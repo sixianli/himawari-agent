@@ -6,9 +6,13 @@ supersedes: ""
 superseded_by: ""
 amends: "docs/adr/0209-rule-book-with-cel-expressions-and-judge.md"
 date: "2026-11-12"
+covers: "packages/application/src/rules/field-catalog.ts, packages/application/src/services/proactive-rules.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0248：邮件“涉钱”地板规则改由模型判断，不再读词表
+
+> 2026-11-25 补：Gmail 检查不再调用模型逐封判断，新邮件改为进收件箱、由主对话里的她自己决定要不要告诉主人（[ADR 0285](0285-one-main-thread-subthreads-and-one-inbox.md) 第 1 步，PR 648）。本文里关于邮件判断提示词、判断结果和判断前带给模型的内容的部分已不再执行；规则手册、决策记录等其余部分照旧。
 
 <a id="contents"></a>
 
@@ -34,7 +38,7 @@ date: "2026-11-12"
 ## 前提
 
 1. 规则 id 已写进决策记录，不能改：`docs/adr/0209-rule-book-with-cel-expressions-and-judge.md` 第 42 行，“三条地板规则的 id（`floor_important_sender`、`floor_public_domain`、`floor_money_words`）已写进决策记录，所以保持不变。”
-2. 地板的作用是“判断模型已经给出结论后，涉钱邮件至少升到要知道”：`packages/application/src/services/proactive-rules.ts` 的 `applyFloor`，`ignore` 命中地板变 `know`，`unsure` 或 `check` 变 `check`，`act` 不动。
+2. 地板的作用是“判断模型已经给出结论后，涉钱邮件至少升到要知道”：`packages/application/src/services/proactive-rules.ts` 的 [applyFloor](https://github.com/sixianli/himawari-agent/blob/9a395ec730b7c96519309bf1199355a04d8199aa/packages/application/src/services/proactive-rules.ts)，`ignore` 命中地板变 `know`，`unsure` 或 `check` 变 `check`，`act` 不动。
 3. 先例：邮件金额由模型给、规则读：`packages/application/src/rules/field-catalog.ts` 的 `amount_state` 字段和 `rules/amount.ts` 的 `parseMailAmount`，`suppress_small_amount` 规则读它。
 4. 地板命中在判断之后计算：`proactive-mail-check-service.ts` 里逐封邮件先取 `judged.get(item.messageId)` 再算 `floorHitIds`；判断之前用同一份邮件事实算的是 `outcomeHits`（要读整串、一定提醒），它们不读涉钱事实。
 
@@ -46,7 +50,7 @@ date: "2026-11-12"
 
 1. 邮件判断提示词（`mail.judgment`）要求每封邮件（包括判 `ignore` 的）多写一项 `"money"`：`"yes"` 表示涉及主人要付出、被扣、可收回或已入账的具体钱款事项，`"no"` 表示不涉及，促销里的标价、折扣和积分不算。
 2. 规则事实新增 `money_state`（`yes`、`no`、`unknown`，永远存在）。解析严格：只认 `yes` 和 `no`，别的值、缺字段都是 `unknown`；判断之前、判断失败、模型没给时也是 `unknown`。
-3. `floor_money_words` 的表达式改为 `money_state == "yes"`，规则 id 不变，版本升到 2，来源加上本 ADR。删掉 `MONEY_SUBSTRINGS`、`MONEY_WORDS` 两张词表和 `BUILT_IN_RULE_VALUES` 里对应的项。规则自带的例子改成带 `money_state` 的事实：账单类 `yes` 命中；“billingual newsletter”“Lunch on Friday”这类 `no` 不命中；`unknown` 不命中。
+3. `floor_money_words` 的表达式改为 `money_state == "yes"`，规则 id 不变，版本升到 2，来源加上本 ADR。删掉 [MONEY_SUBSTRINGS](https://github.com/sixianli/himawari-agent/blob/8d83c29ea88633f1990b7c0ae4d1460d57e00a6b/packages/application/src/rules/rule-book.ts)、[MONEY_WORDS](https://github.com/sixianli/himawari-agent/blob/8d83c29ea88633f1990b7c0ae4d1460d57e00a6b/packages/application/src/rules/rule-book.ts) 两张词表和 `BUILT_IN_RULE_VALUES` 里对应的项。规则自带的例子改成带 `money_state` 的事实：账单类 `yes` 命中；“billingual newsletter”“Lunch on Friday”这类 `no` 不命中；`unknown` 不命中。
 4. 失败默认是“不命中”，等于没有这条地板，判断模型自己的结论照常生效；不因此放行或拦截别的事。每次命中的事实和模型原答照旧记进决策记录（[ADR 0147](0147-keep-model-prompt-and-answer-of-each-gmail-check-with-the-ledger.md)）。
 5. 每日成本用尽、没有判断的邮件没有涉钱事实，所以不再因词表被抬到“要看”；这是接受的取舍，见后果。
 6. 旧的“新旧实现 2 万封逐字等价”测试只保留重要发件人和公共机构域名两条；涉钱这条换成解析与规则的确定性测试，以及“扣款成功通知”这类词表命中、模型答 `no` 时不命中的反向用例。

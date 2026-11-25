@@ -6,6 +6,8 @@ supersedes: ""
 superseded_by: ""
 amends: "docs/adr/0031-isolated-tool-execution.md"
 date: "2026-09-25"
+covers: "test/qualification/evidence/isolated-tool-execution/p0-platform-probe-01/README.md"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0032：原目录模式的磁盘保护与敏感文件遮挡范围

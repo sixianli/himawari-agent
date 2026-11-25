@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-08-25"
+covers: ""
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0002: 使用产品自有的无头 Agent Gateway

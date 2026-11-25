@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-11-10"
+covers: "packages/runtime-pi/src/configured-model-binding.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0206：Pi 偏离 D5 插消息改照官方，D7 缓存预热先锁住设置
@@ -36,12 +38,12 @@ Pi 的出处都是锁定版本 `@earendil-works/pi-coding-agent@1.5.0` 包里的
 1. `session.sendCustomMessage` 在会话运行中把消息交给底层队列：`dist/core/agent-session.js` 第 1875–1880 行，`else if (this.isStreaming && options?.triggerTurn !== false) { … this.agent.steer(appMessage); }`。所以运行中用它和直接调 `agent.steer` 是同一个队列、同一个时机；`role: "custom"` 和 `timestamp` 由它自己补上（第 1863–1871 行），调用方只传 `customType`、`content`、`display`、`details`。
 2. 会话不在运行中、也没有 `triggerTurn` 时，`sendCustomMessage` 直接把消息写进会话历史：同一文件第 1897–1898 行 `else { this._appendCustomMessage(appMessage); }`。
 3. `session.isStreaming` 只在会话自己开的一轮里为真：第 1081–1083 行 `get isStreaming() { return this._isAgentRunActive; }`，`_isAgentRunActive` 只在 `_startRun` 里置真（第 1442 行）。审批续跑用的 `session.agent.continue()` 不经过 `_startRun`，所以续跑的那一轮里 `isStreaming` 为假，但底层 Agent 正在跑。
-4. 会话开的一轮会自己跑完排队的消息，但最后一次检查和收尾之间还隔着一次 `await`：`_startRun` 第 1467–1479 行在 `agent.prompt` 之后循环，`_handlePostAgentRun()` 返回 `this.agent.hasQueuedMessages()`（第 1582 行）时 `await this.agent.continue()`；没有 `agent_before_settle` 处理函数时 `_runBeforeSettleBoundary()` 再查一次 `this.agent.hasQueuedMessages()`（第 1586 行）。`_runBeforeSettleBoundary()` 返回后要经过一次 `await` 才回到 `_startRun` 退出循环，之后 `_emitAgentSettled()` 一开头才把 `_isAgentRunActive` 置假（第 696–698 行）。这一次 `await` 的间隙里送来的后台通知会进底层队列、没人再跑（GLM 互审指出，Pi 官方 `docs/sdk.md` 第 92 行也说 `agent_end` 之后“queued work can still follow”）。
-5. Pi 的自动压缩只在会话开的一轮里发生：`_checkCompaction` 只由 `_prepareRun`（第 1503 行）和 `_handlePostAgentRun`（第 1577 行）调用。所以压缩后补发运行环境说明时，会话一定在运行中。
+4. 会话开的一轮会自己跑完排队的消息，但最后一次检查和收尾之间还隔着一次 `await`：`_startRun` 第 1467–1479 行在 `agent.prompt` 之后循环，_handlePostAgentRun() 返回 `this.agent.hasQueuedMessages()`（第 1582 行）时 `await this.agent.continue()`；没有 `agent_before_settle` 处理函数时 _runBeforeSettleBoundary() 再查一次 `this.agent.hasQueuedMessages()`（第 1586 行）。_runBeforeSettleBoundary() 返回后要经过一次 `await` 才回到 `_startRun` 退出循环，之后 _emitAgentSettled() 一开头才把 `_isAgentRunActive` 置假（第 696–698 行）。这一次 `await` 的间隙里送来的后台通知会进底层队列、没人再跑（GLM 互审指出，Pi 官方 `docs/sdk.md` 第 92 行也说 `agent_end` 之后“queued work can still follow”）。
+5. Pi 的自动压缩只在会话开的一轮里发生：`_checkCompaction` 只由 `_prepareRun`（第 1503 行）和 _handlePostAgentRun（第 1577 行）调用。所以压缩后补发运行环境说明时，会话一定在运行中。
 6. `session.abort()` 先标记“本轮要中止”再中止底层 Agent，然后等会话空闲：第 1989–2000 行。
 7. 只给写了缓存寿命的模型预热：`docs/models.md` 第 112 行“A model without a lifetime for the active tier is not eligible for cache warming.”；`cacheWarming` 1.5.0 默认 `"streaming"`（`dist/core/settings-defaults.d.ts` 第 59 行），1.5.1 默认改为 `"idle"`（1.5.1 `docs/settings.md` 第 21 行）。
 8. 生产主力模型是 DeepSeek，它的缓存“usually within a few hours to a few days”才清掉（https://api-docs.deepseek.com/guides/kv_cache ），不需要预热；生产没有 5 分钟缓存的模型（[ADR 0117](0117-magpie-routes-models-through-owned-subscriptions.md)、[ADR 0111](0111-no-expensive-models-anywhere.md)）。
-9. Himawari 交给 Pi 的模型配置由 `packages/runtime-pi/src/configured-model-binding.ts` 的 `providerModelConfig` 逐项列出，没有 `promptCache`。
+9. Himawari 交给 Pi 的模型配置由 `packages/runtime-pi/src/configured-model-binding.ts` 的 [providerModelConfig](https://github.com/sixianli/himawari-agent/blob/e934cd2f4a7544467e83988796d3938d1cef36b6/packages/runtime-pi/src/configured-model-binding.ts) 逐项列出，没有 `promptCache`。
 
 <a id="decision"></a>
 

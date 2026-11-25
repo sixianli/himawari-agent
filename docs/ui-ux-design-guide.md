@@ -3,6 +3,8 @@ status: active
 supersedes: ""
 superseded_by: ""
 date: "2026-10-29"
+covers: "AGENTS.md, apps/control-center/test/app-interactions.unit.test.ts, apps/control-center/test/brand.unit.test.ts, assets/brand/himawari/v3/logo-sunflower-disc.svg, scripts/check-brand-assets.mjs, scripts/check-layout-audit.mjs, scripts/delivery-mode/browser-acceptance-gate.py, scripts/test-file-preview-browser.mjs, test/integration/owner-settings-sync.test.ts, test/integration/product-path-browser.test.ts, test/integration/public-search-authorization.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # Himawari 网页设计规范

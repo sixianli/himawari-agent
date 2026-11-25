@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-09-29"
+covers: ""
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0037：macOS 安装包自带 Pi 工具使用的 Bash

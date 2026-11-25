@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-10-31"
+covers: "apps/control-center/src/components/glyphs.tsx, apps/control-center/src/rounded.css, apps/control-center/test/glyphs.unit.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0137：全站图标和组件改用“圆润”造型：双色填充图标，浮起的卡片，胶囊按钮
@@ -59,7 +61,7 @@ date: "2026-10-31"
 
 ## 后果
 
-- ADR 0136 被本 ADR 取代；`soft-line.css` 改名为 `rounded.css` 并重写，`line-icons.tsx` 换成 `glyphs.tsx`。v14 基线作废，只留作历史。
+- ADR 0136 被本 ADR 取代；[soft-line.css](https://github.com/sixianli/himawari-agent/blob/91d9b0896874b0e73c3cfadfc765c957305ab17d/apps/control-center/src/main.tsx) 改名为 `rounded.css` 并重写，line-icons.tsx 换成 `glyphs.tsx`。v14 基线作废，只留作历史。
 - 圆润在 iPhone 和 Mac 真机上都还没看过；上线后需要 Andy 在手机上看一次侧栏、输入框和设置弹窗。
 - 文件预览里 Excel 的工作表标签仍模仿 Excel 本身（规则 27），不按圆润改。
 

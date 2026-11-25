@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-11-11"
+covers: "packages/persistence-sqlite/src/data-export/rules.ts, packages/persistence-sqlite/src/migrations/0086_rule_book.sql, packages/persistence-sqlite/src/migrations/0087_rule_book_memory_link.sql, packages/persistence-sqlite/src/sqlite-proactive-operations.ts, test/integration/data-export-rules.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0233：规则手册进入数据导出，格式升到 v2

@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-10-26"
+covers: ".agents/instructions/delivery-mode.md, packages/persistence-sqlite/src/migration-engine.ts, scripts/delivery-mode/deploy.sh, scripts/delivery-mode/make-packet.py, scripts/delivery-mode/run-packet-checks.py, scripts/delivery-mode/test_make_packet.py, scripts/operations/workspace-lifecycle-audit.mjs"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0086：上线操作包由仓库里的生成器按参数生成，不再复制上一次的再手改
@@ -27,7 +29,7 @@ date: "2026-10-26"
 
 这样做已经让生产停服出事三次以上，都记在 [lessons：复制上一次操作包时留下旧文件和旧文件名](../lessons.md#copied-packet-stale-names)：
 
-- 第十次上线第四次尝试：切换脚本还读第九次的文件名 `s7-catalog-after51.json`，停服约 17 分钟后自动回退。
+- 第十次上线第四次尝试：切换脚本还读第九次的文件名 s7-catalog-after51.json，停服约 17 分钟后自动回退。
 - 第十二次上线第一次尝试：切换脚本 `systemd/S7-switch-start-readback.py` 还按第十一次之前的配置核对，要求原配置的读网页上限是 32768，停服后报 `TWELFTH_SWITCH_ORIGINAL_PUBLIC_FETCH_CHANGED`；回退脚本又按数据库版本号拼错步骤名，服务停了约 15 分钟（[工程案例集案例 20](../engineering-casebook.md#case-eleventh-twelfth-deploy)）。
 - 本次搬进仓库时又发现一处：操作包里带的 `scripts/operations/workspace-lifecycle-audit.mjs` 副本只认到数据库第 56 版，`main` 上的同名文件已改成认 57 版（提交 `bfa6162`）。下一次照旧复制，第十三次升库到 57 版时就会在停服后失败。
 

@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-11-07"
+covers: ".agents/instructions/model-review.md, .agents/instructions/prompt-prefix.md, AGENTS.md, scripts/model-review/delegate.mjs, scripts/model-review/gateway-lock.json, scripts/model-review/gateway.json, scripts/model-review/gateway.mjs, scripts/model-review/opencode-review.mjs"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0178：方案讨论和代码复核的模型调用，改经每次运行自起的本机 Magpie
@@ -64,7 +66,7 @@ Andy 还有一个腾讯 CodeBuddy 国际版（WorkBuddy AI）免费账号，里�
 
 ## 对“只追加”规则的受控例外
 
-CodeBuddy 会以错误码 11128 拒绝它不认可的系统提示。被拒时，插件 `@magpie-community/opencode-workbuddy-auth@0.2.24` 先给那句话加一个逗号重发，再不行就把系统提示挪进第一条用户消息（插件 `index.mjs` 的 `systemAsUser`，README 原文“sent once more … with the system prompt moved into the first user message”）。这改变了已经发出的请求开头，违反 [.agents/instructions/prompt-prefix.md](../../.agents/instructions/prompt-prefix.md) 第 4 条。Andy 2026-11-07 同意作为受控例外：只在 CodeBuddy 拒绝时发生，同一个插件进程内对同一段提示的处理是确定的。透传探针只证明 Magpie 本身（经自定义服务方）转发第一条请求时不改内容，不覆盖 CodeBuddy 插件自己的改写；插件的行为依据是它的源码和 README。另外，出故障换服务方时缓存要整段重算一次，这是第 9 条允许的情况；`stays=session` 保证换过去以后不再来回切。
+CodeBuddy 会以错误码 11128 拒绝它不认可的系统提示。被拒时，插件 `@magpie-community/opencode-workbuddy-auth@0.2.24` 先给那句话加一个逗号重发，再不行就把系统提示挪进第一条用户消息（插件 `index.mjs` 的 systemAsUser，README 原文“sent once more … with the system prompt moved into the first user message”）。这改变了已经发出的请求开头，违反 [.agents/instructions/prompt-prefix.md](../../.agents/instructions/prompt-prefix.md) 第 4 条。Andy 2026-11-07 同意作为受控例外：只在 CodeBuddy 拒绝时发生，同一个插件进程内对同一段提示的处理是确定的。透传探针只证明 Magpie 本身（经自定义服务方）转发第一条请求时不改内容，不覆盖 CodeBuddy 插件自己的改写；插件的行为依据是它的源码和 README。另外，出故障换服务方时缓存要整段重算一次，这是第 9 条允许的情况；`stays=session` 保证换过去以后不再来回切。
 
 <a id="options"></a>
 

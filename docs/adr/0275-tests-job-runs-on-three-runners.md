@@ -7,6 +7,8 @@ superseded_by: ""
 amends: ""
 date: "2026-11-15"
 amended_by: "docs/adr/0287-ci-runs-on-github-hosted-runners.md"
+covers: "ci/policy.json, ci/policy.schema.json, scripts/ci/aggregate.mjs, scripts/ci/check-policy.mjs, scripts/ci/local.mjs, scripts/ci/run.mjs, scripts/ci/test-concurrency.mjs, scripts/ci/test.mjs, test/tooling/aggregate.test.mjs, test/tooling/pipeline.test.mjs, test/tooling/policy.test.mjs, test/tooling/test-timeout.test.mjs"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0275：tests 作业拆成三台并行，tooling 测试超时放到 30 秒

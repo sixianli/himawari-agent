@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-11-11"
+covers: "apps/control-center/test/proactive-interactions.unit.test.ts, packages/application/src/services/daily-review.ts, packages/application/test/daily-review.unit.test.ts, packages/memory-engine/src/consolidation.ts, packages/persistence-sqlite/test/memory-checkup-migration.contract.test.ts, packages/platform-node/src/strict-configuration.ts, test/integration/memory-checkup.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0218：每周记忆体检放进每天打分，确认、删除、合并都能撤销，并且共用每天的名额

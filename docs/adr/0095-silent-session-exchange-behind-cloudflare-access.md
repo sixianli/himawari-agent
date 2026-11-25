@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-10-27"
+covers: "apps/control-center/src/app.tsx, apps/control-center/src/browser-entry.ts, apps/control-center/src/components/browser-entry-screen.tsx, packages/platform-node/src/identity-gateway.ts, test/integration/product-path-browser.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0095：过了 Cloudflare 邮箱验证码后，网页自动换取 Himawari 登录，不再要求点按钮

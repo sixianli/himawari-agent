@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-11-11"
+covers: "apps/control-center/test/proactive-interactions.unit.test.ts, packages/application/src/ports/proactive-checks.ts, packages/domain/src/demo-persona.ts, packages/persistence-sqlite/src/data-export/import.ts, packages/platform-node/test/startup-configuration.unit.test.ts, test/integration/demo-data.test.ts, test/integration/proactive-production.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0236：体验者用示范记忆和假收件箱，不碰任何真人的数据

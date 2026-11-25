@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-10-27"
+covers: "scripts/delivery-mode/packet-template/maintenance/production-shape-config-template.json"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0093：附件支持图片，交给能看图的模型

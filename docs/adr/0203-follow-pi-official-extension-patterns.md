@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-11-10"
+covers: ".agents/instructions/pi-and-workspace.md, .claude/rules/owner-standing-rules.md, packages/runtime-pi/package.json"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0203：在 Pi 上加功能先照官方写法，偏离要 Andy 批准

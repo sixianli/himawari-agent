@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-10-31"
+covers: "packages/application/src/services/execution-live-feed.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0138：回答文字边写边推给网页，过程记录写入后立刻通知
@@ -26,7 +28,7 @@ date: "2026-10-31"
 
 Andy 2026-10-31 在生产第二十二版上发现，回答是写完后一整块出现的，不像 ChatGPT 或 Claude 那样逐字出现。
 
-同一天在生产网页（Andy 的 Chrome）里实测了两轮长回答，页面里注入只读脚本，记录回答区字数、推送通知和每个接口请求的时间（数据见项目共享目录 `streaming/measurement-20261031-prod.md`）。第二轮页面自报“写回答 1261 字 7.4 秒”。这 7.4 秒里网页收到 19 次“有变化”通知，也发了过程记录查询，但回答区一个字都没显示，结束时一次出现 1229 字。
+同一天在生产网页（Andy 的 Chrome）里实测了两轮长回答，页面里注入只读脚本，记录回答区字数、推送通知和每个接口请求的时间（数据见项目共享目录 streaming/measurement-20261031-prod.md）。第二轮页面自报“写回答 1261 字 7.4 秒”。这 7.4 秒里网页收到 19 次“有变化”通知，也发了过程记录查询，但回答区一个字都没显示，结束时一次出现 1229 字。
 
 原因有两层，都已对照代码确认：
 
@@ -54,7 +56,7 @@ Andy 2026-10-31 在生产第二十二版上发现，回答是写完后一整块�
 ## 决定
 
 1. **文字直推。** 新增一个进程内的实时消息源 `ExecutionLiveFeed`（`packages/application/src/services/execution-live-feed.ts`）。Pi 运行时每收到一段文字（`text_start`、`text_delta`、`text_end`），就把这条消息到此为止的全文交给它（`PiAgentRuntimeAdapterDependencies.onAssistantText`）。消息源算出“这次比上次多出来的字”和它的起始位置，推送循环用新的事件 `thread.execution_text`（字段 `itemId`、`offset`、`text`）经已有的 SSE 连接推给网页。
-2. **推出去之前先脱敏。** 消息源用和落库记录相同的 `redactTracePayload` 脱敏，并用 `machineSecretHoldStart`（原 `pi-model-transport.ts` 里的扣尾逻辑，移到 `machine-secret-exclusion.ts` 共用）把末尾像密钥开头的部分先扣住，等下一段到了再判断，所以被拆成两段到达的密钥也推不出去。
+2. **推出去之前先脱敏。** 消息源用和落库记录相同的 `redactTracePayload` 脱敏，并用 `machineSecretHoldStart`（原 `pi-model-transport.ts` 里的扣尾逻辑，移到共用文件，现在在 `packages/sensitive-capture/src/machine-secrets.ts`）把末尾像密钥开头的部分先扣住，等下一段到了再判断，所以被拆成两段到达的密钥也推不出去。
 3. **新记录立刻通知。** 运行时写入过程记录（`TraceStorePort.appendNext`）后立刻叫醒推送循环，不再等 500 毫秒；没有新记录时仍按 500 毫秒检查一次，作为后备。
 4. **网页按帧显示。** 网页把收到的增量接在当前文字后面，用 `requestAnimationFrame` 每帧最多刷新一次。位置对不上（中间漏了一段）时不猜，改为拉一次记录。显示时取“推来的文字”和“落库记录里的文字”中较长的一份；这一轮结束后只认落库的最终回答。
 5. **查询结果不再被详情刷新判过期。** 过程记录查询改用独立的编号，只在切换对话、换连接、新建对话时作废。

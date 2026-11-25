@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-11-08"
+covers: "apps/agent-service/src/production-gap-cases.ts, apps/control-center/test/weekly-report.unit.test.ts, packages/calibration/test/gap-lines.unit.test.ts, packages/persistence-sqlite/test/migration-engine.contract.test.ts, packages/platform-node/test/startup-configuration.unit.test.ts, test/integration/gap-cases.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0187：校准周报并列 Muse 命中率和多余提醒率两条差距线，每周列出 Muse 做对而 Himawari 没做到的案例

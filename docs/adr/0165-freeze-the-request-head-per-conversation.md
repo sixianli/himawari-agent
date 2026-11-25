@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-11-04"
+covers: ".agents/instructions/prompt-prefix.md, apps/admin-cli/src/thread-command.ts, apps/admin-cli/test/thread-prompt-rebuild-cli.unit.test.ts, apps/agent-service/src/production-model-composition.ts, apps/agent-service/src/production-run-policy.ts, apps/agent-service/src/production-runtime-tools.ts, apps/agent-service/test/production-runtime-tools.unit.test.ts, packages/application/src/ports/thread-prompt-bundles.ts, packages/application/src/services/run-coordinator.ts, packages/application/src/services/thread-prompt-bundle-service.ts, packages/persistence-sqlite/src/schema-catalog.ts, packages/runtime-pi/src/egress-context.ts, packages/runtime-pi/src/pi-runtime-adapter.ts, packages/runtime-pi/test/prompt-prefix.compat.test.ts, packages/runtime-pi/test/runtime-environment-block.unit.test.ts, test/integration/production-http-composition-process.test.ts, test/integration/thread-prompt-bundles.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0165：按对话冻结最终发给服务方的系统提示和工具

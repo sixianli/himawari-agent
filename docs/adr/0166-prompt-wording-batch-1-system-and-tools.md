@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-11-05"
+covers: ".agents/instructions/prompt-prefix.md, apps/agent-service/src/production-background-commands.ts, apps/agent-service/test/fixtures/prompt-wording-before-batch-1.json, apps/agent-service/test/prompt-wording.unit.test.ts, packages/platform-node/src/files/pi-host-publication.ts, packages/runtime-pi/src/pi-builtin-tool-text.ts, packages/runtime-pi/test/pi-builtin-tool-text.compat.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0166：提示词措辞第 1 批：系统提示和工具层只写真话，并补上三处代码拦截

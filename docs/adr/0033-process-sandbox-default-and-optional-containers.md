@@ -7,6 +7,8 @@ superseded_by: ""
 amends: "docs/adr/0031-isolated-tool-execution.md, docs/adr/0030-durable-workspace-release-facts.md"
 amended_by: "docs/adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md, docs/adr/0072-linux-pid-namespace-sweep-counts-as-release-confirmed.md"
 date: "2026-09-26"
+covers: "test/qualification/evidence/isolated-tool-execution/p0-baseline-01/README.md"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0033：默认用进程级沙箱执行工具，容器改为可选的严格模式

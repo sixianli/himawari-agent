@@ -6,6 +6,8 @@ contract_sha256: "sha256:0000000000000000000000000000000000000000000000000000000
 supersedes: ""
 superseded_by: ""
 date: "2026-11-01"
+covers: ".agents/instructions/delivery-mode.md, apps/agent-service/src/production-muse-intake.ts, packages/platform-node/src/strict-configuration.ts, scripts/delivery-mode/rollback.sh"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # Muse 自动接收运行手册

@@ -6,6 +6,8 @@ supersedes: ""
 superseded_by: ""
 amends: "docs/adr/0033-process-sandbox-default-and-optional-containers.md, docs/adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md"
 date: "2026-10-24"
+covers: ""
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0072：Linux 上扫过整个 PID 命名空间的释放，页面显示为“已释放”
@@ -58,7 +60,7 @@ Mac 没有 PID 命名空间，脱离进程树的后代确实扫不到，原来�
 | --- | --- |
 | 删除容器路径 | 未采用：提示来自 SRT 路径，删掉容器路径消不掉它；容器路径是 ADR 0033 的严格模式。 |
 | 只在页面按运行平台判断 | 未采用：平台不是记录下来的事实，投影只能猜；将来 Agent 和 Worker 不在同一台机器时会判错。 |
-| 新增证明种类 `namespace_gone` | 未采用：要改释放回执表的允许值并新增迁移，收益和本方案相同。 |
+| 新增证明种类 namespace_gone | 未采用：要改释放回执表的允许值并新增迁移，收益和本方案相同。 |
 | 不改语义，只把提示收进工具详情 | 未采用：提示仍然每次都有，只是不显眼。 |
 | 由任务宿主报告、Worker 记录可选字段、投影读取 | 采用。 |
 

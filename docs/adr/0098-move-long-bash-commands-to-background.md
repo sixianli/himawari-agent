@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-10-27"
+covers: "apps/agent-service/src/production-background-commands.ts, apps/agent-service/src/production-background-runs.ts, packages/application/src/services/run-coordinator.ts, scripts/delivery-mode/packet-template/signing/cloud-seal.mjs"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0098：bash 长命令转入后台，本轮先答完，命令跑完后系统另起一轮汇报
@@ -32,7 +34,7 @@ date: "2026-10-27"
 业界做法（来源和原文摘录见[关联文档](#references)）：
 
 - Claude Code：前台命令到了超时不杀，自动转入后台，返回任务编号和输出文件；后台命令结束或到达后台时间上限时，Claude 会“再走一轮”看结果，无人值守时后台默认最长 30 分钟、最多 2 小时；退出时清理全部后台任务。交互模式下后台命令跑着时用户照常发下一条消息。
-- Codex：`exec_command` 等待 `yield_time_ms`（250–30000 毫秒）后交回已有输出和会话编号，之后要模型自己用 `write_stdin` 轮询。公开 issue openai/codex#38495 报告了轮询的代价：一次删除命令让模型等了 90 轮，约 2160 万输入 token。
+- Codex：`exec_command` 等待 yield_time_ms（250–30000 毫秒）后交回已有输出和会话编号，之后要模型自己用 write_stdin 轮询。公开 issue openai/codex#38495 报告了轮询的代价：一次删除命令让模型等了 90 轮，约 2160 万输入 token。
 - OpenHands：命令 30 秒没有新输出就暂停并交回，模型发空命令继续看、发 `C-c` 中断，同样靠模型轮询。
 - Pi 社区扩展 omp-unified-exec：进程结束时用 Pi 的 `sendCustomMessage(..., { triggerTurn: true, deliverAs: "followUp" })` 唤醒 Agent，不打断正在进行的一轮；pi-processes 在 Agent 正忙时用 steer（插到下一次模型调用之前）送达。
 
@@ -128,9 +130,9 @@ date: "2026-10-27"
 - [BL-20261027-012-background-commands-outlive-turn.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261027-012-background-commands-outlive-turn.md)
 - [SOURCE: docs/engineering-casebook.md]
 - Claude Code 官方文档 [Tools reference](https://code.claude.com/docs/en/tools-reference)：“When a foreground command reaches its timeout without finishing, Claude Code moves it to the background instead of stopping it”。
-- Claude Code 官方文档 [Environment variables](https://code.claude.com/docs/en/env-vars)：`BASH_DEFAULT_TIMEOUT_MS`“default: 120000”，`BASH_MAX_TIMEOUT_MS`“default: 600000”。
+- Claude Code 官方文档 [Environment variables](https://code.claude.com/docs/en/env-vars)：`BASH_DEFAULT_TIMEOUT_MS`“default: 120000”，BASH_MAX_TIMEOUT_MS“default: 600000”。
 - Claude Code 官方文档 [Interactive mode](https://code.claude.com/docs/en/interactive-mode)：“Background tasks are automatically cleaned up when Claude Code exits”。
-- OpenAI Codex 源码 [unified_exec/mod.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/unified_exec/mod.rs)：`MIN_YIELD_TIME_MS` 为 250，`MAX_YIELD_TIME_MS` 为 30_000；Codex 配置文档 [Config reference](https://developers.openai.com/codex/config-reference) 的 `background_terminal_max_timeout` 默认 300000。
+- OpenAI Codex 源码 [unified_exec/mod.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/unified_exec/mod.rs)：MIN_YIELD_TIME_MS 为 250，MAX_YIELD_TIME_MS 为 30_000；Codex 配置文档 [Config reference](https://developers.openai.com/codex/config-reference) 的 `background_terminal_max_timeout` 默认 300000。
 - OpenAI Codex issue [#38495](https://github.com/openai/codex/issues/38495)：轮询等待长命令消耗大量输入 token（数字为该 issue 作者报告，未复现）。
 - OpenHands [terminal 工具定义](https://github.com/OpenHands/software-agent-sdk)：“the command will instead pause and ask for confirmation when it produces no new output for 30 seconds”。
 - Pi 社区扩展 [omp-unified-exec](https://github.com/mouriya-s-lab/omp-unified-exec)：结束通知用 `triggerTurn: true` 和 `deliverAs: "followUp"`，“never interrupt a running turn”。

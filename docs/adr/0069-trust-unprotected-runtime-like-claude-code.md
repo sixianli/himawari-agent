@@ -6,6 +6,8 @@ supersedes: ""
 superseded_by: ""
 amended_by: "docs/adr/0078-authority-check-once-then-version-compare.md"
 date: "2026-10-23"
+covers: "apps/execution-worker/src/production-sandbox-execution-v2.ts, packages/platform-node/test/sandbox-host-verifier.unit.test.ts, packages/platform-node/test/sandbox-runtime-digest-worker.unit.test.ts, packages/runtime-sandbox/src/policy.ts, packages/runtime-sandbox/test/policy.unit.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0069：未保护安装信任安装结果，只靠沙箱禁止写入和受保护安装防改动

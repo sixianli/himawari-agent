@@ -6,6 +6,8 @@ supersedes: ""
 superseded_by: ""
 amends: "docs/adr/0249-the-model-judges-meaning-where-word-lists-guessed-it.md"
 date: "2026-11-14"
+covers: "apps/agent-service/src/production-memory-control.ts, apps/agent-service/src/production-memory-episodes.ts, apps/control-center/src/memory-import.ts, packages/application/src/ports/configuration.ts, packages/platform-node/src/memory-import-duplicate-decision.ts, packages/prompt-catalog/src/memory.ts, scripts/check-egress-redaction.mjs"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0271：导入记忆时，“是不是已经记着了”改由服务端的模型判断
@@ -33,7 +35,7 @@ date: "2026-11-14"
 
 ## 前提
 
-1. 原先的判重在网页：改动前的 `apps/control-center/src/memory-import.ts` 第 42 到 49 行 `isDuplicate`，其中 `(known.length > 5 && key.includes(known)) || (key.length > 5 && known.includes(key))`；整理文字的 `normalizeMemoryText` 里有 `.replace(/^(?:我的|我|主人的|主人|用户的|用户)/, "")`。本 PR 已删掉这段代码，现在的代码里找不到，所以把原文抄在下面（`git show 250455897:apps/control-center/src/memory-import.ts` 第 34 到 49 行）：
+1. 原先的判重在网页：改动前的 `apps/control-center/src/memory-import.ts` 第 42 到 49 行 [isDuplicate](https://github.com/sixianli/himawari-agent/blob/25045589797475e844dddd835356c5d2eb36b061/apps/control-center/src/memory-import.ts)，其中 `(known.length > 5 && key.includes(known)) || (key.length > 5 && known.includes(key))`；整理文字的 `normalizeMemoryText` 里有 `.replace(/^(?:我的|我|主人的|主人|用户的|用户)/, "")`。本 PR 已删掉这段代码，现在的代码里找不到，所以把原文抄在下面（`git show 250455897:apps/control-center/src/memory-import.ts` 第 34 到 49 行）：
 
    ```ts
    export const normalizeMemoryText = (text: string) =>
@@ -59,7 +61,7 @@ date: "2026-11-14"
 4. 网页分类导入条目的做法是 [ADR 0260](0260-memory-classification-on-the-server.md)：网页把文字存成受保护内容，把引用发给服务端，服务端读出文字再处理。本决定沿用这个通道。
 5. Jev 的接口：向 `https://ai-gateway.vercel.sh/v1/decisions` 发 `{model: "typesafe-ai/jev", input, questions, providerOptions: {gateway: {zeroDataRetention: true}}}`，每个多选题返回 `choice`、`confidence` 和每个选项的 `probabilities`。2026-11-14（日本时间）实测（见[决定](#decision)的第 6 点），响应里的 `answers[i].probabilities` 是 `[{value, probability}]`，用量 `input_tokens: 3237`、费用 `0.000135954` 美元（10 个导入条目对 5 条已有记忆）。
 6. 发给外部服务的文字必须先过出口遮盖：`scripts/check-egress-redaction.mjs` 要求每个对外发文字的文件登记，并调用 `redactForExternalText`。
-7. 发给模型的对话请求只追加：`.claude/rules/prompt-prefix.md` 第 4、6 条。本决定的调用是后台单独调用，不碰任何对话的系统提示和工具定义。
+7. 发给模型的对话请求只追加：.claude/rules/prompt-prefix.md 第 4、6 条。本决定的调用是后台单独调用，不碰任何对话的系统提示和工具定义。
 
 [返回阅读导航](#contents)
 
@@ -75,7 +77,7 @@ date: "2026-11-14"
 6. **用 Jev，不用通用大模型。**这是“选一个选项”的判断，按 Andy 的新规则优先 Jev。2026-11-14（日本时间）用最终提示词做了 10 个条目的冒烟测试（不是正式评测）：5 个换了说法的条目，选中的都是对的那条已有记忆，概率分别是 100%、100%、100%、88%、100%；5 个不该命中的条目选了 `none`，其中“每周跑五次步”对“每周跑三次步”给了 48%（落在 `unsure`），数字不同本来就该让主人看一眼。费用 0.000136 美元。同一批条目换成只有一句话的简化提示词时，“喝不了牛奶”对“对乳制品不耐受”只给了 15%，所以提示词里的定义和例子不能省。
 7. **配置和密钥。**`runPolicy.importDuplicates` 写模型名和密钥引用；密钥引用必须指向一条用途是 `model-auth` 的密钥，复用 Vercel AI Gateway 的那一条，不新增密钥。配置里没有这一项时，这个查询返回全部 `skipped`，网页的行为是“全部默认不导入、标没能核对”，不会回到词表。
 8. **出口。**这条路由是主人在配置里明确写上的（模型名加密钥引用），不经过对话用的模型组合，所以没有“这个模型能不能看私有数据”的分级检查；这个检查在本决定里由三样东西代替：配置里写了才会发，敏感和受限的记忆与条目不发，发出去的文字先遮盖。请求体里的文字先过 `redactForExternalText`，模型走 `zeroDataRetention: true`；`packages/platform-node/src/memory-import-duplicate-decision.ts` 已在出口遮盖检查里登记。
-9. **删掉词表。**网页删掉 `isDuplicate` 和 `normalizeMemoryText` 里去开头称呼的那条正则；同一批导入里完全相同的两行，仍按“去空白、转小写后相等”去重，这是格式处理，不是判断意思。这两处都不在 `docs/meaning-word-lists.md` 里登记。
+9. **删掉词表。**网页删掉 [isDuplicate](https://github.com/sixianli/himawari-agent/blob/25045589797475e844dddd835356c5d2eb36b061/apps/control-center/src/memory-import.ts) 和 `normalizeMemoryText` 里去开头称呼的那条正则；同一批导入里完全相同的两行，仍按“去空白、转小写后相等”去重，这是格式处理，不是判断意思。这两处都不在 `docs/meaning-word-lists.md` 里登记。
 
 [返回阅读导航](#contents)
 
@@ -83,7 +85,7 @@ date: "2026-11-14"
 
 ## 业界怎么做
 
-- Mem0 写入记忆时，先检索出相似的已有记忆，再让模型在 ADD、UPDATE、DELETE、NONE 里选一个；NONE 的说明是“Make no change (if the fact is already present or irrelevant)”（[Mem0 的 `DEFAULT_UPDATE_MEMORY_PROMPT`](https://github.com/mem0ai/mem0/blob/main/mem0/configs/prompts.py)；论文：Chhikara 等，[Mem0: Building Production-Ready AI Agents with Scalable Long-Term Memory](https://arxiv.org/abs/2504.19413)）。判断同一件事的是模型，检索只负责缩小范围。
+- Mem0 写入记忆时，先检索出相似的已有记忆，再让模型在 ADD、UPDATE、DELETE、NONE 里选一个；NONE 的说明是“Make no change (if the fact is already present or irrelevant)”（[Mem0 的 DEFAULT_UPDATE_MEMORY_PROMPT](https://github.com/mem0ai/mem0/blob/main/mem0/configs/prompts.py)；论文：Chhikara 等，[Mem0: Building Production-Ready AI Agents with Scalable Long-Term Memory](https://arxiv.org/abs/2504.19413)）。判断同一件事的是模型，检索只负责缩小范围。
 - 我们的做法和它一致：判断交给模型。区别是这里没有向量检索可用（前提 3），所以直接拿已有记忆（上限 1000 条）分批比较，换来的是不依赖向量检索、不会因为检索漏掉候选而漏判；代价是已有记忆多时请求数多。
 - 放弃的是：像网页原先那样用字符串包含判重。
 

@@ -6,6 +6,8 @@ supersedes: ""
 superseded_by: ""
 amends: "docs/adr/0107-every-incident-gets-an-automatic-gate.md"
 date: "2026-11-14"
+covers: "scripts/check-incident-gates.mjs, test/tooling/incident-gates.test.mjs"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0269：线程开局只自动载入必需的规则，事故清单和只追加规则改为按需读
@@ -27,12 +29,12 @@ date: "2026-11-14"
 
 ## 前提
 
-1. 云端线程开局自动载入仓库根目录的 `CLAUDE.md`、`.claude/CLAUDE.md` 和 `.claude/rules/`，不载入带 `paths` 前缀的规则。来源：[Claude Code 文档 Projects 一页](https://code.claude.com/docs/en/claude-projects#what-threads-pick-up-from-your-repositories)，原话“`CLAUDE.md`, `.claude/CLAUDE.md`, and `.claude/rules/` at the repository root — Loaded from every repository when the thread starts. `CLAUDE.md` files in subdirectories and path-specific rules aren't loaded”。
+1. 云端线程开局自动载入仓库根目录的 `CLAUDE.md`、.claude/CLAUDE.md 和 `.claude/rules/`，不载入带 `paths` 前缀的规则。来源：[Claude Code 文档 Projects 一页](https://code.claude.com/docs/en/claude-projects#what-threads-pick-up-from-your-repositories)，原话“`CLAUDE.md`, .claude/CLAUDE.md, and `.claude/rules/` at the repository root — Loaded from every repository when the thread starts. `CLAUDE.md` files in subdirectories and path-specific rules aren't loaded”。
 2. `@` 引用的文件和引用它的 `CLAUDE.md` 一起全量载入，不省上下文。来源：[Claude Code 文档 memory 一页](https://code.claude.com/docs/en/memory)，原话“Imports help you organize a long file but don't reduce its context cost, because imported files load together with the CLAUDE.md that imports them”。
 3. 本仓库根目录的 `CLAUDE.md` 只有一行 `@AGENTS.md`（`CLAUDE.md:1`）。
 4. [ADR 0107](0107-every-incident-gets-an-automatic-gate.md) 决定 3 要求每个线程开工时读事故清单，原话“每个线程开工时读，收尾时更新”。
 5. 事故清单 `docs/incidents-and-gates.md` 的每一行写的是一个事故的完整经过（日期、现象、根因、次数、门槛、状态），绝大多数行的状态是“已落门槛”。
-6. 云端线程不载入仓库里的技能。来源：[Claude Code 文档 Projects 一页](https://code.claude.com/docs/en/claude-projects#what-threads-pick-up-from-your-repositories)，原话“Cloud threads load each repository's `CLAUDE.md` instructions but not its skills, `.mcp.json` servers, or `.claude/settings.json`”，表格里“Skills under `.claude/skills/`”一行写的是“Not loaded”。
+6. 云端线程不载入仓库里的技能。来源：[Claude Code 文档 Projects 一页](https://code.claude.com/docs/en/claude-projects#what-threads-pick-up-from-your-repositories)，原话“Cloud threads load each repository's `CLAUDE.md` instructions but not its skills, `.mcp.json` servers, or .claude/settings.json”，表格里“Skills under [.claude/skills/](https://github.com/sixianli/himawari-agent/tree/a56903d808de68423561a52d5e4db4b0b622191b/.claude/skills)”一行写的是“Not loaded”。
 
 <a id="context"></a>
 
@@ -61,7 +63,7 @@ Andy 很在意 Claude Code 的额度，2026-11-14 让一个线程分析“每开
 
 1. **开工时不通读事故清单。** 线程开工时运行 `node scripts/check-incident-gates.mjs --open`，它只打印没有关闭的条目（“缺门槛”“等 Andy”和“仓库外”）的编号、状态、日期和一句话现象，再打印一行 `INCIDENT_OPEN count=<条数> total=<总数>`，之后照旧是检查结果行 `INCIDENT_GATES …`。清单有任何一处通不过检查时，不列条目，用一行 `INCIDENT_OPEN unavailable errors=<错误数>` 代替，因为这时列出来的可能不全。工作涉及其中某条的领域时，再去读清单里的那一行。
 2. **判断重犯时按关键词搜。** 出了错要判断是不是重复发生时，按领域、文件名或报错关键词搜整份清单，包括已关闭的行（已关闭的事故又出现，说明它的门槛漏了），不必通读。清单本身一条不删，“第三次必须有硬门槛”仍由 `npm run check:incident-gates` 拦；这一步现在也跑 `test/tooling/incident-gates.test.mjs`。
-3. **只追加规则改为按需读。** `.claude/rules/prompt-prefix.md` 移到 `.agents/instructions/prompt-prefix.md`。`AGENTS.md` 的“发给模型的内容只追加”一节保留三条核心原则，写明只要动到发给模型的上下文就必须先读这份规则，并列出 5 个用来判断“算不算动到”的问题。`npm run check:prompt-prefix` 照旧是阻断检查。
+3. **只追加规则改为按需读。** .claude/rules/prompt-prefix.md 移到 `.agents/instructions/prompt-prefix.md`。`AGENTS.md` 的“发给模型的内容只追加”一节保留三条核心原则，写明只要动到发给模型的上下文就必须先读这份规则，并列出 5 个用来判断“算不算动到”的问题。`npm run check:prompt-prefix` 照旧是阻断检查。
 4. **`AGENTS.md` 只留触发条件。** “交付模式”“和 OpenCode 协作”“Pi 优先与工作区”三节只保留几条核心规则和“什么时候要读什么、读哪份文件”，细节以 `.agents/instructions/delivery-mode.md`、`model-review.md`、`model-review-card.md` 和 `docs/pi-development-guide.md` 为准。
 
 <a id="industry"></a>

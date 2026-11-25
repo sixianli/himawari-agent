@@ -6,6 +6,8 @@ supersedes: ""
 superseded_by: ""
 amends: "docs/adr/0119-conversation-speed-prewarm-on-tool-call-and-embedding-retry.md"
 date: "2026-10-30"
+covers: "apps/agent-service/src/production-run-memory.ts, packages/runtime-pi/src/pi-runtime-adapter.ts, packages/runtime-pi/test/model-accounting.unit.test.ts, test/integration/sqlite-model-budget-operations.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0123：找记忆时被 3 秒掐断的那次向量请求按费用上限记账，重发用新的调用编号

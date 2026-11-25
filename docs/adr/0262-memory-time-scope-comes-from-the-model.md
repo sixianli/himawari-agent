@@ -6,6 +6,8 @@ supersedes: ""
 superseded_by: ""
 amends: "docs/adr/0249-the-model-judges-meaning-where-word-lists-guessed-it.md"
 date: "2026-11-13"
+covers: "apps/agent-service/src/production-mcp-read.ts, apps/agent-service/test/production-memory-recall.unit.test.ts, evals/memory-time-scope/result.json, evals/memory-time-scope/retrieval-comparison.json, packages/memory-engine/src/time-scope.ts, packages/memory-engine/test/time-scope.unit.test.ts, packages/prompt-catalog/src/tools.ts, scripts/evals/memory-time-scope-live.eval.ts, test/fixtures/memory-evaluation/dataset.json, test/fixtures/memory-evaluation/model-time-scopes.json, test/integration/memory-evaluation.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0262：搜记忆的时间范围只用模型填的日期，不再用正则从问题里猜

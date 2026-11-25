@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-11-09"
+covers: "apps/agent-service/test/production-memory-basis.unit.test.ts, packages/memory-engine/src/consolidation.ts, packages/persistence-sqlite/test/memory-consolidation-basis-migration.contract.test.ts, test/integration/decision-ledger.test.ts, test/integration/memory-consolidation.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0194：记忆整理的每次改动记全依据，并和改记忆写进同一个事务

@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-10-21"
+covers: "ci/policy.json, scripts/ci/check-policy.mjs"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0064：只在检查阶段运行的 CI 脚本改动不再单独触发完整第 3 层
@@ -70,6 +72,6 @@ date: "2026-10-21"
 
 ## 关联文档
 
-- 用户原话：`.agents/tasks/round2-tool-execution/goal.md` 的 G151。
+- 用户原话：.agents/tasks/round2-tool-execution/goal.md 的 G151。
 - 被细化的规则：[ADR 0057](0057-batch-layers-one-two-for-small-defects.md)（保持有效）。
 - 触发本决定的改动：[ADR 0063](0063-test-value-gate-speed-budget-hygiene.md) 的测试卫生门禁（R2-H1）。

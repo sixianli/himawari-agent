@@ -6,6 +6,8 @@ contract_sha256: "sha256:e14ca5ee2948b3fdd53d5e4f3cb90b01ccaa2f3a04e58405d2d6d13
 supersedes: ""
 superseded_by: ""
 date: "2026-10-08"
+covers: "packages/runtime-sandbox/src/sandbox-sdk-worker.ts, packages/runtime-sandbox/src/sandbox-sdk.ts, test/integration/sandbox-reservation-administration.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # 未绑定沙箱预约的离线管理员处置

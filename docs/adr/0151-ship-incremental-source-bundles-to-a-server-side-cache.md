@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-11-01"
+covers: "scripts/ci/verify-artifact.mjs, scripts/delivery-mode/test_make_packet.py"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0151：上线包里的源码包改成增量包，生产机上留一个源码缓存
@@ -23,7 +25,7 @@ date: "2026-11-01"
 
 ## 背景
 
-每次上线都要把约 400MB 的上线包从 Andy 的 MacBook 传到生产机，实测上传 204 到 741 秒（最近四次平均 447 秒），第二十三版第一次因为 SSH 保活超时在约 8 分钟时失败，完整上传实测 554 秒（日志：`.ci-output/production/*/run-logs/deploy-*.log`，阶段耗时拆解见项目文件 `upload-slimming/timing-breakdown.md`）。
+每次上线都要把约 400MB 的上线包从 Andy 的 MacBook 传到生产机，实测上传 204 到 741 秒（最近四次平均 447 秒），第二十三版第一次因为 SSH 保活超时在约 8 分钟时失败，完整上传实测 554 秒（日志：`.ci-output/production/*/run-logs/deploy-*.log`，阶段耗时拆解见项目文件 upload-slimming/timing-breakdown.md）。
 
 其中源码包 `source-<提交>.bundle` 约 118MB，由 `make-packet.py` 用 `git bundle create … HEAD` 生成，带全部历史。实测历史只占约 4MB，真正占地方的是 `test/qualification/evidence/` 下的 106MB 测试证据，整条部署链没有任何一步读它（`scripts/ci/verify-artifact.mjs` 的 `sourceTreeDigest` 排除 `test` 目录）。它被传是因为安装脚本要用 `git bundle` 核对提交号再检出（`install/__PKT_LABEL__-artifact-install.mjs`），而提交号是整棵文件树的哈希，不能只传一部分文件。
 
@@ -72,6 +74,6 @@ date: "2026-11-01"
 - [ADR 0074：Claude 自己执行生产上线](0074-claude-runs-production-deployments.md)
 - [ADR 0086：按参数生成上线包](0086-generate-release-packets-from-parameters.md)
 - 一手来源：Git 文档 [git-bundle](https://git-scm.com/docs/git-bundle)（增量包带前置提交，`git bundle verify` 检查接收方是否具备它们）
-- 阶段耗时和估算：项目文件 `upload-slimming/plan.md`、`upload-slimming/timing-breakdown.md`
+- 阶段耗时和估算：项目文件 upload-slimming/plan.md、upload-slimming/timing-breakdown.md
 
 [返回目录](#contents)

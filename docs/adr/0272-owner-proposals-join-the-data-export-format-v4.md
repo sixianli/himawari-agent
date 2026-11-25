@@ -6,6 +6,8 @@ supersedes: ""
 superseded_by: ""
 amends: "docs/adr/0246-external-proposals-join-the-data-export-and-web.md"
 date: "2026-11-14"
+covers: "packages/persistence-sqlite/src/data-export/schemas.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0272：提给主人的提议进入数据导出，格式升到 v4

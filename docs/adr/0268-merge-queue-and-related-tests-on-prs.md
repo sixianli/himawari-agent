@@ -6,6 +6,8 @@ supersedes: ""
 superseded_by: ""
 amends: ""
 date: "2026-11-14"
+covers: "apps/agent-service/src/cache-hit-monitor.ts, packages/application/src/ports/memory-episodes.ts, scripts/ci/main-evidence.mjs, scripts/ci/merge-queue.mjs, scripts/ci/test-scope.mjs, scripts/delivery-mode/github-ruleset.sh, scripts/model-review/opencode-review.mjs, test/tooling/aggregate.test.mjs, test/tooling/main-evidence.test.mjs, test/tooling/merge-queue.test.mjs, test/tooling/opencode-review-merge-gate.test.mjs, test/tooling/runner-orchestration.test.mjs, test/tooling/test-scope.test.mjs"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0268：自建合并队列，PR 上只跑基础测试和相关测试
@@ -33,7 +35,7 @@ date: "2026-11-14"
 ## 前提和来源
 
 1. 现行合并门槛是 PR 最新提交上的 `ci/required` 成功。来源：`.agents/instructions/delivery-mode.md` 第 27 行，原话“合并进 `main` 之前，PR 最新提交上的 `ci/required` 必须是成功”。
-2. 用 Actions 自带的 `GITHUB_TOKEN` 产生的事件不会再触发工作流，`workflow_dispatch` 例外。来源：https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow ，原话 “events triggered by the `GITHUB_TOKEN` will not create a new workflow run”、“`workflow_dispatch` and `repository_dispatch` events always create workflow runs.”
+2. 用 Actions 自带的 `GITHUB_TOKEN` 产生的事件不会再触发工作流，`workflow_dispatch` 例外。来源：https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow ，原话 “events triggered by the `GITHUB_TOKEN` will not create a new workflow run”、“`workflow_dispatch` and repository_dispatch events always create workflow runs.”
 3. 合并接口的 `sha` 参数只锁 PR 头，不锁 `main`。来源：https://docs.github.com/en/rest/pulls/pulls#merge-a-pull-request ，原话 “SHA that pull request head must match to allow merge.”
 4. vitest 按 import 关系找相关测试，只认静态 import。来源：https://vitest.dev/guide/cli ，`--changed` 的说明原话 “Run tests that are affected by the changed files”；`vitest related` 一节原话 “Works with static imports … but not the dynamic ones”。
 5. 改一个源码文件时 vitest 选出的相关测试数差别很大：改 `packages/application/src/ports/memory-episodes.ts` 时 integration 选出 165 个（全量 186 个），改 `apps/agent-service/src/cache-hit-monitor.ts` 时只选出 1 个。来源：`.agents/evidence/ci-related-tests-2026-11-14.md`。

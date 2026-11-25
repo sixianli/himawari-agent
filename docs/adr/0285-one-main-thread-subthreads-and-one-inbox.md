@@ -6,6 +6,8 @@ supersedes: ""
 superseded_by: ""
 amends: "docs/adr/0230-perception-records-and-memories-inferred-from-perception.md, docs/adr/0244-hard-rules-step4-unified-push-gate.md, docs/adr/0257-consequential-tool-calls-go-through-one-authorization-exit.md"
 date: "2026-11-24"
+covers: ""
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0285：一个主对话加她自己开的子线程，所有新事情走同一个收件箱

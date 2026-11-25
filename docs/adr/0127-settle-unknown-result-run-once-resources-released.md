@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-10-30"
+covers: "apps/execution-worker/src/production-sandbox-execution-v2.ts, packages/application/test/thread-execution-state.unit.test.ts, packages/persistence-sqlite/src/sqlite-run-resource-guard.ts, test/integration/sqlite-sandbox-execution-v2.test.ts, test/integration/sqlite-web-push.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0127：命令结果未知且沙箱资源都已释放时，本轮立刻收尾；失败推送写明原因

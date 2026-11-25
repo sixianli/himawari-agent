@@ -4,7 +4,7 @@
 <a id="delivery-mode"></a>
 ## 交付模式
 
-在决定一项改动需要哪些测试、文档步骤、合并检查或生产步骤之前，先读仓库根目录的 `DELIVERY_MODE`。只要它写的是 `fast`，[.agents/instructions/delivery-mode.md](.agents/instructions/delivery-mode.md) 就替代它在本文件和 `.agents/instructions/` 下各文件中点名的那些规则。只有用户能切换模式。合并前 PR 最新提交上的 `ci/required` 必须是成功；草稿 PR 不跑 CI、CI 本身坏了时可以不等 CI 合并的长期授权、CI 在哪台机器上跑，见[快速模式](.agents/instructions/delivery-mode.md#fast-mode)。
+在决定一项改动需要哪些测试、文档步骤、合并检查或生产步骤之前，先读仓库根目录的 `DELIVERY_MODE`。只要它写的是 `fast`，[.agents/instructions/delivery-mode.md](.agents/instructions/delivery-mode.md) 就替代它在本文件和 `.agents/instructions/` 下各文件中点名的那些规则。只有用户能切换模式。合并前 PR 最新提交上的 `ci/required` 必须是成功；草稿 PR 不跑 CI、CI 没变绿时怎么办、CI 在哪台机器上跑，见[快速模式](.agents/instructions/delivery-mode.md#fast-mode)。
 
 <a id="product-vision"></a>
 ## 产品愿景

@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-11-11"
+covers: "apps/agent-service/src/production-memory-capture.ts, packages/application/src/services/durable-memory-service.ts, packages/persistence-sqlite/src/durable-adapters.ts, packages/persistence-sqlite/src/sqlite-execution-context.ts, packages/persistence-sqlite/test/memory-capture-backlog-migration.contract.test.ts, test/integration/production-memory-capture.test.ts, test/integration/sqlite-transaction-scope.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0240：每轮记忆抽取的全部写库放进一个数据库事务，写失败留在待补队列重试

@@ -6,6 +6,8 @@ supersedes: ""
 superseded_by: ""
 amends: "docs/adr/0031-isolated-tool-execution.md, docs/adr/0071-replaceable-web-search-and-fetch-providers.md"
 date: "2026-10-26"
+covers: "apps/agent-service/src/web-tool-run.ts, packages/platform-node/src/public-web-egress.ts, packages/platform-node/src/web-provider-failure.ts, packages/runtime-pi/src/pi-runtime-adapter.ts, packages/runtime-sandbox/src/public-egress-address.ts, test/integration/web-content-limits.test.ts, test/integration/web-provider-shared-connection.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0079：同一轮的只读工具并行执行，联网搜索和读网页在服务进程执行

@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-11-08"
+covers: "apps/agent-service/src/production-memory-capture.ts, apps/control-center/src/components/memory-page.tsx, apps/control-center/test/memory-interactions.unit.test.ts, apps/control-center/test/message-focus.unit.test.ts, scripts/operations/memory-source-report.mjs, test/integration/memory-source-browser.test.ts, test/integration/memory-source-report.test.ts, test/integration/production-memory-capture.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0186：记忆详情能跳到来源对话里的那句原话，找不到的显示“来源已不可查”并计数

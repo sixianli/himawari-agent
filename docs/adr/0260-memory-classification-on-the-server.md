@@ -6,6 +6,8 @@ supersedes: ""
 superseded_by: ""
 amends: "docs/adr/0249-the-model-judges-meaning-where-word-lists-guessed-it.md"
 date: "2026-11-13"
+covers: "apps/agent-service/src/production-memory-capture.ts, apps/agent-service/src/production-memory-classification.ts, apps/agent-service/src/production-real-eval.ts, apps/agent-service/src/service-main.ts, apps/control-center/src/components/memory-page.tsx, apps/control-center/src/memory-import.ts, packages/gateway-contracts/src/contracts-v2.ts, packages/persistence-sqlite/src/migrations/0091_decision_prereviews.sql, packages/prompt-catalog/src/memory.ts, packages/runtime-pi/src/pi-model-transport.ts, packages/sensitive-capture/src/identifiers.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0260：手动添加和导入的记忆由服务端的模型判断类别和是否敏感
@@ -25,7 +27,7 @@ date: "2026-11-13"
 
 ## 背景
 
-Andy 在 2026-11-12 定的 agent 开发基本原则是：理解用户的意思一律交给模型判断，不用关键词表、正则或写死的词典。网页上“添加记忆”和“导入记忆”原先用 `guessCategory` 这张词表猜类别和是否敏感（例如见到“药”就归“健康”并标敏感，“我不吃药”也会被标成健康敏感），导入时还用一条正则猜一行是不是“规矩”。设计线程的整合方案把它列为任务 T5，Andy 同意；[ADR 0249](0249-the-model-judges-meaning-where-word-lists-guessed-it.md) 记了 T1 到 T4，并写明 T5 另记。协调者按 Andy 的新方向限定了范围：只改服务端和网页上的调用，网页不加新的操作，新的界面（例如“这不是敏感信息”的纠正）放到 iPhone 端做。
+Andy 在 2026-11-12 定的 agent 开发基本原则是：理解用户的意思一律交给模型判断，不用关键词表、正则或写死的词典。网页上“添加记忆”和“导入记忆”原先用 [guessCategory](https://github.com/sixianli/himawari-agent/blob/e4df6f6dec593b2523be8ea81864dd2e842e69c2/apps/control-center/src/components/memory-page.tsx) 这张词表猜类别和是否敏感（例如见到“药”就归“健康”并标敏感，“我不吃药”也会被标成健康敏感），导入时还用一条正则猜一行是不是“规矩”。设计线程的整合方案把它列为任务 T5，Andy 同意；[ADR 0249](0249-the-model-judges-meaning-where-word-lists-guessed-it.md) 记了 T1 到 T4，并写明 T5 另记。协调者按 Andy 的新方向限定了范围：只改服务端和网页上的调用，网页不加新的操作，新的界面（例如“这不是敏感信息”的纠正）放到 iPhone 端做。
 
 [返回阅读导航](#contents)
 
@@ -33,7 +35,7 @@ Andy 在 2026-11-12 定的 agent 开发基本原则是：理解用户的意思�
 
 ## 前提
 
-1. 网页原先的词表：`apps/control-center/src/memory-import.ts` 的 `guessCategory`，以及同文件的 `RULE` 正则；添加表单在 `apps/control-center/src/components/memory-page.tsx` 的 `AddForm` 里用 `guessCategory(text).category` 实时填类别。
+1. 网页原先的词表：`apps/control-center/src/memory-import.ts` 的 [guessCategory](https://github.com/sixianli/himawari-agent/blob/e4df6f6dec593b2523be8ea81864dd2e842e69c2/apps/control-center/src/components/memory-page.tsx)，以及同文件的 `RULE` 正则；添加表单在 `apps/control-center/src/components/memory-page.tsx` 的 `AddForm` 里用 `guessCategory(text).category` 实时填类别。
 2. 记忆的敏感级别在浏览器调用 `protectText` 时就定了，`memory.create` 和 `memory.import.commit` 的契约原先没有 topic 字段（`packages/gateway-contracts/src/contracts-v2.ts` 的 `memoryCreateCommandSchema`、`memoryImportItemsSchema`），服务端存敏感记忆时只能按类别推 topic（`production-memory-control.ts` 的 `sensitiveTopicFor`，健康和财务以外都成了 other）。
 3. 敏感记忆不能改类别：`production-memory-control.ts` 的 `#setCategory` 抛 `MEMORY_CATEGORY_LOCKED`。所以类别和敏感级别必须在保存前定好。
 4. 对话里自动记下的记忆，敏感级别由模型给、程序再用 `classificationWithIdentifiers` 取高：`apps/agent-service/src/production-memory-capture.ts` 的 `parseMemoryCandidates`，“classification”和“topic”的写法在 `packages/prompt-catalog/src/memory.ts` 的 `MEMORY_FIELD_RULES`。
@@ -52,7 +54,7 @@ Andy 在 2026-11-12 定的 agent 开发基本原则是：理解用户的意思�
 2. **服务端怎么判断。**`apps/agent-service/src/production-memory-classification.ts`：命中确定性检测（证件号、卡号、密码、密钥及其字样）的条目直接标敏感，不发给模型；其余按总字数分批（每批字数是一个构造参数，不按固定条数切），每批一次调用，提示词 `memory.classification`（复用对话记忆的类别和敏感规则写法），用 [ADR 0249](0249-the-model-judges-meaning-where-word-lists-guessed-it.md) 的判断辅助做严格解析和一次重试。解析规则：不认识的类别归 other；classification 不是 `private` 或 `sensitive` 的条目、模型漏掉的条目、整批失败、每日额度用完，都当成“判断失败”，按敏感处理；类别是健康或财务时一律敏感。
 3. **花费上限。**分类调用用主动检查配置的模型（`runPolicy.proactive.modelRef`）和它的每日成本上限 `dailyCostMicros`（主人能看到、能改），但单独计数；预估超出就不再调用，剩下的条目按判断失败处理。计数在服务进程内存里，服务重启后当天重新计数（不改表的代价，见后果）。用量记在 `memory-capture` 用途下。
 4. **提交时服务端取高。**`memory.create` 和 `memory.import.commit` 的每条增加 `topic`。服务端存记忆前，如果受保护内容的级别低于敏感，而类别是健康或财务、网页报了 topic、这份内容刚被模型判为敏感（服务进程内记住最近 5000 个判为敏感的引用），或文字命中确定性检测，就把这段文字另存一份敏感级别的受保护内容，记忆按敏感存，防止网页少报。敏感记忆的 topic 依次用网页给的值、模型判的值，都没有时按类别推。
-5. **网页的改动。**删掉 `guessCategory` 和 `RULE` 正则。添加表单的类别默认“让 Himawari 判断”，保存时先问服务端，主人手选的类别优先；导入预览先显示“分类中”，判断完再按结果勾选，判断失败的条目标“分类失败，已先保密，默认不导入”。从 Himawari 自己导出的文件导入时，类别和敏感标记是导出时就有的，不再判断。
+5. **网页的改动。**删掉 [guessCategory](https://github.com/sixianli/himawari-agent/blob/e4df6f6dec593b2523be8ea81864dd2e842e69c2/apps/control-center/src/components/memory-page.tsx) 和 `RULE` 正则。添加表单的类别默认“让 Himawari 判断”，保存时先问服务端，主人手选的类别优先；导入预览先显示“分类中”，判断完再按结果勾选，判断失败的条目标“分类失败，已先保密，默认不导入”。从 Himawari 自己导出的文件导入时，类别和敏感标记是导出时就有的，不再判断。
 
 [返回阅读导航](#contents)
 

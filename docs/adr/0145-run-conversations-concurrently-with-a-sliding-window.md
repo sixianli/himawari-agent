@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-11-01"
+covers: "apps/agent-service/src/production-run-dispatcher.ts, apps/agent-service/test/production-concurrency-default.unit.test.ts, apps/agent-service/test/production-run-dispatcher-concurrency.unit.test.ts, apps/control-center/test/execution-process.unit.test.ts, scripts/delivery-mode/packet-template/maintenance/production-shape-config-template.json, test/integration/sqlite-concurrent-run-dispatch.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0145：对话用滑动窗口同时执行，默认同时 3 个

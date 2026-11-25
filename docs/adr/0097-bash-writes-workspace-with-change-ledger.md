@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-10-27"
+covers: "apps/agent-service/src/production-coding-workflow.ts, apps/agent-service/src/production-run-policy.ts, apps/agent-service/src/production-workspace-ledger.ts, apps/agent-service/src/workspace-auto-authorization.ts, apps/agent-service/test/production-coding-workflow.unit.test.ts, apps/agent-service/test/production-workspace-ledger.unit.test.ts, packages/application/src/services/workspace-changes.ts, packages/application/test/workspace-changes.unit.test.ts, packages/execution-contracts/src/protected-directory-names.ts, packages/platform-node/src/files/host-read-only.ts, packages/platform-node/test/host-read-only.unit.test.ts, scripts/delivery-mode/packet-template/signing/cloud-seal.mjs, test/integration/product-path-browser.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0097：命令可以写工作目录，每条命令的文件改动都留档

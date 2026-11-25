@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-10-28"
+covers: ""
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0105：10-28 界面整批修改：只给主人需要的信息，记忆和提醒各有入口，设置只留主人会改的项

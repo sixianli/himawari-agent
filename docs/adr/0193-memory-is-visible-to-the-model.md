@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-11-09"
+covers: "packages/application/src/services/context-formation-service.ts, packages/application/src/services/model-invocation-admission-service.ts, packages/application/src/services/model-visibility.ts, packages/memory-engine/test/episode-backfill.unit.test.ts, packages/runtime-pi/src/pi-runtime-adapter.ts, packages/runtime-pi/test/prompt-prefix.compat.test.ts, scripts/delivery-mode/packet-template/maintenance/production-shape-config-template.json, test/integration/memory-model-visible.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0193：存入记忆的内容必须能被模型看到（模型可见上限和运行分级分开）
@@ -81,7 +83,7 @@ Andy 在方案 v3 上对三件事拍板“A、B、C 我都同意”：
   - 同一个文件里：记忆检索返回敏感记忆后，最终回答按 sensitive 存（去掉修复时存成 private，用例失败）；主人消息带 sensitive 附件时附件内容进入模型视野、这一轮按 sensitive 准入（去掉修复时附件显示为读不出来、分级仍是 private，用例失败）。
   - 各通道的单元和集成测试：记忆整理、事件段、Gmail 检查（`[RULE-memory-visible]`）、档案块、每日复盘、记忆检索、置顶。
 - 准入被拒时，记为这次运行失败，没有另记一条决策记录。
-- 还没做、留给后续 PR：全文索引和实体索引仍不收 sensitive 记忆（`LEXICAL_CLASSIFICATIONS`、`INDEXED_ENTITY_CLASSIFICATIONS`），在第 2 个 PR 和遮盖后建索引一起做。事件段补算向量已经按每段自己的分级标注（`packages/memory-engine/test/episode-backfill.unit.test.ts`）；sensitive 事件段目前没有检索词，不会被选去补算，第 2 个 PR 给它们建检索词后才会走到这一步。记忆的日期给模型（第 3 个 PR）、凭证占位符编号（第 4 个 PR）另做。
+- 还没做、留给后续 PR：全文索引和实体索引仍不收 sensitive 记忆（[LEXICAL_CLASSIFICATIONS](https://github.com/sixianli/himawari-agent/blob/f9b138b52b360a0f09e4615d1324b0068802963f/packages/memory-engine/src/hybrid-memory-provider.ts)、[INDEXED_ENTITY_CLASSIFICATIONS](https://github.com/sixianli/himawari-agent/blob/f9b138b52b360a0f09e4615d1324b0068802963f/packages/persistence-sqlite/src/sqlite-memory-operations.ts)），在第 2 个 PR 和遮盖后建索引一起做。事件段补算向量已经按每段自己的分级标注（`packages/memory-engine/test/episode-backfill.unit.test.ts`）；sensitive 事件段目前没有检索词，不会被选去补算，第 2 个 PR 给它们建检索词后才会走到这一步。记忆的日期给模型（第 3 个 PR）、凭证占位符编号（第 4 个 PR）另做。
 - 对“只追加”规则（`.agents/instructions/prompt-prefix.md` 第 4 条）的一次性影响：系统提示、工具定义和已存历史的字节不变，但老对话里以前因分级被挡在模型外面的 sensitive 历史消息，上线后第一轮会出现在历史中间，那个对话的请求开头变一次、缓存从那里起重算一次。Andy 2026-11-09 的原话：“做这个方案和后续开发的时候，不用去管以前的聊天记录，做得彻底一点。”所以不为此做迁移，规则文件第 4 条的例外里记了这一条。新对话不受影响。
 - 后续：本决定部分取代的旧说法，在原 ADR 里加了指向本文的说明，决定内容不改：ADR 0185 后果里“sensitive 记忆不进全文和实体索引、不带入档案块”的代价、ADR 0112 第 3 条“敏感记忆不能打开置顶”、ADR 0158 第 3 条“敏感和受限的不进邮件检查”。
 
@@ -91,7 +93,7 @@ Andy 在方案 v3 上对三件事拍板“A、B、C 我都同意”：
 
 - [产品愿景](../product-vision.md)
 - [ADR 0112：记忆页的固定显示](0112-memory-page-carried-memories-and-topic-browsing.md)
-- [ADR 0158：Gmail 检查带入相关记忆](0158-bring-related-memories-into-gmail-checks.md)
+- [ADR 0158：Gmail 检查带入相关记忆](https://github.com/sixianli/himawari-agent/blob/9a395ec730b7c96519309bf1199355a04d8199aa/docs/adr/0158-bring-related-memories-into-gmail-checks.md)
 - [ADR 0183：只在数据离开时遮盖](0183-mask-only-when-data-leaves-and-keep-the-original-inside.md)
 - [ADR 0185：密码、密钥标敏感而不是丢弃](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0185-mark-passwords-and-keys-sensitive-instead-of-dropping-them.md)
 - 代码：`packages/application/src/services/model-visibility.ts`、`packages/runtime-pi/src/pi-runtime-adapter.ts`、`packages/application/src/services/context-formation-service.ts`

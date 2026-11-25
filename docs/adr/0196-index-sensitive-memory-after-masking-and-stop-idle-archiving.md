@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-11-09"
+covers: "apps/admin-cli/src/memory-command.ts, apps/admin-cli/test/memory-reindex-cli.unit.test.ts, apps/agent-service/src/production-memory-capture.ts, apps/agent-service/src/production-memory-worker.ts, apps/agent-service/src/service-main.ts, apps/agent-service/test/production-memory-evidence.unit.test.ts, packages/memory-engine/src/consolidation.ts, packages/memory-engine/src/hybrid-memory-provider.ts, packages/memory-engine/src/segmentation.ts, packages/memory-engine/test/hybrid-memory-provider.unit.test.ts, packages/persistence-sqlite/src/sqlite-memory-consolidation-operations.ts, packages/persistence-sqlite/src/sqlite-memory-maintenance.ts, packages/persistence-sqlite/src/sqlite-memory-operations.ts, packages/platform-node/src/strict-configuration.ts, packages/sensitive-capture/src/secret-like.ts, packages/sensitive-capture/test/secret-like.unit.test.ts, test/integration/memory-consolidation.test.ts, test/integration/memory-episodes.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0196：敏感记忆遮盖后进检索目录，停掉“久不用就归档”

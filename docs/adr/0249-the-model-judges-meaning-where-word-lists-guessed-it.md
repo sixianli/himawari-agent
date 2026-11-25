@@ -4,11 +4,15 @@ document_type: adr
 decision_status: accepted
 supersedes: ""
 superseded_by: ""
-amends: "docs/adr/0239-real-memory-eval-sets.md, docs/adr/0180-gmail-check-reads-earlier-mail-about-the-same-matter.md, docs/adr/0179-keep-low-confidence-memory-candidates-as-tentative.md"
+amends: "docs/adr/0239-real-memory-eval-sets.md, https://github.com/sixianli/himawari-agent/blob/9a395ec730b7c96519309bf1199355a04d8199aa/docs/adr/0180-gmail-check-reads-earlier-mail-about-the-same-matter.md, docs/adr/0179-keep-low-confidence-memory-candidates-as-tentative.md"
 date: "2026-11-12"
+covers: "apps/agent-service/src/auxiliary-judgment.ts, apps/agent-service/src/production-memory-capture.ts, packages/application/src/services/proactive-mail-check-service.ts, packages/application/src/services/real-memory-eval.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0249：几处靠词表猜意思的判断改由模型判断，程序只做校验
+
+> 2026-11-25 补：Gmail 检查不再调用模型逐封判断，新邮件改为进收件箱、由主对话里的她自己决定要不要告诉主人（[ADR 0285](0285-one-main-thread-subthreads-and-one-inbox.md) 第 1 步，PR 648）。本文里关于邮件判断提示词、判断结果和判断前带给模型的内容的部分已不再执行；规则手册、决策记录等其余部分照旧。
 
 <a id="contents"></a>
 
@@ -33,12 +37,12 @@ Andy 在 2026-11-12 定的 agent 开发基本原则是：理解用户的意思�
 
 ## 前提
 
-1. 自 v2.2 起 Andy 定的规则是硬性设定：`AGENTS.md` 写明“规则写进程序、必定执行、每条有回归测试”；确认的现有代码在 `apps/agent-service/src/production-memory-capture.ts` 的 `evidenceRejected`，原先用 `GENERIC_TERMS` 去掉虚词后比较两句话有没有共同的两字词。
+1. 自 v2.2 起 Andy 定的规则是硬性设定：`AGENTS.md` 写明“规则写进程序、必定执行、每条有回归测试”；确认的现有代码在 `apps/agent-service/src/production-memory-capture.ts` 的 `evidenceRejected`，原先用 [GENERIC_TERMS](https://github.com/sixianli/himawari-agent/blob/5e06602c1a8d4e5aef04e07585734e25e657c2ed/apps/agent-service/src/production-memory-capture.ts) 去掉虚词后比较两句话有没有共同的两字词。
 2. 待确认记忆转正“有原话还要和那条记忆相关”的规则出自 [ADR 0179](0179-keep-low-confidence-memory-candidates-as-tentative.md) 第 59 行：“原话与那条待确认记忆自己的文字……去掉「主人」「喜欢」「的」这类到处都有的词后，至少共享一个连续两个字（中文）或一个单词，否则同样丢弃、不转正”，并写明“字面判断对不上同义词（「牛奶」对「乳制品」），误拦的代价只是少转正一次”。Andy 当时要防的是“拿无关的话当证据”，裁判模型照样防得住，还认得出同义词。
 3. 逐字核对 `quoteFromOwnerMessage` 只看引用是否出自主人原话，不看是否在说同一件事：同文件，原话必须在归一化后逐字出现在主人消息里。
-4. 邮件单号原先由正则 `REFERENCE_CONTEXT` 在 `packages/platform-node/src/gmail-related.ts` 里抽取，要求“订单、预约、案件”等标签紧挨着号码；[ADR 0180](0180-gmail-check-reads-earlier-mail-about-the-same-matter.md) 第 41 行写明规则：“单独的 ID、No.、# 不算”。
+4. 邮件单号原先由正则 [REFERENCE_CONTEXT](https://github.com/sixianli/himawari-agent/blob/35b9c5064ec071dddf8f3b63c6bdbc48881e6646/packages/platform-node/src/gmail-related.ts) 在 [packages/platform-node/src/gmail-related.ts](https://github.com/sixianli/himawari-agent/blob/9a395ec730b7c96519309bf1199355a04d8199aa/packages/platform-node/src/gmail-related.ts) 里抽取，要求“订单、预约、案件”等标签紧挨着号码；[ADR 0180](https://github.com/sixianli/himawari-agent/blob/9a395ec730b7c96519309bf1199355a04d8199aa/docs/adr/0180-gmail-check-reads-earlier-mail-about-the-same-matter.md) 第 41 行写明规则：“单独的 ID、No.、# 不算”。
 5. 取相关邮件在判断模型调用之前、每日成本上限之外：`packages/application/src/services/proactive-mail-check-service.ts` 的 `#related` 先于 `#judge`；本 ADR 把抽取放进同一个每日上限和每次检查的时间窗。
-6. 评测题防泄露原先用 n-gram、数字重叠，再加 `chineseNumber`、`PART_OF_DAY`、`dateTokens` 这套日期时刻词典：`packages/application/src/services/real-memory-eval.ts`；[ADR 0239](0239-real-memory-eval-sets.md) 决定 2 写明了这套规则。
+6. 评测题防泄露原先用 n-gram、数字重叠，再加 [chineseNumber](https://github.com/sixianli/himawari-agent/blob/8e59634caed111c35bb107d4317f608adf441687/packages/memory-engine/src/time-scope.ts)、[PART_OF_DAY](https://github.com/sixianli/himawari-agent/blob/b84eba60ff3d79256cea88d30fe7c6cee449aa45/packages/application/src/services/real-memory-eval.ts)、[dateTokens](https://github.com/sixianli/himawari-agent/blob/b84eba60ff3d79256cea88d30fe7c6cee449aa45/packages/application/src/services/real-memory-eval.ts) 这套日期时刻词典：`packages/application/src/services/real-memory-eval.ts`；[ADR 0239](0239-real-memory-eval-sets.md) 决定 2 写明了这套规则。
 7. 模型输出一律严格解析、失败走安全默认，是 OpenAI、Anthropic 结构化输出文档的通用做法：<https://developers.openai.com/api/docs/guides/structured-outputs>。
 8. 请求开头只追加：`.agents/instructions/prompt-prefix.md` 第 4、6 条。本 ADR 新增的三个提示词都是后台单独调用，不改任何对话请求的系统提示和工具定义。
 
@@ -49,9 +53,9 @@ Andy 在 2026-11-12 定的 agent 开发基本原则是：理解用户的意思�
 ## 决定
 
 1. **共用判断辅助（T1）。**`apps/agent-service/src/auxiliary-judgment.ts` 的 `judgeWithModel`：问一次模型，严格解析，解析失败再问一次，仍失败就抛出；`judgeOrDefault` 在失败时返回调用方给的安全默认值。每个判断各自有提示词（放在 `packages/prompt-catalog`，固定指令在前、数据在后）和各自的解析函数，不共用一个大提示词。模型调用仍走原有的出口遮盖和准入。
-2. **待确认规矩的确认裁判（T2）。**删掉 `GENERIC_TERMS`、`relevanceTokens`、`quoteRelatesToMemory`（取代 ADR 0179 第 59 行的“共享两字词”规则）。每天回看对话（`production-memory-conversation-review.ts`）确认待确认记忆时走同一个裁判：调用按当天对话的数据分类发出，每问一条之前先查是否正在停止、是否还持有执行权，结果同样在进程内复用。逐字核对保留。只在“决定是 unchanged、update 或 merge、指向待确认规矩、引用逐字出自原话”时，发一次独立裁判调用（提示词 `memory.confirmation-judge`）：输入只有引用和该规矩原文，输出 `supports` 是或否，只有 `true` 才确认。失败、超时、格式错一律不确认。结果按（数据分类、规矩文本、引用、提示词版本）在进程内复用，同一轮重试不重复花钱；失败的结果不复用。输入当不可信数据，提示词写明不执行其中的指令。
-3. **邮件单号由模型抽取（T3）。**删掉 `REFERENCE_CONTEXT`。取相关邮件之前，对本次候选邮件按批抽取单号（提示词 `mail.reference-extraction`），费用计入每日成本上限，预估超限、超时、失败时不搜单号，只靠线程和同标题同参与人。程序校验全部保留并移到 `packages/application/src/services/proactive-references.ts`：转成大写后只认首字符是字母或数字、总长 8 到 40 的 `[A-Z0-9-]` 串、含数字、不是 YYYY-MM-DD 形式的日期（其他写法的日期和电话号码交给提示词和模型判断）、必须作为完整片段逐字出现在这封邮件里、每封最多 3 个；只有校验后的串才拼进 Gmail 查询；搜回的邮件仍要逐字含该单号才算。对 [ADR 0180](0180-gmail-check-reads-earlier-mail-about-the-same-matter.md) 的修改：不再要求标签紧挨号码，只写“No. 12345678”的号码以后也能串起来。
-4. **评测防泄露改由裁判判断语义（T4）。**保留 n-gram 与数字重叠两道确定性检查，删掉 `chineseNumber`、`PART_OF_DAY`、`dateTokens`。出题后、入库前，对每道题（含拒答题）再发一次裁判调用（提示词 `eval.real-memory.leak-judge`）：输入只有题干和该记忆、原话，输出 `leaks` 是或否。失败、格式错、答非所问都当成泄露，沿用 `rejected: "leak"`，不加新枚举值；预算用尽照旧中止，不当成泄露。只在评测开着时运行。对 [ADR 0239](0239-real-memory-eval-sets.md) 决定 2 的修改：日期时刻的等价判断（“十二月”和“12 月”、“七点”和“7 点”）和“一点”的特殊处理不再由程序做，交给裁判。
+2. **待确认规矩的确认裁判（T2）。**删掉 [GENERIC_TERMS](https://github.com/sixianli/himawari-agent/blob/5e06602c1a8d4e5aef04e07585734e25e657c2ed/apps/agent-service/src/production-memory-capture.ts)、[relevanceTokens](https://github.com/sixianli/himawari-agent/blob/5e06602c1a8d4e5aef04e07585734e25e657c2ed/apps/agent-service/src/production-memory-capture.ts)、[quoteRelatesToMemory](https://github.com/sixianli/himawari-agent/blob/5e06602c1a8d4e5aef04e07585734e25e657c2ed/apps/agent-service/src/production-memory-capture.ts)（取代 ADR 0179 第 59 行的“共享两字词”规则）。每天回看对话（`production-memory-conversation-review.ts`）确认待确认记忆时走同一个裁判：调用按当天对话的数据分类发出，每问一条之前先查是否正在停止、是否还持有执行权，结果同样在进程内复用。逐字核对保留。只在“决定是 unchanged、update 或 merge、指向待确认规矩、引用逐字出自原话”时，发一次独立裁判调用（提示词 `memory.confirmation-judge`）：输入只有引用和该规矩原文，输出 `supports` 是或否，只有 `true` 才确认。失败、超时、格式错一律不确认。结果按（数据分类、规矩文本、引用、提示词版本）在进程内复用，同一轮重试不重复花钱；失败的结果不复用。输入当不可信数据，提示词写明不执行其中的指令。
+3. **邮件单号由模型抽取（T3）。**删掉 [REFERENCE_CONTEXT](https://github.com/sixianli/himawari-agent/blob/35b9c5064ec071dddf8f3b63c6bdbc48881e6646/packages/platform-node/src/gmail-related.ts)。取相关邮件之前，对本次候选邮件按批抽取单号（提示词 `mail.reference-extraction`），费用计入每日成本上限，预估超限、超时、失败时不搜单号，只靠线程和同标题同参与人。程序校验全部保留并移到 [packages/application/src/services/proactive-references.ts](https://github.com/sixianli/himawari-agent/blob/9a395ec730b7c96519309bf1199355a04d8199aa/packages/application/src/services/proactive-references.ts)：转成大写后只认首字符是字母或数字、总长 8 到 40 的 `[A-Z0-9-]` 串、含数字、不是 YYYY-MM-DD 形式的日期（其他写法的日期和电话号码交给提示词和模型判断）、必须作为完整片段逐字出现在这封邮件里、每封最多 3 个；只有校验后的串才拼进 Gmail 查询；搜回的邮件仍要逐字含该单号才算。对 [ADR 0180](https://github.com/sixianli/himawari-agent/blob/9a395ec730b7c96519309bf1199355a04d8199aa/docs/adr/0180-gmail-check-reads-earlier-mail-about-the-same-matter.md) 的修改：不再要求标签紧挨号码，只写“No. 12345678”的号码以后也能串起来。
+4. **评测防泄露改由裁判判断语义（T4）。**保留 n-gram 与数字重叠两道确定性检查，删掉 [chineseNumber](https://github.com/sixianli/himawari-agent/blob/8e59634caed111c35bb107d4317f608adf441687/packages/memory-engine/src/time-scope.ts)、[PART_OF_DAY](https://github.com/sixianli/himawari-agent/blob/b84eba60ff3d79256cea88d30fe7c6cee449aa45/packages/application/src/services/real-memory-eval.ts)、[dateTokens](https://github.com/sixianli/himawari-agent/blob/b84eba60ff3d79256cea88d30fe7c6cee449aa45/packages/application/src/services/real-memory-eval.ts)。出题后、入库前，对每道题（含拒答题）再发一次裁判调用（提示词 `eval.real-memory.leak-judge`）：输入只有题干和该记忆、原话，输出 `leaks` 是或否。失败、格式错、答非所问都当成泄露，沿用 `rejected: "leak"`，不加新枚举值；预算用尽照旧中止，不当成泄露。只在评测开着时运行。对 [ADR 0239](0239-real-memory-eval-sets.md) 决定 2 的修改：日期时刻的等价判断（“十二月”和“12 月”、“七点”和“7 点”）和“一点”的特殊处理不再由程序做，交给裁判。
 5. **模型选择不写死。**这些调用沿用各自调用方已有的模型配置，不在代码里写死模型名；提示词写进目录并登记在 `prompt-manifest.json`。
 
 [返回阅读导航](#contents)

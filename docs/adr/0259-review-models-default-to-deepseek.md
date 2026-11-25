@@ -6,6 +6,8 @@ supersedes: ""
 superseded_by: ""
 amends: "docs/adr/0175-cheaper-code-review-rounds.md"
 date: "2026-11-12"
+covers: ".agents/instructions/model-review.md, AGENTS.md, scripts/model-review/gateway.json, scripts/model-review/opencode-review.mjs, scripts/model-review/review-models.json"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0259：方案审核和代码复核默认只用 DeepSeek，默认模型写在配置里
