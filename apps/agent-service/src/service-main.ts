@@ -104,7 +104,6 @@ import {
   SystemdProviderSecretSource,
   stableErrorCode,
   TypeSafeJevTransport,
-  type VoiceAddresseeDecision,
   writeAgentServiceBootBinding,
   writeAuthorityFile,
   writeServiceDiagnostic,
@@ -234,7 +233,6 @@ import { ProductionThreadTasks } from "./production-thread-tasks.js";
 import { productionToolActionRegistry } from "./production-tool-actions.js";
 import { toolCallSandboxPrewarm } from "./production-tool-call-prewarm.js";
 import { ProductionVaultTools } from "./production-vault-tools.js";
-import { productionVoiceAddressee } from "./production-voice-addressee.js";
 import { ProductionWebPush, WebPushPresence } from "./production-web-push.js";
 import { createProductionWorkerParentBindingRegistry } from "./production-worker-parent-binding-registry.js";
 import {
@@ -302,14 +300,6 @@ let sandboxCommandInventoryOnce: Promise<SandboxCommandInventory> | undefined;
 function sandboxCommandInventory(): Promise<SandboxCommandInventory> {
   sandboxCommandInventoryOnce ??= inspectSandboxCommands();
   return sandboxCommandInventoryOnce;
-}
-
-function voiceAddresseeOption(
-  configuration: ProductConfiguration,
-  secretSource: ReturnType<typeof hostModelSources>["provider"],
-): { readonly voiceAddressee?: VoiceAddresseeDecision } {
-  const voiceAddressee = productionVoiceAddressee(configuration, secretSource);
-  return voiceAddressee ? { voiceAddressee } : {};
 }
 
 function productionClock(): ClockPort {
@@ -3648,7 +3638,6 @@ export async function startTenantRuntime(
               ),
             }
           : {}),
-        ...voiceAddresseeOption(configuration, sources.provider),
         ...(homeUrgency ? { homeUrgency } : {}),
         ...(museIntake ? { museIntake } : {}),
         ...(gapExport ? { gapExport } : {}),

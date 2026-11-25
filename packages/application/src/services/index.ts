@@ -101,7 +101,6 @@ export * from "./thread-prompt-bundle-service.js";
 export * from "./thread-query-service.js";
 export * from "./tool-action-registry.js";
 export * from "./trace-redaction.js";
-export * from "./voice-addressee.js";
 export * from "./voice-command.js";
 export * from "./web-capability-service.js";
 export * from "./web-push-gate.js";

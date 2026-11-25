@@ -154,7 +154,6 @@ export interface HttpGatewayServerOptions {
     readonly home?: DeviceHomePort;
     readonly voiceGates?: () => VoiceGates;
     readonly prefetch?: UtterancePrefetchPort;
-    readonly addressee?: DeviceApiRouteOptions["addressee"];
     readonly exportArchive?: DeviceApiRouteOptions["exportArchive"];
   };
   readonly health?: HttpGatewayHealthPort;
@@ -1337,7 +1336,6 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
       ...(options.devices.notifications ? { notifications: options.devices.notifications } : {}),
       ...(options.devices.voiceGates ? { voiceGates: options.devices.voiceGates } : {}),
       ...(options.devices.prefetch ? { prefetch: options.devices.prefetch } : {}),
-      ...(options.devices.addressee ? { addressee: options.devices.addressee } : {}),
       ...(options.devices.exportArchive ? { exportArchive: options.devices.exportArchive } : {}),
       ...(options.files
         ? {

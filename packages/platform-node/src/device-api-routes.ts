@@ -24,17 +24,16 @@ import {
   PERCEPTION_SENSES,
   PERCEPTION_TEXT_MAXIMUM,
   PERCEPTION_UTTERANCE_ID_PATTERN,
+  PHONE_VOICE_PROOF_PREFIX,
   PORT_ERROR_CODES,
   type ThreadGatewayRequestMessage,
   type UploadGrantPurpose,
+  type VaultService,
   VOICE_HEARD_NAME_MAXIMUM_CHARACTERS,
   VOICE_TRIGGERS,
-  type VoiceAddresseeOutcome,
-  type VoiceAddresseeRequest,
   type VoiceEvidence,
   type VoiceGates,
   type VoiceTrigger,
-  type VaultService,
 } from "@himawari-agent/application";
 import {
   DATA_EXPORT_ID_PATTERN,
@@ -295,10 +294,6 @@ export interface DeviceApiRouteOptions {
     }) => Promise<readonly string[]>;
   };
   readonly voiceGates?: () => VoiceGates;
-  readonly addressee?: (input: {
-    readonly authentication: GatewayAuthenticationContext;
-    readonly request: VoiceAddresseeRequest;
-  }) => Promise<VoiceAddresseeOutcome>;
   readonly prefetch?: UtterancePrefetchPort;
   readonly threadGateway: AgentThreadGatewayPort;
   readonly gateways: DeviceGateways;
@@ -1361,6 +1356,7 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
           body["text"].length > MESSAGE_TEXT_MAXIMUM
         )
           options.rejectBody(400);
+        let heardByPhone = false;
         if (body["voice"] !== undefined) {
           const evidence = parseVoiceEvidence(body["voice"]) as VoiceEvidence;
           const verdict = decideVoiceCommand(evidence, options.voiceGates?.());
@@ -1368,24 +1364,7 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
             return options.sendJson(reply, 409, {
               error: { code: VOICE_COMMAND_UNCONFIRMED_CODE, reason: verdict.reason },
             });
-          const addressed = options.addressee
-            ? await options.addressee({
-                authentication,
-                request: {
-                  deviceId: authenticated.device.id,
-                  utteranceId: body["utteranceId"] as string,
-                  trigger: evidence.trigger,
-                  heardName: evidence.heardName,
-                  text: body["text"] as string,
-                },
-              })
-            : evidence.trigger === "hands_on"
-              ? "addressed"
-              : "addressed_unsure";
-          if (addressed !== "addressed")
-            return options.sendJson(reply, 409, {
-              error: { code: VOICE_COMMAND_UNCONFIRMED_CODE, reason: addressed },
-            });
+          heardByPhone = evidence.trigger !== "hands_on";
         }
         if (typeof body["utteranceId"] === "string")
           options.prefetch?.settle({
@@ -1428,7 +1407,7 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
             runId: `run:${suffix}`,
             sessionId: authentication.sessionId,
             contentRef,
-            sourceProofRef: `device:${authenticated.device.id}`,
+            sourceProofRef: `${heardByPhone ? PHONE_VOICE_PROOF_PREFIX : "device:"}${authenticated.device.id}`,
             dataClassification: "private",
             occurredAt: now().toISOString(),
             resultRef,
