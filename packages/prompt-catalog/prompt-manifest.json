@@ -179,6 +179,11 @@
     "changedIn": "ADR 0286",
     "reason": "记忆清单快照：开局附一次记忆清单，之后每轮只附记忆变化，并加先打开再回答细节的规则"
   },
+  "chat.process-icons-section": {
+    "sha256": "fc7f387153fcbad9ed02c0e6e208b3bebaaf6f247f67645ffb3a7490e3a024a3",
+    "changedIn": "ADR 0250",
+    "reason": "过程图标改名：clipboard-list、puzzle、heartbeat"
+  },
   "chat.runtime-environment.document-skill": {
     "sha256": "1267983f39421d48fa7a9a5680a1c2a7224d13084a16fe64e1bed0d9ec57a805",
     "changedIn": "ADR 0164",
@@ -996,6 +1001,16 @@
     "sha256": "d4eb6b5e8fa4d894cbd5960165eb2032dffcdf1965023c325c8218f320e0cd80",
     "changedIn": "ADR 0213",
     "reason": "P2-3 新增：主人一句话变成长期规则的工具（rule_set/rule_list/rule_undo）和失败结果"
+  },
+  "tools.activity-icon-parameter": {
+    "sha256": "dbd8e58cfc21c55329741fda6c87fea61075ceb1f18e404304e7acf702c66660",
+    "changedIn": "ADR 0250",
+    "reason": "过程图标改名：clipboard-list、puzzle、heartbeat"
+  },
+  "tools.activity-parameter": {
+    "sha256": "d931a691ecca733174ce858eb0d803fecb8d10fd24e031126eb1e38604a36570",
+    "changedIn": "ADR 0250",
+    "reason": "新增：工具参数 activity、activityIcon 的说明和系统提示里的过程图标表"
   },
   "tools.authorized": {
     "sha256": "e2bf668e954070fb41a107317b84ba9f5fc433f2a1b9a37b148f62fc76787fab",

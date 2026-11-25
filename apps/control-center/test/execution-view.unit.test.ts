@@ -32,6 +32,8 @@ const record = (
   text: "",
   input: "",
   output: "",
+  activity: "",
+  activityIcon: "",
   occurredAt: new Date(seconds * 1000).toISOString(),
   ...overrides,
 });
@@ -360,6 +362,8 @@ it("keeps the model request time and arguments separate from tool execution", ()
     name: "web_search",
     phase: "completed",
     output: "News",
+    activity: "",
+    activityIcon: "",
   });
   expect(executionItems([end, request, start, end])[0]).toMatchObject({
     requestedAt: request.occurredAt,
@@ -552,4 +556,34 @@ it("reports how many lines of a file the model has written while it is still wri
   const afterWriting = executionActivity(gameRun(45850), run, "connected", Date.parse(at(45900)));
   expect(afterWriting.label).not.toBe("chat.activity.writing");
   expect(afterWriting.writing).toBeUndefined();
+});
+
+describe("[ICON-2] activity on a merged tool step", () => {
+  it("keeps the model's sentence and icon when the ended record carries none", () => {
+    const tool = { kind: "tool" as const, name: "web_search" };
+    const [item] = executionItems([
+      record(1, 1, { ...tool, phase: "updated", activity: "查天气", activityIcon: "cloud" }),
+      record(2, 2, { ...tool, phase: "started", activity: "查天气", activityIcon: "cloud" }),
+      record(3, 3, { ...tool, phase: "completed" }),
+    ]);
+    expect(item).toMatchObject({ phase: "completed", activity: "查天气", activityIcon: "cloud" });
+  });
+
+  it("takes the later sentence together with its own icon", () => {
+    const tool = { kind: "tool" as const, name: "web_search" };
+    const [item] = executionItems([
+      record(1, 1, { ...tool, phase: "updated", activity: "搜索网页", activityIcon: "puzzle" }),
+      record(2, 2, { ...tool, phase: "started", activity: "查天气", activityIcon: "cloud" }),
+    ]);
+    expect(item).toMatchObject({ activity: "查天气", activityIcon: "cloud" });
+  });
+
+  it("keeps the earlier icon when a later record has a sentence but no icon", () => {
+    const tool = { kind: "tool" as const, name: "web_search" };
+    const [item] = executionItems([
+      record(1, 1, { ...tool, phase: "updated", activity: "查天气", activityIcon: "cloud" }),
+      record(2, 2, { ...tool, phase: "started", activity: "查天气", activityIcon: "" }),
+    ]);
+    expect(item).toMatchObject({ activity: "查天气", activityIcon: "cloud" });
+  });
 });

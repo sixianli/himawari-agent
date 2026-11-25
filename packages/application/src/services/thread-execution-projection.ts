@@ -5,7 +5,14 @@ import {
   createRunId,
   createThreadId,
 } from "@himawari-agent/domain";
-import type { ThreadExecutionRecord } from "@himawari-agent/gateway-contracts";
+import { processStepText, type ThreadExecutionRecord } from "@himawari-agent/gateway-contracts";
+import {
+  PROCESS_ACTIVITY_FALLBACK_ICON,
+  PROCESS_ACTIVITY_ICONS,
+  PROCESS_ACTIVITY_MAX_LENGTH,
+  TOOL_ACTIVITY_ICON_PARAMETER_NAME,
+  TOOL_ACTIVITY_PARAMETER_NAME,
+} from "@himawari-agent/prompt-catalog";
 import {
   ApplicationPortError,
   type DataClassification,
@@ -47,6 +54,47 @@ function text(value: unknown): string {
       : value
     : "";
 }
+function oneLine(value: string): string {
+  return value
+    .replace(/[\p{Cc}\u061c\u200e\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069]/gu, " ")
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
+function toolActivity(
+  value: unknown,
+  toolName: string,
+  locale: string,
+): {
+  readonly input: string;
+  readonly activity: string;
+  readonly activityIcon: string;
+} {
+  const {
+    [TOOL_ACTIVITY_PARAMETER_NAME]: rawActivity,
+    [TOOL_ACTIVITY_ICON_PARAMETER_NAME]: rawIcon,
+    ...rest
+  } = object(value);
+  const activity =
+    (typeof rawActivity === "string"
+      ? [...oneLine(rawActivity)].slice(0, PROCESS_ACTIVITY_MAX_LENGTH).join("")
+      : "") || processStepText(toolName, locale);
+  const icon = typeof rawIcon === "string" ? rawIcon.trim() : "";
+  return {
+    input: text(
+      JSON.stringify(
+        value && typeof value === "object" && !Array.isArray(value) ? rest : (value ?? {}),
+        null,
+        2,
+      ),
+    ),
+    activity,
+    activityIcon: (PROCESS_ACTIVITY_ICONS as readonly string[]).includes(icon)
+      ? icon
+      : PROCESS_ACTIVITY_FALLBACK_ICON,
+  };
+}
+
 export function executionToolItemId(toolCallId: string): string {
   return identifier(toolCallId, toolCallId);
 }
@@ -180,6 +228,8 @@ export class ThreadExecutionProjection {
         text: "",
         input: "",
         output: "",
+        activity: "",
+        activityIcon: "",
         occurredAt: event.occurredAt,
       };
       if (
@@ -258,7 +308,7 @@ export class ThreadExecutionProjection {
                 kind: "tool",
                 phase: "updated",
                 name: text(call["name"]),
-                input: text(JSON.stringify(call["arguments"] ?? {}, null, 2)),
+                ...toolActivity(call["arguments"], text(call["name"]), thread.answerLocale),
               });
             }
           } else {
@@ -279,7 +329,7 @@ export class ThreadExecutionProjection {
                 kind: "tool",
                 phase: "updated",
                 name: text(call["name"]),
-                input: text(JSON.stringify(call["arguments"] ?? {}, null, 2)),
+                ...toolActivity(call["arguments"], text(call["name"]), thread.answerLocale),
               });
               records.push({
                 ...base,
@@ -455,7 +505,13 @@ export class ThreadExecutionProjection {
             text: text(tool["description"]),
             phase: ended ? (failed ? "failed" : "completed") : "started",
             name: text(tool["toolName"]) || text(envelope["capabilityRef"]),
-            input: ended ? "" : text(JSON.stringify(tool["arguments"] ?? {}, null, 2)),
+            ...(ended
+              ? {}
+              : toolActivity(
+                  tool["arguments"],
+                  text(tool["toolName"]) || text(envelope["capabilityRef"]),
+                  thread.answerLocale,
+                )),
             output: ended ? text(visibleText(result["content"])) : "",
           });
         } else if (
@@ -694,7 +750,14 @@ export class ThreadExecutionProjection {
     const unreadable = records.find((record) => record.phase === "unavailable")?.sequence;
     const settled = records
       .filter((record) => unreadable === undefined || record.sequence < unreadable)
-      .map((record) => ({ ...record, text: "", input: "", output: "" }));
+      .map((record) => ({
+        ...record,
+        text: "",
+        input: "",
+        output: "",
+        activity: "",
+        activityIcon: "",
+      }));
     this.stateRecords.delete(key);
     const sequence = settled.at(-1)?.sequence;
     if (sequence === undefined) return;

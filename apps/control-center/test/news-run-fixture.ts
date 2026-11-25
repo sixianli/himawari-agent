@@ -19,6 +19,8 @@ const record = (
     text: "",
     input: "",
     output: "",
+    activity: "",
+    activityIcon: "",
     occurredAt: at(milliseconds),
     ...overrides,
   };
