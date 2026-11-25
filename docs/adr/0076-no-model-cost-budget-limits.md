@@ -91,6 +91,6 @@ install -m "$(stat -c %a /etc/himawari/config.json)" -o "$(stat -c %u /etc/himaw
 ## 后续
 
 - 2026-10-30：[ADR 0124](0124-unknown-model-call-blocks-only-its-own-resend.md) 修改本 ADR 第 3 条：调用结果不确定时账户照样置为 `reconcile_required`，但不再拒绝同一轮里其他调用的预留和开始；阻止同一调用重发改由调用记录按调用位置完成。整轮的重新派发和后台任务恢复仍被挡。原做法让找记忆的向量请求出一次不确定，同一轮主对话也失败（事故 I-37）。
-- 2026-11-11：多人使用时，[ADR 0234](0234-one-program-per-person-database-file.md) 对本 ADR 决定 2 加一个例外：只对 Andy 以外的人，准入前按人按月核对用量，超过上限就拒绝；上限数值由 Andy 在管理页配置，代码里不写固定数字。Andy 本人仍默认不设上限，产品内仍不设累计总额上限，其余决定不变。
+- 2026-11-11：多人使用时，[ADR 0234](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0234-one-program-per-person-database-file.md) 对本 ADR 决定 2 加一个例外：只对 Andy 以外的人，准入前按人按月核对用量，超过上限就拒绝；上限数值由 Andy 在管理页配置，代码里不写固定数字。Andy 本人仍默认不设上限，产品内仍不设累计总额上限，其余决定不变。
 
 [↑ 返回阅读导航](#contents)

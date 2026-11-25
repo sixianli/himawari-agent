@@ -19,7 +19,7 @@ superseded_by: ""
 
 ## Summary
 
-2026-11-11 更新：ADR 0234 取代 ADR 0083，做法改为一个程序、每人一个数据库文件，不再每人一套实例；所有人的模型用 Andy 已有的套餐（对话模型按 ADR 0117 的顺序走），不用 Vercel key；每人每月上限由 Andy 在管理页配置，代码不写固定数字。实现顺序见 [SOURCE: docs/adr/0234-one-program-per-person-database-file.md]；下面的原文是 ADR 0083 时代的记录，其中独立实例、独立端口、每个实例一把 Vercel key 和每月 10 美元的部分作废。
+2026-11-11 更新：ADR 0234 取代 ADR 0083，做法改为一个程序、每人一个数据库文件，不再每人一套实例；所有人的模型用 Andy 已有的套餐（对话模型按 ADR 0117 的顺序走），不用 Vercel key；每人每月上限由 Andy 在管理页配置，代码不写固定数字。实现顺序见 [SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0234-one-program-per-person-database-file.md]；下面的原文是 ADR 0083 时代的记录，其中独立实例、独立端口、每个实例一把 Vercel key 和每月 10 美元的部分作废。
 
 按 ADR 0083（取代 ADR 0081）：先给 Andy 的老婆开一个独立实例（独立 stateRoot、数据库、secrets、配置、系统服务、系统账号、端口），稳定两周后再给最多 2 位朋友开。只邀请，不开放注册。别人的实例用 Cloudflare Tunnel + Access（邮箱名单 + 邮箱一次性验证码），实例 identity.kind=cloudflare-access，先建 Access 规则再接网址；Andy 自己的实例也接同样的入口，由 BL-20261026-004 单独先做，电脑仍可用 ssh 隧道。开工条件：第十一版事故修好、真实网页验收通过、生产连续 7 天没有用不了的事故、上线脚本能按参数自动生成。开工后要做：核对两个实例在同一台生产机上的端口、沙箱目录、系统账号、内存和磁盘不冲突；让上线和回滚脚本支持多个实例；给每个别人的实例单独开一把 Vercel AI Gateway API key，设每月 10 美元、按月重置的预算和 100% 用量邮件提醒（Andy 2026-10-26 定的金额），核对对话、记忆嵌入、联网搜索等收费调用都走这把 key，并让页面在网关返回 402 时明确显示“本月额度已用完”；开 Cloudflare 团队并打开邮箱验证码登录；为老婆的实例做真实网页验收；补工程案例库的结果数据。
 
@@ -29,7 +29,7 @@ superseded_by: ""
 
 ## Notes
 
-- 现行决定：[SOURCE: docs/adr/0234-one-program-per-person-database-file.md]，取代 [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0083-isolated-instance-per-person-with-owner-entry.md]（Andy 2026-11-11T10:27Z 同意一个程序、每人一个数据库文件；11:05Z 要求只用 OpenCode Go 套餐、上限由他配置）。
+- 现行决定：[SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0234-one-program-per-person-database-file.md]，取代 [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0083-isolated-instance-per-person-with-owner-entry.md]（Andy 2026-11-11T10:27Z 同意一个程序、每人一个数据库文件；11:05Z 要求只用 OpenCode Go 套餐、上限由他配置）。
 - ADR 0083 时代的决定：[SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0083-isolated-instance-per-person-with-owner-entry.md]，取代 [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0081-isolated-instance-per-person.md]（Andy 2026-10-26T11:12Z 同意按推荐方案做；2026-10-26T13:05Z 同意 Andy 的手机也走 Cloudflare 入口，见 ADR 0082）。
 - 评估文档：<https://claude.ai/artifact/77cUajUv5MWWHHMH8m2g1N>。
 - 2026-11-09 复查时先看开工条件是否满足；不满足就把复查日期往后推。

@@ -29,7 +29,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 ## 背景
 
-推送（网页推送，Himawari 主动弹到主人手机或电脑上的通知）共有五类来源：主人定的到点提醒、审批、任务完成或失败、邮件提醒、Muse（另一个提醒程序）掉线告警。第 2 步（[ADR 0212](0212-hard-rules-step2-amount-field-and-push-suppression.md)）只让规则管邮件；其余几类发不发、什么时候发，还是写死在代码里，主人没法说一句“夜里别提醒我”。
+推送（网页推送，Himawari 主动弹到主人手机或电脑上的通知）共有五类来源：主人定的到点提醒、审批、任务完成或失败、邮件提醒、Muse（另一个提醒程序）掉线告警。第 2 步（[ADR 0212](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0212-hard-rules-step2-amount-field-and-push-suppression.md)）只让规则管邮件；其余几类发不发、什么时候发，还是写死在代码里，主人没法说一句“夜里别提醒我”。
 
 第 4 步让所有推送经过同一个闸门（发送前用规则手册里的规则判断一次“现在发，还是延后”），并加一种主人规则 `push_quiet_hours`（静默延后）。主人在对话里说一句话，模型调用 `rule_set` 工具就立成规则，不做设置页开关。
 

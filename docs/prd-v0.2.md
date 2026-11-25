@@ -35,7 +35,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 - v0.2 的正式用户是 Himawari Agent 的所有者（Owner）Andy，以及经他邀请的人；每个人那一份 Agent 只有一个所有者，邀请的人只能用自己的那一份。
 - 所有者可以从多个浏览器和设备访问同一个 Agent，但这些客户端共享同一产品身份、长期状态和活动权威。
 - 所有者能够理解任务范围、数据披露、费用、外部副作用和授权期限，并对敏感信息、关键行动、能力和模型变化作最终决定。
-- 受 Andy 邀请的人（家人、朋友，目标 10 到 20 人，最终上限由生产机只读测量决定）各有一份只属于自己的 Himawari：一个程序、每人一个数据库文件和专属执行账号，互相隔离，每人那一份仍然只有一个所有者。服务器和程序由 Andy 管理。按人按月的模型用量上限由 Andy 配置，所有人的模型都用 Andy 已有的套餐、不用按量付费的 Vercel key [SOURCE: docs/adr/0234-one-program-per-person-database-file.md]。
+- 受 Andy 邀请的人（家人、朋友，目标 10 到 20 人，最终上限由生产机只读测量决定）各有一份只属于自己的 Himawari：一个程序、每人一个数据库文件和专属执行账号，互相隔离，每人那一份仍然只有一个所有者。服务器和程序由 Andy 管理。按人按月的模型用量上限由 Andy 配置，所有人的模型都用 Andy 已有的套餐、不用按量付费的 Vercel key [SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0234-one-program-per-person-database-file.md]。
 
 ## 产品范围
 

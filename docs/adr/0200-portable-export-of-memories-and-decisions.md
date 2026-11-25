@@ -112,4 +112,4 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 ## 2026-11-11 后续：多人使用
 
-[ADR 0234](0234-one-program-per-person-database-file.md) 第 10 条要求导出按人做，并补上聊天记录，因为本 ADR 的导出不含对话。聊天记录导出的格式和范围另写 ADR；本 ADR 的决定不变。
+[ADR 0234](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0234-one-program-per-person-database-file.md) 第 10 条要求导出按人做，并补上聊天记录，因为本 ADR 的导出不含对话。聊天记录导出的格式和范围另写 ADR；本 ADR 的决定不变。

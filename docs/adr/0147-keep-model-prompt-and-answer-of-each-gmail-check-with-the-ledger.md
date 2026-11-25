@@ -44,7 +44,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 2. **检查过程中收集引用：** `ProactiveMailCheckService` 在每次模型调用准备好提示词后记下提示词的引用，每收到一段回答记下该段的引用；收集器由检查本身持有，调用中途失败或抛错也不丢。失败重试和多批邮件都按顺序记入。
 3. **同一个事务写入：** `proactive.record` 在同一个数据库事务里写账本行、`inputs` 和上表的行。写入失败时，检查删除已存的提示词、回答，以及已封存的摘要和邮件头，不留垃圾。
 4. **`inputs` 的内容（明文，不含邮件正文）：** `memoryIds`（本轮实际放进提示词的记忆，目前没有，为空）、`ruleIds`（命中的地板规则短代码）、`sourceIds`（真正放进过提示词的邮件编号，上限 500）、`floorHits`（每封邮件命中了哪几条规则）、`memoryInjected`（本检查有没有带记忆，目前为 `false`，以免空数组被误读为“没选中”）。扩展 [ADR 0143](0143-decision-ledger-for-model-gate-decisions.md) 第 3、4、13 条：`inputs` 本来就是自由文本列，加字段不需要改表结构。
-5. **地板规则的短代码：** 地板规则是不经过模型、把邮件至少提到“值得知道”的规则（[ADR 0106](0106-proactive-loop-v1-gmail-read-only.md) 第 4 条）。短代码 `floor_important_sender`、`floor_public_domain`、`floor_money_words` 是 `packages/application/src/services/proactive-rules.ts` 里集中定义的常量；新增 `floorHitIds` 返回命中了哪几条，[hitsFloor](https://github.com/sixianli/himawari-agent/blob/eb128285317814ff89176657023f3bdb345dc973/packages/application/src/services/proactive-rules.ts) 的行为不变。（[ADR 0209](0209-rule-book-with-cel-expressions-and-judge.md) 起，词表和后缀搬到 `rules/rule-book.ts`，[hitsFloor](https://github.com/sixianli/himawari-agent/blob/eb128285317814ff89176657023f3bdb345dc973/packages/application/src/services/proactive-rules.ts) 已移除，行为不变。）
+5. **地板规则的短代码：** 地板规则是不经过模型、把邮件至少提到“值得知道”的规则（[ADR 0106](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0106-proactive-loop-v1-gmail-read-only.md) 第 4 条）。短代码 `floor_important_sender`、`floor_public_domain`、`floor_money_words` 是 `packages/application/src/services/proactive-rules.ts` 里集中定义的常量；新增 `floorHitIds` 返回命中了哪几条，[hitsFloor](https://github.com/sixianli/himawari-agent/blob/eb128285317814ff89176657023f3bdb345dc973/packages/application/src/services/proactive-rules.ts) 的行为不变。（[ADR 0209](0209-rule-book-with-cel-expressions-and-judge.md) 起，词表和后缀搬到 `rules/rule-book.ts`，[hitsFloor](https://github.com/sixianli/himawari-agent/blob/eb128285317814ff89176657023f3bdb345dc973/packages/application/src/services/proactive-rules.ts) 已移除，行为不变。）
 6. **读取：** `DecisionInputs` 和 `entryFromRow` 带上新字段（否则读取时会被丢掉）；`ProactiveStorePort.readDecisionPayloads` 按决策读出引用，`ProductionProactive.readDecisionModelIo` 解密后给出提示词和回答。
 7. **删除顺序：** 外键 `RESTRICT` 要求先删上表的行、再删加密内容。
    - 清除主动检查记录：先收集该来源所有引用（含上表的），再删上表的行和账本行，最后由调用方删加密内容。
@@ -71,7 +71,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 ## 后果
 
-- 提示词和回答会随账本长期保存，每轮几 KB 到几十 KB。**这不是新增的“发给模型”，但是新的“长期保存”**：今天这些内容其实已经存着，只是没人管。[ADR 0106](0106-proactive-loop-v1-gmail-read-only.md) 第 7 条“都不存正文”里的“正文”指邮件正文，仍然成立；发件人、标题、摘要现在以加密形式随账本保存，清除或断开时删除，已在 Gmail 设计规格里写明。
+- 提示词和回答会随账本长期保存，每轮几 KB 到几十 KB。**这不是新增的“发给模型”，但是新的“长期保存”**：今天这些内容其实已经存着，只是没人管。[ADR 0106](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0106-proactive-loop-v1-gmail-read-only.md) 第 7 条“都不存正文”里的“正文”指邮件正文，仍然成立；发件人、标题、摘要现在以加密形式随账本保存，清除或断开时删除，已在 Gmail 设计规格里写明。
 - 进程恰好崩在“存加密内容”和“写账本”之间仍会留下垃圾；已经存在的旧垃圾无法一一找出，不处理。
 - 若以后把整封邮件交给模型，账本保存的提示词会包含邮件正文，体积和敏感度更大；那一项要等“送模型前统一脱敏”完成，本 ADR 的表和删除顺序不用改。
 - 门槛：
@@ -86,7 +86,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ## 关联文档
 
 - [ADR 0143：决策账本](0143-decision-ledger-for-model-gate-decisions.md)
-- [ADR 0106：主动闭环第一刀（只读 Gmail）](0106-proactive-loop-v1-gmail-read-only.md)
+- [ADR 0106：主动闭环第一刀（只读 Gmail）](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0106-proactive-loop-v1-gmail-read-only.md)
 - [Gmail 主动检查设计规格](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/execution/specs/2026-10-29-proactive-loop-v1-gmail-design.md)
 - [产品愿景 v2.2](../product-vision.md)
 

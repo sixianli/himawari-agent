@@ -84,4 +84,4 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 ## 2026-11-11 后续：多人使用
 
-[ADR 0234](0234-one-program-per-person-database-file.md) 取代 ADR 0083，多人改成一个程序、每人一个数据库文件。第 4 条“主人的名字不写进身份说明、统一称主人”的结论不变：每人那一份的主人是他自己，名字由他自己的记忆提供，所以身份说明不用按人改。
+[ADR 0234](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0234-one-program-per-person-database-file.md) 取代 ADR 0083，多人改成一个程序、每人一个数据库文件。第 4 条“主人的名字不写进身份说明、统一称主人”的结论不变：每人那一份的主人是他自己，名字由他自己的记忆提供，所以身份说明不用按人改。

@@ -5,7 +5,7 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 amended_by: "docs/adr/0285-one-main-thread-subthreads-and-one-inbox.md"
-amends: "docs/adr/0179-keep-low-confidence-memory-candidates-as-tentative.md, docs/adr/0106-proactive-loop-v1-gmail-read-only.md"
+amends: "docs/adr/0179-keep-low-confidence-memory-candidates-as-tentative.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0106-proactive-loop-v1-gmail-read-only.md"
 date: "2026-11-11"
 covers: "apps/agent-service/src/production-memory-capture.ts, packages/application/src/ports/proactive-checks.ts, packages/gateway-contracts/src/contracts.ts, packages/persistence-sqlite/src/data-export/schemas.ts, packages/persistence-sqlite/src/migrations/0062_proactive_checks.sql, packages/persistence-sqlite/src/sqlite-governed-deletion.ts, packages/persistence-sqlite/src/sqlite-proactive-operations.ts"
 verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
@@ -72,7 +72,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 11. 发给模型的内容只追加；每轮会变的内容只放在最后一条消息里；工具首选一直在列表里。来源 `.agents/instructions/prompt-prefix.md` 第 2、4、7 条原话：“每轮都会变的内容只放在最后一条用户消息里。”“已经发给过模型的内容，不得改动、重排或删除，只能在末尾追加。”“业界的首选是让工具一直在列表里，不能用的时候由执行端拒绝”。
 12. 后台调用也是固定的在前、会变的在后。来源同文件第 15 条原话：“先放固定的指令，再放这次的数据，最后放当前时间这类每次都变的值。”
 13. 界面上每个数字要有可验证的定义。来源 `.claude/rules/owner-standing-rules.md` 原话：“界面上给 Andy 看的每个数字和判断词……都要有可以验证的定义和门槛，没有就不显示”。
-14. 现行决定是界面不显示费用。来源 `docs/adr/0106-proactive-loop-v1-gmail-read-only.md:47` 原话：“每天累计默认 1 美元，在生产配置里改，界面不显示费用（ADR 0105）。”
+14. 现行决定是界面不显示费用。来源 [ADR 0106 第 47 行](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0106-proactive-loop-v1-gmail-read-only.md?plain=1#L47) 原话：“每天累计默认 1 美元，在生产配置里改，界面不显示费用（ADR 0105）。”
 15. 禁止按量付费调用贵模型。来源 `.claude/rules/owner-standing-rules.md` 原话：“任何场景……都不得通过按 token 付费的渠道……调用 Claude、OpenAI 或同价位的模型”。
 16. 所有发给模型的内容走统一出口并遮盖敏感信息。来源 [0146-redact-sensitive-text-before-it-leaves-for-any-model.md](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0146-redact-sensitive-text-before-it-leaves-for-any-model.md)（标题即决定）；检查是 `npm run check:egress-redaction`。
 
@@ -174,7 +174,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ## 关联文档
 
 - [SOURCE: docs/adr/0179-keep-low-confidence-memory-candidates-as-tentative.md]
-- [SOURCE: docs/adr/0106-proactive-loop-v1-gmail-read-only.md]
+- [SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0106-proactive-loop-v1-gmail-read-only.md]
 - [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0146-redact-sensitive-text-before-it-leaves-for-any-model.md]
 - [SOURCE: docs/adr/0149-append-only-model-requests.md]
 - [SOURCE: docs/adr/0229-native-apple-clients-and-device-api.md]

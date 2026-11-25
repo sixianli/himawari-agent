@@ -1188,7 +1188,7 @@ lessons 共 25 条；第十次上线中“复制操作包留旧名”达到第�
 
 **后续（2026-11-11）**
 
-重新评估后，Andy 定了两个前提：生产机只有一台、不多花服务器钱，目标是 10 到 20 人。每人一套实例大概率放不下（推断，没有实测），所以 [ADR 0234](adr/0234-one-program-per-person-database-file.md) 取代了 ADR 0083，改成一个程序、每人一个数据库文件、每人一个专属执行账号；模型用 Andy 已有的套餐（对话模型按 ADR 0117 的顺序，可能先用 CodeBuddy 免费额度）、不用 Vercel 的 key，每人每月上限由 Andy 在管理页配置。上面“先选 silo”的取舍是当时单机、两三个熟人的前提下做的；放弃的理由是内存和磁盘要乘以人数，代价是隔离从“结构上分开”降为“三道防线加系统账号”，并接受主程序崩了所有人一起断。结果数据还没有：量机器是开工第一步。
+重新评估后，Andy 定了两个前提：生产机只有一台、不多花服务器钱，目标是 10 到 20 人。每人一套实例大概率放不下（推断，没有实测），所以 [ADR 0234](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0234-one-program-per-person-database-file.md) 取代了 ADR 0083，改成一个程序、每人一个数据库文件、每人一个专属执行账号；模型用 Andy 已有的套餐（对话模型按 ADR 0117 的顺序，可能先用 CodeBuddy 免费额度）、不用 Vercel 的 key，每人每月上限由 Andy 在管理页配置。上面“先选 silo”的取舍是当时单机、两三个熟人的前提下做的；放弃的理由是内存和磁盘要乘以人数，代价是隔离从“结构上分开”降为“三道防线加系统账号”，并接受主程序崩了所有人一起断。结果数据还没有：量机器是开工第一步。
 
 **后续（2026-10-26）**
 
@@ -3006,7 +3006,7 @@ PR #82（2026-10-28 合并）。只改了返回格式、没改模型和数据，
 
 **我们的方案**
 
-方案和原型都由 Andy 逐条批注；2026-10-29 他给出“有条件批准”，加了 4 条必改，决定记在 [ADR 0106](adr/0106-proactive-loop-v1-gmail-read-only.md)：
+方案和原型都由 Andy 逐条批注；2026-10-29 他给出“有条件批准”，加了 4 条必改，决定记在 [ADR 0106](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0106-proactive-loop-v1-gmail-read-only.md)：
 
 1. **少披露。** 模型只看发件人、标题和 Gmail 自带的一行摘要，不看正文。判断不了但可能重要的，给第四种结果“可能重要，请看原信”。摘要里有验证码、卡号的，不发给模型。
 2. **地板规则（确定性的后置检查）。** 模型判断之后，用 0 费用的规则检查。发件人在重要名单里、域名是 `go.jp` / `ac.jp` 这类公共机构后缀、或者标题和摘要里有金钱词，就算命中地板。命中地板的邮件不得低于“值得知道”，模型拿不准时强制为“可能重要”，被抬升的都写进日志。模型只能往高判。
@@ -3048,7 +3048,7 @@ PR #82（2026-10-28 合并）。只改了返回格式、没改模型和数据，
 
 **相关 ADR/PR**
 
-[ADR 0106](adr/0106-proactive-loop-v1-gmail-read-only.md)；[设计规格](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/execution/specs/2026-10-29-proactive-loop-v1-gmail-design.md)；[ADR 0102](adr/0102-record-push-notification-feedback.md)；[ADR 0105](adr/0105-ui-batch-2026-10-28-show-what-the-owner-needs.md)；PR 1 在分支 `claude/project-thread-6gwe3i`。
+[ADR 0106](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0106-proactive-loop-v1-gmail-read-only.md)；[设计规格](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/execution/specs/2026-10-29-proactive-loop-v1-gmail-design.md)；[ADR 0102](adr/0102-record-push-notification-feedback.md)；[ADR 0105](adr/0105-ui-batch-2026-10-28-show-what-the-owner-needs.md)；PR 1 在分支 `claude/project-thread-6gwe3i`。
 
 **跟进（2026-10-28，后台 PR）**
 

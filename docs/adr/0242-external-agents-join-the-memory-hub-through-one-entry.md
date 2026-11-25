@@ -63,7 +63,7 @@ P5 系列已经做了入口：[ADR 0219](0219-read-only-mcp-entry-with-static-to
 15. **两家自己记的笔记都是磁盘上的文件。** 来源 <https://code.claude.com/docs/en/memory>：“Each project gets its own memory directory at `~/.claude/projects/<project>/memory/`”，目录可用 autoMemoryDirectory 改；<https://developers.openai.com/codex/memories>：`~/.codex/memories/`，新安装用 memories_v2，“Memories may not update right away when a chat ends”。
 16. **已有“主人概况”的生成代码，MCP 入口没用。** 来源：`packages/application/src/services/owner-profile-service.ts`：`OWNER_PROFILE_CHARACTER_BUDGET = 2000`，`compose` 接受 `maxClassification`。（2026-11-12 补：这是写本 ADR 时 main 上的样子；PR 413 合并后 `start_here` 已经用上它，见[后果](#consequences)。）
 17. **不经浏览器登录的程序入口已有先例。** 来源：[ADR 0162](0162-receive-muse-data-through-a-service-token-and-an-app-secret.md) 决定第 1 条：“边缘层用 Cloudflare Access 的服务令牌（Service Auth 策略，请求头 `CF-Access-Client-Id` 与 `CF-Access-Client-Secret`）”“应用层再要求 `Authorization: Bearer <应用密钥>`”。
-18. **多人时是一个网址。** 来源：[ADR 0234](0234-one-program-per-person-database-file.md) 决定第 5 条：“一个网址、一个 Cloudflare Access 应用，名单里放所有受邀邮箱。”
+18. **多人时是一个网址。** 来源：[ADR 0234](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0234-one-program-per-person-database-file.md) 决定第 5 条：“一个网址、一个 Cloudflare Access 应用，名单里放所有受邀邮箱。”
 19. **待确认表还没进 main。** 写本 ADR 时 main 上没有 ADR 0228，也没有 `external_memory_proposals` 表；它在任务 P5-3 的 PR 里，设计见 `/mnt/project-files/p5-3-pending-writes/integrated-plan.md`。本 ADR 把它当正在落地的依赖。
 
 [返回阅读导航](#contents)
@@ -336,7 +336,7 @@ Andy 2026-11-12 定的规矩，原话：“贵不是问题，我要的是极致�
 - [ADR 0155：决策记录观察期与校准周报网页](0155-decision-record-observation-and-weekly-report-page.md)
 - [ADR 0221：记忆检索的相关度门槛](0221-memory-retrieval-relevance-cutoff-and-same-source-dedupe.md)
 - [ADR 0229：原生苹果客户端和设备接口](0229-native-apple-clients-and-device-api.md)
-- [ADR 0234：每个人一个程序、一个数据库文件](0234-one-program-per-person-database-file.md)
+- [ADR 0234：每个人一个程序、一个数据库文件](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0234-one-program-per-person-database-file.md)
 - 产品愿景 `docs/product-vision.md` 的原则 1、2、5
 - 两个模型的讨论记录：`.agents/reviews/topic-p5-memory-hub/`
 

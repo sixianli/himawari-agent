@@ -126,4 +126,4 @@ Claude 方案（`.ci-output/handoff/2026-10-23-r2d25-host-verify-claude-proposal
 
 ## 2026-11-11 后续：多人使用
 
-[ADR 0234](0234-one-program-per-person-database-file.md) 取代 ADR 0083，多人使用时每人一个数据库文件、每人一个专属执行账号。[ADR 0083](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0083-isolated-instance-per-person-with-owner-entry.md) 记录的前提“使用者就是可信的主人”对 Andy 自己的那一份仍然成立；对其他受邀的人，沙箱不再只防误改，还要防一个人读到另一个人的数据，所以 [ADR 0234](0234-one-program-per-person-database-file.md) 第 4 条补上了系统账号、目录权限和内存、CPU、磁盘的硬上限。本 ADR 的决定不变。
+[ADR 0234](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0234-one-program-per-person-database-file.md) 取代 ADR 0083，多人使用时每人一个数据库文件、每人一个专属执行账号。[ADR 0083](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0083-isolated-instance-per-person-with-owner-entry.md) 记录的前提“使用者就是可信的主人”对 Andy 自己的那一份仍然成立；对其他受邀的人，沙箱不再只防误改，还要防一个人读到另一个人的数据，所以 [ADR 0234](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0234-one-program-per-person-database-file.md) 第 4 条补上了系统账号、目录权限和内存、CPU、磁盘的硬上限。本 ADR 的决定不变。

@@ -89,7 +89,7 @@ Gmail 主动检查的记录在表 `proactive_decisions`（迁移 0062）。它�
 ## 关联文档
 
 - [产品愿景 v2.2](../product-vision.md)、[ADR 0134](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0134-adopt-product-vision-v2-2.md)
-- [ADR 0106：主动闭环第一刀（只读 Gmail）](0106-proactive-loop-v1-gmail-read-only.md)（其中的 `proactive_decisions` 现为 `decision_ledger`）
+- [ADR 0106：主动闭环第一刀（只读 Gmail）](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0106-proactive-loop-v1-gmail-read-only.md)（其中的 `proactive_decisions` 现为 `decision_ledger`）
 - [ADR 0140](0140-settle-early-only-without-recoverable-result.md)（本 PR 的基准）
 
 [返回目录](#contents)

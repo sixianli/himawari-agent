@@ -27,7 +27,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 ## 背景
 
-[ADR 0200](0200-portable-export-of-memories-and-decisions.md) 的数据导出只带记忆和决策记录，明说“不导出对话”。多人方案要求“导出：按人导出，补上聊天记录”，[ADR 0234](0234-one-program-per-person-database-file.md) 里 Andy 对这件事回了“其余的我都同意按照你的建议”。聊天记录是用户自己的数据，愿景要求数据能完整带走，所以补上。
+[ADR 0200](0200-portable-export-of-memories-and-decisions.md) 的数据导出只带记忆和决策记录，明说“不导出对话”。多人方案要求“导出：按人导出，补上聊天记录”，[ADR 0234](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0234-one-program-per-person-database-file.md) 里 Andy 对这件事回了“其余的我都同意按照你的建议”。聊天记录是用户自己的数据，愿景要求数据能完整带走，所以补上。
 
 方案由本线程写好，经 Andy 在决定卡上选“按建议做”（2026-11-11）。协调者说多人总方案已走过两个模型的出方案和整合，聊天导出是其中一块，所以这一块没有再单独跑两模型讨论；代码复核照常做。
 
@@ -100,7 +100,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 - [ADR 0200](0200-portable-export-of-memories-and-decisions.md)：记忆和决策记录的导出，本决定沿用它的机密处理和封存。
 - [ADR 0093](0093-chat-attachments-images.md)：附件在消息里的引用方式。
-- [ADR 0234](0234-one-program-per-person-database-file.md)：每人一个数据库文件。
+- [ADR 0234](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0234-one-program-per-person-database-file.md)：每人一个数据库文件。
 - 代码：`packages/persistence-sqlite/src/data-export/chats.ts`、`chats-verify.ts`、`chat-schemas.ts`，`apps/agent-service/src/production-chat-export.ts`，`apps/admin-cli/src/data-command.ts`。
 
 [返回阅读导航](#contents)
