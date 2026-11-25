@@ -88,7 +88,7 @@ struct TimerDetailPage: View {
         return nil
     }
 
-    private func factText(_ text: String) -> Text {
+    private func factText(_ text: String) -> some View {
         Text(text).hmType(SL.rowValue).foregroundStyle(Color.hmText)
     }
 
