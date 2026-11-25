@@ -11,11 +11,13 @@ public struct ManageCommandOptions: Sendable {
     public var risk: String
     public var dataClassification: String
     public var confirmReason: String
+    public var idempotencyKey: String?
 
-    public init(risk: String = "low", dataClassification: String = "private", confirmReason: String) {
+    public init(risk: String = "low", dataClassification: String = "private", confirmReason: String, idempotencyKey: String? = nil) {
         self.risk = risk
         self.dataClassification = dataClassification
         self.confirmReason = confirmReason
+        self.idempotencyKey = idempotencyKey
     }
 }
 
@@ -60,7 +62,7 @@ public actor ManageGateway {
             dataClassification: options.dataClassification,
             risk: options.risk
         )
-        body["idempotencyKey"] = .string("device-\(makeIdentifier())")
+        body["idempotencyKey"] = .string(options.idempotencyKey ?? "device-\(makeIdentifier())")
         switch capability.requiredTier(payload: payload) {
         case .read, .routine, .tighten:
             return try await send(path: Self.gatewayPath, body: .object(body), nonce: nil, confirm: nil)

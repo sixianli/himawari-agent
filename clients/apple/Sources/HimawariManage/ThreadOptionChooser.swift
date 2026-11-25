@@ -12,17 +12,20 @@ public struct ThreadOptionChooser: Sendable {
         self.gateway = gateway
     }
 
-    public func choose(threadId: String, messageId: String, setId: String, optionId: String) async throws {
+    public func choose(threadId: String, messageId: String, options: MessageOptions, item: MessageOptions.Item) async throws {
         _ = try await gateway.command(
             .threadV3,
             "thread.option.choose",
             payload: [
                 "threadId": .string(threadId),
                 "messageId": .string(messageId),
-                "setId": .string(setId),
-                "optionId": .string(optionId),
+                "setId": .string(options.setId),
+                "optionId": .string(item.optionId),
             ],
-            options: ManageCommandOptions(confirmReason: M.chooseOption)
+            options: ManageCommandOptions(
+                confirmReason: M.chooseOption,
+                idempotencyKey: options.choiceKey(threadId: threadId, messageId: messageId, item: item)
+            )
         )
     }
 }

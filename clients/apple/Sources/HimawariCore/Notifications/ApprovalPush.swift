@@ -31,7 +31,7 @@ public struct HimawariPush: Sendable, Equatable {
             guard let raw = entry["action"] as? String, let action = ActionKind(rawValue: raw),
                   let label = entry["label"] as? String, let token = entry["token"] as? String
             else { return nil }
-            return Action(action: action, label: label, token: token, ownerPresence: entry["ownerPresence"] as? Bool ?? false)
+            return Action(action: action, label: label, token: token, ownerPresence: entry["ownerPresence"] as? Bool ?? true)
         }
     }
 

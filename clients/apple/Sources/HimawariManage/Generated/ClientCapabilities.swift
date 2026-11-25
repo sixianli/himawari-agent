@@ -63,11 +63,7 @@ public enum NativePage: String, Sendable, CaseIterable {
     case memory = "memory"
     case memoryReflection = "memory.reflection"
     case settingsAuthorizations = "settings.authorizations"
-    case settingsCapabilities = "settings.capabilities"
     case settingsDevices = "settings.devices"
-    case settingsImprovements = "settings.improvements"
-    case todayApprovals = "today.approvals"
-    case todaySuggestions = "today.suggestions"
 }
 
 public enum ClientCapabilities {

@@ -48,6 +48,15 @@ final class FakeApprovalTransport: ApprovalPushTransport, @unchecked Sendable {
         #expect(transport.tokens.isEmpty)
     }
 
+    @Test func aButtonThatDoesNotSayWhetherTheOwnerMustBeThereOpensTheApp() async throws {
+        let userInfo: [AnyHashable: Any] = ["himawari": ["v": 1, "kind": "approval", "actions": [["action": "approve", "label": "付钱", "token": "approve-token"]]]]
+        let push = try #require(HimawariPush(userInfo: userInfo))
+        #expect(push.action(.approve)?.ownerPresence == true)
+        let transport = FakeApprovalTransport()
+        #expect(try await ApprovalPushReply(transport: transport).tap(.approve, in: push) == .openApp)
+        #expect(transport.tokens.isEmpty)
+    }
+
     @Test func aPushWithoutButtonsOrFromElsewhereIsNotAnApproval() async throws {
         let plain: [AnyHashable: Any] = ["aps": ["alert": ["title": "她", "body": "到家了吗"], "category": "himawari.plain"], "himawari": ["v": 1, "tag": "t", "kind": "reply", "navigate": "/", "actions": []]]
         let push = try #require(HimawariPush(userInfo: plain))

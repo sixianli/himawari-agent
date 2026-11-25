@@ -55,6 +55,20 @@ final class ManageGatewayTests: XCTestCase {
         XCTAssertNil(calls[0].body["scope"])
     }
 
+    func testACommandKeepsTheCallersKeySoARetryIsNotRunTwice() async throws {
+        let recording = transport()
+        for _ in 0..<2 {
+            _ = try await gateway(recording).command(
+                .v2, "muse.intake.set", payload: ["paused": true], options: ManageCommandOptions(confirmReason: "暂停", idempotencyKey: "device-option-abc")
+            )
+        }
+        _ = try await gateway(recording).command(
+            .v2, "muse.intake.set", payload: ["paused": true], options: ManageCommandOptions(confirmReason: "暂停")
+        )
+        let calls = await recording.calls
+        XCTAssertEqual(calls.map { $0.body["idempotencyKey"] }, [.string("device-option-abc"), .string("device-option-abc"), .string("device-0123456789abcdef0123")])
+    }
+
     func testPausingSkipsFaceIDButResumingAsksForIt() async throws {
         let pause = transport()
         _ = try await gateway(pause).command(

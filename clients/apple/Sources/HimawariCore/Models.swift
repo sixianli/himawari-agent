@@ -151,6 +151,22 @@ public struct ThreadMessage: Codable, Sendable, Equatable, Identifiable {
     public var id: String { messageId }
 }
 
+extension ThreadMessage {
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        messageId = try container.decode(String.self, forKey: .messageId)
+        sequence = try container.decode(Int.self, forKey: .sequence)
+        role = try container.decode(MessageRole.self, forKey: .role)
+        contentRef = try container.decode(String.self, forKey: .contentRef)
+        status = try container.decode(MessageStatus.self, forKey: .status)
+        turnId = try container.decodeIfPresent(String.self, forKey: .turnId)
+        runId = try container.decodeIfPresent(String.self, forKey: .runId)
+        committedAt = try container.decode(String.self, forKey: .committedAt)
+        options = try? container.decodeIfPresent(MessageOptions.self, forKey: .options)
+        chosenFrom = try? container.decodeIfPresent(ChosenOption.self, forKey: .chosenFrom)
+    }
+}
+
 public struct ChosenOption: Codable, Sendable, Equatable {
     public let setId: String
     public let optionId: String
@@ -188,6 +204,12 @@ public struct MessageOptions: Codable, Sendable, Equatable {
     public let items: [Item]
 
     public var isOpen: Bool { items.allSatisfy { $0.state == .open } }
+
+    public func choiceKey(threadId: String, messageId: String, item: Item) -> String? {
+        guard item.action != nil else { return nil }
+        let digest = Hashing.sha256(Data([threadId, messageId, setId, item.optionId].joined(separator: "\n").utf8))
+        return "device-option-" + digest.map { String(format: "%02x", $0) }.joined()
+    }
 }
 
 public struct ThreadRunSummary: Codable, Sendable, Equatable {

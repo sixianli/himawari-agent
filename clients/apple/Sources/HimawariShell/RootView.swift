@@ -171,7 +171,7 @@ struct MainShell: View {
         let chooser = ThreadOptionChooser(api: model.api, confirmKey: model.confirmKey)
         return { threadId, message, item in
             guard let options = message.options else { return }
-            try await chooser.choose(threadId: threadId, messageId: message.messageId, setId: options.setId, optionId: item.optionId)
+            try await chooser.choose(threadId: threadId, messageId: message.messageId, options: options, item: item)
         }
     }
 
