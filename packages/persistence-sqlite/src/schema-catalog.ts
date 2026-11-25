@@ -902,6 +902,13 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "cascade with Owner, Agent or its to-do item",
   ),
   entry(
+    "subthread_exchanges",
+    "SubthreadStorePort",
+    "append-only record of what the main conversation and one hidden conversation sent each other (the task brief, relayed words, progress, questions, results, budget and approval notices), with a protected payload link to the text, for the owner's background-work view",
+    "payload_reference",
+    "cascade with Owner, Agent or the hidden conversation",
+  ),
+  entry(
     "result_board_entries",
     "SubthreadStorePort",
     "append-only result board of a matter: one row per version of a named result a hidden conversation wrote for its sibling conversations, with protected payload links to its one-line summary and full text, their data classification and whether the writer had read outside content",

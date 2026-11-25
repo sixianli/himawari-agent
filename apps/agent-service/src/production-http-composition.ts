@@ -1082,7 +1082,9 @@ export async function createProductionHttpComposition(
     clock: { now: clock },
   });
   const environment = options.executionEnvironment;
+  const backgroundWork = options.inbox?.mainThread?.subthreads;
   const threadAdapter = new ProductThreadGatewayAdapter({
+    ...(backgroundWork ? { backgroundWork: { read: () => backgroundWork.backgroundWork() } } : {}),
     ...(options.messageOptions ? { messageOptions: options.messageOptions } : {}),
     validateModelSelection: (selection, classification) => {
       const model = options.modelCatalog?.find((entry) => entry.ref === selection.modelRef);
@@ -1308,6 +1310,7 @@ export async function createProductionHttpComposition(
           clock: { now: clock },
           ...(options.cancelRun ? { cancelRun: options.cancelRun } : {}),
           ...(mainThreadInbox.subthreads ? { subthreads: mainThreadInbox.subthreads } : {}),
+          checkpoints: repository.runCheckpointStore(ownerId, agentId, authority),
         })
       : undefined);
   const inbox = productionInbox({
