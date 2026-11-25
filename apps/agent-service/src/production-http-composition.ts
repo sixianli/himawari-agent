@@ -325,7 +325,7 @@ export interface ProductionHttpCompositionOptions {
     readonly externalProposals?: ProductionMcpMemoryWriter;
     readonly mcpSync?: McpMemorySyncStorePort;
     readonly actionRules?: Pick<BuiltInActionRuleSwitches, "list" | "setAskFirst">;
-    readonly allowances?: Pick<OwnerAllowances, "list" | "revoke">;
+    readonly allowances?: Pick<OwnerAllowances, "list" | "days">;
     readonly classifier?: Pick<ProductionMemoryClassifier, "classify">;
     readonly importDuplicates?: NonNullable<
       ConstructorParameters<typeof ProductionMemoryControl>[0]["importDuplicates"]

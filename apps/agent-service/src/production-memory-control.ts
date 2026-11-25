@@ -36,6 +36,7 @@ import {
   type UnitOfWorkPort,
 } from "@himawari-agent/application";
 import {
+  APPROVAL_ALLOWANCE_DAYS_DEFAULT,
   type GatewayV2Command,
   type GatewayV2Query,
   type GatewayV2Snapshot,
@@ -271,7 +272,7 @@ export class ProductionMemoryControl {
     >;
     readonly ownerRules?: OwnerRuleControl;
     readonly actionRules?: Pick<BuiltInActionRuleSwitches, "list" | "setAskFirst">;
-    readonly allowances?: Pick<OwnerAllowances, "list" | "revoke">;
+    readonly allowances?: Pick<OwnerAllowances, "list" | "days">;
     readonly reviews?: {
       readonly memories: MemoryReviewStorePort;
       readonly rules: RuleReviewOwnerStorePort;
@@ -1082,6 +1083,7 @@ export class ProductionMemoryControl {
         rules,
         builtIn: [...((await this.options.actionRules?.list()) ?? [])],
         allowances: [...((await this.options.allowances?.list()) ?? [])],
+        allowanceDays: (await this.options.allowances?.days()) ?? APPROVAL_ALLOWANCE_DAYS_DEFAULT,
         generatedAt: this.options.clock.now(),
       },
     };
@@ -1934,16 +1936,6 @@ export class ProductionMemoryControl {
           throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, error.code);
         throw error;
       }
-    }
-    if (command.type === "memory.rule.respond" && command.payload.action === "revoke") {
-      const allowances = this.options.allowances;
-      if (!allowances)
-        throw new ApplicationPortError(
-          PORT_ERROR_CODES.INVALID_OPERATION,
-          "MEMORY_OPERATION_NOT_INSTALLED",
-        );
-      await allowances.revoke(command.payload.target);
-      return { resultRef: command.payload.target, replayed: false };
     }
     if (
       command.type === "memory.rule.respond" &&

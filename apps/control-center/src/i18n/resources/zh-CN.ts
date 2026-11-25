@@ -888,7 +888,12 @@ export const messages = {
     "同样的事在范围内不再问你。读过邮件、网页这类外来内容后，“几天内”和“以后都行”不算数，照样问你。",
   "rules.allowances.scope":
     "{scope, select, this_task {只在那件事里} days {到 {until}} other {以后都行}}",
+  "rules.allowances.task": "只在“{task}”这件事里",
   "rules.allowances.revoke": "收回",
+  "rules.allowances.days": "选“N 天内都行”时管几天",
+  "rules.allowances.daysSave": "保存",
+  "rules.allowances.daysNote":
+    "同意卡片上的“N 天内都行”按这个天数算，可填 {minimum} 到 {maximum} 天。已经给过的同意不受影响。",
   "rules.builtIn.note":
     "这几条写在程序里，决定 Himawari 自己动手做事之前要不要先问你。每条都带该命中和不该命中的例子，每次构建都会逐条跑一遍。“直接做”的那几条可以改成每次都先问你；“先问你”和“不做”的是安全底线，不能放松。",
   "rules.builtIn.name":

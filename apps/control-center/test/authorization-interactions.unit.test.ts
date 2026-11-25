@@ -35,6 +35,7 @@ const message = (id: MessageId, values?: Record<string, string>) =>
 let enabled: boolean,
   providersChanged: boolean,
   revision: number,
+  allowanceDays: number | null,
   approvalSnapshot: ReturnType<typeof approval>;
 function searchProps(connected = true) {
   return { client, configuration, storage, connected, refreshSignal: 0, message };
@@ -64,6 +65,7 @@ beforeEach(() => {
   enabled = false;
   providersChanged = false;
   revision = 2;
+  allowanceDays = 7;
   approvalSnapshot = approval("approval-target", "run-target", "pending");
   query.mockImplementation(async (request) => {
     if (request.type === "search.authorization.read")
@@ -85,6 +87,14 @@ beforeEach(() => {
         null,
       );
     if (request.type === "approval.detail") return approvalSnapshot;
+    if (request.type === "memory.rules.read") {
+      if (allowanceDays === null) throw new Error("rules unavailable");
+      return {
+        ...envelope,
+        type: "memory.rules.snapshot",
+        payload: { allowanceDays },
+      };
+    }
     throw new Error("unexpected query");
   });
   mutate.mockImplementation(async (request) => {
@@ -280,6 +290,30 @@ describe("inline run approval", () => {
       payload: { approvalRequestId: "approval-target", allowFor: "days", days: 7 },
     });
     expect(settled).toHaveBeenCalledOnce();
+  });
+  it("[ADR-0285] “N 天内都行” shows and sends the day count the owner set, not a fixed 7", async () => {
+    allowanceDays = 30;
+    ownerScoped();
+    await render(RunApprovalCard, approvalProps());
+    const days = container.querySelector<HTMLInputElement>(".approval-scope input[value=days]");
+    expect(days?.closest("label")?.textContent).toBe(
+      message("chat.allowance.option", { scope: "days", days: "30" }),
+    );
+    await act(async () => days?.click());
+    await click("chat.allowance.allow");
+    expect(mutate.mock.calls[1]?.[0]).toMatchObject({
+      type: "approval.allowance.set",
+      payload: { allowFor: "days", days: 30 },
+    });
+  });
+  it("[ADR-0285] REVERSE: without a known day count the card leaves out “N 天内都行” instead of guessing", async () => {
+    allowanceDays = null;
+    ownerScoped();
+    await render(RunApprovalCard, approvalProps());
+    const scopes = [
+      ...container.querySelectorAll<HTMLInputElement>(".approval-scope input[type=radio]"),
+    ];
+    expect(scopes.map(({ value }) => value)).toEqual(["once", "this_task", "always"]);
   });
   it("[ADR-0285] REVERSE: a coding or file approval, whose yes is never looked up again, offers only this once", async () => {
     approvalSnapshot = {

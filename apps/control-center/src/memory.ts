@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ControlCenterRuntimeConfiguration, GatewayClient } from "./gateway-client.js";
 import type { ImportCandidate, ImportDuplicateVerdict, MemoryCategory } from "./memory-import.js";
 import { commandMessage, queryMessage } from "./messages.js";
+import { setApprovalAllowanceDays } from "./run-approval.js";
 
 export type MemoryOverview = Extract<
   GatewayV2Snapshot,
@@ -33,13 +34,7 @@ export type OwnerAllowance = Extract<
   GatewayV2Snapshot,
   { type: "memory.rules.snapshot" }
 >["payload"]["allowances"][number];
-export type OwnerRuleAction =
-  | "undo"
-  | "confirm"
-  | "reconfirm"
-  | "ask_first"
-  | "allow_directly"
-  | "revoke";
+export type OwnerRuleAction = "undo" | "confirm" | "reconfirm" | "ask_first" | "allow_directly";
 export type MemoryReview = Extract<
   GatewayV2Snapshot,
   { type: "memory.review.snapshot" }
@@ -64,7 +59,10 @@ export interface MemoryModel {
   readonly rules: readonly OwnerRule[];
   readonly builtInRules: readonly BuiltInActionRule[];
   readonly allowances: readonly OwnerAllowance[];
+  readonly allowanceDays: number | null;
+  readonly setAllowanceDays: (days: number) => Promise<boolean>;
   readonly respondRule: (target: string, action: OwnerRuleAction) => Promise<boolean>;
+  readonly revokeAllowance: (allowanceId: string) => Promise<boolean>;
   readonly review: MemoryReview | null;
   readonly respondReview: (
     target: string,
@@ -158,6 +156,7 @@ export function useMemory(input: {
   const [rules, setRules] = useState<readonly OwnerRule[]>([]);
   const [builtInRules, setBuiltInRules] = useState<readonly BuiltInActionRule[]>([]);
   const [allowances, setAllowances] = useState<readonly OwnerAllowance[]>([]);
+  const [allowanceDays, setAllowanceDaysValue] = useState<number | null>(null);
   const [review, setReview] = useState<MemoryReview | null>(null);
   const reviewAvailable =
     configuration?.installedGatewayV2Operations?.includes("memory.review.read") ?? false;
@@ -191,6 +190,7 @@ export function useMemory(input: {
             setRules(result.payload.rules);
             setBuiltInRules(result.payload.builtIn);
             setAllowances(result.payload.allowances);
+            setAllowanceDaysValue(result.payload.allowanceDays);
           }
         })
         .catch(() => {
@@ -320,7 +320,21 @@ export function useMemory(input: {
     rules,
     builtInRules,
     allowances,
+    allowanceDays,
+    setAllowanceDays: (days) =>
+      run(async () => setApprovalAllowanceDays({ client, configuration, days })),
     respondRule: (target, action) => send("memory.rule.respond", () => ({ target, action })),
+    revokeAllowance: (allowanceId) =>
+      run(async () =>
+        client.mutate(
+          commandMessage(
+            configuration,
+            "approval.allowance.revoke",
+            { allowanceId },
+            { risk: "low" },
+          ),
+        ),
+      ),
     review,
     respondReview: (target, action, expectedRevision) =>
       send("memory.review.respond", () => ({ target, action, expectedRevision })),

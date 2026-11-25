@@ -7,12 +7,12 @@ import type { ControlCenterRuntimeConfiguration, GatewayClient } from "../gatewa
 import type { MessageId } from "../i18n/message-ids.js";
 import { queryMessage } from "../messages.js";
 import {
-  APPROVAL_ALLOWANCE_DAYS,
   type ApprovalAllowFor,
-  approvalAllowanceChoices,
   approvalsDecidedTogether,
   findPendingRunApprovals,
+  groupAllowanceChoices,
   type RunApproval,
+  readApprovalAllowanceDays,
   respondToRunApproval,
   setApprovalAllowance,
 } from "../run-approval.js";
@@ -55,8 +55,10 @@ export function RunApprovalCard({
     (snapshot?.payload.intent.operation === "web_search" ||
       snapshot?.payload.intent.operation === "web_fetch") &&
     snapshot.payload.intent.sideEffect === "none";
-  const choices: readonly ApprovalAllowFor[] =
-    snapshot && !isSearch ? approvalAllowanceChoices(snapshot) : ["once"];
+  const [allowanceDays, setAllowanceDays] = useState<number | null>(null);
+  const offered: readonly ApprovalAllowFor[] = !isSearch ? groupAllowanceChoices(group) : ["once"];
+  const wantsDays = offered.includes("days");
+  const choices = offered.filter((choice) => choice !== "days" || allowanceDays !== null);
   const chosen = choices.includes(allowFor) ? allowFor : "once";
   const responseLock = useRef(false);
   const [busy, setBusy] = useState(false);
@@ -84,6 +86,21 @@ export function RunApprovalCard({
       disposed = true;
     };
   }, [client, configuration, runId, connection, refreshSignal, reload]);
+  useEffect(() => {
+    void reload;
+    if (!wantsDays || connection !== "connected") return;
+    let disposed = false;
+    readApprovalAllowanceDays(client, configuration)
+      .then((days) => {
+        if (!disposed) setAllowanceDays(days);
+      })
+      .catch(() => {
+        if (!disposed) setAllowanceDays(null);
+      });
+    return () => {
+      disposed = true;
+    };
+  }, [client, configuration, connection, wantsDays, reload]);
   const respond = async (decision: "approved" | "denied") => {
     if (!snapshot || responseLock.current || connection !== "connected") return;
     responseLock.current = true;
@@ -137,6 +154,7 @@ export function RunApprovalCard({
             configuration,
             snapshot: approval,
             allowFor: chosen,
+            days: chosen === "days" ? allowanceDays : null,
           }).catch(() => null);
           if (result?.status !== "accepted" && result?.status !== "replayed")
             allowanceSaved = false;
@@ -257,7 +275,7 @@ export function RunApprovalCard({
                   />
                   {message("chat.allowance.option", {
                     scope: choice,
-                    days: String(APPROVAL_ALLOWANCE_DAYS),
+                    days: String(allowanceDays ?? ""),
                   })}
                 </label>
               ))}

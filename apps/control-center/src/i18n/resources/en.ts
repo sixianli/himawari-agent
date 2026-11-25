@@ -940,7 +940,12 @@ export const messages = {
     "The same action isn’t asked again while a permission lasts. After an email, web page or other outside content was read, “for some days” and “from now on” don’t count and you are asked.",
   "rules.allowances.scope":
     "{scope, select, this_task {Only in that task} days {Until {until}} other {From now on}}",
+  "rules.allowances.task": "Only in “{task}”",
   "rules.allowances.revoke": "Take back",
+  "rules.allowances.days": "Number of days for “For N days”",
+  "rules.allowances.daysSave": "Save",
+  "rules.allowances.daysNote":
+    "Used when you choose “For N days” on an approval card. Enter {minimum} to {maximum} days. Approvals you already gave keep their end date.",
   "rules.builtIn.note":
     "These rules are written into the program and decide whether Himawari asks you before acting. Each one carries examples it must and must not match, and every build runs them. The “just do it” rules can be switched to ask you every time; the “ask you” and “don’t do it” rules are safety floors and cannot be loosened.",
   "rules.builtIn.name":

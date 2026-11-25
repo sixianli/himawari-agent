@@ -221,6 +221,17 @@ describe("Gateway v2 fail-closed validation", () => {
         })),
       }),
     ],
+    [
+      "[ADR-0285] taking back a yes goes through its own command, not the rule answer",
+      fixture("command", "memory.rule.respond", {
+        target: "allowance:0123456789abcdef",
+        action: "revoke",
+      }),
+    ],
+    [
+      "[ADR-0285] taking back a yes without naming it",
+      fixture("command", "approval.allowance.revoke", {}),
+    ],
     ["push surface is absent", { ...messages[0], type: "workspace.push" }],
     ["unknown message type", { ...messages[0], type: "provider.github.raw" }],
   ])("rejects %s", (_case, input) => {

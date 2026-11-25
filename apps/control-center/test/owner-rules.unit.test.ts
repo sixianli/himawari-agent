@@ -97,6 +97,7 @@ const allowance = (change: Partial<OwnerAllowance> = {}): OwnerAllowance => ({
   operation: "send",
   recipients: ["zhangsan@example.com"],
   threadId: null,
+  threadTitle: null,
   expiresAt: "2026-11-18T00:00:00.000Z",
   createdAt: "2026-11-11T00:00:00.000Z",
   ...change,
@@ -305,6 +306,14 @@ describe("[P2-3] standing rules on the web page", () => {
       type: "memory.rule.respond",
       payload: { target: "owner:0123456789abcdef01234567", action: "undo" },
     });
+    await act(async () => {
+      await seen.model?.revokeAllowance("allowance:0123456789abcdef");
+    });
+    expect(mutate.mock.calls.at(-1)?.[0]).toMatchObject({
+      type: "approval.allowance.revoke",
+      risk: "low",
+      payload: { allowanceId: "allowance:0123456789abcdef" },
+    });
   });
 
   it("[ADR-0257] lists the built-in action rules with their examples and a switch only on the just-do-it ones", async () => {
@@ -370,8 +379,8 @@ describe("[P2-3] standing rules on the web page", () => {
     expect(container.textContent).toBe("");
   });
 
-  it("[ADR-0285] lists the permissions the owner gave with their scope, and takes one back", async () => {
-    const respondRule = vi.fn(async () => true);
+  it("[ADR-0285] lists the permissions the owner gave with their scope and task name, and takes one back", async () => {
+    const revokeAllowance = vi.fn(async () => true);
     await show(
       h(OwnerAllowancesSection, {
         memory: {
@@ -384,15 +393,26 @@ describe("[P2-3] standing rules on the web page", () => {
               threadId: "thread-1",
               expiresAt: null,
             }),
+            allowance({
+              allowanceId: "allowance:aaaaaaaaaaaaaaaa",
+              allowFor: "this_task",
+              title: "订大阪的酒店",
+              threadId: "thread-2",
+              threadTitle: "订酒店",
+              expiresAt: null,
+            }),
           ],
-          respondRule,
+          revokeAllowance,
           busy: false,
+          allowanceDays: null,
+          setAllowanceDays: vi.fn(async () => true),
         },
         message,
       }),
     );
     const text = container.textContent ?? "";
-    expect(text).toContain("你给过的同意 · 2 条");
+    expect(text).toContain("你给过的同意 · 3 条");
+    expect(text).toContain("只在“订酒店”这件事里");
     expect(text).toContain("回复 张三：周四下午 3 点可以");
     expect(text).toContain("到 ");
     expect(text).toContain("只在那件事里");
@@ -402,16 +422,60 @@ describe("[P2-3] standing rules on the web page", () => {
         "allowance:fedcba9876543210",
     );
     await act(async () => revoke?.click());
-    expect(respondRule).toHaveBeenCalledWith("allowance:fedcba9876543210", "revoke");
+    expect(revokeAllowance).toHaveBeenCalledWith("allowance:fedcba9876543210");
   });
 
-  it("[ADR-0285] REVERSE: nothing renders when no permission was given", async () => {
+  it("[ADR-0285] REVERSE: nothing renders when no permission was given and the day count is unknown", async () => {
     await show(
       h(OwnerAllowancesSection, {
-        memory: { allowances: [], respondRule: vi.fn(async () => true), busy: false },
+        memory: {
+          allowances: [],
+          revokeAllowance: vi.fn(async () => true),
+          busy: false,
+          allowanceDays: null,
+          setAllowanceDays: vi.fn(async () => true),
+        },
         message,
       }),
     );
     expect(container.textContent).toBe("");
+  });
+
+  it("[ADR-0285] the owner changes how many days “N 天内都行” lasts, within 1 to 90", async () => {
+    const setAllowanceDays = vi.fn(async () => true);
+    await show(
+      h(OwnerAllowancesSection, {
+        memory: {
+          allowances: [],
+          revokeAllowance: vi.fn(async () => true),
+          busy: false,
+          allowanceDays: 7,
+          setAllowanceDays,
+        },
+        message,
+      }),
+    );
+    const input = container.querySelector<HTMLInputElement>(".allowance-days input");
+    const save = container.querySelector<HTMLButtonElement>(".allowance-days button");
+    expect(input?.value).toBe("7");
+    expect(save?.disabled).toBe(true);
+    const type = async (value: string) =>
+      act(async () => {
+        if (!input) return;
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(
+          input,
+          value,
+        );
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    await type("91");
+    expect(save?.disabled).toBe(true);
+    await type("0");
+    expect(save?.disabled).toBe(true);
+    await type("14");
+    expect(save?.disabled).toBe(false);
+    await act(async () => save?.click());
+    expect(setAllowanceDays).toHaveBeenCalledWith(14);
+    expect(setAllowanceDays).toHaveBeenCalledTimes(1);
   });
 });

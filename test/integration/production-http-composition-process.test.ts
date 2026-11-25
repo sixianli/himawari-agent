@@ -1667,7 +1667,9 @@ it("[R2-L5] executes authenticated HTTP requests and persists gateway costs afte
         () => {
           const database = openQualifiedDatabase(databasePath);
           try {
-            return readRunBilling(database, "run:installed-main").identities.length;
+            return readRunBilling(database, "run:installed-main").identities.filter(
+              ({ status }) => status === "settled",
+            ).length;
           } finally {
             database.close();
           }
