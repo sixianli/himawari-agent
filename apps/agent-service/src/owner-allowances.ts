@@ -277,11 +277,15 @@ export class OwnerAllowances {
     await this.#index((keys) => keys.filter((existing) => existing !== key));
   }
 
-  async list(): Promise<readonly OwnerAllowanceView[]> {
+  async #listedKeys(): Promise<readonly string[]> {
     const index = await this.#read(INDEX_KEY);
-    const keys = Array.isArray(index?.value["keys"])
+    return Array.isArray(index?.value["keys"])
       ? (index.value["keys"] as unknown[]).filter((key): key is string => typeof key === "string")
       : [];
+  }
+
+  async list(): Promise<readonly OwnerAllowanceView[]> {
+    const keys = await this.#listedKeys();
     const now = this.#clock.now();
     const views: OwnerAllowanceView[] = [];
     for (const key of keys) {
@@ -315,8 +319,10 @@ export class OwnerAllowances {
     const external = factCodes(intent).includes(POLICY_FACT_CODES.contextExternalContent);
     const now = this.#clock.now();
     const threads = [...(intent.threadId ? [intent.threadId] : []), ...(external ? [] : [null])];
+    const listed = new Set(await this.#listedKeys());
     for (const threadId of threads) {
       const key = `${KEY_PREFIX}${allowanceId(scopeKey, threadId)}`;
+      if (!listed.has(key)) continue;
       const record = await this.#read(key);
       const value = record?.value as Partial<AllowanceValue> | undefined;
       if (!record || !value || value.enabled !== true || value.scopeKey !== scopeKey) continue;

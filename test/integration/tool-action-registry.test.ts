@@ -1749,3 +1749,68 @@ it("[ADR-0285] a yes whose settings entry could not be written never takes effec
   expect(await allowances.match(intent as never)).toBeDefined();
   expect((await allowances.list()).map(({ allowanceId }) => allowanceId)).toEqual([id]);
 });
+
+it("[ADR-0285] a take-back that lands while the same yes is being saved again leaves nothing in effect that settings cannot show", async () => {
+  const intent = {
+    contractVersion: "authorization.v2",
+    id: "owner-scope:x",
+    threadId: "thread-a",
+    capabilityRef: "reminder",
+    operation: "reminder.cancel",
+    actionKind: "CREATE_OR_UPDATE",
+    disclosure: "NONE",
+    sideEffect: "WRITE",
+    recipients: [],
+    targets: [],
+    estimatedCostMicros: 0,
+    credentialOrAccessChange: false,
+    deterministicFacts: [],
+  };
+  const records = new Map<string, { value: Record<string, unknown>; revision: number }>();
+  let takeBackDuringRead: (() => Promise<void>) | null = null;
+  const allowances: OwnerAllowances = new OwnerAllowances({
+    configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
+    state: {
+      readScopedState: async (_owner, _agent, key) => {
+        const takeBack = takeBackDuringRead;
+        if (takeBack && key !== "owner-allowances:index") {
+          takeBackDuringRead = null;
+          await takeBack();
+        }
+        return records.get(key) as never;
+      },
+      commitStateAndEvents: async (input) => {
+        const { key, expectedRevision, value } = input.state;
+        if ((records.get(key)?.revision ?? null) !== expectedRevision)
+          throw new Error("unexpected revision");
+        records.set(key, {
+          value: value as Record<string, unknown>,
+          revision: (expectedRevision ?? 0) + 1,
+        });
+        return undefined as never;
+      },
+    },
+    store: {
+      getApproval: async () =>
+        ({
+          id: "approval:x",
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          status: "approved",
+          intentSnapshot: intent,
+        }) as never,
+    },
+    authority: () => SERVICE_AUTHORITY.lease,
+    clock: { now: () => T1 },
+  });
+  const id = await allowances.set({
+    approvalRequestId: "approval:x",
+    allowFor: "always",
+    days: null,
+  });
+  takeBackDuringRead = () => allowances.revoke(id);
+  await allowances.set({ approvalRequestId: "approval:x", allowFor: "days", days: 3 });
+  expect(takeBackDuringRead).toBeNull();
+  expect(await allowances.list()).toEqual([]);
+  expect(await allowances.match(intent as never)).toBeUndefined();
+});
