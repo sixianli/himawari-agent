@@ -202,6 +202,45 @@ describe("[PG-11] Gmail read-only source", () => {
     }
   });
 
+  it("reads a whole thread with one read-only call, including the owner's own reply", async () => {
+    const fake = fakeGoogle((url, call) => {
+      if (url.href === "https://oauth2.googleapis.com/token")
+        return json({ access_token: "access-1", expires_in: 3600 });
+      if (call.authorization !== "Bearer access-1") return json({}, 401);
+      if (url.pathname.endsWith("/threads/t-1"))
+        return json({
+          messages: [
+            { ...message("m1", ["INBOX"]), threadId: "t-1" },
+            { ...message("m2", ["SENT"], "Andy <andy@example.com>"), threadId: "t-1" },
+          ],
+        });
+      if (url.pathname.endsWith("/threads/missing")) return json({ error: { code: 404 } }, 404);
+      return undefined;
+    });
+    const reader = flatMailReader(
+      createGmailReader({ oauth: oauth(fake.fetch), fetch: fake.fetch }),
+    );
+    const signal = new AbortController().signal;
+    if (!reader.thread) throw new Error("expected a thread reader");
+    const thread = await reader.thread({ token: "refresh-1", threadId: "t-1", signal });
+    expect(thread?.map(({ messageId, sentByOwner }) => [messageId, sentByOwner])).toEqual([
+      ["m1", false],
+      ["m2", true],
+    ]);
+    expect(thread?.[0]?.body).toBe("body m1");
+    expect(
+      await reader.thread({ token: "refresh-1", threadId: "missing", signal }),
+    ).toBeUndefined();
+    const gmailCalls = fake.calls.filter(({ url }) =>
+      url.startsWith("https://gmail.googleapis.com/"),
+    );
+    expect(gmailCalls.map(({ url }) => new URL(url).search)).toEqual([
+      "?format=full",
+      "?format=full",
+    ]);
+    for (const call of gmailCalls) expect(call.method).toBe("GET");
+  });
+
   it("[PG-11] reads the connected account address from the Gmail profile", async () => {
     const fake = fakeGoogle((url, call) =>
       url.pathname.endsWith("/profile") && call.authorization === "Bearer access-new"

@@ -14,6 +14,7 @@ import {
   CONVERSATION_OPEN_CAPABILITY_REF,
   CONVERSATION_SEARCH_CAPABILITY_REF,
 } from "./production-conversation-tools.js";
+import { MAIL_READ_CAPABILITY_REF } from "./production-mail-read.js";
 import { MANAGED_TASK_ACTIONS } from "./production-managed-tasks.js";
 import { MEMORY_OPEN_CAPABILITY_REF } from "./production-memory-open.js";
 import { MEMORY_RECALL_CAPABILITY_REF } from "./production-memory-recall.js";
@@ -309,6 +310,19 @@ export const PRODUCTION_TOOL_ACTION_ROWS: readonly ToolActionRow[] = Object.free
     executor: "owner_scoped",
     deduplication: "run_and_tool_call",
     detail: detail({ zh: "打开一条记忆", en: "Open a memory", ja: "記憶を開く" }, "number"),
+  },
+  {
+    ...READ_DEFAULTS,
+    tool: "mail_read",
+    family: "builtin",
+    capabilityRef: MAIL_READ_CAPABILITY_REF,
+    operation: "read",
+    targetType: "owner-mail",
+    resultOrigin: "external",
+    authorization: "read",
+    executor: "owner_scoped",
+    deduplication: "run_and_tool_call",
+    detail: detail({ zh: "读整串邮件", en: "Read mail thread", ja: "メールのスレッドを読む" }),
   },
   {
     ...OWNER_WRITE_DEFAULTS,

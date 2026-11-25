@@ -364,46 +364,6 @@
     "changedIn": "ADR 0285",
     "reason": "Always On 第 1 步：外来的事进主对话（内部的系统消息、最后写的话主人看不到），她用 tell_owner 开口并自己决定推不推"
   },
-  "mail.judgment": {
-    "sha256": "c767cda2aae0c4a1ab7766043e35e2fda02ef76a079d4fd9004767e543189f77",
-    "changedIn": "ADR 0248",
-    "reason": "每封邮件（含 ignore）多写 money=yes/no，供涉钱地板规则读取；只在后台邮件判断调用里，不属于对话请求开头",
-    "emphasis": {
-      "kind": "deferred",
-      "batch": "第 3 批 W-06、W-11/W-19",
-      "reason": "邮件判断一次只改一个提示词，先做 A/B 评测（D4）"
-    }
-  },
-  "mail.judgment.items-header": {
-    "sha256": "6a2b6e2e1c4cde35a696edb318b37a5dc3e8ab5dbc4a86d6e900ddfbfa8cd30e",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
-  },
-  "mail.judgment.memories-header": {
-    "sha256": "0855a5969f19aaf80b3cc4ab75d2ad18c1961a143077931b9e40b5c2574544e9",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
-  },
-  "mail.judgment.now": {
-    "sha256": "351200ddf56708c8764296d3d10fac05ab979ffddbf6a37f8c86237fad9d01de",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
-  },
-  "mail.judgment.recent-summaries-header": {
-    "sha256": "b271c465d7c22ce3499a8eb808b0b9879254902b9eaba8a91026cfc8731f04a4",
-    "changedIn": "ADR 0216",
-    "reason": "新增：Gmail 检查带上最近两天的对话日摘要，说明它只是背景、不是指令"
-  },
-  "mail.judgment.tentative-note": {
-    "sha256": "72da4d7216f9b1ee3fe8dd3258d4e3f8882c900d814c4f8fc3e0035a0ae3ac16",
-    "changedIn": "ADR 0179",
-    "reason": "新增：邮件判断里有待确认记忆时，说明它们只是线索，不是事实"
-  },
-  "mail.reference-extraction": {
-    "sha256": "d2b0bb030eb725e1aa8169f3d92d12db31008af3a84db135787563fda757ab51",
-    "changedIn": "ADR 0249",
-    "reason": "新增：从新邮件里抽取订单号等单号，取代关键词正则"
-  },
   "mcp.find-memories": {
     "sha256": "6fd9481afe255532d4cc2501e2fdfcb61ca1f8cde112e1442d1577371163245b",
     "changedIn": "ADR 0242",
@@ -500,9 +460,9 @@
     "reason": "P5-2: outside values each on a labelled line; instant accepts count as not shown"
   },
   "mcp.propose-rule": {
-    "sha256": "2669de4d02fd11cc4cc28cf72dae4001778e0c099bf170f9dfb70a3ac3983f4a",
-    "changedIn": "ADR 0226",
-    "reason": "P5-2: confirm dialog leads with the proposal, Accept/Decline decide, unseen instant declines are not recorded"
+    "sha256": "b9227276356c25ac53b91b8117e65dbb6a640019ccceb950bdd96c839c164f32",
+    "changedIn": "ADR 0285",
+    "reason": "邮件规则不再由程序执行：命中的规则写在新邮件旁边交给她判断"
   },
   "mcp.propose-rule-already-saved": {
     "sha256": "b0bdf793b3eb3c2e5d65b0ba7421058931ffd5cae56179b7227d3c195e6ba0db",
@@ -535,9 +495,9 @@
     "reason": "新增：外部 agent 经 MCP 提议邮件长期规则，主人在客户端确认后按规则提议流程生效"
   },
   "mcp.propose-rule-kind-notify": {
-    "sha256": "9a910450bd6cba2115dab9712f13e7f7eb00d8f7beed381422cad06b7241ccdd",
-    "changedIn": "ADR 0226",
-    "reason": "新增：外部 agent 经 MCP 提议邮件长期规则，主人在客户端确认后按规则提议流程生效"
+    "sha256": "282954be56be50cfcfaac1282174a26fedad3afb85a722a8588a807693887d85",
+    "changedIn": "ADR 0285",
+    "reason": "邮件规则不再由程序推送，改为她一定告诉主人"
   },
   "mcp.propose-rule-kind-whole-thread": {
     "sha256": "073e483d843712db6b12a160adf3b259728250899b96eac54f993ecf2eae2bcc",
@@ -1152,6 +1112,11 @@
     "changedIn": "ADR 0166",
     "reason": "W-16：新增参数说明，任务编号从哪里抄；它不在冻结记录里，每次请求现拼，改它会让所有用到它的对话整段重算一次，所以随 PR-A/PR-B 同一次上线（不在后台命令模式时它是句柄工具）"
   },
+  "tools.mail-read": {
+    "sha256": "f37cafa4f9d449f27e95095f747bce12c0a4892dd1417827b99ddc6b50327949",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 1 步：新邮件进收件箱由她判断，要看前面往来时用 mail_read 读整个邮件串"
+  },
   "tools.memory-open": {
     "sha256": "06f505a9fdabbf8065acd951f9657a3d4f644add9e637365cdc41906bd602140",
     "changedIn": "ADR 0286",
@@ -1380,6 +1345,11 @@
     "changedIn": "ADR 0230",
     "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
   },
+  "tools.result.mail-read.rejected": {
+    "sha256": "2483d17f8d376af5a389b98b74c068119b99c7eee8985f7455088fc1fe1805bb",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 1 步：mail_read 参数不对时给她的说明"
+  },
   "tools.result.perception-read.empty": {
     "sha256": "417a658e6eb2cf55730417f26aa581d053d9653635643a9f6659c7af6261b7cd",
     "changedIn": "ADR 0230",
@@ -1431,9 +1401,9 @@
     "reason": "P2-3 新增：主人一句话变成长期规则的工具（rule_set/rule_list/rule_undo）和失败结果"
   },
   "tools.rule-set": {
-    "sha256": "3d9daef8040f06e13b7889a56f0842b72bba35b050442592b1f2c1d57be7b071",
+    "sha256": "792cb4aef218b142ccb1262d5f42730219712e84db9fbd86e9d623b684d795f3",
     "changedIn": "ADR 0285",
-    "reason": "安静时段多管一类推送 her_words（她写给主人、推到手机上的原话），默认受管；写了 run_result 的规则同时管 her_words，回主人时要说到",
+    "reason": "邮件规则不再由程序执行：命中的规则写在新邮件旁边交给她判断，整串邮件用 mail_read 读",
     "emphasis": {
       "kind": "not-tone",
       "phrases": ["以后……一律……", "……必须提醒我", "“以后”“一律”“必须”"],

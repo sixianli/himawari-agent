@@ -1,6 +1,5 @@
 import { existsSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import type { ProactiveMail } from "@himawari-agent/application";
 import {
   EGRESS_PLACEHOLDER_LEGEND,
   EGRESS_PLACEHOLDER_LEGEND_WITH_RESTORE,
@@ -8,7 +7,6 @@ import {
   embeddingDocumentText,
   embeddingQueryText,
   JINA_V5_SMALL_INT8_PROFILE,
-  proactivePrompt,
   QWEN3_EMBEDDING_8B_PROFILE,
 } from "@himawari-agent/application";
 import { consolidationPrompt, episodeSummaryPrompt } from "@himawari-agent/memory-engine";
@@ -43,8 +41,6 @@ const GOLDEN_NAMES = [
   "chat.runtime-environment.coding-without-workspace",
   "chat.runtime-environment.plain",
   "chat.runtime-environment.search",
-  "mail.judgment",
-  "mail.judgment.recent-summaries",
   "memory.capture",
   "memory.consolidation",
   "memory.conversation-review",
@@ -65,24 +61,6 @@ const memory = (validFrom: string) =>
     recordedAt: validFrom,
     updatedAt: validFrom,
   }) as unknown as Parameters<typeof consolidationPrompt>[1][number]["memory"];
-
-const mail = (id: string): ProactiveMail => ({
-  source: "gmail",
-  messageId: `message-${id}`,
-  threadId: `thread-${id}`,
-  from: "東京ガス",
-  fromAddress: "info@example.com",
-  subject: `11 月のご請求 ${id}`,
-  snippet: "お支払い期限は 11 月 20 日です。",
-  link: `https://mail.example.com/${id}`,
-  receivedAt: "2026-11-04T00:10:00.000Z",
-  categories: ["CATEGORY_UPDATES"],
-  sentByOwner: false,
-  body: "お支払い期限は 11 月 20 日です。",
-  bodyTruncated: false,
-  bodyUnavailable: false,
-  attachments: [],
-});
 
 const SANDBOX = {
   available: ["bash", "node", "rg", "python3"],
@@ -256,41 +234,6 @@ describe("[PROMPT-GOLDEN] rendered prompts stay byte-identical while text moves 
         ],
       } as unknown as Parameters<typeof episodeSummaryPrompt>[0]),
     ).toMatchFileSnapshot(golden("memory.episode-summary"));
-    await expect(
-      proactivePrompt([mail("a"), mail("b")], "2026-11-04T01:00:00.000Z", "Asia/Tokyo", [
-        {
-          mailId: "message-a",
-          id: "memory-7",
-          text: "主人用东京燃气，每月自动扣款。",
-          dataClassification: "private",
-        },
-      ]),
-    ).toMatchFileSnapshot(golden("mail.judgment"));
-    await expect(
-      proactivePrompt(
-        [mail("a")],
-        "2026-11-04T01:00:00.000Z",
-        "Asia/Tokyo",
-        [
-          {
-            mailId: "message-a",
-            id: "memory-7",
-            text: "主人用东京燃气，每月自动扣款。",
-            dataClassification: "private",
-          },
-        ],
-        undefined,
-        new Map(),
-        [
-          {
-            id: "episode:day_summary:thread-1:1",
-            day: "2026-11-03",
-            text: "主人说十月的电费已经交过了。",
-            dataClassification: "private",
-          },
-        ],
-      ),
-    ).toMatchFileSnapshot(golden("mail.judgment.recent-summaries"));
     await expect(MEMORY_EMBEDDING_QUERY_INSTRUCTION.text).toMatchFileSnapshot(
       golden("memory.embedding-query-instruction"),
     );

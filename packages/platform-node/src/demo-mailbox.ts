@@ -13,7 +13,6 @@ import {
   isDemoLocale,
 } from "@himawari-agent/domain";
 import { DEMO_MAILBOX_TOKEN_PREFIX } from "./demo-mailbox-token.js";
-import { findRelatedMail, normalizeSubject } from "./gmail-related.js";
 import type { GoogleOAuth } from "./gmail-source.js";
 
 export const DEMO_MAILBOX_ACCOUNT = DEMO_OWNER_ADDRESS;
@@ -75,42 +74,15 @@ function arrived(
   };
 }
 
-function matches(item: ProactiveMail, query: string): boolean {
-  const quoted = /"([^"]+)"/u.exec(query)?.[1];
-  if (quoted === undefined) return false;
-  if (query.startsWith("subject:")) return normalizeSubject(item.subject) === quoted.toLowerCase();
-  return `${item.subject}\n${item.body ?? ""}`.toUpperCase().includes(quoted.toUpperCase());
-}
-
 export function createDemoMailReader(options: {
   readonly now: () => string;
   readonly timeZone?: string;
 }): ProactiveMailReader {
   return mailReader({
     source: GMAIL_SOURCE.name,
-    async related({ token, items, limits, wholeThread, references, signal }) {
+    async thread({ token, threadId }) {
       const pool = arrived(token, Date.parse(options.now()), options.timeZone)?.items ?? [];
-      return findRelatedMail({
-        items,
-        limits,
-        ...(wholeThread ? { wholeThread } : {}),
-        ...(references ? { references } : {}),
-        signal,
-        transport: {
-          async thread(threadId) {
-            return pool.filter((item) => item.threadId === threadId);
-          },
-          async search(query, maxResults) {
-            return pool
-              .filter((item) => matches(item, query))
-              .slice(0, maxResults)
-              .map(({ messageId }) => messageId);
-          },
-          async message(id) {
-            return pool.find(({ messageId }) => messageId === id);
-          },
-        },
-      });
+      return pool.filter((item) => item.threadId === threadId);
     },
     async fetch({ token, cursor, since, signal, unseen }): Promise<FlatMailFetchResult> {
       if (signal.aborted) return { kind: "failed", step: "timeout" };
