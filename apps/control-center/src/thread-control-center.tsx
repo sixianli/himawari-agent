@@ -351,20 +351,31 @@ export function useThreadControlCenter(
   const [mainLookupSettled, setMainLookupSettled] = useState(false);
   useEffect(() => {
     if (!active || !client || !configuration) return;
+    setMainLookupSettled(false);
     const controller = new AbortController();
+    let disposed = false;
+    const deadline = window.setTimeout(
+      () => controller.abort(READ_DEADLINE_EXCEEDED),
+      READ_DEADLINE_MILLISECONDS,
+    );
     client
       .queryThread(threadQueryMessage(configuration, "thread.main", {}), controller.signal)
       .then((snapshot) => {
-        if (snapshot.type === "thread.main_snapshot")
+        if (!disposed && snapshot.type === "thread.main_snapshot")
           setMainThreadId(snapshot.payload.thread.threadId);
       })
       .catch((caught: unknown) => {
         if ((caught as { readonly status?: unknown } | null)?.status === 401) onUnauthorized();
       })
       .finally(() => {
-        if (!controller.signal.aborted) setMainLookupSettled(true);
+        window.clearTimeout(deadline);
+        if (!disposed) setMainLookupSettled(true);
       });
-    return () => controller.abort();
+    return () => {
+      disposed = true;
+      window.clearTimeout(deadline);
+      controller.abort();
+    };
   }, [active, client, configuration, onUnauthorized]);
   const openingMain =
     !selectedThreadId &&
@@ -1217,9 +1228,14 @@ export function useThreadControlCenter(
         origin && detail?.payload.thread.threadId === origin ? detail.payload.thread : undefined;
       if (!origin) {
         setMutationStatus("pending");
-        const snapshot = await client.queryThread(
-          threadQueryMessage(configuration, "thread.main", {}),
+        const controller = new AbortController();
+        const deadline = window.setTimeout(
+          () => controller.abort(READ_DEADLINE_EXCEEDED),
+          READ_DEADLINE_MILLISECONDS,
         );
+        const snapshot = await client
+          .queryThread(threadQueryMessage(configuration, "thread.main", {}), controller.signal)
+          .finally(() => window.clearTimeout(deadline));
         if (snapshot.type !== "thread.main_snapshot")
           throw new Error("CONTROL_CENTER_RESPONSE_INVALID");
         target = snapshot.payload.thread;

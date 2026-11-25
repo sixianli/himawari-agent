@@ -443,31 +443,6 @@ export const governanceMessages = [
     thinkingLevel: null,
     expectedRevision: 3,
   }),
-  fixture("query", "delivery_timing.settings.read", { locale: "zh-CN" }),
-  fixture("snapshot", "delivery_timing.settings.snapshot", {
-    items: [
-      {
-        key: "recheckSeconds",
-        label: "复查间隔",
-        description: "先不推送之后，隔多久再确认你有没有空。",
-        unit: "秒",
-        kind: "duration",
-        storageUnit: "s",
-        value: 600,
-        defaultValue: 300,
-        minimum: 60,
-        maximum: 3600,
-        overridden: true,
-      },
-    ],
-    revision: 2,
-    generatedAt: "2026-11-15T03:00:00.000Z",
-  }),
-  fixture("command", "delivery_timing.settings.change", {
-    expectedRevision: 2,
-    key: "recheckSeconds",
-    value: null,
-  }),
   fixture("query", "quiet_hours.read", {}),
   fixture("snapshot", "quiet_hours.snapshot", {
     version: "0123456789abcdef0123456789abcdef",

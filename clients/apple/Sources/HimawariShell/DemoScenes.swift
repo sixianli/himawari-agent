@@ -31,8 +31,6 @@ enum DemoScene: String, CaseIterable {
     case capabilitiesReactivateFailed = "20-himawari-self-1c-capabilities-reactivate-failed"
     case loginBrowsers = "20-himawari-self-2-login-browsers"
     case proposals = "20-himawari-self-3-proposals"
-    case notifications = "19-settings-more-4-notifications"
-    case notificationsEdit = "19-settings-more-4-notifications-edit"
     case thinkSettings = "20-himawari-self-4-think"
     case her = "next-3-her"
     case herPrivacy = "next-3-her-privacy"
@@ -261,7 +259,7 @@ struct DemoSceneView: View {
         case .memory, .memoryDetail, .memoryEdit, .rules, .ruleDetail, .settings, .device, .deviceAbilities, .addDevice, .addDeviceAsking,
             .addDeviceExpired, .files, .exportPacking, .exportReady, .capabilities,
             .capabilitiesReactivated, .capabilitiesReactivateFailed, .loginBrowsers, .proposals,
-            .notifications, .notificationsEdit, .thinkSettings, .her, .herPrivacy, .herDevices, .herNotifications:
+            .thinkSettings, .her, .herPrivacy, .herDevices, .herNotifications:
             EmptyView()
         }
     }

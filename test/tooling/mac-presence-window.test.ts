@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
-import { DELIVERY_TIMING_RANGES } from "../../packages/application/src/services/delivery-timing.ts";
+import { MAC_PRESENCE_WINDOW_SECONDS } from "../../apps/agent-service/src/mac-placement.ts";
 
 const appleSources = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -10,18 +10,16 @@ const appleSources = path.resolve(
 );
 const source = readFileSync(path.join(appleSources, "HimawariCore/OwnerPresence.swift"), "utf8");
 
-const shortestWindow = DELIVERY_TIMING_RANGES.macPresenceSeconds[0];
-
 function declared(pattern: RegExp): number {
   const value = pattern.exec(source)?.[1];
   expect(value, String(pattern)).toBeDefined();
   return Number(value);
 }
 
-it("Mac 上报在场的节奏按服务端 macPresenceSeconds 允许的最短窗口来定", () => {
-  expect(declared(/static let shortestServerWindow: TimeInterval = (\d+(?:\.\d+)?)\n/u)).toBe(
-    shortestWindow,
-  );
+const shortestWindowPattern = /static let shortestServerWindow: TimeInterval = (\d+(?:\.\d+)?)\n/u;
+
+it("Mac 定上报节奏时按的窗口不长于服务端判断 Mac 在场的窗口", () => {
+  expect(declared(shortestWindowPattern)).toBeLessThanOrEqual(MAC_PRESENCE_WINDOW_SECONDS);
 });
 
 it("实际生效的上报间隔加一次检查间隔和网络余量，不超过服务端允许的最短窗口", () => {
@@ -31,7 +29,9 @@ it("实际生效的上报间隔加一次检查间隔和网络余量，不超过�
   expect(source).toContain("let tick = max(minimumInterval / 4, 1)");
   const check = Math.max(minimumInterval / 4, 1);
   const networkAllowance = 10;
-  expect(minimumInterval + check + networkAllowance).toBeLessThanOrEqual(shortestWindow);
+  expect(minimumInterval + check + networkAllowance).toBeLessThanOrEqual(
+    declared(shortestWindowPattern),
+  );
 });
 
 it("Mac 实际用的上报策略就是 standard，没有别处另给一套间隔", () => {

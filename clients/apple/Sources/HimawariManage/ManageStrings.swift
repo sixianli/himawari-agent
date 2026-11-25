@@ -366,7 +366,6 @@ enum M {
     static var on: String { text("开", ja: "オン", en: "On") }
     static var off: String { text("关", ja: "オフ", en: "Off") }
     static var notificationsTitle: String { text("通知", ja: "通知", en: "Notifications") }
-    static var deliveryGroup: String { text("什么时候送", ja: "いつ届けるか", en: "When to deliver") }
     static var thinkTitle: String { text("想一想的门槛", ja: "考える基準", en: "Thinking thresholds") }
     static var tuningDisabled: String { text("未开启", ja: "オフ", en: "Off") }
     static var tuningSave: String { text("保存", ja: "保存", en: "Save") }
