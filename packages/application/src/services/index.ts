@@ -111,3 +111,5 @@ export * from "./workspace-changes.js";
 export * from "./workspace-claims.js";
 export * from "./workspace-copy-service.js";
 export * from "./workspace-service.js";
+export * from "./vault-contract.js";
+export * from "./vault-service.js";

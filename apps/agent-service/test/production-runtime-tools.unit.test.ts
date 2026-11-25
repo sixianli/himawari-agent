@@ -2319,7 +2319,7 @@ it("[ADR-0257] throws instead of reporting a failed check when the run has stopp
   ).toEqual([]);
 });
 
-it("[ADR-0257] only the listing, recall, conversation, mail and perception read tools skip the authorization exit among the built-in tools", () => {
+it("[ADR-0257] only the listing, recall, conversation, mail, perception and vault read tools skip the authorization exit among the built-in tools", () => {
   const builtin = PRODUCTION_TOOL_ACTION_ROWS.filter(({ family }) => family === "builtin");
   expect(
     builtin.filter(({ authorization }) => authorization === "read").map(({ tool }) => tool),
@@ -2333,6 +2333,7 @@ it("[ADR-0257] only the listing, recall, conversation, mail and perception read 
     "rule_list",
     "tool_result_recall",
     "perception_read",
+    "vault_list",
   ]);
   expect(
     builtin
@@ -2348,7 +2349,7 @@ it("[ADR-0257] only the listing, recall, conversation, mail and perception read 
     "rule_undo",
     "tell_owner",
   ]);
-  expect(builtin).toHaveLength(16);
+  expect(builtin).toHaveLength(17);
 });
 
 it("[ADR-0257] runs a tool with consequences only after the exit allows it, and never asks the exit for a read", async () => {

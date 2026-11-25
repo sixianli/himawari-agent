@@ -48,6 +48,8 @@ export const APPLE_PUSH_TEXT = {
     untitled: "新对话",
     openTitle: "Himawari 想请你点开一下",
     openBody: "这台设备上有一件事在等着做",
+    vaultTitle: "Himawari 请你批准一次使用",
+    vaultBody: "点开后刷脸批准或拒绝",
   },
   en: {
     approve: "Approve",
@@ -57,6 +59,8 @@ export const APPLE_PUSH_TEXT = {
     untitled: "New chat",
     openTitle: "Himawari needs you to open the app",
     openBody: "Something is waiting to be done on this device",
+    vaultTitle: "Himawari needs your approval",
+    vaultBody: "Open to approve or decline with Face ID",
   },
   ja: {
     approve: "承認",
@@ -66,6 +70,8 @@ export const APPLE_PUSH_TEXT = {
     untitled: "新しいチャット",
     openTitle: "Himawari を開いてください",
     openBody: "このデバイスで行う操作が待っています",
+    vaultTitle: "Himawari が使用の承認を求めています",
+    vaultBody: "開いて Face ID で承認または拒否",
   },
 } as const satisfies Record<WebPushLocale, unknown>;
 
@@ -150,6 +156,32 @@ export function applePushOpenRequestPayload(input: {
       kind: "device_action",
       navigate: "/",
       actionId: input.actionId,
+      actions: [],
+    },
+  });
+}
+
+export const VAULT_APPROVAL_PUSH_KIND = "vault_approval" as const;
+
+export function applePushVaultApprovalPayload(input: {
+  readonly title: string;
+  readonly body: string;
+  readonly requestId: string;
+}): string {
+  return JSON.stringify({
+    aps: {
+      alert: { title: input.title, body: input.body },
+      sound: "default",
+      "thread-id": VAULT_APPROVAL_PUSH_KIND,
+      "interruption-level": "time-sensitive",
+      category: "himawari.plain",
+    },
+    himawari: {
+      v: 1,
+      tag: `vault-${input.requestId}`,
+      kind: VAULT_APPROVAL_PUSH_KIND,
+      navigate: "/",
+      vaultRequestId: input.requestId,
       actions: [],
     },
   });
@@ -278,6 +310,40 @@ export class ProductionApplePush implements PushCompanionChannel {
             tag,
             actionId: record.id,
             ownerPresence: record.ownerPresence,
+          }),
+        });
+        await this.#applyRegistrationOutcome(registration, result, now);
+      }
+    } catch (error) {
+      this.#options.onFailure(error);
+    }
+  }
+
+  async requestVaultApproval(input: {
+    readonly requestId: string;
+    readonly expiresAt: string;
+  }): Promise<void> {
+    try {
+      const registrations = (
+        await this.#options.store.listRegistrations({ ...this.#scope(), pushType: "alert" })
+      ).filter(
+        (registration) => registration.status === "active" && this.#configured(registration),
+      );
+      const now = this.#options.now();
+      for (const registration of registrations) {
+        const text = APPLE_PUSH_TEXT[registration.locale];
+        const result = await this.#transmit("alert", VAULT_APPROVAL_PUSH_KIND, {
+          token: registration.token,
+          environment: registration.environment,
+          topic: registration.topic,
+          pushType: "alert",
+          priority: 10,
+          expiresAtSeconds: Math.floor(Date.parse(input.expiresAt) / 1_000),
+          collapseId: `vault-${input.requestId}`,
+          payload: applePushVaultApprovalPayload({
+            title: text.vaultTitle,
+            body: text.vaultBody,
+            requestId: input.requestId,
           }),
         });
         await this.#applyRegistrationOutcome(registration, result, now);

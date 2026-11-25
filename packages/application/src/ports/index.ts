@@ -84,3 +84,4 @@ export * from "./web.js";
 export * from "./web-providers.js";
 export * from "./web-push.js";
 export * from "./workspaces.js";
+export * from "./vault.js";

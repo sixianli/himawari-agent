@@ -5,8 +5,8 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
-  readFileSync,
   readdirSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -167,5 +167,20 @@ describe("ui-review.sh --approve (ADR 0276)", () => {
     expect(result.output).toContain("UI_REVIEW_FAILED");
     expect(readFileSync(join(fixture.snapshots, "01-today-light.png"), "utf8")).toBe("old");
     expect(readdirSync(fixture.snapshots)).toHaveLength(4);
+  });
+});
+
+describe("watch-ui-review.sh bundle id (PR 611)", () => {
+  const script = readFileSync(join(apple, "scripts/watch-ui-review.sh"), "utf8");
+
+  it("reads the bundle id from the built app instead of carrying its own copy", () => {
+    expect(script).toMatch(
+      /bundle="\$\(\/usr\/libexec\/PlistBuddy -c 'Print CFBundleIdentifier' "\$app\/Info\.plist"\)"/,
+    );
+  });
+
+  it("does not hard-code a bundle id or the prefix default", () => {
+    expect(script).not.toMatch(/win\.siyi\.himawari/);
+    expect(script).not.toContain("HIMAWARI_BUNDLE_PREFIX");
   });
 });

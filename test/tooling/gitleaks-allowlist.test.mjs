@@ -18,6 +18,12 @@ const blocks = text
     ),
   }));
 const realShapedKey = ["sk", "live", "9fK2mQ7xT4vB8nL1cZ6wR3yH5jD0aE"].join("_");
+const VAULT_CIPHERTEXTS = [
+  ["OJcMhbm3WDiSpM1vIJuD1qnNNVIJ0hTf75YUIS9f", "/c6Qo98Y9w4CnxSW0UGHkewWlVHlFpwsGvui/nsG"],
+  ["tByJMmanrteJYrzRyAz6eC7I+9mY5n5X", "MjMmS01n940gxxayiFeZE/6q"],
+  ["XGIcgad/HQpwhhB3ypIea5eB2sEm5ufB", "GncMjFIZKSwR44rKumK8mSkH"],
+  ["uZP0fC70wm4e+scCIDFNsUTSMXyWlwzXpo70DxbK", "9KJ6kd4XjfSuZN9OQSvjdn9coV0ImLS4JBvMBl2U"],
+].map((parts) => parts.join(""));
 const matches = (patterns, value) => patterns.some((pattern) => pattern.test(value));
 
 describe("[I-gitleaks-allowlist] Gitleaks 白名单只放行已审阅的形式", () => {
@@ -61,7 +67,7 @@ describe("[I-gitleaks-allowlist] Gitleaks 白名单只放行已审阅的形式",
   });
 
   it("其余每条白名单都同时限定规则、文件路径和值的形状", () => {
-    expect(scoped).toHaveLength(16);
+    expect(scoped).toHaveLength(17);
     for (const block of scoped) {
       expect(block.condition).toBe("AND");
       expect(block.regexTarget).toBe("secret");
@@ -116,6 +122,7 @@ describe("[I-gitleaks-allowlist] Gitleaks 白名单只放行已审阅的形式",
         ["aeb13307a71acd8fe81861d94ad54ab6", "89df773318809eed3cbe794b4492dae4"].join(""),
         changeLast,
       ],
+      [VAULT_CIPHERTEXTS[0], changeLast],
     ].map(([sample, mutate], index) => [index, sample, mutate])) {
       expect(matches(scoped[index].regexes, sample)).toBe(true);
       expect(matches(scoped[index].regexes, mutate(sample))).toBe(false);
@@ -138,6 +145,37 @@ describe("[I-gitleaks-allowlist] Gitleaks 白名单只放行已审阅的形式",
       false,
     );
     expect(matches(block.paths, ".agents/reviews/pr-273/round-1/glm-5.3-flash.md")).toBe(false);
+  });
+
+  it("保险箱合约夹具里的四个密文只在那个夹具文件里按精确值放行", () => {
+    const block = scoped[16];
+    expect(block.regexTarget).toBe("secret");
+    expect(
+      matches(
+        block.paths,
+        "/tmp/x/clients/apple/Tests/HimawariCoreTests/Fixtures/vault-contract.json",
+      ),
+    ).toBe(true);
+    expect(
+      matches(block.paths, "clients/apple/Tests/HimawariCoreTests/Fixtures/other-contract.json"),
+    ).toBe(false);
+    expect(
+      matches(
+        block.paths,
+        "clients/apple/Tests/HimawariCoreTests/Fixtures/vault-contract.json.bak",
+      ),
+    ).toBe(false);
+    for (const value of VAULT_CIPHERTEXTS) {
+      expect(matches(block.regexes, value)).toBe(true);
+      expect(matches(block.regexes, `${value}A`)).toBe(false);
+      expect(
+        matches(
+          block.regexes,
+          value.replace(/^./, (first) => (first === "Q" ? "R" : "Q")),
+        ),
+      ).toBe(false);
+    }
+    expect(matches(block.regexes, "A".repeat(56))).toBe(false);
   });
 
   it("Web Push 测试向量只在两个已审阅的文件里被放行", () => {

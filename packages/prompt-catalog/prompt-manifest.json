@@ -1007,6 +1007,11 @@
     "changedIn": "ADR 0213",
     "reason": "P2-3 新增：主人一句话变成长期规则的工具（rule_set/rule_list/rule_undo）和失败结果"
   },
+  "tool-result.vault-unavailable": {
+    "sha256": "1c84cde2411e30977da1aa104bcd3803682b54bb9cce4ed7ed8edfd72356ac33",
+    "changedIn": "ADR 0288",
+    "reason": "保险箱第一步：模型只看到每一项的名字、类型和网站，看不到值；保险箱没开时如实说没开"
+  },
   "tools.activity-icon-parameter": {
     "sha256": "dbd8e58cfc21c55329741fda6c87fea61075ceb1f18e404304e7acf702c66660",
     "changedIn": "ADR 0250",
@@ -1459,6 +1464,11 @@
     "sha256": "4c4ed3364e748ad46829c470f233a04b402584e8c3889aa44c8b3f5260aba589",
     "changedIn": "ADR 0285",
     "reason": "新增：tool_result_recall 工具的描述，按占位编号取回已清理的工具结果"
+  },
+  "tools.vault-list": {
+    "sha256": "55c49147b485c016b05107a4dccb339a3ba62aa9a9effaefcf41f07efae17622",
+    "changedIn": "ADR 0288",
+    "reason": "保险箱第一步：模型只看到每一项的名字、类型和网站，看不到值；保险箱没开时如实说没开"
   },
   "tools.web-fetch": {
     "sha256": "3af5f1ce44de795a72860f18b3e1ec3d5fbdb114a9fa6acd5db7a33c6019fcb8",

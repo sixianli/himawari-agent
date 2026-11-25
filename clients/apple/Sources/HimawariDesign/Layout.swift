@@ -59,6 +59,24 @@ public enum ManageLayout {
         public static let rowValue = TypeToken(size: 17, weight: 400, lineHeight: 17 * 1.35, face: .system, tracking: 0)
     }
 
+    public enum VaultSheet {
+        public static let gap: CGFloat = 20
+        public static let formGap: CGFloat = 16
+        public static let buttonHeight: CGFloat = 52
+        public static let buttonGap: CGFloat = 10
+        public static let tagPaddingHorizontal: CGFloat = 8
+        public static let tagPaddingVertical: CGFloat = 2
+        public static let tile: CGFloat = 44
+        public static let tileRadius: CGFloat = 12
+        public static let tileIcon: CGFloat = 22
+        public static let warningIcon: CGFloat = 56
+        public static let warningTop: CGFloat = 24
+        public static let fieldMinHeight: CGFloat = 52
+        public static let itemTitle = TypeToken(size: 20, weight: 700, lineHeight: nil, face: .system, tracking: 0)
+        public static let warningTitle = TypeToken(size: 24, weight: 700, lineHeight: 24 * 1.35, face: .system, tracking: 0)
+        public static let note = TypeToken(size: 13, weight: 400, lineHeight: 13 * 1.5, face: .system, tracking: 0)
+    }
+
     public enum DeviceSheet {
         public static let rowGap: CGFloat = 16
         public static let rowTextGap: CGFloat = 10

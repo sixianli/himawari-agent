@@ -7,3 +7,4 @@ export * from "./v02-fixture.js";
 export * from "./uds-fault-proxy.js";
 export * from "./model-egress.js";
 export * from "./device-test-client.js";
+export * from "./vault-phone.js";
