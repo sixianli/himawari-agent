@@ -29,6 +29,7 @@ extension ChatStore {
         store.queued = state.queued
         store.streaming = state.streaming
         store.connection = state.connection
+        store.offlineShown = state.connection != .online
         store.executions = state.executions
         return store
     }

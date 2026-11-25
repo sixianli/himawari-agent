@@ -81,6 +81,10 @@ public final class AppModel {
                 streams.error("stream \(path, privacy: .public) not opened: server allows \(connections, privacy: .public) connections, needs \(ExecutionStreamPolicy.streamsNeeded, privacy: .public)")
             case let .refused(path, status, code):
                 streams.error("stream \(path, privacy: .public) refused: HTTP \(status, privacy: .public) \(code ?? "-", privacy: .public)")
+            case let .dropped(path, reason, connectedSeconds):
+                streams.notice("stream \(path, privacy: .public) dropped: \(reason.rawValue, privacy: .public) after \(connectedSeconds, format: .fixed(precision: 1), privacy: .public)s connected")
+            case let .recovered(path, offlineSeconds):
+                streams.notice("stream \(path, privacy: .public) back after \(offlineSeconds, format: .fixed(precision: 1), privacy: .public)s offline")
             }
         }
         #endif
