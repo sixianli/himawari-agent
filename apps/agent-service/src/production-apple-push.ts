@@ -11,8 +11,10 @@ import {
   type ApplePushStorePort,
   type ApprovalRequest,
   type DeviceActionRecord,
+  HER_WORDS_PUSH_PREFIX,
   hasVisibleText,
   type MemoryReminder,
+  type MessageUrgency,
   type NotificationAction,
   type NotificationActionTokenInput,
   type PairedDeviceScope,
@@ -94,6 +96,12 @@ function clip(text: string, bytes: number): string {
   return `${result}…`;
 }
 
+const INTERRUPTION_LEVELS: Readonly<Record<MessageUrgency, string>> = Object.freeze({
+  low: "passive",
+  normal: "active",
+  high: "time-sensitive",
+});
+
 export function applePushAlertPayload(input: {
   readonly title: string;
   readonly body: string;
@@ -102,6 +110,7 @@ export function applePushAlertPayload(input: {
   readonly kind: WebPushOutboxItem["kind"];
   readonly badge?: number | undefined;
   readonly actions: readonly ApplePushAction[];
+  readonly urgency?: MessageUrgency | undefined;
 }): string {
   const build = (title: string, body: string) =>
     JSON.stringify({
@@ -111,7 +120,12 @@ export function applePushAlertPayload(input: {
         ...(input.badge === undefined ? {} : { badge: input.badge }),
         "thread-id": input.kind,
         "mutable-content": 1,
-        "interruption-level": input.kind === "approval" ? "time-sensitive" : "active",
+        "interruption-level":
+          input.urgency !== undefined
+            ? INTERRUPTION_LEVELS[input.urgency]
+            : input.kind === "approval"
+              ? "time-sensitive"
+              : "active",
         category: input.actions.length > 0 ? "himawari.actions" : "himawari.plain",
       },
       notificationId: input.tag,
@@ -200,6 +214,7 @@ export interface ProductionApplePushOptions extends PairedDeviceScope {
   readonly configuration: () => ApplePushConfiguration;
   readonly threadTitle: (threadId: string) => Promise<{ readonly title: string | null } | null>;
   readonly publicOrigin: string;
+  readonly messageUrgency?: (messageId: string) => Promise<MessageUrgency | undefined>;
   readonly now: () => string;
   readonly randomBytes?: (size: number) => Buffer;
   readonly approvalCopy?: (input: {
@@ -530,6 +545,9 @@ export class ProductionApplePush implements PushCompanionChannel {
     const { item, registration, attempt } = entry;
     const tag = webPushTopic(item.sourceKey);
     const built = content.build(locale);
+    const urgency = item.sourceKey.startsWith(HER_WORDS_PUSH_PREFIX)
+      ? await this.#options.messageUrgency?.(item.sourceRef)
+      : undefined;
     const approval =
       item.kind === "approval" ? approvals.find(({ id }) => id === item.sourceRef) : undefined;
     const affirmLabel =
@@ -543,7 +561,7 @@ export class ProductionApplePush implements PushCompanionChannel {
       environment: registration.environment,
       topic: registration.topic,
       pushType: "alert",
-      priority: item.kind === "run" ? 5 : 10,
+      priority: item.kind === "run" || urgency === "low" ? 5 : 10,
       expiresAtSeconds: Math.floor(Date.parse(item.expiresAt) / 1_000),
       collapseId: tag,
       payload: applePushAlertPayload({
@@ -555,6 +573,7 @@ export class ProductionApplePush implements PushCompanionChannel {
         tag,
         kind: item.kind,
         badge,
+        urgency,
         actions: await this.#actions(entry, now, locale, approval, affirmLabel),
       }),
     });

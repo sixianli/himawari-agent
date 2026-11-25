@@ -1135,6 +1135,8 @@ export class SqliteDurableAdapters {
       clearSummary: (input) => this.context.write("inbox.clearSummary", input),
       readSettings: (input) => this.context.write("inbox.readSettings", input),
       changeSettings: (input) => this.context.write("inbox.changeSettings", input),
+      recordUrgency: (input) => this.context.write("inbox.recordUrgency", input),
+      readUrgency: (input) => this.context.write("inbox.readUrgency", input),
     });
   }
 

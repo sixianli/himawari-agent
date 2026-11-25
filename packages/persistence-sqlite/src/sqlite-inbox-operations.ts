@@ -3,6 +3,7 @@ import type {
   InboxSettingsRecord,
   InboxStorePort,
   InboxUsage,
+  MessageUrgency,
   StoredInboxEvent,
 } from "@himawari-agent/application";
 import type Database from "better-sqlite3";
@@ -15,6 +16,7 @@ const MAX_LIMIT = 100000;
 const MAX_BATCH = 1000;
 const SETTLED = ["done", "failed"];
 const OUTCOME = /^[a-z][a-z0-9_]{0,31}$/u;
+const URGENCIES: readonly string[] = ["low", "normal", "high"] satisfies readonly MessageUrgency[];
 
 const columns = `id, source_kind AS sourceKind, source_ref AS sourceRef,
   source_version AS sourceVersion, external_content AS externalContent,
@@ -80,6 +82,10 @@ export class SqliteInboxOperations {
         return this.readSettings(payload as Input<"readSettings">);
       case "inbox.changeSettings":
         return this.changeSettings(payload as Input<"changeSettings">);
+      case "inbox.recordUrgency":
+        return this.recordUrgency(payload as Input<"recordUrgency">);
+      case "inbox.readUrgency":
+        return this.readUrgency(payload as Input<"readUrgency">);
       default:
         return this.fail("PORT_INVALID_OPERATION", `Unknown inbox operation ${operation}`);
     }
@@ -132,6 +138,42 @@ export class SqliteInboxOperations {
         .run(input.ownerId, input.agentId, JSON.stringify(overrides), input.now);
       return this.readSettings(input);
     })();
+  }
+
+  private recordUrgency(input: Input<"recordUrgency">): void {
+    if (!valid(input.now)) this.invalid("Message urgency time is invalid");
+    if (!URGENCIES.includes(input.urgency)) this.invalid("Message urgency is invalid");
+    if (typeof input.messageId !== "string" || input.messageId.length < 1)
+      this.invalid("Message urgency message is invalid");
+    this.assertDiskHeadroom();
+    const message = this.database
+      .prepare("SELECT 1 FROM thread_messages WHERE id = ? AND owner_id = ? AND agent_id = ?")
+      .get(input.messageId, input.ownerId, input.agentId);
+    if (!message) this.fail("PORT_NOT_FOUND", "Message urgency message is missing");
+    this.database
+      .prepare(
+        `INSERT INTO message_urgency (message_id, owner_id, agent_id, urgency, recorded_at)
+         VALUES (?, ?, ?, ?, ?) ON CONFLICT (message_id) DO NOTHING`,
+      )
+      .run(input.messageId, input.ownerId, input.agentId, input.urgency, input.now);
+  }
+
+  private readUrgency(input: Input<"readUrgency">): Readonly<Record<string, MessageUrgency>> {
+    if (input.messageIds.length > MAX_BATCH) this.invalid("Message urgency lookup is too large");
+    if (input.messageIds.length === 0) return Object.freeze({});
+    const rows = this.database
+      .prepare(
+        `SELECT message_id AS messageId, urgency FROM message_urgency
+         WHERE owner_id = ? AND agent_id = ? AND message_id IN (SELECT value FROM json_each(?))
+         ORDER BY message_id`,
+      )
+      .all(input.ownerId, input.agentId, JSON.stringify([...new Set(input.messageIds)])) as {
+      messageId: string;
+      urgency: MessageUrgency;
+    }[];
+    return Object.freeze(
+      Object.fromEntries(rows.map(({ messageId, urgency }) => [messageId, urgency])),
+    );
   }
 
   private invalid(message: string): never {

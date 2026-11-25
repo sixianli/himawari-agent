@@ -1,9 +1,11 @@
 import { createHash } from "node:crypto";
 import {
   type ApprovalRequest,
+  HER_WORDS_PUSH_PREFIX,
   herWordsPushKey,
   type MemoryReminder,
   type MemoryReminderStorePort,
+  type MessageUrgency,
   type ProductMemoryRecord,
   type ProductMemoryStatePort,
   PUSH_RULE_PROTECTED_CLASSES,
@@ -230,6 +232,7 @@ export interface ProductionWebPushOptions {
     | undefined
   >;
   readonly publicOrigin: string;
+  readonly messageUrgency?: (messageId: string) => Promise<MessageUrgency | undefined>;
   readonly timeZone?: string;
   readonly readPushRules?: () => Promise<readonly RuleRecord[]>;
   readonly gate?: PushGate;
@@ -846,6 +849,9 @@ export class ProductionWebPush {
   ): Promise<void> {
     const { item, subscription, attempt } = entry;
     const topic = webPushTopic(item.sourceKey);
+    const chosen = item.sourceKey.startsWith(HER_WORDS_PUSH_PREFIX)
+      ? await this.#options.messageUrgency?.(item.sourceRef)
+      : undefined;
     let result: WebPushSendResult;
     try {
       result = await this.#options.sender.send({
@@ -854,7 +860,7 @@ export class ProductionWebPush {
         auth: subscription.auth,
         payload: webPushPayload({ ...content.build(locale), tag: topic, badge }),
         ttlSeconds: Math.max(1, Math.floor((Date.parse(item.expiresAt) - Date.parse(now)) / 1_000)),
-        urgency: item.kind === "run" ? "normal" : "high",
+        urgency: chosen ?? (item.kind === "run" ? "normal" : "high"),
         topic,
       });
     } catch (error) {
