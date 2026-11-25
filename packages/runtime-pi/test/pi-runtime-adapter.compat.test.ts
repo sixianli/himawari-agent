@@ -27,6 +27,7 @@ import type {
   ModelInvocationPermit,
   ModelUsageObservation,
   RuntimeBackgroundCommandNotice,
+  RuntimeSteerNote,
   RuntimeEvent,
   RuntimeProjection,
   RuntimeProjectionPort,
@@ -5246,6 +5247,68 @@ it("[D5-NOTICE] delivers a background result that arrives as the last answer end
   expect(model.observed).toHaveLength(2);
   expect(messageText(model.observed.at(-1))).toContain("3 passed");
   expect(messageText(model.observed.at(0))).not.toContain("3 passed");
+});
+
+class SteeringRuntimeTools extends RecordingRuntimeTools {
+  listener: ((note: RuntimeSteerNote) => boolean) | undefined;
+  delivered: boolean[] = [];
+
+  subscribeSteer(_runId: string, listener: (note: RuntimeSteerNote) => boolean) {
+    this.listener = listener;
+    return () => {
+      this.listener = undefined;
+    };
+  }
+
+  say(text: string) {
+    this.delivered.push(
+      this.listener?.({ ref: "owner-follow-up:test", modelContent: text }) ?? false,
+    );
+  }
+}
+
+it("puts the owner's added words into the running answer before its next model call, without redoing the tool", async () => {
+  const model = await createFauxModelFixture("只找周六开门的", {
+    name: "restaurant_search",
+    id: "clinic-search",
+    arguments: { query: "牙科诊所" },
+  });
+  const tools = new SteeringRuntimeTools();
+  tools.execute.mockImplementation(async () => {
+    tools.say('<owner-message id="m2">\n只要周六开门的\n</owner-message>');
+    return {
+      outcome: "succeeded" as const,
+      resultRef: "payload-clinics",
+      errorCode: null,
+      externalActionId: null,
+      modelContent: "三家诊所",
+    };
+  });
+  const adapter = new PiAgentRuntimeAdapter({
+    egress: testModelEgress(),
+    projection: new RecordingProjection(),
+    tools,
+    models: model.models,
+    cwd: process.cwd(),
+    now: () => new Date().toISOString(),
+    admission: async (scope) => allowAdmission(scope),
+    logicalSlot: (_request, ordinal) => `steer:${ordinal}`,
+  });
+  const events = await collect(
+    adapter.run({
+      ...request,
+      modelRef: model.descriptor.ref,
+      executionDeadlineAt: new Date(Date.now() + 60_000).toISOString(),
+    }),
+  );
+  expect(events.at(-1)).toMatchObject({ type: "runtime.completed" });
+  expect(tools.delivered).toEqual([true]);
+  expect(tools.execute).toHaveBeenCalledTimes(1);
+  expect(model.observed).toHaveLength(2);
+  expect(messageText(model.observed.at(0))).not.toContain("只要周六开门的");
+  expect(messageText(model.observed.at(-1))).toContain("只要周六开门的");
+  tools.say("太晚了");
+  expect(tools.delivered).toEqual([true, false]);
 });
 
 it("[D7] pins Pi cache warming to streaming so a Pi upgrade cannot turn on idle warming", async () => {

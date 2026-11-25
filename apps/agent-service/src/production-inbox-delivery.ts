@@ -191,7 +191,8 @@ export class ProductionInboxDelivery implements InboxDelivery {
         events.filter(({ entry }) => entry.externalContent).map(({ entry }) => entry.sourceKind),
       ))
         await this.#options.externalContent.mark(runId, inboxEventOrigin(kind));
-      const status = await this.#await(runId, contentRef, signal);
+      const status = await this.#await(main, runId, contentRef, signal);
+      if (status === "yielded") return { status: "yield" };
       if (status !== "completed") return { status: "retry", reasonCode: `run_${status}` };
       const told = await this.#recordSilence(run);
       return {
@@ -267,28 +268,50 @@ export class ProductionInboxDelivery implements InboxDelivery {
     throw lastError;
   }
 
-  async #await(runId: RunId, contentRef: string, signal: AbortSignal): Promise<string> {
+  async #await(
+    main: ThreadId,
+    runId: RunId,
+    contentRef: string,
+    signal: AbortSignal,
+  ): Promise<string> {
     const sleep = this.#options.sleep ?? defaultSleep;
+    const cancel = () =>
+      this.#options.cancelRun
+        ? this.#options
+            .cancelRun({
+              runId,
+              command: {
+                idempotencyKey: `inbox-cancel:${runId}` as never,
+                commandFingerprint: threadCommandFingerprint({ type: "inbox.cancel", runId }),
+                payloadRef: contentRef as never,
+              },
+            })
+            .then(
+              () => true,
+              () => false,
+            )
+        : Promise.resolve(false);
     try {
       for (;;) {
         const stored = await this.#options.runs.readRun(runId);
         if (stored && TERMINAL.has(stored.run.status)) return stored.run.status;
+        if (this.#options.cancelRun && (await this.#ownerWaiting(main)) && (await cancel()))
+          return "yielded";
         await sleep(this.#options.pollMs ?? POLL_MS, signal);
       }
     } catch (error) {
-      if (signal.aborted && this.#options.cancelRun)
-        await this.#options
-          .cancelRun({
-            runId,
-            command: {
-              idempotencyKey: `inbox-cancel:${runId}` as never,
-              commandFingerprint: threadCommandFingerprint({ type: "inbox.cancel", runId }),
-              payloadRef: contentRef as never,
-            },
-          })
-          .catch(() => undefined);
+      if (signal.aborted) await cancel();
       throw error;
     }
+  }
+
+  async #ownerWaiting(main: ThreadId): Promise<boolean> {
+    const runs = await this.#options.threads.listRuns(
+      this.#options.ownerId as OwnerId,
+      this.#options.agentId as AgentId,
+      main,
+    );
+    return runs.some((run) => !TERMINAL.has(run.status));
   }
 
   async #recordSilence(run: InboxRun): Promise<boolean> {

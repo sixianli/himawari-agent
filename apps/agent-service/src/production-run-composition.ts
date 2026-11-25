@@ -4,6 +4,7 @@ import {
   ContextFormationService,
   ContextProjectionService,
   type ExecutionLiveFeed,
+  INBOX_LOOP_DEFAULTS,
   type IdGeneratorPort,
   type MemoryPort,
   type ModelEgress,
@@ -770,6 +771,15 @@ export function createProductionRunComposition(options: ProductionRunComposition
     ids,
     dispatch,
     policy: options.policy,
+    folds: repository.threadRepository(),
+    foldLimit: async () => {
+      const settings = await repository
+        .inbox()
+        .readSettings({ ownerId, agentId })
+        .catch(() => undefined);
+      const perRun = settings?.overrides["eventsPerRun"] ?? INBOX_LOOP_DEFAULTS.eventsPerRun;
+      return Math.max(0, perRun - 1);
+    },
   });
   const describeSettledRun = (result: {
     readonly checkpoint: {

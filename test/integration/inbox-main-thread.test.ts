@@ -133,6 +133,14 @@ describe("outside events in the main conversation", () => {
       protector,
       clock: { now },
       pollMs: 5,
+      cancelRun: async ({ runId }) => {
+        const handle = openQualifiedDatabase(file);
+        try {
+          handle.prepare("UPDATE runs SET status = 'cancelled' WHERE id = ?").run(runId);
+        } finally {
+          handle.close();
+        }
+      },
     });
     const tellOwner = new ProductionTellOwner({
       ownerId: OWNER_ID,
@@ -381,6 +389,53 @@ describe("outside events in the main conversation", () => {
     if (!claim) throw new Error("no claim");
     expect(await f.worker.handle(claim)).toMatchObject({ status: "done", result: "yield" });
     expect(f.query("SELECT 1 FROM runs WHERE id LIKE 'run:inbox:%'")).toEqual([]);
+  });
+
+  it("stops an outside event's run when the owner speaks and puts the event back in the inbox", async () => {
+    const f = await fixture();
+    await f.mail("gmail:4", "一封要慢慢看的邮件");
+    const claim = await f.worker.claim();
+    if (!claim) throw new Error("no claim");
+    const handled = f.worker.handle(claim);
+    const runId = await f.admitted();
+    const main = await f.mainThread.ensure();
+    const thread = await f.threads.read(OWNER_ID, AGENT_ID, main);
+    await f.write("owner-speaks", "帮我设个明早 7 点的闹钟");
+    await f.commands.admitOwnerMessage({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      threadId: main,
+      expectedThreadRevision: thread?.revision ?? 0,
+      sessionId: createSessionId("session-owner-speaks"),
+      idempotencyKey: "owner-speaks",
+      contentRef: "owner-speaks" as never,
+      sourceProofRef: "owner-proof",
+      dataClassification: "private",
+      resultRef: "owner-speaks" as never,
+    });
+    expect(await handled).toMatchObject({ status: "done", result: "yield" });
+    expect(f.query<{ status: string }>("SELECT status FROM runs WHERE id = ?", runId)).toEqual([
+      { status: "cancelled" },
+    ]);
+    expect(f.query<{ status: string }>("SELECT status FROM inbox_events")).toEqual([
+      { status: "queued" },
+    ]);
+    expect(f.query("SELECT 1 FROM decision_ledger")).toEqual([]);
+  });
+
+  it("lets an outside event's run finish when the owner has not spoken", async () => {
+    const f = await fixture();
+    await f.mail("gmail:5", "不急的邮件");
+    const claim = await f.worker.claim();
+    if (!claim) throw new Error("no claim");
+    const handled = f.worker.handle(claim);
+    const runId = await f.admitted();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(f.query<{ status: string }>("SELECT status FROM runs WHERE id = ?", runId)).toEqual([
+      { status: "accepted" },
+    ]);
+    await f.finish(runId, "不用管");
+    expect(await handled).toMatchObject({ status: "done", result: "handled" });
   });
 
   it("names outside events by their kind, so the origin list does not grow with every event", () => {
