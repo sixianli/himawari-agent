@@ -188,6 +188,7 @@ export interface ProductionRunCompositionOptions {
   readonly agentDir: string;
   readonly timeZone?: string;
   readonly memorySnapshotCharacters?: number;
+  readonly relatedMemoryCharacters?: number;
   readonly onFailure: (failure: ProductionRunDispatchLoopFailure) => void;
   readonly onRunTiming?: (diagnostic: RunTimingDiagnostic) => void;
   readonly onBackgroundFailure?: (runId: string, error: unknown) => void;
@@ -341,6 +342,9 @@ export function createProductionRunComposition(options: ProductionRunComposition
       threads: repository.threadRepository(),
       threadSummaries: repository.threadDistillationState(),
       ledger: repository.decisionLedger(),
+      ...(options.relatedMemoryCharacters
+        ? { relatedMemoryCharacters: options.relatedMemoryCharacters }
+        : {}),
     }),
     { form: "context.form" },
   );

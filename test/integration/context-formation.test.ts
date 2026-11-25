@@ -81,6 +81,49 @@ function createService(
   };
 }
 
+function createBudgetedService(relatedMemoryCharacters: number) {
+  const adapters = createReferenceAdapterSet({ scope: { ownerId: OWNER_ID, agentId: AGENT_ID } });
+  const trace = new SessionTraceRecorder({
+    trace: adapters.trace,
+    artifacts: adapters.runPayloadArtifacts,
+    protector: adapters.payloadProtector,
+    audit: adapters.audit,
+    clock: adapters.clock,
+    ids: adapters.ids,
+  });
+  return {
+    adapters,
+    service: new ContextFormationService({
+      memory: adapters.memory,
+      trace,
+      artifacts: adapters.runPayloadArtifacts,
+      payloads: adapters.payload,
+      protector: adapters.payloadProtector,
+      clock: adapters.clock,
+      ids: adapters.ids,
+      relatedMemoryCharacters,
+    }),
+  };
+}
+
+async function storeText(
+  adapters: ReturnType<typeof createReferenceAdapterSet>,
+  ref: string,
+  text: string,
+): Promise<void> {
+  await adapters.payload.put(
+    await adapters.payloadProtector.protect({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      ref,
+      contentType: "text/plain",
+      dataClassification: "private",
+      plaintext: new TextEncoder().encode(text),
+      createdAt: T0,
+    }),
+  );
+}
+
 function request(sourceType: "user_message" | "schedule" | "external_event") {
   return {
     ownerId: OWNER_ID,
@@ -451,6 +494,36 @@ describe("Task 9 Memory and context formation", () => {
       trigger: { sourceType: "user_message" },
       injectedContentRefs: formed.injectedContentRefs,
     });
+  });
+
+  it("[ADR-0286] puts related memories in by relevance until the character budget is used, then stops", async () => {
+    const formedWith = async (budget: number) => {
+      const { adapters, service } = createBudgetedService(budget);
+      await seedMemory(adapters.memory, {
+        id: "memory-beef",
+        contentRef: "payload-memory-beef",
+        sourceRef: "trace-user-preference-beef",
+        searchTerms: ["beef", "restaurant"],
+        dataClassification: "private",
+      });
+      await seedMemory(adapters.memory, {
+        id: "memory-dinner",
+        contentRef: "payload-memory-dinner",
+        sourceRef: "trace-user-dinner",
+        searchTerms: ["dinner"],
+        dataClassification: "private",
+      });
+      await storeText(adapters, "payload-memory-beef", "主人喜欢吃牛肉，常去银座那家店。");
+      await storeText(adapters, "payload-memory-dinner", "主人每周五晚上和家人一起吃饭。");
+      return service.form(request("user_message"));
+    };
+    const tight = await formedWith(20);
+    expect(tight.candidates.map(({ id }) => id)).toEqual(["memory-beef", "memory-dinner"]);
+    expect(tight.selected.map(({ id }) => id)).toEqual(["memory-beef"]);
+    const roomy = await formedWith(40);
+    expect(roomy.selected.map(({ id }) => id)).toEqual(["memory-beef", "memory-dinner"]);
+    const none = await formedWith(5);
+    expect(none.selected).toEqual([]);
   });
 
   it("writes one ledger row naming the memories cut by the selection limit", async () => {

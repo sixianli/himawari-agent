@@ -133,6 +133,7 @@ export interface ContextFormationServiceDependencies {
   readonly threadSummaries?: Pick<ThreadDistillationStatePort, "latestSummary">;
   readonly profile?: OwnerProfilePort;
   readonly ledger?: Pick<DecisionLedgerPort, "append" | "appendIfChanged">;
+  readonly relatedMemoryCharacters?: number;
 }
 
 export interface ContextFormationPort {
@@ -144,6 +145,34 @@ export class ContextFormationService implements ContextFormationPort {
 
   constructor(dependencies: ContextFormationServiceDependencies) {
     this.dependencies = dependencies;
+  }
+
+  private async withinRelatedMemoryBudget(
+    request: ContextFormationRequest,
+    candidates: readonly MemoryCandidate[],
+  ): Promise<readonly MemoryCandidate[]> {
+    const budget = this.dependencies.relatedMemoryCharacters;
+    if (budget === undefined) return candidates;
+    const kept: MemoryCandidate[] = [];
+    let used = 0;
+    for (const candidate of candidates) {
+      const payload = await this.dependencies.payloads.get(candidate.contentRef);
+      if (!payload) {
+        kept.push(candidate);
+        continue;
+      }
+      const characters = new TextDecoder().decode(
+        await this.dependencies.protector.unprotect({
+          ownerId: request.ownerId,
+          agentId: request.agentId,
+          payload,
+        }),
+      ).length;
+      if (used + characters > budget) break;
+      used += characters;
+      kept.push(candidate);
+    }
+    return kept;
   }
 
   async form(request: ContextFormationRequest): Promise<FormedContext> {
@@ -282,12 +311,12 @@ export class ContextFormationService implements ContextFormationPort {
         !profileMemoryIds.has(candidate.id) &&
         CLASSIFICATION_RANK[candidate.dataClassification] <= VISIBLE_RANK,
     );
-    const selected: readonly SelectedMemory[] = allowed
-      .slice(0, request.maxSelectedMemories)
-      .map((candidate) => ({
-        ...candidate,
-        reasonCode: "relevant_and_classification_allowed" as const,
-      }));
+    const selected: readonly SelectedMemory[] = (
+      await this.withinRelatedMemoryBudget(request, allowed.slice(0, request.maxSelectedMemories))
+    ).map((candidate) => ({
+      ...candidate,
+      reasonCode: "relevant_and_classification_allowed" as const,
+    }));
     const selectedIds = new Set(selected.map(({ id }) => id));
     const selectionTrace = await this.dependencies.trace.record({
       ...this.traceScope(request),
