@@ -10,6 +10,7 @@ public struct DemoChatState {
     public var streaming: [String: StreamingReply] = [:]
     public var connection: ChatConnection = .online
     public var executions: [String: [ExecutionRecord]] = [:]
+    public var backgroundWork: BackgroundWork?
 
     public init() {}
 }
@@ -31,6 +32,7 @@ extension ChatStore {
         store.connection = state.connection
         store.offlineShown = state.connection != .online
         store.executions = state.executions
+        store.backgroundWork = state.backgroundWork
         return store
     }
 }
@@ -356,3 +358,84 @@ public enum DemoChatFixtures {
     }
 }
 #endif
+
+public extension DemoChatFixtures {
+    static let backgroundFlightsId = "thread-sub-0000000000000000000000000000000b"
+
+    static func backgroundWork(empty: Bool = false) -> DemoChatState {
+        var state = answered()
+        guard !empty else {
+            state.backgroundWork = BackgroundWork(matters: [])
+            return state
+        }
+        let morning = todayAt(10, 0)
+        typealias Sub = BackgroundWork.Subthread
+        let flights = Sub(
+            subthreadId: backgroundFlightsId,
+            status: .open,
+            activity: .running,
+            openedAt: morning,
+            updatedAt: todayAt(14, 40),
+            progress: "三班都查到了，正在比价格和到达时间，下午给你结果。",
+            progressAt: todayAt(14, 35),
+            runCount: 2,
+            spentMicros: 70_000,
+            budgetMicros: 300_000,
+            title: "订去大阪的机票",
+            runs: [
+                .init(runId: "run:sub-1", status: "completed", startedAt: todayAt(10, 5), updatedAt: todayAt(10, 9)),
+                .init(runId: "run:sub-2", status: "running", startedAt: todayAt(14, 30), updatedAt: todayAt(14, 40)),
+            ],
+            exchanges: [
+                .init(direction: .toSubthread, kind: .brief, text: "订 12 月 3 日早上去大阪的机票，经济舱，靠窗，预算 300 美元以内。", at: todayAt(10, 0)),
+                .init(direction: .toMain, kind: .question, text: "关西机场和伊丹机场都可以吗？伊丹离酒店更近，但便宜的班次少。", at: todayAt(10, 8)),
+                .init(direction: .toSubthread, kind: .message, text: "都可以，优先伊丹。", at: todayAt(10, 20)),
+                .init(direction: .toMain, kind: .progress, text: "三班都查到了，正在比价格和到达时间。", at: todayAt(14, 35)),
+            ],
+            tasks: [
+                .init(number: 1, status: .completed, subject: "查 12 月 3 日早上的航班"),
+                .init(number: 2, status: .inProgress, subject: "比价格和到达时间", activeForm: "正在比三班的价格"),
+                .init(number: 3, status: .pending, subject: "订票并发确认"),
+            ]
+        )
+        let hotel = Sub(
+            subthreadId: "thread-sub-0000000000000000000000000000000c",
+            status: .open,
+            activity: .overBudget,
+            openedAt: morning,
+            updatedAt: todayAt(14, 20),
+            spentMicros: 310_000,
+            budgetMicros: 300_000,
+            title: "订梅田附近的酒店"
+        )
+        let invoices = Sub(
+            subthreadId: "thread-sub-0000000000000000000000000000000d",
+            status: .open,
+            activity: .waitingResult,
+            openedAt: todayAt(9, 0),
+            updatedAt: todayAt(13, 10),
+            spentMicros: 4_000,
+            budgetMicros: 200_000,
+            title: "整理 11 月发票",
+            tasks: [
+                .init(number: 1, status: .completed, subject: "找出邮件里的发票"),
+                .init(number: 2, status: .inProgress, subject: "等会计系统导出", activeForm: "在等会计系统导出"),
+            ]
+        )
+        state.backgroundWork = BackgroundWork(matters: [
+            .init(matter: "12 月 3 日大阪出差", subthreads: [flights, hotel]),
+            .init(matter: "报销", subthreads: [invoices]),
+        ])
+        let early = todayAt(10, 5)
+        state.executions["run:sub-1"] = [
+            ExecutionRecord(id: "s1a", sequence: 1, itemId: "search", kind: .tool, phase: .completed, name: "search", occurredAt: early, activity: "查了航班", activityIcon: "plane"),
+        ]
+        let late = todayAt(14, 30)
+        state.executions["run:sub-2"] = [
+            ExecutionRecord(id: "s2a", sequence: 1, itemId: "web", kind: .tool, phase: .completed, name: "web", occurredAt: late, activity: "看了三家航空公司的网页", activityIcon: "world-search"),
+            ExecutionRecord(id: "s2b", sequence: 2, itemId: "table", kind: .tool, phase: .completed, name: "table", occurredAt: late.addingTimeInterval(240), activity: "列了价格对比表", activityIcon: "table"),
+            ExecutionRecord(id: "s2c", sequence: 3, itemId: "calc", kind: .tool, phase: .started, name: "calc", occurredAt: late.addingTimeInterval(540), activity: "在算到酒店的时间", activityIcon: "calculator"),
+        ]
+        return state
+    }
+}
