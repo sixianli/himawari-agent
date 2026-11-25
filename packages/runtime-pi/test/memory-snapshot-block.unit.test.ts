@@ -251,6 +251,25 @@ describe("[ADR-0286] the memory list is sent once per conversation and later tur
     );
   });
 
+  it("marks a change note no lower than the conversation it reports on, so a gone sensitive memory keeps its class", () => {
+    const history = [sentTurn(sentSnapshot(SNAPSHOT_A))];
+    const gone = list("身份", "8 1998年出生", "偏好", "37喝咖啡不加糖");
+    const split = splitMemorySnapshot({
+      ...projection([snapshot(gone)], history),
+      contentClassification: "sensitive",
+    });
+    expect(split.changes?.content).toContain("12主人住在东京");
+    expect(split.changes?.dataClassification).toBe("sensitive");
+  });
+
+  it("REVERSE: keeps the list's own class for a change note when the conversation holds nothing higher", () => {
+    const history = [sentTurn(sentSnapshot(SNAPSHOT_A))];
+    const gone = list("身份", "8 1998年出生", "偏好", "37喝咖啡不加糖");
+    expect(
+      splitMemorySnapshot(projection([snapshot(gone)], history)).changes?.dataClassification,
+    ).toBe("private");
+  });
+
   it("REVERSE: a memory whose words look like the list marker or the left-out note does not change how the list is read", () => {
     const tricky = list(
       "身份",

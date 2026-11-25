@@ -1,4 +1,7 @@
-import type { RuntimeProjection } from "@himawari-agent/application/runtime-port";
+import {
+  highestClassification,
+  type RuntimeProjection,
+} from "@himawari-agent/application/runtime-port";
 import {
   CHAT_MEMORY_CHANGE_ADDED,
   CHAT_MEMORY_CHANGE_CHANGED,
@@ -266,7 +269,9 @@ export function splitMemorySnapshot(projection: RuntimeProjection): {
           kind: MEMORY_CHANGES_KIND,
           ref: MEMORY_CHANGES_KIND,
           content: changed,
-          dataClassification: current.dataClassification,
+          dataClassification: highestClassification(current.dataClassification, [
+            projection.contentClassification ?? current.dataClassification,
+          ]),
         }
       : undefined,
   };
