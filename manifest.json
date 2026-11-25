@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "pr": 637,
+  "batch": "main-1",
+  "files": [
+    {
+      "path": "04-chat-dark.png",
+      "bytes": 306266,
+      "sha256": "85a9516ed96d0d4b1d47ba80c072ed09d2f150452935aa668086f81df7f6d894"
+    },
+    {
+      "path": "04-chat-light.png",
+      "bytes": 337103,
+      "sha256": "61e0deee69895453e687ecbd3cb0ee4ce2f0f0551a852d4d0b84339ad5d70369"
+    },
+    {
+      "path": "16-chat-states-1-empty-dark.png",
+      "bytes": 194456,
+      "sha256": "28979f1b9404459e23d6680f942d0c10ffbb62f4324b09bdce2e2a3cd70e11bb"
+    },
+    {
+      "path": "16-chat-states-1-empty-light.png",
+      "bytes": 220030,
+      "sha256": "77b5a3ed2a0aea529fcefb012d8532b2678846d9fff6ed65d163f1dadd0d561b"
+    },
+    {
+      "path": "next-2-main-dark.png",
+      "bytes": 304594,
+      "sha256": "4eeeedb1e84c31702590c29256a0dca467ca3f579d81cfa3c3cc86c435955c69"
+    },
+    {
+      "path": "next-2-main-light.png",
+      "bytes": 335649,
+      "sha256": "fba1a5180817227c61196cf3b47dfbe027a58a24c2bdb7aae905d61b7a18056e"
+    },
+    {
+      "path": "next-3-her-approvals-dark.png",
+      "bytes": 276779,
+      "sha256": "dabb980499090142a9bfe3fb3dc36f6318dd6d78a63af1383d7f7773ab7a17fe"
+    },
+    {
+      "path": "next-3-her-approvals-light.png",
+      "bytes": 406929,
+      "sha256": "e38cb5b417bb8fc7c3812723dce4479d368e19db771d0ee5610bb9a1fa33fa4f"
+    },
+    {
+      "path": "next-3-her-dark.png",
+      "bytes": 281116,
+      "sha256": "49faf6bd37005290ea2582fa031909aad08d9cb9b58b15c6d959e07531a0f1b5"
+    },
+    {
+      "path": "next-3-her-light.png",
+      "bytes": 409191,
+      "sha256": "abfe6367fa435da8d9b16b22794c11b1b4bf09796bac3ab590933bb9a94c04a4"
+    }
+  ]
+}
