@@ -54,6 +54,6 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ## 关联资料
 
 - [SOURCE: docs/adr/0025-pi-tools-and-managed-execution-lifecycles.md]
-- [SOURCE: docs/adr/0018-sqlite-product-state-authority.md]
+- [SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0018-sqlite-product-state-authority.md]
 - [2026-09-16-workspace-authorization-lifecycle-design.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-16-workspace-authorization-lifecycle-design.md)
 - [2026-09-16-workspace-authorization-lifecycle-plan.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md)

@@ -44,8 +44,8 @@ Agent Service ── 网关（HTTP 接口、事件流）
 
 几条贯穿全局的决定：
 
-- **产品状态以 SQLite 为准**，Pi 的会话只是运行时的投影（[ADR 0015](docs/adr/0015-product-state-over-pi-runtime-projection.md)、[ADR 0018](docs/adr/0018-sqlite-product-state-authority.md)）。
-- **授权在模型之外判断**，模型只能提出要做什么（[ADR 0004](docs/adr/0004-deterministic-authorization.md)、[ADR 0257](docs/adr/0257-consequential-tool-calls-go-through-one-authorization-exit.md)）。
+- **产品状态以 SQLite 为准**，Pi 的会话只是运行时的投影（[ADR 0296](docs/adr/0296-foundational-architecture-principles.md)、[ADR 0296](docs/adr/0296-foundational-architecture-principles.md)）。
+- **授权在模型之外判断**，模型只能提出要做什么（[ADR 0296](docs/adr/0296-foundational-architecture-principles.md)、[ADR 0257](docs/adr/0257-consequential-tool-calls-go-through-one-authorization-exit.md)）。
 - **会执行代码的工具不在主进程里跑**，由 Worker 起沙箱执行（[ADR 0031](docs/adr/0031-isolated-tool-execution.md)、[ADR 0033](docs/adr/0033-process-sandbox-default-and-optional-containers.md)）。
 - **发给模型的内容只追加**，固定内容在前、每轮会变的在最后，让 KV 缓存命中（[ADR 0149](docs/adr/0149-append-only-model-requests.md)、[KV 缓存规范](docs/kv-cache-guide.md)）。
 - **需要理解意思的判断交给模型**，程序只做格式、出处、额度这类固定校验，不用关键词表猜意思（[ADR 0249](docs/adr/0249-the-model-judges-meaning-where-word-lists-guessed-it.md)）。

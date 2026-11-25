@@ -25,7 +25,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 ## 背景
 
-[ADR 0005](0005-replaceable-memory-boundary.md) 决定通过产品自有的记忆端口使用外部记忆服务，并在“比较过的方案”里以“偏离 Agent 主体目标，重复成熟开源方案的工作”为由否决了自建完整记忆引擎。此后接入的是 Mem0 开源版 3.3.1。
+[ADR 0005](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0005-replaceable-memory-boundary.md) 决定通过产品自有的记忆端口使用外部记忆服务，并在“比较过的方案”里以“偏离 Agent 主体目标，重复成熟开源方案的工作”为由否决了自建完整记忆引擎。此后接入的是 Mem0 开源版 3.3.1。
 
 2026-10-25 对 main（`d7b90f79`）的代码核对和调研（[方案文档](https://claude.ai/artifact/JULHuYEDYGdKHvbCNcp1T2)）发现：
 
@@ -91,7 +91,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 ## 关联文档
 
-- [ADR 0005：将长期记忆作为可替换外部能力](0005-replaceable-memory-boundary.md)
+- [ADR 0005：将长期记忆作为可替换外部能力](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0005-replaceable-memory-boundary.md)
 - [自研记忆引擎设计规格](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-10-25-self-built-memory-engine-design.md)
 - [方案文档（Claude Doc，已批准）](https://claude.ai/artifact/JULHuYEDYGdKHvbCNcp1T2)
 - [方案存档（全文和批注记录）](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/specs/2026-10-25-self-built-memory-engine-proposal.md)

@@ -62,4 +62,4 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ## 关联文档
 
 - [ADR 0053：工作区内自动批准，参照 Codex Auto](0053-workspace-auto-approval-like-codex.md)
-- [ADR 0004：确定性授权](0004-deterministic-authorization.md)
+- [ADR 0004：确定性授权](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0004-deterministic-authorization.md)

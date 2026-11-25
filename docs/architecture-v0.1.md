@@ -189,7 +189,7 @@ testing → application + domain + product contracts
 
 根构建可以分别验证 Node 图、两类 contracts、两个服务、browser bundle 和 admin CLI。`build:browser` 在 Vite production build 后执行 `scripts/check-control-center-build.mjs`，机械验证外部 CSS/JS、en/ja locale code splitting、无 source map、无 inline script/style、无动态代码求值，以及 entry/总 gzip 预算；Fastify `GET /*` 只对非 `/api`、非 `/assets` 且 `Accept` 包含 `text/html` 的路径返回同源 SPA shell，未知 API 与非 HTML 请求仍为 404。`scripts/generate-artifact-manifest.mjs` 会在构建后生成 machine-readable manifest，固定根 manifest/lock SHA-256、每个 workspace 的内容 checksum，以及当次 browser artifacts 的路径、大小和 SHA-256；生成物位于忽略提交的 `dist/`，脚本和 checksum contract 才是当前受版本控制的稳定入口。
 
-`packages/runtime-pi` 直接固定 `@earendil-works/pi-coding-agent` 与 `@earendil-works/pi-ai` `1.5.0`；提交的 manifest 和 lockfile 不引用相邻的 `../pi-mono`。它只能从 `@himawari-agent/application/runtime-port` 导入 Agent Runtime request/event 类型，不能通过 application 根入口获得 Memory、Permission、Capability Registry 或持久化写端口。Pi 的发布声明图（0.84.2 时发现）在 TypeScript `NodeNext` 下包含上游 JSON import-attribute 与 optional provider 声明问题，因此本仓库启用 `skipLibCheck` 仅跳过第三方声明文件检查；Himawari 自有源码仍由 strict TypeScript 完整检查，并以 published package compatibility test 补足运行时证据。该隔离边界落实了产品自有 Pi 适配层决策：[SOURCE: docs/adr/0001-pi-runtime-adapter.md]
+`packages/runtime-pi` 直接固定 `@earendil-works/pi-coding-agent` 与 `@earendil-works/pi-ai` `1.5.0`；提交的 manifest 和 lockfile 不引用相邻的 `../pi-mono`。它只能从 `@himawari-agent/application/runtime-port` 导入 Agent Runtime request/event 类型，不能通过 application 根入口获得 Memory、Permission、Capability Registry 或持久化写端口。Pi 的发布声明图（0.84.2 时发现）在 TypeScript `NodeNext` 下包含上游 JSON import-attribute 与 optional provider 声明问题，因此本仓库启用 `skipLibCheck` 仅跳过第三方声明文件检查；Himawari 自有源码仍由 strict TypeScript 完整检查，并以 published package compatibility test 补足运行时证据。该隔离边界落实了产品自有 Pi 适配层决策：[SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0001-pi-runtime-adapter.md]
 
 ## Data Model
 
@@ -299,7 +299,7 @@ HealthState         GatewayV2ControlPlane/ReadModel          ExecutionTransport
 
 迁移 ledger 持久化连续 `sequence`、`name`、`phase`、SQL SHA-256 与应用时间。loader 验证定义连续性和 digest；启动会拒绝历史内容不匹配、ledger 空洞、未知已应用 migration、未来 schema 及过旧 writer。`expand → backfill → verify → contract` 是受检查的单向 change-set 阶段，系统不提供自动数据库 downgrade。
 
-真实文件连接固定 `foreign_keys=ON`、本地 WAL、`synchronous=FULL`（只有过程记录的写入在提交时临时切到 `NORMAL`，见 [ADR 0088](adr/0088-process-records-skip-disk-sync.md)）、5000 ms busy timeout 和 1000 页自动 checkpoint，并要求 SQLite 至少为 `3.51.3` 且 `quick_check` 成功。已有 schema 执行下一 migration 前必须提供由 SQLite backup API 创建、完整性检查通过、绑定当前主机、源路径、schema sequence 和文件 digest 的同机 snapshot；fresh create、连续升级、重复运行、并发 contention、损坏 ledger、未来 schema 与旧 writer 已由真实 SQLite 文件契约测试覆盖。`SqliteProductStateRepository.open()` 在取得 state-root lock 后调用该引擎，再把 current schema 交给专用 execution context。[SOURCE: docs/adr/0018-sqlite-product-state-authority.md]
+真实文件连接固定 `foreign_keys=ON`、本地 WAL、`synchronous=FULL`（只有过程记录的写入在提交时临时切到 `NORMAL`，见 [ADR 0088](adr/0088-process-records-skip-disk-sync.md)）、5000 ms busy timeout 和 1000 页自动 checkpoint，并要求 SQLite 至少为 `3.51.3` 且 `quick_check` 成功。已有 schema 执行下一 migration 前必须提供由 SQLite backup API 创建、完整性检查通过、绑定当前主机、源路径、schema sequence 和文件 digest 的同机 snapshot；fresh create、连续升级、重复运行、并发 contention、损坏 ledger、未来 schema 与旧 writer 已由真实 SQLite 文件契约测试覆盖。`SqliteProductStateRepository.open()` 在取得 state-root lock 后调用该引擎，再把 current schema 交给专用 execution context。[SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0018-sqlite-product-state-authority.md]
 
 ### Encrypted same-host recovery points
 
@@ -313,7 +313,7 @@ create 在最终 rename 前自动解密到权限受限 staging，并核对 manif
 
 每个 Product State mutation 在一个 `BEGIN IMMEDIATE` transaction 内依次验证幂等 command、当前 active deployment、未释放且未过期 lease、authority epoch/fencing token、expected revision、command fingerprint 和 Event identity，然后共同写入 `product_state_records`、`command_results` 与 pending `reliable_events`。相同 command 并发收敛为一次 commit 和一次 replay；相同 idempotency key 的不同 fingerprint、inactive/retired deployment、stale epoch/token/lease 和旧进程消息均 fail closed。`AuthorityLeasePort` 与 `DeploymentAuthorityStatePort` 共享同一 execution context，持久化单 live lease、续期/过期、单调 fencing token 和不可复活的 retired lifecycle。
 
-运行状态报告 writer queue 深度、最后 transaction duration、busy timeout、WAL bytes 与文件系统 free bytes；低于配置水位时进入 write restriction。checkpoint 只允许受控 `PASSIVE` 或 `TRUNCATE`。真实文件测试覆盖主线程 timer 在同步 driver stall 期间继续运行、并发重复命令、live state-root lock、20 ms `SQLITE_BUSY`、长 reader 下 bounded checkpoint、配置磁盘水位、由 `max_page_count` 触发的真实 `SQLITE_FULL`，以及子进程在 state/result/event 写入后被杀死的逐点 rollback。COMMIT 后回包前被杀死会在重启后返回原提交，不重复副作用；每次重启都通过 WAL、`quick_check` 与 foreign-key recovery。[SOURCE: docs/adr/0018-sqlite-product-state-authority.md]
+运行状态报告 writer queue 深度、最后 transaction duration、busy timeout、WAL bytes 与文件系统 free bytes；低于配置水位时进入 write restriction。checkpoint 只允许受控 `PASSIVE` 或 `TRUNCATE`。真实文件测试覆盖主线程 timer 在同步 driver stall 期间继续运行、并发重复命令、live state-root lock、20 ms `SQLITE_BUSY`、长 reader 下 bounded checkpoint、配置磁盘水位、由 `max_page_count` 触发的真实 `SQLITE_FULL`，以及子进程在 state/result/event 写入后被杀死的逐点 rollback。COMMIT 后回包前被杀死会在重启后返回原提交，不重复副作用；每次重启都通过 WAL、`quick_check` 与 foreign-key recovery。[SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0018-sqlite-product-state-authority.md]
 
 ### SQLite durable repositories, Outbox and Read Model
 
@@ -349,11 +349,11 @@ SQLite 运行状态公开 `normal`、`warning`、`write_restricted` 三档，并
 
 `PermissionService` 接受模型或其他调用方提出的产品 `ActionIntent`，但只由版本化确定性策略和持久 Grant 产生 `ALLOW`。显式 `DENY` 规则优先；未命中规则或 Grant 的行动形成 `ASK`。Authorization Store 不可读、Grant 消耗冲突或其他组件故障一律 fail closed，不能由模型输出修正。
 
-用户 2026-10-13 决定按 [ADR 0053](adr/0053-workspace-auto-approval-like-codex.md)（参照 Codex `Auto`）让授权工作目录内的编码操作默认不逐次征求人工批准。规则仍由确定性组件完成（[ADR 0004](adr/0004-deterministic-authorization.md)），并复用既有 Approval/Grant 通道：`read`、`ls`、`find`、`grep`、`write`、`edit` 和不联网的沙箱 `bash` 命令，在目录授权于判断时有效、覆盖该操作、分级为 private、接收方只有本轮模型身份、无凭据变化、零费用，且（`bash`）签名沙箱绑定的该操作 `network` 为 `disabled` 且允许域名列表为空时，由宿主策略派生一条精确绑定本次 intent 的一次性 Grant，最终 `ALLOW` 仍由 `ActionPolicyService` 因 Grant 覆盖给出；条件不满足即回到原有 `ASK`。越界写入、联网命令、GitHub 推送、发送消息、读取秘密等仍由人决定。配置项 `runPolicy.coding.approval` 取值 `workspace_auto`（默认）或 `ask`；绑定变化推进策略状态 revision，使更早的策略授权失效。详见[工作区授权 Spec 的默认允许](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-16-workspace-authorization-lifecycle-design.md#workspace-auto)。
+用户 2026-10-13 决定按 [ADR 0053](adr/0053-workspace-auto-approval-like-codex.md)（参照 Codex `Auto`）让授权工作目录内的编码操作默认不逐次征求人工批准。规则仍由确定性组件完成（[ADR 0296](adr/0296-foundational-architecture-principles.md)），并复用既有 Approval/Grant 通道：`read`、`ls`、`find`、`grep`、`write`、`edit` 和不联网的沙箱 `bash` 命令，在目录授权于判断时有效、覆盖该操作、分级为 private、接收方只有本轮模型身份、无凭据变化、零费用，且（`bash`）签名沙箱绑定的该操作 `network` 为 `disabled` 且允许域名列表为空时，由宿主策略派生一条精确绑定本次 intent 的一次性 Grant，最终 `ALLOW` 仍由 `ActionPolicyService` 因 Grant 覆盖给出；条件不满足即回到原有 `ASK`。越界写入、联网命令、GitHub 推送、发送消息、读取秘密等仍由人决定。配置项 `runPolicy.coding.approval` 取值 `workspace_auto`（默认）或 `ask`；绑定变化推进策略状态 revision，使更早的策略授权失效。详见[工作区授权 Spec 的默认允许](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-16-workspace-authorization-lifecycle-design.md#workspace-auto)。
 
 Foundation `ActionIntent`、`PermissionService` 与 `CapabilityRegistryService` 保留为 `execution.v1` 兼容层。v0.2 的 `authorization.v2` 意图固定 11 类 ActionKind 和四级风险，完整保存 target/resource、capability version、classification/disclosure、side effect、recipients、cost/frequency、credential/access、reversibility、idempotency、模型建议、确定性 fact 与最终风险；未知字段、缺失语义和模型降低风险均不可执行。Approval Request 保存该不可变语义快照及稳定 hash；响应 hash 不同则拒绝。无 UI 时只把请求标记为 `queued_no_ui`，进程重建后从 Store 恢复。过期只会进入 `expired`，相同 Intent 的超时或重试不能变成允许；之后的尝试必须形成具有新稳定 identity 的 `ActionIntent` 与 Approval Request。CRITICAL 批准还必须保存 recent-auth reference。
 
-Grant 与 Capability 声明分离。一次性 Grant 精确绑定原 Intent 并只有一次使用预算；长期 Grant 只允许范围有界、无披露、无副作用、非敏感的 READ，并约束 capability/version、operations、resource identities/prefixes、最大数据等级、副作用、收件人、每次/累计费用、频率、次数、期限和撤销状态。SQLite 以稳定 usage identity 和 revision CAS 在一个 transaction 内写入 Grant 次数/费用、`authorization_usage`、Trace、Audit 和待发布 Outbox；并发预算竞争只有一个调用成功，相同重试只消费一次。Grant Trace 写入完整 `trace.v1` record，继承 Run correlation、连接已有父事件并以冻结 ActionIntent identity 作为 causation，权威 Trace API 可直接读回。该边界落实确定性授权决策：[SOURCE: docs/adr/0004-deterministic-authorization.md]
+Grant 与 Capability 声明分离。一次性 Grant 精确绑定原 Intent 并只有一次使用预算；长期 Grant 只允许范围有界、无披露、无副作用、非敏感的 READ，并约束 capability/version、operations、resource identities/prefixes、最大数据等级、副作用、收件人、每次/累计费用、频率、次数、期限和撤销状态。SQLite 以稳定 usage identity 和 revision CAS 在一个 transaction 内写入 Grant 次数/费用、`authorization_usage`、Trace、Audit 和待发布 Outbox；并发预算竞争只有一个调用成功，相同重试只消费一次。Grant Trace 写入完整 `trace.v1` record，继承 Run correlation、连接已有父事件并以冻结 ActionIntent identity 作为 causation，权威 Trace API 可直接读回。该边界落实确定性授权决策：[SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0004-deterministic-authorization.md]
 
 ### Capability Registry and execution boundary
 
@@ -379,7 +379,7 @@ Agent 侧通过 Owner/Agent 绑定的 `CapabilityInvocationReceiptPort` 消费�
 
 平台资格与实现能力分开：Mac 命令沙箱按冻结的 `sandboxTier` 分成两层。`native-low-risk` 只接受无网络、无 secret、无脚本、无写入的只读 Git 关闭集合，并必须由签名的 App Sandbox/XPC helper 执行；这里的 Seatbelt 指 App Sandbox 的正式产品边界，不允许用 `/usr/bin/sandbox-exec` 冒充生产实现。`isolated-high-risk` 覆盖 `node`、`npm`、脚本、secret、写入及所有未知命令，使用 Apple `container 1.2.0` candidate provider，要求 pinned image、`--network none`、`--no-dns`、`--home-mount none`、只读 root、单一 workspace bind、guest `prlimit` 和实际 loopback-only/无 raw-IP 默认路由/宿主不可见/root 不可写 probe。`MacCommandSandboxRouter` 只按冻结 tier 路由，任何后端失败都 fail closed，绝不向较弱层降级。当前签名 helper 尚未交付，Apple container 安装签名也未通过，因此两层都不能标记为 production suitable。
 
-Hermes candidate 继续要求 non-setuid `bubblewrap 0.11.2` 与 `prlimit >=2.38`。2026-09-04 经 Owner 授权，仅在机械盘专项目录中校验源码并构建了 `bubblewrap 0.11.2` 与 util-linux `2.42.3` 的 `prlimit`，没有替换系统软件或改动已有服务。临时真实进程探针确认了只读根、隔离网络和宿主敏感目录不可见；原生产参数暴露的用户命名空间与外层进程数限制问题已据此修正。后端现在显式创建用户命名空间，在隔离内通过受摘要和路径校验的 `prlimit` 施加进程数限制，并拒绝覆盖该辅助程序或已校验执行文件的挂载。2026-09-05 使用独立完整临时运行根的 shell/C 探针通过了不加进程数限制的对照、隔离内进程数拒绝、进程组清理和父进程退出清理四项验证。同日用摘要与当前工作区一致的 `isolation.ts` 在 Hermes 实机运行 Node 后端探针：正常 launch 退出 0；篡改的 `prlimit` 摘要和把 helper 放入可写 workspace 的绑定均被拒绝；取消和超时用例先确认 payload 已启动并持有 FIFO，再确认终止后 FIFO 到达 EOF，均以 `SIGTERM` 结束且无输出泄漏。运行根和工作目录始终限于 Owner 授权的机械盘专项目录。该轮使用已有 Node `26.1.0`，证据级别是 `node26-diagnostic-only`；它不是锁定 Node 22 安装产物、真实 capability、Worker 主程序或 Mac 同版本隔离的完整验收。当前没有安装或启用真实 capability，也没有把测试 direct-process fixture 当作生产隔离。`DeterministicRestaurantCapabilityPort` 与 `ScriptedExternalActionReconciliationPort` 仍只验证搜索、预订和对账产品语义；`ProductionExecutionWorker` 已定义 `execution.v2` 严格消息和精确 adapter/version/operation 注册边界，但实际服务入口仍缺少真实能力运行时注册。该边界落实受治理能力决策：[SOURCE: docs/adr/0008-governed-capability-registry.md] [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0022-mac-tiered-command-sandbox.md]
+Hermes candidate 继续要求 non-setuid `bubblewrap 0.11.2` 与 `prlimit >=2.38`。2026-09-04 经 Owner 授权，仅在机械盘专项目录中校验源码并构建了 `bubblewrap 0.11.2` 与 util-linux `2.42.3` 的 `prlimit`，没有替换系统软件或改动已有服务。临时真实进程探针确认了只读根、隔离网络和宿主敏感目录不可见；原生产参数暴露的用户命名空间与外层进程数限制问题已据此修正。后端现在显式创建用户命名空间，在隔离内通过受摘要和路径校验的 `prlimit` 施加进程数限制，并拒绝覆盖该辅助程序或已校验执行文件的挂载。2026-09-05 使用独立完整临时运行根的 shell/C 探针通过了不加进程数限制的对照、隔离内进程数拒绝、进程组清理和父进程退出清理四项验证。同日用摘要与当前工作区一致的 `isolation.ts` 在 Hermes 实机运行 Node 后端探针：正常 launch 退出 0；篡改的 `prlimit` 摘要和把 helper 放入可写 workspace 的绑定均被拒绝；取消和超时用例先确认 payload 已启动并持有 FIFO，再确认终止后 FIFO 到达 EOF，均以 `SIGTERM` 结束且无输出泄漏。运行根和工作目录始终限于 Owner 授权的机械盘专项目录。该轮使用已有 Node `26.1.0`，证据级别是 `node26-diagnostic-only`；它不是锁定 Node 22 安装产物、真实 capability、Worker 主程序或 Mac 同版本隔离的完整验收。当前没有安装或启用真实 capability，也没有把测试 direct-process fixture 当作生产隔离。`DeterministicRestaurantCapabilityPort` 与 `ScriptedExternalActionReconciliationPort` 仍只验证搜索、预订和对账产品语义；`ProductionExecutionWorker` 已定义 `execution.v2` 严格消息和精确 adapter/version/operation 注册边界，但实际服务入口仍缺少真实能力运行时注册。该边界落实受治理能力决策：[SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0008-governed-capability-registry.md] [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0022-mac-tiered-command-sandbox.md]
 
 S6 主机文件与代码工作区使用产品自有 `HostDirectoryGrant`、文件 identity、prepare/execute/verify、受控 Trash、永久删除计划、WorkspaceSnapshot、change ownership、CommandProfile 和 CommitPreview；Pi coding tool 复用 pinned `1.5.0` 的 ToolDefinition 与结果形状。Gateway v2、Execution Worker 和 Control Center 已接通这些本地服务。工作区首次已有的 Owner 改动保持原归属；路径写权限本身不构成任务归属证明。纯任务路径必须由干净基线及受控写入的前后摘要共同证明，混合 Owner 改动无法安全分离时拒绝整文件暂存。`clean` 由冻结 HEAD、index blob 和实际文件字节/模式共同验证。
 
@@ -415,7 +415,7 @@ Memory 端口使用产品自己的 proposal、record、candidate 和 correction 
 
 确定性资格矩阵覆盖四类 trigger、重复请求、模型响应前失败、protected content 写入失败、产品事务前中断、产品事务后回包丢失、claim lease 过期、进程重启和 pre-compaction 恢复。固定夹具得到 summary faithfulness `1.0`、source coverage `1.0`、跨 Thread retrieval relevance `1.0` 和 generation duplication `0`；这些指标证明持久语义与测量 harness，不代表真实模型质量。
 
-user message、schedule 和 external event 没有各自的上下文实现，三者只改变统一请求中的 `sourceType`。Pi 的公开产品依赖面只包含 Agent Runtime Port，因此不能直接调用 Memory 的 proposal、commit、correct 或 delete；长期记忆写入仍必须由后续 Run Coordinator 的产品策略触发。该边界落实可替换 Memory 决策：[SOURCE: docs/adr/0005-replaceable-memory-boundary.md]
+user message、schedule 和 external event 没有各自的上下文实现，三者只改变统一请求中的 `sourceType`。Pi 的公开产品依赖面只包含 Agent Runtime Port，因此不能直接调用 Memory 的 proposal、commit、correct 或 delete；长期记忆写入仍必须由后续 Run Coordinator 的产品策略触发。该边界落实可替换 Memory 决策：[SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0005-replaceable-memory-boundary.md]
 
 ### 要主人点头的事：消息下的选项（2026-11-25）
 
@@ -442,7 +442,7 @@ primary、specialist、local 只选择对应 approved routing class；retryable 
 
 Pi 1.5.0继续负责请求、SSE和工具参数解析。产品共用`gateway-observation.ts`读取克隆响应的计费元数据：模型身份、网关generationId、routing.finalProvider以及相同的usage.cost和gateway.cost。有效账单转换为整数微美元，由原模型调用事务结算；零费用有效，缺失、非法或矛盾费用保留unknown。Agent Loop、受保护ModelPort和标题都使用这项规则。观察器不替代Pi的正文或工具协议。
 
-`resolveConfiguredModelDescriptorSet()`仅把显式Vercel primary转换成Pi绑定；可选TypeSafe specialist仍使用自己的协议。[createAiGatewayMem0ProjectionAdapter()](https://github.com/sixianli/himawari-agent/blob/ba57c8882a7fa1f28e0df54925e0b4c66e26cd4e/apps/agent-service/src/production-memory-composition.ts)把独立embedding descriptor交给Mem0已有SDK，不注册为Pi文本模型。生产main为Run、标题和记忆调用提供持久准入、冻结身份与逻辑槽；重启按原事务恢复，不能重写旧模型身份或重复发送。路由和费用契约见[迁移设计](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/execution/specs/2026-10-06-vercel-gateway-migration-design.md)。[SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/execution/specs/2026-10-06-vercel-gateway-migration-design.md] [SOURCE: docs/adr/0007-policy-controlled-model-routing.md]
+`resolveConfiguredModelDescriptorSet()`仅把显式Vercel primary转换成Pi绑定；可选TypeSafe specialist仍使用自己的协议。[createAiGatewayMem0ProjectionAdapter()](https://github.com/sixianli/himawari-agent/blob/ba57c8882a7fa1f28e0df54925e0b4c66e26cd4e/apps/agent-service/src/production-memory-composition.ts)把独立embedding descriptor交给Mem0已有SDK，不注册为Pi文本模型。生产main为Run、标题和记忆调用提供持久准入、冻结身份与逻辑槽；重启按原事务恢复，不能重写旧模型身份或重复发送。路由和费用契约见[迁移设计](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/execution/specs/2026-10-06-vercel-gateway-migration-design.md)。[SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/execution/specs/2026-10-06-vercel-gateway-migration-design.md] [SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0007-policy-controlled-model-routing.md]
 
 ### Pi Agent Runtime projection
 
@@ -470,7 +470,7 @@ Pi 适配器复用 `SessionManager` 消息与 `appendCustomMessageEntry`，将�
 
 最终回答由 Pi 适配器在 settled 后从最后一个已结束的 assistant 消息中识别，只接受 `stop`、无待执行工具调用且非空的文本；截断、工具调用终态、错误或空 Thread 回答不能伪装成成功。文本经独立的 `captureFinalAnswer` 正文边界保存为受保护引用，再随 `runtime.completed.output` 交给产品协调器；应用层和 SQLite 不解析 Pi 消息 JSON。Pi 内部工具回合的 Turn ID 只用于运行观察，不能替代消息接纳时的产品 Turn ID。没有 Thread 的工作可以显式使用 `no-answer`，也可返回有效正文；Thread 必须有最终回答。
 
-Pi compaction summary 只形成 `RuntimeProjectionPort.proposeCompaction()` 请求；它不能直接写 Thread、Memory 或产品消息。产品接受后把同一受保护 Payload 作为 `pre_compaction` Thread checkpoint 的 prepared summary，派生流程不得再次摘要。压缩摘要不交给记忆引擎，记忆只来自逐轮抽取和每日对话摘要（[ADR 0129](adr/0129-compaction-summary-not-fed-to-memory-engine.md)）。Runtime 工具端口以 `RunId + toolCallId` 作为外部动作幂等边界，使 Session 重建不会重新提交已完成动作。该边界落实产品状态高于 Pi 投影的决策：[SOURCE: docs/adr/0001-pi-runtime-adapter.md] [SOURCE: docs/adr/0015-product-state-over-pi-runtime-projection.md]
+Pi compaction summary 只形成 `RuntimeProjectionPort.proposeCompaction()` 请求；它不能直接写 Thread、Memory 或产品消息。产品接受后把同一受保护 Payload 作为 `pre_compaction` Thread checkpoint 的 prepared summary，派生流程不得再次摘要。压缩摘要不交给记忆引擎，记忆只来自逐轮抽取和每日对话摘要（[ADR 0129](adr/0129-compaction-summary-not-fed-to-memory-engine.md)）。Runtime 工具端口以 `RunId + toolCallId` 作为外部动作幂等边界，使 Session 重建不会重新提交已完成动作。该边界落实产品状态高于 Pi 投影的决策：[SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0001-pi-runtime-adapter.md] [SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0015-product-state-over-pi-runtime-projection.md]
 
 `ProductionRuntimeTools` 把当前 Run 的已授权 Handle 投影为 Pi custom tool，参数只能选择 Handle 已列出的 `inputRef`，不能扩大输入、Context 或 Secret 范围。它先原子保存受保护的调用意图，再复用 `WorkerDelegationService` 消费持久权限和 `ProductionWorkerForwardTransport` 登记父请求；并发竞争失败者及恢复执行器均不重发。只有作用域匹配的 Worker 终态、持久输出观察和当前有效的 invocation receipt 同时成立，才向模型返回正文；恢复读取成功结果时也重新检查撤权。传输挂起、输出未确认和超时保留未知结果，取消记为失败。此适配器已通过独立单元测试及 SQLite 调用消费与结果重读测试，但尚未接入安装后的 `service-main`；它也不负责为任意模型参数新建 Payload 或签发 Handle。
 
@@ -556,7 +556,7 @@ Delivery 有独立于 Run 的 revision 和 `pending → delivering → delivered
 
 `AgentGatewayService` 只接收已认证的 `GatewayAuthenticationContext` 和严格解析后的产品消息。in-process transport 负责把 adapter-specific credential 转成 subject、Owner、device 与 authentication reference；应用服务随后核对 Owner/actor scope，并通过 `GatewayAccessPolicyPort` 执行产品 Owner/Device 授权。认证失败或授权失败不会调用 Control Plane。
 
-所有 Gateway command 只通过 `GatewayControlPlanePort.execute()` 改变状态；Gateway 本身没有 State Store 写依赖。Thread/Run snapshot、Trace query 和事件订阅只通过 `GatewayReadModelPort`。订阅保留客户端 `afterCursor`，并拒绝越出 Owner/Agent/Session/Thread/Run scope 的事件、重复 cursor 和同一 Run 内非递增 sequence。当前 `InMemoryGatewayControlPlane` 与 `InMemoryGatewayReadModel` 是本地参考适配器，不是生产 Control Plane 或持久 read model。该边界落实无头 Gateway 决策：[SOURCE: docs/adr/0002-headless-agent-gateway.md]
+所有 Gateway command 只通过 `GatewayControlPlanePort.execute()` 改变状态；Gateway 本身没有 State Store 写依赖。Thread/Run snapshot、Trace query 和事件订阅只通过 `GatewayReadModelPort`。订阅保留客户端 `afterCursor`，并拒绝越出 Owner/Agent/Session/Thread/Run scope 的事件、重复 cursor 和同一 Run 内非递增 sequence。当前 `InMemoryGatewayControlPlane` 与 `InMemoryGatewayReadModel` 是本地参考适配器，不是生产 Control Plane 或持久 read model。该边界落实无头 Gateway 决策：[SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0002-headless-agent-gateway.md]
 
 `AgentGatewayV2Service` 对 `gateway.v2` 使用相同的认证、scope 与确定性授权顺序，并校验 deployment、authority epoch 与 fencing token。`AgentThreadGatewayService` 对 `gateway.thread.v3` 再验证认证 Owner/actor、设备授权、event scope、cursor 唯一性和单 Thread revision 不后退；`ProductThreadGatewayAdapter` 把严格消息组合到既有 Thread command/query/Fork/deletion 服务。createHttpGatewayServer() 在 Fastify 中提供同源静态资产、v1/v2/Thread v3 command/query 与 durable SSE；请求先经过严格 parser、Host/Origin/Fetch Metadata、session-bound CSRF、精确媒体类型、bounded body 和 header/message 幂等键一致性，再进入应用 Gateway。响应配置 restrictive CSP、frame deny、MIME 与 no-store。SSE 传递持久 cursor/event ID/scope、heartbeat 和 backpressure；重复 cursor、同 Run 非递增 sequence 或跨 scope 事件使 stream fail closed，v1 retention miss 只返回有界 snapshot refresh，Thread cursor 不可用时发出 `thread.snapshot_required`。浏览器正文读取只解析已认证 Owner/Agent scope 的 `text/plain` protected Payload；搜索 query 先作为 private Payload 接纳，再使用共享 tokenizer 生成 Agent/projection-scoped HMAC token refs，浏览器不接触索引明文。
 
@@ -579,7 +579,7 @@ Hermes 单机的当前安装资格与真实网页登录／模型对话证据见 
 
 控制中心的信息架构 inventory 现在固定 11 个页面的主责 Spec、稳定对象、Gateway query/mutation、revision、授权/re-auth 以及 empty/loading/error/degraded/offline 状态。Thread、Approval、Capabilities/Adapters 与 Authorizations/Grants 标记为 `frozen/allowed`；Task、Inbox、Memory、Trace、Session/Device 与 Health 的既有 `gateway.v2` 骨架仍属于 `baseline_only`，Settings 在领域 Gateway contract 冻结前保持 `blocked`。单元检查会拒绝未知 message type、缺少状态或把未冻结页面标成可接入的变更。
 
-`createLocalAgentServiceComposition()` 是 `apps/agent-service/test/fixtures` 中的确定性测试组装，组合 Gateway、Run state/outbox、Trace、Context Formation、Model Router、Permission、Capability Registry、Attention 和 Run Coordinator。生产包不导出该 fixture，`@himawari-agent/testing` 只属于开发依赖；安装后的公共入口不能间接要求加载测试包。确定性 test profile 继续由 `createLocalExecutionWorkerProcess()` 单独启动并只接受 ready 的 `execution.v1` client；production profile 使用 `AgentServiceExecutionClient` 完成 instance/boot-token/schema handshake 后，通过 `execution.v2` UDS 请求、结果 cursor 和 readiness 工作，Worker unavailable 时明确失败且不回落到 Agent Service 进程内执行。启动诊断只输出 component、adapter identity、schema version 与 readiness。关闭先进入 draining、拒绝新请求，再等待登记的 Run settlement。Secret Port 是显式注入项，诊断和 Trace 不读取原值。该边界落实可组合服务和本地优先部署决策：[SOURCE: docs/adr/0011-composable-service-boundaries.md] [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0012-portable-local-first-deployment.md]
+`createLocalAgentServiceComposition()` 是 `apps/agent-service/test/fixtures` 中的确定性测试组装，组合 Gateway、Run state/outbox、Trace、Context Formation、Model Router、Permission、Capability Registry、Attention 和 Run Coordinator。生产包不导出该 fixture，`@himawari-agent/testing` 只属于开发依赖；安装后的公共入口不能间接要求加载测试包。确定性 test profile 继续由 `createLocalExecutionWorkerProcess()` 单独启动并只接受 ready 的 `execution.v1` client；production profile 使用 `AgentServiceExecutionClient` 完成 instance/boot-token/schema handshake 后，通过 `execution.v2` UDS 请求、结果 cursor 和 readiness 工作，Worker unavailable 时明确失败且不回落到 Agent Service 进程内执行。启动诊断只输出 component、adapter identity、schema version 与 readiness。关闭先进入 draining、拒绝新请求，再等待登记的 Run settlement。Secret Port 是显式注入项，诊断和 Trace 不读取原值。该边界落实可组合服务和本地优先部署决策：[SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0011-composable-service-boundaries.md] [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0012-portable-local-first-deployment.md]
 
 ### Reference E2E and recovery evidence
 
@@ -687,23 +687,23 @@ Pi 1.5.0 在 `AgentSession.prompt()` 前检查自身的凭据配置。产品适�
 
 ## Decision Links
 
-- Pi runtime adapter：[SOURCE: docs/adr/0001-pi-runtime-adapter.md]
-- Headless Agent Gateway：[SOURCE: docs/adr/0002-headless-agent-gateway.md]
-- Single logical Agent authority：[SOURCE: docs/adr/0003-single-logical-agent-authority.md]
-- Deterministic authorization：[SOURCE: docs/adr/0004-deterministic-authorization.md]
-- Replaceable Memory boundary：[SOURCE: docs/adr/0005-replaceable-memory-boundary.md]
-- Primary Agent and scoped workers：[SOURCE: docs/adr/0006-primary-agent-scoped-workers.md]
-- Policy-controlled model routing：[SOURCE: docs/adr/0007-policy-controlled-model-routing.md]
-- Governed Capability Registry：[SOURCE: docs/adr/0008-governed-capability-registry.md]
-- Protected Agent trust root：[SOURCE: docs/adr/0009-protected-agent-trust-root.md]
-- Complete Session Trace：[SOURCE: docs/adr/0010-complete-session-trace.md]
-- Composable service boundaries：[SOURCE: docs/adr/0011-composable-service-boundaries.md]
+- Pi runtime adapter：[SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0001-pi-runtime-adapter.md]
+- Headless Agent Gateway：[SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0002-headless-agent-gateway.md]
+- Single logical Agent authority：[SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0003-single-logical-agent-authority.md]
+- Deterministic authorization：[SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0004-deterministic-authorization.md]
+- Replaceable Memory boundary：[SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0005-replaceable-memory-boundary.md]
+- Primary Agent and scoped workers：[SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0006-primary-agent-scoped-workers.md]
+- Policy-controlled model routing：[SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0007-policy-controlled-model-routing.md]
+- Governed Capability Registry：[SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0008-governed-capability-registry.md]
+- Protected Agent trust root：[SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0009-protected-agent-trust-root.md]
+- Complete Session Trace：[SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0010-complete-session-trace.md]
+- Composable service boundaries：[SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0011-composable-service-boundaries.md]
 - Portable local-first deployment：[SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0012-portable-local-first-deployment.md]
-- Agent, Thread and Run identity model：[SOURCE: docs/adr/0013-agent-thread-run-memory-model.md]
-- Central Attention Policy：[SOURCE: docs/adr/0014-central-attention-policy.md]
-- Product state over Pi runtime projection：[SOURCE: docs/adr/0015-product-state-over-pi-runtime-projection.md]
-- TypeScript and Node.js runtime：[SOURCE: docs/adr/0016-typescript-node-runtime.md]
-- Workspace monorepo：[SOURCE: docs/adr/0017-workspace-monorepo.md]
+- Agent, Thread and Run identity model：[SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0013-agent-thread-run-memory-model.md]
+- Central Attention Policy：[SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0014-central-attention-policy.md]
+- Product state over Pi runtime projection：[SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0015-product-state-over-pi-runtime-projection.md]
+- TypeScript and Node.js runtime：[SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0016-typescript-node-runtime.md]
+- Workspace monorepo：[SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0017-workspace-monorepo.md]
 - Pi 工具与受管理执行生命周期：[SOURCE: docs/adr/0025-pi-tools-and-managed-execution-lifecycles.md]
 
 

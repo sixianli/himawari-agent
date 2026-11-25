@@ -4,7 +4,7 @@ document_type: adr
 decision_status: accepted
 supersedes: ""
 superseded_by: ""
-amends: "docs/adr/0018-sqlite-product-state-authority.md"
+amends: "https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0018-sqlite-product-state-authority.md"
 date: "2026-10-26"
 covers: "packages/persistence-sqlite/src/sqlite-durable-operations.ts"
 verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
@@ -63,7 +63,7 @@ Himawari 的产品数据库是 SQLite（一种单文件数据库），用 WAL（
 
 ## 与 ADR 0018 的关系
 
-[ADR 0018](0018-sqlite-product-state-authority.md) 要求“明确 durability pragma”。本 ADR 把它具体化：产品状态和外部动作相关的提交仍用 `FULL`，只有过程记录用 `NORMAL`。ADR 0018 的其他决定不变。[便携持久化设计](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/execution/specs/2026-08-26-portable-durable-web-agent-design.md)里“authority 与 product commit 默认 synchronous = FULL；改变持久性契约必须另立 ADR”这一条也仍然成立，本 ADR 就是那条要求的 ADR。
+[ADR 0018](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0018-sqlite-product-state-authority.md) 要求“明确 durability pragma”。本 ADR 把它具体化：产品状态和外部动作相关的提交仍用 `FULL`，只有过程记录用 `NORMAL`。ADR 0018 的其他决定不变。[便携持久化设计](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/execution/specs/2026-08-26-portable-durable-web-agent-design.md)里“authority 与 product commit 默认 synchronous = FULL；改变持久性契约必须另立 ADR”这一条也仍然成立，本 ADR 就是那条要求的 ADR。
 
 [↑ 返回阅读导航](#contents)
 
@@ -91,9 +91,9 @@ Himawari 的产品数据库是 SQLite（一种单文件数据库），用 WAL（
 
 ## 关联文档
 
-- [ADR 0018：以 SQLite 作为单权威部署的产品状态库](0018-sqlite-product-state-authority.md)
+- [ADR 0018：以 SQLite 作为单权威部署的产品状态库](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0018-sqlite-product-state-authority.md)
 - [ADR 0085：去掉每轮回答里 Himawari 自己造成的等待](0085-remove-per-turn-system-gaps.md)
 - [BL-20261001-002：回到同步写入快的测试机后恢复 5 秒默认测试时限（含生产机同步写入实测）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261001-002-回-到-同-步-写-入-快-的.md)
 - [工程案例库：每轮回答里的系统空档](../engineering-casebook.md#case-run-gaps)
-- [SOURCE: docs/adr/0018-sqlite-product-state-authority.md]
+- [SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0018-sqlite-product-state-authority.md]
 - [SOURCE: docs/adr/0085-remove-per-turn-system-gaps.md]

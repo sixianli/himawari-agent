@@ -144,7 +144,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 - packages/platform-node/src/payload-protector.ts
 - packages/platform-node/src/strict-configuration.ts
 - packages/platform-node/src/state-root-layout.ts
-- docs/adr/0018-sqlite-product-state-authority.md
+- https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0018-sqlite-product-state-authority.md
 - packages/application/src/ports/capabilities.ts
 - packages/application/src/services/execution-worker-service.ts
 - packages/execution-contracts/src/payload-broker-v1.ts
@@ -235,7 +235,7 @@ Worker 单独退出而 Agent 继续运行时，服务整体不可用，页面也
 ## Authoritative Sources
 
 - 产品恢复、排除清单、停止服务、原子切换和保留边界：[2026-08-26-portable-durable-web-agent-design.md「同机恢复点导出与导入」（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/execution/specs/2026-08-26-portable-durable-web-agent-design.md#同机恢复点导出与导入)
-- SQLite 单一产品状态权威：[SOURCE: docs/adr/0018-sqlite-product-state-authority.md]
+- SQLite 单一产品状态权威：[SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0018-sqlite-product-state-authority.md]
 - 本 Runbook contract selector 中列出的 CLI、恢复点 adapter、管理锁、配置、host secret source 和 Payload 认证实现。
 - 受保护配置只提供 state root、deployment/Owner/Agent identity、authority 和 secret reference；运行时回读只显示引用，不显示 secret material。
 

@@ -116,7 +116,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 ## 关联文档
 
-- 现有模型路由决定：[SOURCE: docs/adr/0007-policy-controlled-model-routing.md]
+- 现有模型路由决定：[SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0007-policy-controlled-model-routing.md]
 - 现有模型路径说明：[SOURCE: docs/architecture-v0.1.md]
 - 迁移待办：[BL-20261004-002-模-型-网-关-迁-移-到-vercel.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261004-002-模-型-网-关-迁-移-到-vercel.md)
 

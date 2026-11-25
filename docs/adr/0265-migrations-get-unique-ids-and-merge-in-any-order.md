@@ -4,7 +4,7 @@ document_type: adr
 decision_status: accepted
 supersedes: ""
 superseded_by: ""
-amends: "docs/adr/0018-sqlite-product-state-authority.md"
+amends: "https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0018-sqlite-product-state-authority.md"
 date: "2026-11-14"
 covers: ".claude/rules/incident-gates.md, .claude/rules/owner-standing-rules.md, packages/persistence-sqlite/src/migration-engine.ts, packages/persistence-sqlite/src/migrations/0095_correction_propagation.sql, packages/persistence-sqlite/src/sqlite-decision-ledger-operations.ts, packages/persistence-sqlite/src/sqlite-recovery-point.ts, scripts/check-audit-schema-range.mjs, scripts/delivery-mode/make-packet.py, scripts/delivery-mode/packet-template/s0-db/read-s0-db.mjs, scripts/operations/workspace-lifecycle-audit.mjs, scripts/run-all-checks.mjs"
 verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"

@@ -42,7 +42,7 @@ Himawari 的默认授权策略参照 Codex `Auto` 模式：
 
 1. **授权工作目录内**：读文件、列目录、找文件、搜索、写文件、编辑文件、在沙箱里执行不联网的命令，默认判定为 `ALLOW`（允许），不需要逐次批准。授权工作目录指用户通过目录授权（例如 `directory:himawari-prod-workspace-20261012`）交给 Agent 的目录。
 2. **仍然询问（`ASK`）的操作**：写入或修改授权工作目录以外的位置；执行需要联网的命令；以及原有设计中独立检查的高风险动作和数据披露，例如 GitHub 推送、发送消息、读取秘密。
-3. **不变的部分**：授权判断仍由确定性组件完成，模型不能批准自己，见 [ADR 0004](0004-deterministic-authorization.md)。命令仍在任务级隔离环境中执行，见 [ADR 0031](0031-isolated-tool-execution.md)；联网仍按 [ADR 0026](0026-job-scoped-network-egress.md) 按任务限定。审批、恢复和结果核查规则沿用 [ADR 0023](0023-durable-hitl-execution.md)。
+3. **不变的部分**：授权判断仍由确定性组件完成，模型不能批准自己，见 [ADR 0004](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0004-deterministic-authorization.md)。命令仍在任务级隔离环境中执行，见 [ADR 0031](0031-isolated-tool-execution.md)；联网仍按 [ADR 0026](0026-job-scoped-network-egress.md) 按任务限定。审批、恢复和结果核查规则沿用 [ADR 0023](0023-durable-hitl-execution.md)。
 
 本决定改变的是“哪些动作默认允许”这条策略，不改变授权组件、审批状态机和沙箱边界本身。
 
@@ -71,7 +71,7 @@ Himawari 的默认授权策略参照 Codex `Auto` 模式：
 
 ## 关联文档
 
-- [ADR 0004：将授权判断置于模型之外](0004-deterministic-authorization.md)
+- [ADR 0004：将授权判断置于模型之外](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0004-deterministic-authorization.md)
 - [ADR 0023：通用人工审批与持久执行恢复](0023-durable-hitl-execution.md)
 - [ADR 0026：按任务限定的联网](0026-job-scoped-network-egress.md)
 - [ADR 0031：分离控制平面与任务级隔离工具执行环境](0031-isolated-tool-execution.md)

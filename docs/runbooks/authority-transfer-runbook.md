@@ -152,7 +152,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 - packages/platform-node/src/payload-protector.ts
 - packages/platform-node/src/state-root-layout.ts
 - packages/platform-node/src/strict-configuration.ts
-- docs/adr/0003-single-logical-agent-authority.md
+- https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0003-single-logical-agent-authority.md
 - docs/adr/0019-offline-authority-transfer.md
 - packages/application/src/ports/capabilities.ts
 - packages/application/src/services/execution-worker-service.ts
@@ -248,7 +248,7 @@ Worker 单独退出而 Agent 继续运行时，服务整体不可用，页面也
 ## Authoritative Sources
 
 - 迁移顺序、manifest、Payload/Memory、秘密排除、失败行为和验证边界：[2026-08-26-portable-durable-web-agent-design.md「同机恢复点导出与导入」（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/execution/specs/2026-08-26-portable-durable-web-agent-design.md#同机恢复点导出与导入)
-- 单一逻辑 Agent authority：[SOURCE: docs/adr/0003-single-logical-agent-authority.md]
+- 单一逻辑 Agent authority：[SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0003-single-logical-agent-authority.md]
 - 停机加密迁移决策与回切边界：[SOURCE: docs/adr/0019-offline-authority-transfer.md]
 - 本 Runbook contract selector 中列出的 CLI、状态机、SQLite adapter、offline lock、authority file、配置、host secret source、Payload envelope 和普通启动 fail-closed 实现。
 
