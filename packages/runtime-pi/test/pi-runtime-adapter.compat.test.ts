@@ -3752,10 +3752,10 @@ it("puts the turn time and owner material in the last user turn and saves that t
     contextBlocks: [
       {
         authority: "non-authoritative",
-        kind: "owner-profile",
-        ref: "owner-profile:agent",
+        kind: "memory-snapshot",
+        ref: "memory-snapshot:agent",
         content:
-          "主人档案（由已确认的长期记忆整理）：\n身份：\n- 主人住在东京都北区。\n偏好：\n- 我喜欢喝美式",
+          "记忆清单（每条前面是编号；要看日期、原话和旧版本，用 memory_open 按编号打开）：\n身份\n1主人住在东京都北区。\n偏好\n2我喜欢喝美式\n你还能查到的：\n- 清单里每条只有一句话，日期、原话和旧版本没有放进来，用 memory_open 按编号打开。",
         dataClassification: "private",
       },
       {

@@ -277,6 +277,33 @@ export class ThreadCommandService {
     });
   }
 
+  postAgentMessage(input: {
+    readonly ownerId: OwnerId;
+    readonly agentId: AgentId;
+    readonly threadId: ThreadId;
+    readonly runId: RunId;
+    readonly messageId: MessageId;
+    readonly idempotencyKey: string;
+    readonly contentRef: PayloadRef;
+    readonly dataClassification: DataClassification;
+    readonly resultRef: PayloadRef;
+  }) {
+    const idempotencyKey = createIdempotencyKey(input.idempotencyKey);
+    return this.dependencies.repository.postAgentMessage({
+      ...input,
+      idempotencyKey,
+      semanticFingerprint: threadCommandFingerprint({
+        type: "thread.message.post_agent",
+        threadId: input.threadId,
+        runId: input.runId,
+        messageId: input.messageId,
+        contentRef: input.contentRef,
+      }),
+      committedAt: this.dependencies.clock.now(),
+      authority: this.dependencies.authority(),
+    });
+  }
+
   private async update(
     input: {
       readonly ownerId: OwnerId;

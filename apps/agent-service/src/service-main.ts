@@ -38,6 +38,7 @@ import {
   recoverSandboxJobsAtStartup,
   reviewCapacity,
   reviewMemoryVisible,
+  ThreadCommandService,
   unreadablePushRule,
   WorkerDelegationAdmissionService,
 } from "@himawari-agent/application";
@@ -126,6 +127,7 @@ import { backgroundCommandLimits } from "./production-background-commands.js";
 import { createProductionCapabilityReactivationVerifier } from "./production-capability-reactivation.js";
 import {
   DEFAULT_TOOL_RESULT_SHARE,
+  MEMORY_SNAPSHOT_WINDOW_SHARE,
   ProductionConversationTools,
   toolResultCharacters,
 } from "./production-conversation-tools.js";
@@ -144,6 +146,7 @@ import {
   type ProductionHttpComposition,
   type ProductionHttpCompositionOptions,
 } from "./production-http-composition.js";
+import { InboxRunRegistry } from "./production-inbox-delivery.js";
 import { expandConfigurationWithMagpieModels, priceTiers } from "./production-magpie-models.js";
 import { ProductionMcpMemoryWriter } from "./production-mcp-memory-writer.js";
 import { ProductionMcpRead } from "./production-mcp-read.js";
@@ -221,6 +224,7 @@ import {
   type ProductionTaskEnvironments,
 } from "./production-sandbox-services.js";
 import { ProductionServiceLifecycle } from "./production-service-lifecycle.js";
+import { ProductionTellOwner } from "./production-tell-owner.js";
 import { productionToolActionRegistry } from "./production-tool-actions.js";
 import { toolCallSandboxPrewarm } from "./production-tool-call-prewarm.js";
 import { productionVoiceAddressee } from "./production-voice-addressee.js";
@@ -1591,6 +1595,10 @@ export async function startTenantRuntime(
         primaryModel && "contextWindow" in primaryModel ? primaryModel.contextWindow : undefined,
         configuration.memory.toolResultShare ?? DEFAULT_TOOL_RESULT_SHARE,
       );
+      const memorySnapshotCharacters = toolResultCharacters(
+        primaryModel && "contextWindow" in primaryModel ? primaryModel.contextWindow : undefined,
+        MEMORY_SNAPSHOT_WINDOW_SHARE,
+      );
       const conversationTools = conversationTurns
         ? new ProductionConversationTools({
             ownerId: configuration.ownerId,
@@ -1775,8 +1783,25 @@ export async function startTenantRuntime(
         configuration.ownerId,
         configuration.agentId,
       );
+      const inboxRuns = new InboxRunRegistry();
+      const tellOwner = new ProductionTellOwner({
+        ownerId: configuration.ownerId,
+        agentId: configuration.agentId,
+        registry: inboxRuns,
+        commands: new ThreadCommandService({
+          repository: repository.threadRepository(),
+          clock: { now: () => clock.now() },
+          authority: () => activeAuthority.authorityFence(),
+        }),
+        ledger: repository.decisionLedger(),
+        push: { enqueue: (input) => requireValue(repository).webPush().enqueue(input) },
+        payloads,
+        protector,
+        clock: { now: () => clock.now() },
+      });
       const tools = new ProductionRuntimeTools({
         memoryRecall,
+        tellOwner,
         ...(conversationTools ? { conversations: conversationTools } : {}),
         memoryOpen,
         reminders: reminderTools,
@@ -3171,6 +3196,7 @@ export async function startTenantRuntime(
       observation.start();
       const live = new ExecutionLiveFeed();
       runs = createProductionRunComposition({
+        memorySnapshotCharacters,
         externalContent,
         ...(configuration.runPolicy?.toolRefusals
           ? { toolRefusalLimits: configuration.runPolicy.toolRefusals }
@@ -3481,6 +3507,7 @@ export async function startTenantRuntime(
         threadDeletionDiagnostic: (event: Record<string, string>) =>
           writeServiceDiagnostic(errorOutput, { component: "agent-service", ...event }),
         inbox: {
+          mainThread: { registry: inboxRuns, externalContent },
           onDiagnostic: (event: Record<string, string>) =>
             writeServiceDiagnostic(errorOutput, { component: "agent-service", ...event }),
         },

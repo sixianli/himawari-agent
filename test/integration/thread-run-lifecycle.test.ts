@@ -3358,8 +3358,8 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
           return {
             blocks: [
               {
-                kind: "owner-profile" as const,
-                ref: `owner-profile:${agentId}`,
+                kind: "memory-snapshot" as const,
+                ref: `memory-snapshot:${agentId}`,
                 payloadRef: "payload-owner-profile",
                 dataClassification: "private" as const,
                 memoryIds,

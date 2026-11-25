@@ -100,6 +100,7 @@ import { restoreModelStream, withPlaceholderLegend } from "./egress-context.js";
 import { gatewayPayload, observeGatewayFetch } from "./gateway-observation.js";
 import { createGovernedPiCodingTools } from "./governed-coding-tools.js";
 import { createPiOperationsFromGovernedHostPort } from "./governed-host-operations.js";
+import { memorySnapshotAfterCompaction, splitMemorySnapshot } from "./memory-snapshot-block.js";
 import { himawariBuiltinToolText } from "./pi-builtin-tool-text.js";
 import { nativeHistoryMessages } from "./pi-native-history.js";
 import {
@@ -658,7 +659,11 @@ function localWeekday(occurredAt: string, timeZone: string): string {
 }
 
 function turnPrompt(projection: RuntimeProjection, timeZone: string): string {
-  const { blocks, environment } = splitRuntimeEnvironment(projection);
+  const { blocks: withoutEnvironment, environment } = splitRuntimeEnvironment(projection);
+  const { blocks, snapshot, changes } = splitMemorySnapshot({
+    ...projection,
+    contextBlocks: withoutEnvironment,
+  });
   return [
     "<himawari-context>",
     CHAT_TURN_CONTEXT_PREFACE.text,
@@ -668,13 +673,15 @@ function turnPrompt(projection: RuntimeProjection, timeZone: string): string {
       localTime: localTime(projection.prompt.occurredAt, timeZone),
       weekday: localWeekday(projection.prompt.occurredAt, timeZone),
     }),
+    ...(snapshot ? [contextBlockContent(snapshot, timeZone)] : []),
     ...blocks.map((block) => contextBlockContent(block, timeZone)),
+    ...(changes ? [contextBlockContent(changes, timeZone)] : []),
     ...(environment ? [contextBlockContent(environment, timeZone)] : []),
     "</himawari-context>",
     "",
-    "<owner-message>",
-    projection.prompt.content,
-    "</owner-message>",
+    ...(projection.prompt.from === "outside"
+      ? ["<outside-events>", projection.prompt.content, "</outside-events>"]
+      : ["<owner-message>", projection.prompt.content, "</owner-message>"]),
   ].join("\n");
 }
 
@@ -1890,6 +1897,11 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           !event.aborted &&
           event.result !== undefined
         ) {
+          const snapshot = memorySnapshotAfterCompaction(session.messages, projection);
+          if (snapshot)
+            void session
+              .sendCustomMessage(snapshot, { deliverAs: "steer" })
+              .catch(() => session.abort());
           const environment = runtimeEnvironmentAfterCompaction(session.messages, projection);
           if (environment)
             void session
