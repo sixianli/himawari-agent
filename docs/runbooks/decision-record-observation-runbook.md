@@ -44,7 +44,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 - 适用：带迁移 0074 的版本上线之后，开始观察期、每天查看检查结果、处理失败、在第 8 天确认首份校准周报。
 - 不适用：上线和回滚本身（按 [交付模式](../../.agents/instructions/delivery-mode.md) 用 `scripts/delivery-mode/deploy.sh` 和 `rollback.sh`）；修改检查规则（改代码和 ADR）。
-- 目标：生产机 `84.247.157.41` 上的服务 `himawari-prod.service` 和数据库 `/var/lib/himawari/state/data/product.sqlite`；Andy 的生产网页。
+- 目标：生产机（Oracle 东京的 ARM 机）上的服务 `himawari-prod.service` 和数据库 `/var/lib/himawari/state/data/product.sqlite`；Andy 的生产网页。
 - 观察期的检查是服务自己做的，本手册里的生产操作只有只读查看。唯一会改数据的一步是 Andy 在网页上设置数据起点，这一步只能由 Andy 本人做，而且只能做一次。
 
 [↑ 回到阅读导航](#contents)

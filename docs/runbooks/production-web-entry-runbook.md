@@ -38,8 +38,8 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ## Scope
 
 - 适用：用户在手机或电脑上打开生产网页、登录、开通知；Claude 排查“打不开”“登不进”“收不到通知”；改 Cloudflare Access（Cloudflare 提供的登录关卡）的登录方式或允许的邮箱；把登录方式退回 Himawari 自带登录。
-- 不适用：Hermes 测试机的入口（`https://himawari-test.siyi.win`，见 [Hermes 控制中心升级 Runbook](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/runbooks/hermes-control-center-upgrade-runbook.md)）；程序上线和回滚（按各次上线包执行）；服务器登录和内核（见[生产云服务器访问 Runbook](production-server-access-runbook.md)）。
-- 目标：生产机 `84.247.157.41` 上的 `/etc/himawari/config.json`、`himawari-prod.service`、数据库里 `owner_identity_bindings`（主人和登录身份的绑定表）那一行、cloudflared.service（Cloudflare 隧道程序）；Cloudflare 账号 `341855223c647728540929c55d92ccc8` 下的隧道 `himawari-prod` 和 Access 应用 “Himawari”。
+- 不适用：Hermes 测试机的入口（`https://himawari-test.siyi.win`，见 [Hermes 控制中心升级 Runbook](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/runbooks/hermes-control-center-upgrade-runbook.md)）；程序上线和回滚（按各次上线包执行）；服务器登录和内核（见[生产云服务器访问 Runbook](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/runbooks/production-server-access-runbook.md)）。
+- 目标：生产机（Oracle 东京的 ARM 机，地址见[交付模式](../../.agents/instructions/delivery-mode.md#fast-mode)）上的 `/etc/himawari/config.json`、`himawari-prod.service`、数据库里 `owner_identity_bindings`（主人和登录身份的绑定表）那一行、cloudflared.service（Cloudflare 隧道程序）；Cloudflare 账号 `341855223c647728540929c55d92ccc8` 下的隧道 `himawari-prod` 和 Access 应用 “Himawari”。
 
 [返回导航](#阅读导航)
 
@@ -78,7 +78,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 ## Live-State Preflight
 
-生产机上没有 `sqlite3` 和 `node` 命令；只读查库用 `ssh root@84.247.157.41 'sudo -u himawari-prod python3 -I -' < 本地脚本`，脚本里用 `mode=ro` 打开 `/var/lib/himawari/state/data/product.sqlite`。`himawari-prod` 账号读不了 `/root`，脚本要从标准输入喂进去。Mac 上的固定只读入口 `scripts/operations/prod-read.sh` 用 `/opt/himawari/node/bin/node`（绝对路径，不在 `PATH` 里）查库，两种做法都可用。
+生产机上没有 `sqlite3` 和 `node` 命令；只读查库用 `ssh root@<生产机地址> 'sudo -u himawari-prod python3 -I -' < 本地脚本`，脚本里用 `mode=ro` 打开 `/var/lib/himawari/state/data/product.sqlite`。`himawari-prod` 账号读不了 `/root`，脚本要从标准输入喂进去。Mac 上的固定只读入口 `scripts/operations/prod-read.sh` 用 `/opt/himawari/node/bin/node`（绝对路径，不在 `PATH` 里）查库，两种做法都可用。
 
 1. `systemctl is-active himawari-prod.service cloudflared.service`：两个都是 `active`。
 2. `curl -s -o /dev/null -w '%{http_code}' -H 'Host: himawari.siyi.win' http://127.0.0.1:8400/`：200。不带 Host 头是 403，属正常。
@@ -147,7 +147,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 1. **第一级：只撤回本次改动**。停服；把 `config.before.json` 装回 `/etc/himawari/config.json`；以 `himawari-prod` 身份把绑定那一行改回旧引用；启动。不动数据库其他内容，也不动 `authority.json`，因为这次启动领到的编号两处都写了，仍然一致。
 2. **第二级：成对换回快照**。第一级起不来时停服，把 `snapshot/` 里的数据库和 `authority.json` 一起换回，再装回旧配置，启动。
 3. 两级都起不来：停服，保留日志，交给 Claude 诊断，不再试第三种改法。
-4. **退回自带登录**（Access 本身坏了、短期修不好时）：旧配置的 `publicMode` 是 `false`、`identity.kind` 是 `built-in`，绑定引用是 `built-in:owner:first-production`，用户名 `andy`。退回后浏览器仍从公网域名进，要过 Access 再登 Himawari 自带登录；若连 Access 也要绕开，还要把 `publicOrigin` 改回 `http://127.0.0.1:8400`，用户改用 Mac 上的 ssh 隧道 `ssh -f -N -L 8400:127.0.0.1:8400 root@84.247.157.41`，手机就收不到推送了。
+4. **退回自带登录**（Access 本身坏了、短期修不好时）：旧配置的 `publicMode` 是 `false`、`identity.kind` 是 `built-in`，绑定引用是 `built-in:owner:first-production`，用户名 `andy`。退回后浏览器仍从公网域名进，要过 Access 再登 Himawari 自带登录；若连 Access 也要绕开，还要把 `publicOrigin` 改回 `http://127.0.0.1:8400`，用户改用 Mac 上的 ssh 隧道 `ssh -f -N -L 8400:127.0.0.1:8400 root@<生产机地址>`，手机就收不到推送了。
 
 5. **撤回域名 TLS 设置**：只有出现确实需要旧版本 TLS 的客户端时才做。用[步骤](#procedure)第 5 步的 Token 把 min_tls_version 按存档 `PATCH` 回原值（改前是 `1.0`），或把 always_use_https 改回 `off`，再读回确认。这一项不用停服，立即生效。
 
