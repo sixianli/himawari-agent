@@ -75,7 +75,9 @@ try {
   fetchBundleIntoCache(traced, fullBundle, first, tracedRun, false);
   fetchBundleIntoCache(traced, secondBundle, second, tracedRun, true);
   checkoutFromCache(traced, path.join(root, "traced-checkout"), second, tracedRun);
-  const spawned = readFileSync(trace, "utf8").split("\n").filter((line) => /run_command: .*\bmaintenance run\b/.test(line));
+  const traceLines = readFileSync(trace, "utf8").split("\n");
+  check("the git trace records the traced fetches and the commands they start", traceLines.some((line) => /\bbuilt-in: git fetch\b/.test(line)) && traceLines.some((line) => /\brun_command: /.test(line)), traceLines.slice(0, 3).join("\n").slice(0, 200));
+  const spawned = traceLines.filter((line) => /\b(run_command|built-in): .*\bgit (maintenance run|gc --auto)\b/.test(line));
   check("cache fetches and checkouts start no automatic git maintenance that could keep writing after they return", spawned.length === 0, spawned.join("\n").slice(0, 200));
 } finally {
   rmSync(root, { recursive: true, force: true });
