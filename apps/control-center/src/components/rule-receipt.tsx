@@ -1,3 +1,7 @@
+import {
+  APPROVAL_ALLOWANCE_DAYS_MAXIMUM,
+  APPROVAL_ALLOWANCE_DAYS_MINIMUM,
+} from "@himawari-agent/gateway-contracts";
 import { useState } from "react";
 import { useLocaleFormat } from "../i18n/locale-format.js";
 import type { MessageId } from "../i18n/message-ids.js";
@@ -303,16 +307,62 @@ export function OwnerAllowancesSection({
   memory,
   message,
 }: {
-  memory: Pick<MemoryModel, "allowances" | "respondRule" | "busy">;
+  memory: Pick<
+    MemoryModel,
+    "allowances" | "revokeAllowance" | "busy" | "allowanceDays" | "setAllowanceDays"
+  >;
   message: Message;
 }) {
   const { moment } = useLocaleFormat();
-  if (!memory.allowances.length) return null;
+  const [draft, setDraft] = useState<string | null>(null);
+  if (!memory.allowances.length && memory.allowanceDays === null) return null;
   const title = message("rules.allowances.title", { count: memory.allowances.length });
+  const shown = draft ?? (memory.allowanceDays === null ? "" : String(memory.allowanceDays));
+  const days = Number(shown);
+  const valid =
+    /^\d+$/.test(shown) &&
+    days >= APPROVAL_ALLOWANCE_DAYS_MINIMUM &&
+    days <= APPROVAL_ALLOWANCE_DAYS_MAXIMUM;
+  const changed = valid && days !== memory.allowanceDays;
   return (
     <section id="memory-allowances" className="memory-confirm" aria-label={title}>
       <h4>{title}</h4>
       <p className="settings-note">{message("rules.allowances.note")}</p>
+      {memory.allowanceDays === null ? null : (
+        <div className="allowance-days">
+          <label className="setting-row">
+            <span>{message("rules.allowances.days")}</span>
+            <input
+              className="setting-input"
+              type="number"
+              inputMode="numeric"
+              min={APPROVAL_ALLOWANCE_DAYS_MINIMUM}
+              max={APPROVAL_ALLOWANCE_DAYS_MAXIMUM}
+              aria-invalid={!valid}
+              value={shown}
+              disabled={memory.busy}
+              onChange={(event) => setDraft(event.currentTarget.value)}
+            />
+          </label>
+          <ActionButton
+            variant="quiet"
+            disabled={memory.busy || !changed}
+            onClick={() =>
+              void memory.setAllowanceDays(days).then((saved) => {
+                if (saved) setDraft(null);
+              })
+            }
+          >
+            {message("rules.allowances.daysSave")}
+          </ActionButton>
+          <small>
+            {message("rules.allowances.daysNote", {
+              minimum: String(APPROVAL_ALLOWANCE_DAYS_MINIMUM),
+              maximum: String(APPROVAL_ALLOWANCE_DAYS_MAXIMUM),
+            })}
+          </small>
+        </div>
+      )}
       {memory.allowances.map((allowance) => (
         <section
           className="memory-card"
@@ -322,16 +372,18 @@ export function OwnerAllowancesSection({
         >
           <p className="memory-text">{allowance.title}</p>
           <small>
-            {message("rules.allowances.scope", {
-              scope: allowance.allowFor,
-              until: allowance.expiresAt ? moment(allowance.expiresAt) : "",
-            })}
+            {allowance.allowFor === "this_task" && allowance.threadTitle
+              ? message("rules.allowances.task", { task: allowance.threadTitle })
+              : message("rules.allowances.scope", {
+                  scope: allowance.allowFor,
+                  until: allowance.expiresAt ? moment(allowance.expiresAt) : "",
+                })}
           </small>
           <div className="actions">
             <ActionButton
               variant="quiet"
               disabled={memory.busy}
-              onClick={() => void memory.respondRule(allowance.allowanceId, "revoke")}
+              onClick={() => void memory.revokeAllowance(allowance.allowanceId)}
             >
               {message("rules.allowances.revoke")}
             </ActionButton>

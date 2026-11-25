@@ -13,6 +13,9 @@ import {
   type ProductConfiguration,
 } from "@himawari-agent/application";
 import {
+  APPROVAL_ALLOWANCE_DAYS_DEFAULT,
+  APPROVAL_ALLOWANCE_DAYS_MAXIMUM,
+  APPROVAL_ALLOWANCE_DAYS_MINIMUM,
   APPROVAL_ALLOWANCE_INTENT_PREFIX,
   type GatewayV2Command,
 } from "@himawari-agent/gateway-contracts";
@@ -22,11 +25,19 @@ import { isConflict } from "./context-external-content.js";
 export const OWNER_ALLOWANCE_SCOPES = ["this_task", "days", "always"] as const;
 export type OwnerAllowanceScope = (typeof OWNER_ALLOWANCE_SCOPES)[number];
 
-export const OWNER_ALLOWANCE_DEFAULT_DAYS = 7;
-export const OWNER_ALLOWANCE_MAXIMUM_DAYS = 90;
+type AllowanceCommand = Extract<
+  GatewayV2Command,
+  {
+    readonly type:
+      | "approval.allowance.set"
+      | "approval.allowance.days.set"
+      | "approval.allowance.revoke";
+  }
+>;
 
 const KEY_PREFIX = "owner-allowance:";
 const INDEX_KEY = "owner-allowances:index";
+const SETTINGS_KEY = "owner-allowances:settings";
 const ID_PREFIX = "allowance:";
 const DAY_MS = 86_400_000;
 const TITLE_LIMIT = 120;
@@ -39,6 +50,7 @@ export interface OwnerAllowanceView {
   readonly operation: string;
   readonly recipients: readonly string[];
   readonly threadId: string | null;
+  readonly threadTitle: string | null;
   readonly expiresAt: string | null;
   readonly createdAt: string;
 }
@@ -92,12 +104,22 @@ export function allowanceNotOffered(intent: GovernedActionIntent): string | null
   return null;
 }
 
+function validDays(days: unknown): days is number {
+  return (
+    typeof days === "number" &&
+    Number.isSafeInteger(days) &&
+    days >= APPROVAL_ALLOWANCE_DAYS_MINIMUM &&
+    days <= APPROVAL_ALLOWANCE_DAYS_MAXIMUM
+  );
+}
+
 export class OwnerAllowances {
   readonly #configuration: Pick<ProductConfiguration, "ownerId" | "agentId">;
   readonly #state: Pick<SqliteProductStateRepository, "readScopedState" | "commitStateAndEvents">;
   readonly #store: Pick<AuthorizationStorePort, "getApproval">;
   readonly #authority: () => AuthorityFence;
   readonly #clock: ClockPort;
+  readonly #threadTitle: (threadId: string) => Promise<string | null>;
 
   constructor(options: {
     readonly configuration: Pick<ProductConfiguration, "ownerId" | "agentId">;
@@ -105,12 +127,14 @@ export class OwnerAllowances {
     readonly store: Pick<AuthorizationStorePort, "getApproval">;
     readonly authority: () => AuthorityFence;
     readonly clock: ClockPort;
+    readonly threadTitle?: (threadId: string) => Promise<string | null>;
   }) {
     this.#configuration = options.configuration;
     this.#state = options.state;
     this.#store = options.store;
     this.#authority = options.authority;
     this.#clock = options.clock;
+    this.#threadTitle = options.threadTitle ?? (async () => null);
   }
 
   #read(key: string) {
@@ -197,11 +221,8 @@ export class OwnerAllowances {
     const intent = approval.intentSnapshot;
     const refused = allowanceNotOffered(intent);
     if (refused) throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, refused);
-    const days = input.allowFor === "days" ? (input.days ?? OWNER_ALLOWANCE_DEFAULT_DAYS) : null;
-    if (
-      days !== null &&
-      (!Number.isSafeInteger(days) || days < 1 || days > OWNER_ALLOWANCE_MAXIMUM_DAYS)
-    )
+    const days = input.allowFor === "days" ? (input.days ?? (await this.days())) : null;
+    if (days !== null && !validDays(days))
       throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, "ALLOWANCE_DAYS_INVALID");
     if (input.allowFor !== "days" && input.days !== null)
       throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, "ALLOWANCE_DAYS_INVALID");
@@ -246,15 +267,45 @@ export class OwnerAllowances {
     return id;
   }
 
-  handles(
-    command: GatewayV2Command,
-  ): command is Extract<GatewayV2Command, { readonly type: "approval.allowance.set" }> {
-    return command.type === "approval.allowance.set";
+  async days(): Promise<number> {
+    const days = (await this.#read(SETTINGS_KEY))?.value["days"];
+    return validDays(days) ? days : APPROVAL_ALLOWANCE_DAYS_DEFAULT;
+  }
+
+  async setDays(days: number): Promise<void> {
+    if (!validDays(days))
+      throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, "ALLOWANCE_DAYS_INVALID");
+    await this.#retry(async () => {
+      const record = await this.#read(SETTINGS_KEY);
+      if (record?.value["days"] === days) return;
+      await this.#commit(
+        SETTINGS_KEY,
+        record?.revision ?? null,
+        { ...record?.value, days },
+        "authorization.owner_allowance.days",
+      );
+    });
+  }
+
+  handles(command: GatewayV2Command): command is AllowanceCommand {
+    return (
+      command.type === "approval.allowance.set" ||
+      command.type === "approval.allowance.days.set" ||
+      command.type === "approval.allowance.revoke"
+    );
   }
 
   async execute(
-    command: Extract<GatewayV2Command, { readonly type: "approval.allowance.set" }>,
+    command: AllowanceCommand,
   ): Promise<{ readonly resultRef: string; readonly replayed: false }> {
+    if (command.type === "approval.allowance.days.set") {
+      await this.setDays(command.payload.days);
+      return { resultRef: SETTINGS_KEY, replayed: false };
+    }
+    if (command.type === "approval.allowance.revoke") {
+      await this.revoke(command.payload.allowanceId);
+      return { resultRef: command.payload.allowanceId, replayed: false };
+    }
     return { resultRef: await this.set(command.payload), replayed: false };
   }
 
@@ -284,6 +335,18 @@ export class OwnerAllowances {
       : [];
   }
 
+  async #taskTitle(threadId: string): Promise<string | null> {
+    const title = await this.#threadTitle(threadId).catch(() => null);
+    if (!title) return null;
+    const printable = [...title]
+      .map((character) => {
+        const code = character.charCodeAt(0);
+        return code < 0x20 || code === 0x7f ? " " : character;
+      })
+      .join("");
+    return printable.trim().slice(0, TITLE_LIMIT).trim() || null;
+  }
+
   async list(): Promise<readonly OwnerAllowanceView[]> {
     const keys = await this.#listedKeys();
     const now = this.#clock.now();
@@ -293,13 +356,15 @@ export class OwnerAllowances {
       const value = record?.value as Partial<AllowanceValue> | undefined;
       if (!value || value.enabled !== true) continue;
       if (typeof value.expiresAt === "string" && value.expiresAt <= now) continue;
+      const threadId = typeof value.threadId === "string" ? value.threadId : null;
       views.push({
         allowanceId: key.slice(KEY_PREFIX.length),
         allowFor: value.allowFor as OwnerAllowanceScope,
         title: String(value.title ?? ""),
         operation: String(value.operation ?? ""),
         recipients: Array.isArray(value.recipients) ? [...value.recipients] : [],
-        threadId: typeof value.threadId === "string" ? value.threadId : null,
+        threadId,
+        threadTitle: threadId ? await this.#taskTitle(threadId) : null,
         expiresAt: typeof value.expiresAt === "string" ? value.expiresAt : null,
         createdAt: String(value.createdAt ?? ""),
       });

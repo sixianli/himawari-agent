@@ -131,6 +131,8 @@ async function setup(
     store,
     authority: () => SERVICE_AUTHORITY.lease,
     clock,
+    threadTitle: async (threadId) =>
+      threadId === "thread-capability-invocation" ? "订酒店\n给大阪那家" : null,
   });
   const markFaults = { read: false, write: false };
   const markState: StateStore = {
@@ -1533,11 +1535,24 @@ it("[ADR-0285] after outside content, a yes for this task stops asking for the s
         allowanceId,
         allowFor: "this_task",
         threadId: "thread-capability-invocation",
+        threadTitle: "订酒店 给大阪那家",
         expiresAt: null,
       }),
     ]);
 
-    await s.allowances.revoke(allowanceId);
+    await expect(
+      s.allowances.execute({
+        type: "approval.allowance.revoke",
+        payload: { allowanceId: "allowance:missing" },
+      } as Parameters<typeof s.allowances.execute>[0]),
+    ).rejects.toThrow("ALLOWANCE_NOT_FOUND");
+    expect(await s.allowances.list()).toHaveLength(1);
+    expect(
+      await s.allowances.execute({
+        type: "approval.allowance.revoke",
+        payload: { allowanceId },
+      } as Parameters<typeof s.allowances.execute>[0]),
+    ).toEqual({ resultRef: allowanceId, replayed: false });
     expect(await s.allowances.list()).toEqual([]);
     const third = s.call("rule.set", "call:rule-3", { text: "以后会议邮件都提醒我" });
     expect(await s.tools.execute(third)).toMatchObject({ outcome: "awaiting_approval" });
@@ -1559,6 +1574,9 @@ it("[ADR-0285] a yes from now on stops asking for the same action, but no longer
       allowFor: "always",
       days: null,
     });
+    expect(await s.allowances.list()).toEqual([
+      expect.objectContaining({ allowFor: "always", threadId: null, threadTitle: null }),
+    ]);
     const second = s.call("reminder.set", "call:b", { text: "交月报", due: "2026-11-14T15:00" });
     expect(await s.tools.execute(second)).toMatchObject({ outcome: "succeeded" });
 
@@ -1595,6 +1613,49 @@ it("[ADR-0285] a yes for some days asks again once the days are over", async () 
       s.call("reminder.set", "call:c", { text: "交年报", due: "2026-11-25T15:00" }),
     );
     expect(await s.tools.execute(after)).toMatchObject({ outcome: "awaiting_approval" });
+  } finally {
+    await s.close();
+  }
+});
+
+it("[ADR-0285] the owner's day count, not a fixed 7, decides when a yes for some days runs out", async () => {
+  const s = await setup({ rules: [] });
+  try {
+    expect(await s.allowances.days()).toBe(7);
+    await s.allowances.execute({
+      type: "approval.allowance.days.set",
+      payload: { days: 3 },
+    } as Parameters<typeof s.allowances.execute>[0]);
+    expect(await s.allowances.days()).toBe(3);
+    const first = s.call("reminder.set", "call:a", { text: "交周报", due: "2026-11-13T15:00" });
+    expect(await s.tools.execute(first)).toMatchObject({ outcome: "awaiting_approval" });
+    const [pending] = await s.approvals();
+    await approve(s, pending);
+    await s.allowances.set({ approvalRequestId: pending?.id ?? "", allowFor: "days", days: null });
+    const [given] = await s.allowances.list();
+    expect(given?.expiresAt).toBe(new Date(Date.parse(T1) + 3 * 86_400_000).toISOString());
+    const later = (call: RuntimeToolInvocation): RuntimeToolInvocation => ({
+      ...call,
+      executionDeadlineAt: new Date(Date.parse(T1) + 30 * 86_400_000).toISOString(),
+    });
+    s.advance(4 * 86_400_000);
+    const after = later(
+      s.call("reminder.set", "call:b", { text: "交月报", due: "2026-11-20T15:00" }),
+    );
+    expect(await s.tools.execute(after)).toMatchObject({ outcome: "awaiting_approval" });
+  } finally {
+    await s.close();
+  }
+});
+
+it("[ADR-0285] REVERSE: a day count outside 1 to 90 is refused and the saved count stays", async () => {
+  const s = await setup({ rules: [] });
+  try {
+    await s.allowances.setDays(30);
+    await expect(s.allowances.setDays(0)).rejects.toThrow("ALLOWANCE_DAYS_INVALID");
+    await expect(s.allowances.setDays(91)).rejects.toThrow("ALLOWANCE_DAYS_INVALID");
+    await expect(s.allowances.setDays(2.5)).rejects.toThrow("ALLOWANCE_DAYS_INVALID");
+    expect(await s.allowances.days()).toBe(30);
   } finally {
     await s.close();
   }

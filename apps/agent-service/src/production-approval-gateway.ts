@@ -102,6 +102,8 @@ export const PRODUCTION_APPROVAL_OPERATIONS = Object.freeze([
   "approval.detail",
   "approval.respond",
   "approval.allowance.set",
+  "approval.allowance.days.set",
+  "approval.allowance.revoke",
   "search.authorization.read",
   "search.authorization.set",
 ] as const);

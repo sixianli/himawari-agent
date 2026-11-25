@@ -3542,6 +3542,8 @@ export async function startTenantRuntime(
             store: repository.authorizationStore(),
             authority: () => invocationAuthority().lease,
             clock,
+            threadTitle: async (threadId) =>
+              approvalThreadTitle ? approvalThreadTitle(threadId) : null,
           }),
           ...(memoryClassifier ? { classifier: memoryClassifier } : {}),
           ...(memoryImportDuplicates ? { importDuplicates: memoryImportDuplicates } : {}),
