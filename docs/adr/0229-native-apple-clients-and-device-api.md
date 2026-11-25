@@ -79,7 +79,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 15. 多通道比单条连接在后台有大传输时快。来源开源项目 Cindy（提交 `58169050`）docs/agent-net-plan.md 第 2.1 节的实测：空闲时两种方式延迟都是 44 毫秒；后台有大传输时单条连接形态涨到 246 毫秒，多通道 51 到 74 毫秒。这是它在一台 Mac 上的模拟链路，不是 Himawari 的实测。
 16. HTTP 请求签名有现成标准。来源 RFC 9421 <https://www.rfc-editor.org/rfc/rfc9421.html> 原话：“This document describes a mechanism for creating, encoding, and verifying digital signatures or message authentication codes over components of an HTTP message.”参数 `created`：“Creation time as a UNIX timestamp value of type Integer.”`nonce`：“A random unique value generated for this signature as a String value.”算法名 `ecdsa-p256-sha256`。
 17. 本 ADR 之前的规则不许在 MacBook 上做任何构建（这一句已按决定第 8 条随本 ADR 改写，下面引的是改写前的原话）。来源 `.agents/instructions/test-and-production-hosts.md` 第 8 行改写前的原话：“绝不在用户的 MacBook 上运行 Himawari 测试：不做构建，不跑 `npm run check`、`npm test`、任何 Vitest 项目或产品路径资格验证。”
-18. 每个人一个只属于自己的 Himawari；一套程序、一个网址、每人一个数据库文件。来源 [docs/adr/0234-one-program-per-person-database-file.md](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0234-one-program-per-person-database-file.md) 决定第 2 条原话：“只跑一套程序，每人一个数据库文件。”第 5 条原话：“登录：一个网址、一个 Cloudflare Access 应用，名单里放所有受邀邮箱。”（它取代了 ADR 0083 的“每人一个独立实例”。）
+18. 每个人一个只属于自己的 Himawari；一套程序、一个网址、每人一个数据库文件。来源 [ADR 0234](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0234-one-program-per-person-database-file.md) 决定第 2 条原话：“只跑一套程序，每人一个数据库文件。”第 5 条原话：“登录：一个网址、一个 Cloudflare Access 应用，名单里放所有受邀邮箱。”（它取代了 ADR 0083 的“每人一个独立实例”。）
 
 未核实、所以本 ADR 不依赖的：苹果安全芯片（Secure Enclave）里生成的密钥不能导出，这一点线程没读到原文；TestFlight 的人数和有效期、不公开上架、日本的第三方应用商店，线程读的是搜索结果摘录。它们列在详细设计的[还没核实的事](../execution/specs/2026-11-11-apple-device-body-design.md#unverified)里，动工前读原文。
 
