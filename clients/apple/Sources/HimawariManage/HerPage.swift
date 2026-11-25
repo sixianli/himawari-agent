@@ -96,13 +96,11 @@ public struct HerPage: View {
                         }
                         .buttonStyle(.plain)
                     }
-                    if !memory.allowances.isEmpty {
-                        SettingsGroup(label: nil) {
-                            Button { path.append(.allowances) } label: {
-                                HerRow(icon: .shieldCheck, title: M.allowancesTitle, subtitle: M.allowancesSummary(memory.allowances.count), last: true)
-                            }
-                            .buttonStyle(.plain)
+                    SettingsGroup(label: nil) {
+                        Button { path.append(.allowances) } label: {
+                            HerRow(icon: .shieldCheck, title: M.allowancesTitle, subtitle: M.allowancesSummary(memory.allowances.count), last: true)
                         }
+                        .buttonStyle(.plain)
                     }
                     SettingsGroup(label: nil) {
                         if let hours = quietHours.hours {

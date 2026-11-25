@@ -13,7 +13,8 @@ public extension DeviceActionsModel {
             recent: DeviceActionsDemo.recent,
             policy: DeviceActionsDemo.policy,
             permissions: DeviceActionsDemo.permissions,
-            sourceNames: DeviceActionsDemo.sourceNames
+            sourceNames: DeviceActionsDemo.sourceNames,
+            allowanceDays: 7
         )
     }
 
