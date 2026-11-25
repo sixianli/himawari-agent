@@ -16,8 +16,6 @@ import {
   type BuiltInActionRule,
   type OwnerAllowance,
   type OwnerRule,
-  type PendingProposal,
-  type PendingProposals,
   useMemory,
 } from "../src/memory.ts";
 
@@ -77,42 +75,6 @@ const active = {
   replayed: false,
 };
 
-const respondProposal = vi.fn(async () => true);
-const FINGERPRINT = "ab".repeat(32);
-const proposal = (over: Partial<PendingProposal> = {}): PendingProposal => ({
-  proposalId: "rule-proposal:0123456789abcdef0123456789abcdef",
-  version: 3,
-  fingerprint: FINGERPRINT,
-  type: "owner_rule",
-  summary: "入管局的邮件一律提醒",
-  effect: "入管局的邮件一律提醒",
-  origin: "inferred",
-  adoptable: true,
-  requiresFullRead: false,
-  requiresPresence: false,
-  evidence: [
-    { kind: "owner_words", text: "入管局的邮件别漏了", sources: [], figures: [] },
-    {
-      kind: "mail_replay",
-      text: null,
-      sources: [{ kind: "web_page", ref: "https://example.test/a" }],
-      figures: [{ name: "mailsHit", value: 3, definition: "规则命中的邮件数" }],
-    },
-  ],
-  proposedAt: "2026-11-11T00:00:00.000Z",
-  expiresAt: "2026-12-11T00:00:00.000Z",
-  refusedBefore: 0,
-  ...over,
-});
-const waiting: PendingProposals = {
-  proposals: [proposal()],
-  pendingCount: 1,
-  limit: 20,
-  expiresAfterDays: 30,
-  opened: null,
-  generatedAt: "2026-11-11T00:00:00.000Z",
-};
-
 const rule = (change: Partial<OwnerRule> = {}): OwnerRule => ({
   ruleId: "owner:0123456789abcdef01234567",
   type: "mail_read_whole_thread",
@@ -170,7 +132,6 @@ async function press(label: string) {
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.resetAllMocks();
-  respondProposal.mockImplementation(async () => true);
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -187,7 +148,7 @@ describe("[P2-3] standing rules on the web page", () => {
     await show(
       h(RuleReceiptCard, {
         output: JSON.stringify(active),
-        memory: { proposals: waiting, respondRule, respondProposal, busy: false },
+        memory: { respondRule, busy: false },
         message,
       }),
     );
@@ -208,7 +169,7 @@ describe("[P2-3] standing rules on the web page", () => {
     expect(buttons()).toEqual([]);
   });
 
-  it("offers Apply only on a proposal, and nothing to press for a soft preference or a failed call", async () => {
+  it("offers Apply only on a proposal, and shows nothing for a rule she still has to ask about or a failed call", async () => {
     const respondRule = vi.fn(async () => true);
     await show(
       h(RuleReceiptCard, {
@@ -219,13 +180,13 @@ describe("[P2-3] standing rules on the web page", () => {
           proposalId: "rule-proposal:0123456789abcdef0123456789abcdef",
           replay: null,
         }),
-        memory: { proposals: waiting, respondRule, respondProposal, busy: false },
+        memory: { respondRule, busy: false },
         message,
       }),
     );
     expect(container.textContent).toContain("点“生效”才执行");
     expect(container.textContent).toContain("这次没能做历史回放");
-    expect(buttons()).toEqual(["生效", "不要"]);
+    expect(buttons()).toEqual(["生效"]);
     await press("生效");
     expect(respondRule).toHaveBeenCalledWith(
       "rule-proposal:0123456789abcdef0123456789abcdef",
@@ -233,39 +194,18 @@ describe("[P2-3] standing rules on the web page", () => {
     );
     await show(
       h(RuleReceiptCard, {
-        key: "refuse",
-        output: JSON.stringify({
-          ...active,
-          status: "proposed",
-          ruleId: null,
-          proposalId: "rule-proposal:0123456789abcdef0123456789abcdef",
-        }),
-        memory: { proposals: waiting, respondRule, respondProposal, busy: false },
+        key: "ask",
+        output: JSON.stringify({ ...active, status: "ask_owner", ruleId: null, proposalId: null }),
+        memory: { respondRule, busy: false },
         message,
       }),
     );
-    await press("不要");
-    expect(respondProposal).toHaveBeenCalledWith(waiting.proposals[0], "reject");
-    expect(buttons()).toEqual([]);
-    await show(
-      h(RuleReceiptCard, {
-        key: "gone",
-        output: JSON.stringify({
-          ...active,
-          status: "proposed",
-          ruleId: null,
-          proposalId: "rule-proposal:ffffffffffffffffffffffffffffffff",
-        }),
-        memory: { proposals: waiting, respondRule, respondProposal, busy: false },
-        message,
-      }),
-    );
-    expect(buttons()).toEqual(["生效"]);
+    expect(container.textContent).toBe("");
     await show(
       h(RuleReceiptCard, {
         key: "soft",
         output: JSON.stringify({ ...active, status: "soft", ruleId: null, trials: [] }),
-        memory: { proposals: waiting, respondRule, respondProposal, busy: false },
+        memory: { respondRule, busy: false },
         message,
       }),
     );
@@ -276,7 +216,7 @@ describe("[P2-3] standing rules on the web page", () => {
       h(RuleReceiptCard, {
         key: "failed",
         output: "这次没有记成规则",
-        memory: { proposals: waiting, respondRule, respondProposal, busy: false },
+        memory: { respondRule, busy: false },
         message,
       }),
     );
@@ -287,12 +227,7 @@ describe("[P2-3] standing rules on the web page", () => {
     await show(
       h(RuleReceiptCard, {
         output: JSON.stringify({ ...active, type: "mail_read_whole_thread" }),
-        memory: {
-          proposals: null,
-          respondRule: vi.fn(async () => true),
-          respondProposal: vi.fn(),
-          busy: false,
-        },
+        memory: { respondRule: vi.fn(async () => true), busy: false },
         message,
       }),
     );
@@ -378,18 +313,6 @@ describe("[P2-3] standing rules on the web page", () => {
       type: "approval.allowance.revoke",
       risk: "low",
       payload: { allowanceId: "allowance:0123456789abcdef" },
-    });
-    await act(async () => {
-      await seen.model?.respondProposal(proposal(), "adopt");
-    });
-    expect(mutate.mock.calls.at(-1)?.[0]).toMatchObject({
-      type: "proposal.respond",
-      payload: {
-        proposalId: "rule-proposal:0123456789abcdef0123456789abcdef",
-        expectedVersion: 3,
-        fingerprint: FINGERPRINT,
-        action: "adopt",
-      },
     });
   });
 

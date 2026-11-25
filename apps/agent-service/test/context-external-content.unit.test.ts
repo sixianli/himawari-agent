@@ -194,12 +194,6 @@ it("[ADR-0285] marks the conversation as soon as an outside event starts a run, 
   const sources: Record<string, object> = {
     "run-mail": { threadId: "thread-main", sourceType: "external_event", sourceId: "mail:42" },
     "run-owner": { threadId: "thread-main", sourceType: "user_message", sourceId: "msg:1" },
-    "run-task": {
-      threadId: "thread-task",
-      sourceType: "external_event",
-      sourceId: "task:1",
-      ownerApprovedTask: true,
-    },
     "run-own": { threadId: "thread-own", sourceType: "user_message", sourceId: "msg:2" },
   };
   const store = new ContextExternalContent({
@@ -223,8 +217,6 @@ it("[ADR-0285] marks the conversation as soon as an outside event starts a run, 
     "external_event:mail:42",
   ]);
   expect(await store.markRunSource("run-owner" as never)).toEqual([]);
-  expect(await store.markRunSource("run-task" as never)).toEqual([]);
   expect(await store.markRunSource("run-own" as never)).toEqual([]);
-  expect(await store.readThread("thread-task")).toEqual([]);
   expect(await store.readThread("thread-own")).toEqual([]);
 });

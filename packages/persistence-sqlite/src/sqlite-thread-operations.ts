@@ -1709,13 +1709,7 @@ export class SqliteThreadOperations {
       SELECT r.owner_id AS ownerId, r.agent_id AS agentId, r.id AS runId,
         r.session_id AS sessionId, r.thread_id AS threadId, r.trigger_id AS triggerId,
         t.source_type AS sourceType, t.source_id AS sourceId, t.payload_ref AS payloadRef,
-        p.classification AS dataClassification, t.occurred_at AS occurredAt, r.model_selection_json AS modelSelectionJson,
-        (t.source_type = 'external_event' AND EXISTS (
-          SELECT 1 FROM owner_proposals op
-          WHERE op.owner_id = r.owner_id AND op.agent_id = r.agent_id
-            AND op.type = 'task.run' AND op.status = 'accepted'
-            AND substr(t.source_proof_ref, 1, length(op.id) + 10) = 'proposal:' || op.id || ':'
-        )) AS ownerApprovedTask
+        p.classification AS dataClassification, t.occurred_at AS occurredAt, r.model_selection_json AS modelSelectionJson
       FROM runs r
       JOIN triggers t ON t.id = r.trigger_id AND t.owner_id = r.owner_id
         AND t.agent_id = r.agent_id AND t.thread_id IS r.thread_id
@@ -1736,15 +1730,10 @@ export class SqliteThreadOperations {
         ))
     `)
       .get(input.runId, input.ownerId, input.agentId) as
-      | (Omit<RunExecutionSource, "ownerApprovedTask"> & {
-          modelSelectionJson: string | null;
-          ownerApprovedTask: number;
-        })
+      | (RunExecutionSource & { modelSelectionJson: string | null })
       | undefined;
     if (!row) return undefined;
-    const { modelSelectionJson, ownerApprovedTask, ...rest } = row;
-    const source: RunExecutionSource =
-      ownerApprovedTask === 1 ? { ...rest, ownerApprovedTask: true } : rest;
+    const { modelSelectionJson, ...source } = row;
     return modelSelectionJson
       ? { ...source, modelSelection: JSON.parse(modelSelectionJson) }
       : source;

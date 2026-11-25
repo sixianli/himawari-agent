@@ -4,7 +4,7 @@ document_type: adr
 decision_status: accepted
 supersedes: ""
 superseded_by: ""
-amended_by: "docs/adr/0261-external-proposals-follow-restricted-deletion-and-expiry.md, docs/adr/0272-owner-proposals-join-the-data-export-format-v4.md"
+amended_by: "docs/adr/0261-external-proposals-follow-restricted-deletion-and-expiry.md, docs/adr/0289-data-export-v5-drops-owner-proposals.md"
 date: "2026-11-12"
 covers: "apps/agent-service/src/production-mcp-memory-writer.ts, apps/agent-service/src/production-memory-control.ts, apps/control-center/src/gateway-client.ts, packages/persistence-sqlite/src/migrations/0093_external_memory_proposals.sql, scripts/check-data-export.mjs, test/integration/data-export-external-proposals.test.ts, test/integration/external-proposals-browser.test.ts"
 verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"

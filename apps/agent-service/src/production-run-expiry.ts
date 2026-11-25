@@ -5,10 +5,7 @@ import type {
   PayloadProtectorPort,
   RunReconciliationCandidate,
 } from "@himawari-agent/application";
-import {
-  createApplicationServiceIdentityFactory,
-  frozenRunSourceIdentity,
-} from "@himawari-agent/application";
+import { createApplicationServiceIdentityFactory } from "@himawari-agent/application";
 import { canonicalAuthorizationSnapshot } from "@himawari-agent/application/action-intent-snapshot";
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 
@@ -62,8 +59,7 @@ export function createProductionRunExpiry(options: {
     if (
       !source ||
       frozen?.version !== "run-execution-input.v2" ||
-      canonicalAuthorizationSnapshot(frozenRunSourceIdentity(frozen.source)) !==
-        canonicalAuthorizationSnapshot(frozenRunSourceIdentity(source)) ||
+      canonicalAuthorizationSnapshot(frozen.source) !== canonicalAuthorizationSnapshot(source) ||
       typeof frozen.deadlineAt !== "string" ||
       !Number.isFinite(Date.parse(frozen.deadlineAt)) ||
       typeof frozen.startedAt !== "string" ||

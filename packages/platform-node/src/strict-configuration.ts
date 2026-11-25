@@ -1358,29 +1358,6 @@ function parseMcpRead(value: unknown): NonNullable<RunPolicyConfiguration["mcpRe
   return Object.freeze({ audience, proposals: true as const });
 }
 
-function parseOwnerProposals(
-  value: unknown,
-): NonNullable<RunPolicyConfiguration["ownerProposals"]> {
-  const field = "configuration.runPolicy.ownerProposals";
-  const input = record(value, field);
-  rejectUnknown(input, ["pendingLimit", "expiresAfterDays"], field);
-  return Object.freeze({
-    ...(input["pendingLimit"] === undefined
-      ? {}
-      : { pendingLimit: integer(input["pendingLimit"], `${field}.pendingLimit`, 1, 200) }),
-    ...(input["expiresAfterDays"] === undefined
-      ? {}
-      : {
-          expiresAfterDays: integer(
-            input["expiresAfterDays"],
-            `${field}.expiresAfterDays`,
-            1,
-            3650,
-          ),
-        }),
-  });
-}
-
 function parseInbox(value: unknown): NonNullable<RunPolicyConfiguration["inbox"]> {
   const field = "configuration.runPolicy.inbox";
   const input = record(value, field);
@@ -1778,7 +1755,6 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       "importDuplicates",
       "realEval",
       "mcpRead",
-      "ownerProposals",
       "inbox",
     ],
     "configuration.runPolicy",
@@ -1850,9 +1826,6 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       ? {}
       : { museIntake: parseMuseIntake(input["museIntake"]) }),
     ...(input["mcpRead"] === undefined ? {} : { mcpRead: parseMcpRead(input["mcpRead"]) }),
-    ...(input["ownerProposals"] === undefined
-      ? {}
-      : { ownerProposals: parseOwnerProposals(input["ownerProposals"]) }),
     ...(input["inbox"] === undefined ? {} : { inbox: parseInbox(input["inbox"]) }),
     ...(input["importDuplicates"] === undefined
       ? {}

@@ -155,7 +155,6 @@ describe("data export: round trip", () => {
       decisionTextsWithoutOriginal: 0,
       rulesWithoutOriginal: 0,
       externalProposalsWithoutOriginal: 0,
-      ownerProposalsWithoutOriginal: 0,
       evidenceNotImported: false,
     });
     const second = await exportOf(target, { evidence: true });
@@ -463,7 +462,7 @@ describe("data export: manifest and files are checked before anything is written
       "an unknown format version",
       (files) => {
         const manifest = JSON.parse(decoder.decode(files.get(MANIFEST_FILE)));
-        manifest.format = "himawari.data-export.v5";
+        manifest.format = "himawari.data-export.v4";
         return new Map(files).set(MANIFEST_FILE, encoder.encode(JSON.stringify(manifest)));
       },
       DATA_EXPORT_ERROR_CODES.FORMAT_UNSUPPORTED,

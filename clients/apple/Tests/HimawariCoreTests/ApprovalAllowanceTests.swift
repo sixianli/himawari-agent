@@ -36,8 +36,18 @@ import Testing
     var ok: HTTPExchangeResponse { HTTPExchangeResponse(status: 200, body: Data(#"{"payload":{}}"#.utf8)) }
 
     @Test func anOwnerScopeActionOffersEveryChoice() throws {
-        #expect(try approval().allowanceChoices == [.once, .thisTask, .days, .always])
+        #expect(try approval().allowanceChoices(days: 7) == [.once, .thisTask, .days, .always])
         #expect(try approval().allowanceLimit == nil)
+    }
+
+    @Test func withoutTheOwnersDayCountTheDaysChoiceIsLeftOut() throws {
+        #expect(try approval().allowanceChoices(days: nil) == [.once, .thisTask, .always])
+    }
+
+    @Test func theDayCountComesFromTheRuleBook() async throws {
+        let exchange = RecordingExchange([HTTPExchangeResponse(status: 200, body: Data(#"{"payload":{"rules":[],"allowances":[],"allowanceDays":30}}"#.utf8))])
+        #expect(try await api(exchange).allowanceDays() == 30)
+        #expect(try body(exchange.requests[0])["type"] as? String == "memory.rules.read")
     }
 
     @Test func spendingCredentialsPresenceAndOtherActionsOnlyAllowOnce() throws {
@@ -52,13 +62,13 @@ import Testing
         for (intent, limit) in cases {
             let found = try approval(intent: intent)
             #expect(found.allowanceLimit == limit)
-            #expect(found.allowanceChoices == [.once])
+            #expect(found.allowanceChoices(days: 7) == [.once])
         }
     }
 
-    @Test func approvingForSevenDaysRecordsTheScopeAfterTheApproval() async throws {
+    @Test func approvingForTheOwnersDaysRecordsTheScopeAfterTheApproval() async throws {
         let exchange = RecordingExchange([challengeReply, ok, challengeReply, ok])
-        let reply = try await api(exchange).respond(to: approval(), approved: true, allowFor: .days, confirm: try SoftwareKeySigner(), reason: "r")
+        let reply = try await api(exchange).respond(to: approval(), approved: true, allowFor: .days, days: 14, confirm: try SoftwareKeySigner(), reason: "r")
         #expect(reply == .recorded(status: "approved"))
         let gateway = exchange.requests.filter { $0.url?.path == "/api/device/v1/gateway" }
         #expect(try gateway.map { try body($0)["type"] as? String } == ["approval.respond", "approval.allowance.set"])
@@ -67,7 +77,14 @@ import Testing
         let payload = try #require(sent["payload"] as? [String: Any])
         #expect(payload["approvalRequestId"] as? String == "apr_1")
         #expect(payload["allowFor"] as? String == "days")
-        #expect(payload["days"] as? Int == ApprovalAllowFor.defaultDays)
+        #expect(payload["days"] as? Int == 14)
+    }
+
+    @Test func pickingDaysWithoutAKnownCountSendsNoScope() async throws {
+        let exchange = RecordingExchange([challengeReply, ok])
+        let reply = try await api(exchange).respond(to: approval(), approved: true, allowFor: .days, days: nil, confirm: try SoftwareKeySigner(), reason: "r")
+        #expect(reply == .recorded(status: "approved"))
+        #expect(exchange.requests.count == 2)
     }
 
     @Test func allowingForThisTaskSendsNullDays() async throws {

@@ -175,8 +175,6 @@ export const CLIENT_CAPABILITY_TABLE: readonly ClientCapabilityEntry[] = Object.
   change("v2", "memory.reminder.respond"),
   change("v2", "memory.reminder.create"),
   query("v2", "memory.rules.read"),
-  query("v2", "proposals.read"),
-  change("v2", "proposal.respond"),
   change("v2", "memory.rule.respond"),
   change("v2", "memory.create"),
   change("v2", "memory.category.set"),

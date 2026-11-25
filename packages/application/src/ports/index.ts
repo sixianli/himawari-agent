@@ -54,7 +54,6 @@ export * from "./model-usage.js";
 export * from "./muse-intake.js";
 export * from "./observability.js";
 export * from "./owner-preferences.js";
-export * from "./owner-proposals.js";
 export * from "./inbox.js";
 export * from "./owner-rules.js";
 export * from "./paired-devices.js";

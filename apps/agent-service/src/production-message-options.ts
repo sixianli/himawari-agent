@@ -395,6 +395,16 @@ export class ProductionMessageOptions {
     throw lastError;
   }
 
+  async ownerChose(invocation: RuntimeToolInvocation, tool: string): Promise<boolean> {
+    const record = await this.#read(`${GRANT_PREFIX}${invocation.runId}`);
+    const grant = record?.value as Partial<StoredGrant> | undefined;
+    return (
+      grant?.enabled === true &&
+      grant.tool === tool &&
+      grant.fingerprint === parameterFingerprint(invocation.arguments)
+    );
+  }
+
   async claimGrant(input: {
     readonly runId: string;
     readonly tool: string;
