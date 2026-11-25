@@ -1,6 +1,8 @@
 import type { RuntimeProjection } from "@himawari-agent/application/runtime-port";
 import {
   CHAT_CONTEXT_MATERIAL_MARKER,
+  CHAT_MEMORY_CHANGES_MARKER,
+  CHAT_MEMORY_SNAPSHOT_MARKER,
   CHAT_OWNER_RULES_MARKER,
   CHAT_RUNTIME_ENVIRONMENT_MARKER,
   type PromptEntry,
@@ -21,14 +23,20 @@ function leadingText(entry: Pick<PromptEntry, "id" | "segments">): string {
 }
 
 export const CONTEXT_MARKER_PREFIXES: readonly string[] = Object.freeze(
-  [CHAT_CONTEXT_MATERIAL_MARKER, CHAT_OWNER_RULES_MARKER, CHAT_RUNTIME_ENVIRONMENT_MARKER].map(
-    (entry) => `\n${leadingText(entry)}`,
-  ),
+  [
+    CHAT_CONTEXT_MATERIAL_MARKER,
+    CHAT_OWNER_RULES_MARKER,
+    CHAT_RUNTIME_ENVIRONMENT_MARKER,
+    CHAT_MEMORY_SNAPSHOT_MARKER,
+    CHAT_MEMORY_CHANGES_MARKER,
+  ].map((entry) => `\n${leadingText(entry)}`),
 );
 export const RUNTIME_ENVIRONMENT_MESSAGE_TYPE = "himawari.runtime-environment";
 
 export function contextBlockMarker(block: ContextBlock): string {
   if (block.kind === RUNTIME_ENVIRONMENT_KIND) return CHAT_RUNTIME_ENVIRONMENT_MARKER.text;
+  if (block.kind === "memory-snapshot") return CHAT_MEMORY_SNAPSHOT_MARKER.text;
+  if (block.kind === "memory-changes") return CHAT_MEMORY_CHANGES_MARKER.text;
   const metadata = JSON.stringify({
     authority: block.authority,
     kind: block.kind,

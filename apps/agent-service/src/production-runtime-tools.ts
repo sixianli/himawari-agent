@@ -61,6 +61,7 @@ import {
   TOOL_RESULT_REMINDER_REJECTED,
   TOOL_RESULT_REMINDER_UNAVAILABLE,
   TOOL_RESULT_RULE_REJECTED,
+  TOOL_RESULT_TELL_OWNER_REJECTED,
   TOOL_RESULT_VAULT_UNAVAILABLE,
   TOOL_SAVE_COPY,
   TOOL_SAVE_COPY_EXPECTED_HASH,
@@ -87,14 +88,14 @@ import {
   fileVersionConflictResult,
 } from "./production-coding-workflow.js";
 import {
+  RUNTIME_CONTEXT_EXECUTOR,
+  toolResultRecallDescriptor,
+} from "./production-context-recall.js";
+import {
   ConversationToolInputError,
   conversationToolDescriptors,
   type ProductionConversationTools,
 } from "./production-conversation-tools.js";
-import {
-  RUNTIME_CONTEXT_EXECUTOR,
-  toolResultRecallDescriptor,
-} from "./production-context-recall.js";
 import type { ProductionExecutionAdmissionParentBinding } from "./production-execution-admission-handler.js";
 import {
   type CodingBinding,
@@ -152,6 +153,11 @@ import {
   sandboxCeilingExceededMessage,
 } from "./production-sandbox-tool-result.js";
 import { type StageTiming, stageTiming } from "./production-stage-timing.js";
+import {
+  type ProductionTellOwner,
+  TellOwnerInputError,
+  tellOwnerDescriptor,
+} from "./production-tell-owner.js";
 import { productionToolActionRegistry } from "./production-tool-actions.js";
 import { beforeDeadline } from "./production-worker-deadline.js";
 import { ProductionWorkerForwardTransport } from "./production-worker-forward-transport.js";
@@ -170,6 +176,7 @@ const BUILTIN_PREFLIGHT: Readonly<
   "owner-conversation": { prefix: "conversation", reasonCode: "CONVERSATION_OWNER_SCOPE" },
   "owner-memory-record": { prefix: "memory-open", reasonCode: "MEMORY_OPEN_OWNER_SCOPE" },
   "owner-reminder": { prefix: "reminder", reasonCode: "REMINDER_OWNER_SCOPE" },
+  "owner-message": { prefix: "tell-owner", reasonCode: "TELL_OWNER_OWNER_SCOPE" },
   "owner-rule": { prefix: "owner-rule", reasonCode: "OWNER_RULE_OWNER_SCOPE" },
   "owner-perception": { prefix: "perception", reasonCode: "PERCEPTION_OWNER_SCOPE" },
   "owner-vault": { prefix: "vault", reasonCode: "VAULT_OWNER_SCOPE" },
@@ -378,6 +385,7 @@ export interface ProductionRuntimeToolsOptions {
   readonly conversations?: Pick<ProductionConversationTools, "run">;
   readonly memoryOpen?: Pick<ProductionMemoryOpen, "open">;
   readonly reminders?: Pick<ProductionReminderTools, "run">;
+  readonly tellOwner?: Pick<ProductionTellOwner, "run">;
   readonly ownerRules?: Pick<ProductionOwnerRuleTools, "run">;
   readonly perception?: Pick<ProductionPerceptionTools, "run">;
   readonly vault?: Pick<ProductionVaultTools, "run">;
@@ -631,6 +639,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     }
     if (this.#options.memoryRecall) descriptors.push(memoryRecallDescriptor());
     if (this.#options.reminders) descriptors.push(...reminderToolDescriptors());
+    if (this.#options.tellOwner) descriptors.push(tellOwnerDescriptor());
     if (this.#options.ownerRules) descriptors.push(...ownerRuleToolDescriptors());
     if (this.#options.perception) descriptors.push(...perceptionToolDescriptors());
     if (this.#options.vault) descriptors.push(...vaultToolDescriptors());
@@ -721,6 +730,8 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       return (invocation, gate) => this.#memoryOpen(invocation, gate);
     if (row.targetType === "owner-reminder" && this.#options.reminders)
       return (invocation, gate) => this.#reminder(invocation, gate);
+    if (row.targetType === "owner-message" && this.#options.tellOwner)
+      return (invocation, gate) => this.#tellOwner(invocation, gate);
     if (row.targetType === "owner-rule" && this.#options.ownerRules)
       return (invocation, gate) => this.#ownerRule(invocation, gate);
     if (row.targetType === "owner-perception" && this.#options.perception)
@@ -974,9 +985,33 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       },
     );
   }
+  async #tellOwner(
+    invocation: RuntimeToolInvocation,
+    gate: OwnerScopeGate,
+  ): Promise<RuntimeToolExecutionResult> {
+    const tellOwner = this.#options.tellOwner;
+    return this.#ownerScoped(
+      invocation,
+      "tell",
+      gate,
+      tellOwner ? async (call) => ({ value: await tellOwner.run(call) }) : undefined,
+      (error) => ({
+        errorCode: error instanceof TellOwnerInputError ? error.code : "TELL_OWNER_UNAVAILABLE",
+        note: TOOL_RESULT_TELL_OWNER_REJECTED.text,
+      }),
+    );
+  }
   async #ownerScoped(
     invocation: RuntimeToolInvocation,
-    marker: "recall" | "conversation" | "memory" | "reminder" | "rule" | "perception" | "vault",
+    marker:
+      | "recall"
+      | "conversation"
+      | "memory"
+      | "reminder"
+      | "rule"
+      | "perception"
+      | "tell"
+      | "vault",
     gate: OwnerScopeGate,
     run:
       | ((call: RuntimeToolInvocation) => Promise<{
@@ -1003,7 +1038,15 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
   }
   async #ownerScopedOnce(
     invocation: RuntimeToolInvocation,
-    marker: "recall" | "conversation" | "memory" | "reminder" | "rule" | "perception" | "vault",
+    marker:
+      | "recall"
+      | "conversation"
+      | "memory"
+      | "reminder"
+      | "rule"
+      | "perception"
+      | "tell"
+      | "vault",
     gate: OwnerScopeGate,
     run: (call: RuntimeToolInvocation) => Promise<{
       readonly value: unknown;

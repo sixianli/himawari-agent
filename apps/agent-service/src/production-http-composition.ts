@@ -117,6 +117,7 @@ import {
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { BuiltInActionRuleSwitches } from "./action-rule-switches.js";
 import { classifiedThreadTitleReader } from "./classified-thread-title.js";
+import type { ContextExternalContent } from "./context-external-content.js";
 import type { ProductionApplePush } from "./production-apple-push.js";
 import {
   createProductionApprovalGateway,
@@ -144,10 +145,19 @@ import {
   ProductionHomeControl,
   type ProductionHomeUrgencyOptions,
 } from "./production-home.js";
+import { productionInbox } from "./production-inbox-composition.js";
+import { type InboxRunRegistry, ProductionInboxDelivery } from "./production-inbox-delivery.js";
+import {
+  PRODUCTION_INBOX_OPERATIONS,
+  ProductionInboxControl,
+  ProductionInboxSettings,
+} from "./production-inbox-settings.js";
+import type { InboxDelivery } from "./production-inbox-worker.js";
 import {
   PRODUCTION_LOGIN_DEVICE_OPERATIONS,
   ProductionLoginDevicesControl,
 } from "./production-login-devices-control.js";
+import { ProductionMainThread } from "./production-main-thread.js";
 import {
   McpConnectionAddresses,
   PRODUCTION_MCP_CONNECTION_OPERATIONS,
@@ -178,10 +188,6 @@ import {
 } from "./production-owner-preferences-control.js";
 import { ProductionOwnerRuleWriter } from "./production-owner-rules.js";
 import {
-  PRODUCTION_QUIET_HOURS_OPERATIONS,
-  ProductionQuietHoursControl,
-} from "./production-quiet-hours-control.js";
-import {
   PRODUCTION_PERCEPTION_OPERATIONS,
   ProductionPerceptionControl,
 } from "./production-perception-control.js";
@@ -196,6 +202,10 @@ import {
   ProductionProposalControl,
 } from "./production-proposal-control.js";
 import { ProductionProposalBox } from "./production-proposals.js";
+import {
+  PRODUCTION_QUIET_HOURS_OPERATIONS,
+  ProductionQuietHoursControl,
+} from "./production-quiet-hours-control.js";
 import { registerReminderProposalHandlers } from "./production-reminder-proposals.js";
 import { ProductionReminderWriter } from "./production-reminder-writer.js";
 import {
@@ -212,15 +222,7 @@ import {
   ProductionServerStatusControl,
 } from "./production-server-status-control.js";
 import { registerTaskProposalHandler } from "./production-task-proposals.js";
-import { productionInbox } from "./production-inbox-composition.js";
-import type { InboxDelivery } from "./production-inbox-worker.js";
 import { ThreadDeletionRetry } from "./production-thread-deletion-retry.js";
-import { ProductionMainThread } from "./production-main-thread.js";
-import {
-  PRODUCTION_INBOX_OPERATIONS,
-  ProductionInboxControl,
-  ProductionInboxSettings,
-} from "./production-inbox-settings.js";
 import { type ProductionWebPush, WebPushPresence } from "./production-web-push.js";
 import {
   PRODUCTION_WEB_PUSH_OPERATIONS,
@@ -341,6 +343,10 @@ export interface ProductionHttpCompositionOptions {
   readonly proactive?: ProductionProactive;
   readonly inbox?: {
     readonly delivery?: InboxDelivery;
+    readonly mainThread?: {
+      readonly registry: InboxRunRegistry;
+      readonly externalContent: Pick<ContextExternalContent, "mark">;
+    };
     readonly onDiagnostic?: (event: Record<string, string>) => void;
   };
   readonly threadDeletionDiagnostic?: (event: Record<string, string>) => void;
@@ -1294,7 +1300,7 @@ export async function createProductionHttpComposition(
     store: repository.inbox(),
     configuration: configuration.runPolicy?.inbox,
     clock: { now: clock },
-    enabled: options.inbox?.delivery !== undefined,
+    enabled: options.inbox?.delivery !== undefined || options.inbox?.mainThread !== undefined,
   });
   const retentionDeletion = () =>
     new SqliteGovernedDeletionAdapter({
@@ -1321,6 +1327,26 @@ export async function createProductionHttpComposition(
     },
     ...(options.threadDeletionDiagnostic ? { onDiagnostic: options.threadDeletionDiagnostic } : {}),
   });
+  const mainThreadInbox = options.inbox?.mainThread;
+  const inboxDelivery =
+    options.inbox?.delivery ??
+    (mainThreadInbox
+      ? new ProductionInboxDelivery({
+          ownerId,
+          agentId,
+          mainThread,
+          threads,
+          commands: threadCommands,
+          runs: repository.runLifecycle(ownerId, agentId, authority),
+          ledger: repository.decisionLedger(),
+          externalContent: mainThreadInbox.externalContent,
+          registry: mainThreadInbox.registry,
+          payloads: repository.payloadStore(ownerId, agentId),
+          protector: payloadProtector,
+          clock: { now: clock },
+          ...(options.cancelRun ? { cancelRun: options.cancelRun } : {}),
+        })
+      : undefined);
   const inbox = productionInbox({
     settings: inboxSettings,
     configuration,
@@ -1328,7 +1354,7 @@ export async function createProductionHttpComposition(
     payloads: memoryPayloads,
     protector: payloadProtector,
     clock,
-    ...(options.inbox?.delivery ? { delivery: options.inbox.delivery } : {}),
+    ...(inboxDelivery ? { delivery: inboxDelivery } : {}),
     ...(options.inbox?.onDiagnostic ? { onDiagnostic: options.inbox.onDiagnostic } : {}),
   });
   const ownerRuleWriter = options.memory

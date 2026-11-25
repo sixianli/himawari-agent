@@ -1,4 +1,5 @@
 import type {
+  ConversationSpan,
   ConversationTurn,
   ConversationTurnCandidate,
   ConversationTurnDocument,
@@ -29,6 +30,11 @@ const searchScope = `c.owner_id = @ownerId AND c.agent_id = @agentId
   AND c.classification IN (SELECT value FROM json_each(@classifications))
   AND (@from IS NULL OR c.ended_at >= @from) AND (@to IS NULL OR c.started_at <= @to)
   AND (@excludeThreadId IS NULL OR c.thread_id != @excludeThreadId)
+  AND EXISTS (SELECT 1 FROM threads t WHERE t.id = c.thread_id AND t.status = 'open'
+    AND t.origin = 'owner')`;
+
+const spanScope = `c.owner_id = @ownerId AND c.agent_id = @agentId
+  AND c.classification IN (SELECT value FROM json_each(@allowed))
   AND EXISTS (SELECT 1 FROM threads t WHERE t.id = c.thread_id AND t.status = 'open'
     AND t.origin = 'owner')`;
 
@@ -99,6 +105,14 @@ export class SqliteConversationTurnOperations {
         );
       case "conversationTurn.listBehind":
         return this.listBehind(payload as { ownerId: OwnerId; agentId: AgentId; limit: number });
+      case "conversationTurn.span":
+        return this.span(
+          payload as {
+            ownerId: OwnerId;
+            agentId: AgentId;
+            allowedClassifications: readonly string[];
+          },
+        );
       case "conversationTurn.listUnembedded":
         return this.listUnembedded(
           payload as {
@@ -325,6 +339,48 @@ export class SqliteConversationTurnOperations {
         ORDER BY m.last_at, t.id LIMIT @limit`,
       )
       .all(input) as ConversationTurnWatermark[];
+  }
+
+  private span(input: {
+    ownerId: OwnerId;
+    agentId: AgentId;
+    allowedClassifications: readonly string[];
+  }): ConversationSpan | undefined {
+    const scope = {
+      ownerId: input.ownerId,
+      agentId: input.agentId,
+      allowed: JSON.stringify(input.allowedClassifications),
+    };
+    const months = this.database
+      .prepare(
+        `SELECT substr(c.day, 1, 7) AS month, count(DISTINCT c.day) AS days,
+          min(c.day) AS firstDay, max(c.day) AS lastDay
+        FROM conversation_turns c
+        WHERE ${spanScope}
+        GROUP BY month ORDER BY month`,
+      )
+      .all(scope) as { month: string; days: number; firstDay: string; lastDay: string }[];
+    const [first] = months;
+    const last = months.at(-1);
+    if (!first || !last) return undefined;
+    const seen = new Set(
+      (
+        this.database
+          .prepare(`SELECT DISTINCT c.classification AS value FROM conversation_turns c
+            WHERE ${spanScope}`)
+          .all(scope) as { value: string }[]
+      ).map(({ value }) => value),
+    );
+    return Object.freeze({
+      dataClassification:
+        (["restricted", "sensitive", "private", "public"] as const).find((level) =>
+          seen.has(level),
+        ) ?? "public",
+      firstDay: first.firstDay,
+      lastDay: last.lastDay,
+      days: months.reduce((sum, { days }) => sum + days, 0),
+      months: Object.freeze(months.map(({ month, days }) => Object.freeze({ month, days }))),
+    });
   }
 
   private listUnembedded(input: {

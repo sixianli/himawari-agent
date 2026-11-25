@@ -11,11 +11,11 @@ import {
 } from "@himawari-agent/execution-contracts";
 import { describe, expect, it, vi } from "vitest";
 import { ConversationToolInputError } from "../src/production-conversation-tools.js";
-import { MemoryOpenInputError } from "../src/production-memory-open.js";
 import type {
   ProductionHostReadOnlyInput,
   ProductionHostReadOnlyResult,
 } from "../src/production-host-read.js";
+import { MemoryOpenInputError } from "../src/production-memory-open.js";
 import { ReminderInputError } from "../src/production-reminder-writer.js";
 import {
   type ProductionRuntimeSandbox,
@@ -2339,8 +2339,15 @@ it("[ADR-0257] only the listing, recall, conversation and perception read tools 
       .filter(({ authorization }) => authorization === "owner_scope")
       .map(({ tool }) => tool)
       .sort(),
-  ).toEqual(["device_action", "reminder_cancel", "reminder_set", "rule_set", "rule_undo"]);
-  expect(builtin).toHaveLength(14);
+  ).toEqual([
+    "device_action",
+    "reminder_cancel",
+    "reminder_set",
+    "rule_set",
+    "rule_undo",
+    "tell_owner",
+  ]);
+  expect(builtin).toHaveLength(15);
 });
 
 it("[ADR-0257] runs a tool with consequences only after the exit allows it, and never asks the exit for a read", async () => {

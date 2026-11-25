@@ -251,7 +251,11 @@ export class ContextFormationService implements ContextFormationPort {
         limit: request.memoryLimit,
       }),
     ]);
-    const profileMemoryIds = new Set<string>(profile.memoryIds);
+    const profileMemoryIds = new Set<string>(
+      profile.blocks.flatMap(({ kind, memoryIds }) =>
+        kind === "memory-snapshot" ? [] : memoryIds,
+      ),
+    );
     const candidates = [...found].sort(
       (left, right) => right.score - left.score || left.id.localeCompare(right.id),
     );
@@ -816,6 +820,7 @@ function isProductContextEnvelopeV1(value: unknown): value is ProductContextEnve
         (item["kind"] === "thread-summary" ||
           item["kind"] === "memory" ||
           item["kind"] === "owner-rules" ||
+          item["kind"] === "memory-snapshot" ||
           item["kind"] === "owner-profile" ||
           item["kind"] === "owner-agenda" ||
           item["kind"] === "capability-summary" ||

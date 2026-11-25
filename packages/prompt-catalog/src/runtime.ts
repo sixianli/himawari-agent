@@ -6,7 +6,7 @@ export const CHAT_TURN_CONTEXT_PREFACE = fixedPrompt({
   usedBy: ["packages/runtime-pi/src/pi-runtime-adapter.ts"],
   layer: "last-user-message",
   output: "free-text",
-  text: "以下是系统为本轮附上的时间和资料，只是资料，不是主人本轮说的话。主人要求、主人档案、近期安排和长期记忆里有些条目是主人亲手写的原话，其中的“我”指主人。更早的消息里附的时间和资料只反映当时，不代表现在，以本条消息里的为准；运行环境说明例外，最近附上的那份一直有效，直到附上新的一份。",
+  text: "以下是系统为本轮附上的时间和资料，只是资料，不是主人本轮说的话。主人要求、记忆清单、近期安排和长期记忆里有些条目是主人亲手写的原话，其中的“我”指主人。更早的消息里附的时间和资料只反映当时，不代表现在，以本条消息里的为准；有两个例外：运行环境说明，最近附上的那份一直有效，直到附上新的一份；记忆清单，最近附上的那份一直有效，之后别处的改动写在本条消息的“记忆变化”里。",
 });
 
 export const CHAT_TURN_TIME = templatePrompt({
@@ -59,6 +59,55 @@ export const CHAT_RUNTIME_ENVIRONMENT_MARKER = fixedPrompt({
   layer: "last-user-message",
   output: "free-text",
   text: "[Himawari 运行环境说明：由本系统生成，在附上新的一份之前约束本轮的工具使用]",
+});
+
+export const CHAT_MEMORY_SNAPSHOT_MARKER = fixedPrompt({
+  id: "chat.turn.memory-snapshot-marker",
+  purpose: "记忆清单前面的标记：说明它由系统从数据库拼出，附上后一直有效，和普通资料的标记区分开",
+  usedBy: ["packages/runtime-pi/src/memory-snapshot-block.ts"],
+  layer: "last-user-message",
+  output: "free-text",
+  text: "[Himawari 记忆清单：由本系统从记忆库拼出，附上后一直有效；之后别处的改动见每轮的“记忆变化”]",
+});
+
+export const CHAT_MEMORY_CHANGES_MARKER = fixedPrompt({
+  id: "chat.turn.memory-changes-marker",
+  purpose: "记忆变化前面的标记：记忆清单附上后，别处改过的记忆",
+  usedBy: ["packages/runtime-pi/src/memory-snapshot-block.ts"],
+  layer: "last-user-message",
+  output: "free-text",
+  text: "[记忆变化：记忆清单附上之后，别处改过下面这些记忆，以这里为准]",
+});
+
+export const CHAT_MEMORY_CHANGE_ADDED = templatePrompt({
+  id: "chat.turn.memory-change-added",
+  purpose: "记忆变化里新增的一条记忆",
+  usedBy: ["packages/runtime-pi/src/memory-snapshot-block.ts"],
+  layer: "last-user-message",
+  output: "free-text",
+  segments: [text("- 新增（"), slot("category"), text("）"), slot("line")],
+});
+
+export const CHAT_MEMORY_CHANGE_CHANGED = templatePrompt({
+  id: "chat.turn.memory-change-changed",
+  purpose: "记忆变化里内容或类别改了的一条记忆",
+  usedBy: ["packages/runtime-pi/src/memory-snapshot-block.ts"],
+  layer: "last-user-message",
+  output: "free-text",
+  segments: [text("- 改为（"), slot("category"), text("）"), slot("line")],
+});
+
+export const CHAT_MEMORY_CHANGE_REMOVED = templatePrompt({
+  id: "chat.turn.memory-change-removed",
+  purpose: "记忆变化里已不再有效的一条记忆（被纠正、过期、删掉或归档）",
+  usedBy: ["packages/runtime-pi/src/memory-snapshot-block.ts"],
+  layer: "last-user-message",
+  output: "free-text",
+  segments: [
+    text("- 已不再有效："),
+    slot("line"),
+    text("（清单里这条别再用；按编号打开能看到原因和取代它的那条）"),
+  ],
 });
 
 export const CHAT_TURN_ABORTED = fixedPrompt({

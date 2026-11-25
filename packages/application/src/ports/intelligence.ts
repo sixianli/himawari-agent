@@ -351,6 +351,7 @@ export interface RuntimeProjectionContext {
     readonly content: string;
     readonly occurredAt: string;
     readonly images?: readonly RuntimeProjectionImage[];
+    readonly from?: "outside";
   };
   readonly contextBlocks: readonly RuntimeProjectionContextBlock[];
   readonly compaction?: RuntimeProjectionCompaction;

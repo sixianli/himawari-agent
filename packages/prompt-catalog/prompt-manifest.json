@@ -175,9 +175,9 @@
     }
   },
   "chat.identity": {
-    "sha256": "6a8e6585448e8ff3122d514ba5bc8b5433af903902c69ea6e0f03896a0d56c0c",
-    "changedIn": "ADR 0285",
-    "reason": "Andy 2026-11-24 定的权限照 Meta Muse（ADR 0285 决定 7、规格“权限和审批”第 5 条）：外来资料里的指令不照做，看到像在指使她做事的内容要告诉主人；识别出来也不代替系统按规则问主人"
+    "sha256": "d6289ade6b0d6430a1e7ff484c3c4f171d212adc0dbca3e3b59cf26b03a31943",
+    "changedIn": "ADR 0286",
+    "reason": "记忆清单快照：开局附一次记忆清单，之后每轮只附记忆变化，并加先打开再回答细节的规则"
   },
   "chat.runtime-environment.document-skill": {
     "sha256": "1267983f39421d48fa7a9a5680a1c2a7224d13084a16fe64e1bed0d9ec57a805",
@@ -275,9 +275,34 @@
     "reason": "W-21、W-05：资料标记改中文；主人的要求改用单独的标记；runtime-environment-block.ts 的标记前缀改为从目录生成"
   },
   "chat.turn.context-preface": {
-    "sha256": "fca9cc30abb6e3962cc98a8a43ebfb4fe7584d4cbda76656cfb1834574b75df9",
-    "changedIn": "ADR 0164",
-    "reason": "第二步 PR-A：运行环境说明只在变化时附上，开头说明写明它是“以本条为准”的例外，最近附上的那份一直有效"
+    "sha256": "1a9fefdbbea63bdf1066ae25acc29e5dfec74c9fde4d21673ef19c52e4d7a052",
+    "changedIn": "ADR 0286",
+    "reason": "记忆清单快照：开局附一次记忆清单，之后每轮只附记忆变化，并加先打开再回答细节的规则"
+  },
+  "chat.turn.memory-change-added": {
+    "sha256": "55e5c8ca00bc758f4eff8639a11e1eeffeba8ad4cfcac857c77f713c367357c8",
+    "changedIn": "ADR 0286",
+    "reason": "记忆清单快照：开局附一次记忆清单，之后每轮只附记忆变化，并加先打开再回答细节的规则"
+  },
+  "chat.turn.memory-change-changed": {
+    "sha256": "3bfc32462f5845f8c56037914fc3c826dfa249ba34d4c7da62b94d17f705647a",
+    "changedIn": "ADR 0286",
+    "reason": "记忆清单快照：开局附一次记忆清单，之后每轮只附记忆变化，并加先打开再回答细节的规则"
+  },
+  "chat.turn.memory-change-removed": {
+    "sha256": "7086e7d02d7661a172a9d889506bf0f30ea943f171ccf3aeb595bedf0de33c33",
+    "changedIn": "ADR 0286",
+    "reason": "记忆清单快照：开局附一次记忆清单，之后每轮只附记忆变化，并加先打开再回答细节的规则"
+  },
+  "chat.turn.memory-changes-marker": {
+    "sha256": "a1a23f9ceca23aefe4801889062b39552ac60673c98ce62a91fac0164a9b9359",
+    "changedIn": "ADR 0286",
+    "reason": "记忆清单快照：开局附一次记忆清单，之后每轮只附记忆变化，并加先打开再回答细节的规则"
+  },
+  "chat.turn.memory-snapshot-marker": {
+    "sha256": "093fdee282380cb43a5597ab27defac43b9c51197b082caa9ea8fbbf95aa1bcf",
+    "changedIn": "ADR 0286",
+    "reason": "记忆清单快照：开局附一次记忆清单，之后每轮只附记忆变化，并加先打开再回答细节的规则"
   },
   "chat.turn.owner-rules-marker": {
     "sha256": "9c43cbeab3df5f2ee401c71b71bed62171731b2746bf54a8ecf0a534e2cc5df7",
@@ -323,6 +348,16 @@
     "sha256": "845629e56803e841ec93a29ec735e1553db095888dc322f477f9e7b1375a2d62",
     "changedIn": "ADR 0255",
     "reason": "新增：首页上等主人定的事由模型打要紧度，审批另写一句话和同意按钮文字"
+  },
+  "inbox.events.entry": {
+    "sha256": "fdc03a3f74c899b3acf556a65a32d0bbb93a6c3dab1e1579f568ec09c5241d94",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 1 步：外来的事进主对话（内部的系统消息、最后写的话主人看不到），她用 tell_owner 开口并自己决定推不推"
+  },
+  "inbox.events.preface": {
+    "sha256": "94d617cdfb83e5870cf7edc6eff624e1a998625223432e255462ea6c8dbc16fd",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 1 步：外来的事进主对话（内部的系统消息、最后写的话主人看不到），她用 tell_owner 开口并自己决定推不推"
   },
   "mail.judgment": {
     "sha256": "c767cda2aae0c4a1ab7766043e35e2fda02ef76a079d4fd9004767e543189f77",
@@ -746,6 +781,41 @@
     "sha256": "324340a48c186039fa92a6a4d0f7bb175cadfb4d107b573b24d5916cb56c3255",
     "changedIn": "ADR 0271",
     "reason": "新增：导入记忆前，判断模型逐条看已有记忆里有没有说的是同一件事的，代替网页上的字符串包含判重"
+  },
+  "memory.snapshot.conversations": {
+    "sha256": "a42f7ab8e9ecf9ef02079a6f898481ca73b4d0df2fd1a88cd36d6675bafe50b7",
+    "changedIn": "ADR 0286",
+    "reason": "记忆清单快照：开局附一次记忆清单，之后每轮只附记忆变化，并加先打开再回答细节的规则"
+  },
+  "memory.snapshot.header": {
+    "sha256": "a23b3ad606eba843e865835247275114f9252c0b970f813ec4fc5861c2daa570",
+    "changedIn": "ADR 0286",
+    "reason": "记忆清单快照：开局附一次记忆清单，之后每轮只附记忆变化，并加先打开再回答细节的规则"
+  },
+  "memory.snapshot.month": {
+    "sha256": "1860bdd754bed027e5509586406786031a0f7f108bac89370440fc24f0c21847",
+    "changedIn": "ADR 0286",
+    "reason": "记忆清单快照：开局附一次记忆清单，之后每轮只附记忆变化，并加先打开再回答细节的规则"
+  },
+  "memory.snapshot.omitted": {
+    "sha256": "f55eca80ec54837d68ba88df2166ffa4d6766d19a1feec9cd25335eca5844203",
+    "changedIn": "ADR 0286",
+    "reason": "记忆清单快照：开局附一次记忆清单，之后每轮只附记忆变化，并加先打开再回答细节的规则"
+  },
+  "memory.snapshot.reachable-details": {
+    "sha256": "74315f4e8a933c36faf399e0f93624669886ada9f212504cff5ab0b40f923fed",
+    "changedIn": "ADR 0286",
+    "reason": "记忆清单快照：开局附一次记忆清单，之后每轮只附记忆变化，并加先打开再回答细节的规则"
+  },
+  "memory.snapshot.reachable-header": {
+    "sha256": "c66a93f944c6027c3c7ad78238053b85fd84d5cd8261e016279fc73ecf3fd2be",
+    "changedIn": "ADR 0286",
+    "reason": "记忆清单快照：开局附一次记忆清单，之后每轮只附记忆变化，并加先打开再回答细节的规则"
+  },
+  "memory.snapshot.tentative": {
+    "sha256": "2e0551212f0980f80942d40c43f126e582a3f9be790ced9184f18f9460eac467",
+    "changedIn": "ADR 0286",
+    "reason": "记忆清单快照：开局附一次记忆清单，之后每轮只附记忆变化，并加先打开再回答细节的规则"
   },
   "perception.data-notice": {
     "sha256": "da76be06e6177f16d79d1d00289481149234b0e618e9c71b703dee79dba2eeb2",
@@ -1335,6 +1405,11 @@
     "changedIn": "ADR 0230",
     "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
   },
+  "tools.result.tell-owner.rejected": {
+    "sha256": "e00c2075b9c218e50fdaa2ade29d00fa5a946a34f72a85bff8c131a8a84a6f0f",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 1 步：外来的事进主对话（内部的系统消息、最后写的话主人看不到），她用 tell_owner 开口并自己决定推不推"
+  },
   "tools.result.tool-result-recall.not-found": {
     "sha256": "b74cc518c46e5dc874742224bbcac13c5657de91256e916bf5273421570002fb",
     "changedIn": "ADR 0285",
@@ -1374,6 +1449,11 @@
     "sha256": "101f34dda3cc16f8f8e96e1977ddbd83927e8b2a602e0e91aa336c3f3653651e",
     "changedIn": "ADR 0166",
     "reason": "W-15a：新增参数说明"
+  },
+  "tools.tell-owner": {
+    "sha256": "331ad9c65b7a1ec36fd4a59e9e725263c31021d2ad35a45e022019f579a08581",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 1 步：外来的事进主对话（内部的系统消息、最后写的话主人看不到），她用 tell_owner 开口并自己决定推不推"
   },
   "tools.tool-result-recall": {
     "sha256": "4c4ed3364e748ad46829c470f233a04b402584e8c3889aa44c8b3f5260aba589",

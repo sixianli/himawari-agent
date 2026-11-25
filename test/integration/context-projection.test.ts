@@ -145,6 +145,7 @@ async function createContext(
   scenario?: { readonly previous: string; readonly current: string; readonly runState: unknown },
   runtimeEnvironment?: string,
   memoryDates?: unknown,
+  ownerProfile?: string,
 ): Promise<string> {
   const envelope = {
     schemaVersion: "context.v1" as const,
@@ -201,6 +202,16 @@ async function createContext(
               dataClassification: "private" as const,
             },
           ]),
+      ...(ownerProfile === undefined
+        ? []
+        : [
+            {
+              kind: "owner-profile" as const,
+              ref: "owner-profile:agent",
+              payloadRef: "payload-owner-profile",
+              dataClassification: "private" as const,
+            },
+          ]),
     ],
   };
   for (const [ref, text] of [
@@ -212,6 +223,7 @@ async function createContext(
     ["payload-memory", "非权威记忆摘要"],
     ["payload-worker-result", "Worker result material"],
     ["payload-runtime-environment", runtimeEnvironment ?? ""],
+    ["payload-owner-profile", ownerProfile ?? ""],
   ] as const) {
     await putText(fixture, ref, text);
   }
@@ -492,6 +504,21 @@ describe("ContextProjectionService", () => {
       dataClassification: "private",
     });
     expect(projection.systemInstruction).not.toContain("工作目录");
+  });
+
+  it("[ADR-0286] still projects a run formed before the memory list replaced the owner profile block", async () => {
+    const fixture = createFixture();
+    const contextRef = await createContext(
+      fixture,
+      undefined,
+      undefined,
+      undefined,
+      "主人档案：\n- 住在东京",
+    );
+    const projection = await fixture.service.resolveProjection(request(contextRef));
+    expect(projection.contextBlocks.find(({ kind }) => kind === "owner-profile")?.content).toBe(
+      "主人档案：\n- 住在东京",
+    );
   });
 
   it("re-materializes the same protected envelope after a projection service restart", async () => {

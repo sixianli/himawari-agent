@@ -161,6 +161,8 @@ describe("runtime environment block is sent only when the model has not seen it"
       "\n[Himawari 资料 ",
       "\n[Himawari 主人的要求 ",
       `\n${MARKER}`,
+      "\n[Himawari 记忆清单：由本系统从记忆库拼出，附上后一直有效；之后别处的改动见每轮的“记忆变化”]",
+      "\n[记忆变化：记忆清单附上之后，别处改过下面这些记忆，以这里为准]",
     ]);
     const history = [
       sentTurn([

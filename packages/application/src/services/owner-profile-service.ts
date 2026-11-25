@@ -1,11 +1,19 @@
 import type { AgentId, MemoryId, OwnerId } from "@himawari-agent/domain";
 import {
+  MEMORY_SNAPSHOT_CONVERSATIONS,
+  MEMORY_SNAPSHOT_HEADER,
+  MEMORY_SNAPSHOT_MONTH,
+  MEMORY_SNAPSHOT_OMITTED,
+  MEMORY_SNAPSHOT_REACHABLE_DETAILS,
+  MEMORY_SNAPSHOT_REACHABLE_HEADER,
+  MEMORY_SNAPSHOT_TENTATIVE,
   OWNER_AGENDA_ENDING,
   OWNER_AGENDA_OMITTED,
   OWNER_AGENDA_UNREMINDED,
   renderPrompt,
 } from "@himawari-agent/prompt-catalog";
 import type {
+  ConversationTurnStorePort,
   DataClassification,
   MemoryBookStorePort,
   MemoryCategory,
@@ -19,6 +27,8 @@ import { highestClassification, modelVisibleCeiling } from "./model-visibility.j
 
 export const OWNER_PROFILE_CHARACTER_BUDGET = 2000;
 export const OWNER_AGENDA_CHARACTER_BUDGET = 2400;
+export const MEMORY_SNAPSHOT_CHARACTER_BUDGET = 100_000;
+const MEMORY_NUMBER_BATCH = 10_000;
 const AGENDA_HORIZON_MS = 7 * 24 * 3_600_000;
 const AGENDA_REMINDER_LIMIT = 100;
 const PROFILE_MINIMUM_IMPORTANCE = 600;
@@ -28,6 +38,17 @@ const CLASSIFICATION_RANK: Record<DataClassification, number> = {
   sensitive: 2,
   restricted: 3,
 };
+const SNAPSHOT_SECTIONS: readonly (readonly [MemoryCategory, string])[] = [
+  ["identity", "身份"],
+  ["preference", "偏好"],
+  ["relationship", "人际关系"],
+  ["goal", "长期目标"],
+  ["project", "进行中的事"],
+  ["health", "健康"],
+  ["finance", "财务"],
+  ["event", "经历和事件"],
+  ["other", "其他"],
+];
 const PROFILE_SECTIONS: readonly (readonly [MemoryCategory, string])[] = [
   ["identity", "身份"],
   ["preference", "偏好"],
@@ -37,7 +58,7 @@ const PROFILE_SECTIONS: readonly (readonly [MemoryCategory, string])[] = [
 ];
 
 export interface OwnerProfileBlock {
-  readonly kind: "owner-rules" | "owner-profile" | "owner-agenda";
+  readonly kind: "owner-rules" | "memory-snapshot" | "owner-agenda";
   readonly ref: string;
   readonly payloadRef: PayloadRef;
   readonly dataClassification: DataClassification;
@@ -90,7 +111,9 @@ export interface OwnerProfilePort {
 }
 
 export interface OwnerProfileServiceOptions {
-  readonly state: Pick<ProductMemoryStatePort, "listActive">;
+  readonly state: Pick<ProductMemoryStatePort, "listActive" | "numbers">;
+  readonly conversations?: Pick<ConversationTurnStorePort, "span">;
+  readonly snapshotCharacterBudget?: number;
   readonly readText: (memory: ProductMemoryRecord) => Promise<string | undefined>;
   readonly storeText: (input: {
     readonly ref: PayloadRef;
@@ -112,14 +135,27 @@ export interface OwnerProfileServiceOptions {
 }
 
 function currentlyValid(memory: ProductMemoryRecord, now: string): boolean {
+  return memory.attributes?.tentative !== true && listable(memory, now);
+}
+
+function listable(memory: ProductMemoryRecord, now: string): boolean {
   const attributes = memory.attributes;
-  if (!attributes) return false;
-  if (attributes.supersededBy !== null || attributes.tentative === true) return false;
+  if (!attributes || attributes.supersededBy !== null) return false;
   return attributes.validTo === null || attributes.validTo > now;
 }
 
 function byCodeUnit(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function snapshotSection(memory: ProductMemoryRecord): string {
+  if (memory.attributes?.tentative) return MEMORY_SNAPSHOT_TENTATIVE.text;
+  const category = memory.attributes?.category;
+  return (
+    SNAPSHOT_SECTIONS.find(([candidate]) => candidate === category)?.[1] ??
+    SNAPSHOT_SECTIONS.at(-1)?.[1] ??
+    ""
+  );
 }
 
 function byImportance(left: ProductMemoryRecord, right: ProductMemoryRecord): number {
@@ -193,11 +229,13 @@ export class OwnerProfileService implements OwnerProfilePort {
     );
     const pinned = new Set([...choices].flatMap(([memoryId, on]) => (on ? [memoryId] : [])));
     const declined = new Set([...choices].flatMap(([memoryId, on]) => (on ? [] : [memoryId])));
-    const valid = (await this.#options.state.listActive(input.ownerId, input.agentId)).filter(
+    const active = (await this.#options.state.listActive(input.ownerId, input.agentId)).filter(
       (memory) =>
-        memory.status === "active" &&
-        CLASSIFICATION_RANK[memory.dataClassification] <= ceiling &&
-        currentlyValid(memory, input.now),
+        memory.status === "active" && CLASSIFICATION_RANK[memory.dataClassification] <= ceiling,
+    );
+    const valid = active.filter((memory) => currentlyValid(memory, input.now));
+    const listed = active.filter(
+      (memory) => listable(memory, input.now) && choices.get(memory.id) !== false,
     );
     const eligible = valid.filter((memory) => choices.get(memory.id) !== false);
     const limit = this.#options.characterBudget ?? OWNER_PROFILE_CHARACTER_BUDGET;
@@ -260,7 +298,7 @@ export class OwnerProfileService implements OwnerProfilePort {
       pinned: pinnedUsed,
       queued: Object.freeze(queued),
     });
-    return { rules, sections, eligible: valid, declined, usage };
+    return { rules, sections, eligible: valid, declined, usage, listed, ceiling };
   }
 
   async #agenda(
@@ -379,7 +417,7 @@ export class OwnerProfileService implements OwnerProfilePort {
     readonly maxClassification: DataClassification;
     readonly now: string;
   }): Promise<OwnerProfile> {
-    const { rules, sections, eligible, declined, usage } = await this.#select(input);
+    const { rules, eligible, declined, usage, listed, ceiling } = await this.#select(input);
     const agenda = await this.#agenda(input, eligible, declined);
     const blocks: OwnerProfileBlock[] = [];
     const name =
@@ -406,19 +444,15 @@ export class OwnerProfileService implements OwnerProfilePort {
           name ? "private" : undefined,
         ),
       );
-    if (sections.length > 0)
+    const snapshot = await this.#snapshot(input, listed, ceiling);
+    if (snapshot)
       blocks.push(
         await this.#block(
           input,
-          "owner-profile",
-          [
-            "主人档案（由已确认的长期记忆整理）：",
-            ...sections.flatMap(({ title, lines }) => [
-              `${title}：`,
-              ...lines.map(({ text, dateNote }) => `- ${text}${dateNote}`),
-            ]),
-          ].join("\n"),
-          sections.flatMap(({ lines }) => lines.map(({ memory }) => memory)),
+          "memory-snapshot",
+          snapshot.text,
+          snapshot.memories,
+          snapshot.floor,
         ),
       );
     if (agenda.lines.length > 0 || agenda.omitted > 0)
@@ -441,6 +475,134 @@ export class OwnerProfileService implements OwnerProfilePort {
       memoryIds: Object.freeze(blocks.flatMap(({ memoryIds }) => memoryIds)),
       usage,
     });
+  }
+
+  async #snapshot(
+    input: { readonly ownerId: OwnerId; readonly agentId: AgentId },
+    valid: readonly ProductMemoryRecord[],
+    ceiling: number,
+  ): Promise<
+    | {
+        text: string;
+        memories: readonly ProductMemoryRecord[];
+        floor: DataClassification | undefined;
+      }
+    | undefined
+  > {
+    const listed = valid.filter((memory) => memory.attributes?.category !== "rule");
+    const numbers = new Map<MemoryId, number>();
+    for (let start = 0; start < listed.length; start += MEMORY_NUMBER_BATCH) {
+      const found = await this.#options.state.numbers({
+        ownerId: input.ownerId,
+        agentId: input.agentId,
+        memoryIds: listed.slice(start, start + MEMORY_NUMBER_BATCH).map(({ id }) => id),
+      });
+      for (const { memoryId, number } of found) numbers.set(memoryId, number);
+    }
+    const lines: {
+      memory: ProductMemoryRecord;
+      number: number;
+      section: string;
+      line: string;
+    }[] = [];
+    for (const memory of listed) {
+      const number = numbers.get(memory.id);
+      if (number === undefined) continue;
+      const text = (await this.#options.readText(memory))?.replace(/\s+/gu, " ").trim();
+      if (!text) continue;
+      lines.push({
+        memory,
+        number,
+        section: snapshotSection(memory),
+        line: `${number}${/^\d/u.test(text) ? " " : ""}${text}`,
+      });
+    }
+    const allowed = (["public", "private", "sensitive", "restricted"] as const).filter(
+      (classification) => CLASSIFICATION_RANK[classification] <= ceiling,
+    );
+    const span = await this.#options.conversations?.span({
+      ownerId: input.ownerId,
+      agentId: input.agentId,
+      allowedClassifications: allowed,
+    });
+    if (lines.length === 0 && !span) return undefined;
+    const limit = this.#options.snapshotCharacterBudget ?? MEMORY_SNAPSHOT_CHARACTER_BUDGET;
+    const titles = [...SNAPSHOT_SECTIONS.map(([, title]) => title), MEMORY_SNAPSHOT_TENTATIVE.text];
+    const bySection = titles.map((title) => ({
+      title,
+      entries: lines
+        .filter(({ section }) => section === title)
+        .sort((left, right) => left.number - right.number),
+    }));
+    const omittedLine = (title: string, count: number) =>
+      renderPrompt(MEMORY_SNAPSHOT_OMITTED, { category: title, count: String(count) });
+    const reachable = [
+      MEMORY_SNAPSHOT_REACHABLE_HEADER.text,
+      MEMORY_SNAPSHOT_REACHABLE_DETAILS.text,
+      ...(span
+        ? [
+            renderPrompt(MEMORY_SNAPSHOT_CONVERSATIONS, {
+              first: span.firstDay,
+              last: span.lastDay,
+              days: String(span.days),
+              months: span.months
+                .map(({ month, days }) =>
+                  renderPrompt(MEMORY_SNAPSHOT_MONTH, { month, days: String(days) }),
+                )
+                .join("，"),
+            }),
+          ]
+        : []),
+    ];
+    const render = (kept: ReadonlySet<MemoryId>) => {
+      const body: string[] = [];
+      const omitted: string[] = [];
+      for (const { title, entries } of bySection) {
+        const shown = entries.filter(({ memory }) => kept.has(memory.id));
+        if (shown.length > 0) body.push(title, ...shown.map(({ line }) => line));
+        if (shown.length < entries.length)
+          omitted.push(omittedLine(title, entries.length - shown.length));
+      }
+      return [MEMORY_SNAPSHOT_HEADER.text, ...body, ...reachable, ...omitted].join("\n");
+    };
+    const fitWithinLimit = () => {
+      const kept = new Set<MemoryId>();
+      const cost = (texts: readonly string[]) =>
+        texts.reduce((sum, text) => sum + text.length + 1, 0);
+      let remaining =
+        limit +
+        1 -
+        cost([MEMORY_SNAPSHOT_HEADER.text, ...reachable]) -
+        cost(
+          bySection
+            .filter(({ entries }) => entries.length > 0)
+            .map(({ title, entries }) => omittedLine(title, entries.length)),
+        );
+      const opened = new Set<string>();
+      for (const entry of [...lines].sort(
+        (left, right) =>
+          (right.memory.attributes?.importancePermille ?? 0) -
+            (left.memory.attributes?.importancePermille ?? 0) ||
+          byCodeUnit(right.memory.updatedAt, left.memory.updatedAt) ||
+          left.number - right.number,
+      )) {
+        const needed =
+          entry.line.length + 1 + (opened.has(entry.section) ? 0 : entry.section.length + 1);
+        if (needed > remaining) continue;
+        remaining -= needed;
+        opened.add(entry.section);
+        kept.add(entry.memory.id);
+      }
+      return kept;
+    };
+    const everything = new Set(lines.map(({ memory }) => memory.id));
+    const kept = render(everything).length <= limit ? everything : fitWithinLimit();
+    const text = render(kept);
+    return {
+      text,
+      memories: lines.filter(({ memory }) => kept.has(memory.id)).map(({ memory }) => memory),
+      floor: span?.dataClassification,
+    };
   }
 
   async #block(
