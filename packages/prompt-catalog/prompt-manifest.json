@@ -364,6 +364,16 @@
     "changedIn": "ADR 0285",
     "reason": "Always On 第 4 步：主人定的提醒到点时进收件箱叫醒她，由她在主对话里提醒、决定推不推；她那一趟失败或太慢时程序按原话写进主对话并推送"
   },
+  "inbox.memory-saved": {
+    "sha256": "8028cb0341e9759f6803fe8f604b8451b9b38ea935ce7e8830af0a26d1dc4ad4",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 5 步：主对话以外新存下或改了一条记忆时进收件箱叫醒她，只带编号和时间，内容她用 memory_open 打开，由她判断要不要告诉主人"
+  },
+  "inbox.perception-episode": {
+    "sha256": "5cbf490ddecfa9ab213ea787576183f6c06d092fca631d2412621a43f9795aee",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 5 步：手机感知的一段经历整理好时进收件箱叫醒她，只带编号、起止时间和记录种类，内容她用 perception_read 取回，感知暂停时不进"
+  },
   "inbox.events.preface": {
     "sha256": "94d617cdfb83e5870cf7edc6eff624e1a998625223432e255462ea6c8dbc16fd",
     "changedIn": "ADR 0285",
