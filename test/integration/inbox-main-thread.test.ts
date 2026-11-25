@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
+  DEFAULT_MEMORY_ATTRIBUTES,
   type MemoryReminder,
   type PayloadProtectorPort,
   ThreadCommandService,
@@ -10,6 +11,7 @@ import {
   createAgentId,
   createAuthorityLeaseId,
   createDeploymentId,
+  createMemoryId,
   createOwnerId,
   createRunId,
   createSessionId,
@@ -32,6 +34,10 @@ import {
 } from "../../apps/agent-service/src/production-inbox-delivery.ts";
 import { ProductionInboxWorker } from "../../apps/agent-service/src/production-inbox-worker.ts";
 import { ProductionMainThread } from "../../apps/agent-service/src/production-main-thread.ts";
+import {
+  MEMORY_SAVED_EVENT_KIND,
+  ProductionMemoryInbox,
+} from "../../apps/agent-service/src/production-memory-inbox.ts";
 import {
   ProductionReminderInbox,
   reminderMessageId,
@@ -279,8 +285,45 @@ describe("outside events in the main conversation", () => {
         summary,
         externalContent: true,
       });
+    const memories = new ProductionMemoryInbox({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      state: repository.productMemoryState(),
+      mainThread,
+      formatTime: (iso) => `北京时间 ${iso.slice(11, 16)}`,
+      clock: { now },
+    });
+    memories.registerSource(inbox.sources);
+    memories.attach(inbox);
+    const remember = async (id: string, content: string, sourceThreadId: string | null) => {
+      const contentRef = `memory-content:${id}`;
+      await write(contentRef, content);
+      await repository.productMemoryState().save(
+        {
+          id: createMemoryId(id),
+          ...scope,
+          revision: 1,
+          status: "active",
+          contentRef: contentRef as never,
+          dataClassification: "private",
+          sourceThreadId: sourceThreadId as never,
+          sourceRefs: [`message-${id}`],
+          inference: false,
+          confidencePermille: 950,
+          policyVersion: "memory-capture:v2",
+          providerRecordId: null,
+          lastUsedAt: null,
+          updatedAt: now(),
+          attributes: DEFAULT_MEMORY_ATTRIBUTES,
+        },
+        null,
+      );
+    };
     return {
       repository,
+      memories,
+      remember,
+      inbox,
       threads,
       commands,
       mainThread,
@@ -390,6 +433,54 @@ describe("outside events in the main conversation", () => {
     expect(f.query<{ outcome: string }>("SELECT outcome FROM inbox_events")[0]?.outcome).toBe(
       "silent",
     );
+  });
+
+  it("[ADR-0285] puts a memory saved outside the main conversation into the inbox by number only, and records her silence", async () => {
+    const f = await fixture();
+    const main = await f.mainThread.ensure();
+    await f.remember("memory:oolong", "主人喜欢喝乌龙茶", null);
+    await f.remember("memory:said-here", "主人下周三去大阪出差", main);
+    expect(await f.memories.tick()).toBe(1);
+    expect(await f.memories.tick()).toBe(0);
+    const rows = f.query<{ source_ref: string; summary_ref: string; priority: number }>(
+      "SELECT source_ref, summary_ref, priority FROM inbox_events WHERE source_kind = ?",
+      MEMORY_SAVED_EVENT_KIND,
+    );
+    expect(rows).toMatchObject([{ source_ref: "memory:oolong", priority: 5 }]);
+    const summary = await f.text(rows[0]?.summary_ref ?? "");
+    expect(summary).toContain("第 1 条");
+    expect(summary).toContain("memory_open");
+    expect(summary).not.toContain("乌龙茶");
+    const claim = await f.worker.claim();
+    if (!claim) throw new Error("no claim");
+    expect(claim.threadId).toBeNull();
+    const handled = f.worker.handle(claim);
+    const runId = await f.admitted();
+    await f.finish(runId, "和时间无关的口味偏好，不用说");
+    expect(await handled).toMatchObject({ status: "done", result: "handled" });
+    expect(await f.threads.listMessages(OWNER_ID, AGENT_ID, main, 0, 20)).toEqual([]);
+    expect(
+      f.query<{ verdict: string }>("SELECT verdict FROM decision_ledger WHERE kind = 'proactive'"),
+    ).toEqual([{ verdict: "silent" }]);
+  });
+
+  it("REVERSE: after a restart the same saved memory adds no second inbox row", async () => {
+    const f = await fixture();
+    await f.remember("memory:oolong", "主人喜欢喝乌龙茶", null);
+    expect(await f.memories.tick()).toBe(1);
+    const fresh = new ProductionMemoryInbox({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      state: f.repository.productMemoryState(),
+      mainThread: f.mainThread,
+      formatTime: (iso) => iso,
+      clock: { now: () => f.clock.value },
+    });
+    fresh.attach(f.inbox);
+    expect(await fresh.tick()).toBe(0);
+    expect(
+      f.query("SELECT 1 FROM inbox_events WHERE source_kind = ?", MEMORY_SAVED_EVENT_KIND),
+    ).toHaveLength(1);
   });
 
   it("keeps one inbox row and one decision when the same mail arrives twice", async () => {

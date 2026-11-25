@@ -124,6 +124,7 @@ import { classifiedThreadTitleReader } from "./classified-thread-title.js";
 import type { ContextExternalContent } from "./context-external-content.js";
 import type { OwnerAllowances } from "./owner-allowances.js";
 import type { ProductionApplePush } from "./production-apple-push.js";
+import { ProductionApprovalAnswers } from "./production-approval-answers.js";
 import {
   createProductionApprovalGateway,
   PRODUCTION_APPROVAL_OPERATIONS,
@@ -157,12 +158,6 @@ import {
   ProductionInboxControl,
   ProductionInboxSettings,
 } from "./production-inbox-settings.js";
-import { ProductionApprovalAnswers } from "./production-approval-answers.js";
-import {
-  PRODUCTION_TIMER_OPERATIONS,
-  ProductionTimerControl,
-  type TimerReminders,
-} from "./production-timer-control.js";
 import type { InboxDelivery } from "./production-inbox-worker.js";
 import {
   PRODUCTION_LOGIN_DEVICE_OPERATIONS,
@@ -183,6 +178,7 @@ import {
   PRODUCTION_MEMORY_OPERATIONS,
   ProductionMemoryControl,
 } from "./production-memory-control.js";
+import { ProductionMemoryInbox } from "./production-memory-inbox.js";
 import { flushSensitiveInterceptions } from "./production-model-egress.js";
 import { type ProductionMuseIntake, registerMuseIntakeRoute } from "./production-muse-intake.js";
 import {
@@ -202,6 +198,7 @@ import {
   PRODUCTION_PERCEPTION_OPERATIONS,
   ProductionPerceptionControl,
 } from "./production-perception-control.js";
+import type { ProductionPerceptionInbox } from "./production-perception-inbox.js";
 import {
   PROACTIVE_GOOGLE_CALLBACK_PATH,
   PROACTIVE_GOOGLE_START_PATH,
@@ -212,6 +209,7 @@ import {
   PRODUCTION_QUIET_HOURS_OPERATIONS,
   ProductionQuietHoursControl,
 } from "./production-quiet-hours-control.js";
+import type { ProductionReminderInbox } from "./production-reminder-inbox.js";
 import {
   PRODUCTION_SEARCH_OPERATIONS,
   ProductionSearchControl,
@@ -225,9 +223,17 @@ import {
   PRODUCTION_SERVER_STATUS_OPERATIONS,
   ProductionServerStatusControl,
 } from "./production-server-status-control.js";
-import type { ProductionReminderInbox } from "./production-reminder-inbox.js";
-import type { ProductionSubthreads } from "./production-subthreads.js";
+import {
+  DEFAULT_TIMER_TIME_ZONE,
+  localTime,
+  type ProductionSubthreads,
+} from "./production-subthreads.js";
 import { ThreadDeletionRetry } from "./production-thread-deletion-retry.js";
+import {
+  PRODUCTION_TIMER_OPERATIONS,
+  ProductionTimerControl,
+  type TimerReminders,
+} from "./production-timer-control.js";
 import { type ProductionWebPush, WebPushPresence } from "./production-web-push.js";
 import {
   PRODUCTION_WEB_PUSH_OPERATIONS,
@@ -355,6 +361,7 @@ export interface ProductionHttpCompositionOptions {
       readonly externalContent: Pick<ContextExternalContent, "mark">;
       readonly subthreads?: ProductionSubthreads;
       readonly reminders?: ProductionReminderInbox;
+      readonly perception?: ProductionPerceptionInbox;
       readonly timerReminders?: TimerReminders;
       readonly timeZone?: string;
     };
@@ -1354,6 +1361,31 @@ export async function createProductionHttpComposition(
     approvalAnswers.registerSource(inbox.inbox.sources);
     approvalAnswers.attach(inbox.inbox);
   }
+  const memoryInbox = mainThreadInbox
+    ? new ProductionMemoryInbox({
+        ownerId,
+        agentId,
+        state: repository.productMemoryState(),
+        mainThread,
+        formatTime: (iso) =>
+          localTime(iso, options.inbox?.mainThread?.timeZone ?? DEFAULT_TIMER_TIME_ZONE),
+        clock: { now: clock },
+        onFailure: (error: unknown) =>
+          options.inbox?.onDiagnostic?.({
+            event: "inbox.memory_source_failed",
+            error: error instanceof Error ? error.message.slice(0, 120) : "unknown",
+          }),
+      })
+    : undefined;
+  if (memoryInbox) {
+    memoryInbox.registerSource(inbox.inbox.sources);
+    memoryInbox.attach(inbox.inbox);
+  }
+  const perceptionInbox = mainThreadInbox?.perception;
+  if (perceptionInbox) {
+    perceptionInbox.registerSource(inbox.inbox.sources);
+    perceptionInbox.attach(inbox.inbox);
+  }
   const subthreads = mainThreadInbox?.subthreads;
   if (subthreads) {
     subthreads.registerSources(inbox.inbox.sources);
@@ -1992,6 +2024,7 @@ export async function createProductionHttpComposition(
         home.startScoring();
         await ensureMainThread();
         inbox.loop?.start();
+        memoryInbox?.start();
         threadDeletionRetry.start();
         return address;
       }
@@ -2008,11 +2041,13 @@ export async function createProductionHttpComposition(
       home.startScoring();
       await ensureMainThread();
       inbox.loop?.start();
+      memoryInbox?.start();
       threadDeletionRetry.start();
       return unixSocketPath;
     },
     close: async () => {
       searchIndexer.stop();
+      await memoryInbox?.stop();
       await inbox.loop?.stop();
       await threadDeletionRetry.stop();
       await home.stopScoring();
