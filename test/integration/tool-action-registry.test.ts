@@ -1687,3 +1687,65 @@ it("[ADR-0285] spending money, credential changes and actions that need the owne
     ).rejects.toMatchObject({ message: code });
   }
 });
+
+it("[ADR-0285] a yes whose settings entry could not be written never takes effect, and saving again lists it", async () => {
+  const intent = {
+    contractVersion: "authorization.v2",
+    id: "owner-scope:x",
+    threadId: "thread-a",
+    capabilityRef: "reminder",
+    operation: "reminder.cancel",
+    actionKind: "CREATE_OR_UPDATE",
+    disclosure: "NONE",
+    sideEffect: "WRITE",
+    recipients: [],
+    targets: [],
+    estimatedCostMicros: 0,
+    credentialOrAccessChange: false,
+    deterministicFacts: [],
+  };
+  const records = new Map<string, { value: Record<string, unknown>; revision: number }>();
+  let indexDown = true;
+  const allowances = new OwnerAllowances({
+    configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
+    state: {
+      readScopedState: async (_owner, _agent, key) => records.get(key) as never,
+      commitStateAndEvents: async (input) => {
+        const { key, expectedRevision, value } = input.state;
+        if (indexDown && key === "owner-allowances:index") throw new Error("STATE_WRITE_DOWN");
+        if ((records.get(key)?.revision ?? null) !== expectedRevision)
+          throw new Error("unexpected revision");
+        records.set(key, {
+          value: value as Record<string, unknown>,
+          revision: (expectedRevision ?? 0) + 1,
+        });
+        return undefined as never;
+      },
+    },
+    store: {
+      getApproval: async () =>
+        ({
+          id: "approval:x",
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          status: "approved",
+          intentSnapshot: intent,
+        }) as never,
+    },
+    authority: () => SERVICE_AUTHORITY.lease,
+    clock: { now: () => T1 },
+  });
+  await expect(
+    allowances.set({ approvalRequestId: "approval:x", allowFor: "always", days: null }),
+  ).rejects.toThrow("STATE_WRITE_DOWN");
+  expect(await allowances.match(intent as never)).toBeUndefined();
+  expect(await allowances.list()).toEqual([]);
+  indexDown = false;
+  const id = await allowances.set({
+    approvalRequestId: "approval:x",
+    allowFor: "always",
+    days: null,
+  });
+  expect(await allowances.match(intent as never)).toBeDefined();
+  expect((await allowances.list()).map(({ allowanceId }) => allowanceId)).toEqual([id]);
+});

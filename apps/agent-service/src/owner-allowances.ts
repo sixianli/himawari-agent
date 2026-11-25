@@ -227,6 +227,7 @@ export class OwnerAllowances {
       createdAt: now,
       approvalRequestId: approval.id,
     };
+    await this.#index((keys) => [...keys, key]);
     await this.#retry(async () => {
       const record = await this.#read(key);
       if (
@@ -242,7 +243,6 @@ export class OwnerAllowances {
         "authorization.owner_allowance.set",
       );
     });
-    await this.#index((keys) => [...keys, key]);
     return id;
   }
 
