@@ -244,7 +244,7 @@ struct PrivacyPage: View {
                         icon: nil,
                         title: M.pauseMemory,
                         detail: M.pauseMemoryDetail,
-                        switchState: Binding(get: { overview.capturePaused }, set: setPaused),
+                        switchState: Binding(get: { overview.capturePaused }, set: { setPaused($0) }),
                         last: true
                     )
                 }
