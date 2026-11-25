@@ -335,6 +335,8 @@ export function createGithub({ token, repository, request = fetch, sleep }) {
   };
 }
 
+export const reviewPaused = () => ({ ok: true, broken: false, output: "REVIEW_PAUSED" });
+
 export function reviewChecker({
   repo,
   script = path.join(scriptRoot, "scripts/model-review/opencode-review.mjs"),
@@ -643,7 +645,7 @@ export async function main({ env = process.env, cwd = process.cwd() } = {}) {
   const state = await processQueue({
     github,
     repo,
-    checkReview: reviewChecker({ repo }),
+    checkReview: reviewPaused,
     runTag: `${env.GITHUB_RUN_ID}-${env.GITHUB_RUN_ATTEMPT}`,
     resume: env.GITHUB_EVENT_NAME === "workflow_dispatch" && env.MQ_RESUME === "true",
     log: (line) => {

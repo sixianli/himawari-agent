@@ -54,6 +54,8 @@ Andy 的全局指令已复制到 [.claude/rules/owner-global-instructions.md](.c
 <a id="working-with-opencode"></a>
 ## 和 OpenCode 协作：方案讨论和代码复核
 
+**已暂停（Andy 2026-11-25 原话：“把 opencode 的审核给它暂停掉。无论是方案的审核还是 Code Review，都不需要 opencode 来审核了”“我觉得 opencode 的审核太浪费 token 和时间了”）。** 暂停期间方案讨论（`plan`、`plan-review`）、方案说法核对（`plan-claims`）和合并前代码复核（`code-review`）一律不跑，合并只看测试和 CI；合并队列也不再检查复核记录。下面的写法保留到 Andy 说恢复为止，恢复时删掉这一段、把合并队列的复核检查接回来。
+
 方案讨论和合并前的代码复核，都要请 OpenCode（一个能让模型读代码、调用工具的命令行程序）上的模型看：默认只用 `opencode-go/deepseek-v4.1-flash`，只有 Andy 特别指明时才加上 `opencode-go/glm-5.3-flash`（[ADR 0259](docs/adr/0259-review-models-default-to-deepseek.md)）。一律用 `node scripts/model-review/opencode-review.mjs` 跑，不自己拼 `opencode run` 命令。
 
 - 写代码之前要出方案时（大改动一定要）：先 `--mode plan` 让模型独立出方案，再 `--mode plan-review` 审核线程自己的方案；线程逐条比较后，只把整合后的方案和真正要 Andy 拍板的几项交给他（[方案讨论](.agents/instructions/model-review.md#plan-discussion)）。
