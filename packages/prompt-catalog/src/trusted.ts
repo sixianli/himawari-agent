@@ -5,7 +5,6 @@ import * as chat from "./chat.js";
 import { trustedPromptTexts } from "./entry.js";
 import * as evaluation from "./eval.js";
 import * as inbox from "./inbox.js";
-import * as mail from "./mail.js";
 import * as memory from "./memory.js";
 import * as perception from "./perception.js";
 import * as review from "./review.js";
@@ -20,7 +19,6 @@ export const TRUSTED_PROMPT_TEXTS: readonly string[] = trustedPromptTexts(
     chat,
     evaluation,
     inbox,
-    mail,
     memory,
     perception,
     review,

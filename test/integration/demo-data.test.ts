@@ -279,7 +279,7 @@ describe("[P6-demo] fake inbox", () => {
     }
   });
 
-  it("[P6-demo] finds the earlier thread and the earlier mail that shares an order number, including mail from before the connection", async () => {
+  it("[P6-demo] reads every mail of one thread for her, including mail from before the connection", async () => {
     const reader = flatMailReader(
       createDemoMailReader({
         now: () => new Date(Date.parse(ANCHOR) + HOUR).toISOString(),
@@ -287,23 +287,15 @@ describe("[P6-demo] fake inbox", () => {
     );
     const fetched = await fetchOnce("en", Date.parse(ANCHOR) + HOUR, null);
     if (fetched.kind !== "items") throw new Error("expected items");
-    const delivery = fetched.items.find(({ messageId }) => messageId === "demo-en-delivery");
     const mockups = fetched.items.find(({ messageId }) => messageId === "demo-en-mockups");
-    if (!delivery || !mockups || !reader.related) throw new Error("expected mail");
-    const related = await reader.related({
-      token: demoMailboxToken("en", ANCHOR),
-      items: [delivery, mockups],
-      limits: { perMail: 6, requestsPerCheck: 300, wholeThreadPerMail: 50 },
-      signal: new AbortController().signal,
-    });
-    expect(related.failed.size).toBe(0);
-    expect(related.byMail.get(delivery.messageId)?.map(({ messageId }) => messageId)).toEqual([
-      "demo-en-order",
-    ]);
-    expect(related.byMail.get(mockups.messageId)?.map(({ messageId }) => messageId)).toEqual([
-      "demo-en-review-moved",
-      "demo-en-review-ok",
-    ]);
+    if (!mockups || !reader.thread) throw new Error("expected mail");
+    const token = demoMailboxToken("en", ANCHOR);
+    const signal = new AbortController().signal;
+    const thread = await reader.thread({ token, threadId: mockups.threadId, signal });
+    expect(thread?.map(({ messageId }) => messageId)).toContain("demo-en-mockups");
+    expect(thread?.length).toBeGreaterThan(1);
+    expect(thread?.every(({ threadId }) => threadId === mockups.threadId)).toBe(true);
+    expect(await reader.thread({ token, threadId: "no-such-thread", signal })).toEqual([]);
   });
 
   it("[P6-demo] [reverse] never touches the network, and its fake sign-in cannot be completed or revoked at Google", async () => {

@@ -28,16 +28,8 @@ async function filesUsing(pattern: RegExp): Promise<string[]> {
   return hits.sort();
 }
 
-describe("[P3-6] recent conversation summaries reach only the Gmail check and the external read entry", () => {
+describe("[P3-6] recent conversation summaries reach only the external read entry", () => {
   it("keeps the summary block, the reader and its wiring out of the chat path", async () => {
-    expect(await filesUsing(/MAIL_JUDGMENT_RECENT_SUMMARIES_HEADER/u)).toEqual([
-      "packages/application/src/services/proactive-mail-check-service.ts",
-      "packages/prompt-catalog/src/mail.ts",
-    ]);
-    expect(await filesUsing(/createProactiveRecentSummaries/u)).toEqual([
-      "apps/agent-service/src/production-proactive-summaries.ts",
-      "apps/agent-service/src/service-main.ts",
-    ]);
     expect(await filesUsing(/listDaySummaries\b/u)).toEqual([
       "packages/application/src/ports/memory-episodes.ts",
       "packages/memory-engine/src/episodes.ts",
@@ -56,15 +48,7 @@ describe("[P3-6] recent conversation summaries reach only the Gmail check and th
         "utf8",
       ),
     ).not.toMatch(/episode\.contentRef/u);
-    expect(await filesUsing(/\.recent\(\{/u)).toEqual([
-      "apps/agent-service/src/production-proactive-summaries.ts",
-      "apps/agent-service/src/service-main.ts",
-      "packages/application/src/services/proactive-mail-check-service.ts",
-    ]);
-    expect(await filesUsing(/recentSummaries/u)).toEqual([
-      "apps/agent-service/src/production-proactive.ts",
-      "apps/agent-service/src/service-main.ts",
-      "packages/application/src/services/proactive-mail-check-service.ts",
-    ]);
+    expect(await filesUsing(/\.recent\(\{/u)).toEqual(["apps/agent-service/src/service-main.ts"]);
+    expect(await filesUsing(/recentSummaries/u)).toEqual([]);
   });
 });

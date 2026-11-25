@@ -30,7 +30,6 @@ export * from "./files/pi-file-publication.js";
 export * from "./files/pi-host-publication.js";
 export * from "./files/pi-write-evidence.js";
 export * from "./files/workspace-copy-publication.js";
-export * from "./gmail-related.js";
 export * from "./gmail-source.js";
 export * from "./host-secret-source.js";
 export * from "./http-gateway-server.js";

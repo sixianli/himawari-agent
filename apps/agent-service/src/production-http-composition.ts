@@ -40,6 +40,7 @@ import {
   type RunLifecyclePort,
   readThreadExecutionEnvironment,
   type SessionDeviceStatePort,
+  MAIL_INBOX_SOURCE_KIND,
   ThreadCommandService,
   ThreadDeletionCoordinationService,
   ThreadExecutionProjection,
@@ -1359,6 +1360,16 @@ export async function createProductionHttpComposition(
     ...(inboxDelivery ? { delivery: inboxDelivery } : {}),
     ...(options.inbox?.onDiagnostic ? { onDiagnostic: options.inbox.onDiagnostic } : {}),
   });
+  if (options.proactive) {
+    inbox.inbox.sources.register({
+      kind: MAIL_INBOX_SOURCE_KIND,
+      describe: "新邮件",
+      externalContent: true,
+      fromOwner: false,
+      priority: 5,
+    });
+    options.proactive.attachInbox(inbox.inbox);
+  }
   const ownerRuleWriter = options.memory
     ? new ProductionOwnerRuleWriter({
         configuration,

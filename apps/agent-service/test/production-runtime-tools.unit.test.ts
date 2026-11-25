@@ -2319,7 +2319,7 @@ it("[ADR-0257] throws instead of reporting a failed check when the run has stopp
   ).toEqual([]);
 });
 
-it("[ADR-0257] only the listing, recall, conversation and perception read tools skip the authorization exit among the built-in tools", () => {
+it("[ADR-0257] only the listing, recall, conversation, mail, perception and vault read tools skip the authorization exit among the built-in tools", () => {
   const builtin = PRODUCTION_TOOL_ACTION_ROWS.filter(({ family }) => family === "builtin");
   expect(
     builtin.filter(({ authorization }) => authorization === "read").map(({ tool }) => tool),
@@ -2328,6 +2328,7 @@ it("[ADR-0257] only the listing, recall, conversation and perception read tools 
     "conversation_search",
     "conversation_open",
     "memory_open",
+    "mail_read",
     "reminder_list",
     "rule_list",
     "tool_result_recall",
@@ -2347,7 +2348,7 @@ it("[ADR-0257] only the listing, recall, conversation and perception read tools 
     "rule_undo",
     "tell_owner",
   ]);
-  expect(builtin).toHaveLength(15);
+  expect(builtin).toHaveLength(16);
 });
 
 it("[ADR-0257] runs a tool with consequences only after the exit allows it, and never asks the exit for a read", async () => {
@@ -2429,8 +2430,8 @@ const EVERY_TOOL_NAMES = [
   "memory_open",
 ];
 const EVERY_TOOL_DEFINITIONS_SHA256 =
-  "4141035a01840f7dedd21038f64d395e01e8ebbb3e9a99f42f3fa7661b7696a4";
+  "436e911d11ad89642d590bd1f88c2d16b0767190a9b4beb6d15a960c50a716b0";
 const TOOL_DEFINITIONS_BEFORE_MEMORY_OPEN_SHA256 =
-  "fd3345339856bda316c02421d4a3168f2a82fcb69af0374752be478a09d619e3";
+  "d1e9bfb09aa04a2984725521ece7922899265dbf8edb714e151be6707fdffb16";
 const TOOL_DEFINITIONS_BEFORE_CONVERSATIONS_SHA256 =
-  "a41c59795408bf1a95dc613c7ed5b761542a72e2798a3fe72c7a1c0197d7af91";
+  "5c7da35d5ccce139ebd9d74f1baf598adea5b2b88fd0a7a82386717bfdfe16cb";
