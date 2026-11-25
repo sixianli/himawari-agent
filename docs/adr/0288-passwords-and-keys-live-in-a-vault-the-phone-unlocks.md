@@ -8,7 +8,7 @@ amends: "docs/adr/0185-mark-passwords-and-keys-sensitive-instead-of-dropping-the
 date: "2026-11-25"
 ---
 
-# ADR 0287：密码和密钥放进保险箱，钥匙在 iPhone 上，每次办事刷脸批一次
+# ADR 0288：密码和密钥放进保险箱，钥匙在 iPhone 上，每次办事刷脸批一次
 
 <a id="contents"></a>
 

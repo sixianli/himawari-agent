@@ -11,7 +11,7 @@ date: "2026-11-08"
 
 > 2026-11-24 补：密码、密钥“明说记住就存成敏感”已由 [ADR 0286](0286-the-main-model-reads-and-writes-memory-itself.md) 改为一律不存；证件号、银行卡号当普通信息记，不再标敏感。
 >
-> 2026-11-25 补：密码、密钥、两步验证种子改存在保险箱里，模型看不到值，见 [ADR 0287](0287-passwords-and-keys-live-in-a-vault-the-phone-unlocks.md)。
+> 2026-11-25 补：密码、密钥、两步验证种子改存在保险箱里，模型看不到值，见 [ADR 0288](0288-passwords-and-keys-live-in-a-vault-the-phone-unlocks.md)。
 
 <a id="contents"></a>
 

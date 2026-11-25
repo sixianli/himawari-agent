@@ -8,7 +8,7 @@ date: "2026-11-25"
 
 # 密钥保险箱
 
-**审阅状态：已批准。** Andy 2026-11-25 00:35 JST 在“接入密码管理器填表”线程对方案 v5 的三项选择都回“按照你的推荐来”（给 Andy 看的同一份方案：<https://claude.ai/artifact/NZ4EFtUSmhfXqFbw3bkW3T>）。决定和理由见 [ADR 0287](../../adr/0287-passwords-and-keys-live-in-a-vault-the-phone-unlocks.md)。
+**审阅状态：已批准。** Andy 2026-11-25 00:35 JST 在“接入密码管理器填表”线程对方案 v5 的三项选择都回“按照你的推荐来”（给 Andy 看的同一份方案：<https://claude.ai/artifact/NZ4EFtUSmhfXqFbw3bkW3T>）。决定和理由见 [ADR 0288](../../adr/0288-passwords-and-keys-live-in-a-vault-the-phone-unlocks.md)。
 
 ## 一句话
 密码、API key、两步验证种子放进保险箱：服务器只存密文，钥匙在 Andy 的 iPhone 上；她只看得到每一项的名字和允许的网站；每次办事要用时 Andy 在手机上刷脸批准一次，手机只解开这一次用到的几项，由沙箱外的保险箱程序填进网页或在出口替换，她从头到尾看不到值。
