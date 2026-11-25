@@ -93,7 +93,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 ## Procedure
 
-1. **手机登录和开通知（用户自己做）**：Safari 打开 `https://himawari.siyi.win`，在 Access 页面填允许的那个邮箱，收邮件里的 6 位码填回去。网页会自己换取 Himawari 的登录，直接进对话，不用再点按钮（[ADR 0095](../adr/0095-silent-session-exchange-behind-cloudflare-access.md)）。进来后用 Safari 的“分享 → 添加到主屏幕”，从主屏幕图标打开，在设置里开通知，点“发送一条测试通知”。iPhone 只给添加到主屏幕的网页发推送。
+1. **手机登录和开通知（用户自己做）**：Safari 打开 `https://himawari.siyi.win`，在 Access 页面填允许的那个邮箱，收邮件里的 6 位码填回去。网页会自己换取 Himawari 的登录，直接进对话，不用再点按钮（[ADR 0295](../adr/0295-web-chat-interface.md)）。进来后用 Safari 的“分享 → 添加到主屏幕”，从主屏幕图标打开，在设置里开通知，点“发送一条测试通知”。iPhone 只给添加到主屏幕的网页发推送。
 2. **电脑登录**：浏览器打开同一地址，同样用邮箱验证码。Access 会话 1 个月，到期再登。
 3. **加减 Access 登录方式或改允许的邮箱**：用户同意后在 Cloudflare Zero Trust 控制台（Access → Applications → Himawari → Policies 和 Settings → Authentication）改。One-time PIN 的编号是 `98dddcc9-cc1a-4e8f-bb99-d16322d147ed`；另有一个 “Cloudflare 账号登录” 方式，当前没用在 “Himawari” 应用上。
 4. **重新绑定 Access 身份（换邮箱后，或从自带登录切到 Access）**：

@@ -2079,7 +2079,7 @@ Andy 在卡片上选了“加一个看图模型”。动手前我先查现有的
   - 登录方式是 `built-in`（自带用户名密码） → 原来的登录表单不变。
 - 每次进入只自动换取一次；换取后仍被拒就停下来给“重试”按钮，不会无限循环。
 - 新页面 `components/browser-entry-screen.tsx` 只显示葵盘标志和一两句话，不显示错误码，中英日三语。
-- 和 Pi（Himawari 依赖的开源 Agent 框架）无关；全部是 Himawari 自己的身份和网页代码。决定记在 [ADR 0095](adr/0095-silent-session-exchange-behind-cloudflare-access.md)。
+- 和 Pi（Himawari 依赖的开源 Agent 框架）无关；全部是 Himawari 自己的身份和网页代码。决定记在 [ADR 0095](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0095-silent-session-exchange-behind-cloudflare-access.md)。
 
 **方案讨论与备选**
 
@@ -2110,7 +2110,7 @@ Andy 在卡片上选了“加一个看图模型”。动手前我先查现有的
 
 **相关 ADR/PR**
 
-[ADR 0095](adr/0095-silent-session-exchange-behind-cloudflare-access.md)、[ADR 0089](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0089-web-push-only-owner-entry.md)；[原型](https://claude.ai/artifact/BxexuxfGz84FFYTSnqu5Y6)；相关：[案例 30](#case-login-switch-outage)。
+[ADR 0095](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0095-silent-session-exchange-behind-cloudflare-access.md)、[ADR 0089](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0089-web-push-only-owner-entry.md)；[原型](https://claude.ai/artifact/BxexuxfGz84FFYTSnqu5Y6)；相关：[案例 30](#case-login-switch-outage)。
 
 **面试 30 秒版**
 

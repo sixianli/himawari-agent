@@ -2,7 +2,7 @@
 status: active
 document_type: adr
 decision_status: accepted
-supersedes: "https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0087-chat-ui-v6-process-timeline.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0090-chat-ui-v6-answer-and-composer.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0091-chat-ui-v6-file-preview-and-sidebar.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0096-phone-chat-page-safe-area-and-quiet-answer-line.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0100-conversation-more-panel-files-and-background-commands.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0105-ui-batch-2026-10-28-show-what-the-owner-needs.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0110-ui-batch-2026-10-29-check-it-before-the-owner-does.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0114-file-preview-pdf-word-excel-in-browser.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0137-rounded-icons-and-components.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0283-sunflower-mark-keeps-55-seeds-and-apps-get-icons.md"
+supersedes: "https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0095-silent-session-exchange-behind-cloudflare-access.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0087-chat-ui-v6-process-timeline.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0090-chat-ui-v6-answer-and-composer.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0091-chat-ui-v6-file-preview-and-sidebar.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0096-phone-chat-page-safe-area-and-quiet-answer-line.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0100-conversation-more-panel-files-and-background-commands.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0105-ui-batch-2026-10-28-show-what-the-owner-needs.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0110-ui-batch-2026-10-29-check-it-before-the-owner-does.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0114-file-preview-pdf-word-excel-in-browser.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0137-rounded-icons-and-components.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0283-sunflower-mark-keeps-55-seeds-and-apps-get-icons.md"
 superseded_by: ""
 date: "2026-11-26"
 covers: "apps/control-center/src/execution-timeline.ts, apps/control-center/src/spreadsheet-model.ts, apps/control-center/src/components/glyphs.tsx, apps/control-center/src/rounded.css, apps/control-center/src/quiet-scrollbars.ts, packages/platform-node/src/http-gateway-server.ts, packages/platform-node/src/browser-thread-files.ts, packages/persistence-sqlite/src/sqlite-thread-artifact-operations.ts, scripts/check-layout-audit.mjs, scripts/check-control-center-build.mjs, scripts/render-brand-assets.mjs, docs/ui-ux-design-guide.md"
@@ -24,6 +24,7 @@ verified_at: "7d0ffcd52cbb69d4941871cf9bf08d93f3843da8"
   - [设置和分出的对话](#settings)
   - [手机](#phone)
   - [造型和标志](#look)
+  - [过了 Cloudflare 验证后自动登录](#session-exchange)
   - [自动检查](#checks)
 - [放弃的做法](#rejected)
 - [后果](#consequences)
@@ -97,6 +98,14 @@ verified_at: "7d0ffcd52cbb69d4941871cf9bf08d93f3843da8"
 - 全站一套“圆润”造型：图标是半透明底形加实心细节的双色图标，全部放在 `glyphs.tsx` 一个文件里，每层填色写在图标自己身上；组件不描边，靠底色和阴影分层，按钮是胶囊形；圆角等尺寸写成 `rounded.css` 里的变量。新图标照同样画法放进同一个文件。
 - 标志是 55 粒按黄金角排列的种子，所有尺寸同一个点数；首页大图和正在回答的标志会长新种子，系统开了“减少动态效果”时一律静止。网页标志、PWA 图标和苹果端的桌面图标都由 `render-brand-assets.mjs` 从同一份种子数学生成。
 - 界面文字一律有中文、英文、日文三份。
+
+<a id="session-exchange"></a>
+
+### 过了 Cloudflare 验证后自动登录
+
+- 登录方式是 `cloudflare-access` 时，网页读配置被拒（401、403）就自己调用一次换取接口拿 Himawari 登录，成功后直接进入对话，不要求点按钮。每次进入只自动换取一次，换取后仍被拒就停下来显示“暂时连不上”和“重试”。
+- Cloudflare 登录过期时整页跳去 Cloudflare 的登录页。网络断开或服务在重启时显示“Himawari 暂时连不上”，5 秒后自动重试。这些页面不显示内部错误码，有中、英、日三种文字。
+- 登录方式是 `built-in`（Himawari 自己的用户名、密码和验证器）时，仍显示登录表单。
 
 <a id="checks"></a>
 

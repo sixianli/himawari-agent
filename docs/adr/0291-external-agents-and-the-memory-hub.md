@@ -135,7 +135,7 @@ Andy 要 Himawari 当他的记忆中心：别的 AI agent（Claude Code、Codex�
     | 三 | 只能挂 MCP | 使用说明和工具描述 | 主人说“同步记忆”或模型自己调 | 尽力而为 |
     | 四 | 不能挂 MCP | 主人贴“关于我”文本 | 主人贴提示词让它列出记忆，再贴回 | 手动 |
 
-34. 第一档的助手程序装在主人电脑上，被钩子调用：直接读对方的记忆目录（只读，不改不删），只推有变化的；用 Cloudflare 服务令牌过第一道门、接入密钥定身份（同 Muse 收件入口，[ADR 0162](0162-receive-muse-data-through-a-service-token-and-an-app-secret.md)）；每次限时很短，超时就放行。
+34. 第一档的助手程序装在主人电脑上，被钩子调用：直接读对方的记忆目录（只读，不改不删），只推有变化的；用 Cloudflare 服务令牌过第一道门、接入密钥定身份（同 Muse 收件入口，[ADR 0162](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0162-receive-muse-data-through-a-service-token-and-an-app-secret.md)）；每次限时很短，超时就放行。
 35. 规则带到别的 agent 那里只是文字要求：`start_here` 和页面上写明，这些在 Himawari 里必定执行，在别的 agent 里做不到。
 
 <a id="usage"></a>

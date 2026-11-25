@@ -2,7 +2,7 @@
 status: active
 document_type: adr
 decision_status: accepted
-supersedes: "https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0102-record-push-notification-feedback.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0143-decision-ledger-for-model-gate-decisions.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0147-keep-model-prompt-and-answer-of-each-gmail-check-with-the-ledger.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0154-weekly-calibration-report-and-muse-mail-pairing.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0155-decision-record-observation-and-weekly-report-page.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0182-record-proactive-implicit-signals.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0187-weekly-gap-lines-and-cases-against-muse.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0195-show-the-whole-chain-of-one-decision-record.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0197-one-page-for-one-email-decision.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0214-record-profile-truncation-and-keep-pinned-memories.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0237-model-pre-rates-waiting-decisions.md"
+supersedes: "https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0162-receive-muse-data-through-a-service-token-and-an-app-secret.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0102-record-push-notification-feedback.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0143-decision-ledger-for-model-gate-decisions.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0147-keep-model-prompt-and-answer-of-each-gmail-check-with-the-ledger.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0154-weekly-calibration-report-and-muse-mail-pairing.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0155-decision-record-observation-and-weekly-report-page.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0182-record-proactive-implicit-signals.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0187-weekly-gap-lines-and-cases-against-muse.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0195-show-the-whole-chain-of-one-decision-record.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0197-one-page-for-one-email-decision.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0214-record-profile-truncation-and-keep-pinned-memories.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0237-model-pre-rates-waiting-decisions.md"
 superseded_by: ""
 date: "2026-11-26"
 covers: "packages/calibration/src/thresholds.ts, apps/agent-service/src/production-observation.ts, apps/agent-service/src/production-gap-cases.ts, packages/application/src/services/ledger-observation.ts"
@@ -22,6 +22,7 @@ verified_at: "7d0ffcd52cbb69d4941871cf9bf08d93f3843da8"
   - [推送和主人的反应](#signals)
   - [观察期和校准周报](#calibration)
   - [模型预评](#prereview)
+  - [Muse 数据怎样收进来](#muse-intake)
 - [放弃的做法](#rejected)
 - [后果](#consequences)
 
@@ -29,7 +30,7 @@ verified_at: "7d0ffcd52cbb69d4941871cf9bf08d93f3843da8"
 
 ## 背景
 
-Himawari 每做一个判断（提醒不提醒、记不记、整理时改不改、截掉哪些记忆），都要能事后查到依据、给主人打分、算出命中率。这些做法原来分散在十一份 ADR 里（0102、0143、0147、0154、0155、0182、0187、0195、0197、0214、0237）。这份 ADR 只写现在为真的做法。规则怎样参与判断见 [ADR 0301](0301-the-owners-rule-book.md)。旧文全文在 `supersedes` 列的固定提交链接里。
+Himawari 每做一个判断（提醒不提醒、记不记、整理时改不改、截掉哪些记忆），都要能事后查到依据、给主人打分、算出命中率。这些做法原来分散在十一份 ADR 里（0102、0143、0147、0154、0155、0162、0182、0187、0195、0197、0214、0237）。这份 ADR 只写现在为真的做法。规则怎样参与判断见 [ADR 0301](0301-the-owners-rule-book.md)。旧文全文在 `supersedes` 列的固定提交链接里。
 
 <a id="decision"></a>
 
@@ -76,6 +77,15 @@ Himawari 每做一个判断（提醒不提醒、记不记、整理时改不改�
 
 - 模型先给待打分的决策预评，存在单独的表 `decision_prereviews`，不带主人已打的分。有花费上限和失败退避。
 - 预评和主人打分的一致率够高时，才可以少让主人打一些“模型有把握认为做对了”的条目；这个自动减少默认关闭。模型认为做错的仍然给主人看。
+
+<a id="muse-intake"></a>
+
+### Muse 数据怎样收进来
+
+- Muse 的提醒记录经 `POST /api/muse-intake/v1/batch` 自动送来，两层认证：边缘层用 Cloudflare Access 的服务令牌，应用层再要求单独的应用密钥。配置 `runPolicy.museIntake.enabled` 为真才注册这条路径，否则是 404。
+- 只有 Muse 自己能证明的来源（系统记录、聊天记录、由它们推出的）参与数字，其他只存档。含机密的文字不存正文。
+- 按批次序号去重，整批重发回“重放”；同一条内容不同进冲突表，不覆盖。距上一批超过 3 小时推一次“Muse 通道中断”，一次中断只推一次。
+- 能读到 Gmail 邮件编号的条目，自动和 Himawari 处理过的同一封邮件配对，不要主人介入。“清除 Muse 数据”只删自动收到的条目和它们的评价，手工记的保留。
 
 [返回目录](#contents)
 
