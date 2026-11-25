@@ -22,7 +22,7 @@ private actor AllowanceServer: DeviceTransport {
             return DeviceResponse(status: 200, body: Data(#"{"payload":{"memories":[],"imports":[],"capturePaused":false}}"#.utf8))
         case .string("memory.rules.read"):
             return DeviceResponse(status: 200, body: Data(Self.rules.utf8))
-        case .string("approval.allowance.revoke"), .string("approval.allowance.days.set") where refuseRevoke:
+        case .string("approval.allowance.revoke") where refuseRevoke, .string("approval.allowance.days.set") where refuseRevoke:
             return DeviceResponse(status: 409, body: Data(#"{"error":{"code":"PORT_CONFLICT"}}"#.utf8))
         default:
             return DeviceResponse(status: 200, body: Data("{}".utf8))
