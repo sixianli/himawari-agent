@@ -77,6 +77,7 @@ CI（持续集成，每次推送和开 PR 时自动跑检查和测试的那套�
 - 只在 `pull_request` 事件上缩小范围；手动触发、推送和 main 上的运行一律全量。
 - unit 和 contracts 照跑全量。integration、e2e、pi-compat、tooling 只跑 `vitest list --changed <PR 基线>` 选出的测试，可以是零个（`scripts/ci/test-scope.mjs`）。
 - 改动里只要有一个文件不是 `apps/`、`packages/`、`test/` 下的源码（配置文件 `*.config.*`、`vitest.*` 不算源码），也不是 `.md` 或 `.agents/` 下的记录，就全部全量。所以改依赖、SQL、JSON、`scripts/`、`ci/`、`.github/` 都跑全量。某个项目的 `vitest list` 出错时，那个项目退回全量。
+- 改动里的 `.md` 或 `.agents/` 文件（包括删掉的），只要 `apps/`、`packages/`、`test/`、`scripts/` 下有代码文件按路径写着它（`findPathReaders` 用 `git grep` 找），也全部全量，结果的范围说明写 `full-readers <读它的文件>`。`vitest list --changed` 只顺着 `import` 找，看不见测试用 `readFileSync` 读的文档；起因见 [I-113](../incidents-and-gates.md#incidents)。
 - 汇总结果标 `scope: related`，只在 PR 上接受这种范围。完整测试在合进 `main` 后由 `Main confirmation` 补上。
 
 <a id="results"></a>
