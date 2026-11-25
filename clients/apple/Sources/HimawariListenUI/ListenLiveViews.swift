@@ -2,69 +2,6 @@ import HimawariCore
 import HimawariDesign
 import SwiftUI
 
-public struct SensingSummary: Sendable, Equatable {
-    public let paused: Bool
-    public let senses: [String]
-    public let todayCount: Int?
-
-    public init(paused: Bool, senses: [String], todayCount: Int?) {
-        self.paused = paused
-        self.senses = senses
-        self.todayCount = todayCount
-    }
-}
-
-public struct SensingCard: View {
-    private let summary: SensingSummary
-    private let onPause: () -> Void
-    private let onOpen: () -> Void
-
-    public init(summary: SensingSummary, onPause: @escaping () -> Void, onOpen: @escaping () -> Void) {
-        self.summary = summary
-        self.onPause = onPause
-        self.onOpen = onOpen
-    }
-
-    public var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 10) {
-                Circle()
-                    .fill(summary.paused ? Color.hmMuted : Color.hmSuccess)
-                    .frame(width: 10, height: 10)
-                    .background(Circle().fill((summary.paused ? Color.hmMuted : Color.hmSuccess).opacity(0.18)).frame(width: 18, height: 18))
-                Text(L.text(summary.paused ? "sensing.pausedTitle" : "sensing.title"))
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(Color.hmText)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Button(action: onPause) {
-                    Text(L.text(summary.paused ? "sensing.resume" : "sensing.pauseHour"))
-                        .font(.system(size: 15))
-                        .foregroundStyle(Color.hmSun)
-                        .frame(minHeight: 44)
-                }
-                .buttonStyle(.plain)
-            }
-            Button(action: onOpen) {
-                HStack(spacing: 2) {
-                    Text(summary.senses.joined(separator: L.text("sensing.separator")))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    if let count = summary.todayCount {
-                        Text(L.format("sensing.today", count))
-                    }
-                    Icon(.chevronRight, size: 15)
-                }
-                .font(.system(size: 13))
-                .foregroundStyle(Color.hmMuted)
-                .padding(.leading, 20)
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(EdgeInsets(top: 4, leading: 18, bottom: 14, trailing: 14))
-        .background(Color.hmSurface, in: RoundedRectangle(cornerRadius: DesignTokens.Radius.card, style: .continuous))
-        .hmShadow(DesignTokens.Shadows.lift)
-    }
-}
-
 public struct ListenElapsedText: View {
     private let startedAt: Date
     private let now: Date?

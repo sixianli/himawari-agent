@@ -1,6 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { createProactiveMemoryRecall } from "../src/production-proactive-memory.ts";
-import { createProactiveRecentSummaries } from "../src/production-proactive-summaries.ts";
 import { createProductionRunMemory } from "../src/production-run-memory.ts";
 
 const OWNER_ID = "owner-mail-embedding" as never;
@@ -116,43 +114,6 @@ describe("embedding for the Gmail check", () => {
     expect(sensitiveContext.costMicros).toBe(0);
   });
 
-  it("[P3-6] hands each caught-up segment's classification to the embedding scope and adds up its cost", async () => {
-    const seen: { dataClassification: string | undefined }[] = [];
-    const segment = (day: string, dataClassification: string) => ({ day, dataClassification });
-    const summaries = createProactiveRecentSummaries({
-      ownerId: OWNER_ID,
-      agentId: AGENT_ID,
-      episodes: {
-        recentDays: () => ({ fromDay: "2026-10-31", toDay: "2026-11-01" }),
-        dueSegments: async () =>
-          [
-            segment("2026-10-31", "private"),
-            segment("2026-11-01", "sensitive"),
-            segment("2026-11-02", "private"),
-            segment("2026-10-01", "private"),
-          ] as never,
-        summarize: async () => ({}) as never,
-        recent: async () => ({ summaries: [], partial: false }),
-      },
-      allowedClassifications: ["public", "private", "sensitive"],
-      capturePaused: async () => false,
-      embedForMailCheck: async (context, operation) => {
-        seen.push({ dataClassification: context.dataClassification });
-        context.costMicros += 7;
-        return operation();
-      },
-    });
-    const result = await summaries.catchUp({
-      days: 2,
-      limit: 3,
-      deadlineAt: LATER,
-      signal: new AbortController().signal,
-      generate: async () => "",
-    });
-    expect(seen).toEqual([{ dataClassification: "private" }, { dataClassification: "sensitive" }]);
-    expect(result).toEqual({ generated: 2, costMicros: 14, failed: false });
-  });
-
   it("refuses once the check has been aborted", async () => {
     const { memory, embed } = build();
     const controller = new AbortController();
@@ -180,112 +141,5 @@ describe("[P5-1] embedding for an external MCP read", () => {
     const context = { deadlineAt: LATER, signal: controller.signal, costMicros: 0 };
     await expect(memory.embedForExternalRead(context, async () => embed())).rejects.toThrow();
     expect(context.costMicros).toBe(0);
-  });
-});
-
-describe("recall for the Gmail check", () => {
-  const found = (id: string, score: number) => ({ memory: { id, contentRef: `ref-${id}` }, score });
-  const recallWith = (
-    search: (input: Record<string, unknown>) => Promise<unknown>,
-    active: { now: number; peak: number },
-  ) =>
-    createProactiveMemoryRecall({
-      ownerId: OWNER_ID,
-      agentId: AGENT_ID,
-      memory: {
-        search: async (input: Record<string, unknown>) => {
-          active.now += 1;
-          active.peak = Math.max(active.peak, active.now);
-          try {
-            return await search(input);
-          } finally {
-            active.now -= 1;
-          }
-        },
-      } as never,
-      content: { readText: async (ref: string) => `text of ${ref}` },
-      embedForMailCheck: (_context, operation) => operation(),
-      minimumSimilarity: 0.45,
-      hitsPerMail: 3,
-      concurrency: 4,
-    });
-
-  it("[PA-2] searches with tentative memories included and marks only the tentative hits", async () => {
-    const active = { now: 0, peak: 0 };
-    const seen: Record<string, unknown>[] = [];
-    const recall = recallWith(async (input) => {
-      seen.push(input);
-      return [
-        found("m1", 0.7),
-        {
-          memory: { id: "m2", contentRef: "ref-m2", attributes: { tentative: true } },
-          score: 0.6,
-        },
-        {
-          memory: { id: "m3", contentRef: "ref-m3", attributes: { tentative: false } },
-          score: 0.5,
-        },
-      ];
-    }, active);
-    const result = await recall.recall({
-      queries: [{ messageId: "mail-1", query: "q" }],
-      deadlineAt: LATER,
-      signal: new AbortController().signal,
-    });
-    expect(seen[0]).toMatchObject({ includeTentative: true });
-    expect(result.hits.get("mail-1")).toEqual([
-      { id: "m1", text: "text of ref-m1", score: 0.7 },
-      { id: "m2", text: "text of ref-m2", score: 0.6, tentative: true },
-      { id: "m3", text: "text of ref-m3", score: 0.5 },
-    ]);
-  });
-
-  it("[RULE-memory-visible] searches read-only with the check's threshold, without rules, sensitive memories included, and runs at most four at a time", async () => {
-    const active = { now: 0, peak: 0 };
-    const seen: Record<string, unknown>[] = [];
-    const recall = recallWith(async (input) => {
-      seen.push(input);
-      await new Promise((resolve) => setTimeout(resolve, 5));
-      return [found("m1", 0.7)];
-    }, active);
-    const queries = Array.from({ length: 10 }, (_, index) => ({
-      messageId: `mail-${index}`,
-      query: `q${index}`,
-    }));
-    const result = await recall.recall({
-      queries,
-      deadlineAt: LATER,
-      signal: new AbortController().signal,
-    });
-    expect(active.peak).toBeLessThanOrEqual(4);
-    expect(seen).toHaveLength(10);
-    for (const input of seen)
-      expect(input).toMatchObject({
-        recordUse: false,
-        minimumSimilarity: 0.45,
-        excludeCategories: ["rule"],
-        policy: { limit: 3, allowedClassifications: ["public", "private", "sensitive"] },
-      });
-    expect(result.hits.get("mail-3")).toEqual([{ id: "m1", text: "text of ref-m1", score: 0.7 }]);
-    expect(result.failedQueries).toBe(0);
-  });
-
-  it("counts failed searches and leaves mails with no related memory out", async () => {
-    const active = { now: 0, peak: 0 };
-    const recall = recallWith(async (input) => {
-      if (input["queryText"] === "boom") throw new Error("EMBEDDING_DOWN");
-      return input["queryText"] === "none" ? [] : [found("m1", 0.6)];
-    }, active);
-    const result = await recall.recall({
-      queries: [
-        { messageId: "a", query: "boom" },
-        { messageId: "b", query: "none" },
-        { messageId: "c", query: "ok" },
-      ],
-      deadlineAt: LATER,
-      signal: new AbortController().signal,
-    });
-    expect(result.failedQueries).toBe(1);
-    expect([...result.hits.keys()]).toEqual(["c"]);
   });
 });

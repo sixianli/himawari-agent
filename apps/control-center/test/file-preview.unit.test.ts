@@ -39,6 +39,8 @@ const tool = (
   text: "",
   input: typeof input === "string" ? input : JSON.stringify(input),
   output: "",
+  activity: "",
+  activityIcon: "",
   occurredAt: "2026-10-26T12:00:00.000Z",
 });
 

@@ -282,6 +282,7 @@ export async function qualifyBrowser({
   }
 
   async function assertAxeClean(page, checkpoint) {
+    await settleFiniteAnimations(page);
     const violations = (await new AxeBuilder({ page }).analyze()).violations;
     if (violations.length > 0) {
       const details = violations.flatMap(({ id, nodes }) =>
@@ -289,6 +290,17 @@ export async function qualifyBrowser({
       );
       throw new Error(`CONTROL_CENTER_AXE_VIOLATIONS:${checkpoint}:${JSON.stringify(details)}`);
     }
+  }
+
+  async function settleFiniteAnimations(page) {
+    await page.evaluate(() =>
+      Promise.all(
+        document
+          .getAnimations()
+          .filter((animation) => Number.isFinite(animation.effect?.getComputedTiming().endTime))
+          .map((animation) => animation.finished.catch(() => undefined)),
+      ),
+    );
   }
 
   async function assertNoDocumentOverflow(page, checkpoint) {

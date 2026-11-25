@@ -70,9 +70,6 @@ public final class ListeningController {
         ListenCommandCenter.shared.handler = { [weak self] command in
             await self?.perform(command)
         }
-        #if os(iOS)
-        notices.install()
-        #endif
     }
 
     public static func defaultVoiceprintStore() -> VoiceprintStore {

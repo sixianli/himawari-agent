@@ -1,6 +1,8 @@
 <a id="review-card"></a>
 # 代码复核流程卡
 
+**已暂停（Andy 2026-11-25 原话：“把 opencode 的审核给它暂停掉。无论是方案的审核还是 Code Review，都不需要 opencode 来审核了”“我觉得 opencode 的审核太浪费 token 和时间了”）。** 暂停期间不跑合并前代码复核，合并只看测试和 CI（见 [AGENTS.md](../../AGENTS.md#working-with-opencode)）。
+
 这一页是合并前代码复核的常用路径。完整规则在[和 OpenCode 协作](model-review.md)（约 8 万字节），平时不通读，遇到下面没写到的情况或报错时，按链接只读对应那一节。事故清单 `docs/incidents-and-gates.md` 和教训记录 `docs/lessons.md` 也一样：按编号或标题用 `grep` 查那一段，不整份读。
 
 为什么这样做：复核的花费大头在 Claude 线程这边。线程上下文常有 15 万到 30 万 token，每调一次工具都要把整段上下文再读一遍；一轮复核要调二三十次。每一轮的判断、修改和收尾交给一个新开的子代理（Claude Code 的 Agent 工具新开的一段对话，上下文从零开始，一轮做完就结束，不在子代理里攒出长上下文），主线程只拿回结论（[ADR 0263](../../docs/adr/0263-cheaper-claude-side-of-code-review.md)）。DeepSeek 复核由主线程在后台跑，答案出来后再起子代理：子代理的缓存只保留 5 分钟，让它等复核（实测一次等了 10.8 分钟），回来就要按 1.25 倍价把整段上下文重写一遍。

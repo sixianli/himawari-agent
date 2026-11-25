@@ -198,6 +198,24 @@ describe("[第11批] 客户端能力表", () => {
     expect(findClientCapability("v2", "github.monitor.set_state")?.tier).toBe("not_on_phone");
   });
 
+  it("一个主对话以后：审批和建议进主对话，能力和改进这一版手机上不做", () => {
+    const page = (webPage: string) => CLIENT_PAGE_TABLE.find((entry) => entry.webPage === webPage);
+    for (const webPage of ["approvals", "suggestions"]) {
+      const entry = page(webPage);
+      expect(entry && "nativePage" in entry ? entry.nativePage : undefined, webPage).toBe("chat");
+    }
+    for (const webPage of ["capabilities-adapters", "improvements"]) {
+      const entry = page(webPage);
+      expect(entry && "notOnPhone" in entry ? entry.notOnPhone : undefined, webPage).toContain(
+        "这一版手机上不做",
+      );
+    }
+    const pages = CLIENT_PAGE_TABLE.flatMap((entry) =>
+      "nativePage" in entry ? [entry.nativePage] : [],
+    );
+    expect(pages.filter((name) => name.startsWith("today."))).toEqual([]);
+  });
+
   it("运维类页面留在网页：三页和它们的消息类型手机上不做，点头和服务器状态不受影响", () => {
     for (const webPage of ["host-workspaces", "workers", "health-deployment"]) {
       const page = CLIENT_PAGE_TABLE.find((entry) => entry.webPage === webPage);
