@@ -12,6 +12,7 @@ import {
   processQueue,
   queueLabel,
   reviewChecker,
+  reviewPaused,
   runGraceMs,
   splitGroups,
   touchesProtected,
@@ -214,6 +215,12 @@ const remoteState = (origin) =>
   JSON.parse(git(origin, ["show", "refs/heads/merge-queue-state:state.json"]));
 const commentsFor = (fake, number) =>
   fake.calls.filter((c) => c[0] === "comment" && c[1] === number).map((c) => c[2]);
+
+describe("review pause", () => {
+  it("lets every PR through the review step while OpenCode review is paused", () => {
+    expect(reviewPaused(1, "a", "b")).toEqual({ ok: true, broken: false, output: "REVIEW_PAUSED" });
+  });
+});
 
 describe("合并队列 [ADR-0268]", () => {
   it("把就绪的 PR 按加标签顺序合成候选，推到唯一的 mq 分支并以当前 main 为基线触发完整 CI", async () => {
