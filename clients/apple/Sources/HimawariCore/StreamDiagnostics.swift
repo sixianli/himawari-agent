@@ -46,3 +46,30 @@ public final class StreamDiagnostics: @unchecked Sendable {
         report?(problem)
     }
 }
+
+public struct StreamDropReport: Sendable, Equatable {
+    public let reason: String
+    public let connectedSeconds: TimeInterval?
+    public var status: Int?
+    public var networkError: Int?
+    public let droppedAt: Date
+    public var attempts = 0
+
+    public init(reason: String, connectedSeconds: TimeInterval? = nil, status: Int? = nil, networkError: Int? = nil, droppedAt: Date) {
+        self.reason = reason
+        self.connectedSeconds = connectedSeconds
+        self.status = status
+        self.networkError = networkError
+        self.droppedAt = droppedAt
+    }
+
+    public func query(at now: Date) -> [URLQueryItem] {
+        var items = [URLQueryItem(name: "lastDrop", value: reason)]
+        if let connectedSeconds { items.append(URLQueryItem(name: "lastConnected", value: String(Int(connectedSeconds.rounded())))) }
+        if let status { items.append(URLQueryItem(name: "lastStatus", value: String(status))) }
+        if let networkError { items.append(URLQueryItem(name: "lastError", value: String(networkError))) }
+        items.append(URLQueryItem(name: "offline", value: String(max(0, Int(now.timeIntervalSince(droppedAt).rounded())))))
+        items.append(URLQueryItem(name: "attempts", value: String(attempts)))
+        return items
+    }
+}

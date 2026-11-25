@@ -135,9 +135,11 @@ public final class DeviceEventStream: @unchecked Sendable {
     private func run(continuation: AsyncStream<DeviceStreamEvent>.Continuation) async {
         var failures = 0
         var droppedAt: Date?
+        var report: StreamDropReport?
         while !Task.isCancelled {
             var query: [URLQueryItem] = []
             if let cursor = cursors?.load() { query.append(URLQueryItem(name: "after", value: cursor)) }
+            if let report { query += report.query(at: Date()) }
             var ending: StreamEnding
             lock.withLock { restartRequested = false }
             do {
@@ -151,20 +153,25 @@ public final class DeviceEventStream: @unchecked Sendable {
                     StreamDiagnostics.shared.note(.recovered(path: path, offlineSeconds: openedAt.timeIntervalSince(droppedAt)))
                 }
                 droppedAt = nil
+                report = nil
                 let deadline = LivenessDeadline(window: { [heartbeat] in heartbeat() * 2 + Self.silenceAllowance })
                 ending = try await consume(chunks, deadline: deadline, continuation: continuation)
                 failures = deadline.heard ? 0 : failures + 1
                 if case let .reconnect(reason) = ending {
-                    StreamDiagnostics.shared.note(.dropped(path: path, reason: reason, connectedSeconds: Date().timeIntervalSince(openedAt)))
+                    let connected = Date().timeIntervalSince(openedAt)
+                    StreamDiagnostics.shared.note(.dropped(path: path, reason: reason, connectedSeconds: connected))
+                    report = StreamDropReport(reason: reason.rawValue, connectedSeconds: connected, droppedAt: Date())
                 }
             } catch let error as DeviceAPIError where error.isRevoked {
                 continuation.yield(.sessionInvalid)
                 ending = .stop
             } catch let DeviceAPIError.server(status, code, _, _) {
                 StreamDiagnostics.shared.note(.refused(path: path, status: status, code: code))
+                report = Self.retried(report, StreamDropReport(reason: "refused", status: status, droppedAt: Date()))
                 failures += 1
                 ending = .reconnect(.failed)
             } catch {
+                report = Self.retried(report, StreamDropReport(reason: StreamDropReason.failed.rawValue, networkError: (error as? URLError)?.code.rawValue, droppedAt: Date()))
                 failures += 1
                 ending = .reconnect(.failed)
             }
@@ -178,6 +185,15 @@ public final class DeviceEventStream: @unchecked Sendable {
             await pause(seconds: Self.backoff(failures: failures))
         }
         continuation.finish()
+    }
+
+    static func retried(_ earlier: StreamDropReport?, _ latest: StreamDropReport) -> StreamDropReport {
+        guard let earlier else { return latest }
+        var kept = earlier
+        kept.attempts += 1
+        kept.status = latest.status
+        kept.networkError = latest.networkError
+        return kept
     }
 
     private enum StreamEnding: Sendable {

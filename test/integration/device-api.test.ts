@@ -959,92 +959,91 @@ describe("[P1-1] device client routes", () => {
     await h.repository.close();
   });
 
-  it("limits how many streams one device keeps open and frees a slot when a stream ends", async () => {
+  it("lets a new stream from the same device replace its oldest one when every slot is taken", async () => {
     const h = await harness();
     h.configuration.current = {
       ...h.configuration.current,
-      connectionMaxSeconds: 1,
+      connectionMaxSeconds: 60,
       streamConnections: 1,
     };
     const client = await pairAndConfirm(h);
     const other = await pairAndConfirm(h);
-    const open = async (who: PairedClient, path: string) => {
-      const request = signedRequest(h, who, { method: "GET", path });
-      const url = new URL(request.url);
-      return h.app.inject({
-        method: "GET",
-        url: url.pathname + url.search,
-        headers: request.headers,
-        payloadAsStream: true,
-      });
-    };
-    const held = await open(client, "/api/device/v1/stream");
-    expect(held.statusCode).toBe(200);
-    const ended = new Promise<void>((resolve) => {
-      const stream = held.stream();
-      stream.on("data", () => undefined);
-      stream.on("end", () => resolve());
-    });
-    const refused = await open(client, "/api/device/v1/stream");
-    expect(refused.statusCode).toBe(429);
-    const body = await new Promise<string>((resolve) => {
-      const parts: Buffer[] = [];
-      refused
-        .stream()
-        .on("data", (chunk: Buffer) => parts.push(chunk))
-        .on("end", () => resolve(Buffer.concat(parts).toString("utf8")));
-    });
-    expect(JSON.parse(body)).toEqual({
-      error: { streamConnections: 1, code: "DEVICE_STREAM_LIMIT" },
-    });
-    const otherDevice = await open(other, "/api/device/v1/stream");
-    expect(otherDevice.statusCode).toBe(200);
-    otherDevice.stream().resume();
-    await ended;
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    const reopened = await open(client, "/api/device/v1/stream");
-    expect(reopened.statusCode).toBe(200);
-    reopened.stream().resume();
-    await new Promise((resolve) => setTimeout(resolve, 1200));
-    await h.repository.close();
-  });
-
-  it("frees a stream slot when the device drops the connection", async () => {
-    const h = await harness();
-    h.configuration.current = { ...h.configuration.current, streamConnections: 1 };
-    const client = await pairAndConfirm(h);
     const address = await h.app.listen({ host: "127.0.0.1", port: 0 });
-    const connect = () =>
-      new Promise<{ status: number; drop: () => void }>((resolve, reject) => {
-        const request = signedRequest(h, client, { method: "GET", path: "/api/device/v1/stream" });
+    const connect = (who: PairedClient) =>
+      new Promise<{ status: number; ended: Promise<void>; drop: () => void }>((resolve, reject) => {
+        const request = signedRequest(h, who, { method: "GET", path: "/api/device/v1/stream" });
         const url = new URL(request.url);
         const outgoing = httpRequest(
           `${address}${url.pathname}${url.search}`,
           { method: "GET", headers: request.headers },
           (response) => {
+            const ended = new Promise<void>((done) => {
+              response.on("close", () => done());
+              response.on("error", () => done());
+            });
             response.resume();
-            resolve({ status: response.statusCode ?? 0, drop: () => outgoing.destroy() });
+            resolve({ status: response.statusCode ?? 0, ended, drop: () => outgoing.destroy() });
           },
         );
         outgoing.on("error", () => undefined);
         outgoing.once("error", reject);
         outgoing.end();
       });
-    try {
-      const first = await connect();
-      expect(first.status).toBe(200);
-      const refused = await connect();
-      expect(refused.status).toBe(429);
-      refused.drop();
-      first.drop();
-      await new Promise((resolve) => setTimeout(resolve, 200));
-      const again = await connect();
-      expect(again.status).toBe(200);
-      again.drop();
-    } finally {
-      await h.app.close();
-      await h.repository.close();
-    }
+    const stale = await connect(client);
+    expect(stale.status).toBe(200);
+    const otherDevice = await connect(other);
+    expect(otherDevice.status).toBe(200);
+    const fresh = await connect(client);
+    expect(fresh.status).toBe(200);
+    await stale.ended;
+    const newest = await connect(client);
+    expect(newest.status).toBe(200);
+    await fresh.ended;
+    let otherEnded = false;
+    void otherDevice.ended.then(() => {
+      otherEnded = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(otherEnded).toBe(false);
+    const replaced = h.warnings.filter((warning) => warning.event === "device.stream_replaced");
+    expect(replaced).toHaveLength(2);
+    expect(replaced[0]).toMatchObject({ deviceId: client.deviceId, path: "stream" });
+    newest.drop();
+    otherDevice.drop();
+    await h.app.close();
+    await h.repository.close();
+  });
+
+  it("records why the device's previous stream ended when it opens the next one", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    const request = signedRequest(h, client, {
+      method: "GET",
+      path: "/api/device/v1/stream",
+      query:
+        "lastDrop=silent&lastConnected=1834&lastStatus=429&offline=12&attempts=2&lastError=-1005",
+    });
+    const url = new URL(request.url);
+    const response = await h.app.inject({
+      method: "GET",
+      url: url.pathname + url.search,
+      headers: request.headers,
+      payloadAsStream: true,
+    });
+    expect(response.statusCode).toBe(200);
+    response.stream().destroy();
+    expect(h.warnings).toContainEqual({
+      event: "device.stream_opened",
+      deviceId: client.deviceId,
+      path: "stream",
+      lastDrop: "silent",
+      lastConnected: 1834,
+      lastStatus: 429,
+      lastError: -1005,
+      offline: 12,
+      attempts: 2,
+    });
+    await h.repository.close();
   });
 
   it("answers a refused stream handshake with an error body", async () => {

@@ -383,6 +383,24 @@ final class ProblemBox: @unchecked Sendable {
         #expect(refusals == [.refused(path: "threads/thr_1/execution-stream", status: 429, code: "DEVICE_STREAM_LIMIT")])
     }
 
+    @Test func eachReopenTellsTheServerWhyTheLastConnectionEndedAndHowTheRetriesWent() async throws {
+        let exchange = RecordingExchange([], streams: [(200, [": ping\n\n"]), (429, [#"{"error":{"code":"RATE_LIMITED"}}"#]), (403, [#"{"error":{"code":"DEVICE_REVOKED"}}"#])])
+        let stream = DeviceEventStream(http: try client(exchange), cursors: nil, heartbeat: { 30 })
+        for await _ in stream.start() {}
+        let queries = exchange.requests.map { request in
+            Dictionary(uniqueKeysWithValues: (URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []).map { ($0.name, $0.value ?? "") })
+        }
+        #expect(queries.count == 3)
+        #expect(queries[0]["lastDrop"] == nil)
+        #expect(queries[1]["lastDrop"] == "closed")
+        #expect(queries[1]["lastConnected"] == "0")
+        #expect(queries[1]["attempts"] == "0")
+        #expect(queries[1]["offline"] != nil)
+        #expect(queries[2]["lastDrop"] == "closed")
+        #expect(queries[2]["attempts"] == "1")
+        #expect(queries[2]["lastStatus"] == "429")
+    }
+
     @Test func theServersHourlyReconnectIsNotReportedAsADisconnect() async throws {
         let rotate = "event: device.reconnect\ndata: {\"reasonCode\":\"CONNECTION_MAX_LIFETIME\"}\n\n"
         let exchange = RecordingExchange([], streams: [(200, [rotate]), (403, [#"{"error":{"code":"DEVICE_REVOKED"}}"#])])

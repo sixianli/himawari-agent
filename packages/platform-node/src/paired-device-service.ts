@@ -31,7 +31,6 @@ export const PAIRED_DEVICE_ERROR_CODES = Object.freeze({
   OWNER_INACTIVE: "DEVICE_OWNER_INACTIVE",
   NONCE_REPLAYED: "DEVICE_NONCE_REPLAYED",
   NONCE_STORE_FULL: "DEVICE_NONCE_STORE_FULL",
-  STREAM_LIMIT: "DEVICE_STREAM_LIMIT",
   PATH_NOT_ALLOWED: "DEVICE_PATH_NOT_ALLOWED",
   BODY_TOO_LARGE: "DEVICE_BODY_TOO_LARGE",
   REQUEST_INVALID: "DEVICE_REQUEST_INVALID",
@@ -87,10 +86,25 @@ export interface PairedDeviceServiceOptions {
   readonly prepareRevoke?: (deviceId: string) => Promise<(() => Promise<void>) | undefined>;
 }
 
-export interface PairedDeviceWarning {
-  readonly event: "device.nonce_store_full";
+export type PairedDeviceWarning =
+  | {
+      readonly event: "device.nonce_store_full";
+      readonly deviceId: string;
+      readonly retained: number;
+    }
+  | DeviceStreamDiagnostic;
+
+export interface DeviceStreamDiagnostic {
+  readonly event: "device.stream_opened" | "device.stream_closed" | "device.stream_replaced";
   readonly deviceId: string;
-  readonly retained: number;
+  readonly path: string;
+  readonly heldSeconds?: number;
+  readonly lastDrop?: string;
+  readonly lastConnected?: number;
+  readonly lastStatus?: number;
+  readonly lastError?: number;
+  readonly offline?: number;
+  readonly attempts?: number;
 }
 
 const WARNING_INTERVAL_MILLISECONDS = 60_000;
@@ -139,6 +153,10 @@ export class PairedDeviceService {
         return device ? { ownerId: device.ownerId, agentId: device.agentId } : undefined;
       },
     };
+  }
+
+  reportStream(diagnostic: DeviceStreamDiagnostic): void {
+    this.#options.onWarning?.(diagnostic);
   }
 
   #now(): Date {
