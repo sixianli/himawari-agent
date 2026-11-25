@@ -1746,7 +1746,7 @@ DevTools 和 LangSmith 的瀑布图让并行的步骤各自画满，总和可以
 
 **相关 ADR/PR**
 
-[ADR 0087](adr/0087-chat-ui-v6-process-timeline.md)；[PR #45](https://github.com/sixianli/himawari-agent/pull/45)（提交 `13cf0d6`、`b938b1a`、`001bbb6`）；相关：[案例 24](#case-run-gaps)（同一轮数据里找出的系统空档）、[案例 16](#case-narration-status)、[案例 23](#case-memory-steps)（同一块过程区之前的两次修复）。
+[ADR 0087](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0087-chat-ui-v6-process-timeline.md)；[PR #45](https://github.com/sixianli/himawari-agent/pull/45)（提交 `13cf0d6`、`b938b1a`、`001bbb6`）；相关：[案例 24](#case-run-gaps)（同一轮数据里找出的系统空档）、[案例 16](#case-narration-status)、[案例 23](#case-memory-steps)（同一块过程区之前的两次修复）。
 
 **面试 30 秒版**
 
@@ -1835,7 +1835,7 @@ Pi 不管推送和客户端，这部分全是 Himawari 自己的：订阅存储�
 
 **背景与现象**
 
-2026-10-26 Andy 在对话界面 v6 原型上对回答框和输入区留了 8 条批注（原话见 [ADR 0090](adr/0090-chat-ui-v6-answer-and-composer.md#context)），其中三条最费工夫：
+2026-10-26 Andy 在对话界面 v6 原型上对回答框和输入区留了 8 条批注（原话见 [ADR 0090](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0090-chat-ui-v6-answer-and-composer.md#context)），其中三条最费工夫：
 
 - 复制按钮挨着来源，用户会以为“连来源也一起复制了”。
 - “我比较关注每一次的 token 消耗”，但界面上看不到一轮用了多少 token（模型计费的文字单位）。
@@ -1878,7 +1878,7 @@ Pi 不管推送和客户端，这部分全是 Himawari 自己的：订阅存储�
 
 **相关 ADR/PR**
 
-[ADR 0090](adr/0090-chat-ui-v6-answer-and-composer.md)；[PR #48](https://github.com/sixianli/himawari-agent/pull/48)；[BL-20261026-012](backlog/BL-20261026-012-attachments-images-pdf-office.md)；相关：[案例 26](#case-process-timeline)（同一轮回答的过程区）。
+[ADR 0090](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0090-chat-ui-v6-answer-and-composer.md)；[PR #48](https://github.com/sixianli/himawari-agent/pull/48)；[BL-20261026-012](backlog/BL-20261026-012-attachments-images-pdf-office.md)；相关：[案例 26](#case-process-timeline)（同一轮回答的过程区）。
 
 **面试 30 秒版**
 
@@ -1896,7 +1896,7 @@ Pi 不管推送和客户端，这部分全是 Himawari 自己的：订阅存储�
 
 **后续（2026-10-26 夜）：第三期文件预览不改后端，只用工具记录**
 
-原型里右侧预览能打开任何文件，产品里却没有“读工作目录文件”的接口。我没有先写接口，而是先看浏览器手里已有什么：Pi 的写文件工具参数是 `{ path, content }`，改文件是 `{ path, edits: [{ oldText, newText }] }`，这些参数本来就作为过程记录发给浏览器。于是浏览器从记录里取全文，按顺序把改动替换进去得到最终内容，再用最长公共子序列算逐行增删，卡片上的“+N −N”和“改动”页一致（详见 [ADR 0091](adr/0091-chat-ui-v6-file-preview-and-sidebar.md#file-source)）。
+原型里右侧预览能打开任何文件，产品里却没有“读工作目录文件”的接口。我没有先写接口，而是先看浏览器手里已有什么：Pi 的写文件工具参数是 `{ path, content }`，改文件是 `{ path, edits: [{ oldText, newText }] }`，这些参数本来就作为过程记录发给浏览器。于是浏览器从记录里取全文，按顺序把改动替换进去得到最终内容，再用最长公共子序列算逐行增删，卡片上的“+N −N”和“改动”页一致（详见 [ADR 0091](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0091-chat-ui-v6-file-preview-and-sidebar.md#file-source)）。
 
 网页文件本想用 `iframe srcdoc` 直接渲染，但查规范发现 srcdoc 文档会继承父页面的内容安全策略（✅ [W3C CSP Level 3 第 7.8 节](https://www.w3.org/TR/CSP3/)：“Documents loaded from local schemes will inherit a copy of the policies in the source document”），我们的策略禁止内联样式，渲染出来是错的；正确做法是单独的隔离预览地址，和图片、PDF 一起记进 [BL-20261026-013](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261026-013-file-preview-images-pdf-html.md)。
 
@@ -2138,7 +2138,7 @@ Andy 在卡片上选了“加一个看图模型”。动手前我先查现有的
 - 对话区明确 `overflow-x: hidden`，并去掉超宽的来源：回答下方一行不再显示模型名，复制按钮只留图标且不可压缩。
 - 记忆改成一行 12px 灰字“记下了 N 条新记忆 · 查看”，点开记忆页把这一轮记下的那几条放最上面，标“刚记住”，能直接编辑、删除。
 - 发送按钮电脑和手机都改成 34px 圆形，手机点按区域 44px；空着是浅灰，能发是深色，回答中显示停止方块。
-- 先出原型，Andy 批注“再放小一点……太抢用户的注意力了”后改小，13:49 审核通过才写代码。决定记在 [ADR 0096](adr/0096-phone-chat-page-safe-area-and-quiet-answer-line.md)。和 Pi（Himawari 依赖的开源 Agent 框架）无关，全是网页样式和组件。
+- 先出原型，Andy 批注“再放小一点……太抢用户的注意力了”后改小，13:49 审核通过才写代码。决定记在 [ADR 0096](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0096-phone-chat-page-safe-area-and-quiet-answer-line.md)。和 Pi（Himawari 依赖的开源 Agent 框架）无关，全是网页样式和组件。
 
 **方案讨论与备选**
 
@@ -2168,7 +2168,7 @@ Andy 在卡片上选了“加一个看图模型”。动手前我先查现有的
 
 **相关 ADR/PR**
 
-[ADR 0096](adr/0096-phone-chat-page-safe-area-and-quiet-answer-line.md)、[ADR 0090](adr/0090-chat-ui-v6-answer-and-composer.md)；PR #62；[原型](https://claude.ai/artifact/BGa1vxG7DHy9GQKBQLatSS)。
+[ADR 0096](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0096-phone-chat-page-safe-area-and-quiet-answer-line.md)、[ADR 0090](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0090-chat-ui-v6-answer-and-composer.md)；PR #62；[原型](https://claude.ai/artifact/BGa1vxG7DHy9GQKBQLatSS)。
 
 **面试 30 秒版**
 
@@ -2246,7 +2246,7 @@ Andy 定后台命令最长 30 分钟（原话“30 分钟”），随后要求�
 
 **后续（2026-10-28）：后台命令收进“更多”栏**
 
-问题：第一版在回答下面放一行“后台命令运行中 · 停止”，Andy 嫌后台命令在主界面抢注意力，要求收进对话右上的“更多”栏，并和“对话产物”一起出综合设计；他批准设计时的原话是“原型和方案都审核了，全部按照你的设计和推荐来做！”。整体设计记在 [ADR 0100（更多面板综合设计）](adr/0100-conversation-more-panel-files-and-background-commands.md)（见[案例 36](#case-more-panel)），本案例只记和后台命令有关的实现。
+问题：第一版在回答下面放一行“后台命令运行中 · 停止”，Andy 嫌后台命令在主界面抢注意力，要求收进对话右上的“更多”栏，并和“对话产物”一起出综合设计；他批准设计时的原话是“原型和方案都审核了，全部按照你的设计和推荐来做！”。整体设计记在 [ADR 0100（更多面板综合设计）](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0100-conversation-more-panel-files-and-background-commands.md)（见[案例 36](#case-more-panel)），本案例只记和后台命令有关的实现。
 
 难点是网页要列出每条命令的原文和输出，而第一版刻意没把命令原文写进登记表（可能含密码之类）。做法：登记表只多存两个加密内容的编号（命令前 300 个字符、结束时输出的最后 20 行），原文和输出仍是加密存放，网页用已有的读加密文本接口按编号读，和读聊天消息走同一条路；轮次摘要多一个 `backgroundCommands` 列表，含已结束的命令和汇报那一轮的编号，网页据此算出“第几轮启动”和“看汇报”跳到哪。主界面只留三处轻提示：按钮上正在跑的个数、回答下一行可点的灰字、汇报前一条灰色分隔线；“停止”点了就停、不弹确认，按钮变成“正在停止…”。
 
@@ -2425,7 +2425,7 @@ Andy 定后台命令最长 30 分钟（原话“30 分钟”），随后要求�
 
 **相关 ADR/PR**
 
-[ADR 0100](adr/0100-conversation-more-panel-files-and-background-commands.md)、[控制中心 Spec 的 v8 增补](execution/specs/2026-09-15-control-center-v4-design.md#v8-more-panel)、[实施计划](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-10-28-file-delivery-and-more-panel-plan.md)、[ADR 0091](adr/0091-chat-ui-v6-file-preview-and-sidebar.md)、[ADR 0097](adr/0097-bash-writes-workspace-with-change-ledger.md)；PR #63（后台命令）、本设计的文档 PR 见分支 `claude/project-thread-3hdzxk`。
+[ADR 0100](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0100-conversation-more-panel-files-and-background-commands.md)、[控制中心 Spec 的 v8 增补](execution/specs/2026-09-15-control-center-v4-design.md#v8-more-panel)、[实施计划](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-10-28-file-delivery-and-more-panel-plan.md)、[ADR 0091](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0091-chat-ui-v6-file-preview-and-sidebar.md)、[ADR 0097](adr/0097-bash-writes-workspace-with-change-ledger.md)；PR #63（后台命令）、本设计的文档 PR 见分支 `claude/project-thread-3hdzxk`。
 
 **面试 30 秒版**
 
@@ -2940,7 +2940,7 @@ PR #82（2026-10-28 合并）。只改了返回格式、没改模型和数据，
 
 **我们的方案**
 
-先做三语可点原型（<https://claude.ai/artifact/KYcGzu8DdXoLNUT8XuD8JL>），几处给多套方案，Andy 逐条批注选定后再改代码，决定写进 [ADR 0105](adr/0105-ui-batch-2026-10-28-show-what-the-owner-needs.md)：
+先做三语可点原型（<https://claude.ai/artifact/KYcGzu8DdXoLNUT8XuD8JL>），几处给多套方案，Andy 逐条批注选定后再改代码，决定写进 [ADR 0105](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0105-ui-batch-2026-10-28-show-what-the-owner-needs.md)：
 
 1. 过程区收起时一句话说做了什么和总用时（“搜索了 2 次网页，用时 13.1s”），从这一轮步骤种类计数生成；展开后每步只写自己的耗时；最下面一行只有 Token 总数和“缓存命中 N%”。
 2. “缓存命中”按 Andy 的要求写明是模型服务商的 KV 缓存（服务商把算过的前文存起来，同样开头的输入直接复用）：命中率 = 缓存读取 ÷（普通输入 + 缓存读取 + 缓存写入）。不显示费用。
@@ -2979,7 +2979,7 @@ PR #82（2026-10-28 合并）。只改了返回格式、没改模型和数据，
 
 **相关 ADR/PR**
 
-[ADR 0105](adr/0105-ui-batch-2026-10-28-show-what-the-owner-needs.md)（部分替换 [ADR 0087](adr/0087-chat-ui-v6-process-timeline.md) 和 [ADR 0096](adr/0096-phone-chat-page-safe-area-and-quiet-answer-line.md)）；[v4 设计说明 · v9 增补](execution/specs/2026-09-15-control-center-v4-design.md#v9-ui-batch)；PR #80（分支 `claude/project-thread-di5x9h`）。
+[ADR 0105](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0105-ui-batch-2026-10-28-show-what-the-owner-needs.md)（部分替换 [ADR 0087](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0087-chat-ui-v6-process-timeline.md) 和 [ADR 0096](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0096-phone-chat-page-safe-area-and-quiet-answer-line.md)）；[v4 设计说明 · v9 增补](execution/specs/2026-09-15-control-center-v4-design.md#v9-ui-batch)；PR #80（分支 `claude/project-thread-di5x9h`）。
 
 **面试 30 秒版**
 
@@ -3048,7 +3048,7 @@ PR #82（2026-10-28 合并）。只改了返回格式、没改模型和数据，
 
 **相关 ADR/PR**
 
-[ADR 0106](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0106-proactive-loop-v1-gmail-read-only.md)；[设计规格](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/execution/specs/2026-10-29-proactive-loop-v1-gmail-design.md)；[ADR 0102](adr/0102-record-push-notification-feedback.md)；[ADR 0105](adr/0105-ui-batch-2026-10-28-show-what-the-owner-needs.md)；PR 1 在分支 `claude/project-thread-6gwe3i`。
+[ADR 0106](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0106-proactive-loop-v1-gmail-read-only.md)；[设计规格](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/execution/specs/2026-10-29-proactive-loop-v1-gmail-design.md)；[ADR 0102](adr/0102-record-push-notification-feedback.md)；[ADR 0105](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0105-ui-batch-2026-10-28-show-what-the-owner-needs.md)；PR 1 在分支 `claude/project-thread-6gwe3i`。
 
 **跟进（2026-10-28，后台 PR）**
 
@@ -3423,7 +3423,7 @@ Andy 2026-10-29 00:56 定了规则，记在 [ADR 0107](https://github.com/sixian
 
 **相关 ADR/PR**
 
-[事故与门槛清单 I-14](incidents-and-gates.md)；[第十八版手机页面基线 ADR 0096](adr/0096-phone-chat-page-safe-area-and-quiet-answer-line.md)；本案例的 PR 在分支 `claude/project-thread-6cxbkp`。
+[事故与门槛清单 I-14](incidents-and-gates.md)；[第十八版手机页面基线 ADR 0096](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0096-phone-chat-page-safe-area-and-quiet-answer-line.md)；本案例的 PR 在分支 `claude/project-thread-6cxbkp`。
 
 **面试 30 秒版**
 
@@ -3443,7 +3443,7 @@ Andy 2026-10-29 00:56 定了规则，记在 [ADR 0107](https://github.com/sixian
 
 - **低级错误漏到主人手里**：交付前只靠人看截图，而 3 种语言 × 2 种宽度 × 2 种主题 × 10 个页面就是 120 张图，人看不过来，也没有一项规则说“看到什么算错”。仓库里已有的手机检查（[案例 51](#case-phone-input-zoom) 的 `check-phone-layout.mjs`）只读 CSS 文本，看不到页面真正排出来的样子。
 - **分出的对话是空的（I-17）**：真实服务器分出新对话时只记下“来自哪个对话、到第几条消息为止”（`ProductThread.lineage`），不复制消息；网页从来不读这条来源记录。测试用的假服务器反而把原消息复制进了新对话，所以所有测试都看到“有内容”。这是用复现确认的：把假服务器改成和真实服务器一样之后，新写的测试在旧代码上失败，报 “expected '' to contain 'source-content-1'”。
-- **称呼不跨设备**：[ADR 0105](adr/0105-ui-batch-2026-10-28-show-what-the-owner-needs.md) 当时决定称呼只存在浏览器本地存储里，换一台设备自然是空的。
+- **称呼不跨设备**：[ADR 0105](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0105-ui-batch-2026-10-28-show-what-the-owner-needs.md) 当时决定称呼只存在浏览器本地存储里，换一台设备自然是空的。
 
 **我们的方案**
 
@@ -3483,7 +3483,7 @@ Andy 2026-10-29 00:56 定了规则，记在 [ADR 0107](https://github.com/sixian
 
 **相关 ADR/PR**
 
-[ADR 0110](adr/0110-ui-batch-2026-10-29-check-it-before-the-owner-does.md)；[ADR 0100](adr/0100-conversation-more-panel-files-and-background-commands.md)、[ADR 0105](adr/0105-ui-batch-2026-10-28-show-what-the-owner-needs.md) 的后续说明；[事故与门槛清单 I-15 至 I-18](incidents-and-gates.md)；[设计规范](ui-ux-design-guide.md)；截图基线 `docs/assets/control-center/2026-10-29-v11/`；PR #99（分支 `claude/project-thread-89xntg`）。
+[ADR 0110](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0110-ui-batch-2026-10-29-check-it-before-the-owner-does.md)；[ADR 0100](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0100-conversation-more-panel-files-and-background-commands.md)、[ADR 0105](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0105-ui-batch-2026-10-28-show-what-the-owner-needs.md) 的后续说明；[事故与门槛清单 I-15 至 I-18](incidents-and-gates.md)；[设计规范](ui-ux-design-guide.md)；截图基线 `docs/assets/control-center/2026-10-29-v11/`；PR #99（分支 `claude/project-thread-89xntg`）。
 
 **面试 30 秒版**
 
@@ -3867,7 +3867,7 @@ Claude 让用户按主题看、改、删记忆，但没有告诉用户每轮实�
 
 **相关 ADR/PR**
 
-[ADR 0114](adr/0114-file-preview-pdf-word-excel-in-browser.md)、[ADR 0091](adr/0091-chat-ui-v6-file-preview-and-sidebar.md)、[ADR 0100](adr/0100-conversation-more-panel-files-and-background-commands.md)、[案例 36 “更多”栏](#case-more-panel)。PR 见 ADR 0114 所在分支 `claude/project-thread-6vnjqg`。
+[ADR 0114](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0114-file-preview-pdf-word-excel-in-browser.md)、[ADR 0091](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0091-chat-ui-v6-file-preview-and-sidebar.md)、[ADR 0100](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0100-conversation-more-panel-files-and-background-commands.md)、[案例 36 “更多”栏](#case-more-panel)。PR 见 ADR 0114 所在分支 `claude/project-thread-6vnjqg`。
 
 **面试 30 秒版**
 
@@ -4397,7 +4397,7 @@ OpenAI 的“流式”Himawari 早已做到，但第一个字本身就要 5 秒�
 
 **相关 ADR/PR**
 
-[ADR 0122](adr/0122-every-owner-setting-on-the-server-with-revision.md)（修改 [ADR 0110](adr/0110-ui-batch-2026-10-29-check-it-before-the-owner-does.md) 第 3 条）；[事故 I-16](incidents-and-gates.md#incidents) 第二次；本案例的 PR 在分支 `claude/project-thread-bcspuc`。
+[ADR 0122](adr/0122-every-owner-setting-on-the-server-with-revision.md)（修改 [ADR 0110](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0110-ui-batch-2026-10-29-check-it-before-the-owner-does.md) 第 3 条）；[事故 I-16](incidents-and-gates.md#incidents) 第二次；本案例的 PR 在分支 `claude/project-thread-bcspuc`。
 
 **面试 30 秒版**
 

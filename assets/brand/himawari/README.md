@@ -1,6 +1,6 @@
 # Himawari Agent Logo
 
-当前界面使用 `v4/` 的 55 粒“生长”葵盘标志（2026-11-15 用户选定，[ADR 0283](../../../docs/adr/0283-sunflower-mark-keeps-55-seeds-and-apps-get-icons.md)）；`v3/` 是 2026-10-30 选定的 233 粒版本（[ADR 0126](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0126-sunflower-mark-grows-233-seeds.md)），保留作历史参照；`v2/` 是 2026-10-26 选定的 96 粒葵盘，保留作历史参照；`v1/` 是 2026-09-10 确认的原始 PNG，保留作历史参照，不再被界面引用。
+当前界面使用 `v4/` 的 55 粒“生长”葵盘标志（2026-11-15 用户选定，[ADR 0295](../../../docs/adr/0295-web-chat-interface.md)）；`v3/` 是 2026-10-30 选定的 233 粒版本（[ADR 0126](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0126-sunflower-mark-grows-233-seeds.md)），保留作历史参照；`v2/` 是 2026-10-26 选定的 96 粒葵盘，保留作历史参照；`v1/` 是 2026-09-10 确认的原始 PNG，保留作历史参照，不再被界面引用。
 
 ## v4 生长葵盘（当前）
 

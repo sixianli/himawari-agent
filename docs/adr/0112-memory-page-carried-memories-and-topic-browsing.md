@@ -141,7 +141,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 - [2026-10-25-self-built-memory-engine-design.md「profile」（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-10-25-self-built-memory-engine-design.md#profile)
 - [SOURCE: docs/execution/specs/2026-09-15-control-center-v4-design.md#v12-memory-page]
 - [ADR 0075 自研记忆引擎](0075-self-built-memory-engine.md)
-- [ADR 0105 UI 批次（记忆页独立）](0105-ui-batch-2026-10-28-show-what-the-owner-needs.md)
+- [ADR 0105 UI 批次（记忆页独立）](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0105-ui-batch-2026-10-28-show-what-the-owner-needs.md)
 - [工程案例库 案例 54](../engineering-casebook.md#case-carried-memories)
 - [事故与门槛清单 I-21](../incidents-and-gates.md)
 - 原型：<https://claude.ai/artifact/EY7f1dkgB7zypskUoQ1dzo>；基线：[`docs/assets/control-center/2026-10-29-v12/`](../assets/control-center/2026-10-29-v12/SHA256SUMS)

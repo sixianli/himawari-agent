@@ -115,6 +115,6 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 - [事故与门槛清单 I-38](../incidents-and-gates.md#incidents)
 - [工程案例库：案例 67](../engineering-casebook.md#case-silent-file-writing)
 - [界面设计规范](../ui-ux-design-guide.md)
-- [ADR 0105：过程区一句话总结](0105-ui-batch-2026-10-28-show-what-the-owner-needs.md)
+- [ADR 0105：过程区一句话总结](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0105-ui-batch-2026-10-28-show-what-the-owner-needs.md)
 
 [↑ 返回阅读导航](#contents)
