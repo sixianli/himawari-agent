@@ -944,6 +944,14 @@ export function RemindersPage({
       </section>
     ) : null;
   };
+  const restore = (item: { readonly reminderId: string; readonly text: string }) =>
+    memory?.respondReminder(item, "restore").then((ok) =>
+      setNotice({
+        text: ok
+          ? message("memory.page.restored", { text: item.text })
+          : message("memory.page.restoreFailed"),
+      }),
+    );
   const dueRows = mailRows("due");
   const reminderGroups = (["today", "week", "later"] as const).map((group) => {
     const items = groups.get(group) ?? [];
@@ -964,13 +972,14 @@ export function RemindersPage({
                 variant="quiet"
                 disabled={memory?.busy}
                 onClick={() =>
-                  void memory
-                    ?.respondReminder(item, "cancel")
-                    .then(
-                      (ok) =>
-                        ok &&
-                        setNotice({ text: message("memory.page.cancelled", { text: item.text }) }),
-                    )
+                  void memory?.respondReminder(item, "cancel").then(
+                    (ok) =>
+                      ok &&
+                      setNotice({
+                        text: message("memory.page.cancelled", { text: item.text }),
+                        undo: () => void restore(item),
+                      }),
+                  )
                 }
               >
                 {message("memory.reminderDismiss")}
@@ -1105,7 +1114,33 @@ export function RemindersPage({
           {reminderGroups[2]}
           {mailGroup("none")}
           {mailGroup("know")}
-          {!overview.reminders.length && !overview.upcoming.length && !mailCount ? (
+          {overview.cancelled.length ? (
+            <section>
+              <h2 className="memory-group">{message("reminders.cancelledGroup")}</h2>
+              {overview.cancelled.map((item) => (
+                <div className="reminder-row" data-kind="cancelled" key={item.reminderId}>
+                  <span className="reminder-when">{when(item.dueAt)}</span>
+                  <span className="reminder-text">
+                    {item.text}
+                    {meta(item.repeat === "yearly", null)}
+                  </span>
+                  <span className="actions">
+                    <ActionButton
+                      variant="quiet"
+                      disabled={memory.busy}
+                      onClick={() => void restore(item)}
+                    >
+                      {message("memory.reminderRestore")}
+                    </ActionButton>
+                  </span>
+                </div>
+              ))}
+            </section>
+          ) : null}
+          {!overview.reminders.length &&
+          !overview.upcoming.length &&
+          !overview.cancelled.length &&
+          !mailCount ? (
             <EmptyState
               icon={<LineIcon name="bell" />}
               title={message("reminders.emptyTitle")}
@@ -1126,7 +1161,10 @@ export function RemindersPage({
             <ProactiveReviewSection proactive={proactive} message={message} locale={locale} />
           ) : null}
           {muse ? <MuseReference muse={muse} message={message} locale={locale} /> : null}
-          {overview.reminders.length || overview.upcoming.length || mailCount ? (
+          {overview.reminders.length ||
+          overview.upcoming.length ||
+          overview.cancelled.length ||
+          mailCount ? (
             <p className="settings-note reminders-notify">{notifyNote}</p>
           ) : null}
         </>

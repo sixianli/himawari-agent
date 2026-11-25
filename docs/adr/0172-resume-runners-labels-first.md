@@ -102,6 +102,6 @@ Hermes（家里的 Linux 服务器）上有两个 GitHub 自托管 runner（替 
 
 - [ADR 0169：暂停 runner 时先在 Mac 上去掉标签，再在 Hermes 上等空闲后停服务](0169-pause-runners-by-removing-the-label.md)
 - [ADR 0176：CI 搬到 OVH 的 VPS](0176-ci-on-ovh-vps.md)
-- [CI VPS 上的自托管 runner Runbook](../runbooks/ci-vps-runner-runbook.md#pause-and-resume)
+- CI VPS 上的自托管 runner Runbook（运行手册已随 [ADR 0287](0287-ci-runs-on-github-hosted-runners.md) 删除，最后一版在提交 `88e17c24`）
 
 [↑ 返回阅读导航](#contents)

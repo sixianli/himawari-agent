@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import ts from "typescript";
@@ -7,11 +7,15 @@ import { parseDocument } from "yaml";
 import {
   activeMembers,
   armChecks,
+  legacyArmChecks,
   armRunnerLabel,
   fileSha256,
   gateRunnerLabel,
   githubExpression,
+  hostedRunnerLabels,
+  legacyRunnerLabels,
   linuxRunnerLabel,
+  macRunnerLabel,
   parseArguments,
   readJson,
   repositoryRoot,
@@ -39,6 +43,20 @@ export const REQUIRED_ENTRY_SCRIPT = [
 export const REQUIRED_AFTER_ENTRY = githubExpression(
   "always() && steps.entry.outcome == 'success'",
 );
+export const SHARE_ROOT_COMMAND =
+  'mkdir -p "$RUNNER_TEMP/ci-share" && echo "HIMAWARI_CI_SHARE=$RUNNER_TEMP/ci-share" >> "$GITHUB_ENV"';
+const runShareKey = `${githubExpression("github.run_id")}-${githubExpression("github.run_attempt")}`;
+export const sharePath = (name) =>
+  `${githubExpression("runner.temp")}/ci-share/${runShareKey}/${name}`;
+export const shareCacheKey = (name) => `ci-share-${runShareKey}-${name}`;
+export const SHARE_AFTER_PUT = githubExpression("always() && steps.share.outcome == 'success'");
+const actionRepository = (uses) => uses.split("@")[0].split("/").slice(0, 2).join("/");
+const isCacheAction = (step, kind) =>
+  typeof step.uses === "string" && step.uses.startsWith(`actions/cache/${kind}@`);
+const restoresShare = (step, name) =>
+  isCacheAction(step, "restore") &&
+  step.with?.path === sharePath(name) &&
+  step.with?.key === shareCacheKey(name);
 export const REQUIRED_GATE_COMMAND =
   '.ci-output/tools/bin/node scripts/ci/required.mjs --reports .ci-output/reports --output .ci-output/gate --base "$CI_BASE"';
 const assert = (condition, message) => {
@@ -81,7 +99,7 @@ export function upgradeHostedRunnerPolicy(policy) {
   for (const check of upgraded.checks)
     for (const member of check.members)
       if (member.key === "macos-arm64") member.paused = true;
-      else member.runner = linuxRunnerLabel;
+      else member.runner = legacyRunnerLabels.linux;
   return upgraded;
 }
 
@@ -100,7 +118,7 @@ export function upgradeRunnerLabel(policy) {
   const upgraded = structuredClone(policy);
   for (const check of upgraded.checks)
     for (const member of check.members)
-      if (member.key !== "macos-arm64") member.runner = linuxRunnerLabel;
+      if (member.key !== "macos-arm64") member.runner = legacyRunnerLabels.linux;
   return upgraded;
 }
 
@@ -117,7 +135,13 @@ const retiredTestChecks = [
     needs: ["policy", "build"],
     timeoutMinutes: 90,
     members: [
-      { key: "linux-x64", runner: linuxRunnerLabel, os: "linux", arch: "x64", node: "22.22.3" },
+      {
+        key: "linux-x64",
+        runner: legacyRunnerLabels.linux,
+        os: "linux",
+        arch: "x64",
+        node: "22.22.3",
+      },
       {
         key: "macos-arm64",
         runner: "macos-15",
@@ -135,7 +159,13 @@ const retiredTestChecks = [
     needs: ["policy"],
     timeoutMinutes: 90,
     members: [
-      { key: "default", runner: linuxRunnerLabel, os: "linux", arch: "x64", node: "22.19.0" },
+      {
+        key: "default",
+        runner: legacyRunnerLabels.linux,
+        os: "linux",
+        arch: "x64",
+        node: "22.19.0",
+      },
     ],
     projects: ["unit", "contracts", "integration", "e2e", "pi-compat"],
     outputs: ["json", "junit"],
@@ -144,15 +174,23 @@ const retiredTestChecks = [
 
 const ciVpsDefaultMember = {
   key: "default",
-  runner: linuxRunnerLabel,
+  runner: legacyRunnerLabels.linux,
   os: "linux",
   arch: "x64",
   node: "22.22.3",
 };
 
 export const testsMembers = [
-  { key: "integration-1", projects: ["integration"], shard: { index: 1, count: 2 } },
-  { key: "integration-2", projects: ["integration"], shard: { index: 2, count: 2 } },
+  {
+    key: "integration-1",
+    projects: ["integration"],
+    shard: { index: 1, count: 2 },
+  },
+  {
+    key: "integration-2",
+    projects: ["integration"],
+    shard: { index: 2, count: 2 },
+  },
   { key: "others", projects: ["unit", "contracts", "e2e", "pi-compat"] },
 ].map((member) => ({ ...ciVpsDefaultMember, ...member }));
 
@@ -259,7 +297,13 @@ export function upgradeCoverageToTests(policy) {
         id: "tooling",
         needs: ["policy"],
         timeoutMinutes: timeoutMinutesFor("tooling"),
-        members: [{ ...ciVpsDefaultMember, runner: armRunnerLabel, alternateArch: "arm64" }],
+        members: [
+          {
+            ...ciVpsDefaultMember,
+            runner: legacyRunnerLabels.arm,
+            alternateArch: "arm64",
+          },
+        ],
         projects: ["tooling"],
         outputs: ["json"],
       },
@@ -281,7 +325,7 @@ export function upgradeArmRunnerPolicy(policy) {
     const members = checks.find((check) => check.id === id)?.members;
     return (
       members?.length === 1 &&
-      members[0].runner === linuxRunnerLabel &&
+      members[0].runner === legacyRunnerLabels.linux &&
       members[0].os === "linux" &&
       members[0].arch === "x64" &&
       [undefined, "arm64"].includes(members[0].alternateArch)
@@ -298,7 +342,10 @@ export function upgradeArmRunnerPolicy(policy) {
   const upgraded = structuredClone(policy);
   for (const check of upgraded.checks)
     if (coverageArmChecks.includes(check.id))
-      Object.assign(check.members[0], { runner: armRunnerLabel, alternateArch: "arm64" });
+      Object.assign(check.members[0], {
+        runner: legacyRunnerLabels.arm,
+        alternateArch: "arm64",
+      });
   return upgraded;
 }
 
@@ -311,10 +358,44 @@ export function upgradeGateRunnerPolicy(policy) {
       coverageJobIds,
     ) &&
     required.members?.length === 1 &&
-    required.members[0].runner === linuxRunnerLabel;
+    required.members[0].runner === legacyRunnerLabels.linux;
   if (!sharedRunner) return policy;
   const upgraded = structuredClone(policy);
-  upgraded.checks.find((check) => check.id === "required").members[0].runner = gateRunnerLabel;
+  upgraded.checks.find((check) => check.id === "required").members[0].runner =
+    legacyRunnerLabels.gate;
+  return upgraded;
+}
+
+export function upgradeSelfHostedRunners(policy) {
+  const hosted = {
+    [legacyRunnerLabels.linux]: linuxRunnerLabel,
+    [legacyRunnerLabels.gate]: gateRunnerLabel,
+    [legacyRunnerLabels.arm]: armRunnerLabel,
+  };
+  const members = (policy?.checks ?? []).flatMap((check) => check.members ?? []);
+  const legacyMac = (member) =>
+    member.key === "macos-arm64" && member.runner === "macos-15" && member.paused === true;
+  const selfHosted =
+    members.length > 0 &&
+    members.every((member) => legacyMac(member) || Object.hasOwn(hosted, member.runner));
+  if (!selfHosted) return policy;
+  const upgraded = structuredClone(policy);
+  for (const check of upgraded.checks)
+    for (const member of check.members) {
+      if (legacyMac(member)) {
+        member.runner = macRunnerLabel;
+        continue;
+      }
+      member.runner = hosted[member.runner];
+      const leftArm =
+        member.runner === armRunnerLabel &&
+        legacyArmChecks.includes(check.id) &&
+        !armChecks.includes(check.id);
+      if (leftArm) {
+        member.runner = linuxRunnerLabel;
+        delete member.alternateArch;
+      }
+    }
   return upgraded;
 }
 
@@ -445,7 +526,7 @@ export function validatePolicy(policy, { allowLegacyIntegration = false } = {}) 
         member.os === (mac ? "darwin" : "linux") &&
           member.arch === (mac ? "arm64" : "x64") &&
           member.alternateArch === (arm ? "arm64" : undefined) &&
-          member.runner === (mac ? "macos-15" : runnerLabelFor(check.id)),
+          member.runner === (mac ? macRunnerLabel : runnerLabelFor(check.id)),
         `Incorrect platform: ${check.id}/${member.key}`,
       );
       assert(mac || member.paused === undefined, `Only macOS members may pause: ${check.id}`);
@@ -508,7 +589,10 @@ function requireReadPermissions(permissions, label, root = false) {
 
 export function validateWorkflow(policy, source, toolchain) {
   validatePolicy(policy);
-  const document = parseDocument(source, { uniqueKeys: true, maxAliasCount: 0 });
+  const document = parseDocument(source, {
+    uniqueKeys: true,
+    maxAliasCount: 0,
+  });
   assert(
     document.errors.length === 0,
     `Invalid workflow YAML: ${document.errors.map((error) => error.message).join("; ")}`,
@@ -651,7 +735,10 @@ export function validateWorkflow(policy, source, toolchain) {
       if (step.uses) {
         const match = /^([^@]+)@([a-f0-9]{40})$/u.exec(step.uses);
         assert(match, `Action must use a full commit SHA: ${step.uses}`);
-        assert(actions.get(match[1]) === match[2], `Action is not toolchain-locked: ${step.uses}`);
+        assert(
+          actions.get(actionRepository(step.uses)) === match[2],
+          `Action is not toolchain-locked: ${step.uses}`,
+        );
         if (match[1] === "actions/checkout")
           assert(
             step.with?.["persist-credentials"] === false,
@@ -671,6 +758,11 @@ export function validateWorkflow(policy, source, toolchain) {
         `Chromium must install unconditionally before the checks run: ${check.id}`,
       );
     }
+    const shareRoots = job.steps.filter((step) => step.run === SHARE_ROOT_COMMAND);
+    assert(
+      shareRoots.length === 1 && shareRoots[0].if === undefined && !shareRoots[0].env,
+      `Job must point the run share at this runner's temporary directory exactly once: ${check.id}`,
+    );
     if (check.id === "required") {
       const [entry] = job.steps;
       assert(
@@ -682,21 +774,29 @@ export function validateWorkflow(policy, source, toolchain) {
           entry.run === REQUIRED_ENTRY_SCRIPT,
         "Required must first fail draft and cancelled runs before installing anything",
       );
-      assert(
-        job.steps.some(
-          (step) =>
-            step.run ===
-              `.ci-output/tools/bin/node scripts/ci/run-share.mjs collect --to .ci-output/reports --remote-jobs ${armChecks.join(",")}` &&
-            step.env?.CI_NEEDS === githubExpression("toJSON(needs)") &&
-            step.if === undefined,
-        ) &&
-          job.steps.some(
-            (step) =>
-              step.run === ".ci-output/tools/bin/node scripts/ci/run-share.mjs remove" &&
-              step.if === REQUIRED_AFTER_ENTRY,
-          ),
-        "Required must collect digest-checked reports from the runner share and always remove the run directory",
+      const collectIndex = job.steps.findIndex(
+        (step) =>
+          step.run ===
+            ".ci-output/tools/bin/node scripts/ci/run-share.mjs collect --to .ci-output/reports" &&
+          step.env?.CI_NEEDS === githubExpression("toJSON(needs)") &&
+          step.if === undefined,
       );
+      assert(collectIndex > 0, "Required must collect digest-checked reports from the run share");
+      const reported = policy.checks
+        .filter((other) => other.id !== "required")
+        .flatMap((other) => activeMembers(other).map((member) => `${other.id}-${member.key}`));
+      for (const name of reported)
+        assert(
+          job.steps
+            .slice(0, collectIndex)
+            .some(
+              (step) =>
+                restoresShare(step, name) &&
+                step.if === undefined &&
+                step.with?.["fail-on-cache-miss"] === undefined,
+            ),
+          `Required must restore every member's reports from the run cache before collecting: ${name}`,
+        );
       assert(
         job.steps
           .slice(1)
@@ -721,6 +821,16 @@ export function validateWorkflow(policy, source, toolchain) {
             `.ci-output/tools/bin/node scripts/ci/run-share.mjs put --name "${check.id}-$CI_MATRIX" --from .ci-output/public/reports --output-key "$CI_MATRIX"`,
         `Job must put its reports on the runner share exactly once: ${check.id}`,
       );
+      const shareIndex = job.steps.findIndex((step) => step.id === "share");
+      const saves = job.steps.filter((step) => isCacheAction(step, "save"));
+      assert(
+        saves.length === 1 &&
+          job.steps.indexOf(saves[0]) > shareIndex &&
+          saves[0].if === SHARE_AFTER_PUT &&
+          saves[0].with?.path === sharePath(`${check.id}-\${{ env.CI_MATRIX }}`) &&
+          saves[0].with?.key === shareCacheKey(`${check.id}-\${{ env.CI_MATRIX }}`),
+        `Job must save its shared reports to this run's cache exactly once: ${check.id}`,
+      );
       const summaries = job.steps.filter((step) => step.run?.includes("scripts/ci/ci-summary.mjs"));
       assert(
         summaries.length === 1 &&
@@ -743,6 +853,18 @@ export function validateWorkflow(policy, source, toolchain) {
     if (check.id === "tests" || check.id === "browser") {
       const fetches = job.steps.filter((step) =>
         step.run?.includes("scripts/ci/run-share.mjs get"),
+      );
+      const fetchIndex = job.steps.indexOf(fetches[0]);
+      assert(
+        job.steps
+          .slice(0, fetchIndex)
+          .some(
+            (step) =>
+              restoresShare(step, "build-linux-x64") &&
+              step.if === undefined &&
+              step.with?.["fail-on-cache-miss"] === true,
+          ),
+        `${check.id} must restore this attempt's Linux build from the run cache before taking it`,
       );
       assert(
         fetches.length === 1 &&
@@ -769,6 +891,27 @@ export function validateWorkflow(policy, source, toolchain) {
     jobs: policy.checks.length,
     members: policy.checks.reduce((total, check) => total + check.members.length, 0),
   };
+}
+
+export function validateHostedRunners(workflows) {
+  for (const [file, text] of Object.entries(workflows)) {
+    const workflow = parseDocument(text, { uniqueKeys: true }).toJS();
+    for (const [id, job] of Object.entries(workflow?.jobs ?? {})) {
+      if (job.uses) {
+        assert(job["runs-on"] === undefined, `HOSTED_RUNNER_REQUIRED ${file}/${id}`);
+        continue;
+      }
+      const label = job["runs-on"];
+      const labels =
+        label === githubExpression("matrix.runner")
+          ? (job.strategy?.matrix?.include ?? [null]).map((member) => member?.runner)
+          : [label];
+      assert(
+        labels.length > 0 && labels.every((entry) => hostedRunnerLabels.includes(entry)),
+        `HOSTED_RUNNER_REQUIRED ${file}/${id}: only ${hostedRunnerLabels.join(", ")} are free on this public repository`,
+      );
+    }
+  }
 }
 
 export function inspectTestSource(source, filename) {
@@ -806,7 +949,10 @@ export function inspectTestSource(source, filename) {
     if (bindings && ts.isNamedImports(bindings))
       for (const item of bindings.elements) {
         const imported = item.propertyName?.text ?? item.name.text;
-        importedNames.set(checker.getSymbolAtLocation(item.name), { module, name: imported });
+        importedNames.set(checker.getSymbolAtLocation(item.name), {
+          module,
+          name: imported,
+        });
         if (module === "vitest" && ["describe", "suite", "it", "test"].includes(imported)) {
           roots.set(checker.getSymbolAtLocation(item.name), [imported]);
           rootNames.add(item.name.text);
@@ -1203,7 +1349,11 @@ export function resolveTestHygieneBaseline({
   assert(/^(?:[a-f0-9]{40}|HEAD)$/u.test(base), "Hygiene base must be HEAD or a full commit SHA");
   assert(safeRelativePath(baselinePath), "Hygiene baseline path must be relative");
   const git = (args) =>
-    execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    execFileSync("git", args, {
+      cwd: root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
   const baseSha = git(["rev-parse", "--verify", `${base}^{commit}`]).trim();
   const present = git(["ls-tree", "-r", "--name-only", baseSha, "--", baselinePath])
     .split("\n")
@@ -1337,7 +1487,11 @@ export function resolvePolicySource({
     "Policy source paths must be relative",
   );
   const git = (args) =>
-    execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    execFileSync("git", args, {
+      cwd: root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
   const baseSha = git(["rev-parse", "--verify", `${base}^{commit}`]).trim();
   const paths = git(["ls-tree", "-r", "--name-only", baseSha, "--", policyPath, coveragePath])
     .trim()
@@ -1353,14 +1507,16 @@ export function resolvePolicySource({
     ? git(["show", `${baseSha}:${policyPath}`])
     : readFileSync(path.join(root, policyPath), "utf8");
   const policy = validatePolicy(
-    upgradeSplitTests(
-      upgradeCoverageToTests(
-        upgradeCoverageCollection(
-          upgradeArmRunnerPolicy(
-            upgradeGateRunnerPolicy(
-              upgradeRetiredTestChecks(
-                upgradeArtifactRetention(
-                  upgradeRunnerLabel(upgradeHostedRunnerPolicy(JSON.parse(bytes))),
+    upgradeSelfHostedRunners(
+      upgradeSplitTests(
+        upgradeCoverageToTests(
+          upgradeCoverageCollection(
+            upgradeArmRunnerPolicy(
+              upgradeGateRunnerPolicy(
+                upgradeRetiredTestChecks(
+                  upgradeArtifactRetention(
+                    upgradeRunnerLabel(upgradeHostedRunnerPolicy(JSON.parse(bytes))),
+                  ),
                 ),
               ),
             ),
@@ -1393,7 +1549,13 @@ export function resolvePolicySource({
     validateRecord("CoveragePolicy", coverage);
     assert(coverage.baseline !== null, "Accepted coverage policy has no measured baseline");
   }
-  return { policy, policySha256: sha256(bytes), coverage, baseSha, initialization: !hasPolicy };
+  return {
+    policy,
+    policySha256: sha256(bytes),
+    coverage,
+    baseSha,
+    initialization: !hasPolicy,
+  };
 }
 
 export function validateToolchain(policy, lock, packageManifest) {
@@ -1541,6 +1703,15 @@ export async function main(argv = process.argv.slice(2)) {
     readJson(path.join(root, "ci/quality-policy.json")),
     readFileSync(path.join(root, ".github/workflows/quality.yml"), "utf8"),
     lock,
+  );
+  const workflowDirectory = path.join(root, ".github/workflows");
+  validateHostedRunners(
+    Object.fromEntries(
+      readdirSync(workflowDirectory)
+        .filter((name) => /\.ya?ml$/u.test(name))
+        .sort()
+        .map((name) => [name, readFileSync(path.join(workflowDirectory, name), "utf8")]),
+    ),
   );
   const vitest = await import(pathToFileURL(path.join(root, "vitest.workspace.ts")).href);
   validateVitestProjects(proposed, vitest.default);

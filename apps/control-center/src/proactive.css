@@ -549,6 +549,11 @@
     grid-column: 1 / -1;
     grid-row: 2;
   }
+  .proactive-checkup-actions {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    justify-content: flex-start;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .proactive-row {

@@ -15,7 +15,7 @@ defaults:
 jobs:
   plan:
     name: main/evidence
-    runs-on: ci-vps
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     outputs:
       mode: ${{ steps.verify.outputs.mode }}
@@ -49,7 +49,7 @@ jobs:
     name: main/confirmation
     needs: plan
     if: needs.plan.result == 'success' && needs.plan.outputs.mode == 'light'
-    runs-on: ci-vps
+    runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
       CI_NODE: 22.22.3
@@ -65,6 +65,8 @@ jobs:
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
       - name: 隔离安装依赖及 SQLite 探针
         run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache runner
+      - name: 准备 GitHub 托管机器上的沙箱和浏览器依赖
+        run: sudo bash scripts/ci/prepare-hosted.sh "$PWD/.ci-output/tools/bin/node"
       - name: 重新查找并取回本次确认的 PR 汇总结论
         env:
           HIMAWARI_CI_GITHUB_TOKEN: ${{ github.token }}

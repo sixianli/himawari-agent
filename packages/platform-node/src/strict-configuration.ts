@@ -40,6 +40,7 @@ import {
   IMPORT_DUPLICATE_RANGES,
   type ImportDuplicateConfiguration,
   type ImportDuplicateTuning,
+  INBOX_SETTING_DEFINITIONS,
   isWebProviderId,
   LOCAL_ONNX_EMBEDDING_PROVIDER,
   type ModelCostDescriptor,
@@ -57,11 +58,7 @@ import {
   type RunPolicyConfiguration,
   type TaskEnvironmentConfiguration,
   type TaskEnvironmentImageConfiguration,
-  THINK_SETTING_DEFINITIONS,
-  THINK_WORTH_DEFAULTS,
-  type ThinkWorthConfiguration,
   type ToolRefusalConfiguration,
-  thinkSettingDefinition,
   VOICE_ADDRESSEE_DEFAULTS,
   VOICE_ADDRESSEE_RANGES,
   type VoiceAddresseeConfiguration,
@@ -1388,63 +1385,21 @@ function parseOwnerProposals(
   });
 }
 
-function parseThinkInbox(value: unknown): NonNullable<RunPolicyConfiguration["thinkInbox"]> {
-  const field = "configuration.runPolicy.thinkInbox";
+function parseInbox(value: unknown): NonNullable<RunPolicyConfiguration["inbox"]> {
+  const field = "configuration.runPolicy.inbox";
   const input = record(value, field);
   const ranges = Object.fromEntries(
-    THINK_SETTING_DEFINITIONS.filter((definition) => definition.unit !== "permille").map(
-      (definition) => [definition.key, [definition.minimum, definition.maximum] as const],
-    ),
+    INBOX_SETTING_DEFINITIONS.map((definition) => [
+      definition.key,
+      [definition.minimum, definition.maximum] as const,
+    ]),
   );
-  rejectUnknown(input, [...Object.keys(ranges), "worth"], field);
+  rejectUnknown(input, Object.keys(ranges), field);
   const parsed: Record<string, number> = {};
   for (const [key, [low, high]] of Object.entries(ranges)) {
     if (input[key] !== undefined) parsed[key] = integer(input[key], `${field}.${key}`, low, high);
   }
-  return Object.freeze({
-    ...parsed,
-    ...(input["worth"] === undefined ? {} : { worth: parseThinkWorth(input["worth"]) }),
-  });
-}
-
-function parseThinkWorth(value: unknown): ThinkWorthConfiguration {
-  const field = "configuration.runPolicy.thinkInbox.worth";
-  const input = record(value, field);
-  rejectUnknown(
-    input,
-    ["model", "secretRef", "yesAtLeastPermille", "noAtMostPermille", "requestTimeoutMs"],
-    field,
-  );
-  const yesAtLeastPermille =
-    input["yesAtLeastPermille"] === undefined
-      ? THINK_WORTH_DEFAULTS.yesAtLeastPermille
-      : integer(
-          input["yesAtLeastPermille"],
-          `${field}.yesAtLeastPermille`,
-          thinkSettingDefinition("yesAtLeastPermille").minimum,
-          thinkSettingDefinition("yesAtLeastPermille").maximum,
-        );
-  const noAtMostPermille =
-    input["noAtMostPermille"] === undefined
-      ? THINK_WORTH_DEFAULTS.noAtMostPermille
-      : integer(
-          input["noAtMostPermille"],
-          `${field}.noAtMostPermille`,
-          thinkSettingDefinition("noAtMostPermille").minimum,
-          thinkSettingDefinition("noAtMostPermille").maximum,
-        );
-  if (noAtMostPermille >= yesAtLeastPermille)
-    throw invalid(`${field}.noAtMostPermille`, "must be smaller than yesAtLeastPermille");
-  return Object.freeze({
-    model: safeReference(input["model"], `${field}.model`),
-    secretRef: safeReference(input["secretRef"], `${field}.secretRef`),
-    yesAtLeastPermille,
-    noAtMostPermille,
-    requestTimeoutMs:
-      input["requestTimeoutMs"] === undefined
-        ? THINK_WORTH_DEFAULTS.requestTimeoutMs
-        : integer(input["requestTimeoutMs"], `${field}.requestTimeoutMs`, 500, 120_000),
-  });
+  return Object.freeze(parsed);
 }
 
 function parseWebPush(value: unknown): NonNullable<RunPolicyConfiguration["webPush"]> {
@@ -1857,7 +1812,7 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       "realEval",
       "mcpRead",
       "ownerProposals",
-      "thinkInbox",
+      "inbox",
     ],
     "configuration.runPolicy",
   );
@@ -1934,9 +1889,7 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
     ...(input["ownerProposals"] === undefined
       ? {}
       : { ownerProposals: parseOwnerProposals(input["ownerProposals"]) }),
-    ...(input["thinkInbox"] === undefined
-      ? {}
-      : { thinkInbox: parseThinkInbox(input["thinkInbox"]) }),
+    ...(input["inbox"] === undefined ? {} : { inbox: parseInbox(input["inbox"]) }),
     ...(input["importDuplicates"] === undefined
       ? {}
       : { importDuplicates: parseImportDuplicates(input["importDuplicates"]) }),
@@ -2256,13 +2209,6 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       runPolicy.importDuplicates.secretRef,
       "model-auth",
       "configuration.runPolicy.importDuplicates.secretRef",
-    );
-  if (runPolicy?.thinkInbox?.worth)
-    assertIdentitySecretReference(
-      secretReferences,
-      runPolicy.thinkInbox.worth.secretRef,
-      "model-auth",
-      "configuration.runPolicy.thinkInbox.worth.secretRef",
     );
   if (runPolicy?.museIntake)
     assertIdentitySecretReference(

@@ -73,7 +73,7 @@ import type {
   SensitiveMemoryApprovalStatePort,
   SessionDeletionStatePort,
   SessionDeviceStatePort,
-  ThinkInboxStorePort,
+  InboxStorePort,
   ThreadArtifactStorePort,
   ThreadDistillationStatePort,
   ThreadPromptBundleStorePort,
@@ -1100,19 +1100,19 @@ export class SqliteDurableAdapters {
     });
   }
 
-  thinkInbox(): ThinkInboxStorePort {
-    return Object.freeze<ThinkInboxStorePort>({
-      enqueue: (input) => this.context.write("thinkInbox.enqueue", input),
-      claimNext: (input) => this.context.write("thinkInbox.claimNext", input),
-      finish: (input) => this.context.write("thinkInbox.finish", input),
-      recoverStalled: (input) => this.context.write("thinkInbox.recoverStalled", input),
-      expireQueued: (input) => this.context.write("thinkInbox.expireQueued", input),
-      usage: (input) => this.context.write("thinkInbox.usage", input),
-      settledSummaries: (input) => this.context.write("thinkInbox.settledSummaries", input),
-      summaryReferenced: (input) => this.context.write("thinkInbox.summaryReferenced", input),
-      clearSummary: (input) => this.context.write("thinkInbox.clearSummary", input),
-      readSettings: (input) => this.context.write("thinkInbox.readSettings", input),
-      changeSettings: (input) => this.context.write("thinkInbox.changeSettings", input),
+  inbox(): InboxStorePort {
+    return Object.freeze<InboxStorePort>({
+      enqueue: (input) => this.context.write("inbox.enqueue", input),
+      claimBatch: (input) => this.context.write("inbox.claimBatch", input),
+      finish: (input) => this.context.write("inbox.finish", input),
+      release: (input) => this.context.write("inbox.release", input),
+      recoverStalled: (input) => this.context.write("inbox.recoverStalled", input),
+      usage: (input) => this.context.write("inbox.usage", input),
+      settledSummaries: (input) => this.context.write("inbox.settledSummaries", input),
+      summaryReferenced: (input) => this.context.write("inbox.summaryReferenced", input),
+      clearSummary: (input) => this.context.write("inbox.clearSummary", input),
+      readSettings: (input) => this.context.write("inbox.readSettings", input),
+      changeSettings: (input) => this.context.write("inbox.changeSettings", input),
     });
   }
 
@@ -1173,6 +1173,7 @@ export class SqliteDurableAdapters {
       listDue: (input) => this.context.read("memoryReminder.listDue", input),
       countDue: (input) => this.context.read("memoryReminder.countDue", input),
       listUpcoming: (input) => this.context.read("memoryReminder.listUpcoming", input),
+      listCancelled: (input) => this.context.read("memoryReminder.listCancelled", input),
       read: (id) => this.context.read("memoryReminder.read", { id }),
       update: (input) => this.context.write("memoryReminder.update", input),
     });

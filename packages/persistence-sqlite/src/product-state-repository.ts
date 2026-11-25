@@ -83,7 +83,7 @@ import type {
   SessionDeletionStatePort,
   SessionDeviceStatePort,
   StateRecord,
-  ThinkInboxStorePort,
+  InboxStorePort,
   ThreadArtifactStorePort,
   ThreadDistillationStatePort,
   ThreadPromptBundleStorePort,
@@ -617,8 +617,8 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
     return this.durable.ownerProposals();
   }
 
-  thinkInbox(): ThinkInboxStorePort {
-    return this.durable.thinkInbox();
+  inbox(): InboxStorePort {
+    return this.durable.inbox();
   }
 
   memoryReminders(): MemoryReminderStorePort {

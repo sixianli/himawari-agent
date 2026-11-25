@@ -618,7 +618,7 @@ export class ProductionWebPush {
         content = await contentOf(item);
       } catch (error) {
         this.#options.onFailure(error);
-        await this.#record(entry, now, "failed", "WEB_PUSH_CONTENT_UNREADABLE");
+        await this.#retryLater(entry, now, "WEB_PUSH_CONTENT_UNREADABLE");
         continue;
       }
       if (content.expired) {
@@ -680,10 +680,15 @@ export class ProductionWebPush {
     for (const item of recent) {
       const id = webPushTopic(item.sourceKey);
       if (!wanted.has(id)) continue;
-      const expired =
-        Date.parse(now) >= Date.parse(item.expiresAt) ||
-        (await this.#content(item, approvals, now)).expired;
-      if (expired) settled.push(id);
+      if (Date.parse(now) >= Date.parse(item.expiresAt)) {
+        settled.push(id);
+        continue;
+      }
+      try {
+        if ((await this.#content(item, approvals, now)).expired) settled.push(id);
+      } catch (error) {
+        this.#options.onFailure(error);
+      }
     }
     return settled;
   }
@@ -1041,12 +1046,7 @@ export class ProductionWebPush {
       await this.#record(entry, now, "pending", result.code, attempts, {
         delayMs: Math.min(3_600, Math.max(1, result.retryAfterSeconds ?? 60)) * 1_000,
       });
-    else if (attempts > RETRY_DELAYS_MS.length)
-      await this.#record(entry, now, "failed", result.code, attempts);
-    else
-      await this.#record(entry, now, "pending", result.code, attempts, {
-        delayMs: RETRY_DELAYS_MS[attempts - 1] ?? RETRY_DELAYS_MS[0],
-      });
+    else await this.#retryLater(entry, now, result.code, attempts);
     await this.#applySubscriptionOutcome(subscription.id, result);
   }
 
@@ -1074,6 +1074,19 @@ export class ProductionWebPush {
         failureCode: result.code,
         deliveredAt: null,
         now,
+      });
+  }
+
+  async #retryLater(
+    entry: WebPushDue,
+    now: string,
+    code: string,
+    attempts = (entry.attempt?.attempts ?? 0) + 1,
+  ): Promise<void> {
+    if (attempts > RETRY_DELAYS_MS.length) await this.#record(entry, now, "failed", code, attempts);
+    else
+      await this.#record(entry, now, "pending", code, attempts, {
+        delayMs: RETRY_DELAYS_MS[attempts - 1] ?? RETRY_DELAYS_MS[0],
       });
   }
 
