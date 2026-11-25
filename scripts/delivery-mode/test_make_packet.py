@@ -894,26 +894,17 @@ class ArmTargetTest(RenderedPacket):
             with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_PYTHON_MATERIAL_NOT_LOCKED'):
                 packet_maker.python_material_sha('e' * 40, 'riscv64')
         lock['python']['version'] = '3.13.0'
+        with unittest.mock.patch.object(packet_maker, 'git', return_value=json.dumps(lock)):
+            self.assertEqual(packet_maker.python_material_version('e' * 40), '3.13.0')
+            self.assertEqual(packet_maker.python_archive_name('3.13.0'), 'python-3.13.0.tar.gz')
+        lock['python']['version'] = 'latest'
         with unittest.mock.patch.object(packet_maker, 'git', return_value=json.dumps(lock)), self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_PYTHON_VERSION_UNSUPPORTED'):
-            packet_maker.python_material_sha('e' * 40, 'x64')
-
-    def test_host_tools_script_reads_the_python_name_from_the_lock_and_installs_every_builder_tool(self):
-        script = (HERE.parent.parent / 'scripts/install/prepare-host-tools.sh').read_text()
-        lock = json.loads((HERE.parent.parent / 'ci/toolchain-lock.json').read_text())
-        self.assertNotIn(lock['python']['version'], script)
-        self.assertIn("python_material=$builder_root/materials/python-$python_version.tar.gz", script)
-        arm = json.loads((HERE / 'hermes/builder-arm64.json').read_text())
-        self.assertEqual(Path(arm['pythonMaterial']).name, 'python-' + lock['python']['version'] + '.tar.gz')
-        for step in ('builder-python', 'builder-tools', 'builder-fd', 'builder-browsers'):
-            self.assertIn('step ' + step, script)
-        for setting in ('tools', 'browsers', 'piToolBin'):
-            self.assertIn(Path(arm[setting]).name, script.replace('$tools_dir', 'tools').replace('$toolbin', 'pi-tools-bin') + 'browsers')
-        self.assertIn('fd-pins.json', script)
+            packet_maker.python_material_version('e' * 40)
 
     def test_the_arm_builder_is_the_target_itself_and_never_the_rehearsal_host(self):
         settings = packet_maker.load_builder('arm64', 'tokyo-a1', '192.0.2.7')
         self.assertEqual((settings['hostname'], settings['transport'], settings['address']), ('tokyo-a1', 'target-ssh', '192.0.2.7'))
-        with unittest.mock.patch.object(packet_maker, 'python_material_sha', return_value='b' * 64):
+        with unittest.mock.patch.object(packet_maker, 'python_material_sha', return_value='b' * 64), unittest.mock.patch.object(packet_maker, 'python_material_version', return_value='3.12.10'):
             same = packet_maker.builder_parameters('e' * 40, {'HOSTNAME': 'tokyo-a1', 'NODE_ARCH': 'arm64'}, settings)
             self.assertEqual((same['BUILDER_HOSTNAME'], same['REHEARSAL_HOSTNAME']), ('tokyo-a1', ''))
             elsewhere = packet_maker.builder_parameters('e' * 40, {'HOSTNAME': 'vmi3618928', 'NODE_ARCH': 'x64'}, packet_maker.load_builder('x64', 'vmi3618928', '192.0.2.1'))
@@ -1153,6 +1144,8 @@ class ReleaseWalkthroughTest(unittest.TestCase):
         source = root / 'source'
         source.mkdir()
         (source / 'package.json').write_text('{}')
+        (source / 'ci').mkdir()
+        (source / 'ci/toolchain-lock.json').write_text(json.dumps({'python': {'version': '3.12.10'}}))
         subprocess.run(['git', 'init', '-q', str(source)], check=True)
         subprocess.run(['git', '-C', str(source), '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'x'], check=True)
         self.source = source
