@@ -128,8 +128,9 @@ enum ManageDemo {
       {"ruleId":"r2","type":"spend_limit","summary":"花钱超过 5000 日元先问我","status":"active","enforced":true,"updatedAt":"2026-10-28T03:00:00Z","quote":null,"changes":0,"lastUsed":null,"quoteSuperseded":false,"quoteLatestMemoryId":null}
     ],"allowances":[
       {"allowanceId":"allowance:a1","allowFor":"always","title":"给 田中 发邮件","operation":"mail.send","recipients":["tanaka@example.co.jp"],"threadId":null,"expiresAt":null,"createdAt":"2026-11-24T03:00:00Z"},
-      {"allowanceId":"allowance:a2","allowFor":"days","title":"改日历里的工作日程","operation":"calendar.update","recipients":[],"threadId":null,"expiresAt":"2026-12-02T03:00:00Z","createdAt":"2026-11-25T03:00:00Z"}
-    ]}}
+      {"allowanceId":"allowance:a2","allowFor":"days","title":"改日历里的工作日程","operation":"calendar.update","recipients":[],"threadId":null,"threadTitle":null,"expiresAt":"2026-12-02T03:00:00Z","createdAt":"2026-11-25T03:00:00Z"},
+      {"allowanceId":"allowance:a3","allowFor":"this_task","title":"在酒店网站上填入住信息","operation":"browser.fill","recipients":[],"threadId":"thread:hotel","threadTitle":"订酒店","expiresAt":null,"createdAt":"2026-11-25T05:00:00Z"}
+    ],"allowanceDays":7}}
     """#
 
     private static let devices = #"""

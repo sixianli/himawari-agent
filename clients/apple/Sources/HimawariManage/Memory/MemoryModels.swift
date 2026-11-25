@@ -83,6 +83,7 @@ public struct OwnerAllowance: Decodable, Sendable, Hashable, Identifiable {
     public let title: String
     public let operation: String
     public let threadId: String?
+    public let threadTitle: String?
     public let expiresAt: String?
     public let createdAt: String
 

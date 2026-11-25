@@ -111,10 +111,6 @@ public enum ApprovalAllowFor: String, CaseIterable, Sendable {
     case thisTask = "this_task"
     case days
     case always
-
-    public static let defaultDays = 7
-
-    public var days: Int? { self == .days ? Self.defaultDays : nil }
 }
 
 public enum ApprovalAllowanceLimit: Sendable, Equatable {
@@ -135,7 +131,8 @@ public extension PendingApproval {
         return nil
     }
 
-    var allowanceChoices: [ApprovalAllowFor] {
-        allowanceLimit == nil ? ApprovalAllowFor.allCases : [.once]
+    func allowanceChoices(days: Int?) -> [ApprovalAllowFor] {
+        guard allowanceLimit == nil else { return [.once] }
+        return ApprovalAllowFor.allCases.filter { $0 != .days || days != nil }
     }
 }

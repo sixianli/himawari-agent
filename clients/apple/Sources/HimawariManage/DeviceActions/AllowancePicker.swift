@@ -4,13 +4,14 @@ import SwiftUI
 
 struct AllowancePicker: View {
     let approval: PendingApproval
+    let days: Int?
     @Binding var selection: ApprovalAllowFor
 
     var body: some View {
         let limit = approval.allowanceLimit
         VStack(alignment: .leading, spacing: DesignTokens.Allowance.noteGap) {
             HStack(spacing: DesignTokens.Allowance.segmentGap) {
-                ForEach(ApprovalAllowFor.allCases, id: \.self) { choice in
+                ForEach(ApprovalAllowFor.allCases.filter { $0 != .days || days != nil }, id: \.self) { choice in
                     option(choice, on: (limit == nil ? selection : .once) == choice)
                 }
             }
@@ -30,7 +31,7 @@ struct AllowancePicker: View {
         Button {
             selection = choice
         } label: {
-            Text(Self.label(choice))
+            Text(Self.label(choice, days: days))
                 .hmType(on ? DesignTokens.TypeScale.rowAction : DesignTokens.TypeScale.secondary)
                 .foregroundStyle(Color.hmText)
                 .lineLimit(1)
@@ -48,11 +49,11 @@ struct AllowancePicker: View {
         .accessibilityAddTraits(on ? .isSelected : [])
     }
 
-    static func label(_ choice: ApprovalAllowFor) -> String {
+    static func label(_ choice: ApprovalAllowFor, days: Int?) -> String {
         switch choice {
         case .once: L.text("allowance.once")
         case .thisTask: L.text("allowance.thisTask")
-        case .days: L.format("allowance.days", ApprovalAllowFor.defaultDays)
+        case .days: L.format("allowance.days", days ?? 0)
         case .always: L.text("allowance.always")
         }
     }

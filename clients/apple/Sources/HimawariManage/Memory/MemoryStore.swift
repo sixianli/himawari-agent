@@ -95,8 +95,8 @@ public final class MemoryStore {
         do {
             _ = try await gateway.command(
                 .v2,
-                "memory.rule.respond",
-                payload: ["target": .string(allowance.allowanceId), "action": "revoke"],
+                "approval.allowance.revoke",
+                payload: ["allowanceId": .string(allowance.allowanceId)],
                 options: ManageCommandOptions(confirmReason: reason)
             )
         } catch {

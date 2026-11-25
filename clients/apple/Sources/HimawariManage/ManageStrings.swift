@@ -74,6 +74,9 @@ enum M {
             let until = pairedDay(expires)
             return text("\(days) 天内都行 · 到 \(until)", ja: "\(days)日間 · \(until)まで", en: "\(days) days · until \(until)")
         case "this_task":
+            if let title = allowance.threadTitle {
+                return text("这件事里都行 · \(title)", ja: "この件の間 · \(title)", en: "This task · \(title)")
+            }
             return text("这件事里都行 · \(chose)你点的", ja: "この件の間 · \(chose)に選択", en: "This task · you chose on \(chose)")
         default:
             break

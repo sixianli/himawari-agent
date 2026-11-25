@@ -7,6 +7,7 @@ import SwiftUI
 
 struct ApprovalCard: View {
     let approval: PendingApproval
+    let allowanceDays: Int?
     let busy: Bool
     let open: () -> Void
     let respond: (Bool, ApprovalAllowFor) -> Void
@@ -32,7 +33,7 @@ struct ApprovalCard: View {
                 Icon(.chevronRight, size: DesignTokens.IconSize.chevron)
                     .foregroundStyle(Color.hmMuted)
             }
-            AllowancePicker(approval: approval, selection: $allowFor)
+            AllowancePicker(approval: approval, days: allowanceDays, selection: $allowFor)
             HStack(spacing: 8) {
                 Button(ApprovalWords.decline(approval)) { respond(false, .once) }
                     .buttonStyle(CapsuleButtonStyle(.secondary, height: DesignTokens.Size.pill))
@@ -127,7 +128,7 @@ public struct ApprovalsView: View {
                                 .frame(minHeight: DesignTokens.Size.emptyMinHeight)
                         }
                         ForEach(model.pending) { approval in
-                            ApprovalCard(approval: approval, busy: model.busy.contains(approval.id), open: { open(approval) }) { approved, allowFor in
+                            ApprovalCard(approval: approval, allowanceDays: model.allowanceDays, busy: model.busy.contains(approval.id), open: { open(approval) }) { approved, allowFor in
                                 Task { await model.respond(approval, approved: approved, allowFor: allowFor) }
                             }
                         }
@@ -219,7 +220,7 @@ public struct ApprovalDetailView: View {
             .scrollIndicators(.hidden)
             if approval.status == ApprovalStatus.pending.rawValue && model.pending.contains(where: { $0.id == approval.id }) {
                 VStack(spacing: DesignTokens.Allowance.actionsGap) {
-                    AllowancePicker(approval: approval, selection: $allowFor)
+                    AllowancePicker(approval: approval, days: model.allowanceDays, selection: $allowFor)
                     HStack(spacing: 8) {
                         Button(ApprovalWords.decline(approval)) { decide(false) }
                             .buttonStyle(CapsuleButtonStyle(.secondary, height: DesignTokens.Size.pillBig))
