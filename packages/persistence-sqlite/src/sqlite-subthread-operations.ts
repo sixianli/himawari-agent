@@ -27,7 +27,7 @@ const subthreadColumns = `thread_id AS threadId, parent_thread_id AS parentThrea
   open_key AS openKey, opened_by_run_id AS openedByRunId, brief_ref AS briefRef,
   result_ref AS resultRef, classification, status, stuck_at AS stuckAt,
   progress_ref AS progressRef, progress_at AS progressAt, asked_at AS askedAt,
-  budget_micros AS budgetMicros, budget_hit_at AS budgetHitAt, title,
+  budget_micros AS budgetMicros, budget_hit_at AS budgetHitAt, title, approval_run_id AS approvalRunId,
   created_at AS createdAt, updated_at AS updatedAt`;
 
 const entryColumns = `e.writer_thread_id AS writerThreadId, e.name, e.version,
@@ -130,6 +130,8 @@ export class SqliteSubthreadOperations {
         return this.recordExchange(payload as Input<"recordExchange">);
       case "subthread.listExchanges":
         return this.listExchanges(payload as Input<"listExchanges">);
+      case "subthread.listAwaitingApproval":
+        return this.listAwaitingApproval(payload as Input<"listAwaitingApproval">);
       case "subthread.markStuck":
         return this.markStuck(payload as Input<"markStuck">);
       case "subthread.recordResult":
@@ -338,6 +340,9 @@ export class SqliteSubthreadOperations {
           input.budgetMicros < 1 ||
           input.budgetMicros > MAX_BUDGET_MICROS)) ||
       (input.budgetHit !== undefined && typeof input.budgetHit !== "boolean") ||
+      (input.approvalRunId !== undefined &&
+        input.approvalRunId !== null &&
+        !text(input.approvalRunId, 256)) ||
       !validTime(input.now)
     )
       this.invalid("Subthread activity is invalid");
@@ -376,6 +381,13 @@ export class SqliteSubthreadOperations {
              WHERE owner_id = ? AND agent_id = ? AND thread_id = ?`,
           )
           .run(input.budgetMicros, input.now, input.ownerId, input.agentId, input.threadId);
+      if (input.approvalRunId !== undefined)
+        this.database
+          .prepare(
+            `UPDATE subthreads SET approval_run_id = ?, updated_at = ?
+             WHERE owner_id = ? AND agent_id = ? AND thread_id = ?`,
+          )
+          .run(input.approvalRunId, input.now, input.ownerId, input.agentId, input.threadId);
       if (input.budgetHit !== undefined)
         this.database
           .prepare(
@@ -481,6 +493,20 @@ export class SqliteSubthreadOperations {
             input.threadId,
             input.limit,
           ) as SubthreadExchangeRecord[]
+      ).map((row) => Object.freeze({ ...row })),
+    );
+  }
+
+  private listAwaitingApproval(input: Input<"listAwaitingApproval">): readonly SubthreadRecord[] {
+    return Object.freeze(
+      (
+        this.database
+          .prepare(
+            `SELECT ${subthreadColumns} FROM subthreads
+             WHERE owner_id = ? AND agent_id = ? AND approval_run_id IS NOT NULL
+             ORDER BY thread_id LIMIT 200`,
+          )
+          .all(input.ownerId, input.agentId) as SubthreadRecord[]
       ).map((row) => Object.freeze({ ...row })),
     );
   }

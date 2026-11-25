@@ -26,6 +26,7 @@ import {
   RESULT_BOARD_GONE_STUCK,
   RESULT_BOARD_READY,
   renderPrompt,
+  SUBTHREAD_APPROVAL_WAITING,
   SUBTHREAD_BRIEF,
   SUBTHREAD_BUDGET_REACHED,
   SUBTHREAD_CONTINUE,
@@ -120,6 +121,7 @@ const MICROS = 1_000_000;
 type BackgroundActivity =
   | "queued"
   | "running"
+  | "waiting_approval"
   | "waiting_answer"
   | "waiting_result"
   | "idle"
@@ -593,6 +595,42 @@ export class ProductionSubthreads {
     return true;
   }
 
+  async parentOf(threadId: string): Promise<string | undefined> {
+    return (await this.#options.store.read({ ...this.#scope, threadId }))?.parentThreadId;
+  }
+
+  async awaitingApproval(input: { readonly threadId: string; readonly runId: string }) {
+    const subthread = await this.open(input.threadId);
+    if (!subthread) return;
+    if (subthread.approvalRunId !== input.runId)
+      await this.#options.store.noteActivity({
+        ...this.#scope,
+        threadId: input.threadId,
+        approvalRunId: input.runId,
+        now: this.#options.clock.now(),
+      });
+    await this.#submit({
+      kind: SUBTHREAD_EVENT_KIND,
+      sourceRef: `approval:${digest([input.threadId, input.runId])}`,
+      text: this.#event(subthread, "approval", SUBTHREAD_APPROVAL_WAITING.text),
+      threadId: null,
+      externalContent: await this.#marked(input.threadId),
+    });
+  }
+
+  listAwaitingApproval(): Promise<readonly SubthreadRecord[]> {
+    return this.#options.store.listAwaitingApproval(this.#scope);
+  }
+
+  async approvalSettled(threadId: string): Promise<void> {
+    await this.#options.store.noteActivity({
+      ...this.#scope,
+      threadId,
+      approvalRunId: null,
+      now: this.#options.clock.now(),
+    });
+  }
+
   async afterRun(input: {
     readonly threadId: string;
     readonly runId: string;
@@ -695,15 +733,17 @@ export class ProductionSubthreads {
         ? "finished"
         : subthread.budgetHitAt !== null
           ? "over_budget"
-          : subthread.askedAt !== null
-            ? "waiting_answer"
-            : queues.waiting.has(subthread.threadId)
-              ? "waiting_result"
-              : active.some((run) => run.status !== "accepted")
-                ? "running"
-                : active.length > 0 || queues.queued.has(subthread.threadId)
-                  ? "queued"
-                  : "idle";
+          : active.some((run) => run.status === "awaiting_approval")
+            ? "waiting_approval"
+            : subthread.askedAt !== null
+              ? "waiting_answer"
+              : queues.waiting.has(subthread.threadId)
+                ? "waiting_result"
+                : active.some((run) => run.status !== "accepted")
+                  ? "running"
+                  : active.length > 0 || queues.queued.has(subthread.threadId)
+                    ? "queued"
+                    : "idle";
     return { activity, runCount: runs.length, runs };
   }
 
@@ -736,7 +776,7 @@ export class ProductionSubthreads {
       const row = {
         subthreadId: subthread.threadId,
         status: subthread.status,
-        activity,
+        activity: activity === "waiting_approval" ? "running" : activity,
         openedAt: subthread.createdAt,
         updatedAt: subthread.updatedAt,
         progress: progress === undefined ? null : [...progress].slice(0, 2000).join(""),
