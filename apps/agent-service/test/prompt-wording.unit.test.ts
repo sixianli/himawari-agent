@@ -51,7 +51,6 @@ const FORBIDDEN_WORD_EXCEPTIONS: Readonly<Record<string, string>> = {
   "background.notice": "第 2 批（追加消息层）把“用户”改成“主人”",
   "tool-result.background-handoff.guidance": "第 2 批（工具结果层，W-13、W-14）一起改",
   "thread.title": "第 3 批改；这里的“用户”指对话里说话的人，改前先确认标题写法",
-  "mail.judgment": "第 3 批 W-11 删掉 know 的显示说明时“筛掉”一起删，先做 A/B 评测（D4）",
   "review.typesafe-questions": "外部服务 TypeSafe 的英文问题，背后模型没核实，Andy 定暂不动",
 };
 

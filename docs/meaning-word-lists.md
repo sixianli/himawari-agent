@@ -53,7 +53,6 @@ Andy 在 2026-11-12 定的原则（[ADR 0249](adr/0249-the-model-judges-meaning-
 | `packages/sensitive-capture/src/machine-secrets.ts` | `POTENTIAL_SECRET_MARKERS` | 安全底线 | 机器密钥的确定性筛查 | |
 | `packages/integration-web/src/untrusted-content.ts` | `INSTRUCTION_PATTERN` | 安全底线 | 网页内容里看到“忽略之前的指令”一类只打 `prompt_injection_observed` 标记，是防御纵深；是否照做仍由模型和授权出口决定 | |
 | `packages/memory-engine/src/segmentation.ts` | `STOPWORDS` | 检索分词 | 检索分词时丢掉“的、了、什么”，只影响召回，和向量检索并用 | |
-| `packages/platform-node/src/gmail-related.ts` | `SUBJECT_PREFIX` | 格式解析 | 去掉邮件标题的 Re:、回复: 前缀来串邮件 | |
 | `packages/application/src/services/thread-prompt-bundle-service.ts` | `SCHEMA_TEXT_KEYWORDS` | 格式解析 | JSON Schema 的关键字，不是自然语言 | |
 | `packages/application/src/services/thread-prompt-bundle-service.ts` | `SCHEMA_VALUE_KEYWORDS` | 格式解析 | 同上 | |
 | `packages/application/src/services/thread-prompt-bundle-service.ts` | `SCHEMA_MAP_KEYWORDS` | 格式解析 | 同上 | |

@@ -10,30 +10,17 @@ import HimawariShare
 import SwiftUI
 
 enum DemoScene: String, CaseIterable {
-    case chatList = "03-chat-list"
     case chat = "04-chat"
+    case main = "next-2-main"
     case memory = "05-memory"
     case memoryDetail = "06-memory-detail"
     case memoryEdit = "18-memory-more-1-edit"
     case rules = "18-memory-more-2-rules"
     case ruleDetail = "18-memory-more-3-rule-detail"
-    case settings = "08-settings"
-    case device = "19-settings-more-1-device"
     case deviceAbilities = "19-settings-more-1-abilities"
-    case addDevice = "19-settings-more-2-add-device"
-    case addDeviceAsking = "19-settings-more-3-new-device"
-    case addDeviceExpired = "19-settings-more-4-code-expired"
-    case files = "19-settings-more-5-files"
-    case exportPacking = "19-settings-more-6-export-packing"
-    case exportReady = "19-settings-more-7-export-ready"
-    case capabilities = "20-himawari-self-1-capabilities"
-    case capabilitiesReactivated = "20-himawari-self-1b-capabilities-reactivated"
-    case capabilitiesReactivateFailed = "20-himawari-self-1c-capabilities-reactivate-failed"
-    case loginBrowsers = "20-himawari-self-2-login-browsers"
-    case proposals = "20-himawari-self-3-proposals"
-    case thinkSettings = "20-himawari-self-4-think"
     case her = "next-3-her"
     case herPrivacy = "next-3-her-privacy"
+    case herApprovals = "next-3-her-approvals"
     case herDevices = "next-3-her-devices"
     case herNotifications = "next-3-her-notifications"
     case pairing = "11-pairing"
@@ -44,33 +31,27 @@ enum DemoScene: String, CaseIterable {
     case pairingUnreachable = "15-pairing-flow-4-unreachable"
     case pairingRemoved = "15-pairing-flow-5-removed"
     case chatEmpty = "16-chat-states-1-empty"
-    case chatNew = "16-chat-states-2-new"
     case chatSending = "16-chat-states-3-sending"
     case chatOffline = "16-chat-states-4-offline"
     case chatAnswering = "16-chat-states-5-answering"
     case chatSteps = "16-chat-states-6-steps"
     case chatFormat = "next-2-chat-format"
     case chatFormatStreaming = "next-2-chat-format-streaming"
+    case chatOptions = "next-2-chat-options"
+    case chatOptionChosen = "next-2-chat-options-chosen"
     case chatAttach = "next-2-chat-attach"
     case chatTalkListening = "next-2-chat-talk-listening"
     case chatTalkHer = "next-2-chat-talk-her"
-    case tabTodayOneDigit = "tab-today-1-digit"
     case sensesOverview = "19-senses-1-overview"
     case sensesIntro = "19-senses-2-intro"
     case sensesSystemPrompt = "19-senses-3-system-prompt"
     case sensesDetail = "19-senses-4-detail"
     case sensesDenied = "19-senses-5-denied"
-    case actionsToday = "01-today-device-actions"
     case actionsDetail = "17-today-more-2-detail"
     case actionsDetailFace = "17-today-more-3-detail-face-id"
     case actionsApprovals = "17-today-more-1-approvals"
     case actionsPrimer = "19-settings-more-2-permission-primer"
     case actionsPrimerDenied = "19-settings-more-3-permission-denied"
-    case actionsTodayEmpty = "01-today-device-actions-empty"
-    case today = "01-today"
-    case todayDeviceApproval = "01-today-device-approval"
-    case todaySettled = "12-today-states-3-settled"
-    case todayQuiet = "12-today-states-5-quiet"
     case listenIntro = "23-listen-1"
     case listenEnroll = "23-listen-2"
     case listenLive = "23-listen-3"
@@ -88,7 +69,6 @@ enum DemoScene: String, CaseIterable {
     case safariOn = "22-gaps-1b-safari-on"
     case shareEntry = "19-senses-share-entry"
     case motionShimmer = "motion-shimmer"
-    case motionTabs = "motion-tab-switch"
     case motionSheet = "motion-sheet"
     case motionScroll = "motion-scroll-under-glass"
 
@@ -132,39 +112,16 @@ struct DemoSceneView: View {
 
     @ViewBuilder
     private func manage(_ screen: ManageDemoScreen) -> some View {
-        switch screen {
-        case .memory, .memoryDetail, .memoryEdit, .rules, .ruleDetail:
-            MainTabsView(model: .demo(.active), chat: .demo(DemoChatFixtures.chatList()), tab: .memory, memory: AnyView(ManageDemoView(screen)))
-        default:
-            MainTabsView(model: .demo(.active), chat: .demo(DemoChatFixtures.chatList()), tab: .today, settings: AnyView(ManageDemoView(screen)))
-        }
+        ManageDemoView(screen)
     }
 
     @ViewBuilder
     private var other: some View {
         switch scene {
-        case .chatList:
-            tabs(DemoChatFixtures.chatList())
+        case .main:
+            MainShell(model: .demo(.active), chat: .demo(DemoChatFixtures.answered()), actions: .demo(), threadId: DemoChatFixtures.osakaThreadId)
         case .chatEmpty:
-            tabs(DemoChatState())
-        case .tabTodayOneDigit:
-            tabs(DemoChatFixtures.chatList())
-                .environment(\.listClock, DemoChatFixtures.now.addingTimeInterval(-3 * 86_400))
-        case .motionTabs:
-            tabs(DemoChatFixtures.chatList())
-                .environment(\.tabsCycleEvery, 3)
-        case .actionsToday:
-            tabs(DemoChatFixtures.chatList(), tab: .today)
-        case .actionsTodayEmpty:
-            tabs(DemoChatFixtures.chatList(), tab: .today, actions: .demo(empty: true))
-        case .today:
-            tabs(DemoChatFixtures.chatList(), tab: .today, feed: TodayDemo.first)
-        case .todayDeviceApproval:
-            tabs(DemoChatFixtures.chatList(), tab: .today, feed: TodayDemo.withDeviceApproval)
-        case .todaySettled:
-            tabs(DemoChatFixtures.chatList(), tab: .today, feed: TodayDemo.settled)
-        case .todayQuiet:
-            tabs(DemoChatFixtures.chatList(), tab: .today, actions: .demo(empty: true), feed: TodayDemo.quiet)
+            chat(DemoChatState())
         case .actionsDetail:
             approvalDetail(at: 0)
         case .actionsDetailFace:
@@ -179,9 +136,6 @@ struct DemoSceneView: View {
                 .himawariScreenBackground()
         case .chat:
             chat(DemoChatFixtures.answered())
-        case .chatNew:
-            ChatView(store: .demo(DemoChatState()), threadId: nil) {}
-                .environment(\.chatCanAttach, true)
         case .chatSending:
             chat(DemoChatFixtures.sending())
         case .chatOffline:
@@ -192,6 +146,12 @@ struct DemoSceneView: View {
             chat(DemoChatFixtures.formatted())
         case .chatFormatStreaming:
             chat(DemoChatFixtures.formattedStreaming())
+        case .chatOptions:
+            chat(DemoChatFixtures.withOptions())
+                .environment(\.chatChooseOption, { _, _, _ in })
+        case .chatOptionChosen:
+            chat(DemoChatFixtures.optionChosen())
+                .environment(\.chatChooseOption, { _, _, _ in })
         case .chatAttach:
             chat(DemoChatFixtures.offline())
                 .environment(\.chatOpensAttachSheet, true)
@@ -256,16 +216,9 @@ struct DemoSceneView: View {
             DemoSensesHost(scene: .denied)
         case .listenIntro, .listenEnroll, .listenLive, .listenInterrupted, .listenCalling, .listenAsking, .listenStopped:
             ListenDemoScene(scene: scene)
-        case .memory, .memoryDetail, .memoryEdit, .rules, .ruleDetail, .settings, .device, .deviceAbilities, .addDevice, .addDeviceAsking,
-            .addDeviceExpired, .files, .exportPacking, .exportReady, .capabilities,
-            .capabilitiesReactivated, .capabilitiesReactivateFailed, .loginBrowsers, .proposals,
-            .thinkSettings, .her, .herPrivacy, .herDevices, .herNotifications:
+        case .memory, .memoryDetail, .memoryEdit, .rules, .ruleDetail, .deviceAbilities, .her, .herApprovals, .herPrivacy, .herDevices, .herNotifications:
             EmptyView()
         }
-    }
-
-    private func tabs(_ state: DemoChatState, tab: MainTab = .chats, actions: DeviceActionsModel = .demo(), feed: HomeFeedModel = HomeFeedModel(source: nil)) -> some View {
-        MainTabsView(model: .demo(.active), chat: .demo(state), actions: actions, feed: feed, tab: tab)
     }
 
     private func approvalDetail(at index: Int) -> some View {
@@ -274,7 +227,7 @@ struct DemoSceneView: View {
     }
 
     private func chat(_ state: DemoChatState) -> some View {
-        ChatView(store: .demo(state), threadId: DemoChatFixtures.osakaThreadId) {}
+        ChatView(store: .demo(state), threadId: DemoChatFixtures.osakaThreadId)
             .environment(\.chatCanAttach, true)
     }
 }
@@ -359,9 +312,6 @@ struct ListenDemoScene: View {
             Color.hmBackground.ignoresSafeArea()
             RadialGradient(colors: [Color.hmGlow, .clear], center: UnitPoint(x: 0, y: 20 / 844), startRadius: 0, endRadius: 340)
                 .ignoresSafeArea()
-            ListenTodayCardPreview()
-                .padding(.horizontal, 16)
-                .padding(.top, 152)
             ListenIslandCompact(state: listening, now: Self.clock)
                 .padding(.horizontal, 12)
                 .listenIslandPreviewSurface()
@@ -382,9 +332,4 @@ struct ListenDemoScene: View {
     }
 }
 
-struct ListenTodayCardPreview: View {
-    var body: some View {
-        SensingCard(summary: SensingSummary(paused: false, senses: [ListenText.hearingLabel], todayCount: 5), onPause: {}, onOpen: {})
-    }
-}
 #endif

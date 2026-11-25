@@ -63,11 +63,7 @@ public enum NativePage: String, Sendable, CaseIterable {
     case memory = "memory"
     case memoryReflection = "memory.reflection"
     case settingsAuthorizations = "settings.authorizations"
-    case settingsCapabilities = "settings.capabilities"
     case settingsDevices = "settings.devices"
-    case settingsImprovements = "settings.improvements"
-    case todayApprovals = "today.approvals"
-    case todaySuggestions = "today.suggestions"
 }
 
 public enum ClientCapabilities {
@@ -82,6 +78,7 @@ public enum ClientCapabilities {
         ClientCapability(gateway: .v1, type: "trace.query", kind: .query, tier: .notOnPhone, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "thread.message.submit", kind: .command, tier: .notOnPhone, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "approval.respond", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
+        ClientCapability(gateway: .v2, type: "approval.allowance.set", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "search.authorization.set", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "search.authorization.read", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "push.subscription.set", kind: .command, tier: .notOnPhone, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),

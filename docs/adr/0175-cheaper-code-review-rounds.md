@@ -79,7 +79,7 @@ PR #255 复核了 6 轮，实际花了约 0.79 美元。按它的账本（`.agen
 
 ## 与 ADR 0068 的关系
 
-[ADR 0068](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0068-deepseek-only-codebuddy-fallback.md) 第 1 条写“派给代理的编码、审核和独立方案只用 DeepSeek V4.1 Flash”。它管的是把编码任务派给 opencode、CodeBuddy 这类代理的那条路（`opencode-orchestration` 技能和 [[[`.agents/opencode-models.toml`](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/.agents/opencode-models.toml)](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/.agents/opencode-models.toml)](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/.agents/opencode-models.toml) 模型表）。
+[ADR 0068](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0068-deepseek-only-codebuddy-fallback.md) 第 1 条写“派给代理的编码、审核和独立方案只用 DeepSeek V4.1 Flash”。它管的是把编码任务派给 opencode、CodeBuddy 这类代理的那条路（`opencode-orchestration` 技能和 [[[[`.agents/opencode-models.toml`](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/.agents/opencode-models.toml)](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/.agents/opencode-models.toml)](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/.agents/opencode-models.toml)](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/.agents/opencode-models.toml) 模型表）。
 
 用 `scripts/model-review/opencode-review.mjs` 做的方案讨论和合并前代码复核，从规则文件写成起就用两个 Go 套餐模型（Andy 在项目指令第 17 条规定）。两份文字一直互相矛盾。
 

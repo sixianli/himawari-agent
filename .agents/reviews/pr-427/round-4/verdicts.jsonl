@@ -1,0 +1,5 @@
+{"id": "r4-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "测试只断言 `tools.execute` 调用了 4 次，没有断言“第 5 次调用是被循环保护拦下的”", "valid": true, "class": "error", "severity": "low", "trigger": "流程因别的原因在 4 次后结束", "consequence": "测试照样通过，锁不住循环停止", "modelSeverity": "低"}
+{"id": "r4-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "期望值由生产代码的 `withToolActivityParameters()` 现算", "valid": true, "class": "error", "severity": "low", "trigger": "withToolActivityParameters 自己写错", "consequence": "测试一起错着通过", "modelSeverity": "低"}
+{"id": "r4-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "U+061C 被塞进已有的一条多控制符用例里，没有独立用例名", "valid": true, "class": "better"}
+{"id": "r4-4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "ADR 的“测试”条目没有提到本轮新增的", "valid": true, "class": "error", "severity": "low", "trigger": "读 ADR 的人", "consequence": "文档落后于测试", "modelSeverity": "低"}
+{"id": "r4-5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`carriesToolActivity()` 用“当前提示词原文”当身份标记", "valid": true, "class": "better"}

@@ -53,6 +53,7 @@ import {
   TOOL_RESULT_CONVERSATION_INPUT_INVALID,
   TOOL_RESULT_CONVERSATION_UNAVAILABLE,
   TOOL_RESULT_DEVICE_ACTION_UNAVAILABLE,
+  TOOL_RESULT_MAIL_READ_REJECTED,
   TOOL_RESULT_MEMORY_OPEN_INPUT_INVALID,
   TOOL_RESULT_MEMORY_OPEN_UNAVAILABLE,
   TOOL_RESULT_RECALL_INPUT_INVALID,
@@ -102,6 +103,11 @@ import {
   type ProductionFileReadServices,
   ProductionFileReadWorkflow,
 } from "./production-file-read-workflow.js";
+import {
+  MailReadInputError,
+  mailReadDescriptor,
+  type ProductionMailRead,
+} from "./production-mail-read.js";
 import {
   MANAGED_TASK_ACTIONS,
   managedTaskDescriptors,
@@ -171,6 +177,7 @@ const BUILTIN_PREFLIGHT: Readonly<
   "owner-memory-record": { prefix: "memory-open", reasonCode: "MEMORY_OPEN_OWNER_SCOPE" },
   "owner-reminder": { prefix: "reminder", reasonCode: "REMINDER_OWNER_SCOPE" },
   "owner-message": { prefix: "tell-owner", reasonCode: "TELL_OWNER_OWNER_SCOPE" },
+  "owner-mail": { prefix: "mail-read", reasonCode: "MAIL_READ_OWNER_SCOPE" },
   "owner-rule": { prefix: "owner-rule", reasonCode: "OWNER_RULE_OWNER_SCOPE" },
   "owner-perception": { prefix: "perception", reasonCode: "PERCEPTION_OWNER_SCOPE" },
   "conversation-context": { prefix: "context-recall", reasonCode: "CONTEXT_RECALL_RUNTIME" },
@@ -379,6 +386,7 @@ export interface ProductionRuntimeToolsOptions {
   readonly memoryOpen?: Pick<ProductionMemoryOpen, "open">;
   readonly reminders?: Pick<ProductionReminderTools, "run">;
   readonly tellOwner?: Pick<ProductionTellOwner, "run">;
+  readonly mailRead?: Pick<ProductionMailRead, "run">;
   readonly ownerRules?: Pick<ProductionOwnerRuleTools, "run">;
   readonly perception?: Pick<ProductionPerceptionTools, "run">;
   readonly toolActions?: ToolActionRegistry;
@@ -632,6 +640,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     if (this.#options.memoryRecall) descriptors.push(memoryRecallDescriptor());
     if (this.#options.reminders) descriptors.push(...reminderToolDescriptors());
     if (this.#options.tellOwner) descriptors.push(tellOwnerDescriptor());
+    if (this.#options.mailRead) descriptors.push(mailReadDescriptor());
     if (this.#options.ownerRules) descriptors.push(...ownerRuleToolDescriptors());
     if (this.#options.perception) descriptors.push(...perceptionToolDescriptors());
     this.#exposed.set(runId, new Set(refs));
@@ -723,6 +732,8 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       return (invocation, gate) => this.#reminder(invocation, gate);
     if (row.targetType === "owner-message" && this.#options.tellOwner)
       return (invocation, gate) => this.#tellOwner(invocation, gate);
+    if (row.targetType === "owner-mail" && this.#options.mailRead)
+      return (invocation, gate) => this.#mailRead(invocation, gate);
     if (row.targetType === "owner-rule" && this.#options.ownerRules)
       return (invocation, gate) => this.#ownerRule(invocation, gate);
     if (row.targetType === "owner-perception" && this.#options.perception)
@@ -974,9 +985,35 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       }),
     );
   }
+  async #mailRead(
+    invocation: RuntimeToolInvocation,
+    gate: OwnerScopeGate,
+  ): Promise<RuntimeToolExecutionResult> {
+    const mailRead = this.#options.mailRead;
+    return this.#ownerScoped(
+      invocation,
+      "mail",
+      gate,
+      mailRead
+        ? async (call) => ({ value: await mailRead.run(call), contentClassification: "private" })
+        : undefined,
+      (error) => ({
+        errorCode: error instanceof MailReadInputError ? error.code : "MAIL_READ_UNAVAILABLE",
+        note: TOOL_RESULT_MAIL_READ_REJECTED.text,
+      }),
+    );
+  }
   async #ownerScoped(
     invocation: RuntimeToolInvocation,
-    marker: "recall" | "conversation" | "memory" | "reminder" | "rule" | "perception" | "tell",
+    marker:
+      | "recall"
+      | "conversation"
+      | "memory"
+      | "reminder"
+      | "rule"
+      | "perception"
+      | "tell"
+      | "mail",
     gate: OwnerScopeGate,
     run:
       | ((call: RuntimeToolInvocation) => Promise<{
@@ -1003,7 +1040,15 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
   }
   async #ownerScopedOnce(
     invocation: RuntimeToolInvocation,
-    marker: "recall" | "conversation" | "memory" | "reminder" | "rule" | "perception" | "tell",
+    marker:
+      | "recall"
+      | "conversation"
+      | "memory"
+      | "reminder"
+      | "rule"
+      | "perception"
+      | "tell"
+      | "mail",
     gate: OwnerScopeGate,
     run: (call: RuntimeToolInvocation) => Promise<{
       readonly value: unknown;

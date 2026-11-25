@@ -45,6 +45,7 @@ import {
 } from "@himawari-agent/gateway-contracts";
 import { isConsolidationUndoable } from "@himawari-agent/memory-engine";
 import type { BuiltInActionRuleSwitches } from "./action-rule-switches.js";
+import type { OwnerAllowances } from "./owner-allowances.js";
 import { type DecisionChainMemoryView, readDecisionChain } from "./production-decision-chain.js";
 import {
   externalProposalBatchId,
@@ -270,6 +271,7 @@ export class ProductionMemoryControl {
     >;
     readonly ownerRules?: OwnerRuleControl;
     readonly actionRules?: Pick<BuiltInActionRuleSwitches, "list" | "setAskFirst">;
+    readonly allowances?: Pick<OwnerAllowances, "list" | "revoke">;
     readonly reviews?: {
       readonly memories: MemoryReviewStorePort;
       readonly rules: RuleReviewOwnerStorePort;
@@ -1079,6 +1081,7 @@ export class ProductionMemoryControl {
       payload: {
         rules,
         builtIn: [...((await this.options.actionRules?.list()) ?? [])],
+        allowances: [...((await this.options.allowances?.list()) ?? [])],
         generatedAt: this.options.clock.now(),
       },
     };
@@ -1931,6 +1934,16 @@ export class ProductionMemoryControl {
           throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, error.code);
         throw error;
       }
+    }
+    if (command.type === "memory.rule.respond" && command.payload.action === "revoke") {
+      const allowances = this.options.allowances;
+      if (!allowances)
+        throw new ApplicationPortError(
+          PORT_ERROR_CODES.INVALID_OPERATION,
+          "MEMORY_OPERATION_NOT_INSTALLED",
+        );
+      await allowances.revoke(command.payload.target);
+      return { resultRef: command.payload.target, replayed: false };
     }
     if (
       command.type === "memory.rule.respond" &&

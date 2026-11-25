@@ -22,21 +22,6 @@ private actor RecordingTransport: DeviceTransport {
         return await record(Call(path: path, body: decoded, nonce: nonce, confirm: confirm))
     }
 
-    private(set) var downloads: [String] = []
-
-    nonisolated func download(path: String, query: [URLQueryItem]) async throws -> DeviceResponse {
-        let line = path + (query.isEmpty ? "" : "?" + query.map { "\($0.name)=\($0.value ?? "")" }.joined(separator: "&"))
-        await recordDownload(line)
-        if path.hasSuffix("missing") {
-            return DeviceResponse(status: 404, body: Data(#"{"error":{"code":"NOT_FOUND"}}"#.utf8))
-        }
-        return DeviceResponse(status: 200, body: Data("bytes".utf8))
-    }
-
-    private func recordDownload(_ line: String) {
-        downloads.append(line)
-    }
-
     private func record(_ call: Call) -> DeviceResponse {
         calls.append(call)
         return responses[call.path] ?? DeviceResponse(status: 200, body: Data("{}".utf8))
@@ -58,28 +43,6 @@ final class ManageGatewayTests: XCTestCase {
         ])
     }
 
-    func testFileDownloadEncodesTheColonAndSlashInTheFileId() async throws {
-        let recording = transport()
-        let data = try await gateway(recording).downloadFile(fileId: "thread-artifact:ab/cd")
-        XCTAssertEqual(data, Data("bytes".utf8))
-        let downloads = await recording.downloads
-        XCTAssertEqual(downloads, ["files/content/thread-artifact%3Aab%2Fcd"])
-    }
-
-    func testArchiveDownloadSendsTheExportIdAndRejectedStatusSurfaces() async throws {
-        let recording = transport()
-        _ = try await gateway(recording).downloadArchive(exportId: "data-export:AAAAAAAAAAAAAAAAAAAAAA")
-        let downloads = await recording.downloads
-        XCTAssertEqual(downloads, ["data-export/archive?exportId=data-export:AAAAAAAAAAAAAAAAAAAAAA"])
-        do {
-            _ = try await gateway(recording).downloadFile(fileId: "missing")
-            XCTFail("expected rejection")
-        } catch let ManageGatewayError.rejected(status, code, _) {
-            XCTAssertEqual(status, 404)
-            XCTAssertEqual(code, "NOT_FOUND")
-        }
-    }
-
     func testReadIsSignedByTheDeviceKeyOnly() async throws {
         let recording = transport()
         _ = try await gateway(recording).read(.v2, "memory.overview.read")
@@ -90,6 +53,20 @@ final class ManageGatewayTests: XCTestCase {
         XCTAssertEqual(calls[0].body["type"], "memory.overview.read")
         XCTAssertNil(calls[0].body["idempotencyKey"])
         XCTAssertNil(calls[0].body["scope"])
+    }
+
+    func testACommandKeepsTheCallersKeySoARetryIsNotRunTwice() async throws {
+        let recording = transport()
+        for _ in 0..<2 {
+            _ = try await gateway(recording).command(
+                .v2, "muse.intake.set", payload: ["paused": true], options: ManageCommandOptions(confirmReason: "暂停", idempotencyKey: "device-option-abc")
+            )
+        }
+        _ = try await gateway(recording).command(
+            .v2, "muse.intake.set", payload: ["paused": true], options: ManageCommandOptions(confirmReason: "暂停")
+        )
+        let calls = await recording.calls
+        XCTAssertEqual(calls.map { $0.body["idempotencyKey"] }, [.string("device-option-abc"), .string("device-option-abc"), .string("device-0123456789abcdef0123")])
     }
 
     func testPausingSkipsFaceIDButResumingAsksForIt() async throws {

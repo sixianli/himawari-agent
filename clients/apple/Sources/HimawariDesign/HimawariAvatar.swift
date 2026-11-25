@@ -12,8 +12,10 @@ public struct HimawariAvatar: View {
 
     private var moving: Bool { busy && !reduceMotion && !stillFrames }
 
+    public static let height = DesignTokens.Avatar.size + DesignTokens.Avatar.wordmarkGap + Wordmark.lineBox(size: DesignTokens.Avatar.wordmarkSize, lineHeight: DesignTokens.Avatar.wordmarkLineHeight)
+
     public var body: some View {
-        VStack(spacing: DesignTokens.Chat.avatarGap) {
+        VStack(spacing: DesignTokens.Avatar.wordmarkGap) {
             ZStack {
                 if moving {
                     TimelineView(.animation) { context in
@@ -22,32 +24,36 @@ public struct HimawariAvatar: View {
                 }
                 Circle()
                     .fill(Color.hmSpeak)
-                    .frame(width: DesignTokens.Chat.avatar, height: DesignTokens.Chat.avatar)
+                    .frame(width: DesignTokens.Avatar.size, height: DesignTokens.Avatar.size)
                 SunflowerMark(growing: busy)
-                    .frame(width: DesignTokens.Chat.avatarMark, height: DesignTokens.Chat.avatarMark)
+                    .frame(width: DesignTokens.Avatar.mark, height: DesignTokens.Avatar.mark)
             }
-            .frame(width: DesignTokens.Chat.avatar, height: DesignTokens.Chat.avatar)
-            Wordmark(height: DesignTokens.Chat.avatarLabelHeight)
+            .frame(width: DesignTokens.Avatar.size, height: DesignTokens.Avatar.size)
+            Wordmark(size: DesignTokens.Avatar.wordmarkSize, lineHeight: DesignTokens.Avatar.wordmarkLineHeight)
                 .accessibilityHidden(true)
         }
         .accessibilityElement(children: .ignore)
     }
 
     static func pulse(at date: Date) -> Double {
-        let period = Double(DesignTokens.Chat.avatarPulseSeconds)
+        let period = Double(DesignTokens.Avatar.busyGlowSeconds)
         let phase = date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: period) / period
         return 0.5 - 0.5 * cos(phase * 2 * .pi)
     }
 
     private func glow(strength: Double) -> some View {
-        RadialGradient(
+        let diameter = DesignTokens.Avatar.size - 2 * DesignTokens.Avatar.busyGlowInset
+        let opacity = DesignTokens.Avatar.busyGlowOpacityMin + (DesignTokens.Avatar.busyGlowOpacityMax - DesignTokens.Avatar.busyGlowOpacityMin) * strength
+        let scale = DesignTokens.Avatar.busyGlowScaleMin + (DesignTokens.Avatar.busyGlowScaleMax - DesignTokens.Avatar.busyGlowScaleMin) * strength
+        return RadialGradient(
             colors: [Color.hmGlow, Color.hmGlow.opacity(0)],
             center: .center,
-            startRadius: DesignTokens.Chat.avatar / 2,
-            endRadius: DesignTokens.Chat.avatarGlow / 2
+            startRadius: 0,
+            endRadius: diameter / 2
         )
-        .frame(width: DesignTokens.Chat.avatarGlow, height: DesignTokens.Chat.avatarGlow)
-        .opacity(0.35 + 0.65 * strength)
+        .frame(width: diameter, height: diameter)
+        .scaleEffect(scale)
+        .opacity(opacity)
         .allowsHitTesting(false)
     }
 }

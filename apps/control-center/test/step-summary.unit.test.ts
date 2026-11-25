@@ -1,4 +1,8 @@
-import type { ThreadExecutionRecord } from "@himawari-agent/gateway-contracts";
+import {
+  PROCESS_STEP_KINDS,
+  PROCESS_STEP_TEXT,
+  type ThreadExecutionRecord,
+} from "@himawari-agent/gateway-contracts";
 import { describe, expect, it } from "vitest";
 import { endedAwaitingApproval, type RunSummary } from "../src/execution-view.js";
 import { messages as en } from "../src/i18n/resources/en.js";
@@ -19,6 +23,8 @@ const record = (
   text: "",
   input: "",
   output: "",
+  activity: "",
+  activityIcon: "",
   occurredAt: new Date(sequence * 1000).toISOString(),
   ...overrides,
 });
@@ -128,5 +134,19 @@ describe("[P2-3] standing rule steps", () => {
       "入管局的邮件一律提醒",
     );
     expect([zh["step.rule"], en["step.rule"], ja["step.rule"]].every(Boolean)).toBe(true);
+  });
+});
+
+describe("[ICON-3] step names shared with the server", () => {
+  it("keeps every web step label equal to the text the server fills in when the model gave none", () => {
+    for (const [locale, catalog] of [
+      ["zh-CN", zh],
+      ["en", en],
+      ["ja", ja],
+    ] as const)
+      for (const kind of PROCESS_STEP_KINDS)
+        expect(catalog[`step.${kind}` as keyof typeof catalog]).toBe(
+          PROCESS_STEP_TEXT[locale][kind],
+        );
   });
 });

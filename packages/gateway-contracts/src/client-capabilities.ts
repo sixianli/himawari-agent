@@ -121,6 +121,7 @@ export const CLIENT_CAPABILITY_TABLE: readonly ClientCapabilityEntry[] = Object.
 
   notOnPhone("v2", "thread.message.submit", "command", VIA_DEVICE_MESSAGES),
   change("v2", "approval.respond"),
+  change("v2", "approval.allowance.set"),
   change("v2", "search.authorization.set"),
   query("v2", "search.authorization.read"),
   notOnPhone("v2", "push.subscription.set", "command", WEB_PUSH_ONLY),
@@ -378,20 +379,22 @@ export type ClientPageEntry =
   | { readonly webPage: string; readonly notOnPhone: string };
 
 const WEB_CONTRACT_MISSING = "网页自己还没有约定，没有任何查询或命令；网页定了约定后补原生页";
+const NOT_IN_THIS_PHONE_VERSION =
+  "这一版手机上不做，留在电脑网页：下一版范围清单和界面基线第 4 版都没有这一页（ADR 0258）";
 
 export const CLIENT_PAGE_TABLE: readonly ClientPageEntry[] = Object.freeze([
   { webPage: "threads", nativePage: "chat" },
-  { webPage: "approvals", nativePage: "today.approvals" },
+  { webPage: "approvals", nativePage: "chat" },
   { webPage: "tasks", notOnPhone: WEB_TASKS_ONLY },
   { webPage: "inbox-digest", notOnPhone: WEB_CONTRACT_MISSING },
   { webPage: "memory", nativePage: "memory" },
-  { webPage: "capabilities-adapters", nativePage: "settings.capabilities" },
+  { webPage: "capabilities-adapters", notOnPhone: NOT_IN_THIS_PHONE_VERSION },
   { webPage: "authorizations-grants", nativePage: "settings.authorizations" },
   { webPage: "host-workspaces", notOnPhone: WEB_OPERATIONS_ONLY },
-  { webPage: "suggestions", nativePage: "today.suggestions" },
+  { webPage: "suggestions", nativePage: "chat" },
   { webPage: "reflection", nativePage: "memory.reflection" },
   { webPage: "workers", notOnPhone: WEB_OPERATIONS_ONLY },
-  { webPage: "improvements", nativePage: "settings.improvements" },
+  { webPage: "improvements", notOnPhone: NOT_IN_THIS_PHONE_VERSION },
   { webPage: "trace", notOnPhone: WEB_CONTRACT_MISSING },
   { webPage: "settings", notOnPhone: WEB_CONTRACT_MISSING },
   {

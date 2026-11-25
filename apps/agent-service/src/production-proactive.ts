@@ -19,17 +19,14 @@ import {
   PROACTIVE_SOURCES,
   type ProactiveConfiguration,
   type ProactiveDecision,
-  type ProactiveMailCheckOptions,
+  type MailInboxPort,
   ProactiveMailCheckService,
   type ProactiveMailReader,
-  type ProactiveMemoryRecall,
   type ProactiveModelInvoker,
-  type ProactiveObservationPort,
   type ProactiveOverview,
   type ProactiveProgramEntry,
   type ProactiveProgramEntryOutcome,
   type ProactiveRating,
-  type ProactiveRecentSummaries,
   type ProactiveScope,
   type ProactiveSealPort,
   type ProactiveSource,
@@ -183,12 +180,9 @@ export interface ProductionProactiveOptions {
   readonly reader: ProactiveMailReader;
   readonly registry?: ProactiveSourceRegistry<ProactiveSource>;
   readonly runners?: readonly ProactiveSourceRunner[];
-  readonly observations?: ProactiveObservationPort;
   readonly onLimit?: (hit: ProactiveSourceLimitHit) => void;
   readonly readAccount: (accessToken: string) => Promise<string>;
   readonly model: ProactiveModelInvoker;
-  readonly memory?: ProactiveMemoryRecall;
-  readonly recentSummaries?: ProactiveRecentSummaries;
   readonly ledger: Pick<DecisionLedgerPort, "listReviewPool" | "rateMany">;
   readonly readMemoryText: (ref: string) => Promise<string | undefined>;
   readonly readMemory?: (memoryId: string) => Promise<DailyReviewMemoryText | undefined>;
@@ -209,7 +203,6 @@ export interface ProductionProactiveOptions {
   readonly ids: IdGeneratorPort;
   readonly onDecision?: (decision: ProactiveDecision) => void;
   readonly onFailure: (error: unknown) => void;
-  readonly onMasked?: ProactiveMailCheckOptions["onMasked"];
 }
 
 export type ProactiveAuthorizationOutcome = "connected" | "denied" | "failed";
@@ -218,6 +211,8 @@ export class ProductionProactive {
   readonly #options: ProductionProactiveOptions;
   readonly #registry: ProactiveSourceRegistry<ProactiveSource>;
   readonly #runners: readonly ProactiveSourceRunner[];
+  readonly #mail: ProactiveMailCheckService;
+  #inbox: MailInboxPort | undefined;
   readonly #prereview: ReviewPrereviewService | undefined;
   readonly #states = new Map<string, { readonly owner: string; readonly expiresAt: number }>();
   #timer: ReturnType<typeof setInterval> | undefined;
@@ -238,36 +233,16 @@ export class ProductionProactive {
         timeZone: options.timeZone,
         ...(options.onLimit ? { onLimit: options.onLimit } : {}),
       }),
-      definition: GMAIL_SOURCE,
-      ...(options.observations ? { observations: options.observations } : {}),
-      model: options.model,
-      ...(options.memory ? { memory: options.memory } : {}),
-      ...(options.ownerRules ? { ownerRuleStore: options.ownerRules } : {}),
-      ...(options.recentSummaries ? { recentSummaries: options.recentSummaries } : {}),
-      limits: {
-        perCheckMs: options.configuration.perCheckMs,
-        dailyCostMicros: options.configuration.dailyCostMicros,
-        estimateCostMicros: options.estimateCostMicros,
+      inbox: {
+        submit: (input) =>
+          this.#inbox ? this.#inbox.submit(input) : Promise.resolve({ accepted: false }),
       },
-      timeZone: options.timeZone,
+      perCheckMs: options.configuration.perCheckMs,
+      ...(options.ownerRules ? { ownerRuleStore: options.ownerRules } : {}),
       clock: options.clock,
       ids: options.ids,
-      outputTokenLimit: PROACTIVE_MAX_OUTPUT_TOKENS,
-      backoff: { threshold: options.configuration.backoffThreshold },
-      bodyLimits: {
-        perMail: options.configuration.bodyCharactersPerMail,
-        perBatch: options.configuration.bodyCharactersPerBatch,
-      },
-      relatedLimits: {
-        perMail: options.configuration.relatedMailsPerMail,
-        requestsPerCheck: options.configuration.relatedRequestsPerCheck,
-        charactersPerRelated: options.configuration.relatedCharactersPerRelatedMail,
-        charactersPerMail: options.configuration.relatedCharactersPerMail,
-        wholeThreadPerMail: options.configuration.wholeThreadMailsPerMail,
-        wholeThreadCharactersPerMail: options.configuration.wholeThreadCharactersPerMail,
-      },
-      ...(options.onMasked ? { onMasked: options.onMasked } : {}),
     });
+    this.#mail = mail;
     const bound = new Map<string, ProactiveSourceRunner>(
       [{ source: GMAIL_SOURCE.name, run: () => mail.run() }, ...(options.runners ?? [])].map(
         (runner) => [runner.source, runner],
@@ -294,6 +269,14 @@ export class ProductionProactive {
           subjects: async () => listDailyReviewSubjects(await this.#reviewSources()),
         })
       : undefined;
+  }
+
+  attachInbox(inbox: MailInboxPort): void {
+    this.#inbox = inbox;
+  }
+
+  readMailThread(threadId: string, signal: AbortSignal) {
+    return this.#mail.readThread(threadId, signal);
   }
 
   async #reviewSources() {
