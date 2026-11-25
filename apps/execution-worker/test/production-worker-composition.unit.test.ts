@@ -625,22 +625,29 @@ describe("production Worker composition", () => {
     });
   });
 
-  it("rejects missing deployment and static qualification drift before creating a Worker", async () => {
+  it("composes a Worker with no tools when no deployment is configured", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "himawari-worker-composition-disabled-"));
+    roots.push(root);
+    const options = {
+      configuration: configuration(root, undefined),
+      credential: CREDENTIAL,
+      authority: { authorityEpoch: 2, fencingToken: 3 },
+      agentServiceBootId: "agent-service-boot:composition",
+      platform: "linux" as const,
+      clock: { now: () => NOW },
+    };
+    const qualified = await qualifyProductionWorkerDeployment(options);
+    expect(qualified.deployment.snapshot.capabilities).toEqual([]);
+    expect(qualified.deployment.manifests).toEqual([]);
+    expect(qualified.deployment.adapters).toEqual([]);
+    const composition = await createProductionWorkerComposition(options, qualified);
+    expect(composition.worker).toBeDefined();
+    await composition.close();
+  });
+
+  it("rejects static qualification drift before creating a Worker", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "himawari-worker-composition-errors-"));
     roots.push(root);
-    await expect(
-      compose({
-        configuration: configuration(root, undefined),
-        credential: CREDENTIAL,
-        authority: { authorityEpoch: 2, fencingToken: 3 },
-        agentServiceBootId: "agent-service-boot:composition",
-        platform: "linux",
-        clock: { now: () => NOW },
-      }),
-    ).rejects.toMatchObject({
-      code: PRODUCTION_WORKER_COMPOSITION_ERROR_CODES.CAPABILITY_DEPLOYMENT_REQUIRED,
-    });
-
     const deployment = await snapshot(root, [
       endpointEntry({ runtimeIdentity: "fixture-qualifier:v1" }),
     ]);
