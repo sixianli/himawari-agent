@@ -1789,7 +1789,7 @@ export async function startTenantRuntime(
           authority: () => activeAuthority.authorityFence(),
         }),
         ledger: repository.decisionLedger(),
-        push: { enqueue: (input) => repository.webPush().enqueue(input) },
+        push: { enqueue: (input) => requireValue(repository).webPush().enqueue(input) },
         payloads,
         protector,
         clock: { now: () => clock.now() },

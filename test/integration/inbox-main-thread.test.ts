@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { ThreadCommandService } from "@himawari-agent/application";
+import { type PayloadProtectorPort, ThreadCommandService } from "@himawari-agent/application";
 import {
   createAgentId,
   createAuthorityLeaseId,
@@ -93,7 +93,7 @@ describe("outside events in the main conversation", () => {
     });
     closers.push(() => repository.close());
     const adapters = createReferenceAdapterSet();
-    const protector = adapters.payloadProtector;
+    const protector: PayloadProtectorPort = adapters.payloadProtector;
     const payloads = repository.payloadStore(OWNER_ID, AGENT_ID);
     const threads = repository.threadRepository();
     const commands = new ThreadCommandService({
