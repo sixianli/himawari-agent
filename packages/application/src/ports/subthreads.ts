@@ -28,6 +28,7 @@ export interface SubthreadRecord {
   readonly budgetMicros: number | null;
   readonly budgetHitAt: string | null;
   readonly title: string | null;
+  readonly approvalRunId: string | null;
   readonly createdAt: string;
   readonly updatedAt: string;
 }
@@ -178,6 +179,7 @@ export interface SubthreadStorePort {
       readonly asked?: boolean;
       readonly budgetMicros?: number;
       readonly budgetHit?: boolean;
+      readonly approvalRunId?: string | null;
       readonly now: string;
     },
   ): Promise<SubthreadRecord | undefined>;
@@ -201,6 +203,7 @@ export interface SubthreadStorePort {
   listExchanges(
     input: OwnerRuleScope & { readonly threadId: string; readonly limit: number },
   ): Promise<readonly SubthreadExchangeRecord[]>;
+  listAwaitingApproval(input: OwnerRuleScope): Promise<readonly SubthreadRecord[]>;
   markStuck(
     input: OwnerRuleScope & {
       readonly threadId: string;

@@ -38,12 +38,13 @@ public struct ShownAttachment: Sendable, Equatable {
 extension MessageAttachments {
     public static func preview(_ text: String) -> String {
         let shown = shown(text)
-        guard !shown.attachments.isEmpty else { return text }
+        guard !shown.attachments.isEmpty else { return shown.text }
         let body = shown.text.trimmingCharacters(in: .whitespacesAndNewlines)
         return body.isEmpty ? shown.attachments[0].name : body
     }
 
     public static func shown(_ text: String) -> (text: String, attachments: [ShownAttachment]) {
+        let text = MessageReply.split(text).text
         var attachments: [ShownAttachment] = []
         var kept: [String] = []
         for part in text.components(separatedBy: "\n\n") {

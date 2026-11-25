@@ -1230,4 +1230,80 @@ describe("subthreads opened by the main conversation", () => {
       f.query("SELECT COUNT(*) AS n FROM inbox_events WHERE source_ref LIKE 'budget:%'"),
     ).toEqual([{ n: 1 }]);
   });
+
+  it("[ADR-0285] parks a subthread run that waits for the owner's approval, tells the main conversation, and carries on once the approved run ends", async () => {
+    const f = await fixture();
+    const opened = await f.open();
+    await f.finish(await f.mainThread.ensure(), opened.runId);
+    const first = await f.started(opened.subthread);
+    await f.call(first.runId, "task_create", {
+      subject: "订票",
+      description: "订最便宜的一班",
+      active_form: "正在订票",
+    });
+    const setStatus = (status: string) => {
+      const handle = openQualifiedDatabase(f.file);
+      try {
+        handle.prepare("UPDATE runs SET status = ? WHERE id = ?").run(status, first.runId);
+      } finally {
+        handle.close();
+      }
+    };
+    setStatus("awaiting_approval");
+    expect(await first.handled).toMatchObject({ status: "done", result: "handled" });
+    expect(
+      f.query<{ outcome: string; reason_code: string }>(
+        "SELECT outcome, reason_code FROM inbox_events WHERE run_id = ?",
+        first.runId,
+      ),
+    ).toEqual([{ outcome: "awaiting_approval", reason_code: "subthread_awaiting_approval" }]);
+    expect(f.query("SELECT approval_run_id FROM subthreads")).toEqual([
+      { approval_run_id: first.runId },
+    ]);
+    const told = f.query<{ thread_id: string | null }>(
+      "SELECT thread_id FROM inbox_events WHERE source_ref LIKE 'approval:%'",
+    );
+    expect(told).toEqual([{ thread_id: null }]);
+    const work = await f.subthreads.backgroundWork();
+    expect(work.matters[0]?.subthreads[0]?.activity).toBe("running");
+    const continues = () =>
+      f.query("SELECT COUNT(*) AS n FROM inbox_events WHERE source_kind = 'subthread_continue'");
+    await f.worker.claim();
+    expect(continues()).toEqual([{ n: 0 }]);
+    setStatus("accepted");
+    await f.finish(opened.subthread, first.runId);
+    await f.worker.claim();
+    expect(f.query("SELECT approval_run_id FROM subthreads")).toEqual([{ approval_run_id: null }]);
+    expect(continues()).toEqual([{ n: 1 }]);
+  });
+
+  it("REVERSE: does not carry a subthread on after its approval run was cancelled", async () => {
+    const f = await fixture();
+    const opened = await f.open();
+    await f.finish(await f.mainThread.ensure(), opened.runId);
+    const first = await f.started(opened.subthread);
+    await f.call(first.runId, "task_create", {
+      subject: "订票",
+      description: "订最便宜的一班",
+      active_form: "正在订票",
+    });
+    const handle = openQualifiedDatabase(f.file);
+    try {
+      handle.prepare("UPDATE runs SET status = 'awaiting_approval' WHERE id = ?").run(first.runId);
+    } finally {
+      handle.close();
+    }
+    expect(await first.handled).toMatchObject({ status: "done", result: "handled" });
+    const again = openQualifiedDatabase(f.file);
+    try {
+      again.prepare("UPDATE runs SET status = 'cancelled' WHERE id = ?").run(first.runId);
+    } finally {
+      again.close();
+    }
+    await f.worker.claim();
+    expect(f.query("SELECT approval_run_id FROM subthreads")).toEqual([{ approval_run_id: null }]);
+    expect(
+      f.query("SELECT COUNT(*) AS n FROM inbox_events WHERE source_kind = 'subthread_continue'"),
+    ).toEqual([{ n: 0 }]);
+  });
 });

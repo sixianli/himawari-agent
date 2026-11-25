@@ -169,7 +169,7 @@ export const SUBTHREAD_STATUS_BOARD_HEADER = fixedPrompt({
   usedBy: ["apps/agent-service/src/production-subthreads.ts"],
   layer: "last-user-message",
   output: "free-text",
-  text: "【后台在办】你开的、还没结束的子线程现在的情况（主人看不到这一块，回主人时不要提）。status 是 queued（排队）、running（在做）、waiting_answer（问了你问题在等你回）、waiting_result（在等兄弟子线程的结果）、idle（这一趟做完了、在等下一件事）、over_budget（花到预算停下了，等你决定加预算、改方向还是叫停）；progress 是它最近报的进展；下面每行一条待办。要看完整计划、修改历史和交回的结果，用 view_subthread。",
+  text: "【后台在办】你开的、还没结束的子线程现在的情况（主人看不到这一块，回主人时不要提）。status 是 queued（排队）、running（在做）、waiting_approval（要做的一件事在等主人同意）、waiting_answer（问了你问题在等你回）、waiting_result（在等兄弟子线程的结果）、idle（这一趟做完了、在等下一件事）、over_budget（花到预算停下了，等你决定加预算、改方向还是叫停）；progress 是它最近报的进展；下面每行一条待办。要看完整计划、修改历史和交回的结果，用 view_subthread。",
 });
 
 export const TOOL_TASK_CREATE = fixedPrompt({
@@ -323,4 +323,13 @@ export const SUBTHREAD_BUDGET_REACHED = templatePrompt({
       " 条。它在你决定之前不再花钱。你来定：值得接着做就用 send_to_subthread 加预算，方向不对就改要求，不需要了就叫停，拿不准就问主人。",
     ),
   ],
+});
+
+export const SUBTHREAD_APPROVAL_WAITING = fixedPrompt({
+  id: "subthreads.approval-waiting",
+  purpose: "子线程要做的一件事在等主人同意时发给主对话的那件事的正文",
+  usedBy: ["apps/agent-service/src/production-subthreads.ts"],
+  layer: "last-user-message",
+  output: "free-text",
+  text: "它要做的一件事在等主人同意，同意卡片已经直接给主人看了，卡片上写的是程序按真实动作生成的内容。主人回答之前它不往下做，回答后它自己接着做。你不用转述卡片内容；觉得主人需要知道为什么要做这件事时，跟主人补一句就好。",
 });

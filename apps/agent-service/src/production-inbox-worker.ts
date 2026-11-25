@@ -49,6 +49,7 @@ export interface InboxDelivery {
     readonly events: readonly InboxDeliveryEvent[];
     readonly signal: AbortSignal;
   }): Promise<InboxDeliveryResult>;
+  sweep?(): Promise<void>;
 }
 
 export interface InboxWorkerOptions {
@@ -109,6 +110,7 @@ export class ProductionInboxWorker {
     await this.#options.inbox
       .maintain({ runsLastUpToMs: this.#runTimeoutMs(overrides) + RUN_SETTLE_MS })
       .catch((error: unknown) => this.#report("", error));
+    await this.#options.delivery.sweep?.().catch((error: unknown) => this.#report("", error));
     const limit =
       overrides["eventsPerRun"] ?? this.#options.eventsPerRun ?? INBOX_LOOP_DEFAULTS.eventsPerRun;
     const entries = await store.claimBatch({ ...scope, now: clock.now(), limit, skip });
