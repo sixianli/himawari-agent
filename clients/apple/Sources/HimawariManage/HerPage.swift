@@ -16,6 +16,7 @@ public struct HerPage: View {
         case devices
         case device(String)
         case approvals
+        case allowances
     }
 
     @State private var settings: SettingsStore
@@ -95,6 +96,14 @@ public struct HerPage: View {
                         }
                         .buttonStyle(.plain)
                     }
+                    if !memory.allowances.isEmpty {
+                        SettingsGroup(label: nil) {
+                            Button { path.append(.allowances) } label: {
+                                HerRow(icon: .shieldCheck, title: M.allowancesTitle, subtitle: M.allowancesSummary(memory.allowances.count), last: true)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
                     SettingsGroup(label: nil) {
                         if let hours = quietHours.hours {
                             Button { path.append(.notifications) } label: {
@@ -150,6 +159,8 @@ public struct HerPage: View {
                     HerDevicesPage(store: settings, open: { path.append(.device($0.id)) }, removedThisDevice: removedThisDevice) { path.removeLast() }
                 case .device(let id):
                     DevicePage(store: settings, deviceId: id, actions: actions, removedThisDevice: removedThisDevice) { path.removeLast() }
+                case .allowances:
+                    HerAllowancesPage(memory: memory) { path.removeLast() }
                 case .approvals:
                     if let actions {
                         ApprovalsView(model: actions, openThread: { _ in close() }) { path.removeLast() }

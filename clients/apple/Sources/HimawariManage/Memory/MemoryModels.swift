@@ -74,6 +74,19 @@ public struct RuleUse: Decodable, Sendable, Hashable {
 
 public struct RuleBook: Decodable, Sendable {
     public let rules: [RuleSummary]
+    public var allowances: [OwnerAllowance]? = nil
+}
+
+public struct OwnerAllowance: Decodable, Sendable, Hashable, Identifiable {
+    public let allowanceId: String
+    public let allowFor: String
+    public let title: String
+    public let operation: String
+    public let threadId: String?
+    public let expiresAt: String?
+    public let createdAt: String
+
+    public var id: String { allowanceId }
 }
 
 public struct MemoryGroup: Identifiable, Sendable, Equatable {
