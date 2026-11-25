@@ -4731,6 +4731,154 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
     });
   });
 
+  it("[ADR-0285] marks the conversation when an outside event starts a run that only answers, so the next run in it reads the mark", async () => {
+    const { createFauxModelFixture } = await import(
+      "../../packages/runtime-pi/test/faux-model-fixture.js"
+    );
+    const { createProductionRunComposition } = await import(
+      "../../apps/agent-service/src/production-run-composition.js"
+    );
+    const { ContextExternalContent } = await import(
+      "../../apps/agent-service/src/context-external-content.js"
+    );
+    const setup = await executionFixture();
+    const adapters = createReferenceAdapterSet({ clock });
+    const model = await createFauxModelFixture(
+      "收到邮件了，没有要做的事。",
+      undefined,
+      [],
+      ["好的。"],
+    );
+    const payloads = setup.repository.payloadStore(ownerId, agentId);
+    for (const [ref, text] of [
+      ["mark-event", "新邮件：周五的会改到下午三点。"],
+      ["mark-owner", "好的"],
+      ["mark-system", "你是助手。"],
+    ] as const)
+      await payloads.put(
+        await setup.protector.protect({
+          ownerId,
+          agentId,
+          ref,
+          dataClassification: "private",
+          contentType: "text/plain",
+          plaintext: new TextEncoder().encode(text),
+          createdAt: clock.now(),
+        }),
+      );
+    const thread = await setup.commands.create({
+      ownerId,
+      agentId,
+      idempotencyKey: "mark-thread",
+      resultRef: "mark-event",
+    });
+    const event = await setup.commands.admitOwnerMessage({
+      triggerSource: "external_event",
+      ownerId,
+      agentId,
+      threadId: thread.thread.id,
+      expectedThreadRevision: thread.thread.revision,
+      sessionId: createSessionId("mark-session"),
+      idempotencyKey: "mark-message-1",
+      contentRef: "mark-event",
+      sourceProofRef: "think:mark-test",
+      dataClassification: "private",
+      resultRef: "mark-event",
+    });
+    const externalContent = new ContextExternalContent({
+      configuration: { ownerId, agentId },
+      state: setup.repository,
+      source: setup.repository.runExecutionSource(ownerId, agentId),
+      authority: () => lease,
+      clock,
+    });
+    const failure = vi.fn();
+    const composed = createProductionRunComposition({
+      egress: testModelEgress(),
+      externalContent,
+      configuration: {
+        ownerId,
+        agentId,
+        concurrency: { totalRuns: 1, foregroundReserved: 1, perCategory: {} },
+        deadlines: { runMs: 60_000, workerRequestMs: 10_000, providerRequestMs: 10_000 },
+      },
+      repository: setup.repository,
+      authority: {
+        authorityFence: () => authority,
+        authorityLease: () => lease,
+        assertActive: async () => undefined,
+        isAccepting: () => true,
+      },
+      models: model.models,
+      modelRegistry: [model.descriptor],
+      protector: setup.protector,
+      memory: adapters.memory,
+      tools: {
+        listAuthorized: async () => [],
+        preflight: async () => ({
+          allowed: true,
+          permissionDecisionRef: "test-policy",
+          reasonCode: "test",
+        }),
+        execute: async () => {
+          throw new Error("no tool expected");
+        },
+      },
+      workers: new ScriptedWorkerRunPort(),
+      policy: async () => ({
+        modelRef: model.descriptor.ref,
+        systemInstructionRef: "mark-system",
+        policyVersion: "mark-test-policy",
+        policies: [],
+        capabilities: [],
+        capabilityHandleRefs: [],
+        memoryLimit: 5,
+        maxSelectedMemories: 0,
+      }),
+      clock,
+      ids: adapters.ids,
+      instanceId: "mark-composition-test",
+      cwd: setup.stateRoot,
+      agentDir: path.join(setup.stateRoot, "pi-agent"),
+      onFailure: failure,
+    });
+    const eventRunId = event.message.runId;
+    if (!eventRunId) throw new Error("missing event run");
+    expect(await externalContent.readThread(thread.thread.id)).toEqual([]);
+    await composed.dispatcher.pump();
+    expect((await setup.runs.readRun(eventRunId))?.run.status).toBe("completed");
+    const eventSource = await setup.repository
+      .runExecutionSource(ownerId, agentId)
+      .read(eventRunId);
+    const origin = `external_event:${eventSource?.sourceId}`;
+    expect((await externalContent.readThread(thread.thread.id)).map((s) => s.origin)).toEqual([
+      origin,
+    ]);
+
+    const current = await setup.repository
+      .threadRepository()
+      .read(ownerId, agentId, thread.thread.id);
+    if (!current) throw new Error("thread missing");
+    const owner = await setup.commands.admitOwnerMessage({
+      ownerId,
+      agentId,
+      threadId: thread.thread.id,
+      expectedThreadRevision: current.revision,
+      sessionId: createSessionId("mark-session"),
+      idempotencyKey: "mark-message-2",
+      contentRef: "mark-owner",
+      sourceProofRef: "owner:mark-test",
+      dataClassification: "private",
+      resultRef: "mark-owner",
+    });
+    const ownerRunId = owner.message.runId;
+    if (!ownerRunId) throw new Error("missing owner run");
+    await composed.dispatcher.pump();
+    expect((await setup.runs.readRun(ownerRunId))?.run.status).toBe("completed");
+    expect((await externalContent.read(ownerRunId)).map((s) => s.origin)).toEqual([origin]);
+    expect(failure).not.toHaveBeenCalled();
+  });
+
   it("[BG-3] answers, takes the next message while a command runs, then reports it in a new turn", async () => {
     const { createFauxModelFixture } = await import(
       "../../packages/runtime-pi/test/faux-model-fixture.js"

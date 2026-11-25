@@ -1,9 +1,9 @@
 ---
-status: active
+status: superseded
 document_type: adr
-decision_status: accepted
+decision_status: superseded
 supersedes: ""
-superseded_by: ""
+superseded_by: "docs/adr/0285-one-main-thread-subthreads-and-one-inbox.md"
 amends: "docs/adr/0264-a-decision-model-decides-whether-a-name-call-is-meant-for-himawari.md"
 date: "2026-11-15"
 ---

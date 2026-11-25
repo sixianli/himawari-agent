@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import type { Context, Message } from "@earendil-works/pi-ai";
 import { createAgentSession, SettingsManager } from "@earendil-works/pi-coding-agent";
 import type {
   RuntimeEvent,
@@ -15,19 +16,20 @@ import type {
 } from "@himawari-agent/application/runtime-port";
 import { afterEach, describe, expect, it } from "vitest";
 import {
-  ConfiguredPiModelBindingPort,
-  PiAgentRuntimeAdapter,
-  type PiAgentRuntimeAdapterDependencies,
-} from "../src/index.js";
-import type { Context, Message } from "@earendil-works/pi-ai";
-import {
   approximateTokens,
   COMPACTION_TRIGGER_CAP_TOKENS,
   compactionModelOverrides,
   compactionPrefixMessages,
+  compactionTriggerTokens,
   sharedSummaryContext,
   sharedSummaryOptions,
+  toolResultClearingTriggerTokens,
 } from "../src/compaction-prefix.js";
+import {
+  ConfiguredPiModelBindingPort,
+  PiAgentRuntimeAdapter,
+  type PiAgentRuntimeAdapterDependencies,
+} from "../src/index.js";
 import { allowAdmission, fixtureExecutionLease } from "./helpers/admission.js";
 import { testModelEgress } from "./helpers/model-egress.js";
 import {
@@ -1444,6 +1446,200 @@ const compactLast = (messages: Message[], systemPrompt = "系统提示"): Contex
   messages,
 });
 
+const PAGE = (index: number, repeat: number) =>
+  `网页正文${index}：${"lorem ipsum ".repeat(repeat)}`;
+
+class PageTools extends SearchTools {
+  #count = 0;
+  readonly #repeat: number;
+  readonly #keepSearch: boolean;
+
+  constructor(repeat: number, keepSearch = false) {
+    super();
+    this.#repeat = repeat;
+    this.#keepSearch = keepSearch;
+  }
+
+  override async execute(invocation: { readonly capabilityRef: string }) {
+    const result = await super.execute(invocation);
+    return invocation.capabilityRef === "web-search"
+      ? { ...result, modelContent: PAGE(this.#count++, this.#repeat) }
+      : result;
+  }
+
+  override async listAuthorized(): Promise<readonly RuntimeToolDescriptor[]> {
+    const [search, ...rest] = await super.listAuthorized();
+    return [
+      {
+        ...(search as Extract<RuntimeToolDescriptor, { description: string }>),
+        ...(this.#keepSearch ? { contextRetention: "keep" as const } : {}),
+      },
+      ...rest,
+      {
+        definition: "tool-result-recall",
+        name: "tool_result_recall",
+        capabilityRef: "context.tool_result_recall",
+        capabilityHandleRef: null,
+      },
+    ];
+  }
+}
+
+const READING_TURNS: readonly Turn[] = [
+  { prompt: "把这几篇网页读一遍", occurredAt: "2026-11-02T00:40:00.000Z" },
+  { prompt: "第一篇里说了什么？", occurredAt: "2026-11-02T00:44:00.000Z" },
+];
+
+async function readingConversation(tools: PageTools, recallId = "call-0") {
+  return conversation(
+    READING_TURNS,
+    (index, body) => {
+      PROMPT_TOKENS = index === 4 ? 60_000 : 20_000;
+      if (index < 5)
+        return { tool: "web_search", input: JSON.stringify({ query: `第${index}篇` }) };
+      if (index === 5) return { text: "读完了。" };
+      const last = (JSON.parse(body).messages as { role: string }[]).at(-1)?.role;
+      return last === "tool"
+        ? { text: "第一篇讲的是 lorem ipsum。" }
+        : { tool: "tool_result_recall", input: JSON.stringify({ toolCallId: recallId }) };
+    },
+    () => undefined,
+    { tools },
+  );
+}
+
+function toolContents(body: string): string[] {
+  return (JSON.parse(body).messages as { role: string; content: unknown }[])
+    .filter((message) => message.role === "tool")
+    .map((message) =>
+      typeof message.content === "string" ? message.content : JSON.stringify(message.content),
+    );
+}
+
+describe("[I-66] [CLEAR] clearing old tool results once, then appending again", () => {
+  it("[CLEAR-1] replaces the older results with a placeholder in one batch, keeps the last 3, and only appends afterwards", async () => {
+    const { bodies } = await readingConversation(new PageTools(1_500));
+    const breaks = bodies
+      .map((body, index) => (index === 0 ? null : findPrefixBreak(bodies[index - 1] ?? "", body)))
+      .flatMap((found, index) => (found ? [index] : []));
+    expect(breaks).toEqual([5]);
+    const cleared = toolContents(bodies[5] ?? "");
+    expect(cleared).toHaveLength(5);
+    expect(cleared[0]).toContain("编号 call-0");
+    expect(cleared[0]).toContain("tool_result_recall");
+    expect(cleared[0]).not.toContain("网页正文0");
+    expect(cleared[1]).toContain("编号 call-1");
+    for (const [offset, index] of [2, 3, 4].entries())
+      expect(cleared[offset + 2]).toContain(`网页正文${index}`);
+    expect(findConversationBreak(bodies.slice(5))).toBeNull();
+  });
+
+  it("[CLEAR-2] tool_result_recall brings back the original text of a cleared result as a new tool result at the end", async () => {
+    const { bodies } = await readingConversation(new PageTools(1_500));
+    const last = bodies.at(-1) ?? "";
+    const contents = toolContents(last);
+    expect(contents[0]).toContain("编号 call-0");
+    expect(contents.at(-1)).toContain("网页正文0");
+    expect(findConversationBreak(bodies.slice(5))).toBeNull();
+  });
+
+  it("[CLEAR-6] records a recall as a lookup that ran, found or not, so it never reads as unconfirmed", async () => {
+    const found = await readingConversation(new PageTools(1_500));
+    const recalls = (
+      found.projection.saved as {
+        role: string;
+        toolName?: string;
+        details?: Record<string, unknown>;
+      }[]
+    )
+      .filter(
+        (message) => message.role === "toolResult" && message.toolName === "tool_result_recall",
+      )
+      .map((message) => message.details);
+    expect(recalls).toHaveLength(1);
+    expect(recalls[0]).toMatchObject({ productOutcome: "succeeded", dispatchState: "accepted" });
+    const missing = await readingConversation(new PageTools(1_500), "call-missing");
+    const notFound = (
+      missing.projection.saved as { toolName?: string; details?: Record<string, unknown> }[]
+    ).filter((message) => message.toolName === "tool_result_recall");
+    expect(notFound).toHaveLength(1);
+    expect(notFound[0]?.details).toMatchObject({
+      productOutcome: "failed",
+      dispatchState: "accepted",
+      errorCode: "TOOL_RESULT_RECALL_NOT_FOUND",
+    });
+  });
+
+  it("[CLEAR-7] REVERSE: keeps a result that names a password, so the value stays masked in later turns", async () => {
+    const secret = "Qz7mWx42Lp";
+    class SecretPageTools extends PageTools {
+      override async execute(invocation: { readonly capabilityRef: string }) {
+        const result = await super.execute(invocation);
+        return result.modelContent.startsWith("网页正文0")
+          ? { ...result, modelContent: `${result.modelContent}\n密码：${secret}` }
+          : result;
+      }
+    }
+    const { bodies } = await conversation(
+      READING_TURNS,
+      (index) => {
+        PROMPT_TOKENS = index === 4 ? 60_000 : 20_000;
+        if (index < 5)
+          return { tool: "web_search", input: JSON.stringify({ query: `第${index}篇` }) };
+        if (index === 5) return { text: `读完了，第一篇给的是 ${secret}。` };
+        return { text: "就是那个。" };
+      },
+      () => undefined,
+      { tools: new SecretPageTools(1_500) },
+    );
+    expect(bodies.length).toBeGreaterThan(6);
+    for (const body of bodies) expect(body).not.toContain(secret);
+    const last = toolContents(bodies.at(-1) ?? "");
+    expect(last[0]).toContain("网页正文0");
+    expect(last[1]).toContain("编号 call-1");
+  });
+
+  it("[CLEAR-5] the summary request after a clearing still reuses the last request's head, placeholders included", async () => {
+    const shared: boolean[] = [];
+    const { bodies } = await conversation(
+      [
+        READING_TURNS[0] as Turn,
+        { prompt: `接着说${"alpha bravo ".repeat(9000)}`, occurredAt: "2026-11-02T00:44:00.000Z" },
+        { prompt: "好，先这样", occurredAt: "2026-11-02T00:50:00.000Z" },
+      ],
+      (index, body) => {
+        if (body.includes("Do NOT continue it")) return { text: "摘要：读过五篇网页。" };
+        PROMPT_TOKENS = index === 4 ? 60_000 : index === 6 ? 90_000 : 20_000;
+        if (index < 5)
+          return { tool: "web_search", input: JSON.stringify({ query: `第${index}篇` }) };
+        return { text: `回答${index}` };
+      },
+      () => undefined,
+      {
+        tools: new PageTools(1_500),
+        promptBundles: new FrozenPromptBundles(),
+        onCompactionSummaryRequest: (_request, summary) => shared.push(summary.sharedHead),
+      },
+    );
+    expect(shared[0]).toBe(true);
+    const summary = bodies.find((body) => body.includes("Do NOT continue it")) ?? "";
+    expect(summary).toContain("编号 call-0");
+    expect(toolContents(summary).some((content) => content.includes("网页正文0："))).toBe(false);
+  });
+
+  it("[CLEAR-3] REVERSE: leaves every result in place when the older ones add up to less than 5000 tokens", async () => {
+    const { bodies } = await readingConversation(new PageTools(400));
+    expect(findConversationBreak(bodies)).toBeNull();
+    expect(bodies.some((body) => body.includes("tool_result_recall 按这个编号取回"))).toBe(false);
+  });
+
+  it("[CLEAR-4] REVERSE: never clears the results of a tool that asks to stay in the context", async () => {
+    const { bodies } = await readingConversation(new PageTools(1_500, true));
+    expect(findConversationBreak(bodies)).toBeNull();
+    expect(toolContents(bodies[5] ?? "")[0]).toContain("网页正文0");
+  });
+});
+
 describe("[I-66] [COMPACT-2] sharing the conversation's head with the summary request", () => {
   const prefix = [compactUser("第一问")];
 
@@ -1491,7 +1687,7 @@ describe("[I-66] [COMPACT-2] sharing the conversation's head with the summary re
     expect(compactionPrefixMessages({ ...base, reason: "manual" })).toBeUndefined();
   });
 
-  it("[COMPACT-4] caps the compaction trigger at 200K for a large window and leaves a small window on Pi's default", () => {
+  it("[COMPACT-4] caps the compaction trigger at 150K for a large window and leaves a small window on Pi's default", () => {
     const resolve = (model: { provider: string; id: string; contextWindow: number }) =>
       SettingsManager.inMemory(
         { compaction: { enabled: true, modelOverrides: compactionModelOverrides(model) } },
@@ -1510,11 +1706,17 @@ describe("[I-66] [COMPACT-2] sharing the conversation's head with the summary re
     expect(compactionModelOverrides(small)).toEqual({});
     expect(resolve(small)).toBe(16_384);
     expect(compactionModelOverrides({ ...small, contextWindow: 0 })).toEqual({});
-    for (const window of [200_001, 210_000, 216_384]) {
+    for (const window of [150_001, 160_000, 166_384]) {
       expect(compactionModelOverrides({ ...small, contextWindow: window })).toEqual({});
       expect(resolve({ ...small, contextWindow: window })).toBe(16_384);
     }
-    expect(resolve({ ...small, contextWindow: 216_385 })).toBe(16_385);
+    expect(resolve({ ...small, contextWindow: 166_385 })).toBe(16_385);
+    expect(COMPACTION_TRIGGER_CAP_TOKENS).toBe(150_000);
+    expect(compactionTriggerTokens(1_000_000)).toBe(150_000);
+    expect(toolResultClearingTriggerTokens(1_000_000)).toBe(100_000);
+    expect(compactionTriggerTokens(128_000)).toBe(128_000 - 16_384);
+    expect(toolResultClearingTriggerTokens(128_000)).toBe(Math.floor(((128_000 - 16_384) * 2) / 3));
+    expect(toolResultClearingTriggerTokens(0)).toBeUndefined();
     const slashed = {
       provider: "magpie",
       id: "opencode-go/deepseek-v4.1-flash",

@@ -4,12 +4,14 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import sqlite3
 import subprocess
 import sys
 import tempfile
 import time
 import unittest
+import unittest.mock
 
 HERE = Path(__file__).resolve().parent
 
@@ -361,13 +363,16 @@ class QualificationLeftoverCleanupTest(CleanupCase):
         self.assertEqual(self.deleted(result), [str(self.target())])
         self.assertTrue(self.target().exists())
 
-    def test_directory_with_content_stays_for_the_preflight_to_report(self):
+    def test_directory_with_content_is_cleared_and_its_reports_are_kept(self):
         self.target().mkdir()
-        evidence = self.tree.file(self.target() / 'host-qualification-public-key.pem')
+        self.tree.file(self.target() / 'host-qualification-public-key.pem')
+        self.tree.file(self.target() / 'publication.json')
         result = self.run_cleanup()
-        self.assertEqual(self.deleted(result), [])
-        self.assertTrue(evidence.exists())
-        self.assertIn({'path': str(self.target()), 'reason': 'qualification-not-empty'}, result['kept'])
+        self.assertFalse(self.target().exists())
+        self.assertIn({'path': str(self.target()), 'bytes': unittest.mock.ANY, 'reason': 'failed-attempt-target-path'}, result['deleted'])
+        archived = self.tree.lib / 'release-cleanup/failed-attempts/20261030T010000Z' / str(self.target()).lstrip('/') / 'publication.json'
+        self.assertTrue(archived.exists())
+        self.assertEqual(result['targetPathsLeft'], [])
 
     def test_a_process_using_it_keeps_it(self):
         self.target().mkdir()
@@ -399,6 +404,141 @@ class QualificationLeftoverCleanupTest(CleanupCase):
         self.target().mkdir()
         self.run_cleanup()
         self.assertEqual(self.deleted(self.run_cleanup()), [])
+
+
+class TargetPathClearingTest(CleanupCase):
+    PREFLIGHT = load('deploy_preflight', 'deploy-preflight.py')
+
+    def targets(self, release):
+        return self.PREFLIGHT.target_paths(release['binding'])
+
+    def test_cleanup_handles_exactly_the_paths_the_preflight_requires_absent(self):
+        for release in (self.failed, self.serving):
+            self.assertEqual(self.tree.plan(release)['targetPaths'], self.targets(release))
+
+    def test_leftovers_of_every_kind_are_cleared_before_the_preflight(self):
+        qualification = Path(self.failed['binding']['service']['newQualificationEvidenceRoot'])
+        self.tree.file(qualification / 'publication.json')
+        self.tree.file(self.failed['operations'] / 'run-01/s6-report.json')
+        result = self.run_cleanup()
+        self.assertEqual([path for path in self.targets(self.failed) if os.path.lexists(path)], [])
+        self.assertEqual(result['targetPathsLeft'], [])
+        attempt = self.tree.lib / 'release-cleanup/failed-attempts/20261030T010000Z'
+        self.assertTrue((attempt / str(qualification).lstrip('/') / 'publication.json').exists())
+        self.assertTrue((attempt / str(self.failed['operations']).lstrip('/') / 'run-01/s6-report.json').exists())
+
+    def test_plan_mode_changes_nothing(self):
+        qualification = Path(self.failed['binding']['service']['newQualificationEvidenceRoot'])
+        self.tree.file(qualification / 'publication.json')
+        result = self.run_cleanup(apply=False)
+        self.assertTrue(qualification.exists())
+        self.assertEqual(result['targetPathsLeft'], [])
+        self.assertFalse((self.tree.lib / 'release-cleanup/failed-attempts').exists())
+
+    def test_paths_of_the_serving_release_stay_and_are_reported(self):
+        result = self.run_cleanup(current=self.serving)
+        left = {item['path']: item['reason'] for item in result['targetPathsLeft']}
+        self.assertEqual(left[str(self.serving['prefix'])], 'serving')
+        self.assertEqual(left[str(self.serving['operations'])], 'serving')
+        self.assertTrue(self.serving['prefix'].exists() and self.serving['operations'].exists())
+
+    def test_the_serving_qualification_stays(self):
+        qualification = Path(self.serving['binding']['service']['newQualificationEvidenceRoot'])
+        self.tree.file(qualification / 'publication.json')
+        result = self.run_cleanup(current=self.serving)
+        self.assertTrue((qualification / 'publication.json').exists())
+        self.assertIn({'path': str(qualification), 'reason': 'serving'}, result['targetPathsLeft'])
+
+    def test_a_path_used_by_a_process_stays_and_is_reported(self):
+        qualification = Path(self.failed['binding']['service']['newQualificationEvidenceRoot'])
+        self.tree.file(qualification / 'publication.json')
+        result = self.run_cleanup(references=[str(qualification)])
+        self.assertTrue(qualification.exists())
+        self.assertIn({'path': str(qualification), 'reason': 'used-by-a-process'}, result['targetPathsLeft'])
+
+    def test_a_release_named_by_the_database_stays_and_is_reported(self):
+        self.tree.record('tool ran from ' + str(self.failed['prefix']) + '/bin/x')
+        result = self.run_cleanup()
+        self.assertTrue(self.failed['prefix'].exists())
+        self.assertIn({'path': str(self.failed['prefix']), 'reason': 'named-by-database:runs.detail'}, result['targetPathsLeft'])
+
+    def test_paths_other_than_releases_named_by_the_database_stay_and_are_reported(self):
+        qualification = Path(self.failed['binding']['service']['newQualificationEvidenceRoot'])
+        self.tree.file(qualification / 'publication.json')
+        self.tree.file(self.failed['operations'] / 'run-01/s6-report.json')
+        self.tree.record('fingerprints in ' + str(self.failed['operations']) + '/runtime-fingerprints.json')
+        self.tree.record('published to ' + str(qualification))
+        result = self.run_cleanup()
+        self.assertTrue((qualification / 'publication.json').exists() and (self.failed['operations'] / 'run-01/s6-report.json').exists())
+        left = {item['path']: item['reason'] for item in result['targetPathsLeft']}
+        self.assertEqual((left[str(qualification)], left[str(self.failed['operations'])]), ('named-by-database:runs.detail', 'named-by-database:runs.detail'))
+
+    def test_a_database_row_naming_a_longer_sibling_path_does_not_keep_a_target_path(self):
+        qualification = Path(self.failed['binding']['service']['newQualificationEvidenceRoot'])
+        self.tree.file(qualification / 'publication.json')
+        self.tree.record('published to ' + str(qualification) + '-older')
+        result = self.run_cleanup()
+        self.assertFalse(qualification.exists())
+        self.assertEqual(result['targetPathsLeft'], [])
+
+    def test_the_failed_release_keeps_its_reports_before_it_is_deleted(self):
+        self.tree.file(self.failed['prefix'] / 'install-report.json')
+        self.run_cleanup()
+        attempt = self.tree.lib / 'release-cleanup/failed-attempts/20261030T010000Z'
+        self.assertFalse(self.failed['prefix'].exists())
+        self.assertTrue((attempt / str(self.failed['prefix']).lstrip('/') / 'install-report.json').exists())
+
+    def test_an_unreadable_database_table_keeps_every_target_path(self):
+        qualification = Path(self.failed['binding']['service']['newQualificationEvidenceRoot'])
+        self.tree.file(qualification / 'publication.json')
+        with unittest.mock.patch.object(remote, 'database_references', return_value={'unreadableTables': ['runs']}):
+            result = self.run_cleanup()
+        self.assertTrue(self.failed['prefix'].exists() and self.failed['operations'].exists() and qualification.exists())
+        left = {item['path']: item['reason'] for item in result['targetPathsLeft']}
+        self.assertEqual((left[str(self.failed['prefix'])], left[str(qualification)]), ('database-unreadable', 'database-unreadable'))
+
+    def test_the_paths_of_a_passed_deploy_are_left_only_as_the_serving_release(self):
+        result = self.run_cleanup(current=self.serving)
+        self.assertEqual({item['reason'] for item in result['targetPathsLeft']}, {'serving'})
+
+    def test_a_symbolic_link_stays_and_is_not_followed(self):
+        elsewhere = self.tree.file(self.tree.root / 'elsewhere/keep.json')
+        qualification = Path(self.failed['binding']['service']['newQualificationEvidenceRoot'])
+        qualification.parent.mkdir(parents=True, exist_ok=True)
+        qualification.symlink_to(elsewhere.parent)
+        result = self.run_cleanup()
+        self.assertTrue(qualification.is_symlink() and elsewhere.exists())
+        self.assertIn({'path': str(qualification), 'reason': 'not-a-directory'}, result['targetPathsLeft'])
+
+    def test_paths_outside_the_allowed_parents_are_refused(self):
+        plan = self.tree.plan(self.failed)
+        for path in ('/', str(self.tree.lib), str(self.tree.lib / 'qualification/../state'), str(self.tree.lib / 'state/data')):
+            with self.subTest(path=path), self.assertRaisesRegex(RuntimeError, 'CLEANUP_TARGET_PATH_INVALID'):
+                self.run_cleanup(targetPaths=plan['targetPaths'] + [path])
+        self.assertTrue(self.tree.database.exists())
+
+    def test_only_the_newest_failed_attempts_are_kept(self):
+        root = self.tree.lib / 'release-cleanup/failed-attempts'
+        for stamp in ('20261001T000000Z', '20261002T000000Z', '20261003T000000Z'):
+            self.tree.file(root / stamp / 'x/report.json')
+        self.tree.file(Path(self.failed['binding']['service']['newQualificationEvidenceRoot']) / 'publication.json')
+        self.run_cleanup()
+        self.assertEqual(sorted(os.listdir(root)), ['20261003T000000Z', '20261030T010000Z'])
+
+    def test_failed_attempts_over_the_byte_limit_are_trimmed_but_the_newest_stays(self):
+        root = self.tree.lib / 'release-cleanup/failed-attempts'
+        self.tree.file(root / '20261001T000000Z/x/report.json', 3 * MEBIBYTE)
+        self.tree.file(root / '20261002T000000Z/x/report.json', 3 * MEBIBYTE)
+        shutil.rmtree(self.failed['operations'])
+        self.run_cleanup(failedAttemptBytes=MEBIBYTE)
+        self.assertEqual(sorted(os.listdir(root)), ['20261002T000000Z'])
+
+    def test_leftover_paths_make_the_local_run_exit_with_its_own_code(self):
+        result = {'mode': 'apply', 'deleted': [], 'trimmed': [], 'renamed': [], 'kept': [], 'archived': [], 'freedBytes': 0, 'rootFreeBeforeBytes': 0, 'rootFreeAfterBytes': 0, 'targetPathsLeft': [{'path': '/opt/himawari/releases/x', 'reason': 'serving'}]}
+        with unittest.mock.patch('sys.stdout'):
+            self.assertEqual(local.report(result), local.TARGET_PATHS_LEFT_EXIT)
+            self.assertEqual(local.report({**result, 'mode': 'plan'}), 0)
+            self.assertEqual(local.report({**result, 'targetPathsLeft': []}), 0)
 
 
 class StaleTransportTest(unittest.TestCase):

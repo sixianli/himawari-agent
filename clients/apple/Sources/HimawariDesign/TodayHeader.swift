@@ -78,14 +78,18 @@ public struct CornerSunflower: View {
 }
 
 public struct Wordmark: View {
-    public init() {}
+    private let height: CGFloat
+
+    public init(height: CGFloat = DesignTokens.Home.wordmarkHeight) {
+        self.height = height
+    }
 
     public var body: some View {
         Image("wordmark", bundle: .module)
             .renderingMode(.template)
             .resizable()
             .scaledToFit()
-            .frame(height: DesignTokens.Home.wordmarkHeight)
+            .frame(height: height)
             .foregroundStyle(Color.hmText)
             .accessibilityLabel(Text(verbatim: "himawari"))
             .accessibilityAddTraits(.isHeader)

@@ -10,7 +10,6 @@ import {
   OWNER_RULE_SUMMARY_LIMIT,
   type OwnerRuleReplayResult,
   type OwnerRuleStorePort,
-  type RuleReviewOwnerStorePort,
   ownerRuleRecord,
   type PayloadProtectorPort,
   type PayloadStorePort,
@@ -18,13 +17,18 @@ import {
   type ProductConfiguration,
   type ProductMemoryRecord,
   type ProductMemoryStatePort,
+  PUSH_QUIET_CLASS_LABELS,
   PUSH_QUIET_CLASSES,
+  type PushQuietParameters,
   parseOwnerRuleParameters,
+  pushQuietClassesOf,
   RULE_TYPES,
   type RuleRecord,
+  type RuleReviewOwnerStorePort,
   RuleTypeError,
   type RuntimeToolDescriptor,
   type RuntimeToolInvocation,
+  ruleIsEnforced,
   type StoredOwnerRule,
   type ThreadRepositoryPort,
   validRuleSummary,
@@ -33,13 +37,13 @@ import {
 import { EXTERNAL_CONTENT_SOURCE_REF_PREFIX } from "@himawari-agent/gateway-contracts";
 import { TOOL_RULE_LIST, TOOL_RULE_SET, TOOL_RULE_UNDO } from "@himawari-agent/prompt-catalog";
 import { classificationWithIdentifiers } from "@himawari-agent/sensitive-capture";
+import { externalContentSourceRefs } from "./context-external-content.js";
 import {
   canonicalJson,
   type ProductionProposalBox,
   ProposalError,
   type ProposalEvidence,
 } from "./production-proposals.js";
-import { externalContentSourceRefs } from "./context-external-content.js";
 
 export const RULE_SET_CAPABILITY_REF = "rule.set";
 export const RULE_LIST_CAPABILITY_REF = "rule.list";
@@ -265,7 +269,8 @@ export type OwnerRuleErrorCode =
   | "RULE_UNAVAILABLE"
   | "RULE_PROPOSALS_FULL"
   | "RULE_PROPOSAL_REJECTED"
-  | "RULE_PROPOSAL_EXPIRED";
+  | "RULE_PROPOSAL_EXPIRED"
+  | "RULE_CONFLICT";
 
 export class OwnerRuleError extends Error {
   readonly code: OwnerRuleErrorCode;
@@ -332,7 +337,7 @@ export function ownerRuleToolDescriptors(
                 type: "array",
                 items: { type: "string", enum: [...PUSH_QUIET_CLASSES] },
                 minItems: 1,
-                maxItems: 3,
+                maxItems: PUSH_QUIET_CLASSES.length,
               },
             },
             additionalProperties: false,
@@ -609,16 +614,22 @@ function saysWholeClauses(text: string, quote: readonly string[]): boolean {
   return false;
 }
 
+const RULE_SOURCE_LIMIT = 256;
+const RULE_SOURCE_DIGEST = 16;
+
 function ruleSource(proposal: Proposal): string {
   const base = proposal.source ?? `chat:${proposal.threadId ?? "none"}`;
-  const origins = [...new Set(proposal.externalOrigins ?? [])].sort((left, right) =>
-    left.localeCompare(right, "en"),
-  );
-  return (
-    origins.length === 0
-      ? base
-      : `${EXTERNAL_CONTENT_SOURCE_REF_PREFIX}${origins.join(",")}|${base}`
-  ).slice(0, 256);
+  const origins = [...new Set(proposal.externalOrigins ?? [])]
+    .sort((left, right) => left.localeCompare(right, "en"))
+    .join(",");
+  if (origins.length === 0) return base.slice(0, RULE_SOURCE_LIMIT);
+  const tail = `|${base}`;
+  const room = RULE_SOURCE_LIMIT - EXTERNAL_CONTENT_SOURCE_REF_PREFIX.length - tail.length;
+  const kept =
+    origins.length <= room || room <= RULE_SOURCE_DIGEST + 1
+      ? origins
+      : `${origins.slice(0, room - RULE_SOURCE_DIGEST - 1)}~${hash(origins).slice(0, RULE_SOURCE_DIGEST)}`;
+  return `${EXTERNAL_CONTENT_SOURCE_REF_PREFIX}${kept}${tail}`.slice(0, RULE_SOURCE_LIMIT);
 }
 
 function sameRule(parameters: unknown, type: string, params: unknown): boolean {
@@ -634,8 +645,44 @@ function summaryOf(parameters: unknown): { readonly type: string; readonly summa
   };
 }
 
+export const QUIET_HOURS_RULE_TYPE = "push_quiet_hours";
+const QUIET_HOURS_SOURCE = "settings:notifications";
+const QUIET_HOURS_DAYS = Object.freeze([0, 1, 2, 3, 4, 5, 6]);
+const CLOCK = /^([01][0-9]|2[0-3]):[0-5][0-9]$/u;
+
+export interface QuietHoursState {
+  readonly version: string;
+  readonly editable: boolean;
+  readonly enabled: boolean;
+  readonly start: string | null;
+  readonly end: string | null;
+  readonly classes: readonly string[];
+  readonly rules: readonly { readonly ruleId: string; readonly summary: string }[];
+}
+
+function quietParams(parameters: unknown): PushQuietParameters | undefined {
+  try {
+    const parsed = parseOwnerRuleParameters(parameters);
+    return parsed.type === QUIET_HOURS_RULE_TYPE
+      ? (parsed.params as PushQuietParameters)
+      : undefined;
+  } catch (error) {
+    if (error instanceof RuleTypeError) return undefined;
+    throw error;
+  }
+}
+
+function everyDay(days: unknown): boolean {
+  return (
+    Array.isArray(days) &&
+    days.length === QUIET_HOURS_DAYS.length &&
+    QUIET_HOURS_DAYS.every((day) => days.includes(day))
+  );
+}
+
 export class ProductionOwnerRuleWriter {
   readonly #options: ProductionOwnerRuleWriterOptions;
+  #quietHoursWrites: Promise<void> = Promise.resolve();
 
   constructor(options: ProductionOwnerRuleWriterOptions) {
     this.#options = options;
@@ -1147,6 +1194,117 @@ export class ProductionOwnerRuleWriter {
         return;
       throw new OwnerRuleError("RULE_UNAVAILABLE", "规则记忆没能归档，请再撤销一次");
     }
+  }
+
+  async quietHours(): Promise<QuietHoursState> {
+    return (await this.#quietHoursState()).state;
+  }
+
+  async #quietHoursState(): Promise<{
+    readonly state: QuietHoursState;
+    readonly params: PushQuietParameters | undefined;
+  }> {
+    const rows = (await this.#options.rules.list({ ...this.#scope(), includeRetired: false }))
+      .filter((row) => summaryOf(row.parameters).type === QUIET_HOURS_RULE_TYPE)
+      .sort((left, right) => left.ruleId.localeCompare(right.ruleId, "en"));
+    const version = hash(
+      canonicalJson(rows.map(({ ruleId, revision, status }) => [ruleId, revision, status])),
+    ).slice(0, 32);
+    const rules = rows.map((row) => ({
+      ruleId: row.ruleId,
+      summary: summaryOf(row.parameters).summary,
+    }));
+    const enforced = rows.filter((row) => ruleIsEnforced(row.status));
+    const [only] = enforced;
+    if (!only)
+      return {
+        state: Object.freeze({
+          version,
+          editable: true,
+          enabled: false,
+          start: null,
+          end: null,
+          classes: [],
+          rules,
+        }),
+        params: undefined,
+      };
+    const params = quietParams(only.parameters);
+    const periods = params?.periods ?? [];
+    const [period] = periods;
+    const single =
+      enforced.length === 1 &&
+      periods.length === 1 &&
+      period !== undefined &&
+      everyDay(period.days);
+    const classes = enforced.length === 1 && params ? pushQuietClassesOf(params) : [];
+    return {
+      state: Object.freeze({
+        version,
+        editable: single,
+        enabled: true,
+        start: single ? period.start : null,
+        end: single ? period.end : null,
+        classes,
+        rules,
+      }),
+      params,
+    };
+  }
+
+  setQuietHours(input: {
+    readonly enabled: boolean;
+    readonly start: string;
+    readonly end: string;
+    readonly expectedVersion: string;
+  }): Promise<QuietHoursState> {
+    const run = this.#quietHoursWrites.then(() => this.#writeQuietHours(input));
+    this.#quietHoursWrites = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
+  async #writeQuietHours(input: {
+    readonly enabled: boolean;
+    readonly start: string;
+    readonly end: string;
+    readonly expectedVersion: string;
+  }): Promise<QuietHoursState> {
+    const { state: current, params } = await this.#quietHoursState();
+    if (current.version !== input.expectedVersion)
+      throw new OwnerRuleError("RULE_CONFLICT", "安静时段已经在别处改过，请刷新再改");
+    if (!current.editable)
+      throw new OwnerRuleError("RULE_UNAVAILABLE", "现在有不止一段安静时段，只能在聊天里改");
+    if (input.enabled) {
+      if (!CLOCK.test(input.start) || !CLOCK.test(input.end) || input.start === input.end)
+        throw new OwnerRuleError("RULE_INPUT_INVALID", "start/end");
+      const named = params ? params.classes : PUSH_QUIET_CLASSES;
+      const covered = pushQuietClassesOf({ periods: [], ...(named ? { classes: named } : {}) });
+      const summary =
+        covered.length === PUSH_QUIET_CLASSES.length
+          ? `每天 ${input.start} 到 ${input.end} 不推送，要你同意的事照常推送`
+          : `每天 ${input.start} 到 ${input.end} 不推送${covered.map((name) => PUSH_QUIET_CLASS_LABELS[name]).join("、")}`;
+      const receipt = await this.#activate(
+        {
+          key: `${QUIET_HOURS_SOURCE}:${input.start}-${input.end}:${named?.join(",") ?? "default"}`,
+          type: QUIET_HOURS_RULE_TYPE,
+          params: {
+            periods: [{ days: [...QUIET_HOURS_DAYS], start: input.start, end: input.end }],
+            ...(named ? { classes: [...named] } : {}),
+          },
+          summary,
+          quote: `在通知设置里设定：${summary}`,
+          threadId: null,
+          source: QUIET_HOURS_SOURCE,
+        },
+        null,
+      );
+      for (const { ruleId } of current.rules)
+        if (ruleId !== receipt.ruleId) await this.undo(ruleId);
+    } else for (const { ruleId } of current.rules) await this.undo(ruleId);
+    return this.quietHours();
   }
 
   async undo(ruleId: string): Promise<ListedOwnerRule> {

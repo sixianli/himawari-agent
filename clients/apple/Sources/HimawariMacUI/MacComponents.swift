@@ -85,7 +85,7 @@ struct SunflowerBadge: View {
     let size: CGFloat
 
     var body: some View {
-        SunflowerMark(detail: .compact)
+        SunflowerMark()
             .frame(width: size, height: size)
             .accessibilityHidden(true)
     }

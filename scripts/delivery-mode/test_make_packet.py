@@ -24,6 +24,7 @@ MEMORY_PAGE_COMMIT = '4ca2d24c4af3dba5868a1d18ea882b371462845b'
 ADDED_FILES = {'install/source-cache.mjs', 'install/verify-source-cache-fixtures.mjs', 'maintenance/verify-migrate-fixtures.mjs', 'measurement/verify-s6-report-contract.py', 'systemd/verify-startup-readiness-fixtures.mjs'}
 RENAMED_FILES = {'systemd/fixtures/verify-doctor-fixtures.mjs': 'systemd/fixtures/verify-doctor.test.mjs'}
 INTENDED_CHANGES = {
+    'acceptance/helpers/collect-installer-dependencies.mjs', 'install/collect-installer-dependencies.mjs', 'steps/transport-packet.py', 'steps/packet-common.py',
     'acceptance/OWNED-SHA256SUMS', 'acceptance/S6-limited-host-acceptance.sh', 'acceptance/cloud/adaptation-manifest.json',
     'acceptance/cloud/adapters/probe-authorized-network.mjs', 'acceptance/cloud/adapters/probe-foreground.mjs', 'acceptance/cloud/adapters/probe-network-boundary.mjs', 'acceptance/cloud/probe-source/packages/runtime-pi/scripts/probe-foreground.mjs', 'acceptance/cloud/cloud-inputs.draft.json',
     'acceptance/cloud/run-cloud-acceptance.sh', 'acceptance/cloud/run-stage-03.py', 'acceptance/cloud/run-question12-downloads.sh', 'inputs/bindings.draft.json',
@@ -596,6 +597,14 @@ class DerivedExpectationsTest(RenderedPacket):
         self.assertEqual(packet_maker.deploy_failure_choice({}), 'rollback')
         with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_ON_DEPLOY_FAILURE_INVALID'):
             packet_maker.deploy_failure_choice({'onDeployFailure': 'ignore'})
+
+    def test_material_cache_settings_come_from_the_instance_file(self):
+        self.assertEqual(json.loads(packet_maker.material_cache(INSTANCE)), INSTANCE['materialCache'])
+        self.assertEqual(json.loads(packet_maker.material_cache({'materialCache': {'minBytes': 5, 'maxBytes': 9}})), {'minBytes': 5, 'maxBytes': 9})
+        self.assertIsNone(json.loads(packet_maker.material_cache({})))
+        for broken in ({'minBytes': 0, 'maxBytes': 9}, {'minBytes': 10, 'maxBytes': 9}, {'minBytes': '1', 'maxBytes': 9}, {'minBytes': 1}, {'minBytes': 1, 'maxBytes': 9, 'path': '/tmp'}, 'on'):
+            with self.subTest(broken=broken), self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_MATERIAL_CACHE_INVALID'):
+                packet_maker.material_cache({'materialCache': broken})
 
     def test_history_is_compared_only_while_the_service_is_stopped(self):
         packet = self.render()
@@ -1173,7 +1182,7 @@ class SourceBundleTest(unittest.TestCase):
         self.directory = tempfile.TemporaryDirectory()
         self.root = Path(self.directory.name)
         self.repo = self.root / 'repo'
-        self.git_environment = {**os.environ, 'GIT_AUTHOR_NAME': 't', 'GIT_AUTHOR_EMAIL': 't@example.invalid', 'GIT_COMMITTER_NAME': 't', 'GIT_COMMITTER_EMAIL': 't@example.invalid', 'GIT_CONFIG_GLOBAL': '/dev/null'}
+        self.git_environment = {**os.environ, 'GIT_AUTHOR_NAME': 't', 'GIT_AUTHOR_EMAIL': 't@example.invalid', 'GIT_COMMITTER_NAME': 't', 'GIT_COMMITTER_EMAIL': 't@example.invalid', 'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_CONFIG_COUNT': '1', 'GIT_CONFIG_KEY_0': 'maintenance.auto', 'GIT_CONFIG_VALUE_0': 'false'}
         self.run_git('init', '-q', str(self.repo), cwd=self.root)
         self.commits = []
         for index in range(4):

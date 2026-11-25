@@ -1,16 +1,12 @@
 import { createHash } from "node:crypto";
 import {
   type ApprovalRequest,
-  DELIVERY_TIMING_CLASSES,
-  type DeliveryTimingConfiguration,
-  type DeliveryTimingJudgement,
-  deliveryTimingDeadlineMs,
+  herWordsPushKey,
   type MemoryReminder,
   type MemoryReminderStorePort,
   type ProductMemoryRecord,
   type ProductMemoryStatePort,
   PUSH_RULE_PROTECTED_CLASSES,
-  type PushClass,
   PushGate,
   type PushGateDecision,
   pushClassOf,
@@ -36,6 +32,7 @@ const PROPOSAL_WINDOW_MS = 24 * 3_600_000;
 const PROACTIVE_WINDOW_MS = 24 * 3_600_000;
 const MUSE_CHANNEL_WINDOW_MS = 12 * 3_600_000;
 const RUN_WINDOW_MS = 24 * 3_600_000;
+const HER_WORDS_WINDOW_MS = 24 * 3_600_000;
 const PRUNE_AFTER_MS = 7 * 24 * 3_600_000;
 const RETRY_DELAYS_MS = [60_000, 5 * 60_000, 15 * 60_000] as const;
 const MAX_PAYLOAD_BYTES = 3_072;
@@ -52,6 +49,8 @@ export const WEB_PUSH_TEXT = {
     privateReminder: "你有一条私密提醒",
     approval: "等你审批",
     risk: { low: "低风险", medium: "中风险", high: "高风险", critical: "极高风险" },
+    herWords: "Himawari",
+    privateMessage: "你有一条私密消息",
     completed: "已完成",
     failed: "没有完成",
     unconfirmed: "命令结果没确认，本轮已结束",
@@ -72,6 +71,8 @@ export const WEB_PUSH_TEXT = {
     privateReminder: "You have a private reminder",
     approval: "Waiting for your approval",
     risk: { low: "Low risk", medium: "Medium risk", high: "High risk", critical: "Critical risk" },
+    herWords: "Himawari",
+    privateMessage: "You have a private message",
     completed: "Done",
     failed: "Didn't finish",
     unconfirmed: "A command's result is unconfirmed; the Run ended",
@@ -92,6 +93,8 @@ export const WEB_PUSH_TEXT = {
     privateReminder: "非公開のリマインダーがあります",
     approval: "承認待ち",
     risk: { low: "低リスク", medium: "中リスク", high: "高リスク", critical: "最高リスク" },
+    herWords: "Himawari",
+    privateMessage: "非公開のメッセージがあります",
     completed: "完了しました",
     failed: "完了できませんでした",
     unconfirmed: "コマンドの結果を確認できず、ターンを終了しました",
@@ -224,22 +227,27 @@ export interface ProductionWebPushOptions {
   readonly readLocale?: () => Promise<WebPushLocale | null>;
   readonly runThread: (runId: string) => Promise<string | null>;
   readonly threadTitle: (threadId: string) => Promise<{ readonly title: string | null } | null>;
+  readonly readMessage: (
+    threadId: string,
+    messageId: string,
+  ) => Promise<
+    | {
+        readonly dataClassification: string;
+        readonly internal?: true;
+        readonly readText: () => Promise<string | undefined>;
+      }
+    | undefined
+  >;
   readonly publicOrigin: string;
   readonly timeZone?: string;
   readonly readPushRules?: () => Promise<readonly RuleRecord[]>;
   readonly gate?: PushGate;
-  readonly timing?: DeliveryTimingSource;
   readonly placement?: NotificationPlacement;
   readonly onGateFailure?: (outcome: { readonly sourceKey: string }) => void;
   readonly now: () => string;
   readonly intervalMs?: number;
   readonly onDelivery?: (outcome: { readonly kind: string; readonly code?: string }) => void;
   readonly onFailure: (error: unknown) => void;
-}
-
-export interface DeliveryTimingSource {
-  configuration(): DeliveryTimingConfiguration;
-  judge(pushClass: PushClass, nowMs: number): Promise<DeliveryTimingJudgement>;
 }
 
 export interface MuseChannelPushSource {
@@ -427,17 +435,31 @@ export class ProductionWebPush {
     const runs = cursor
       ? await store.listFinishedRuns({ ...scope, afterCursor: cursor, limit: FINISHED_RUN_BATCH })
       : [];
-    for (const run of runs)
-      if (Date.parse(now) - Date.parse(run.finishedAt) < RUN_WINDOW_MS)
+    for (const run of runs) {
+      if (Date.parse(now) - Date.parse(run.finishedAt) >= RUN_WINDOW_MS) continue;
+      if (run.startedBy === "external_event") continue;
+      if (run.startedBy === "user_message" && run.status === "completed" && run.replyMessageId) {
         items.push({
           ...scope,
-          sourceKey: `run:${run.runId}:${run.status}${run.resultUnconfirmed ? ":unconfirmed" : ""}`,
-          kind: "run",
-          sourceRef: run.runId,
+          sourceKey: await herWordsPushKey({ messageId: run.replyMessageId }),
+          kind: "reminder",
+          sourceRef: run.replyMessageId,
           threadId: run.threadId,
           createdAt: now,
-          expiresAt: new Date(Date.parse(run.finishedAt) + RUN_WINDOW_MS).toISOString(),
+          expiresAt: new Date(Date.parse(run.finishedAt) + HER_WORDS_WINDOW_MS).toISOString(),
         });
+        continue;
+      }
+      items.push({
+        ...scope,
+        sourceKey: `run:${run.runId}:${run.status}${run.resultUnconfirmed ? ":unconfirmed" : ""}`,
+        kind: "run",
+        sourceRef: run.runId,
+        threadId: run.threadId,
+        createdAt: now,
+        expiresAt: new Date(Date.parse(run.finishedAt) + RUN_WINDOW_MS).toISOString(),
+      });
+    }
     const proactive = (await this.#options.proactive?.listReady(now)) ?? [];
     for (const push of proactive)
       items.push({
@@ -548,6 +570,7 @@ export class ProductionWebPush {
     );
     const gate = async (item: WebPushOutboxItem): Promise<boolean> => {
       if (this.#options.placement?.holds(webPushTopic(item.sourceKey))) return true;
+      if (visible) return false;
       if (await this.#deferred(item, now, gated, decisions)) return true;
       return !visible && (await this.#place(item, contentOf, accountLocale));
     };
@@ -580,7 +603,14 @@ export class ProductionWebPush {
         await this.#record(entry, now, "suppressed", "WEB_PUSH_KIND_OFF");
         continue;
       }
-      const content = await contentOf(item);
+      let content: Content;
+      try {
+        content = await contentOf(item);
+      } catch (error) {
+        this.#options.onFailure(error);
+        await this.#retryLater(entry, now, "WEB_PUSH_CONTENT_UNREADABLE");
+        continue;
+      }
       if (content.expired) {
         await this.#record(entry, now, "expired", null);
         continue;
@@ -640,10 +670,15 @@ export class ProductionWebPush {
     for (const item of recent) {
       const id = webPushTopic(item.sourceKey);
       if (!wanted.has(id)) continue;
-      const expired =
-        Date.parse(now) >= Date.parse(item.expiresAt) ||
-        (await this.#content(item, approvals, now)).expired;
-      if (expired) settled.push(id);
+      if (Date.parse(now) >= Date.parse(item.expiresAt)) {
+        settled.push(id);
+        continue;
+      }
+      try {
+        if ((await this.#content(item, approvals, now)).expired) settled.push(id);
+      } catch (error) {
+        this.#options.onFailure(error);
+      }
     }
     return settled;
   }
@@ -683,9 +718,8 @@ export class ProductionWebPush {
     }
     if (decision.action === "deliver") {
       if (decision.failed) this.#options.onGateFailure?.({ sourceKey: item.sourceKey });
-      const timed = await this.#timed(item, pushClass, now);
-      gated.set(item.sourceKey, timed);
-      return timed;
+      gated.set(item.sourceKey, false);
+      return false;
     }
     const lifeEnd = Date.parse(item.createdAt) + PUSH_TOTAL_LIFE_MS;
     const expiresAt = new Date(
@@ -710,83 +744,6 @@ export class ProductionWebPush {
     }
     gated.set(item.sourceKey, stored);
     return stored;
-  }
-
-  async #timed(item: WebPushOutboxItem, pushClass: PushClass, now: string): Promise<boolean> {
-    const timing = this.#options.timing;
-    if (!timing || !DELIVERY_TIMING_CLASSES.includes(pushClass)) return false;
-    if (this.#options.presence.anyVisible(now)) return false;
-    const { ownerId, agentId, store } = this.#options;
-    try {
-      const configuration = timing.configuration();
-      const nowMs = Date.parse(now);
-      const deadline = deliveryTimingDeadlineMs(
-        pushClass,
-        Date.parse(item.createdAt),
-        configuration,
-      );
-      if (nowMs >= deadline) {
-        if (item.deferredByTiming)
-          await store.recordDeliveryTiming({
-            ownerId,
-            agentId,
-            sourceKey: item.sourceKey,
-            outcome: "deadline_reached",
-            reasonCode: "timing_deadline",
-            deferUntil: null,
-            expiresAt: null,
-            costMicros: 0,
-            now,
-          });
-        return false;
-      }
-      const judgement = await timing.judge(pushClass, nowMs);
-      if (judgement.action === "deliver") {
-        if (
-          judgement.reasonCode === "timing_failed" ||
-          judgement.reasonCode === "timing_budget" ||
-          judgement.reasonCode === "timing_rate"
-        )
-          this.#options.onGateFailure?.({ sourceKey: item.sourceKey });
-        if (judgement.judged)
-          await store.recordDeliveryTiming({
-            ownerId,
-            agentId,
-            sourceKey: item.sourceKey,
-            outcome: "delivered",
-            reasonCode: judgement.reasonCode,
-            deferUntil: null,
-            expiresAt: null,
-            costMicros: 0,
-            now,
-          });
-        return false;
-      }
-      const until = new Date(
-        Math.min(nowMs + configuration.recheckSeconds * 1000, deadline),
-      ).toISOString();
-      const lifeEnd = Date.parse(item.createdAt) + PUSH_TOTAL_LIFE_MS;
-      const expiresAt = new Date(
-        Math.min(
-          Math.max(Date.parse(item.expiresAt), Date.parse(until) + PUSH_DEFER_EXTENSION_MS),
-          lifeEnd,
-        ),
-      ).toISOString();
-      return await store.recordDeliveryTiming({
-        ownerId,
-        agentId,
-        sourceKey: item.sourceKey,
-        outcome: "deferred",
-        reasonCode: `timing_busy_${judgement.signals.join("+")}`.slice(0, 64),
-        deferUntil: until,
-        expiresAt,
-        costMicros: 0,
-        now,
-      });
-    } catch {
-      this.#options.onGateFailure?.({ sourceKey: item.sourceKey });
-      return false;
-    }
   }
 
   async #content(
@@ -829,6 +786,25 @@ export class ProductionWebPush {
           navigate: `${origin}/`,
           lang: locale,
           quiet: true,
+        }),
+      };
+    }
+    if (pushClassOf(item) === "her_words") {
+      const message = item.threadId
+        ? await this.#options.readMessage(item.threadId, item.sourceRef)
+        : undefined;
+      if (!message || message.internal === true) return { expired: true };
+      const hidden =
+        message.dataClassification === "sensitive" || message.dataClassification === "restricted";
+      const text = hidden ? undefined : (await message.readText())?.trim();
+      if (!hidden && !text) return { expired: true };
+      return {
+        expired: false,
+        build: (locale) => ({
+          title: WEB_PUSH_TEXT[locale].herWords,
+          body: hidden ? WEB_PUSH_TEXT[locale].privateMessage : (text as string),
+          navigate: threadUrl(item.threadId),
+          lang: locale,
         }),
       };
     }
@@ -982,12 +958,7 @@ export class ProductionWebPush {
       await this.#record(entry, now, "pending", result.code, attempts, {
         delayMs: Math.min(3_600, Math.max(1, result.retryAfterSeconds ?? 60)) * 1_000,
       });
-    else if (attempts > RETRY_DELAYS_MS.length)
-      await this.#record(entry, now, "failed", result.code, attempts);
-    else
-      await this.#record(entry, now, "pending", result.code, attempts, {
-        delayMs: RETRY_DELAYS_MS[attempts - 1] ?? RETRY_DELAYS_MS[0],
-      });
+    else await this.#retryLater(entry, now, result.code, attempts);
     await this.#applySubscriptionOutcome(subscription.id, result);
   }
 
@@ -1015,6 +986,19 @@ export class ProductionWebPush {
         failureCode: result.code,
         deliveredAt: null,
         now,
+      });
+  }
+
+  async #retryLater(
+    entry: WebPushDue,
+    now: string,
+    code: string,
+    attempts = (entry.attempt?.attempts ?? 0) + 1,
+  ): Promise<void> {
+    if (attempts > RETRY_DELAYS_MS.length) await this.#record(entry, now, "failed", code, attempts);
+    else
+      await this.#record(entry, now, "pending", code, attempts, {
+        delayMs: RETRY_DELAYS_MS[attempts - 1] ?? RETRY_DELAYS_MS[0],
       });
   }
 

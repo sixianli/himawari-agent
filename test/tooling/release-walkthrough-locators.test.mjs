@@ -20,7 +20,7 @@ describe("release walkthrough locators", () => {
         "function composer(",
         "async function send(",
         "async function expectFinishedTurnShowsStep(",
-        "async function newThread(",
+        "async function openMainThread(",
         "async function openToolsSettings(",
         "async function closeSettings(",
         "async function searchToggleUsable(",

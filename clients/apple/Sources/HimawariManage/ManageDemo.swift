@@ -24,9 +24,11 @@ public enum ManageDemoScreen: String, CaseIterable, Sendable {
     case capabilitiesReactivateFailed = "20-himawari-self-1c-capabilities-reactivate-failed"
     case loginBrowsers = "20-himawari-self-2-login-browsers"
     case proposals = "20-himawari-self-3-proposals"
-    case notifications = "19-settings-more-4-notifications"
-    case notificationsEdit = "19-settings-more-4-notifications-edit"
     case thinkSettings = "20-himawari-self-4-think"
+    case her = "next-3-her"
+    case herPrivacy = "next-3-her-privacy"
+    case herDevices = "next-3-her-devices"
+    case herNotifications = "next-3-her-notifications"
 }
 
 public struct ManageDemoView: View {
@@ -73,12 +75,16 @@ public struct ManageDemoView: View {
             SettingsRootView(store: ManageDemo.settingsStore(), path: [.loginBrowsers]) {}
         case .proposals:
             SettingsRootView(store: ManageDemo.settingsStore(), path: [.proposals]) {}
-        case .notifications:
-            SettingsRootView(store: ManageDemo.settingsStore(), path: [.tuningList(.delivery)]) {}
-        case .notificationsEdit:
-            SettingsRootView(store: ManageDemo.settingsStore(), path: [.tuningList(.delivery), .tuningEdit(.delivery, "busyAtLeastPermille")]) {}
         case .thinkSettings:
             SettingsRootView(store: ManageDemo.settingsStore(), path: [.tuningList(.think)]) {}
+        case .her:
+            her([])
+        case .herPrivacy:
+            her([.privacy])
+        case .herDevices:
+            her([.devices])
+        case .herNotifications:
+            her([.notifications])
         case .addDevice:
             pairing(.showing(link: ManageDemo.link, expiresAt: ManageDemo.frozenNow.addingTimeInterval(581)))
         case .addDeviceAsking:
@@ -86,6 +92,17 @@ public struct ManageDemoView: View {
         case .addDeviceExpired:
             pairing(.expired(minutes: 10))
         }
+    }
+
+    private func her(_ path: [HerPage.Page]) -> some View {
+        HerPage(
+            settings: ManageDemo.settingsStore(),
+            memory: ManageDemo.memoryStore(),
+            quietHours: QuietHoursStore(gateway: ManageDemo.gateway()),
+            listening: DemoListening(),
+            senses: AnyView(EmptyView()),
+            path: path
+        )
     }
 
     private func exporting(_ stage: DataExportStage) -> some View {
@@ -102,6 +119,12 @@ public struct ManageDemoView: View {
                 .environment(\.pairingClock, ManageDemo.frozenNow)
         }
     }
+}
+
+@MainActor
+final class DemoListening: HerListening {
+    let hasVoiceprint = true
+    func deleteVoiceprint() {}
 }
 
 enum ManageDemo {
@@ -163,12 +186,12 @@ enum ManageDemo {
         case "memory.overview.read": memories
         case "memory.rules.read": rules
         case "device.list.read": devices
+        case "quiet_hours.read": #"{"payload":{"version":"v1","editable":true,"enabled":true,"start":"23:00","end":"07:00","classes":["scheduled_reminder","run_result","mail_reminder","her_words"],"rules":[{"ruleId":"rule-quiet","summary":"晚上 11 点到早上 7 点别推"}]}}"#
         case "server.status.read":
             #"{"payload":{"live":true,"ready":true,"status":"healthy","dependencies":[],"generatedAt":"2026-11-12T00:00:00Z"}}"#
         case "login.devices.read": loginDevices
         case "proposals.read": proposals
-        case "think.settings.read": tuning(think: true)
-        case "delivery_timing.settings.read": tuning(think: false)
+        case "think.settings.read": tuning
         case "capability.list":
             #"{"payload":{"itemRefs":["cap-calendar","cap-search","cap-mail","cap-photos"],"nextCursor":null}}"#
         default: "{}"
@@ -203,23 +226,14 @@ enum ManageDemo {
         return #"{"fileId":"\#(id)","threadId":"t1","threadTitle":\#(title),"name":"\#(name)","kind":"\#(kind)","origin":"\#(origin)","mediaType":"application/octet-stream","sizeBytes":2048,"version":1,"createdAt":"\#(at)","deleted":false,"contentPath":null}"#
     }
 
-    private static func tuning(think: Bool) -> String {
-        let rows: [(String, String, String, String, Int, Int, Int, Int, Bool)] = think
-            ? [
-                ("yesAtLeastPermille", "值得想的门槛", "判断“值得想”至少要多有把握", "千分比", 700, 700, 501, 1000, false),
-                ("noAtMostPermille", "不值得想的门槛", "判断“不值得”最多有多少把握，中间算拿不准，不想", "千分比", 300, 300, 0, 499, false),
-                ("queueLimit", "排队上限", "最多同时排几件", "件", 20, 20, 1, 1000, false),
-                ("dailyLimit", "每天上限", "每天最多收多少件", "件", 80, 50, 1, 10000, true),
-                ("expiresAfterHours", "排队多久作废", "排队这么久还没想就作废", "小时", 48, 48, 1, 8760, false),
-            ]
-            : [
-                ("busyAtLeastPermille", "判忙门槛", "至少多有把握才算你正忙，忙就先不打扰", "千分比", 700, 700, 500, 1000, false),
-                ("recheckSeconds", "复查间隔", "扣下的通知隔多久再看一次", "秒", 120, 120, 1, 3600, false),
-                ("timeoutMs", "问模型超时", "问模型判断的最长等待", "毫秒", 4000, 4000, 100, 60000, false),
-                ("perMinute", "每分钟最多问几次", "每分钟最多问模型几次", "次", 12, 12, 1, 600, false),
-                ("reminderMaximumDeferSeconds", "提醒最多扣多久", "提醒最多往后扣这么久", "秒", 600, 600, 0, 86400, false),
-                ("maximumDeferSeconds", "其余通知最多扣多久", "其余通知最多往后扣这么久", "秒", 1800, 1800, 0, 86400, true),
-            ]
+    private static var tuning: String {
+        let rows: [(String, String, String, String, Int, Int, Int, Int, Bool)] = [
+            ("yesAtLeastPermille", "值得想的门槛", "判断“值得想”至少要多有把握", "千分比", 700, 700, 501, 1000, false),
+            ("noAtMostPermille", "不值得想的门槛", "判断“不值得”最多有多少把握，中间算拿不准，不想", "千分比", 300, 300, 0, 499, false),
+            ("queueLimit", "排队上限", "最多同时排几件", "件", 20, 20, 1, 1000, false),
+            ("dailyLimit", "每天上限", "每天最多收多少件", "件", 80, 50, 1, 10000, true),
+            ("expiresAfterHours", "排队多久作废", "排队这么久还没想就作废", "小时", 48, 48, 1, 8760, false),
+        ]
         let items = rows.map { key, label, note, unit, value, def, low, high, overridden in
             let (kind, storage) = switch unit {
             case "千分比": ("ratio", "permille")
@@ -230,8 +244,7 @@ enum ManageDemo {
             }
             return #"{"key":"\#(key)","label":"\#(label)","description":"\#(note)","unit":"\#(unit)","kind":"\#(kind)","storageUnit":"\#(storage)","value":\#(value),"defaultValue":\#(def),"minimum":\#(low),"maximum":\#(high),"overridden":\#(overridden)}"#
         }
-        let enabled = think ? #""enabled":true,"# : ""
-        return #"{"payload":{"revision":4,\#(enabled)"items":[\#(items.joined(separator: ","))],"generatedAt":"2026-11-15T00:00:00.000Z"}}"#
+        return #"{"payload":{"revision":4,"enabled":true,"items":[\#(items.joined(separator: ","))],"generatedAt":"2026-11-15T00:00:00.000Z"}}"#
     }
 
     private static var proposals: String {

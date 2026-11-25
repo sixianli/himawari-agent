@@ -46,7 +46,6 @@ function render(
         route: routeForSurface("threads"),
         onSearchTextChange: vi.fn(),
         onSearch: vi.fn(),
-        onCreate: vi.fn(),
         onRefresh: vi.fn(),
         onNavigate: vi.fn(),
         ...extra,
@@ -84,11 +83,45 @@ describe("thread sidebar navigation", () => {
     const labels = [...quiet.matchAll(/<button[^>]*>(?:<svg.*?<\/svg>)?([^<]+)/g)].map(
       (match) => match[1],
     );
-    expect(labels.slice(0, 4)).toEqual(["新建对话", "记忆", "提醒", "文件"]);
+    expect(labels.slice(0, 3)).toEqual(["记忆", "提醒", "文件"]);
+    expect(quiet).not.toContain("新建对话");
     expect(quiet).toMatch(/aria-pressed="true"[^>]*><svg[^>]*>.*?<\/svg>记忆/);
     expect(quiet).not.toContain("nav-dot");
     const due = render([], false, true, { onOpenReminders: vi.fn(), remindersDue: 2 });
     expect(due).toContain('class="nav-dot" role="img" aria-label="有 2 个提醒到点了"');
+  });
+
+  it("names the main conversation and offers no way to start another one", () => {
+    const main = { ...thread("main", null), titleRef: "title:recent", messageWatermark: 0 };
+    const markup = render([main, thread("recent", null)], false, true, { mainThreadId: "main" });
+    expect(markup.match(/href="\/threads\/main"/g)).toHaveLength(1);
+    expect(markup).toMatch(/<nav[^>]*><a[^>]*href="\/threads\/main"[^>]*>.*?主对话<\/a>/);
+    expect(markup.match(/title="最近的工作"/g)).toHaveLength(1);
+    expect(markup).not.toContain("新建对话");
+  });
+
+  it("marks the main conversation when it has background programs or needs attention", () => {
+    const main = thread("main", null);
+    const mainLink = (markup: string) =>
+      markup.match(/<a[^>]*href="\/threads\/main"[^>]*>.*?<\/a>/)?.[0] ?? "";
+    const running = render([main], false, true, {
+      mainThreadId: "main",
+      runningThreadIds: ["main"],
+    });
+    expect(mainLink(running)).toContain('class="thread-running" role="img"');
+    const pending = render([main], false, true, {
+      mainThreadId: "main",
+      pendingThreadIds: ["main"],
+      runningThreadIds: ["main"],
+    });
+    expect(mainLink(pending)).toContain('class="thread-attention" role="img"');
+    expect(mainLink(pending)).not.toContain("thread-running");
+    const quiet = render([main], false, true, {
+      mainThreadId: "main",
+      runningThreadIds: ["recent"],
+    });
+    expect(mainLink(quiet)).not.toContain("thread-running");
+    expect(mainLink(quiet)).not.toContain("thread-attention");
   });
 
   it("shows quiet placeholders only before the first collection arrives", () => {

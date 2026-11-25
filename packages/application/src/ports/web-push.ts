@@ -38,7 +38,6 @@ export interface WebPushOutboxItem extends WebPushScope {
   readonly createdAt: string;
   readonly expiresAt: string;
   readonly deferUntil?: string | null;
-  readonly deferredByTiming?: boolean;
 }
 
 export interface WebPushAttempt {
@@ -84,6 +83,8 @@ export interface WebPushFinishedRun {
   readonly threadId: string;
   readonly status: "completed" | "failed";
   readonly resultUnconfirmed: boolean;
+  readonly startedBy: "user_message" | "schedule" | "external_event";
+  readonly replyMessageId: string | null;
   readonly finishedAt: string;
   readonly cursor: string;
 }
@@ -142,17 +143,6 @@ export interface WebPushStorePort {
       readonly deferUntil: string;
       readonly expiresAt: string;
       readonly ruleRefs: readonly string[];
-      readonly now: string;
-    },
-  ): Promise<boolean>;
-  recordDeliveryTiming(
-    input: WebPushScope & {
-      readonly sourceKey: string;
-      readonly outcome: "delivered" | "deferred" | "deadline_reached";
-      readonly reasonCode: string;
-      readonly deferUntil: string | null;
-      readonly expiresAt: string | null;
-      readonly costMicros: number;
       readonly now: string;
     },
   ): Promise<boolean>;

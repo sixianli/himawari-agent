@@ -1,14 +1,18 @@
 # Himawari Agent Logo
 
-当前界面使用 `v3/` 的“生长”葵盘标志（2026-10-30 用户选定，[ADR 0126](../../../docs/adr/0126-sunflower-mark-grows-233-seeds.md)）；`v2/` 是 2026-10-26 选定的 96 粒葵盘，保留作历史参照；`v1/` 是 2026-09-10 确认的原始 PNG，保留作历史参照，不再被界面引用。
+当前界面使用 `v4/` 的 55 粒“生长”葵盘标志（2026-11-15 用户选定，[ADR 0283](../../../docs/adr/0283-sunflower-mark-keeps-55-seeds-and-apps-get-icons.md)）；`v3/` 是 2026-10-30 选定的 233 粒版本（[ADR 0126](../../../docs/adr/0126-sunflower-mark-grows-233-seeds.md)），保留作历史参照；`v2/` 是 2026-10-26 选定的 96 粒葵盘，保留作历史参照；`v1/` 是 2026-09-10 确认的原始 PNG，保留作历史参照，不再被界面引用。
 
-## v3 生长葵盘（当前）
+## v4 生长葵盘（当前）
 
 | 文件 | 用途 | 格式与边界 |
 | --- | --- | --- |
-| [logo-sunflower-disc.svg](v3/logo-sunflower-disc.svg) | 独立图标，透明底 | 矢量 SVG，233 粒种子按 137.508° 黄金角排布，画布 48×48；第 n 粒距中心 `19.7/√233 × √年龄`，颜色从最新的亮白金色经深褐、琥珀过渡到金色 |
+| [logo-sunflower-disc.svg](v4/logo-sunflower-disc.svg) | 独立图标，透明底 | 矢量 SVG，55 粒种子按 137.508° 黄金角排布，画布 48×48；第 n 粒距中心 `19.7/√55 × √年龄`，半径 `0.8 + 1.33 × √(年龄占比)`，颜色从最新的亮白金色经深褐、琥珀过渡到金色 |
 
-界面里的标志由 `apps/control-center/src/components/brand-seeds.ts` 里的 `seedsAt` 画出，`brand.tsx` 只负责显示和动画；首页大图、登录页和加载页用 233 粒，侧栏和回答前的小标志用 89 粒（点放大 25%）。`v3` 的 SVG 和 4 张应用图标（`apps/control-center/public/icons/` 下 3 张 PWA 图标和 `public/apple-touch-icon.png`）都由 `node scripts/render-brand-assets.mjs` 生成（需要 Chromium，可用环境变量 `CHROMIUM_PATH` 指定）；`npm run check:brand` 检查 SVG 和代码一致。
+界面里的标志由 `apps/control-center/src/components/brand-seeds.ts` 里的 `seedsAt` 画出，`brand.tsx` 只负责显示和动画；所有尺寸都是 55 粒。`v4` 的 SVG、4 张网页应用图标（`apps/control-center/public/icons/` 下 3 张 PWA 图标和 `public/apple-touch-icon.png`）和苹果三端的桌面图标（`clients/apple/App/Brand.xcassets` 里的 `AppIcon`、`WatchAppIcon`）都由 `node scripts/render-brand-assets.mjs` 生成（需要 Chromium，可用环境变量 `CHROMIUM_PATH` 指定）；`npm run check:brand` 检查 SVG 和代码一致。
+
+## v3 生长葵盘（历史参照）
+
+[logo-sunflower-disc.svg](v3/logo-sunflower-disc.svg)：233 粒种子的版本，2026-10-30 到 2026-11-15 在用，小尺寸下看不清，改成了 `v4`。
 
 ## v2 葵盘（历史参照）
 

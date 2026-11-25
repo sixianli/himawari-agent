@@ -15,7 +15,6 @@ import {
   type DataClassification,
   DEFAULT_HOME_URGENCY,
   DEFAULT_PROACTIVE_MEMORY_LIMITS,
-  DELIVERY_TIMING_DEFAULTS,
   DEVICE_CONFIGURATION_DEFAULTS,
   DurableMemoryService,
   defaultDeviceHardLimits,
@@ -27,12 +26,14 @@ import {
   modelUsagePurpose,
   modelVisibleClassifications,
   OwnerProfileService,
+  type PayloadRef,
   PERCEPTION_CONFIGURATION_DEFAULTS,
   type ProductConfiguration,
   prereviewPromptId,
   RemoteExecutionBackend,
   RuleReviewService,
   type RuntimeRequest,
+  type RuntimeToolInvocation,
   recoverSandboxExecutionsAtStartup,
   recoverSandboxJobsAtStartup,
   reviewCapacity,
@@ -48,7 +49,11 @@ import {
   SRT_TASK_ENVIRONMENT_BACKEND_REF,
   SRT_TASK_ENVIRONMENT_GUARANTEES,
 } from "@himawari-agent/execution-contracts";
-import { MemoryConsolidationService, MemoryEpisodeService } from "@himawari-agent/memory-engine";
+import {
+  ConversationTurnService,
+  MemoryConsolidationService,
+  MemoryEpisodeService,
+} from "@himawari-agent/memory-engine";
 import {
   inspectDeploymentAuthorityReadOnly,
   type SqliteExtraReadThreadBudget,
@@ -112,19 +117,19 @@ import { classifiedThreadTitleReader } from "./classified-thread-title.js";
 import { COMMAND_SILENCE_CHECK_INTERVAL_MS, CommandSilenceWatch } from "./command-silence-watch.js";
 import { ContextExternalContent } from "./context-external-content.js";
 import { createLocalVectorCatchUp } from "./local-vector-catch-up.js";
-import { MacPlacement } from "./mac-placement.js";
+import { MAC_PRESENCE_WINDOW_SECONDS, MacPlacement } from "./mac-placement.js";
 import { OwnerScopeAuthorization } from "./owner-scope-authorization.js";
 import { ProductionApplePush } from "./production-apple-push.js";
 import { createProductionAuthorityLifecycle } from "./production-authority-lifecycle.js";
 import { createProductionAutomaticReview } from "./production-automatic-review.js";
 import { backgroundCommandLimits } from "./production-background-commands.js";
 import { createProductionCapabilityReactivationVerifier } from "./production-capability-reactivation.js";
-import { retrievalDegradeRecorder } from "./production-decision-ledger.js";
 import {
-  createDeliveryTimingSource,
-  DeliveryTimingHolder,
-  productionDeliveryTiming,
-} from "./production-delivery-timing.js";
+  DEFAULT_TOOL_RESULT_SHARE,
+  ProductionConversationTools,
+  toolResultCharacters,
+} from "./production-conversation-tools.js";
+import { retrievalDegradeRecorder } from "./production-decision-ledger.js";
 import { productionDeviceActionAuthorization } from "./production-device-action-authorization.js";
 import { createProductionDeviceActions } from "./production-device-actions.js";
 import { ProductionExecutionAdmissionHandler } from "./production-execution-admission-handler.js";
@@ -162,6 +167,7 @@ import {
   importDuplicateFailureCode,
   productionImportDuplicateChecker,
 } from "./production-memory-import-duplicates.js";
+import { ProductionMemoryOpen } from "./production-memory-open.js";
 import { ProductionMemoryRecall } from "./production-memory-recall.js";
 import { ProductionMemoryWorker } from "./production-memory-worker.js";
 import {
@@ -215,8 +221,6 @@ import {
   type ProductionTaskEnvironments,
 } from "./production-sandbox-services.js";
 import { ProductionServiceLifecycle } from "./production-service-lifecycle.js";
-import { productionThinkWorth, type ThinkWorthRoute } from "./production-think-composition.js";
-import { isThinkRunSource } from "./production-think-runner.js";
 import { productionToolActionRegistry } from "./production-tool-actions.js";
 import { toolCallSandboxPrewarm } from "./production-tool-call-prewarm.js";
 import { productionVoiceAddressee } from "./production-voice-addressee.js";
@@ -734,8 +738,7 @@ export async function startTenantRuntime(
   const macPlacement = new MacPlacement({
     hub: deviceNotificationHub,
     presence: devicePresence,
-    windowMilliseconds: () =>
-      (deliveryTimingHolder?.current() ?? DELIVERY_TIMING_DEFAULTS).macPresenceSeconds * 1000,
+    windowMilliseconds: () => MAC_PRESENCE_WINDOW_SECONDS * 1000,
     nowMilliseconds: () => Date.parse(productionClock().now()),
   });
   let deviceActions: ReturnType<typeof createProductionDeviceActions> | undefined;
@@ -751,13 +754,11 @@ export async function startTenantRuntime(
   let runMemoryEpisodes: MemoryEpisodeService | undefined;
   let requeueStaleMemoryVectors: () => Promise<void> = async () => {};
   let webPush: ProductionWebPush | undefined;
-  let deliveryTimingHolder: DeliveryTimingHolder | undefined;
   let applePush: ProductionApplePush | undefined;
   let applePushSender: ReturnType<typeof createApplePushSender> | undefined;
   let proactive: ProductionProactive | undefined;
   let memoryClassifier: ProductionMemoryClassifier | undefined;
   let memoryImportDuplicates: ReturnType<typeof productionImportDuplicateChecker>;
-  let thinkWorth: ThinkWorthRoute | undefined;
   let museIntake: ProductionMuseIntake | undefined;
   let gapExport: ProductionGapExport | undefined;
   let mcpRead: ProductionMcpRead | undefined;
@@ -1528,8 +1529,106 @@ export async function startTenantRuntime(
         publicMode: true,
         additionalRequired: ["run-dispatch", "memory-consumer"],
       });
+      const conversationTurnFailure = (error: unknown) =>
+        writeServiceDiagnostic(errorOutput, {
+          component: "agent-service",
+          event: "conversation-turn.failed",
+          code: stableErrorCode(error),
+          ...siteField(error),
+        });
+      const turnProtector = protector;
+      const conversationTurns = turnProtector
+        ? new ConversationTurnService({
+            store: repository.conversationTurns(),
+            threads: repository.threadRepository(),
+            readText: async ({ ownerId, agentId, ref }) => {
+              const payload = await payloads.get(ref);
+              if (!payload || payload.contentType !== "text/plain") return undefined;
+              return new TextDecoder("utf-8", { fatal: true }).decode(
+                await turnProtector.unprotect({ ownerId, agentId, payload }),
+              );
+            },
+            embedder: memoryComposition.projection.embedder,
+            embeddableClassifications: memoryComposition.projection.embeddableClassifications,
+            minimumSimilarity: memoryComposition.projection.minimumSimilarity,
+            onEmbeddingFailure: conversationTurnFailure,
+            onIndexFailure: conversationTurnFailure,
+            ...(configuration.runPolicy?.timeZone
+              ? { timeZone: configuration.runPolicy.timeZone }
+              : {}),
+            now: () => clock.now(),
+          })
+        : undefined;
+      const recallEmbedWithin = <T>(
+        invocation: RuntimeToolInvocation,
+        slot: string,
+        operation: () => Promise<T>,
+      ): Promise<T> => {
+        const memory = governedMemory;
+        const executionLease = invocation.context?.executionLease;
+        if (!memory || !executionLease) throw new Error("MEMORY_RECALL_NOT_READY");
+        return memory.embedWithin(
+          {
+            ownerId: configuration.ownerId,
+            agentId: configuration.agentId,
+            runId: invocation.runId,
+            executionLease,
+            deadlineAt:
+              invocation.executionDeadlineAt ??
+              new Date(
+                Date.parse(clock.now()) + configuration.deadlines.providerRequestMs,
+              ).toISOString(),
+            dataClassification: invocation.dataClassification,
+            slot: `${slot}:${invocation.toolCallId}`,
+          },
+          operation,
+        );
+      };
+      const primaryModel = configuration.modelDescriptors.find(
+        (descriptor) => descriptor.role === "primary",
+      );
+      const toolPageCharacters = toolResultCharacters(
+        primaryModel && "contextWindow" in primaryModel ? primaryModel.contextWindow : undefined,
+        configuration.memory.toolResultShare ?? DEFAULT_TOOL_RESULT_SHARE,
+      );
+      const conversationTools = conversationTurns
+        ? new ProductionConversationTools({
+            ownerId: configuration.ownerId,
+            agentId: configuration.agentId,
+            turns: conversationTurns,
+            pageCharacters: toolPageCharacters,
+            embedWithin: (invocation, slot, operation) =>
+              recallEmbedWithin(invocation, slot, operation),
+            ...(configuration.runPolicy?.timeZone
+              ? { timeZone: configuration.runPolicy.timeZone }
+              : {}),
+          })
+        : undefined;
       const recallProjection = memoryComposition.projection;
       const recallProtector = protector;
+      const readMemoryPayloadText = async (ref: PayloadRef) => {
+        const payload = await payloads.get(ref);
+        if (!payload || payload.contentType !== "text/plain") return undefined;
+        return {
+          text: new TextDecoder("utf-8", { fatal: true }).decode(
+            await recallProtector.unprotect({
+              ownerId: configuration.ownerId,
+              agentId: configuration.agentId,
+              payload,
+            }),
+          ),
+          dataClassification: payload.dataClassification,
+        };
+      };
+      const readMemoryText = async (ref: PayloadRef) => (await readMemoryPayloadText(ref))?.text;
+      const memoryOpen = new ProductionMemoryOpen({
+        ownerId: configuration.ownerId,
+        agentId: configuration.agentId,
+        state: repository.productMemoryState(),
+        readText: (ref) => readMemoryPayloadText(ref),
+        pageCharacters: toolPageCharacters,
+        now: () => clock.now(),
+      });
       const memoryRecall = new ProductionMemoryRecall({
         ownerId: configuration.ownerId,
         agentId: configuration.agentId,
@@ -1540,38 +1639,8 @@ export async function startTenantRuntime(
           search: (input) =>
             runMemoryEpisodes ? runMemoryEpisodes.search(input) : Promise.resolve([]),
         },
-        readText: async (record) => {
-          const payload = await payloads.get(record.contentRef);
-          if (!payload || payload.contentType !== "text/plain") return undefined;
-          return new TextDecoder("utf-8", { fatal: true }).decode(
-            await recallProtector.unprotect({
-              ownerId: configuration.ownerId,
-              agentId: configuration.agentId,
-              payload,
-            }),
-          );
-        },
-        embedWithin: (invocation, slot, operation) => {
-          const memory = governedMemory;
-          const executionLease = invocation.context?.executionLease;
-          if (!memory || !executionLease) throw new Error("MEMORY_RECALL_NOT_READY");
-          return memory.embedWithin(
-            {
-              ownerId: configuration.ownerId,
-              agentId: configuration.agentId,
-              runId: invocation.runId,
-              executionLease,
-              deadlineAt:
-                invocation.executionDeadlineAt ??
-                new Date(
-                  Date.parse(clock.now()) + configuration.deadlines.providerRequestMs,
-                ).toISOString(),
-              dataClassification: invocation.dataClassification,
-              slot: `${slot}:${invocation.toolCallId}`,
-            },
-            operation,
-          );
-        },
+        readText: (record) => readMemoryText(record.contentRef),
+        embedWithin: recallEmbedWithin,
         now: () => clock.now(),
         ...(configuration.runPolicy?.timeZone
           ? { timeZone: configuration.runPolicy.timeZone }
@@ -1669,7 +1738,6 @@ export async function startTenantRuntime(
         scope: perceptionScope,
         store: repository.deviceActions(),
         perception: repository.perception(),
-        externalContent,
         devices: repository.pairedDevices().listDevices,
         ledger: repository.decisionLedger(),
         payloads,
@@ -1709,6 +1777,8 @@ export async function startTenantRuntime(
       );
       const tools = new ProductionRuntimeTools({
         memoryRecall,
+        ...(conversationTools ? { conversations: conversationTools } : {}),
+        memoryOpen,
         reminders: reminderTools,
         ownerRules: ownerRuleTools,
         toolActions,
@@ -1718,7 +1788,7 @@ export async function startTenantRuntime(
         fileReadEnabled: configuration.runPolicy?.fileRead !== undefined,
         readOnlyRun: async (runId) => {
           const source = await runSources.read(runId);
-          return source === undefined || isThinkRunSource(source);
+          return source === undefined;
         },
         ...(configuration.runPolicy?.publicSearch
           ? { publicSearch: configuration.runPolicy.publicSearch }
@@ -1932,6 +2002,30 @@ export async function startTenantRuntime(
       if (localEmbedding) {
         const catchUpLocalVectors = async () => {
           await requeueStaleMemoryVectors();
+          const maintenanceWithin = <T>(
+            dataClassification: RuntimeRequest["dataClassification"],
+            operation: () => Promise<T>,
+          ) =>
+            memory.embedForMaintenance(
+              {
+                deadlineAt: new Date(
+                  Date.parse(clock.now()) + configuration.deadlines.providerRequestMs,
+                ).toISOString(),
+                dataClassification,
+              },
+              operation,
+            );
+          if (conversationTurns) {
+            for (;;) {
+              const embedded = await conversationTurns.backfillEmbeddings({
+                ownerId: configuration.ownerId,
+                agentId: configuration.agentId,
+                limit: 100,
+                within: maintenanceWithin,
+              });
+              if (embedded === 0) break;
+            }
+          }
           if (!memoryEpisodes) return;
           for (;;) {
             const embedded = await memoryEpisodes.backfillEmbeddings({
@@ -2012,7 +2106,6 @@ export async function startTenantRuntime(
               ids,
             })
           : undefined;
-      thinkWorth = productionThinkWorth(configuration, hostModelSources(configuration).provider);
       memoryImportDuplicates = productionImportDuplicateChecker(
         configuration,
         hostModelSources(configuration).provider,
@@ -2890,18 +2983,6 @@ export async function startTenantRuntime(
               }),
           });
         }
-        const timingConfiguration = configuration.runPolicy?.deliveryTiming;
-        const timingModel = productionDeliveryTiming(configuration, sources.provider);
-        if (timingModel && timingConfiguration)
-          deliveryTimingHolder = new DeliveryTimingHolder(
-            timingConfiguration,
-            (
-              await pushRepository.deliveryTimingSettings().read({
-                ownerId: configuration.ownerId,
-                agentId: configuration.agentId,
-              })
-            ).overrides,
-          );
         webPush = new ProductionWebPush({
           placement: macPlacement,
           ownerId: configuration.ownerId,
@@ -2966,6 +3047,27 @@ export async function startTenantRuntime(
                 )
             )?.run.threadId ?? null,
           threadTitle,
+          readMessage: async (threadId, messageId) => {
+            const [message] = await pushRepository.threadRepository().readCommittedMessagesByIds({
+              ownerId: configuration.ownerId,
+              agentId: configuration.agentId,
+              threadId: threadId as Parameters<
+                ReturnType<typeof pushRepository.threadRepository>["read"]
+              >[2],
+              messageIds: [
+                messageId as Parameters<
+                  ReturnType<typeof pushRepository.threadRepository>["readCommittedMessagesByIds"]
+                >[0]["messageIds"][number],
+              ],
+            });
+            return message?.role === "agent"
+              ? {
+                  dataClassification: message.dataClassification,
+                  ...(message.internal === true ? { internal: true as const } : {}),
+                  readText: () => readPlain(message.contentRef),
+                }
+              : undefined;
+          },
           ...(applePush ? { companion: applePush } : {}),
           publicOrigin: configuration.publicOrigin,
           ...(configuration.runPolicy?.timeZone
@@ -2983,25 +3085,6 @@ export async function startTenantRuntime(
               const rule = enforceableOwnerRule(row);
               return rule?.gate === "push_delivery" ? [rule] : [];
             }),
-          ...(timingModel && deliveryTimingHolder
-            ? {
-                timing: createDeliveryTimingSource({
-                  model: timingModel,
-                  configuration: deliveryTimingHolder.current,
-                  store: pushRepository.perception(),
-                  scope: {
-                    ownerId: configuration.ownerId,
-                    agentId: configuration.agentId,
-                  },
-                  reserve: async (micros) =>
-                    (await http?.perception.reserveModelCost(
-                      { ownerId: configuration.ownerId, agentId: configuration.agentId },
-                      micros,
-                    )) ?? false,
-                  now: () => Date.parse(clock.now()),
-                }),
-              }
-            : {}),
           onGateFailure: ({ sourceKey }) =>
             writeServiceDiagnostic(errorOutput, {
               component: "agent-service",
@@ -3190,6 +3273,7 @@ export async function startTenantRuntime(
                   ? {
                       episodes: {
                         service: memoryEpisodes,
+                        ...(conversationTurns ? { turns: conversationTurns } : {}),
                         embedWithin: (request, slot, operation) =>
                           embedWithin(request, slot, operation, request.dataClassification),
                         onFailure: (error) =>
@@ -3380,7 +3464,6 @@ export async function startTenantRuntime(
         ...(capabilityReactivation ? { capabilityReactivation } : {}),
         ...(input.listen?.kind === "unix" ? { listenUnixSocketPath: input.listen.path } : {}),
         live,
-        ...(deliveryTimingHolder ? { deliveryTimingSettings: deliveryTimingHolder } : {}),
         webPush: {
           presence: webPushPresence,
           push: webPush,
@@ -3395,17 +3478,12 @@ export async function startTenantRuntime(
           settled: async (ids) => (await webPush?.settled(ids)) ?? [],
         },
         ...(proactive ? { proactive } : {}),
-        thinkRetentionDiagnostic: (event: Record<string, string>) =>
+        threadDeletionDiagnostic: (event: Record<string, string>) =>
           writeServiceDiagnostic(errorOutput, { component: "agent-service", ...event }),
-        ...(thinkWorth
-          ? {
-              think: {
-                worth: thinkWorth,
-                onDiagnostic: (event: Record<string, string>) =>
-                  writeServiceDiagnostic(errorOutput, { component: "agent-service", ...event }),
-              },
-            }
-          : {}),
+        inbox: {
+          onDiagnostic: (event: Record<string, string>) =>
+            writeServiceDiagnostic(errorOutput, { component: "agent-service", ...event }),
+        },
         ...(memoryComposition?.queryPrefetch
           ? {
               queryPrefetch: outsideRunQueryPrefetch(

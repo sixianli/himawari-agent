@@ -174,7 +174,7 @@ describe("action gate", () => {
     ).toBeNull();
   });
 
-  it("[ADR-0257] refuses a background action once external content is in context, and asks the owner in a conversation", () => {
+  it("[ADR-0285] asks the owner instead of refusing a background action once external content is in context, and lets Himawari-side changes through", () => {
     for (const [source, code] of [
       ["schedule", POLICY_FACT_CODES.runSourceSchedule],
       ["external_event", POLICY_FACT_CODES.runSourceExternalEvent],
@@ -183,8 +183,19 @@ describe("action gate", () => {
         runtimePolicyFacts([code, POLICY_FACT_CODES.contextExternalContent]),
       );
       expect(decideActionRules(judge, actionGateFacts(background, source))).toMatchObject({
-        outcome: "refuse",
-        hit: { id: ACTION_RULE_IDS.refuseBackgroundAfterExternalContent },
+        outcome: "ask_owner",
+        hit: { id: ACTION_RULE_IDS.askAfterExternalContent },
+      });
+      const himawariSide = intent(
+        runtimePolicyFacts([
+          code,
+          POLICY_FACT_CODES.contextExternalContent,
+          POLICY_FACT_CODES.himawariSideOnly,
+        ]),
+      );
+      expect(decideActionRules(judge, actionGateFacts(himawariSide, source))).toMatchObject({
+        outcome: "allow_preauthorized",
+        hit: { id: ACTION_RULE_IDS.preauthorizeHimawariSideAfterExternalContent },
       });
       expect(
         decideActionRules(judge, actionGateFacts(intent(runtimePolicyFacts([code])), source)),

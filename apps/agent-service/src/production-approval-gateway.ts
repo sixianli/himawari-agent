@@ -1,7 +1,7 @@
 import {
-  PRODUCTION_THINK_OPERATIONS,
-  type ProductionThinkControl,
-} from "./production-think-settings.js";
+  PRODUCTION_INBOX_OPERATIONS,
+  type ProductionInboxControl,
+} from "./production-inbox-settings.js";
 import { randomUUID } from "node:crypto";
 import { setTimeout as wait } from "node:timers/promises";
 import {
@@ -32,9 +32,9 @@ import {
   type ProductionDataExportControl,
 } from "./production-data-export.js";
 import {
-  PRODUCTION_DELIVERY_TIMING_OPERATIONS,
-  type ProductionDeliveryTimingControl,
-} from "./production-delivery-timing-control.js";
+  PRODUCTION_QUIET_HOURS_OPERATIONS,
+  type ProductionQuietHoursControl,
+} from "./production-quiet-hours-control.js";
 import {
   PRODUCTION_DEVICE_OPERATIONS,
   type ProductionDeviceControl,
@@ -130,7 +130,7 @@ export function createProductionApprovalGateway(options: {
   readonly museControl?: Pick<ProductionMuseControl, "query" | "execute">;
   readonly observationControl?: Pick<ProductionObservation, "query" | "execute">;
   readonly ownerPreferencesControl?: ProductionOwnerPreferencesControl;
-  readonly deliveryTimingControl?: ProductionDeliveryTimingControl;
+  readonly quietHoursControl?: ProductionQuietHoursControl;
   readonly proposalControl?: Pick<ProductionProposalControl, "query" | "execute">;
   readonly sensitiveInterceptionsControl?: ProductionSensitiveInterceptionsControl;
   readonly serverStatusControl?: ProductionServerStatusControl;
@@ -143,7 +143,7 @@ export function createProductionApprovalGateway(options: {
   readonly loginDevicesControl?: ProductionLoginDevicesControl;
   readonly mcpConnectionsControl?: ProductionMcpConnectionsControl;
   readonly perceptionControl?: Pick<ProductionPerceptionControl, "query" | "execute">;
-  readonly thinkControl?: Pick<ProductionThinkControl, "query" | "execute">;
+  readonly inboxControl?: Pick<ProductionInboxControl, "query" | "execute">;
   readonly onApprovalResolved?: (approval: ApprovalRequest) => Promise<void>;
 }) {
   const { ownerId, agentId } = options.configuration;
@@ -191,9 +191,8 @@ export function createProductionApprovalGateway(options: {
                         ? options.proactiveControl.query(query)
                         : query.type.startsWith("muse.") && options.museControl
                           ? options.museControl.query(query)
-                          : query.type.startsWith("delivery_timing.") &&
-                              options.deliveryTimingControl
-                            ? options.deliveryTimingControl.query(query)
+                          : query.type.startsWith("quiet_hours.") && options.quietHoursControl
+                            ? options.quietHoursControl.query(query)
                             : query.type.startsWith("owner.preferences.") &&
                                 options.ownerPreferencesControl
                               ? options.ownerPreferencesControl.query(query)
@@ -216,8 +215,8 @@ export function createProductionApprovalGateway(options: {
                                               options.perceptionControl
                                             ? options.perceptionControl.query(query)
                                             : query.type.startsWith("think.") &&
-                                                options.thinkControl
-                                              ? options.thinkControl.query(query)
+                                                options.inboxControl
+                                              ? options.inboxControl.query(query)
                                               : searchAuthorization.query(query),
       async *subscribe({ authentication, signal }) {
         let previous: string | undefined;
@@ -336,8 +335,8 @@ export function createProductionApprovalGateway(options: {
           return options.proactiveControl.execute(command);
         if (command.type.startsWith("muse.") && options.museControl)
           return options.museControl.execute(command);
-        if (command.type.startsWith("delivery_timing.") && options.deliveryTimingControl)
-          return options.deliveryTimingControl.execute(command);
+        if (command.type.startsWith("quiet_hours.") && options.quietHoursControl)
+          return options.quietHoursControl.execute(command);
         if (command.type.startsWith("owner.preferences.") && options.ownerPreferencesControl)
           return options.ownerPreferencesControl.execute(command);
         if (command.type.startsWith("proposal.") && options.proposalControl)
@@ -353,8 +352,8 @@ export function createProductionApprovalGateway(options: {
           return options.deviceControl.execute(authentication, command);
         if (command.type.startsWith("perception.") && options.perceptionControl)
           return options.perceptionControl.execute(command);
-        if (command.type.startsWith("think.") && options.thinkControl)
-          return options.thinkControl.execute(command);
+        if (command.type.startsWith("think.") && options.inboxControl)
+          return options.inboxControl.execute(command);
         if (command.type.startsWith("workspace.copy.") && options.workspaceCopies)
           return options.workspaceCopies.execute({ authentication, command });
         return searchAuthorization.set(command, options.executionAuthority());
@@ -387,7 +386,7 @@ export function createProductionApprovalGateway(options: {
       ...(options.museControl ? PRODUCTION_MUSE_OPERATIONS : []),
       ...(options.observationControl ? PRODUCTION_OBSERVATION_OPERATIONS : []),
       ...(options.ownerPreferencesControl ? PRODUCTION_OWNER_PREFERENCE_OPERATIONS : []),
-      ...(options.deliveryTimingControl ? PRODUCTION_DELIVERY_TIMING_OPERATIONS : []),
+      ...(options.quietHoursControl ? PRODUCTION_QUIET_HOURS_OPERATIONS : []),
       ...(options.proposalControl ? PRODUCTION_PROPOSAL_OPERATIONS : []),
       ...(options.sensitiveInterceptionsControl
         ? PRODUCTION_SENSITIVE_INTERCEPTION_OPERATIONS
@@ -403,7 +402,7 @@ export function createProductionApprovalGateway(options: {
       ...(options.loginDevicesControl ? PRODUCTION_LOGIN_DEVICE_OPERATIONS : []),
       ...(options.mcpConnectionsControl ? PRODUCTION_MCP_CONNECTION_OPERATIONS : []),
       ...(options.perceptionControl ? PRODUCTION_PERCEPTION_OPERATIONS : []),
-      ...(options.thinkControl ? PRODUCTION_THINK_OPERATIONS : []),
+      ...(options.inboxControl ? PRODUCTION_INBOX_OPERATIONS : []),
     ],
     reads,
     controlPlane,

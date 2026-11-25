@@ -21,8 +21,8 @@ import type {
   CommandResultRecord,
   CommitStateAndEventsInput,
   CommitStateAndEventsResult,
+  ConversationTurnStorePort,
   DecisionLedgerPort,
-  DeliveryTimingSettingsStorePort,
   DeploymentAuthorityStatePort,
   DeviceActionStorePort,
   DurableGitHubMonitorHistoryPolicyPort,
@@ -81,7 +81,7 @@ import type {
   SessionDeletionStatePort,
   SessionDeviceStatePort,
   StateRecord,
-  ThinkInboxStorePort,
+  InboxStorePort,
   ThreadArtifactStorePort,
   ThreadDistillationStatePort,
   ThreadPromptBundleStorePort,
@@ -595,6 +595,10 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
     return this.durable.memoryIndex();
   }
 
+  conversationTurns(): ConversationTurnStorePort {
+    return this.durable.conversationTurns();
+  }
+
   memoryEpisodes(): MemoryEpisodeStorePort {
     return this.durable.memoryEpisodes();
   }
@@ -611,8 +615,8 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
     return this.durable.ownerProposals();
   }
 
-  thinkInbox(): ThinkInboxStorePort {
-    return this.durable.thinkInbox();
+  inbox(): InboxStorePort {
+    return this.durable.inbox();
   }
 
   memoryReminders(): MemoryReminderStorePort {
@@ -705,10 +709,6 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   proactive(): ProactiveStorePort {
     return this.durable.proactive();
-  }
-
-  deliveryTimingSettings(): DeliveryTimingSettingsStorePort {
-    return this.durable.deliveryTimingSettings();
   }
 
   ownerPreferences(): OwnerPreferencesStorePort {

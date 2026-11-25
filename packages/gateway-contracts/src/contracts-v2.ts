@@ -63,9 +63,9 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "owner.preferences.read",
   "owner.preferences.snapshot",
   "owner.preferences.set",
-  "delivery_timing.settings.read",
-  "delivery_timing.settings.snapshot",
-  "delivery_timing.settings.change",
+  "quiet_hours.read",
+  "quiet_hours.snapshot",
+  "quiet_hours.set",
   "proposals.read",
   "proposals.snapshot",
   "proposal.respond",
@@ -566,40 +566,32 @@ const ownerPreferencesSetCommandSchema = object({
   ...commandEnvelope("owner.preferences.set"),
   payload: object({ ...ownerPreferencesSchema, expectedRevision: integer(0) }),
 });
-const deliveryTimingSettingsQuerySchema = object({
-  ...envelope("query", "delivery_timing.settings.read"),
-  payload: object({ locale: enumeration(["zh-CN", "en", "ja"]) }),
-});
 const settingValueKindSchema = enumeration(["ratio", "duration", "count"]);
 const settingStorageUnitSchema = enumeration(["permille", "ms", "s", "min", "h", "d", "count"]);
-const deliveryTimingSettingsSnapshotSchema = object({
-  ...envelope("snapshot", "delivery_timing.settings.snapshot"),
+const quietClock = proactiveClockSchema;
+const quietHoursQuerySchema = object({
+  ...envelope("query", "quiet_hours.read"),
+  payload: object({}),
+});
+const quietHoursSnapshotSchema = object({
+  ...envelope("snapshot", "quiet_hours.snapshot"),
   payload: object({
-    items: array(
-      object({
-        key: machineString,
-        label: boundedString(80),
-        description: boundedString(240),
-        unit: boundedString(16),
-        kind: settingValueKindSchema,
-        storageUnit: settingStorageUnitSchema,
-        value: integer(0),
-        defaultValue: integer(0),
-        minimum: integer(0),
-        maximum: integer(0),
-        overridden: booleanValue,
-      }),
-    ),
-    revision: integer(0),
-    generatedAt: timestamp,
+    version: boundedString(64),
+    editable: booleanValue,
+    enabled: booleanValue,
+    start: nullable(quietClock),
+    end: nullable(quietClock),
+    classes: array(machineString),
+    rules: array(object({ ruleId: boundedString(64), summary: boundedString(2000) })),
   }),
 });
-const deliveryTimingSettingsChangeCommandSchema = object({
-  ...commandEnvelope("delivery_timing.settings.change"),
+const quietHoursSetCommandSchema = object({
+  ...commandEnvelope("quiet_hours.set"),
   payload: object({
-    expectedRevision: integer(0),
-    key: machineString,
-    value: nullable(integer(0)),
+    expectedVersion: boundedString(64),
+    enabled: booleanValue,
+    start: quietClock,
+    end: quietClock,
   }),
 });
 export const DEVICE_KINDS = ["iphone", "watch", "mac"] as const;
@@ -2444,6 +2436,14 @@ const memoryOverviewSnapshotSchema = object({
         sourceThreadId: nullable(machineString),
       }),
     ),
+    cancelled: array(
+      object({
+        reminderId: machineString,
+        text: boundedString(2000),
+        dueAt: timestamp,
+        repeat: enumeration(["none", "yearly"]),
+      }),
+    ),
     people: array(
       object({
         personId: machineString,
@@ -2578,7 +2578,7 @@ const memoryReminderRespondCommandSchema = object({
   ...commandEnvelope("memory.reminder.respond"),
   payload: object({
     reminderId: machineString,
-    action: enumeration(["dismiss", "snooze", "cancel"]),
+    action: enumeration(["dismiss", "snooze", "cancel", "restore"]),
   }),
 });
 const memoryReminderCreateCommandSchema = object({
@@ -3848,9 +3848,9 @@ const schemasByType = {
   "owner.preferences.read": ownerPreferencesQuerySchema,
   "owner.preferences.snapshot": ownerPreferencesSnapshotSchema,
   "owner.preferences.set": ownerPreferencesSetCommandSchema,
-  "delivery_timing.settings.read": deliveryTimingSettingsQuerySchema,
-  "delivery_timing.settings.snapshot": deliveryTimingSettingsSnapshotSchema,
-  "delivery_timing.settings.change": deliveryTimingSettingsChangeCommandSchema,
+  "quiet_hours.read": quietHoursQuerySchema,
+  "quiet_hours.snapshot": quietHoursSnapshotSchema,
+  "quiet_hours.set": quietHoursSetCommandSchema,
   "proposals.read": proposalsQuerySchema,
   "proposals.snapshot": proposalsSnapshotSchema,
   "proposal.respond": proposalRespondCommandSchema,

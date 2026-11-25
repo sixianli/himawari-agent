@@ -92,7 +92,7 @@ export interface MemoryModel {
   readonly undoReview: (item: MemoryConversationReview) => Promise<boolean>;
   readonly respondReminder: (
     item: { readonly reminderId: string },
-    action: "dismiss" | "snooze" | "cancel",
+    action: "dismiss" | "snooze" | "cancel" | "restore",
   ) => Promise<boolean>;
   readonly createReminder: (
     text: string,

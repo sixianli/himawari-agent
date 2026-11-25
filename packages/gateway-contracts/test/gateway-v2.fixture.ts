@@ -443,30 +443,21 @@ export const governanceMessages = [
     thinkingLevel: null,
     expectedRevision: 3,
   }),
-  fixture("query", "delivery_timing.settings.read", { locale: "zh-CN" }),
-  fixture("snapshot", "delivery_timing.settings.snapshot", {
-    items: [
-      {
-        key: "recheckSeconds",
-        label: "复查间隔",
-        description: "先不推送之后，隔多久再确认你有没有空。",
-        unit: "秒",
-        kind: "duration",
-        storageUnit: "s",
-        value: 600,
-        defaultValue: 300,
-        minimum: 60,
-        maximum: 3600,
-        overridden: true,
-      },
-    ],
-    revision: 2,
-    generatedAt: "2026-11-15T03:00:00.000Z",
+  fixture("query", "quiet_hours.read", {}),
+  fixture("snapshot", "quiet_hours.snapshot", {
+    version: "0123456789abcdef0123456789abcdef",
+    editable: true,
+    enabled: true,
+    start: "23:00",
+    end: "07:00",
+    classes: ["scheduled_reminder", "run_result", "mail_reminder", "her_words"],
+    rules: [{ ruleId: "owner:0123456789abcdef01234567", summary: "每天 23:00 到 07:00 不推送" }],
   }),
-  fixture("command", "delivery_timing.settings.change", {
-    expectedRevision: 2,
-    key: "recheckSeconds",
-    value: null,
+  fixture("command", "quiet_hours.set", {
+    expectedVersion: "0123456789abcdef0123456789abcdef",
+    enabled: true,
+    start: "23:00",
+    end: "07:00",
   }),
   fixture("query", "device.list.read", {}),
   fixture("snapshot", "device.list.snapshot", {
@@ -1243,6 +1234,14 @@ export const governanceMessages = [
         sourceThreadId: "thread-01",
       },
     ],
+    cancelled: [
+      {
+        reminderId: "reminder:memory-03",
+        text: "周五交周报",
+        dueAt: "2026-09-18T07:00:00.000Z",
+        repeat: "none",
+      },
+    ],
     people: [
       {
         personId: "person-01",
@@ -1283,7 +1282,7 @@ export const governanceMessages = [
   }),
   fixture("command", "memory.reminder.respond", {
     reminderId: "reminder:memory-01",
-    action: "dismiss",
+    action: "restore",
   }),
   fixture("command", "memory.reminder.create", {
     contentRef: "payload-03",

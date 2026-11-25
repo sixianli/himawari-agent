@@ -11,8 +11,8 @@ import type {
   CapabilityInvocationReceiptPort,
   CapabilityInvocationResultPort,
   CapabilityRegistryStorePort,
+  ConversationTurnStorePort,
   DecisionLedgerPort,
-  DeliveryTimingSettingsStorePort,
   DeviceActionStorePort,
   ExecutionEnvironmentStorePort,
   ExternalMemoryProposalStorePort,
@@ -71,7 +71,7 @@ import type {
   SensitiveMemoryApprovalStatePort,
   SessionDeletionStatePort,
   SessionDeviceStatePort,
-  ThinkInboxStorePort,
+  InboxStorePort,
   ThreadArtifactStorePort,
   ThreadDistillationStatePort,
   ThreadPromptBundleStorePort,
@@ -933,6 +933,8 @@ export class SqliteDurableAdapters {
       appendHistory: (input) => this.context.write("memory.appendHistory", input),
       listHistory: (input) => this.context.read("memory.listHistory", input),
       readHistory: (input) => this.context.read("memory.readHistory", input),
+      numbers: (input) => this.context.read("memory.numbers", input),
+      byNumber: (input) => this.context.read("memory.byNumber", input),
     });
   }
 
@@ -1083,19 +1085,19 @@ export class SqliteDurableAdapters {
     });
   }
 
-  thinkInbox(): ThinkInboxStorePort {
-    return Object.freeze<ThinkInboxStorePort>({
-      enqueue: (input) => this.context.write("thinkInbox.enqueue", input),
-      claimNext: (input) => this.context.write("thinkInbox.claimNext", input),
-      finish: (input) => this.context.write("thinkInbox.finish", input),
-      recoverStalled: (input) => this.context.write("thinkInbox.recoverStalled", input),
-      expireQueued: (input) => this.context.write("thinkInbox.expireQueued", input),
-      usage: (input) => this.context.write("thinkInbox.usage", input),
-      settledSummaries: (input) => this.context.write("thinkInbox.settledSummaries", input),
-      summaryReferenced: (input) => this.context.write("thinkInbox.summaryReferenced", input),
-      clearSummary: (input) => this.context.write("thinkInbox.clearSummary", input),
-      readSettings: (input) => this.context.write("thinkInbox.readSettings", input),
-      changeSettings: (input) => this.context.write("thinkInbox.changeSettings", input),
+  inbox(): InboxStorePort {
+    return Object.freeze<InboxStorePort>({
+      enqueue: (input) => this.context.write("inbox.enqueue", input),
+      claimBatch: (input) => this.context.write("inbox.claimBatch", input),
+      finish: (input) => this.context.write("inbox.finish", input),
+      release: (input) => this.context.write("inbox.release", input),
+      recoverStalled: (input) => this.context.write("inbox.recoverStalled", input),
+      usage: (input) => this.context.write("inbox.usage", input),
+      settledSummaries: (input) => this.context.write("inbox.settledSummaries", input),
+      summaryReferenced: (input) => this.context.write("inbox.summaryReferenced", input),
+      clearSummary: (input) => this.context.write("inbox.clearSummary", input),
+      readSettings: (input) => this.context.write("inbox.readSettings", input),
+      changeSettings: (input) => this.context.write("inbox.changeSettings", input),
     });
   }
 
@@ -1156,6 +1158,7 @@ export class SqliteDurableAdapters {
       listDue: (input) => this.context.read("memoryReminder.listDue", input),
       countDue: (input) => this.context.read("memoryReminder.countDue", input),
       listUpcoming: (input) => this.context.read("memoryReminder.listUpcoming", input),
+      listCancelled: (input) => this.context.read("memoryReminder.listCancelled", input),
       read: (id) => this.context.read("memoryReminder.read", { id }),
       update: (input) => this.context.write("memoryReminder.update", input),
     });
@@ -1196,13 +1199,6 @@ export class SqliteDurableAdapters {
       processedSince: (input) => this.context.read("proactive.processedSince", input),
     });
   }
-  deliveryTimingSettings(): DeliveryTimingSettingsStorePort {
-    return Object.freeze<DeliveryTimingSettingsStorePort>({
-      read: (input) => this.context.read("deliveryTimingSettings.read", input),
-      write: (input) => this.context.write("deliveryTimingSettings.write", input),
-    });
-  }
-
   ownerPreferences(): OwnerPreferencesStorePort {
     return Object.freeze<OwnerPreferencesStorePort>({
       read: (input) => this.context.read("ownerPreferences.read", input),
@@ -1397,7 +1393,6 @@ export class SqliteDurableAdapters {
       listDue: (input) => this.context.read("webPush.listDue", input),
       listRecent: (input) => this.context.read("webPush.listRecent", input),
       deferItem: (input) => this.context.write("webPush.deferItem", input),
-      recordDeliveryTiming: (input) => this.context.write("webPush.recordDeliveryTiming", input),
       recordAttempt: (input) => this.context.write("webPush.recordAttempt", input),
       recordReactions: (input) => this.context.write("webPush.recordReactions", input),
       listFeedback: (input) => this.context.read("webPush.listFeedback", input),
@@ -1433,6 +1428,16 @@ export class SqliteDurableAdapters {
       versions: (input) => this.context.read("threadArtifact.versions", input),
       list: (input) => this.context.read("threadArtifact.list", input),
       markDeleted: (input) => this.context.write("threadArtifact.markDeleted", input),
+    });
+  }
+
+  conversationTurns(): ConversationTurnStorePort {
+    return Object.freeze<ConversationTurnStorePort>({
+      upsert: (document) => this.context.write("conversationTurn.upsert", { document }),
+      search: (input) => this.context.read("conversationTurn.search", input),
+      listBehind: (input) => this.context.read("conversationTurn.listBehind", input),
+      listUnembedded: (input) => this.context.read("conversationTurn.listUnembedded", input),
+      attachEmbedding: (input) => this.context.write("conversationTurn.attachEmbedding", input),
     });
   }
 
@@ -1538,6 +1543,8 @@ export class SqliteDurableAdapters {
         this.context.read("thread.inspectDeletionImpact", { ownerId, agentId, threadId }),
       resolveDeletionTask: (input) => this.context.write("thread.resolveDeletionTask", { input }),
       requestDeletion: (input) => this.context.write("thread.requestDeletion", { input }),
+      readMain: (ownerId, agentId) => this.context.read("thread.readMain", { ownerId, agentId }),
+      claimMain: (input) => this.context.write("thread.claimMain", { input }),
     });
   }
 

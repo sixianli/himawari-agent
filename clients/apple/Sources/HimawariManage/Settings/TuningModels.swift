@@ -2,26 +2,22 @@ import Foundation
 
 public enum TuningKind: CaseIterable, Sendable {
     case think
-    case delivery
 
     var readType: String {
         switch self {
         case .think: "think.settings.read"
-        case .delivery: "delivery_timing.settings.read"
         }
     }
 
     var readPayload: JSONValue {
         switch self {
         case .think: [:]
-        case .delivery: ["locale": .string(ManageLanguage.current.serverTag)]
         }
     }
 
     var changeType: String {
         switch self {
         case .think: "think.settings.change"
-        case .delivery: "delivery_timing.settings.change"
         }
     }
 }

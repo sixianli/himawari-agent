@@ -18,3 +18,6 @@ __pycache__/
 .claude/worktrees/
 .agents/local/
 .cb-delegate/
+
+.agents/evidence/memory-list-format/read-eval-raw-*.json
+.agents/evidence/memory-list-format/read-eval-progress-*.jsonl

@@ -460,6 +460,25 @@ describe("[WP-2] web push storage", () => {
            VALUES ('run-a',?,?,1,'failed',1,'failed','RUNTIME_TOOL_RESULT_UNKNOWN',?)`,
         )
         .run(OWNER_ID, AGENT_ID, T1);
+      database
+        .prepare(
+          `INSERT INTO turns (id, owner_id, agent_id, thread_id, session_id, run_id, turn_index)
+           VALUES ('turn-b', ?, ?, 'thread-1', 'session', 'run-b', 1)`,
+        )
+        .run(OWNER_ID, AGENT_ID);
+      const message = (id: string, sequence: number, role: string, status: string, internal = 0) =>
+        database
+          .prepare(
+            `INSERT INTO thread_messages (
+              id, owner_id, agent_id, thread_id, revision, sequence, role, content_ref,
+              classification, committed_at, turn_id, run_id, message_status, internal
+            ) VALUES (?, ?, ?, 'thread-1', 1, ?, ?, 'payload', 'private', ?, 'turn-b', 'run-b', ?, ?)`,
+          )
+          .run(id, OWNER_ID, AGENT_ID, sequence, role, T1, status, internal);
+      message("asked-b", 1, "owner", "committed");
+      message("said-b", 2, "agent", "committed");
+      message("cut-b", 3, "agent", "partial");
+      message("inner-b", 4, "agent", "committed", 1);
       const first = await store.listFinishedRuns({ ...scope, afterCursor: T0, limit: 2 });
       expect(first).toEqual([
         {
@@ -467,6 +486,8 @@ describe("[WP-2] web push storage", () => {
           threadId: "thread-1",
           status: "failed",
           resultUnconfirmed: true,
+          startedBy: "user_message",
+          replyMessageId: null,
           finishedAt: T1,
           cursor: `${T1}|run-a`,
         },
@@ -475,6 +496,8 @@ describe("[WP-2] web push storage", () => {
           threadId: "thread-1",
           status: "completed",
           resultUnconfirmed: false,
+          startedBy: "user_message",
+          replyMessageId: "said-b",
           finishedAt: T1,
           cursor: `${T1}|run-b`,
         },

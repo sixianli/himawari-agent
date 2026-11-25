@@ -67,6 +67,7 @@ export interface AdmitOwnerMessageInput {
   readonly occurredAt: string;
   readonly resultRef: PayloadRef;
   readonly authority: ProductAuthorityFence;
+  readonly internal?: true;
 }
 
 export interface CommitAssistantMessageInput {
@@ -277,6 +278,13 @@ export interface ThreadDetailSnapshot {
   readonly runs: readonly ThreadRunSummaryRecord[];
 }
 
+export interface ClaimMainThreadInput {
+  readonly ownerId: OwnerId;
+  readonly agentId: AgentId;
+  readonly threadId: ThreadId;
+  readonly claimedAt: string;
+}
+
 export interface ThreadRepositoryPort {
   /** Read metadata, paged messages and run states from one database snapshot. */
   readDetailSnapshot(query: ThreadDetailSnapshotQuery): Promise<ThreadDetailSnapshot | undefined>;
@@ -348,6 +356,8 @@ export interface ThreadRepositoryPort {
     task: ThreadTaskBinding;
     receipt: ThreadMutationReceipt;
   }>;
+  readMain(ownerId: OwnerId, agentId: AgentId): Promise<ThreadId | undefined>;
+  claimMain(input: ClaimMainThreadInput): Promise<ThreadId>;
   requestDeletion(input: RequestThreadDeletionInput): Promise<{
     thread: ProductThread;
     impact: ThreadDeletionImpact;

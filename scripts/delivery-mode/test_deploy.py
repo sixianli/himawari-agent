@@ -144,10 +144,31 @@ class SandboxCommandLinksPreflightTest(unittest.TestCase):
             (packet / 'signing' / 'cloud-seal.mjs').write_text('x = { readOnlyToolchainPaths: [ runtime, "/usr/bin", "/etc/alternatives", ["/etc/magic"] ], protectedPaths: [ "/etc/himawari" ] }')
             self.assertEqual(preflight.sandbox_read_roots(packet), ['/usr/bin', '/etc/alternatives', '/etc/magic'])
 
-    def test_real_seal_template_roots_let_every_command_link_resolve_on_this_host(self):
+    def test_real_seal_template_roots_let_ubuntu_alternative_links_resolve_and_refuse_links_out_of_them(self):
         roots = preflight.sandbox_read_roots(HERE / 'packet-template')
         self.assertIn('/etc/alternatives', roots)
-        self.assertEqual(sandbox_links.unreachable_commands(roots), [])
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            rebased = [str(base) + root for root in roots]
+            for folder in ('usr/bin', 'usr/lib/jvm/bin', 'usr/share/nodejs', 'etc/alternatives', 'opt/google/chrome', 'usr/local/bin'):
+                (base / folder).mkdir(parents=True)
+            for real in ('usr/bin/gawk', 'usr/bin/vim.basic', 'usr/bin/python3.12', 'usr/lib/jvm/bin/java', 'opt/google/chrome/chrome', 'usr/local/bin/go'):
+                (base / real).write_text('x')
+            links = {
+                'etc/alternatives/awk': 'usr/bin/gawk',
+                'etc/alternatives/vi': 'usr/bin/vim.basic',
+                'etc/alternatives/java': 'usr/lib/jvm/bin/java',
+                'etc/alternatives/x-www-browser': 'opt/google/chrome/chrome',
+                'usr/bin/awk': 'etc/alternatives/awk',
+                'usr/bin/vi': 'etc/alternatives/vi',
+                'usr/bin/java': 'etc/alternatives/java',
+                'usr/bin/x-www-browser': 'etc/alternatives/x-www-browser',
+                'usr/bin/go': 'usr/local/bin/go',
+            }
+            for link, target in links.items():
+                (base / link).symlink_to(base / target)
+            (base / 'usr/bin/python3').symlink_to('python3.12')
+            self.assertEqual(sandbox_links.unreachable_commands(rebased, str(base / 'usr/bin')), ['go', 'x-www-browser'])
 
     def test_link_to_a_directory_outside_the_roots_is_reported_and_inside_is_not(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -527,10 +548,10 @@ class DeployHarness(unittest.TestCase):
         root = Path(self.directory.name)
         self.scripts = root / 'scripts'
         self.scripts.mkdir()
-        for name in ('deploy.sh', 'deploy-preflight.py', 'browser-acceptance-gate.py', 'generated-packet-gate.py', 'run-packet-checks.py', 'script-checkout-gate.py', 'sandbox-command-links.py', 'embedding-artifact-check.py'):
+        for name in ('deploy.sh', 'deploy-preflight.py', 'deploy-target-paths.py', 'browser-acceptance-gate.py', 'generated-packet-gate.py', 'run-packet-checks.py', 'script-checkout-gate.py', 'sandbox-command-links.py', 'embedding-artifact-check.py'):
             shutil.copy(HERE / name, self.scripts / name)
         self.calls = root / 'calls'
-        (self.scripts / 'release-cleanup.py').write_text('import sys\nopen(' + repr(str(root / 'calls')) + ', "a").write("cleanup-" + sys.argv[2] + "\\n")\nopen(' + repr(str(root / 'keeps')) + ', "a").write(" ".join(sys.argv[3:]) + "\\n")\n')
+        (self.scripts / 'release-cleanup.py').write_text('import os, sys\nfrom pathlib import Path\ncalls = Path(' + repr(str(root / 'calls')) + ')\nfirst = not calls.exists() or "cleanup-" not in calls.read_text()\nopen(calls, "a").write("cleanup-" + sys.argv[2] + "\\n")\nopen(' + repr(str(root / 'keeps')) + ', "a").write(" ".join(sys.argv[3:]) + "\\n")\nsys.exit(int(os.environ.get("FAKE_CLEANUP_BEFORE_EXIT" if first else "FAKE_CLEANUP_AFTER_EXIT", "0")))\n')
         (self.scripts / 'rollback.sh').write_text('echo rollback >> ' + str(self.calls) + '\nexit "${FAKE_ROLLBACK_EXIT:-0}"\n')
         (root / 'disk-hygiene').mkdir()
         shutil.copy(HERE.parent / 'disk-hygiene' / 'prune-rebuildable.py', root / 'disk-hygiene' / 'prune-rebuildable.py')
@@ -785,6 +806,26 @@ class ProductionCleanupFlowTest(DeployHarness):
         self.deploy_with_cleanup(FAKE_FAIL_AT='S7_SWITCH_START')
         self.assertEqual((self.calls.parent / 'keeps').read_text().split('\n')[:-1], ['1', '1'])
 
+    def test_target_paths_left_after_the_cleanup_stop_the_deploy_before_the_preflight(self):
+        code, result, calls = self.deploy_with_cleanup(FAKE_CLEANUP_BEFORE_EXIT='3')
+        self.assertEqual((code, result['result'], result['stoppedAt'], calls), (4, 'target-paths-left', 'PREFLIGHT', ['cleanup-apply']))
+
+    def test_other_cleanup_failures_before_the_preflight_do_not_stop_the_deploy(self):
+        code, result, calls = self.deploy_with_cleanup(FAKE_CLEANUP_BEFORE_EXIT='1')
+        self.assertEqual((code, result['result']), (0, 'passed'))
+
+    def test_target_paths_left_after_a_passed_deploy_do_not_change_its_result(self):
+        code, result, calls = self.deploy_with_cleanup(FAKE_CLEANUP_AFTER_EXIT='3')
+        self.assertEqual((code, result['result']), (0, 'passed'))
+        log = Path(result['log']).read_text()
+        self.assertNotIn('DEPLOY_CLEANUP_FAILED', log)
+        self.assertIn('DEPLOY_CLEANUP_PATHS_KEPT after', log)
+
+    def test_a_real_cleanup_failure_after_a_passed_deploy_is_still_reported(self):
+        code, result, calls = self.deploy_with_cleanup(FAKE_CLEANUP_AFTER_EXIT='1')
+        self.assertEqual((code, result['result']), (0, 'passed'))
+        self.assertIn('DEPLOY_CLEANUP_FAILED after', Path(result['log']).read_text())
+
     def test_failure_before_the_service_stop_cleans_the_failed_attempt(self):
         code, result, calls = self.deploy_with_cleanup(FAKE_FAIL_AT='S1_INSTALL')
         self.assertEqual(result['result'], 'stopped-before-service-stop')
@@ -1005,7 +1046,7 @@ class SourceCachePreflightTest(unittest.TestCase):
     def test_the_remote_check_reads_the_real_cache(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            environment = {**os.environ, 'GIT_AUTHOR_NAME': 't', 'GIT_AUTHOR_EMAIL': 't@example.invalid', 'GIT_COMMITTER_NAME': 't', 'GIT_COMMITTER_EMAIL': 't@example.invalid', 'GIT_CONFIG_GLOBAL': '/dev/null'}
+            environment = {**os.environ, 'GIT_AUTHOR_NAME': 't', 'GIT_AUTHOR_EMAIL': 't@example.invalid', 'GIT_COMMITTER_NAME': 't', 'GIT_COMMITTER_EMAIL': 't@example.invalid', 'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_CONFIG_COUNT': '1', 'GIT_CONFIG_KEY_0': 'maintenance.auto', 'GIT_CONFIG_VALUE_0': 'false'}
             work = root / 'work'
             subprocess.run(['git', 'init', '-q', str(work)], check=True, env=environment)
             (work / 'f.txt').write_text('x\n')

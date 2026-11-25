@@ -1,13 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import {
-  GROWTH_RATES,
-  restingGrowth,
-  SEED_COUNTS,
-  type SunflowerDetail,
-  seedsAt,
-} from "./brand-seeds.js";
+import { GROWTH_RATES, restingGrowth, SEED_COUNT, seedsAt } from "./brand-seeds.js";
 
-export { GROWTH_RATES, restingGrowth, SEED_COUNTS, type SunflowerDetail, seedsAt };
+export { GROWTH_RATES, restingGrowth, SEED_COUNT, seedsAt };
 export type { Seed } from "./brand-seeds.js";
 
 const MAX_FRAME_SECONDS = 0.05;
@@ -62,17 +56,15 @@ function usePrefersReducedMotion() {
 export function SunflowerMark({
   busy = false,
   growing = false,
-  detail = "compact",
 }: {
   readonly busy?: boolean;
   readonly growing?: boolean;
-  readonly detail?: SunflowerDetail;
 }) {
   const seedsRef = useRef<SVGGElement>(null);
   const reducedMotion = usePrefersReducedMotion();
   const rate = busy ? GROWTH_RATES.busy : growing ? GROWTH_RATES.idle : 0;
   const animated = rate > 0 && !reducedMotion;
-  const growthRef = useRef(restingGrowth(detail));
+  const growthRef = useRef(restingGrowth());
 
   useEffect(() => {
     if (!animated) return;
@@ -80,7 +72,7 @@ export function SunflowerMark({
     if (!circles) return;
     return joinGrowth((seconds) => {
       growthRef.current += seconds * rate;
-      seedsAt(detail, growthRef.current).forEach((seed, index) => {
+      seedsAt(growthRef.current).forEach((seed, index) => {
         const circle = circles[index];
         if (!circle) return;
         circle.setAttribute("cx", String(seed.cx));
@@ -91,9 +83,9 @@ export function SunflowerMark({
         circle.setAttribute("class", seed.fresh ? "seed-new" : "");
       });
     });
-  }, [animated, rate, detail]);
+  }, [animated, rate]);
 
-  const resting = seedsAt(detail, restingGrowth(detail));
+  const resting = seedsAt(restingGrowth());
   return (
     <svg
       className={busy ? "himawari-mark is-busy" : "himawari-mark"}
