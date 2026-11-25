@@ -20,6 +20,7 @@ final class TalkAudio: @unchecked Sendable {
 
     func start() throws {
         try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.allowBluetoothHFP, .defaultToSpeaker])
+        try session.setAllowHapticsAndSystemSoundsDuringRecording(true)
         try session.setActive(true, options: [])
         let input = engine.inputNode
         try input.setVoiceProcessingEnabled(true)

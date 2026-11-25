@@ -326,6 +326,19 @@ export function ThreadSidebar({
           >
             <SidebarIcon name="compose" />
             {message("chat.main")}
+            {pendingThreadIds.includes(mainThreadId) ? (
+              <span
+                className="thread-attention"
+                role="img"
+                aria-label={message("review.needsAttention")}
+              />
+            ) : runningThreadIds.includes(mainThreadId) ? (
+              <span
+                className="thread-running"
+                role="img"
+                aria-label={message("chat.environment.threadRunning")}
+              />
+            ) : null}
           </AppLink>
         ) : null}
         <search className="thread-search-landmark">

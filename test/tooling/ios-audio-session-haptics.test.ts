@@ -33,7 +33,7 @@ describe("the listening audio session never silences the phone's haptics", () =>
     expect(activate).toBeGreaterThan(allow);
   });
 
-  it("is activated only by AudioCapture", () => {
+  it("keeps haptics on wherever the session is activated", () => {
     const hits = execFileSync(
       "grep",
       ["-rln", "--include=*.swift", "setActive(true", new URL(".", sources).pathname],
@@ -41,7 +41,23 @@ describe("the listening audio session never silences the phone's haptics", () =>
     )
       .split("\n")
       .filter(Boolean);
-    expect(hits.map((path) => path.split("/").pop())).toEqual(["AudioCapture.swift"]);
+    expect(hits.map((path) => path.split("/").pop()).sort()).toEqual([
+      "AudioCapture.swift",
+      "TalkAudio.swift",
+    ]);
+    for (const path of hits) {
+      const source = readFileSync(path, "utf8");
+      let from = 0;
+      for (;;) {
+        const activate = source.indexOf("setActive(true", from);
+        if (activate === -1) break;
+        const before = source.slice(0, activate);
+        const allow = before.lastIndexOf("setAllowHapticsAndSystemSoundsDuringRecording(true)");
+        const category = before.lastIndexOf("setCategory(");
+        expect(allow, path).toBeGreaterThan(category);
+        from = activate + 1;
+      }
+    }
   });
 
   it("releases the session on stop, on teardown, on a replaced capture and when the capture is dropped", () => {

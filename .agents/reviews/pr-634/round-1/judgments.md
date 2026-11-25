@@ -1,0 +1,5 @@
+# PR 634 第 1 轮判断（deepseek-v4.1-flash）
+
+- 1（deepseek-v4.1-flash）成立，会出错，中高：### 1. 高：删掉 `M.notificationsTitle` 会让苹果端编译失败。本 PR 在 clients/apple/Sources/HimawariManage/ManageStrings.swift:367 删了 notificationsTitle，而 main 合进来的 HerPage.swift:89 和 Settings/NotificationsPage.swift:13（安静时段页，提交 8054d3ffa）仍引用它；grep 全仓只剩这两处引用、没有定义；触发：在合并了 main 的分支上编译 HimawariManage（iPhone App）；后果：Swift 编译报找不到 M.notificationsTitle，App 构建失败
+- 2（deepseek-v4.1-flash）成立，会出错，低：### 2. 低：设计文档仍说送达时机窗口“可配置”，并引用已删除的测试。设计文档 615 行表头“默认，可配置”和 1095 行验收行仍在，test/integration/delivery-timing.test.ts 不存在；同节 628-632 行已写明程序不按状态延后；触发：按 docs/execution/specs/2026-11-11-apple-device-body-design.md 第 10 节和验收表实施或验收；后果：表头说过期时长可配置、验收表要求 test/integration/delivery-timing.test.ts 覆盖已删的延后判断，可能让人去做已取代的功能；但同节第 632 行已写明 ADR 0273 的延后被取代、不做
+- 3（deepseek-v4.1-flash）成立，可以更好：### 3. 低：退役键只测了解析，没测启动日志和真实启动。apps/agent-service/src/service-main.ts:907-912 的 configuration.key_retired 日志循环本 PR 没改（diff 里只改了 strict-configuration.ts 的 retiredRunPolicyKeys，新键的解析已有 startup-configuration.unit.test.ts:337-349 覆盖），循环对 maxMemoryClassification 早已在用；补启动层日志测试是加强覆盖，不是当前代码会出错
