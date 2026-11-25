@@ -1046,7 +1046,7 @@ class SourceCachePreflightTest(unittest.TestCase):
     def test_the_remote_check_reads_the_real_cache(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            environment = {**os.environ, 'GIT_AUTHOR_NAME': 't', 'GIT_AUTHOR_EMAIL': 't@example.invalid', 'GIT_COMMITTER_NAME': 't', 'GIT_COMMITTER_EMAIL': 't@example.invalid', 'GIT_CONFIG_GLOBAL': '/dev/null'}
+            environment = {**os.environ, 'GIT_AUTHOR_NAME': 't', 'GIT_AUTHOR_EMAIL': 't@example.invalid', 'GIT_COMMITTER_NAME': 't', 'GIT_COMMITTER_EMAIL': 't@example.invalid', 'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_CONFIG_COUNT': '1', 'GIT_CONFIG_KEY_0': 'maintenance.auto', 'GIT_CONFIG_VALUE_0': 'false'}
             work = root / 'work'
             subprocess.run(['git', 'init', '-q', str(work)], check=True, env=environment)
             (work / 'f.txt').write_text('x\n')
