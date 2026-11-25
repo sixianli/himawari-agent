@@ -23,7 +23,16 @@ import {
 const [deepseek, glm] = REVIEW_MODELS;
 const KEY = "pr-7";
 
-const GIT_SETTINGS = ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"];
+const GIT_SETTINGS = [
+  "-c",
+  "user.name=t",
+  "-c",
+  "user.email=t@t",
+  "-c",
+  "commit.gpgsign=false",
+  "-c",
+  "maintenance.auto=false",
+];
 const GIT_ENV = {
   ...process.env,
   GIT_CONFIG_GLOBAL: "/dev/null",
