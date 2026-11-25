@@ -25,13 +25,21 @@ public enum DesignTokens {
         public static let switchOff = PaletteToken(light: RGBA(red: 201 / 255, green: 203 / 255, blue: 194 / 255, alpha: 1), dark: RGBA(red: 85 / 255, green: 85 / 255, blue: 79 / 255, alpha: 1))
         public static let text = PaletteToken(light: RGBA(red: 37 / 255, green: 41 / 255, blue: 33 / 255, alpha: 1), dark: RGBA(red: 228 / 255, green: 228 / 255, blue: 225 / 255, alpha: 1))
         public static let badge = danger
+        public static let codeComment = muted
+        public static let codeKeyword = sun
+        public static let codeNumber = danger
+        public static let codeString = success
+        public static let codeType = glyph
         public static let iconTile = highlight
+        public static let link = sun
+        public static let replyBar = sun
         public static let streamingDot = sunBright
     }
 
     public enum Shadows {
         public static let lift = ShadowToken(x: 0, y: 2, blur: 10, color: PaletteToken(light: RGBA(red: 0 / 255, green: 0 / 255, blue: 0 / 255, alpha: 0.07), dark: RGBA(red: 0 / 255, green: 0 / 255, blue: 0 / 255, alpha: 0.35)))
         public static let liftBig = ShadowToken(x: 0, y: 8, blur: 28, color: PaletteToken(light: RGBA(red: 0 / 255, green: 0 / 255, blue: 0 / 255, alpha: 0.13), dark: RGBA(red: 0 / 255, green: 0 / 255, blue: 0 / 255, alpha: 0.5)))
+        public static let puck = ShadowToken(x: 0, y: 4, blur: 14, color: PaletteToken(light: RGBA(red: 0 / 255, green: 0 / 255, blue: 0 / 255, alpha: 0.25), dark: RGBA(red: 0 / 255, green: 0 / 255, blue: 0 / 255, alpha: 0.25)))
     }
 
     public enum Glass {
@@ -289,17 +297,40 @@ public enum DesignTokens {
         public static let attachTileIcon: CGFloat = 26
         public static let attachTileIconGap: CGFloat = 8
         public static let attachTitleSize: CGFloat = 18
+        public static let codeHeaderPaddingTop: CGFloat = 8
         public static let codePadding: CGFloat = 12
+        public static let codeRadius: CGFloat = 12
+        public static let copiedToastLift: CGFloat = 10
+        public static let copiedToastPaddingHorizontal: CGFloat = 14
+        public static let copiedToastPaddingVertical: CGFloat = 7
+        public static let copiedToastSeconds: CGFloat = 1.2
+        public static let emptyFadeSeconds: CGFloat = 0.4
+        public static let emptyMark: CGFloat = 120
+        public static let emptyWordmarkGap: CGFloat = 14
+        public static let emptyWordmarkSize: CGFloat = 22
         public static let headerFade: CGFloat = 140
         public static let headerFadeSolid: CGFloat = 110
         public static let headerFadeWithBackground: CGFloat = 186
         public static let headerFadeWithBackgroundSolid: CGFloat = 156
         public static let hearingBubbleOpacity: CGFloat = 0.55
+        public static let inlineCodePadding: CGFloat = 3
+        public static let inlineCodeRadius: CGFloat = 4
         public static let listGap: CGFloat = 4
         public static let listIndent: CGFloat = 4
         public static let listMarkerGap: CGFloat = 6
+        public static let puckBannerGap: CGFloat = 8
+        public static let puckBusyLow: CGFloat = 0.7
+        public static let puckContentGap: CGFloat = 12
+        public static let puckLine: CGFloat = 0.5
+        public static let puckMark: CGFloat = 46
+        public static let puckSize: CGFloat = 56
+        public static let puckTop: CGFloat = 6
         public static let quoteBar: CGFloat = 3
         public static let quoteGap: CGFloat = 10
+        public static let replyBarWidth: CGFloat = 3
+        public static let replyFlashOpacity: CGFloat = 0.18
+        public static let replyFlashSeconds: CGFloat = 0.6
+        public static let replyQuoteGap: CGFloat = 8
         public static let tableCellPaddingVertical: CGFloat = 10
         public static let tableCellPaddingHorizontal: CGFloat = 14
         public static let tableFontSize: CGFloat = 15

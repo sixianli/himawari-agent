@@ -36,6 +36,7 @@ function renderRun(
   records: ThreadExecutionRecord[],
   state?: ThreadExecutionState,
   extra: Record<string, unknown> = {},
+  messages: Detail["payload"]["messages"] = [],
 ) {
   const detail: Detail = {
     schemaVersion: "gateway.thread.v3",
@@ -66,7 +67,7 @@ function renderRun(
       snapshotRef: "snapshot:one",
       generatedAt: "2026-09-11T00:00:12Z",
       nextSequence: null,
-      messages: [],
+      messages,
       runs: [
         {
           runId: "run:cancel",
@@ -295,4 +296,65 @@ it("[UI-12] shows an uploaded file once, in the owner's message, and still lists
   });
   expect(html).toContain("report.csv");
   expect(html).not.toContain("sales.csv");
+});
+
+const chatMessage = (
+  messageId: string,
+  sequence: number,
+  role: "owner" | "agent",
+): Detail["payload"]["messages"][number] => ({
+  messageId,
+  sequence,
+  role,
+  contentRef: `content:${messageId}`,
+  dataClassification: "private",
+  status: "committed",
+  turnId: null,
+  runId: "run:cancel",
+  committedAt: "2026-09-11T00:00:00Z",
+  options: null,
+  chosenFrom: null,
+});
+
+it("[REPLY] shows the replied-to message above the owner's reply and hides the tag", () => {
+  const html = renderRun(
+    "completed",
+    [],
+    undefined,
+    {
+      contentByRef: {
+        "content:answer": "**明天**大阪晴，最高 18 度",
+        "content:reply": '<reply to="answer"/>\n要带伞吗？',
+      },
+    },
+    [chatMessage("answer", 1, "agent"), chatMessage("reply", 2, "owner")],
+  );
+  expect(html).toContain("reply.toAgent");
+  expect(html).toContain("明天大阪晴，最高 18 度");
+  expect(html).toContain("要带伞吗？");
+  expect(html).not.toContain("reply to=");
+});
+
+it("[REPLY] says the original is gone when the replied-to message is not in the conversation", () => {
+  const html = renderRun(
+    "completed",
+    [],
+    undefined,
+    { contentByRef: { "content:reply": '<reply to="deleted"/>\n要带伞吗？' } },
+    [chatMessage("reply", 1, "owner")],
+  );
+  expect(html).toContain("reply.missing");
+  expect(html).toContain('data-missing="true"');
+  expect(html).not.toContain("reply to=");
+});
+
+it("shows no quote on a message that is not a reply", () => {
+  const html = renderRun(
+    "completed",
+    [],
+    undefined,
+    { contentByRef: { "content:plain": "要带伞吗？" } },
+    [chatMessage("plain", 1, "owner")],
+  );
+  expect(html).not.toContain("message-reply-quote");
 });

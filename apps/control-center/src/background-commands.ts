@@ -1,4 +1,4 @@
-import { splitDraft } from "./draft-attachments.js";
+import { splitDraft, splitReply } from "./draft-attachments.js";
 import type { RunSummary } from "./execution-view.js";
 
 export type BackgroundCommandState =
@@ -73,8 +73,9 @@ export function turnTitles(
   const titles: Record<string, string> = {};
   for (const message of messages) {
     if (message.role !== "owner" || !message.runId || titles[message.runId]) continue;
-    const content = contentByRef[message.contentRef];
-    if (content === undefined) continue;
+    const stored = contentByRef[message.contentRef];
+    if (stored === undefined) continue;
+    const content = splitReply(stored).text;
     const line = (splitDraft(content).text || content).trim().split("\n")[0]?.trim() ?? "";
     if (line)
       titles[message.runId] = line.length > TITLE_LIMIT ? `${line.slice(0, TITLE_LIMIT)}…` : line;

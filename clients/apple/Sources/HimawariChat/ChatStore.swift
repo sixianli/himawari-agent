@@ -6,9 +6,13 @@ public enum TranscriptItem: Identifiable, Equatable {
     case message(ThreadMessage)
     case process(runId: String)
 
+    public static func id(ofMessage messageId: String) -> String {
+        "message:\(messageId)"
+    }
+
     public var id: String {
         switch self {
-        case let .message(message): "message:\(message.messageId)"
+        case let .message(message): Self.id(ofMessage: message.messageId)
         case let .process(runId): "process:\(runId)"
         }
     }

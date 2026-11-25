@@ -48,3 +48,14 @@
 "chat.talk.muted" = "静音了";
 "chat.talk.failed" = "没能开始语音对话，再试一次";
 "chat.option.chosen" = "选了";
+"chat.copyCode" = "复制代码";
+"chat.menu.reply" = "回复";
+"chat.menu.copy" = "复制";
+"chat.menu.select" = "选择文字";
+"chat.reply.toAgent" = "回复她";
+"chat.reply.toOwner" = "回复你自己";
+"chat.reply.missing" = "原消息已不在";
+"chat.reply.cancel" = "取消回复";
+"chat.copied" = "已复制";
+"chat.select.title" = "选择文字";
+"chat.select.done" = "完成";
