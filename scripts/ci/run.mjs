@@ -43,10 +43,18 @@ const json = (filename, value) =>
   writeFileSync(filename, `${JSON.stringify(value, null, 2)}\n`, { flag: "wx" });
 const emptyCounts = () => ({ files: 0, executed: 0, passed: 0, failed: 0, skipped: 0 });
 
-export function selectCheck(policy, id, key) {
+export function localBuildMember(check, key) {
+  if (check.id !== "build" || key !== "linux-arm64") return undefined;
+  const base = check.members.find((entry) => entry.os === "linux");
+  return base && { ...base, key, arch: "arm64", runner: "local" };
+}
+
+export function selectCheck(policy, id, key, { local = false } = {}) {
   const check = policy.checks.find((entry) => entry.id === id && entry.id !== "required");
   if (!check) throw new Error(`CI_CHECK_UNSUPPORTED:${id}`);
-  const member = check.members.find((entry) => entry.key === (key ?? "default"));
+  const member =
+    check.members.find((entry) => entry.key === (key ?? "default")) ??
+    (local ? localBuildMember(check, key) : undefined);
   if (!member) throw new Error(`CI_MATRIX_UNSUPPORTED:${id}/${key}`);
   return { check, member };
 }
@@ -97,7 +105,9 @@ export async function runCheck({
   const directory = outputPath(output, root);
   const source = resolvePolicySource({ root, base: context.baseSha });
   if (!source.policy.events.includes(context.event)) throw new Error("CI_EVENT_UNSUPPORTED");
-  const { check, member } = selectCheck(source.policy, checkId, matrixKey);
+  const { check, member } = selectCheck(source.policy, checkId, matrixKey, {
+    local: !hosted,
+  });
   if (existsSync(directory)) throw new Error("CI_OUTPUT_ALREADY_EXISTS");
   if (artifact && (!existsSync(artifact) || !statSync(artifact).isFile()))
     throw new Error("CI_ARTIFACT_INVALID");

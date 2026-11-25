@@ -255,6 +255,12 @@ describe("受控检查与公开输出", () => {
     expect(selectCheck(policy, "policy").member.key).toBe("default");
     expect(() => selectCheck(policy, "required")).toThrow("UNSUPPORTED");
     expect(() => selectCheck(policy, "build", "windows")).toThrow("UNSUPPORTED");
+    expect(() => selectCheck(policy, "build", "linux-arm64")).toThrow("CI_MATRIX_UNSUPPORTED");
+    const local = selectCheck(policy, "build", "linux-arm64", { local: true });
+    expect(local.member).toMatchObject({ key: "linux-arm64", arch: "arm64", runner: "local" });
+    expect(() => selectCheck(policy, "tests", "linux-arm64", { local: true })).toThrow(
+      "CI_MATRIX_UNSUPPORTED",
+    );
     const root = directory();
     const output = path.join(root, "output");
     mkdirSync(output);

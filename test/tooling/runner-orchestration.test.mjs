@@ -497,10 +497,12 @@ describe("共享runner的调度、来源和失败传播", () => {
     expect(state.calls).toEqual([]);
     expect(existsSync(path.join(state.root, ".ci-output/policy"))).toBe(false);
   });
-  it("rejects build, browser and tests on linux-arm64 before creating output or executing anything", async () => {
+  it("rejects hosted build, browser and tests on linux-arm64 before creating output or executing anything", async () => {
     await withHost("linux", "arm64", async () => {
       for (const checkId of ["build", "browser", "tests"]) {
-        await expect(run(checkId)).rejects.toThrow("CI_ARTIFACT_PLATFORM_UNSUPPORTED: linux-arm64");
+        await expect(run(checkId, { hosted: true, matrixKey: "linux-arm64" })).rejects.toThrow(
+          "CI_MATRIX_UNSUPPORTED",
+        );
         expect(existsSync(path.join(state.root, `.ci-output/${checkId}`))).toBe(false);
       }
       expect(state.calls).toEqual([]);
