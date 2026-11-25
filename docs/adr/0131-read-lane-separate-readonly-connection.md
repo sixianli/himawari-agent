@@ -90,6 +90,6 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 - [事故与门槛清单 I-45](../incidents-and-gates.md#incidents)
 - [工程案例库：案例 73](../engineering-casebook.md#case-read-write-lanes)
-- [ADR 0128：记录每次模型请求的缓存用量](0128-record-cache-usage-of-every-model-request.md)
+- [ADR 0128：记录每次模型请求的缓存用量](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0128-record-cache-usage-of-every-model-request.md)
 
 [↑ 返回阅读导航](#contents)

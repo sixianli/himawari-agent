@@ -69,7 +69,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 ## 业界怎么做
 
-LongMemEval（论文 <https://arxiv.org/abs/2410.10813>）和 Mem0（<https://arxiv.org/abs/2504.19413>）都用“问答加模型判对错”量长期记忆，标准答案是一句参考答案，换说法也算对，并单独统计拒答题。本 ADR 照这个做法，把数据换成主人的真实记忆，判分模型换成低价模型（项目禁用 GPT-4o 这类贵模型，见 [ADR 0111](0111-no-expensive-models-anywhere.md)），所以分数只能和自己的历史比，不能和论文里的数字直接比。
+LongMemEval（论文 <https://arxiv.org/abs/2410.10813>）和 Mem0（<https://arxiv.org/abs/2504.19413>）都用“问答加模型判对错”量长期记忆，标准答案是一句参考答案，换说法也算对，并单独统计拒答题。本 ADR 照这个做法，把数据换成主人的真实记忆，判分模型换成低价模型（项目禁用 GPT-4o 这类贵模型，见 [ADR 0111](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0111-no-expensive-models-anywhere.md)），所以分数只能和自己的历史比，不能和论文里的数字直接比。
 
 [返回阅读导航](#contents)
 
@@ -100,7 +100,7 @@ LongMemEval（论文 <https://arxiv.org/abs/2410.10813>）和 Mem0（<https://ar
 ## 关联文档
 
 - [ADR 0115：记忆检索的相关度门槛和检索评测](0115-memory-search-relevance-threshold-and-retrieval-eval.md)
-- [ADR 0111：任何场景都不用贵模型](0111-no-expensive-models-anywhere.md)
+- [ADR 0111：任何场景都不用贵模型](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0111-no-expensive-models-anywhere.md)
 - 代码：`packages/application/src/services/real-memory-eval.ts`、`packages/application/src/services/real-memory-eval-service.ts`、`apps/agent-service/src/production-real-eval.ts`、`packages/prompt-catalog/src/eval.ts`
 - 测试：`test/integration/real-memory-eval.test.ts`、`packages/application/test/real-memory-eval*.unit.test.ts`、`apps/agent-service/test/production-real-eval.unit.test.ts`
 

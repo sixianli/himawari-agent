@@ -27,6 +27,6 @@ superseded_by: ""
 
 ## Notes
 
-- 现状：后台命令（bash）已有每条 30 分钟的时间上限（[ADR 0098](../adr/0098-move-long-bash-commands-to-background.md)），但命令跑完后系统另起的汇报轮、以及以后的无人值守任务，都没有按任务的费用或 token 上限；全局累计上限已按 [ADR 0076](../adr/0076-no-model-cost-budget-limits.md) 删除，只留用量账本。
+- 现状：后台命令（bash）已有每条 30 分钟的时间上限（[ADR 0098](../adr/0098-move-long-bash-commands-to-background.md)），但命令跑完后系统另起的汇报轮、以及以后的无人值守任务，都没有按任务的费用或 token 上限；全局累计上限已按 [ADR 0297](../adr/0297-how-model-calls-work.md) 删除，只留用量账本。
 - 要做的：每个任务开始时定下自己的费用、token 和时间上限；用量账本按任务累计；任一项超限就停止该任务并汇报“停在哪、已完成什么、还剩什么”，不影响其他对话。
 - 待 Andy 定：各项默认值，以及能否在单个任务上临时放宽。上线前问他。

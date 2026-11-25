@@ -29,7 +29,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 此前 Himawari 在两个地方对敏感信息“整段拦下”：
 
 1. 内部存储这一侧：自动整理记忆、提醒、Muse 收件、沙箱诊断、对话检查点、反思、执行动态、对话标题等写库之前，用 `scanMachineSecrets`、`containsRestrictedIdentifier` 这类检测，命中就整条丢弃或拒绝（审计结果码 [source_secret_excluded](https://github.com/sixianli/himawari-agent/blob/01873f5c26c536750090ffbc3772ee0cc95bf3fc/packages/application/src/ports/automatic-memory.ts)、`candidate_secret_excluded`）。
-2. 发往模型这一侧：[ADR 0148](0148-send-every-model-request-through-one-in-process-egress.md) 的出口遮盖已经在做，命中后继续发送，遮盖后仍检出机器密钥才拒绝。
+2. 发往模型这一侧：[ADR 0148](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0148-send-every-model-request-through-one-in-process-egress.md) 的出口遮盖已经在做，命中后继续发送，遮盖后仍检出机器密钥才拒绝。
 
 第 1 类让主人说“记住我的密码是……”这样明确要求的事做不成，也让记忆、标题里出现“被拦下”的空洞结果；而这些内容并不发往任何外部方。
 
@@ -49,7 +49,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 2. **发往外部时照旧遮盖。** 出口遮盖（ADR 0148）和搜索服务的外部文字遮盖不变；发给模型的字节不变，符合[发给模型的内容只追加](../../.agents/instructions/prompt-prefix.md)。
 3. **模型回复里的占位符，写库前还原。** 自动整理记忆和对话标题调用模型时，提示里的敏感值已被遮成占位符，模型可能把占位符抄进候选文字、原话或标题。写库前用“刚才实际发出的那条提示”重建占位符到原文的对照表，把占位符还原成原文：
    - 提示里的主人消息是 `JSON.stringify` 的产物，规则可能把结尾的引号和花括号一并吞进值里，所以对照表里的值先在第一个没被转义的引号处截断，再按 JSON 字符串解码。
-   - 提示词目录里 Himawari 自己写的固定文字不算外来内容，建表时按 [ADR 0148](0148-send-every-model-request-through-one-in-process-egress.md) 的规则排除。
+   - 提示词目录里 Himawari 自己写的固定文字不算外来内容，建表时按 [ADR 0148](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0148-send-every-model-request-through-one-in-process-egress.md) 的规则排除。
    - 还原不了的占位符（模型改写、抄错编号）原样保留，不猜；`[密钥]` 没有编号，同样保留字面量。
 4. **分类仍按检测结果往上提。** 自动整理记忆、模型提的提醒、网页手动添加的记忆和提醒，文字含 18 位证件号或去掉空格和连字符后 16 到 19 位数字时，分类至少是 sensitive（`classificationWithIdentifiers`）。模型自己标 restricted 的候选仍按原规则丢弃。这一条是启发式，不是安全边界。
 5. **审计结果码删掉不再产生的两个。** [source_secret_excluded](https://github.com/sixianli/himawari-agent/blob/01873f5c26c536750090ffbc3772ee0cc95bf3fc/packages/application/src/ports/automatic-memory.ts)、`candidate_secret_excluded` 不再出现在类型里；拦截记录页面不再记“记忆没保存”这一类，历史上已写入的行照常显示。
@@ -79,7 +79,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 ## 关联文档
 
-- [ADR 0148：所有模型请求走同一个进程内出口](0148-send-every-model-request-through-one-in-process-egress.md)
+- [ADR 0148：所有模型请求走同一个进程内出口](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0148-send-every-model-request-through-one-in-process-egress.md)
 - [ADR 0167：敏感信息识别包](0167-sensitive-capture-package.md)
 - [ADR 0166：提示词措辞第 1 批](0166-prompt-wording-batch-1-system-and-tools.md)
 - [ADR 0143：模型门槛决定的账本](0143-decision-ledger-for-model-gate-decisions.md)

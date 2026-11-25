@@ -3,7 +3,7 @@ status: active
 document_type: adr
 decision_status: accepted
 supersedes: ""
-amends: "docs/adr/0109-paid-eval-runs-need-cost-cap-and-preflight.md"
+amends: "https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0109-paid-eval-runs-need-cost-cap-and-preflight.md"
 superseded_by: ""
 date: "2026-11-11"
 covers: "apps/agent-service/src/production-decision-ledger.ts, apps/agent-service/src/production-run-memory.ts, apps/agent-service/src/service-main.ts, apps/agent-service/test/production-model-composition.unit.test.ts, packages/memory-engine/src/hybrid-memory-provider.ts, packages/persistence-sqlite/src/sqlite-model-budget-operations.ts, test/integration/decision-ledger.test.ts, test/integration/production-http-composition-process.test.ts"
@@ -52,7 +52,7 @@ ChatGPT 和 Claude 的记忆或检索出问题时，对话照常回答，不会�
 3. **删掉因此用不到的代码：**`CONTEXT_MEMORY_UNAVAILABLE`、`CONTEXT_MEMORY_QUOTA_EXCEEDED` 两个失败码、`RunCoordinator` 里处理它们的分支、执行记录里的映射，以及网页上“查找相关记忆时连接模型服务失败”的三语文案。旧对话里留下的这两个失败码，网页按通用的失败说明显示（Andy 2026-11-09 定：做方案不用顾及旧数据兼容）。
 4. **保留的：**嵌入请求本身出错（发送失败、网关返回错误、响应不合格）时仍写一行 `memory.embedding_failed` 诊断日志，带 HTTP 状态、网关错误类型和原文，`failure` 字段写 `quota_exceeded` 或 `unavailable`；收到响应之后才发现截止时间已过、执行权已失效这类情况不写这行日志，和原来一样。额度被拒仍能从日志看出来，不会被说成网络问题。
 
-这条决定部分取代 [ADR 0109](0109-paid-eval-runs-need-cost-cap-and-preflight.md) 决定 4 里嵌入的那一部分。对话模型自己返回 402 时的 `PI_MODEL_QUOTA_EXCEEDED` 不变。
+这条决定部分取代 [ADR 0109](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0109-paid-eval-runs-need-cost-cap-and-preflight.md) 决定 4 里嵌入的那一部分。对话模型自己返回 402 时的 `PI_MODEL_QUOTA_EXCEEDED` 不变。
 
 依据的原则：产品愿景里的“记忆可靠性”和“主动性与效率”之间，这里没有冲突：记忆照样能找到（关键词和实体），只是少了按意思找的那一路；整轮失败对主人没有任何好处。
 

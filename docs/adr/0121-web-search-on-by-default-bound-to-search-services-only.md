@@ -34,7 +34,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 Andy 当天在审批线程的选择卡上选了"默认打开，从不问"。
 
-同一天 Andy 还发现：他一直在设置里开着"允许联网搜索"，在手机上却发现是关着的。代码核对（`apps/agent-service/src/public-search-authorization.ts`）的结果：开关本来就存在服务端，手机和电脑读的是同一份；但开关存下时记了一个摘要，摘要里有每个能读私人数据的模型的完整配置（`configuredModelDisclosureIdentity`，模型配置整段 JSON 的 sha256）。只要模型配置有任何变化，例如第十九版把主模型换成 Magpie 路由组（[ADR 0117](0117-magpie-routes-models-through-owned-subscriptions.md)），摘要就对不上，开关在所有设备上一起悄悄变成"关"，页面上没有任何说明。生产当时的开关状态没有读（读生产数据要 Andy 另行同意），"第十九版换模型导致失效"是根据代码的推断。
+同一天 Andy 还发现：他一直在设置里开着"允许联网搜索"，在手机上却发现是关着的。代码核对（`apps/agent-service/src/public-search-authorization.ts`）的结果：开关本来就存在服务端，手机和电脑读的是同一份；但开关存下时记了一个摘要，摘要里有每个能读私人数据的模型的完整配置（`configuredModelDisclosureIdentity`，模型配置整段 JSON 的 sha256）。只要模型配置有任何变化，例如第十九版把主模型换成 Magpie 路由组（[ADR 0117](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0117-magpie-routes-models-through-owned-subscriptions.md)），摘要就对不上，开关在所有设备上一起悄悄变成"关"，页面上没有任何说明。生产当时的开关状态没有读（读生产数据要 Andy 另行同意），"第十九版换模型导致失效"是根据代码的推断。
 
 <a id="decision"></a>
 
@@ -79,7 +79,7 @@ Andy 当天在审批线程的选择卡上选了"默认打开，从不问"。
 
 - [ADR 0071：联网搜索和读网页改为可替换的供应商链](0071-replaceable-web-search-and-fetch-providers.md)（"供应商列表一变必须重新同意"在本 ADR 中保留）
 - [ADR 0079：并行只读工具和宿主侧网页工具](0079-parallel-read-only-tools-and-host-web-tools.md)
-- [ADR 0117：Magpie 经自有订阅路由模型](0117-magpie-routes-models-through-owned-subscriptions.md)
+- [ADR 0117：Magpie 经自有订阅路由模型](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0117-magpie-routes-models-through-owned-subscriptions.md)
 - [事故与门槛清单：I-29、I-34](../incidents-and-gates.md#incidents)
 - [工程案例库：案例 62](../engineering-casebook.md#case-approval-stall)
 - [架构文档：已授权公开搜索与聊天执行反馈](../architecture-v0.1.md)（产品需求 v0.2 里“开启后不逐次询问搜索”的说法仍然成立，未改）

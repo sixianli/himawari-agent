@@ -116,8 +116,8 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ## 关联文档
 
 - 取代：[ADR 0104](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0104-turn-material-in-last-user-message.md)
-- [ADR 0128：记录每次模型请求的缓存用量](0128-record-cache-usage-of-every-model-request.md)
-- [ADR 0148：所有模型请求只走一个进程内出口](0148-send-every-model-request-through-one-in-process-egress.md)
+- [ADR 0128：记录每次模型请求的缓存用量](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0128-record-cache-usage-of-every-model-request.md)
+- [ADR 0148：所有模型请求只走一个进程内出口](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0148-send-every-model-request-through-one-in-process-egress.md)
 - 事故：[I-66](../incidents-and-gates.md#incidents)
 - 选项文档：cache-hit-stats/cross-turn-history-options.md（项目文件库）
 - 案例：[案例 82](../engineering-casebook.md#case-append-only-prefix)

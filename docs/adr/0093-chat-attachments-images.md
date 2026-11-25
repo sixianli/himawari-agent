@@ -37,7 +37,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 - Pi（Himawari 底层的 Agent 框架，固定版本 `@earendil-works/pi-ai` 0.84.2）已经能把图片发给模型：`dist/api/openai-completions.js` 把用户消息里的图片转成 `image_url` 内容；`dist/api/transform-messages.js` 在模型的 `input` 不含 `image` 时，把图片换成文字“(image omitted: model does not support images)”。`AgentSession.prompt()` 有 `images` 参数。
 - Himawari 没用上这些：发给 Pi 的只有文字，生产配置里模型的 `input` 只写了 `["text"]`。
 
-[ADR 0048](0048-vercel-ai-gateway-replaces-openrouter.md) 记着 Andy 的原话“禁止使用oepnai的模型，文本模型只能使用deepseek/deepseek-v4.1-flash”，备用也只能给同一个模型换供应商，不能换模型。
+[ADR 0048](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0048-vercel-ai-gateway-replaces-openrouter.md) 记着 Andy 的原话“禁止使用oepnai的模型，文本模型只能使用deepseek/deepseek-v4.1-flash”，备用也只能给同一个模型换供应商，不能换模型。
 
 [↑ 返回阅读导航](#contents)
 
@@ -99,7 +99,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 ## 关联文档
 
-- [ADR 0048：改用 Vercel AI Gateway，文本模型只用 DeepSeek V4.1 Flash](0048-vercel-ai-gateway-replaces-openrouter.md)
+- [ADR 0048：改用 Vercel AI Gateway，文本模型只用 DeepSeek V4.1 Flash](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0048-vercel-ai-gateway-replaces-openrouter.md)
 - [ADR 0090：对话界面 v6 第二期（附件）](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0090-chat-ui-v6-answer-and-composer.md#attachments)
 - [ADR 0091：对话界面 v6 第三期](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0091-chat-ui-v6-file-preview-and-sidebar.md)
 - [控制中心 v4 设计 Spec 的附件图片增补](../execution/specs/2026-09-15-control-center-v4-design.md#v6-attachment-images)

@@ -63,7 +63,7 @@ Anthropic 记忆工具文档（2026-10-30 打开）：“compaction keeps the ac
 
 ## 关联文档
 
-- [ADR 0128：每次模型请求都记下缓存命中](0128-record-cache-usage-of-every-model-request.md)
+- [ADR 0128：每次模型请求都记下缓存命中](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0128-record-cache-usage-of-every-model-request.md)
 - [架构文档：Pi compaction](../architecture-v0.1.md)
 
 [↑ 返回阅读导航](#contents)

@@ -123,7 +123,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 - [事故 I-23](../incidents-and-gates.md#incidents)
 - [工程案例 57](../engineering-casebook.md#case-memory-relevance-threshold)
 - [ADR 0075：自研长期记忆](0075-self-built-memory-engine.md)
-- [ADR 0109：花钱的评测要先报费用、设上限、先试探](0109-paid-eval-runs-need-cost-cap-and-preflight.md)
+- [ADR 0109：花钱的评测要先报费用、设上限、先试探](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0109-paid-eval-runs-need-cost-cap-and-preflight.md)
 - [界面与交互设计指南](../ui-ux-design-guide.md#bad)
 - [Control Center v4 设计规格](../execution/specs/2026-09-15-control-center-v4-design.md)
 - Anthropic, Introducing Contextual Retrieval：<https://www.anthropic.com/news/contextual-retrieval>

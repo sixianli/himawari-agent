@@ -705,7 +705,7 @@ Andy 让 Agent 写一个贪吃蛇游戏，做到第 16 步时回答突然只剩�
 
 **相关 ADR/PR**
 
-[ADR 0076](adr/0076-no-model-cost-budget-limits.md)；[PR #23](https://github.com/sixianli/himawari-agent/pull/23)。
+[ADR 0076](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0076-no-model-cost-budget-limits.md)；[PR #23](https://github.com/sixianli/himawari-agent/pull/23)。
 
 **面试 30 秒版**
 
@@ -976,7 +976,7 @@ lessons 共 25 条；第十次上线中“复制操作包留旧名”达到第�
 
 **相关 ADR/PR**
 
-[ADR 0048](adr/0048-vercel-ai-gateway-replaces-openrouter.md)。
+[ADR 0048](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0048-vercel-ai-gateway-replaces-openrouter.md)。
 
 **面试 30 秒版**
 
@@ -1038,7 +1038,7 @@ lessons 共 25 条；第十次上线中“复制操作包留旧名”达到第�
 
 **相关 ADR/PR**
 
-[PR #33](https://github.com/sixianli/himawari-agent/pull/33)（提交 42a0ad5）；相关背景：[ADR 0048](adr/0048-vercel-ai-gateway-replaces-openrouter.md)（模型接入复用 Pi）、[案例 5](#case-search-latency)（同一类新闻请求的耗时）、PR #15（每步白话摘要）。
+[PR #33](https://github.com/sixianli/himawari-agent/pull/33)（提交 42a0ad5）；相关背景：[ADR 0048](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0048-vercel-ai-gateway-replaces-openrouter.md)（模型接入复用 Pi）、[案例 5](#case-search-latency)（同一类新闻请求的耗时）、PR #15（每步白话摘要）。
 
 **面试 30 秒版**
 
@@ -2499,7 +2499,7 @@ Agent 一轮里会跑后台命令、写出文件，这些都是附属结果，�
 
 **相关 ADR/PR**
 
-[ADR 0101](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0101-adopt-product-vision-v2-1.md)、[产品愿景](product-vision.md)、[ADR 0076](adr/0076-no-model-cost-budget-limits.md)、[ADR 0084](adr/0084-himawari-identity-system-prompt.md)、[ADR 0083](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0083-isolated-instance-per-person-with-owner-entry.md)；PR 见分支 `claude/project-thread-rfq0gv`。
+[ADR 0101](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0101-adopt-product-vision-v2-1.md)、[产品愿景](product-vision.md)、[ADR 0076](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0076-no-model-cost-budget-limits.md)、[ADR 0084](adr/0084-himawari-identity-system-prompt.md)、[ADR 0083](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0083-isolated-instance-per-person-with-owner-entry.md)；PR 见分支 `claude/project-thread-rfq0gv`。
 
 **面试 30 秒版**
 
@@ -3219,7 +3219,7 @@ Andy 2026-10-29 00:56 定了规则，记在 [ADR 0107](https://github.com/sixian
 
 - `npm run eval:jarvis:live` 不带 `--confirm-cost=<美元>` 就拒跑，并打印上一轮完整跑的实际花费，方便先报预计费用、等 Andy 同意。跑的过程中，花费到上限就停。
 - 开跑前先发 1 个 token 的请求试探网关，被拒就不跑，并贴出网关原文。
-- 请 Andy 删掉按人的用户预算，改成按 key 设：评测 key 单独封顶，生产 key 放宽（[ADR 0109](adr/0109-paid-eval-runs-need-cost-cap-and-preflight.md)）。
+- 请 Andy 删掉按人的用户预算，改成按 key 设：评测 key 单独封顶，生产 key 放宽（[ADR 0109](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0109-paid-eval-runs-need-cost-cap-and-preflight.md)）。
 - 生产这次只记下 `transport_unresolved`，看不出是额度被拒。现在嵌入失败会写一行带 HTTP 状态和网关原文的 `memory.embedding_failed` 日志；402 单独记成 `CONTEXT_MEMORY_QUOTA_EXCEEDED` 或 `PI_MODEL_QUOTA_EXCEEDED`，网页用三语告诉主人是额度用完了，不是网络不通。后续（2026-11-11，[ADR 0223](adr/0223-chat-memory-lookup-falls-back-to-keywords.md)）：聊天时嵌入失败不再让整轮失败，改为按关键词和实体继续找记忆，`CONTEXT_MEMORY_QUOTA_EXCEEDED` 和对应网页说明已删，嵌入的 402 只在 `memory.embedding_failed` 日志里记下。
 - 给 Andy 的对比结论改为不再花钱：用官方价目表和已经跑完的第 1 组数据给推荐。Andy 决定先不换。
 - 换被测模型的开关已删掉：Andy 在 13:31 定下任何场景都不调用 Claude、OpenAI 等贵模型，评测只测生产用的 DeepSeek V4.1 Flash。
@@ -3249,7 +3249,7 @@ Andy 2026-10-29 00:56 定了规则，记在 [ADR 0107](https://github.com/sixian
 
 **相关 ADR/PR**
 
-[ADR 0109](adr/0109-paid-eval-runs-need-cost-cap-and-preflight.md)、[ADR 0103](adr/0103-jarvis-test-live-evaluation-and-two-tier-judge.md)、[ADR 0107](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0107-every-incident-gets-an-automatic-gate.md)、PR #95、[事故清单 I-11](incidents-and-gates.md#incidents)。
+[ADR 0109](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0109-paid-eval-runs-need-cost-cap-and-preflight.md)、[ADR 0103](adr/0103-jarvis-test-live-evaluation-and-two-tier-judge.md)、[ADR 0107](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0107-every-incident-gets-an-automatic-gate.md)、PR #95、[事故清单 I-11](incidents-and-gates.md#incidents)。
 
 **面试 30 秒版**
 
@@ -3503,7 +3503,7 @@ Andy 2026-10-29 00:56 定了规则，记在 [ADR 0107](https://github.com/sixian
 
 2026-10-29 13:31（日本时间），Andy 在 Vercel AI Gateway（Vercel 的模型网关，Himawari 经它调用所有模型）的账单页看到：本月花钱最多的是 `anthropic/claude-sonnet-5.5`，2.27 美元，缓存命中 0%；真正给 Andy 干活的生产主模型 DeepSeek V4.1 Flash 只花了 1.48 美元。Himawari 生产从来没用过 Claude，钱全花在评测上。Andy 定下长期规则：任何场景都不得调用 Claude、OpenAI 或同价位的贵模型，代码和脚本里不得再写死这类模型名。
 
-在 Andy 的浏览器里打开 Vercel Logs 逐行核对（Hobby 套餐不能用汇总报表接口），793 次 Sonnet 请求分成四段：10-28 15:31–15:54 第一次接真模型的裁判校准和小试跑 0.25 美元；16:03–16:41 三轮完整评测的裁判 0.46 美元；22:51–22:56 第一轮已校准评测的裁判 0.23 美元；10-29 10:54–10:58 三模型对比评测（Sonnet 既当被测又当裁判）约 1.33 美元。明细见 [ADR 0111](adr/0111-no-expensive-models-anywhere.md#bill)。
+在 Andy 的浏览器里打开 Vercel Logs 逐行核对（Hobby 套餐不能用汇总报表接口），793 次 Sonnet 请求分成四段：10-28 15:31–15:54 第一次接真模型的裁判校准和小试跑 0.25 美元；16:03–16:41 三轮完整评测的裁判 0.46 美元；22:51–22:56 第一轮已校准评测的裁判 0.23 美元；10-29 10:54–10:58 三模型对比评测（Sonnet 既当被测又当裁判）约 1.33 美元。明细见 [ADR 0111](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0111-no-expensive-models-anywhere.md#bill)。
 
 **根因**
 
@@ -3543,7 +3543,7 @@ Andy 2026-10-29 00:56 定了规则，记在 [ADR 0107](https://github.com/sixian
 
 **相关 ADR/PR**
 
-[ADR 0111](adr/0111-no-expensive-models-anywhere.md)、[ADR 0103](adr/0103-jarvis-test-live-evaluation-and-two-tier-judge.md)、[ADR 0107](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0107-every-incident-gets-an-automatic-gate.md)、[事故清单 I-19](incidents-and-gates.md#incidents)、[案例 39 真模型跑 Jarvis Test](#case-jarvis-test-evals)。
+[ADR 0111](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0111-no-expensive-models-anywhere.md)、[ADR 0103](adr/0103-jarvis-test-live-evaluation-and-two-tier-judge.md)、[ADR 0107](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0107-every-incident-gets-an-automatic-gate.md)、[事故清单 I-19](incidents-and-gates.md#incidents)、[案例 39 真模型跑 Jarvis Test](#case-jarvis-test-evals)。
 
 **后续（2026-10-29）**
 
@@ -3947,7 +3947,7 @@ Andy 先要一个“隐私最好、价格最低”的方案。调研比较了 12
 - 每次调用的费用只认 Vercel 返回的账单字段，别的通道一律当作“账单缺失”拒绝。
 - 订阅套餐和 API 不是一回事。很多套餐的额度只允许在官方认可的客户端里用，接到自己的服务上要看条款。
 
-**我们的方案**（[ADR 0117](adr/0117-magpie-routes-models-through-owned-subscriptions.md)）
+**我们的方案**（[ADR 0117](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0117-magpie-routes-models-through-owned-subscriptions.md)）
 
 1. 在生产机装 Magpie v0.1.2001：用固定版本，做 SHA256 校验，用专用系统用户，只监听本机 `127.0.0.1:3425`，关掉统计上报，也关掉它读取其他客户端登录信息的功能。
 2. Himawari 新增 `provider: "magpie"`。配置里写 Magpie 的路由组名和本机地址；校验只接受回环地址的 http，也不接受 Vercel 专用的路由参数。
@@ -3990,7 +3990,7 @@ Andy 先要一个“隐私最好、价格最低”的方案。调研比较了 12
 
 **后续（2026-10-29 晚间）**
 
-上面“腾讯 CodeBuddy 不接、SuperGrok 接”的结论后来反过来了。我先前以为 Magpie 只能把自己的模型给 CodeBuddy 用，其实社区插件能让 Magpie 调用 CodeBuddy 的模型。主人 18:31 授权在生产机装插件并登录国际版，条款风险由他承担；国际版数据在新加坡保留 14 天，所以排在组里最后。SuperGrok 主人选了先不接。最终顺序是：OpenCode Zen 两个免费模型 → OpenCode Go 两个模型 → CodeBuddy 国际版，组里没有 Vercel。主人还决定私人数据不必特意避开 CodeBuddy。详见 [ADR 0117 晚间修订](adr/0117-magpie-routes-models-through-owned-subscriptions.md#revision-1029-evening)。这件事的教训：判断“某个套餐能不能接”之前，要先查这个网关的插件生态，而不是只看它的主文档。
+上面“腾讯 CodeBuddy 不接、SuperGrok 接”的结论后来反过来了。我先前以为 Magpie 只能把自己的模型给 CodeBuddy 用，其实社区插件能让 Magpie 调用 CodeBuddy 的模型。主人 18:31 授权在生产机装插件并登录国际版，条款风险由他承担；国际版数据在新加坡保留 14 天，所以排在组里最后。SuperGrok 主人选了先不接。最终顺序是：OpenCode Zen 两个免费模型 → OpenCode Go 两个模型 → CodeBuddy 国际版，组里没有 Vercel。主人还决定私人数据不必特意避开 CodeBuddy。详见 [ADR 0117 晚间修订](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0117-magpie-routes-models-through-owned-subscriptions.md#revision-1029-evening)。这件事的教训：判断“某个套餐能不能接”之前，要先查这个网关的插件生态，而不是只看它的主文档。
 
 **后续（2026-11-07）**
 
@@ -3998,7 +3998,7 @@ Andy 先要一个“隐私最好、价格最低”的方案。调研比较了 12
 
 **相关 ADR/PR**
 
-[ADR 0117](adr/0117-magpie-routes-models-through-owned-subscriptions.md)、[ADR 0111](adr/0111-no-expensive-models-anywhere.md)、[ADR 0048](adr/0048-vercel-ai-gateway-replaces-openrouter.md)、[ADR 0178](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0178-review-model-calls-through-a-local-magpie.md)；本案例的 PR 在分支 `claude/project-thread-0k10sh`，复核改经 Magpie 的 PR 在分支 `claude/laughing-dirac-dfkf3j`。
+[ADR 0117](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0117-magpie-routes-models-through-owned-subscriptions.md)、[ADR 0111](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0111-no-expensive-models-anywhere.md)、[ADR 0048](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0048-vercel-ai-gateway-replaces-openrouter.md)、[ADR 0178](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0178-review-model-calls-through-a-local-magpie.md)；本案例的 PR 在分支 `claude/project-thread-0k10sh`，复核改经 Magpie 的 PR 在分支 `claude/laughing-dirac-dfkf3j`。
 
 **面试 30 秒版**
 
@@ -4217,13 +4217,13 @@ OpenAI 的“流式”Himawari 早已做到，但第一个字本身就要 5 秒�
   修法：静态文件只看内存里的服务状态，不查数据库；同一时刻的权限检查共用一次（写入本身仍带权限令牌，数据库层照样拒绝过期的写）；最后活跃时间 60 秒内不重复写；推送只读待审批，订阅改读“条数 + 修订号之和 + 待审批列表”这个一行的小结果。放弃的做法：给数据库加第二个读线程，改动面大，而且问题是请求太多，不是单次慢。效果待第二十一版之后的下一版上线后用同一条日志命令复测，现在未测量。
 - 3 秒重发反而让整轮失败（2026-10-30 后续，事故 I-37，[ADR 0123](adr/0123-cut-off-embedding-attempt-charged-at-its-ceiling.md)）：第二十版、第二十一版验收共 3 次“本轮执行失败”，都在找记忆第一次超时重发之后。用真实 SQLite 准入写测试复现：被掐断的那次记成“结果不确定”，这一轮的预算账户随之变成“待对账”；重发用同一个调用位置，被要求先对账；主对话再申请调用，被预算账户拒绝。原来的单元测试用总是放行的假准入，所以 #116 上线前没发现，重发在生产上从未成功过。
   业界做法（实际打开的一手资料）：开源网关 LiteLLM 对“到达服务后超时”的请求按预估输入 token 计费、从预算里扣，每次重试单独一条记录（`attempt-<n>`）；OpenAI Agents SDK 每次重试是新的一次尝试、单独计时，只有重放不安全时才停下。我们照此修：被自己掐断的向量请求按费用上限（16384 个 token × 输入单价）结清，重发用新的调用位置；准入失败的原因写进日志 `model.admission_failed`。放弃的做法：超时按 0 元记（服务方照样收费，会少算）、一直等对账（这一轮必然失败）、准入不计向量请求（重发仍会被挡住）。代价是每次重发最多多记一次向量请求的上限费用。效果待下一版上线复测，现在未测量。
-  为什么当初这样设计（Andy 问）：当时合理的部分是，预算账本（迁移 0022）建在有费用上限的时期（全局 1 美元、单轮 0.1 美元），一次调用花费不确定，就不知道是否已经超限，先锁住整轮账户等对账，是防超支的保守做法；Pi 运行适配器把准入异常统一换成一句固定的“准入失败”，用意是不把内部错误原文混进模型输出和过程记录，这一点是推断，没找到当时的记录。后来变错的部分是，10-25 [ADR 0076](adr/0076-no-model-cost-budget-limits.md) 取消了所有费用上限，却保留了这把锁，理由改成“阻止同一调用被重复发出”；可这件事调用记录已经按调用位置做了，锁整轮账户就把同一轮里无关的调用也挡住了。#116 加 3 秒掐断时，测试用的是总是放行的假准入，碰不到这把锁；异常又只换成一句固定的话、不写日志，所以上线后也看不出原因。本次只修了“被自己掐断的向量请求”这一种；锁的范围要不要缩小到“只挡同一调用”，留给 Andy 定。
+  为什么当初这样设计（Andy 问）：当时合理的部分是，预算账本（迁移 0022）建在有费用上限的时期（全局 1 美元、单轮 0.1 美元），一次调用花费不确定，就不知道是否已经超限，先锁住整轮账户等对账，是防超支的保守做法；Pi 运行适配器把准入异常统一换成一句固定的“准入失败”，用意是不把内部错误原文混进模型输出和过程记录，这一点是推断，没找到当时的记录。后来变错的部分是，10-25 [ADR 0076](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0076-no-model-cost-budget-limits.md) 取消了所有费用上限，却保留了这把锁，理由改成“阻止同一调用被重复发出”；可这件事调用记录已经按调用位置做了，锁整轮账户就把同一轮里无关的调用也挡住了。#116 加 3 秒掐断时，测试用的是总是放行的假准入，碰不到这把锁；异常又只换成一句固定的话、不写日志，所以上线后也看不出原因。本次只修了“被自己掐断的向量请求”这一种；锁的范围要不要缩小到“只挡同一调用”，留给 Andy 定。
   怎么防止再用假的测过去（Andy 问）：Google《Software Engineering at Google》第 13 章说“We prefer realistic tests because they give more confidence that the system under test is working properly”，并指出用桩代替时“there is no way to ensure the function being stubbed behaves like the real implementation”，假实现“must have its own tests to ensure that it conforms to the API of its corresponding real implementation”（https://abseil.io/resources/swe-book/html/ch13.html ）；Martin Fowler 把这类核对叫契约测试，用来发现替身和真实服务走样（https://martinfowler.com/bliki/ContractTest.html ）。我们据此加了一道门 `npm run check:real-admission`：单元测试可以继续用假准入图快，但每个调用模型准入的源文件都必须另有一条走真实 SQLite 准入的集成测试，新增调用方不登记就过不了 `npm run check`。把测试恢复到 #116 时的状态，这道门会报错。
-- 锁只挡同一次（2026-10-30 后续，[ADR 0124](adr/0124-unknown-model-call-blocks-only-its-own-resend.md)）：Andy 定“改只挡同一次”。业界做法（实际打开的一手资料）：Stripe 的幂等键按每个请求识别“retries of the same request”；Temporal 建议用“the Workflow Run ID and the Activity ID as an idempotency key”，防重复的单位是一轮里的一个步骤；LiteLLM 每次重试单独记一行。我们照此改：预算账户“待对账”时仍接受同一轮其他调用，同一调用位置上那笔不确定的调用再申请仍返回“先对账”；账户保持待对账，整轮重新派发和后台任务恢复仍被挡，因为那会把不确定的那次再发一遍。放弃的做法：保持整轮锁（向量请求一次不确定就让整轮失败）、连派发和恢复一起放开（会重发同一次）、按调用种类分别处理（按调用位置已经对所有种类成立）。代价是对账要按每一笔看，不能只看账户总数。验证：真实 SQLite 准入的测试改前报 `Budget account is not available for a new allocation`，改后通过；出包走查新增必过场景 `accept-slow-memory-search`，让找记忆故意晚 3.5 秒，主回答必须出来、不出现“本轮执行失败”。效果待下一版出包走查和上线后确认，现在未测量。
+- 锁只挡同一次（2026-10-30 后续，[ADR 0124](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0124-unknown-model-call-blocks-only-its-own-resend.md)）：Andy 定“改只挡同一次”。业界做法（实际打开的一手资料）：Stripe 的幂等键按每个请求识别“retries of the same request”；Temporal 建议用“the Workflow Run ID and the Activity ID as an idempotency key”，防重复的单位是一轮里的一个步骤；LiteLLM 每次重试单独记一行。我们照此改：预算账户“待对账”时仍接受同一轮其他调用，同一调用位置上那笔不确定的调用再申请仍返回“先对账”；账户保持待对账，整轮重新派发和后台任务恢复仍被挡，因为那会把不确定的那次再发一遍。放弃的做法：保持整轮锁（向量请求一次不确定就让整轮失败）、连派发和恢复一起放开（会重发同一次）、按调用种类分别处理（按调用位置已经对所有种类成立）。代价是对账要按每一笔看，不能只看账户总数。验证：真实 SQLite 准入的测试改前报 `Budget account is not available for a new allocation`，改后通过；出包走查新增必过场景 `accept-slow-memory-search`，让找记忆故意晚 3.5 秒，主回答必须出来、不出现“本轮执行失败”。效果待下一版出包走查和上线后确认，现在未测量。
 
 **相关 ADR/PR**
 
-[ADR 0119](adr/0119-conversation-speed-prewarm-on-tool-call-and-embedding-retry.md)、[ADR 0123](adr/0123-cut-off-embedding-attempt-charged-at-its-ceiling.md)、[ADR 0124](adr/0124-unknown-model-call-blocks-only-its-own-resend.md)、[ADR 0085](adr/0085-remove-per-turn-system-gaps.md)、[ADR 0117](adr/0117-magpie-routes-models-through-owned-subscriptions.md)、[事故清单 I-25、I-30、I-36、I-37](incidents-and-gates.md#incidents)、[案例 59：工具前后空等](#case-tool-gap-host-check)、[案例 24：每轮系统空档](#case-run-gaps)；PR 在分支 `claude/project-thread-jimoqj`。
+[ADR 0119](adr/0119-conversation-speed-prewarm-on-tool-call-and-embedding-retry.md)、[ADR 0123](adr/0123-cut-off-embedding-attempt-charged-at-its-ceiling.md)、[ADR 0124](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0124-unknown-model-call-blocks-only-its-own-resend.md)、[ADR 0085](adr/0085-remove-per-turn-system-gaps.md)、[ADR 0117](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0117-magpie-routes-models-through-owned-subscriptions.md)、[事故清单 I-25、I-30、I-36、I-37](incidents-and-gates.md#incidents)、[案例 59：工具前后空等](#case-tool-gap-host-check)、[案例 24：每轮系统空档](#case-run-gaps)；PR 在分支 `claude/project-thread-jimoqj`。
 
 **面试 30 秒版**
 
@@ -4679,7 +4679,7 @@ OpenAI 的“流式”Himawari 早已做到，但第一个字本身就要 5 秒�
 
 **相关 ADR/PR**
 
-[ADR 0128](adr/0128-record-cache-usage-of-every-model-request.md)；[ADR 0104](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0104-turn-material-in-last-user-message.md)；分支 `claude/project-thread-r8uswg`。后续 PR：各用途前缀稳定性的自动检查和三处提示词修改、历史固定块（3 + 1 + 2）。
+[ADR 0128](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0128-record-cache-usage-of-every-model-request.md)；[ADR 0104](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0104-turn-material-in-last-user-message.md)；分支 `claude/project-thread-r8uswg`。后续 PR：各用途前缀稳定性的自动检查和三处提示词修改、历史固定块（3 + 1 + 2）。
 
 **面试 30 秒版**
 
@@ -5218,7 +5218,7 @@ Andy 看到“崩溃已有处理、生产没有卡住证据”后选了“只记
 
 **相关 ADR/PR**
 
-[ADR 0146](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0146-redact-sensitive-text-before-it-leaves-for-any-model.md)（第一版，已被取代）、[ADR 0148](adr/0148-send-every-model-request-through-one-in-process-egress.md)、[ADR 0117](adr/0117-magpie-routes-models-through-owned-subscriptions.md)、PR #185、#187、#190。
+[ADR 0146](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0146-redact-sensitive-text-before-it-leaves-for-any-model.md)（第一版，已被取代）、[ADR 0148](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0148-send-every-model-request-through-one-in-process-egress.md)、[ADR 0117](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0117-magpie-routes-models-through-owned-subscriptions.md)、PR #185、#187、#190。
 
 **后续（2026-11-07）**
 
@@ -5269,7 +5269,7 @@ Andy 看到“崩溃已有处理、生产没有卡住证据”后选了“只记
 
 **相关 ADR/PR**
 
-[ADR 0149](adr/0149-append-only-model-requests.md)（取代 [ADR 0104](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0104-turn-material-in-last-user-message.md)）、[ADR 0128](adr/0128-record-cache-usage-of-every-model-request.md)、事故 [I-66](incidents-and-gates.md#incidents)。
+[ADR 0149](adr/0149-append-only-model-requests.md)（取代 [ADR 0104](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0104-turn-material-in-last-user-message.md)）、[ADR 0128](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0128-record-cache-usage-of-every-model-request.md)、事故 [I-66](incidents-and-gates.md#incidents)。
 
 **面试 30 秒版**
 
@@ -5440,7 +5440,7 @@ Anthropic 的插件按置信度过滤意见；我们不过滤，而是按严重�
 - 事故：[I-78](incidents-and-gates.md#incidents)
 - 规则：`.agents/instructions/prompt-prefix.md` 第 11 条
 - PR：#268（PR #258 的拦截记录页面暴露了这个问题）
-- 前置决定：[ADR 0148](adr/0148-send-every-model-request-through-one-in-process-egress.md)
+- 前置决定：[ADR 0148](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0148-send-every-model-request-through-one-in-process-egress.md)
 - 方案讨论和逐条判断：`.agents/reviews/topic-trusted-prompt-egress/`、`.agents/reviews/pr-268/`
 
 **面试 30 秒版**
@@ -5582,7 +5582,7 @@ Pi 在 0.86 和 0.87 改了两处核心约定：发给模型的请求不再分�
 
 - **相同：** 问答加模型判对错，换说法也算对，拒答题单独统计。
 - **不同 1：题目来源。** 业界用公开的合成对话；我们用主人自己的记忆和原话。所以只能和自己的历史比，不能和论文数字直接比。
-- **不同 2：判分模型。** 官方用 GPT-4o；项目禁用这类贵模型（[ADR 0111](adr/0111-no-expensive-models-anywhere.md)），换成低价模型。判分可能判错，第一次抽查时用 Andy 标出的判错条目算判分和人工的一致率。
+- **不同 2：判分模型。** 官方用 GPT-4o；项目禁用这类贵模型（[ADR 0111](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0111-no-expensive-models-anywhere.md)），换成低价模型。判分可能判错，第一次抽查时用 Andy 标出的判错条目算判分和人工的一致率。
 - **不同 3：先快判。** 回答包含原话就不调判分模型，省钱。
 - **放弃：** 题库偏向没被改写过的记忆。改写时没存新原话的记忆取不到原话，不出题。
 

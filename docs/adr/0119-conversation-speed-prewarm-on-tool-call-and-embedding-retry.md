@@ -40,7 +40,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 三处的原因：
 
-1. **模型首字。** 生产主模型经本机 Magpie（把多个模型来源合成一个接口的路由程序，[ADR 0117](0117-magpie-routes-models-through-owned-subscriptions.md)）的路由组 `group/himawari-main` 依次尝试。组里排在最前的两个 OpenCode 免费模型在生产机上一直拿不到额度，每次都回 429（额度用完），之后才轮到 OpenCode Go 的 DeepSeek V4.1 Flash。等待时间与请求大小无关：4 千 token、没命中缓存的请求和 2 万 token、大部分命中缓存的请求都等约 5.1 秒。生产机上的短请求实测（每组 5 次）：经路由组中位数 3.0 秒，跳过免费模型直指 Go 2.5 秒，经 Magpie 走 CodeBuddy 新加坡 1.1 秒；生产机到 opencode.ai 的网络约 0.5 秒。
+1. **模型首字。** 生产主模型经本机 Magpie（把多个模型来源合成一个接口的路由程序，[ADR 0117](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0117-magpie-routes-models-through-owned-subscriptions.md)）的路由组 `group/himawari-main` 依次尝试。组里排在最前的两个 OpenCode 免费模型在生产机上一直拿不到额度，每次都回 429（额度用完），之后才轮到 OpenCode Go 的 DeepSeek V4.1 Flash。等待时间与请求大小无关：4 千 token、没命中缓存的请求和 2 万 token、大部分命中缓存的请求都等约 5.1 秒。生产机上的短请求实测（每组 5 次）：经路由组中位数 3.0 秒，跳过免费模型直指 Go 2.5 秒，经 Magpie 走 CodeBuddy 新加坡 1.1 秒；生产机到 opencode.ai 的网络约 0.5 秒。
 2. **工具空等。** [ADR 0085](0085-remove-per-turn-system-gaps.md) 去掉了每轮预热后，常驻沙箱（用操作系统机制限制程序能访问的文件和网络的隔离环境，同一轮里多次调用共用一个）要等工具请求一路走到 Worker（执行命令的后台进程）才开始启动。日志 `sandbox.srt_session.timing` 显示新开一个会话要 3.2–5.0 秒，写文件和执行命令各要一个会话；在它之前，工具请求的准入和派发（`tool.dispatch.timing` 的 `dispatch` 段）已经花了 2.4–6.7 秒，两段是串行的。
 3. **找记忆。** 要先把问题变成向量（经 Vercel 去美国的供应商），连续发消息时 0.9–1.8 秒，隔几分钟再发的第一轮 1.9–9.1 秒；向量请求的超时等于整个模型请求的时限，慢的那一次只能干等。
 
@@ -50,7 +50,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 1. **模型一开始写工具调用就预热沙箱。** Pi 运行适配器（`packages/runtime-pi/src/pi-runtime-adapter.ts`）在模型流式输出里看到工具调用开始（`toolcall_start`）时，立即用工具名回调 `onToolCallStarted`，不等过程记录写盘。服务（`apps/agent-service/src/production-tool-call-prewarm.ts`）只在工具是 `bash`、`write`、`edit` 之一、且在配置的 `runPolicy.coding.enabledTools` 里时，调用 [ADR 0054](0054-readonly-tools-in-host-and-reused-task-sandbox.md#resident-prewarm) 留下的 `prewarmEnvironment`，同一轮只调一次。预热启动命令和写文件两个会话；真正的调用照旧走完整准入，只复用已启动的沙箱进程；预热失败只写诊断（`sandbox.srt_prewarm.failed`），真正的调用按原来的冷启动走。没用这三个工具的轮次不预热。
 2. **找记忆的向量请求 3 秒没回就重发一次。** 在一轮对话里找记忆时，第一次向量请求最多等 3 秒；超时就把这次记为"结果不确定"（`markUnknown("transport_unresolved")`，和原来被取消时一样），用新的调用序号（`ordinal` 2）重新登记再发一次，第二次用剩下的全部时限。只重发一次，后台记忆整理不重发。重发时写诊断 `memory.embedding_retried`。3 秒取自 10-28 的 40 轮实测（中位数 1.39 秒，第 90 百分位 2.29 秒）。
-3. **Magpie 路由组把 CodeBuddy 排第一。** Andy 10-30 00:41（日本时间）在选择卡上选定：`group/himawari-main` 改为 CodeBuddy 新加坡 DeepSeek V4.1 Flash → Go DeepSeek V4.1 Flash → Go GLM-5.3-Flash → 两个免费模型（挪到最后，不删）。这是生产机上 Magpie 的配置，不在本仓库。10-30 01:04 Mac 线程已改好并重启 `magpie.service`，改前备份和改后实测记在 [ADR 0117 的 10-30 顺序变更](0117-magpie-routes-models-through-owned-subscriptions.md#revision-1030-order)。
+3. **Magpie 路由组把 CodeBuddy 排第一。** Andy 10-30 00:41（日本时间）在选择卡上选定：`group/himawari-main` 改为 CodeBuddy 新加坡 DeepSeek V4.1 Flash → Go DeepSeek V4.1 Flash → Go GLM-5.3-Flash → 两个免费模型（挪到最后，不删）。这是生产机上 Magpie 的配置，不在本仓库。10-30 01:04 Mac 线程已改好并重启 `magpie.service`，改前备份和改后实测记在 [ADR 0117 的 10-30 顺序变更](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0117-magpie-routes-models-through-owned-subscriptions.md#revision-1030-order)。
 4. **上线前的网页走查给对话耗时设上限。** 走查（`test/integration/product-path-browser.test.ts`）记下“简单问题”和“执行命令”两个场景从按发送到答案出现的毫秒数 `answerMs`；`scripts/delivery-mode/browser-acceptance-gate.py` 在简单问题超过 4 秒、执行命令超过 12 秒或没有计时时拒绝出包和上线。走查用脚本模型，这个上限只管 Himawari 自己的耗时；第一版上限是 20 秒、60 秒；10-30 按第二十版走查实测（简单问题 1,223 毫秒、执行命令 5,721 毫秒）收紧为 4 秒、12 秒：执行命令约为实测的 2 倍，简单问题本身很短，测试机负载一抖动比例就大，所以放到约 3 倍。
 
 <a id="amendments"></a>
@@ -102,7 +102,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 - [ADR 0085：去掉每轮回答里的系统空档](0085-remove-per-turn-system-gaps.md)
 - [ADR 0054：只读工具在宿主执行、同一轮复用沙箱](0054-readonly-tools-in-host-and-reused-task-sandbox.md)
-- [ADR 0117：Magpie 经自有订阅路由模型](0117-magpie-routes-models-through-owned-subscriptions.md)
+- [ADR 0117：Magpie 经自有订阅路由模型](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0117-magpie-routes-models-through-owned-subscriptions.md)
 - [事故与门槛清单](../incidents-and-gates.md)
 - [工程案例库：案例 63](../engineering-casebook.md#case-conversation-speed)
 - [Backlog BL-20261028-008：本机向量模型](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/backlog/BL-20261028-008-local-memory-embedding.md)
