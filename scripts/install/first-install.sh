@@ -97,7 +97,14 @@ if [[ ! -d "$prefix/lib" ]]; then
   mkdir -p "$install_root/releases"
   (cd "$source_dir" && env PATH="$node_prefix/bin:/usr/bin:/bin" node scripts/install-node-runtime.mjs --prefix "$prefix")
 fi
-[[ -d "$prefix/share/control-center" ]] || { echo "FIRST_INSTALL_CONTROL_CENTER_MISSING $prefix" >&2; exit 1; }
+if [[ ! -f "$prefix/share/control-center/index.html" ]]; then
+  mkdir -p "$prefix/share"
+  rm -rf "$prefix/share/control-center"
+  cp -r "$source_dir/apps/control-center/dist" "$prefix/share/control-center"
+  find "$prefix/share/control-center" -type d -exec chmod 0755 {} +
+  find "$prefix/share/control-center" -type f -exec chmod 0644 {} +
+fi
+[[ -f "$prefix/share/control-center/index.html" ]] || { echo "FIRST_INSTALL_CONTROL_CENTER_MISSING $prefix" >&2; exit 1; }
 operations=$install_root/operations/first-install
 mkdir -p "$operations"
 install -m 0644 "$source_dir/scripts/delivery-mode/packet-template/systemd/pair-supervisor.mjs" "$operations/pair-supervisor.mjs"
