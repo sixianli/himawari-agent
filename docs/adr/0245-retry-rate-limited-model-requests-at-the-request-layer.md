@@ -4,7 +4,7 @@ document_type: adr
 decision_status: accepted
 supersedes: ""
 superseded_by: ""
-amends: "docs/adr/0198-upgrade-pi-to-1-5-0.md"
+amends: "https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0198-upgrade-pi-to-1-5-0.md"
 date: "2026-11-12"
 covers: ".agents/instructions/prompt-prefix.md, packages/application/test/model-egress.unit.test.ts, packages/runtime-pi/src/pi-model-transport.ts, packages/runtime-pi/src/pi-runtime-adapter.ts, packages/runtime-pi/test/prompt-prefix.compat.test.ts"
 verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
@@ -29,7 +29,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 2026-11-12 09:13 JST，Andy 在手机上发“新闻”，页面显示“发送中”，18 秒后回答“模型服务当前限流”。生产日志（`out.txt`，在 Andy 的 Mac 上）显示：这一轮在 00:13:42Z 收到上游 429（provider_status_429），同一秒起标题的后台调用也被同一上游限流；数据库没有堵（这一轮 154 次操作总排队 349 ms）。当时没有重试，立刻报错，用户只能自己重发。
 
-本 ADR 之前两层重试都关着：Pi 的自动重试（`packages/runtime-pi/src/pi-runtime-adapter.ts` 里 `retry: { enabled: false, maxRetries: 0 }`），以及发出 HTTP 请求那一层的重试，这一层原来的次数也是 0，本 ADR 把它改成 2 次。第一层要关，因为 Pi 的自动重试会往历史追加 `context_edit`，改变已发出的内容（[ADR 0198](0198-upgrade-pi-to-1-5-0.md#decision) 前提 5、决定 7）。第二层没有这个问题：它在发出 HTTP 请求的那一层，只重发同一份请求，不碰对话历史。
+本 ADR 之前两层重试都关着：Pi 的自动重试（`packages/runtime-pi/src/pi-runtime-adapter.ts` 里 `retry: { enabled: false, maxRetries: 0 }`），以及发出 HTTP 请求那一层的重试，这一层原来的次数也是 0，本 ADR 把它改成 2 次。第一层要关，因为 Pi 的自动重试会往历史追加 `context_edit`，改变已发出的内容（[ADR 0198](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0198-upgrade-pi-to-1-5-0.md#decision) 前提 5、决定 7）。第二层没有这个问题：它在发出 HTTP 请求的那一层，只重发同一份请求，不碰对话历史。
 
 别人怎么做：OpenAI 官方限流指南说有 `Retry-After` 就照它等，没有就指数退避加随机抖动，并限制次数和总时长（<https://developers.openai.com/api/docs/guides/rate-limits>）；OpenAI 和 Anthropic 的官方 SDK 默认都在请求层重试 2 次。Pi 的模型层自己带了同样的官方做法：`@earendil-works/pi-ai` 的 `maxRetries` 和 `maxRetryDelayMs` 选项（`dist/utils/provider-retry.js`：只重试 408、409、429、5xx 和连接错误；先看 `retry-after-ms`、`retry-after`，没有就从 0.5 秒起指数退避；服务方要求等得比上限还久就立刻失败）。
 
@@ -86,7 +86,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 ## 关联文档
 
-- [ADR 0198](0198-upgrade-pi-to-1-5-0.md)
+- [ADR 0198](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0198-upgrade-pi-to-1-5-0.md)
 - [Pi 二次开发规范](../pi-development-guide.md#pattern-settings)
 - [模型请求的 KV 缓存规范](../kv-cache-guide.md)
 

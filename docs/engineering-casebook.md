@@ -5454,7 +5454,7 @@ Anthropic 的插件按置信度过滤意见；我们不过滤，而是按严重�
 ## 案例 86：底层 Agent 框架跨大版本升级：Pi 从 0.84.2 升到 1.5.0，老对话的缓存一个字节都没变
 
 **背景与现象**
-Himawari 的模型调用、Agent 循环（模型一步步调用工具的那套流程）和内置工具都来自开源框架 Pi，固定在 0.84.2 已近三个月。直接把版本号改成 1.5.0 后，类型检查报 8 处错，Pi 兼容测试 405 条里 48 条失败（试升记录，见 [ADR 0198](adr/0198-upgrade-pi-to-1-5-0.md)）。
+Himawari 的模型调用、Agent 循环（模型一步步调用工具的那套流程）和内置工具都来自开源框架 Pi，固定在 0.84.2 已近三个月。直接把版本号改成 1.5.0 后，类型检查报 8 处错，Pi 兼容测试 405 条里 48 条失败（试升记录，见 [ADR 0198](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0198-upgrade-pi-to-1-5-0.md)）。
 
 **根因**
 Pi 在 0.86 和 0.87 改了两处核心约定：发给模型的请求不再分开传系统提示和工具，而是放进 `role: "system"` 的消息里；会话历史以 SessionManager（Pi 管会话条目的对象）为准，给 `agent.state.messages` 赋值不再影响请求，`systemPrompt` 变成只读。Himawari 恰好在两处依赖旧约定：每次请求替换成按对话冻结的系统提示和工具；审批后续跑时直接给内部状态赋值来恢复历史。前者在 1.5.0 里会“静默不生效”，后者直接编译不过。
@@ -5478,7 +5478,7 @@ Pi 在 0.86 和 0.87 改了两处核心约定：发给模型的请求不再分�
 - 生产命中率变化：未测量（还没上线）。
 
 **相关 ADR/PR**
-[ADR 0198](adr/0198-upgrade-pi-to-1-5-0.md)、[ADR 0165](adr/0165-freeze-the-request-head-per-conversation.md)、PR #338。
+[ADR 0198](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0198-upgrade-pi-to-1-5-0.md)、[ADR 0165](adr/0165-freeze-the-request-head-per-conversation.md)、PR #338。
 
 **面试 30 秒版**
 “我们的 Agent 跑在开源框架 Pi 上，跨大版本升级时 Pi 把系统提示改成放在消息里，并且会话历史只认它自己的会话管理器。我们按对话冻结请求开头来保证 KV 缓存命中，直接升级会让这层冻结静默失效。我按 Pi 官方文档把审批续跑改成用会话条目恢复，请求开头仍由我们生成再交给 Pi 的官方函数，并加了反向测试。最后用新旧两版生成同一请求做逐字节比对，证明老对话的缓存一个字节都没变。”

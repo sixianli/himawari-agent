@@ -659,7 +659,7 @@ Ubuntu coverage 作业通过显式 `initial-only` 选项，在合法初始化且
 
 HTTP 身份 Session ID 可以包含冒号；Pi SessionManager 只接受受限字符。适配层对版本化 Owner/Agent/Session/Thread 元组计算 SHA-256，生成稳定 Pi 内部 ID；数据库中的产品身份保持原值，重建仍由产品检查点负责。
 
-Pi 1.5.0 在 `AgentSession.prompt()` 前检查自身的凭据配置。产品适配层在注册模型服务方时用 Pi 的完整 `Provider` 声明原生认证（[ADR 0205](adr/0205-pi-native-provider-auth.md)）：`auth.apiKey.check` 无副作用地回答“已配置”，`resolve` 只接收 Himawari 经 `apiKey` 选项传入的密钥，Pi 的凭据库保持为空。此处不读取密钥，也不修改共享凭据库。每次物理请求仍由 `admitPiStream` 先检查权限和预算，再从主机 Secret source 读取密钥。Vercel兼容协议的本地HTTPS安装测试与本地 HTTP Pi 兼容测试分别验证该路径，不能把仅允许匿名认证的 faux provider 测试当作凭据接线证据。
+Pi 1.5.0 在 `AgentSession.prompt()` 前检查自身的凭据配置。产品适配层在注册模型服务方时用 Pi 的完整 `Provider` 声明原生认证（[ADR 0294](adr/0294-building-on-pi.md)）：`auth.apiKey.check` 无副作用地回答“已配置”，`resolve` 只接收 Himawari 经 `apiKey` 选项传入的密钥，Pi 的凭据库保持为空。此处不读取密钥，也不修改共享凭据库。每次物理请求仍由 `admitPiStream` 先检查权限和预算，再从主机 Secret source 读取密钥。Vercel兼容协议的本地HTTPS安装测试与本地 HTTP Pi 兼容测试分别验证该路径，不能把仅允许匿名认证的 faux provider 测试当作凭据接线证据。
 
 
 生成继续复用Pi ModelRuntime和AgentSession；embedding按G46使用精确锁定的Mem0 3.3.1 SDK。每个SDK物理embedding请求在原边界核对输入、模型、分类、原期限和取消，再预留预算、登记开始并解析单次凭据。响应必须给出4096维有限向量、模型身份和安全token用量；实际费用从`providerMetadata.gateway.cost`取得，若同时存在usage.cost则要求一致。最终异步权威检查返回后，在结算前再次核对取消和原期限。查询使用Run执行租约，投影使用领取租约；断连、缺失费用、到期和取消保持unknown预约，不用估价结算或重发。`pg@8.11.3`仍为精确直接依赖，构建继续独立导入实际SDK以核对依赖完整性。

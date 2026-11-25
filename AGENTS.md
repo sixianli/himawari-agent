@@ -109,7 +109,7 @@ Andy 的全局指令已复制到 [.claude/rules/owner-global-instructions.md](.c
 <a id="pi-first-development-principle"></a>
 ## Pi 优先与工作区
 
-涉及模型连接、提供方、路由、流式输出、模型运行时、Agent 循环（模型一步步调用工具的那套流程）、工具、会话或扩展，或者要改依赖、导入 `@earendil-works/pi-*` 包、查看 `pi-mono` 源码之前，先读 [Pi 优先与工作区约定](.agents/instructions/pi-and-workspace.md)。在 Pi 上加功能或改接入点之前，必须先读 [Pi 二次开发规范](docs/pi-development-guide.md)：官方有写法就照官方写，偏离官方要先出方案经 Andy 同意（[ADR 0203](docs/adr/0203-follow-pi-official-extension-patterns.md)）；照官方写也不免除“大改动先出方案”。
+涉及模型连接、提供方、路由、流式输出、模型运行时、Agent 循环（模型一步步调用工具的那套流程）、工具、会话或扩展，或者要改依赖、导入 `@earendil-works/pi-*` 包、查看 `pi-mono` 源码之前，先读 [Pi 优先与工作区约定](.agents/instructions/pi-and-workspace.md)。在 Pi 上加功能或改接入点之前，必须先读 [Pi 二次开发规范](docs/pi-development-guide.md)：官方有写法就照官方写，偏离官方要先出方案经 Andy 同意（[ADR 0294](docs/adr/0294-building-on-pi.md)）；照官方写也不免除“大改动先出方案”。
 
 <a id="pushing-commits"></a>
 ## 推送提交

@@ -119,7 +119,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 - [ADR 0163](0163-owner-preferences-as-data-run-by-tested-rule-types.md)：本 ADR 取代其中的决定 4，决定 1、2、3 继续有效。
 - [ADR 0134](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0134-adopt-product-vision-v2-2.md)、[ADR 0153](0153-adopt-product-vision-v2-3.md)：规则是硬性设定。
 - [ADR 0083](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0083-isolated-instance-per-person-with-owner-entry.md)：每人一个实例（已被 [ADR 0234](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0234-one-program-per-person-database-file.md) 取代，改为一个程序、每人一个数据库文件；每人各自一个主人这一点不变）。
-- [ADR 0204](0204-handle-pi-deviations-d2-d3-d5.md)：“先问我”接现有审批，第 3 步用。
+- [ADR 0204](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0204-handle-pi-deviations-d2-d3-d5.md)：“先问我”接现有审批，第 3 步用。
 - [.agents/instructions/prompt-prefix.md](../../.agents/instructions/prompt-prefix.md)：发给模型的内容只追加。
 - [ADR 0233](0233-rule-book-joins-the-data-export.md)：规则手册进入数据导出（后续）。
 
