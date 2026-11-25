@@ -23,12 +23,15 @@ public struct HerPage: View {
         case device(String)
         case approvals
         case allowances
+        case timers
+        case timer(String)
         case about
     }
 
     @State private var settings: SettingsStore
     @State private var memory: MemoryStore
     @State private var quietHours: QuietHoursStore
+    @State private var timers: TimersStore
     @State private var path: [Page] = []
     @State private var sensesOpen = false
     @State private var vaultCount: HerVaultCount = .unknown
@@ -68,6 +71,7 @@ public struct HerPage: View {
         _settings = State(initialValue: SettingsStore(gateway: gateway, identity: identity))
         _memory = State(initialValue: MemoryStore(gateway: gateway))
         _quietHours = State(initialValue: QuietHoursStore(gateway: gateway))
+        _timers = State(initialValue: TimersStore(gateway: gateway))
         self.listening = listening
         self.actions = actions
         self.openListening = openListening
@@ -93,10 +97,11 @@ public struct HerPage: View {
         #endif
     }
 
-    init(settings: SettingsStore, memory: MemoryStore, quietHours: QuietHoursStore, listening: (any HerListening)? = nil, actions: DeviceActionsModel? = nil, senses: AnyView? = nil, vaultItems: HerVaultCount = .items(3), path: [Page] = []) {
+    init(settings: SettingsStore, memory: MemoryStore, quietHours: QuietHoursStore, timers: TimersStore? = nil, listening: (any HerListening)? = nil, actions: DeviceActionsModel? = nil, senses: AnyView? = nil, vaultItems: HerVaultCount = .items(3), path: [Page] = []) {
         _settings = State(initialValue: settings)
         _memory = State(initialValue: memory)
         _quietHours = State(initialValue: quietHours)
+        _timers = State(initialValue: timers ?? TimersStore(timers: nil))
         _path = State(initialValue: path)
         self.listening = listening
         self.actions = actions
@@ -133,6 +138,12 @@ public struct HerPage: View {
                         .buttonStyle(.plain)
                     }
                     SettingsGroup(label: nil) {
+                        if timers.phase != .unsupported {
+                            Button { path.append(.timers) } label: {
+                                HerRow(icon: .alarm, title: M.timersTitle, subtitle: timersSummary)
+                            }
+                            .buttonStyle(.plain)
+                        }
                         Button { path.append(.allowances) } label: {
                             HerRow(icon: .shieldCheck, title: M.allowancesTitle, subtitle: M.allowancesSummary(memory.allowances.count), last: vaultCount == .unsupported)
                         }
@@ -208,6 +219,10 @@ public struct HerPage: View {
                     DevicePage(store: settings, deviceId: id, actions: actions, removedThisDevice: removedThisDevice) { path.removeLast() }
                 case .allowances:
                     HerAllowancesPage(memory: memory) { path.removeLast() }
+                case .timers:
+                    TimersPage(store: timers, open: { path.append(.timer($0)) }) { path.removeLast() }
+                case .timer(let id):
+                    TimerDetailPage(store: timers, timerId: id) { path.removeLast() }
                 case .about:
                     AboutPage(server: server) { path.removeLast() }
                 case .approvals:
@@ -232,6 +247,12 @@ public struct HerPage: View {
         }
     }
 
+    private var timersSummary: String? {
+        guard timers.phase == .loaded else { return nil }
+        let counts = timers.counts
+        return M.timersSummary(active: counts.active, paused: counts.paused)
+    }
+
     private var devicesSummary: String? {
         guard settings.phase == .loaded, settings.devices.contains(where: settings.isThisDevice) else { return nil }
         return M.thisIPhone
@@ -241,8 +262,9 @@ public struct HerPage: View {
         async let settingsLoaded: Void = settings.load()
         async let memoryLoaded: Void = memory.load()
         async let quietLoaded: Void = quietHours.load()
+        async let timersLoaded: Void = timers.load()
         vaultCount = await countVault()
-        _ = await (settingsLoaded, memoryLoaded, quietLoaded)
+        _ = await (settingsLoaded, memoryLoaded, quietLoaded, timersLoaded)
     }
 }
 
