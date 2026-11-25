@@ -324,6 +324,16 @@
     "changedIn": "ADR 0255",
     "reason": "新增：首页上等主人定的事由模型打要紧度，审批另写一句话和同意按钮文字"
   },
+  "inbox.events.entry": {
+    "sha256": "fdc03a3f74c899b3acf556a65a32d0bbb93a6c3dab1e1579f568ec09c5241d94",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 1 步：外来的事进主对话（内部的系统消息、最后写的话主人看不到），她用 tell_owner 开口并自己决定推不推"
+  },
+  "inbox.events.preface": {
+    "sha256": "94d617cdfb83e5870cf7edc6eff624e1a998625223432e255462ea6c8dbc16fd",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 1 步：外来的事进主对话（内部的系统消息、最后写的话主人看不到），她用 tell_owner 开口并自己决定推不推"
+  },
   "mail.judgment": {
     "sha256": "c767cda2aae0c4a1ab7766043e35e2fda02ef76a079d4fd9004767e543189f77",
     "changedIn": "ADR 0248",
@@ -1330,6 +1340,11 @@
     "changedIn": "ADR 0230",
     "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
   },
+  "tools.result.tell-owner.rejected": {
+    "sha256": "e00c2075b9c218e50fdaa2ade29d00fa5a946a34f72a85bff8c131a8a84a6f0f",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 1 步：外来的事进主对话（内部的系统消息、最后写的话主人看不到），她用 tell_owner 开口并自己决定推不推"
+  },
   "tools.result.tool-result-recall.not-found": {
     "sha256": "b74cc518c46e5dc874742224bbcac13c5657de91256e916bf5273421570002fb",
     "changedIn": "ADR 0285",
@@ -1369,6 +1384,11 @@
     "sha256": "101f34dda3cc16f8f8e96e1977ddbd83927e8b2a602e0e91aa336c3f3653651e",
     "changedIn": "ADR 0166",
     "reason": "W-15a：新增参数说明"
+  },
+  "tools.tell-owner": {
+    "sha256": "331ad9c65b7a1ec36fd4a59e9e725263c31021d2ad35a45e022019f579a08581",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 1 步：外来的事进主对话（内部的系统消息、最后写的话主人看不到），她用 tell_owner 开口并自己决定推不推"
   },
   "tools.tool-result-recall": {
     "sha256": "4c4ed3364e748ad46829c470f233a04b402584e8c3889aa44c8b3f5260aba589",

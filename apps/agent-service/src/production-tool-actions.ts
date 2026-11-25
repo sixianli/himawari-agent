@@ -7,13 +7,13 @@ import {
   type ToolActionRow,
 } from "@himawari-agent/application";
 import {
-  CONVERSATION_OPEN_CAPABILITY_REF,
-  CONVERSATION_SEARCH_CAPABILITY_REF,
-} from "./production-conversation-tools.js";
-import {
   RUNTIME_CONTEXT_EXECUTOR,
   TOOL_RESULT_RECALL_CAPABILITY_REF,
 } from "./production-context-recall.js";
+import {
+  CONVERSATION_OPEN_CAPABILITY_REF,
+  CONVERSATION_SEARCH_CAPABILITY_REF,
+} from "./production-conversation-tools.js";
 import { MANAGED_TASK_ACTIONS } from "./production-managed-tasks.js";
 import { MEMORY_OPEN_CAPABILITY_REF } from "./production-memory-open.js";
 import { MEMORY_RECALL_CAPABILITY_REF } from "./production-memory-recall.js";
@@ -31,6 +31,7 @@ import {
   REMINDER_LIST_CAPABILITY_REF,
   REMINDER_SET_CAPABILITY_REF,
 } from "./production-reminder-writer.js";
+import { TELL_OWNER_CAPABILITY_REF } from "./production-tell-owner.js";
 
 export const BUILT_IN_CAPABILITY_VERSION = "1.0.0";
 
@@ -308,6 +309,16 @@ export const PRODUCTION_TOOL_ACTION_ROWS: readonly ToolActionRow[] = Object.free
     executor: "owner_scoped",
     deduplication: "run_and_tool_call",
     detail: detail({ zh: "打开一条记忆", en: "Open a memory", ja: "記憶を開く" }, "number"),
+  },
+  {
+    ...OWNER_WRITE_DEFAULTS,
+    tool: "tell_owner",
+    himawariSideOnly: true,
+    capabilityRef: TELL_OWNER_CAPABILITY_REF,
+    operation: "tell",
+    targetType: "owner-message",
+    standingRuleChange: false,
+    detail: detail({ zh: "告诉你", en: "Tell you", ja: "あなたに伝える" }, "text"),
   },
   {
     ...OWNER_WRITE_DEFAULTS,

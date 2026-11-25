@@ -285,6 +285,21 @@ export interface ClaimMainThreadInput {
   readonly claimedAt: string;
 }
 
+export interface PostAgentMessageInput {
+  readonly ownerId: OwnerId;
+  readonly agentId: AgentId;
+  readonly threadId: ThreadId;
+  readonly runId: RunId;
+  readonly messageId: MessageId;
+  readonly idempotencyKey: IdempotencyKey;
+  readonly semanticFingerprint: string;
+  readonly contentRef: PayloadRef;
+  readonly dataClassification: DataClassification;
+  readonly committedAt: string;
+  readonly resultRef: PayloadRef;
+  readonly authority: ProductAuthorityFence;
+}
+
 export interface ThreadRepositoryPort {
   /** Read metadata, paged messages and run states from one database snapshot. */
   readDetailSnapshot(query: ThreadDetailSnapshotQuery): Promise<ThreadDetailSnapshot | undefined>;
@@ -358,6 +373,17 @@ export interface ThreadRepositoryPort {
   }>;
   readMain(ownerId: OwnerId, agentId: AgentId): Promise<ThreadId | undefined>;
   claimMain(input: ClaimMainThreadInput): Promise<ThreadId>;
+  readRunThought(input: {
+    readonly ownerId: OwnerId;
+    readonly agentId: AgentId;
+    readonly threadId: ThreadId;
+    readonly runId: RunId;
+  }): Promise<{ readonly contentRef: PayloadRef } | undefined>;
+  postAgentMessage(input: PostAgentMessageInput): Promise<{
+    thread: ProductThread;
+    message: ProductThreadMessage;
+    receipt: ThreadMutationReceipt;
+  }>;
   requestDeletion(input: RequestThreadDeletionInput): Promise<{
     thread: ProductThread;
     impact: ThreadDeletionImpact;

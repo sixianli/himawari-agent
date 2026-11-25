@@ -122,6 +122,7 @@ export class ContextProjectionService implements RuntimeProjectionPort {
         content: prompt,
         occurredAt: envelope.prompt.occurredAt,
         ...(images.length ? { images: Object.freeze(images) } : {}),
+        ...(envelope.prompt.sourceType === "external_event" ? { from: "outside" as const } : {}),
       }),
       contextBlocks: Object.freeze([...contextBlocks, ...workerBlocks]),
     });
