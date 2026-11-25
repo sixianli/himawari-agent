@@ -35,8 +35,6 @@
     "device.pairing.confirm": "iPhone 只留一个主对话（2026-11-24 iPhone 新清单），添加设备页随旧设置页一起删掉，网页也没有页面（缺：调用方）。后端和测试留着；新版“她的页面”要用时再接，是否删除这个操作由 Andy 另行决定",
     "think.settings.read": "iPhone 只留一个主对话（2026-11-24 iPhone 新清单），“想一想”调节页随旧设置页一起删掉，网页也没有页面（缺：调用方）。后端和测试留着；新版“她的页面”要用时再接，是否删除这个操作由 Andy 另行决定",
     "think.settings.change": "iPhone 只留一个主对话（2026-11-24 iPhone 新清单），“想一想”调节页随旧设置页一起删掉，网页也没有页面（缺：调用方）。后端和测试留着；新版“她的页面”要用时再接，是否删除这个操作由 Andy 另行决定",
-    "timers.read": "Always On 第 4 步的定时清单：服务器接口已装（PRODUCTION_TIMER_OPERATIONS），iPhone“她的页面”里的定时清单还没接（缺：调用方）。iPhone 页面接上后移出名单",
-    "timers.change": "Always On 第 4 步的定时清单：服务器接口已装（PRODUCTION_TIMER_OPERATIONS），iPhone“她的页面”里的定时清单还没接（缺：调用方）。iPhone 页面接上后移出名单",
     "server.status.read": "iPhone 只留一个主对话（2026-11-24 iPhone 新清单），设置首页的服务器状态行随旧设置页一起删掉，网页也没有页面（缺：调用方）。后端和测试留着；新版“她的页面”要用时再接，是否删除这个操作由 Andy 另行决定",
     "data.export.start": "iPhone 只留一个主对话（2026-11-24 iPhone 新清单），导出数据页随旧设置页一起删掉，网页也没有页面（缺：调用方）。后端和测试留着；新版“她的页面”要用时再接，是否删除这个操作由 Andy 另行决定",
     "data.export.cancel": "iPhone 只留一个主对话（2026-11-24 iPhone 新清单），导出数据页随旧设置页一起删掉，网页也没有页面（缺：调用方）。后端和测试留着；新版“她的页面”要用时再接，是否删除这个操作由 Andy 另行决定",
