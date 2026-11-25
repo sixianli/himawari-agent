@@ -995,7 +995,6 @@ export const messages = {
     "再計算は当時保存した内容で行います。「対応不要」と判断したメールは差出人と件名しか残っていないため、件数は推定で、多めにも少なめにもなりえます。",
   "rules.receipt.replayNone": "今回は再計算ができませんでしたが、ルールは有効になっています。",
   "rules.receipt.confirm": "適用",
-  "proposals.reject": "不要",
   "memory.page.carry.title": "毎回の会話に持っていく記憶",
   "memory.page.carry.summary": "{count} 件 · {limit} 字中 {used} 字を使用",
   "memory.page.carry.queued": "ほかに {count} 件が入りきりません",

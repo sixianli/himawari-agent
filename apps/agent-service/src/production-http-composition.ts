@@ -199,16 +199,9 @@ import {
   type ProductionProactive,
 } from "./production-proactive.js";
 import {
-  PRODUCTION_PROPOSAL_OPERATIONS,
-  ProductionProposalControl,
-} from "./production-proposal-control.js";
-import { ProductionProposalBox } from "./production-proposals.js";
-import {
   PRODUCTION_QUIET_HOURS_OPERATIONS,
   ProductionQuietHoursControl,
 } from "./production-quiet-hours-control.js";
-import { registerReminderProposalHandlers } from "./production-reminder-proposals.js";
-import { ProductionReminderWriter } from "./production-reminder-writer.js";
 import {
   PRODUCTION_SEARCH_OPERATIONS,
   ProductionSearchControl,
@@ -222,7 +215,6 @@ import {
   PRODUCTION_SERVER_STATUS_OPERATIONS,
   ProductionServerStatusControl,
 } from "./production-server-status-control.js";
-import { registerTaskProposalHandler } from "./production-task-proposals.js";
 import { ThreadDeletionRetry } from "./production-thread-deletion-retry.js";
 import { type ProductionWebPush, WebPushPresence } from "./production-web-push.js";
 import {
@@ -855,7 +847,6 @@ function routeOptions(
         ...(observationAvailable ? PRODUCTION_OBSERVATION_OPERATIONS : []),
         ...PRODUCTION_OWNER_PREFERENCE_OPERATIONS,
         ...(memoryAvailable ? PRODUCTION_QUIET_HOURS_OPERATIONS : []),
-        ...PRODUCTION_PROPOSAL_OPERATIONS,
         ...PRODUCTION_SENSITIVE_INTERCEPTION_OPERATIONS,
         ...PRODUCTION_SERVER_STATUS_OPERATIONS,
         ...PRODUCTION_CAPABILITY_OPERATIONS,
@@ -1260,44 +1251,6 @@ export async function createProductionHttpComposition(
         now: clock,
       })
     : undefined;
-  const proposalBox = new ProductionProposalBox({
-    configuration,
-    store: repository.ownerProposals(),
-    payloads: memoryPayloads,
-    protector: payloadProtector,
-    clock: { now: clock },
-  });
-  const reminderWriter = options.memory
-    ? new ProductionReminderWriter({
-        configuration,
-        memory: options.memory.service,
-        state: repository.productMemoryState(),
-        book: repository.memoryBook(),
-        reminders: repository.memoryReminders(),
-        payloads: memoryPayloads,
-        protector: payloadProtector,
-        clock: { now: clock },
-        ...(configuration.runPolicy?.timeZone
-          ? { timeZone: configuration.runPolicy.timeZone }
-          : {}),
-      })
-    : undefined;
-  if (reminderWriter)
-    registerReminderProposalHandlers({
-      box: proposalBox,
-      writer: reminderWriter,
-      clock: { now: clock },
-    });
-  registerTaskProposalHandler({
-    box: proposalBox,
-    configuration,
-    commands: threadCommands,
-    threads,
-    payloads: memoryPayloads,
-    protector: payloadProtector,
-    clock: { now: clock },
-    timeZone: configuration.runPolicy?.timeZone ?? "UTC",
-  });
   const inboxSettings = new ProductionInboxSettings({
     scope: { ownerId, agentId },
     store: repository.inbox(),
@@ -1374,7 +1327,6 @@ export async function createProductionHttpComposition(
     ? new ProductionOwnerRuleWriter({
         configuration,
         rules: repository.ownerRules(),
-        box: proposalBox,
         reviews: repository.ruleReviews(),
         memory: options.memory.service,
         memories: repository.productMemoryState(),
@@ -1688,12 +1640,6 @@ export async function createProductionHttpComposition(
     ...(options.proactive ? { proactiveControl: options.proactive } : {}),
     ...(options.museControl ? { museControl: options.museControl } : {}),
     ...(options.observation ? { observationControl: options.observation } : {}),
-    proposalControl: new ProductionProposalControl({
-      configuration,
-      box: proposalBox,
-      recentAuthentication,
-      clock: { now: clock },
-    }),
     ...(ownerRuleWriter
       ? {
           quietHoursControl: new ProductionQuietHoursControl({

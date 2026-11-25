@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useLocaleFormat } from "../i18n/locale-format.js";
 import type { MessageId } from "../i18n/message-ids.js";
-import type { MemoryModel, OwnerRuleAction, PendingProposal, ProposalAction } from "../memory.js";
+import type { MemoryModel, OwnerRuleAction } from "../memory.js";
 import { ActionButton } from "./primitives.js";
 
 type Message = (id: MessageId, values?: Record<string, string | number>) => string;
@@ -88,33 +88,20 @@ export function RuleReceiptCard({
   message,
 }: {
   output: string;
-  memory: Pick<MemoryModel, "proposals" | "respondRule" | "respondProposal" | "busy">;
+  memory: Pick<MemoryModel, "respondRule" | "busy">;
   message: Message;
 }) {
   const receipt = parseRuleReceipt(output);
-  const [done, setDone] = useState<OwnerRuleAction | ProposalAction | null>(null);
+  const [done, setDone] = useState<OwnerRuleAction | null>(null);
   if (!receipt) return null;
   const act = async (target: string, action: OwnerRuleAction) => {
     if (await memory.respondRule(target, action)) setDone(action);
-  };
-  const waiting = memory.proposals?.proposals.find(
-    ({ proposalId }) => proposalId === receipt.proposalId,
-  );
-  const refuse = async (proposal: PendingProposal) => {
-    if (await memory.respondProposal(proposal, "reject")) setDone("reject");
   };
   return (
     <section className="memory-card rule-receipt" aria-label={message("rules.receipt.label")}>
       <span className="memory-tag" data-kind="rule">
         {message("rules.receipt.status", {
-          s:
-            done === "undo"
-              ? "undone"
-              : done === "confirm"
-                ? "active"
-                : done === "reject"
-                  ? "rejected"
-                  : receipt.status,
+          s: done === "undo" ? "undone" : done === "confirm" ? "active" : receipt.status,
         })}
       </span>
       <p className="memory-text">{receipt.summary}</p>
@@ -177,15 +164,6 @@ export function RuleReceiptCard({
               onClick={() => void act(receipt.proposalId ?? "", "confirm")}
             >
               {message("rules.receipt.confirm")}
-            </ActionButton>
-          ) : null}
-          {receipt.status === "proposed" && waiting ? (
-            <ActionButton
-              variant="quiet"
-              disabled={memory.busy}
-              onClick={() => void refuse(waiting)}
-            >
-              {message("proposals.reject")}
             </ActionButton>
           ) : null}
         </div>

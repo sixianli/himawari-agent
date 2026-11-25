@@ -88,3 +88,12 @@ export const OPTION_DISMISS_LABEL = fixedPrompt({
   output: "free-text",
   text: "不用了",
 });
+
+export const TOOL_RESULT_RULE_ASK_OWNER = fixedPrompt({
+  id: "tools.result.rule-set.ask-owner",
+  purpose: "rule_set 不能直接生效时给她的说明：用消息下的选项问主人",
+  usedBy: ["apps/agent-service/src/production-owner-rules.ts"],
+  layer: "tools",
+  output: "free-text",
+  text: "这条规则还没生效：它不是主人原话里明说的一直有效的要求。要立的话，在你这次回主人的话里问一句，并用 offer_options 给一个带动作的选项，action 的 tool 写 rule_set，arguments 和这次调用完全相同；主人点了，你再用同样的参数调用一次 rule_set 就生效。",
+});

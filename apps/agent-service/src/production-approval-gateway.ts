@@ -76,10 +76,6 @@ import {
   PRODUCTION_PROACTIVE_OPERATIONS,
   type ProductionProactive,
 } from "./production-proactive.js";
-import {
-  PRODUCTION_PROPOSAL_OPERATIONS,
-  type ProductionProposalControl,
-} from "./production-proposal-control.js";
 import { PRODUCTION_SEARCH_OPERATIONS, type ProductionSearchControl } from "./production-search.js";
 import {
   PRODUCTION_SENSITIVE_INTERCEPTION_OPERATIONS,
@@ -133,7 +129,6 @@ export function createProductionApprovalGateway(options: {
   readonly observationControl?: Pick<ProductionObservation, "query" | "execute">;
   readonly ownerPreferencesControl?: ProductionOwnerPreferencesControl;
   readonly quietHoursControl?: ProductionQuietHoursControl;
-  readonly proposalControl?: Pick<ProductionProposalControl, "query" | "execute">;
   readonly sensitiveInterceptionsControl?: ProductionSensitiveInterceptionsControl;
   readonly serverStatusControl?: ProductionServerStatusControl;
   readonly capabilityReactivation?: CapabilityReactivationVerifierPort;
@@ -198,28 +193,25 @@ export function createProductionApprovalGateway(options: {
                             : query.type.startsWith("owner.preferences.") &&
                                 options.ownerPreferencesControl
                               ? options.ownerPreferencesControl.query(query)
-                              : query.type.startsWith("proposals.") && options.proposalControl
-                                ? options.proposalControl.query(query)
-                                : query.type.startsWith("sensitive.interceptions.") &&
-                                    options.sensitiveInterceptionsControl
-                                  ? options.sensitiveInterceptionsControl.query(query)
-                                  : query.type.startsWith("server.status.") &&
-                                      options.serverStatusControl
-                                    ? options.serverStatusControl.query(query)
-                                    : query.type.startsWith("data.export.") &&
-                                        options.dataExportControl
-                                      ? options.dataExportControl.query(query)
-                                      : query.type.startsWith("files.") && options.filesControl
-                                        ? options.filesControl.query(query, context)
-                                        : query.type.startsWith("device.") && options.deviceControl
-                                          ? options.deviceControl.query(query)
-                                          : query.type.startsWith("perception.") &&
-                                              options.perceptionControl
-                                            ? options.perceptionControl.query(query)
-                                            : query.type.startsWith("think.") &&
-                                                options.inboxControl
-                                              ? options.inboxControl.query(query)
-                                              : searchAuthorization.query(query),
+                              : query.type.startsWith("sensitive.interceptions.") &&
+                                  options.sensitiveInterceptionsControl
+                                ? options.sensitiveInterceptionsControl.query(query)
+                                : query.type.startsWith("server.status.") &&
+                                    options.serverStatusControl
+                                  ? options.serverStatusControl.query(query)
+                                  : query.type.startsWith("data.export.") &&
+                                      options.dataExportControl
+                                    ? options.dataExportControl.query(query)
+                                    : query.type.startsWith("files.") && options.filesControl
+                                      ? options.filesControl.query(query, context)
+                                      : query.type.startsWith("device.") && options.deviceControl
+                                        ? options.deviceControl.query(query)
+                                        : query.type.startsWith("perception.") &&
+                                            options.perceptionControl
+                                          ? options.perceptionControl.query(query)
+                                          : query.type.startsWith("think.") && options.inboxControl
+                                            ? options.inboxControl.query(query)
+                                            : searchAuthorization.query(query),
       async *subscribe({ authentication, signal }) {
         let previous: string | undefined;
         while (!signal?.aborted) {
@@ -349,8 +341,6 @@ export function createProductionApprovalGateway(options: {
           return options.quietHoursControl.execute(command);
         if (command.type.startsWith("owner.preferences.") && options.ownerPreferencesControl)
           return options.ownerPreferencesControl.execute(command);
-        if (command.type.startsWith("proposal.") && options.proposalControl)
-          return options.proposalControl.execute(authentication, command);
         if (command.type.startsWith("data.export.") && options.dataExportControl)
           return options.dataExportControl.execute(command);
         if (
@@ -397,7 +387,6 @@ export function createProductionApprovalGateway(options: {
       ...(options.observationControl ? PRODUCTION_OBSERVATION_OPERATIONS : []),
       ...(options.ownerPreferencesControl ? PRODUCTION_OWNER_PREFERENCE_OPERATIONS : []),
       ...(options.quietHoursControl ? PRODUCTION_QUIET_HOURS_OPERATIONS : []),
-      ...(options.proposalControl ? PRODUCTION_PROPOSAL_OPERATIONS : []),
       ...(options.sensitiveInterceptionsControl
         ? PRODUCTION_SENSITIVE_INTERCEPTION_OPERATIONS
         : []),

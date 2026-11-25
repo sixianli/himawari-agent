@@ -865,7 +865,6 @@ export const MESSAGE_IDS = [
   "rules.receipt.replayNote",
   "rules.receipt.replayNone",
   "rules.receipt.confirm",
-  "proposals.reject",
   "memory.page.carry.title",
   "memory.page.carry.summary",
   "memory.page.carry.queued",

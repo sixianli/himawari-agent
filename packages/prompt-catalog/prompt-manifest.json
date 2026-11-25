@@ -1365,6 +1365,11 @@
     "changedIn": "ADR 0285",
     "reason": "Always On 第 1 步：选项没挂上时给她的说明"
   },
+  "tools.result.rule-set.ask-owner": {
+    "sha256": "d25662743343f3251ba1300b1e08b1934b08661431db4e6fdafead1b879e10da",
+    "changedIn": "ADR 0285",
+    "reason": "提议箱删除：推断的规则要主人点头时，告诉她用消息下的选项问"
+  },
   "tools.result.perception-read.empty": {
     "sha256": "417a658e6eb2cf55730417f26aa581d053d9653635643a9f6659c7af6261b7cd",
     "changedIn": "ADR 0230",
@@ -1416,9 +1421,9 @@
     "reason": "P2-3 新增：主人一句话变成长期规则的工具（rule_set/rule_list/rule_undo）和失败结果"
   },
   "tools.rule-set": {
-    "sha256": "792cb4aef218b142ccb1262d5f42730219712e84db9fbd86e9d623b684d795f3",
+    "sha256": "6b42804a6cbd95a9290f0a1d5caf4be5eb9de6f36b77b0558ff14a986a11717a",
     "changedIn": "ADR 0285",
-    "reason": "邮件规则不再由程序执行：命中的规则写在新邮件旁边交给她判断，整串邮件用 mail_read 读",
+    "reason": "提议箱删除：推断的规则不再进提议箱，返回 ask_owner，她用消息下的选项问主人",
     "emphasis": {
       "kind": "not-tone",
       "phrases": ["以后……一律……", "……必须提醒我", "“以后”“一律”“必须”"],
