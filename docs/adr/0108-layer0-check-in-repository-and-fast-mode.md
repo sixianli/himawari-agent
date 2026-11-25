@@ -2,7 +2,7 @@
 status: active
 document_type: adr
 decision_status: accepted
-supersedes: "docs/adr/0066-layer0-related-tests-declared.md"
+supersedes: ""
 superseded_by: ""
 date: "2026-10-29"
 ---
@@ -23,12 +23,12 @@ date: "2026-10-29"
 
 ## 背景
 
-第 0 层是改产品代码前后跑的定向测试。[ADR 0066](0066-layer0-related-tests-declared.md) 规定：直接相关的测试文件由脚本 `check-layer0-tests.py` 从代码推导，提交说明里逐行写 `Layer-0-tests: <路径>`，本机的 `commit-msg` 和 `pre-push` 钩子（git 在提交和推送时自动运行的脚本）拒绝缺漏。
+第 0 层是改产品代码前后跑的定向测试。[ADR 0066](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0066-layer0-related-tests-declared.md) 规定：直接相关的测试文件由脚本 `check-layer0-tests.py` 从代码推导，提交说明里逐行写 `Layer-0-tests: <路径>`，本机的 `commit-msg` 和 `pre-push` 钩子（git 在提交和推送时自动运行的脚本）拒绝缺漏。
 
 这个检查后来等于没有：
 
 - 脚本和钩子只装在 Andy 的 Mac 上，不在仓库里。云端线程每次从头克隆仓库，根本没有这个脚本；现在大部分代码是云端线程写的。
-- 快速模式（[ADR 0073](0073-fast-delivery-mode.md)，后由 [ADR 0080](0080-document-governance-in-fast-mode.md) 取代）让两个钩子直接放行。
+- 快速模式（[ADR 0073](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0073-fast-delivery-mode.md)，后由 [ADR 0080](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0080-document-governance-in-fast-mode.md) 取代）让两个钩子直接放行。
 
 结果同一错误一共出了 6 次，后两次在快速模式下：加迁移的提交 `d849375` 和 `bfa6162` 都没跑写死迁移编号的测试，main 上 16 个用例一直失败（[事故清单 I-05](../incidents-and-gates.md)）。按 [ADR 0107](0107-every-incident-gets-an-automatic-gate.md)，次数到 3 必须有硬门槛。Andy 在 2026-10-29 10:01（日本时间）同意“把脚本放进仓库，作为 `npm run check` 的一步”。
 
@@ -87,7 +87,7 @@ date: "2026-10-29"
 
 ## 关联文档
 
-- 被取代的决定：[ADR 0066](0066-layer0-related-tests-declared.md)。
-- 被改变一条规定的决定：[ADR 0080](0080-document-governance-in-fast-mode.md)。
+- 被取代的决定：[ADR 0066](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0066-layer0-related-tests-declared.md)。
+- 被改变一条规定的决定：[ADR 0080](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0080-document-governance-in-fast-mode.md)。
 - 事故门槛规则：[ADR 0107](0107-every-incident-gets-an-automatic-gate.md)，[事故与门槛清单](../incidents-and-gates.md)。
 - 面试案例：[工程案例库案例 47 的后续](../engineering-casebook.md#case-incident-gates)。

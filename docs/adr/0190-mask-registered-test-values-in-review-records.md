@@ -10,6 +10,8 @@ date: "2026-11-09"
 
 # ADR 0190：复核脚本写记录时，把已登记的测试假值遮掉
 
+> **2026-11-25 起暂停。** Andy 叫停了全部 OpenCode 复核：方案讨论、方案说法核对和合并前代码复核都不跑，合并只看测试和 CI（见 [AGENTS.md](../../AGENTS.md#working-with-opencode)）。Andy 说恢复之前，本文的决定不适用。
+
 <a id="contents"></a>
 
 ## 阅读导航

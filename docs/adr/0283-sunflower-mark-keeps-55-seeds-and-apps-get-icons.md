@@ -2,7 +2,7 @@
 status: active
 document_type: adr
 decision_status: accepted
-supersedes: docs/adr/0126-sunflower-mark-grows-233-seeds.md
+supersedes: ""
 superseded_by: ""
 date: "2026-11-15"
 ---
@@ -25,7 +25,7 @@ date: "2026-11-15"
 
 2026-11-15，Andy 发现装到 iPhone 上的 Himawari App 在桌面上没有图标（显示系统默认的空白图标）。查下来，main 上 iPhone、Mac、手表三个 App 都没有 App 图标资源集（`AppIcon.appiconset`），工程设置里也没有写图标名（`ASSETCATALOG_COMPILER_APPICON_NAME`），所以 Xcode 打包时根本没有图标可放。
 
-同一天 Andy 说现在的标志“圆点数量太多了”，“当 logo 或者是 icon 很小的时候，就看不出来是个什么”。[ADR 0126](0126-sunflower-mark-grows-233-seeds.md) 定的标志在大图用 233 粒种子、小图用 89 粒；24px 以下 233 粒挤成一团，看不出一粒粒种子，也看不出向日葵。
+同一天 Andy 说现在的标志“圆点数量太多了”，“当 logo 或者是 icon 很小的时候，就看不出来是个什么”。[ADR 0126](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0126-sunflower-mark-grows-233-seeds.md) 定的标志在大图用 233 粒种子、小图用 89 粒；24px 以下 233 粒挤成一团，看不出一粒粒种子，也看不出向日葵。
 
 线程先后出了六批全新造型（写实向日葵、扁平花瓣、字母和假名、抽象几何、细线、有体积的图标、家纹），Andy 都没有选，最后定下：“你用之前选定的那一个，然后把点弄少一点”。线程按同一套数学做了 233、89、55、34、21 五档对比（项目共享文件夹 `app-icon/logo-seed-counts-v7.html`，带动效），Andy 选“55 粒”。
 
@@ -75,7 +75,7 @@ date: "2026-11-15"
 
 ## 关联文档
 
-- [ADR 0126：标志换成“生长”的向日葵](0126-sunflower-mark-grows-233-seeds.md)（本 ADR 取代它）
+- [ADR 0126：标志换成“生长”的向日葵](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0126-sunflower-mark-grows-233-seeds.md)（本 ADR 取代它）
 - [界面设计规范](../ui-ux-design-guide.md)
 - [标志资源说明](../../assets/brand/himawari/README.md)
 

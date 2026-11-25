@@ -2,7 +2,7 @@
 status: active
 document_type: prd
 version: "0.2"
-supersedes: "docs/prd-v0.1.md"
+supersedes: ""
 superseded_by: ""
 date: "2026-08-26"
 ---
@@ -56,7 +56,7 @@ date: "2026-08-26"
 
 ### 本版本不包含
 
-- 微信、Telegram 或其他即时通信渠道的消息投递。提醒以 Web UI 为主；站外只用网页推送（服务器经浏览器厂商的推送服务把加密通知送到所有者已开启通知的设备，推送服务读不到内容），推送到期记忆提醒、等待审批和任务完成或失败三类事，控制中心做成可加到主屏幕的网页应用；不用 Bark，Telegram 机器人不采用 [SOURCE: docs/adr/0089-web-push-only-owner-entry.md]。
+- 微信、Telegram 或其他即时通信渠道的消息投递。提醒以 Web UI 为主；站外只用网页推送（服务器经浏览器厂商的推送服务把加密通知送到所有者已开启通知的设备，推送服务读不到内容），推送到期记忆提醒、等待审批和任务完成或失败三类事，控制中心做成可加到主屏幕的网页应用；不用 Bark，Telegram 机器人不采用 [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0089-web-push-only-owner-entry.md]。
 - 本地生成模型；只保留未来接入本地模型所需的服务商和部署位置中立边界。
 - 原生 macOS、iOS、Android、桌面壳、纯语音或带屏硬件客户端。手机端先用主屏网页应用、网页推送和 Siri 快捷指令；原生 iOS App 只在 ADR 0089 列出的条件出现时重新评估。
 - 面向公众的自助注册、计费、团队空间，或多个所有者共享同一份私人状态。受邀的人之间不共享记忆和对话，也不向陌生人开放。

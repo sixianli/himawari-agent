@@ -127,6 +127,9 @@ public final class DeviceEventStream: @unchecked Sendable {
             } catch let error as DeviceAPIError where error.isRevoked {
                 continuation.yield(.sessionInvalid)
                 stop = true
+            } catch let DeviceAPIError.server(status, code, _, _) {
+                StreamDiagnostics.shared.note(.refused(path: path, status: status, code: code))
+                failures += 1
             } catch {
                 failures += 1
             }

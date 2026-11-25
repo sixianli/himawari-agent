@@ -4,7 +4,7 @@ document_type: adr
 decision_status: accepted
 supersedes: ""
 superseded_by: ""
-amends: "docs/adr/0185-mark-passwords-and-keys-sensitive-instead-of-dropping-them.md, docs/adr/0286-the-main-model-reads-and-writes-memory-itself.md"
+amends: "https://github.com/sixianli/himawari-agent/blob/b153d125a00229ae2f617e9643bf2b4461ce8313/docs/adr/0185-mark-passwords-and-keys-sensitive-instead-of-dropping-them.md, docs/adr/0286-the-main-model-reads-and-writes-memory-itself.md"
 date: "2026-11-25"
 ---
 

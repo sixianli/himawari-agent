@@ -4,12 +4,14 @@ document_type: adr
 decision_status: accepted
 supersedes: ""
 superseded_by: ""
-amends: "docs/adr/0068-deepseek-only-codebuddy-fallback.md"
+amends: ""
 amended_by: "docs/adr/0259-review-models-default-to-deepseek.md, docs/adr/0263-cheaper-claude-side-of-code-review.md"
 date: "2026-11-06"
 ---
 
 # ADR 0175：代码复核第 2 轮起只用 DeepSeek，低严重度意见不再触发下一轮
+
+> **2026-11-25 起暂停。** Andy 叫停了全部 OpenCode 复核：方案讨论、方案说法核对和合并前代码复核都不跑，合并只看测试和 CI（见 [AGENTS.md](../../AGENTS.md#working-with-opencode)）。Andy 说恢复之前，本文的决定不适用。
 
 <a id="contents"></a>
 
@@ -35,7 +37,7 @@ PR #255 复核了 6 轮，实际花了约 0.79 美元。按它的账本（`.agen
 - DeepSeek 共 0.434 美元，其中 56% 花在思考（推理 token）上；GLM 共 0.355 美元，其中 58% 是缓存读取，也就是反复读代码。
 - 后面几轮的“会出错”意见，多数是只有故意构造的怪输入才能触发、触发后只是报错拒绝的问题，或者文字写得不准但不会误导人。
 
-方案讨论记录在 `.agents/reviews/topic-review-cost/`，整合后的方案在 `.agents/handoffs/2026-11-06-review-cost-plan-v2.md`。
+方案讨论记录在 `.agents/reviews/topic-review-cost/`，整合后的方案在 [`2026-11-06-review-cost-plan-v2.md`](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/.agents/handoffs/2026-11-06-review-cost-plan-v2.md)。
 
 业界做法：Anthropic 官方的代码复核插件先给每条意见打 0 到 100 的置信分，再过滤掉 80 分以下的（[README](https://raw.githubusercontent.com/anthropics/claude-plugins-official/main/plugins/code-review/README.md)：“Scores each issue 0-100 for confidence level”，“Filters out issues below 80 confidence threshold”）。也就是说，不是每条意见都值得再花一轮。
 
@@ -77,7 +79,7 @@ PR #255 复核了 6 轮，实际花了约 0.79 美元。按它的账本（`.agen
 
 ## 与 ADR 0068 的关系
 
-[ADR 0068](0068-deepseek-only-codebuddy-fallback.md) 第 1 条写“派给代理的编码、审核和独立方案只用 DeepSeek V4.1 Flash”。它管的是把编码任务派给 opencode、CodeBuddy 这类代理的那条路（`opencode-orchestration` 技能和 `.agents/opencode-models.toml` 模型表）。
+[ADR 0068](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0068-deepseek-only-codebuddy-fallback.md) 第 1 条写“派给代理的编码、审核和独立方案只用 DeepSeek V4.1 Flash”。它管的是把编码任务派给 opencode、CodeBuddy 这类代理的那条路（`opencode-orchestration` 技能和 [`.agents/opencode-models.toml`](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/.agents/opencode-models.toml) 模型表）。
 
 用 `scripts/model-review/opencode-review.mjs` 做的方案讨论和合并前代码复核，从规则文件写成起就用两个 Go 套餐模型（Andy 在项目指令第 17 条规定）。两份文字一直互相矛盾。
 
@@ -113,7 +115,7 @@ PR #255 复核了 6 轮，实际花了约 0.79 美元。按它的账本（`.agen
 ## 关联文档
 
 - [.agents/instructions/model-review.md](../../.agents/instructions/model-review.md)：方案讨论和代码复核的步骤。
-- [ADR 0068](0068-deepseek-only-codebuddy-fallback.md)：派编码任务只用 DeepSeek。
+- [ADR 0068](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0068-deepseek-only-codebuddy-fallback.md)：派编码任务只用 DeepSeek。
 - `scripts/model-review/opencode-review.mjs`、`test/tooling/opencode-review.test.mjs`：实现和测试。
 
 [↑ 返回阅读导航](#contents)

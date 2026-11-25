@@ -43,9 +43,9 @@ Andy 11-24 下午在线程里定的：
 7. 主模型被告知自己不能记：“主人告诉你的事，系统会在本轮回答后尝试整理进长期记忆，但整理可能失败，你看不到结果。所以不要说‘已经记住了’”（packages/prompt-catalog/src/chat.ts:17）。
 8. 发给模型的内容只追加；每轮会变的放最后一条消息；系统提示和工具按对话冻结（.agents/instructions/prompt-prefix.md:27-28,36,42）。
 9. 理解用户意思交给模型，程序只做校验（.claude/rules/owner-standing-rules.md:62）。
-10. 以前测过“主模型自己写”：ADR 0142 表（docs/adr/0142-keep-background-memory-capture.md:31-36），后台抽取该记的记下 90%、误记 0%、密钥 0；主模型调 memory_remember 记下 93%/92%、误记 6.7%/5%、密钥 2/1 条。那个工具没接后台那条路上的校验。
+10. 以前测过“主模型自己写”：ADR 0142 表（https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0142-keep-background-memory-capture.md:31-36），后台抽取该记的记下 90%、误记 0%、密钥 0；主模型调 memory_remember 记下 93%/92%、误记 6.7%/5%、密钥 2/1 条。那个工具没接后台那条路上的校验。
 11. 敏感记忆现在就原样给模型：ADR 0193 把模型可见上限定为 sensitive（docs/adr/0193-memory-is-visible-to-the-model.md:56），生产对话模型允许名单含 sensitive（production-shape-config-template.json:62-66）；发出前只遮盖密钥、密码、验证码、银行卡号、证件号（packages/sensitive-capture/src/redaction.ts）。敏感话题有 health、finance、beliefs、intimacy 等（packages/application/src/ports/automatic-memory.ts:117）。
-12. 密码、密钥现在是“明说记住就存成敏感”：ADR 0185（docs/adr/0185-mark-passwords-and-keys-sensitive-instead-of-dropping-them.md，标题“密码、密钥、证件号、银行卡号标成敏感，不再标受限丢弃”）。本方案改掉其中密码、密钥这部分。
+12. 密码、密钥现在是“明说记住就存成敏感”：ADR 0185（https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0185-mark-passwords-and-keys-sensitive-instead-of-dropping-them.md，标题“密码、密钥、证件号、银行卡号标成敏感，不再标受限丢弃”）。本方案改掉其中密码、密钥这部分。
 13. 已有、要复用的：每日回看对话补记忆（ADR 0231）、纠正传播和规则待复核（ADR 0232）、外部内容之后写操作先问（ADR 0278）、记忆导出格式（ADR 0200）、记忆跳回原话（ADR 0186）。
 14. 业界资料：
    - Anthropic 记忆工具 https://platform.claude.com/docs/en/agents-and-tools/tool-use/memory-tool

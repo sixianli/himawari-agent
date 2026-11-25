@@ -23,7 +23,7 @@ date: "2026-10-27"
 
 ## 背景
 
-[ADR 0089](0089-web-push-only-owner-entry.md) 第 4 条定了“生产只用一道门：Cloudflare 邮箱验证码”。Cloudflare Access（Cloudflare 提供的登录关卡，这里只放行 Andy 的邮箱）放行后，每个请求都带着 Cloudflare 签发的身份令牌（请求头 `cf-access-jwt-assertion`）。Himawari 还需要自己的登录（浏览器里的 `himawari_session` 会话 Cookie，Cookie 是网站存在浏览器里的一小段登录凭据），由 `POST /api/identity/v1/sessions` 用 Cloudflare 的身份令牌换出来（`packages/platform-node/src/identity-gateway.ts`）。这个接口只检查请求来自本站和 Cloudflare 身份令牌有效，不需要用户做任何操作。
+[ADR 0089](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0089-web-push-only-owner-entry.md) 第 4 条定了“生产只用一道门：Cloudflare 邮箱验证码”。Cloudflare Access（Cloudflare 提供的登录关卡，这里只放行 Andy 的邮箱）放行后，每个请求都带着 Cloudflare 签发的身份令牌（请求头 `cf-access-jwt-assertion`）。Himawari 还需要自己的登录（浏览器里的 `himawari_session` 会话 Cookie，Cookie 是网站存在浏览器里的一小段登录凭据），由 `POST /api/identity/v1/sessions` 用 Cloudflare 的身份令牌换出来（`packages/platform-node/src/identity-gateway.ts`）。这个接口只检查请求来自本站和 Cloudflare 身份令牌有效，不需要用户做任何操作。
 
 2026-10-27 12:54（日本时间）生产切到只用邮箱验证码后，Andy 在 iPhone 上输完验证码，网页仍停在一个黄色框里，标题“このブラウザーでログインしてください”（请登录以连接此浏览器），要他再点“Himawari にログイン”，框里还露出给程序看的错误码 `HTTP_GATEWAY_AUTHENTICATION_REQUIRED`。原因在网页：`apps/control-center/src/app.tsx` 读配置收到 401/403 时，故意只摆一个按钮，等用户点了才去调用上面的换取接口。
 
@@ -70,7 +70,7 @@ Andy 原话（2026-10-27 13:14）：“为什么我既然都输入验证码了�
 
 ## 关联文档
 
-- [SOURCE: docs/adr/0089-web-push-only-owner-entry.md]
+- [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0089-web-push-only-owner-entry.md]
 - [SOURCE: docs/engineering-casebook.md#case-silent-access-entry]
 - 界面原型：<https://claude.ai/artifact/BxexuxfGz84FFYTSnqu5Y6>
 - 代码：`apps/control-center/src/browser-entry.ts`、`apps/control-center/src/components/browser-entry-screen.tsx`、`apps/control-center/src/app.tsx`

@@ -2,7 +2,7 @@
 status: active
 document_type: adr
 decision_status: accepted
-supersedes: "docs/adr/0089-web-push-only-owner-entry.md"
+supersedes: ""
 superseded_by: ""
 date: "2026-11-11"
 amended_by: "docs/adr/0247-apple-clients-are-fully-native-with-a-capability-table.md"
@@ -27,7 +27,7 @@ amended_by: "docs/adr/0247-apple-clients-are-fully-native-with-a-capability-tabl
 
 ## 背景
 
-[ADR 0089](0089-web-push-only-owner-entry.md) 定的是：不做原生 iOS App，网页之外只用网页推送（Web Push：服务器经浏览器厂商的推送服务把通知送到设备）。它的第 7 条留了重新评估的条件，其中一条是“需要锁屏小组件、灵动岛、Siri 深度整合或后台感知这类网页做不到的能力”。
+[ADR 0089](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0089-web-push-only-owner-entry.md) 定的是：不做原生 iOS App，网页之外只用网页推送（Web Push：服务器经浏览器厂商的推送服务把通知送到设备）。它的第 7 条留了重新评估的条件，其中一条是“需要锁屏小组件、灵动岛、Siri 深度整合或后台感知这类网页做不到的能力”。
 
 2026-11-11 Andy 要把 Himawari 做成“全能的 personal agent”：能听、能看、知道他此刻在做什么、能在他的设备上直接动手。这些能力网页做不到：网页应用一到后台就丢麦克风（前提 4），也拿不到位置轨迹、健康数据、通讯录和日历。所以重新评估的条件已经出现。
 
@@ -62,7 +62,7 @@ amended_by: "docs/adr/0247-apple-clients-are-fully-native-with-a-capability-tabl
 
 1. 多种设备是同一个 Agent 的感官。来源 `docs/product-vision.md` 原则 5 原话：“多接入、多感知都是同一个权威 Agent 的不同感官。”
 2. 原则冲突时的顺序。来源同文件原话：“用户主权 > 边界与可逆性 > 记忆可靠性 > 主动性与效率”。
-3. 现行决定留了重新评估的条件。来源 `docs/adr/0089-web-push-only-owner-entry.md` 决定第 7 条原话：“原生 App 只在下面任一条件出现时重新评估：需要锁屏小组件、灵动岛、Siri 深度整合或后台感知这类网页做不到的能力”。
+3. 现行决定留了重新评估的条件。来源 [`0089-web-push-only-owner-entry.md`](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0089-web-push-only-owner-entry.md) 决定第 7 条原话：“原生 App 只在下面任一条件出现时重新评估：需要锁屏小组件、灵动岛、Siri 深度整合或后台感知这类网页做不到的能力”。
 4. 原生 App 在前台开始录音后可以在后台一直录；网页应用做不到。来源苹果技术支持在开发者论坛的回答 <https://developer.apple.com/forums/thread/776949> 原话：“we allow apps that start an audio recording session in the foreground to continue recording indefinitely in the background.”（这句话线程读到过，另一个模型复核时被验证页挡住，动工前再核一次。）
 5. 服务器现在只接受浏览器里同源页面发来的修改请求。来源 `packages/platform-node/src/http-gateway-server.ts:261` 原话：`header(request, "sec-fetch-site") !== "same-origin"`，不满足就拒绝。
 6. 已经有不经过浏览器的入口先例：Muse 推送入口用 Cloudflare 服务令牌（Cloudflare 发给程序用的一对编号和密钥，带在请求头里就能通过登录门）加应用自己的密钥。来源 `docs/adr/0162-receive-muse-data-through-a-service-token-and-an-app-secret.md` 决定第 1 条原话：“两层认证。边缘层用 Cloudflare Access 的服务令牌（Service Auth 策略，请求头 `CF-Access-Client-Id` 与 `CF-Access-Client-Secret`）”“应用层再要求 `Authorization: Bearer <应用密钥>`”。MCP 入口早先也是这个做法（ADR 0219），现已由 ADR 0227 改成只认 Cloudflare Access 的登录凭证，不拿它当先例。
@@ -174,7 +174,7 @@ amended_by: "docs/adr/0247-apple-clients-are-fully-native-with-a-capability-tabl
 
 ## 关联文档
 
-- [SOURCE: docs/adr/0089-web-push-only-owner-entry.md]
+- [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0089-web-push-only-owner-entry.md]
 - [SOURCE: docs/adr/0234-one-program-per-person-database-file.md]
 - [SOURCE: docs/adr/0162-receive-muse-data-through-a-service-token-and-an-app-secret.md]
 - [SOURCE: docs/adr/0165-freeze-the-request-head-per-conversation.md]

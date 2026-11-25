@@ -22,7 +22,7 @@ date: "2026-11-04"
 
 ## 背景
 
-产品愿景要求：“规则不是记忆，是硬性设定：记忆只保存一条规则的出处和修改历史；规则本身写进程序、必定执行，每条都有回归测试守着。”（`docs/product-vision.md` 原则 3；采纳记录见 [ADR 0134](0134-adopt-product-vision-v2-2.md)、[ADR 0153](0153-adopt-product-vision-v2-3.md)）
+产品愿景要求：“规则不是记忆，是硬性设定：记忆只保存一条规则的出处和修改历史；规则本身写进程序、必定执行，每条都有回归测试守着。”（`docs/product-vision.md` 原则 3；采纳记录见 [ADR 0134](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0134-adopt-product-vision-v2-2.md)、[ADR 0153](0153-adopt-product-vision-v2-3.md)）
 
 2026-11-04 Andy 在侧问（项目线程之外另开的一次问答）里提出一个顾虑：如果每条偏好都要写一批代码和测试，就太重了。例如他说“中午 12 点之后不要发提醒”，一周后又说“可以发了”，不该每次都去改代码。讨论之后，Andy 定下了本文的原则。
 
@@ -73,7 +73,7 @@ date: "2026-11-04"
 
 ## 关联文档
 
-- [ADR 0134](0134-adopt-product-vision-v2-2.md)：采纳愿景 v2.2，规则成为硬性设定。
+- [ADR 0134](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0134-adopt-product-vision-v2-2.md)：采纳愿景 v2.2，规则成为硬性设定。
 - [ADR 0153](0153-adopt-product-vision-v2-3.md)：采纳现行的愿景 v2.3。
 - [ADR 0122](0122-every-owner-setting-on-the-server-with-revision.md)：主人的设置存在服务器上，带版本号。
 - [ADR 0161](0161-keep-every-model-prompt-in-one-catalog-package.md)：提示词集中管理，第二步另出方案。

@@ -16,7 +16,7 @@ struct MessageOptionsView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var tappable: Bool { choose != nil && sending == nil && options.isOpen }
+    private func tappable(_ item: MessageOptions.Item) -> Bool { choose != nil && sending == nil && item.isOpen }
 
     private func button(_ item: MessageOptions.Item) -> some View {
         Button {
@@ -39,10 +39,10 @@ struct MessageOptionsView: View {
                 if item.action == nil { shape.strokeBorder(Color.hmSeparator) }
             }
             .frame(maxWidth: DesignTokens.Options.maxWidth, alignment: .leading)
-            .opacity(options.isOpen ? 1 : DesignTokens.Options.staleOpacity)
+            .opacity(item.isOpen ? 1 : DesignTokens.Options.staleOpacity)
         }
         .buttonStyle(.plain)
-        .disabled(!tappable)
+        .disabled(!tappable(item))
         .accessibilityHint(item.action?.summary ?? item.reason ?? "")
     }
 
@@ -55,7 +55,7 @@ struct MessageOptionsView: View {
     }
 
     private func pick(_ item: MessageOptions.Item) {
-        guard let choose, tappable else { return }
+        guard let choose, tappable(item) else { return }
         sending = item.optionId
         Haptics.shared.report(.messageSent)
         Task {

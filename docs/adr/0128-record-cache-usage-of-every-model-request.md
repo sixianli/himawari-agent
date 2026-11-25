@@ -94,7 +94,7 @@ date: "2026-10-30"
 ## 关联文档
 
 - [工程案例库：案例 71](../engineering-casebook.md#case-cache-usage-ruler)
-- [ADR 0104：本轮材料放在最后一条用户消息](0104-turn-material-in-last-user-message.md)
+- [ADR 0104：本轮材料放在最后一条用户消息](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0104-turn-material-in-last-user-message.md)
 - [ADR 0117：Magpie 经自有订阅路由模型](0117-magpie-routes-models-through-owned-subscriptions.md)
 - [架构文档：模型调用与预算](../architecture-v0.1.md)
 

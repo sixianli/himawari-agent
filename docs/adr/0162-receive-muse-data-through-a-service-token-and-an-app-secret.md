@@ -68,7 +68,7 @@ Muse 是 Andy 的另一个 Agent。Andy 要对照“Muse 该提醒的有没有�
 ## 关联文档
 
 - [Muse 自动接收运行手册](../runbooks/muse-intake-runbook.md)
-- [ADR 0089：只用网页推送，入口改为公网域名](0089-web-push-only-owner-entry.md)
+- [ADR 0089：只用网页推送，入口改为公网域名](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0089-web-push-only-owner-entry.md)
 - [ADR 0143：决策账本](0143-decision-ledger-for-model-gate-decisions.md)
 - Cloudflare：<https://developers.cloudflare.com/cloudflare-one/access-controls/service-credentials/service-tokens/>
 

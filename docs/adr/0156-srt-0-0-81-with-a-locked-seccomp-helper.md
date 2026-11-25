@@ -72,7 +72,7 @@ Himawari 在 Linux 上用 SRT（Anthropic 的 `@anthropic-ai/sandbox-runtime`，
 
 ## 关联文档
 
-- [ADR 0024：SRT 统一执行](0024-srt-unified-execution.md)
+- [ADR 0024：SRT 统一执行](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0024-srt-unified-execution.md)
 - [ADR 0026：按任务的网络出口](0026-job-scoped-network-egress.md)
 - [架构 v0.1](../architecture-v0.1.md)
 - 上游提交：https://github.com/anthropics/sandbox-runtime/commit/9a277e5

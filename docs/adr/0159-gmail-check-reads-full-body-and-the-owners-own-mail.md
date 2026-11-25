@@ -26,7 +26,7 @@ date: "2026-11-04"
 Andy 2026-11-04 在项目聊天里做了三个决定，原话由协调者附在线程里：
 
 - 只跳过垃圾邮件，其余邮件（包括他自己发出的）都交给模型看。起因是他自己答应别人的事（例如“周五前给你报价”）只写在他发出的邮件里，现在这类邮件在送模型之前就被规则丢掉了（`packages/application/src/services/proactive-mail-check-service.ts` 里原来的 `own_mail` 跳过）。
-- 模型读邮件的全部内容（正文）。这改变了他自己此前保留的决定：[ADR 0134](0134-adopt-product-vision-v2-2.md) 第 98 行“要不要让主动检查读正文，由 Andy 决定”（ADR 0134 现已被 [ADR 0153](0153-adopt-product-vision-v2-3.md) 取代，愿景 `docs/product-vision.md` 第 133 行本来就写着“对退款、预订、付款是否办结，必须读完线程全文并搜后续确认/收据才下结论，绝不只看标题”）。
+- 模型读邮件的全部内容（正文）。这改变了他自己此前保留的决定：[ADR 0134](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0134-adopt-product-vision-v2-2.md) 第 98 行“要不要让主动检查读正文，由 Andy 决定”（ADR 0134 现已被 [ADR 0153](0153-adopt-product-vision-v2-3.md) 取代，愿景 `docs/product-vision.md` 第 133 行本来就写着“对退款、预订、付款是否办结，必须读完线程全文并搜后续确认/收据才下结论，绝不只看标题”）。
 - 记录里只存遮盖掉密码、卡号后的版本；这次只读新收到的邮件和已发送邮件；“只发给不保留数据的模型厂商”这一条他决定先不关注，所以本次沿用现有模型路由。
 
 方案由线程和 OpenCode 上的两个模型（`deepseek-v4.1-flash`、`glm-5.3-flash`）各自独立出方案、再互相审核后整合。完整比较在项目文件夹 `own-mail-to-model/plan-v2-full-body.md`。
@@ -84,4 +84,4 @@ Andy 2026-11-04 在项目聊天里做了三个决定，原话由协调者附在�
 
 - [ADR 0106](0106-proactive-loop-v1-gmail-read-only.md)、[ADR 0147](0147-keep-model-prompt-and-answer-of-each-gmail-check-with-the-ledger.md)、[ADR 0148](0148-send-every-model-request-through-one-in-process-egress.md)、[ADR 0153](0153-adopt-product-vision-v2-3.md)、[ADR 0158](0158-bring-related-memories-into-gmail-checks.md)
 - 产品愿景：[docs/product-vision.md](../product-vision.md)
-- 规格：[主动闭环 v1 Gmail 设计](../execution/specs/2026-10-29-proactive-loop-v1-gmail-design.md)
+- 规格：[主动闭环 v1 Gmail 设计](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/execution/specs/2026-10-29-proactive-loop-v1-gmail-design.md)
