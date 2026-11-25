@@ -65,7 +65,7 @@ archive_signed() {
   need HIMAWARI_BUILD_NUMBER
   need ASC_ISSUER_ID
   trap cleanup_signing EXIT
-  import_certificate
+  if [ -n "${BUILD_CERTIFICATE_BASE64:-}" ]; then import_certificate; fi
   write_key
   rm -rf "$archive"
   xcodebuild archive \
