@@ -1606,14 +1606,19 @@
     "reason": "Always On 第 3 步：同一件大事的子线程用结果板共用结果，先看目录、要细节再取正文，等的结果到了或改版时叫醒"
   },
   "subthreads.status-board.header": {
-    "sha256": "83728f61c2762ce4647972e548d70ec84cc6088213b0b9963bbb90e80d1b3118",
+    "sha256": "434f359653017b17f95ba24af811dbb8ec3d5845a5c16cd179e519f3a9e239a5",
     "changedIn": "ADR 0285",
-    "reason": "Always On 第 3 步：状态板多一种 over_budget，花到预算停下、等主对话决定"
+    "reason": "Always On 第 3 步：状态板多 over_budget 和 waiting_approval 两种状态"
   },
   "subthreads.budget-reached": {
     "sha256": "bc8f2a2bb12a6ecd2948c33ad1a2efd91690a69e9ddc4ad7dbf075c865fb559f",
     "changedIn": "ADR 0285",
     "reason": "Always On 第 3 步：子线程花到预算停下时告诉主对话花了多少、预算多少、计划做到哪，由主对话决定加预算、改方向或叫停"
+  },
+  "subthreads.approval-waiting": {
+    "sha256": "562c492000bd45e22dae45e8d3ee1fa118f667cd2fae047bbb7d88c2e6e3053b",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 3 步：子线程要做的事在等主人同意时告诉主对话，同意卡片由程序按真实动作生成"
   },
   "subthreads.continue": {
     "sha256": "b4280ed0d7c94fb809c2d0a8b7b0bca425c48b67f39964987356a937a1b246c1",
