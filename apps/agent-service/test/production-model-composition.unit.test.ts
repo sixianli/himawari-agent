@@ -1032,7 +1032,100 @@ it("[P3-2] a memory tool search whose Run lost its execution lease while embeddi
   expect(recorded).toEqual([false, true, true, true, false]);
 });
 
-it("gives a slow memory-search embedding three seconds, then asks once more under a new invocation", async () => {
+it("stops waiting for a slow per-turn memory-search embedding after three seconds so the answer is not held", async () => {
+  const selected = selectedEmbeddingConfiguration(temporaryDirectory);
+  const configuration = {
+    ...selected,
+    deadlines: { ...selected.deadlines, providerRequestMs: 30_000 },
+  };
+  let boundary: EmbeddingBoundary | undefined;
+  const permits: ModelInvocationPermit[] = [];
+  const begin = vi.fn(
+    async (_input: { readonly ordinal: number; readonly logicalSlot: string }) => {
+      const permit: ModelInvocationPermit = {
+        assertActive: vi.fn(async () => {}),
+        markStarted: vi.fn(async () => {}),
+        releaseReserved: vi.fn(async () => {}),
+        settle: vi.fn(async () => {}),
+        markUnknown: vi.fn(async () => {}),
+      };
+      permits.push(permit);
+      return { disposition: "fresh", permit };
+    },
+  );
+  const diagnostics: Readonly<Record<string, string>>[] = [];
+  const send = vi.fn(
+    (options?: { timeoutMs?: number; signal?: AbortSignal }) =>
+      new Promise<never>((_resolve, reject) => {
+        options?.signal?.addEventListener("abort", () => reject(options.signal?.reason));
+      }),
+  );
+  const vectorFailures: unknown[] = [];
+  const memory = createProductionRunMemory({
+    configuration,
+    projection: {
+      bindEmbeddingBoundary: (value) => {
+        boundary = value;
+      },
+    },
+    payloads: { get: async () => ({ dataClassification: "private" }) as never },
+    memory: {
+      search: async () => {
+        if (!boundary) throw new Error("BOUNDARY_MISSING");
+        try {
+          await boundary(
+            {
+              identity: "fixture",
+              model: "alibaba/qwen3-embedding-8b",
+              input: "query",
+              dimensions: 4096,
+            },
+            send,
+          );
+        } catch (error) {
+          vectorFailures.push(error);
+        }
+        return [];
+      },
+    },
+    admission: async () => ({ begin }) as never,
+    budget: {} as never,
+    assertActive: async () => {},
+    now: () => "2026-09-06T00:00:00.000Z",
+    diagnostic: (event) => diagnostics.push(event),
+  });
+  const started = performance.now();
+  await expect(
+    memory.search({
+      ownerId: configuration.ownerId,
+      agentId: configuration.agentId,
+      runId: "run-embedding-skip" as never,
+      executionLease: {} as never,
+      dataClassification: "private",
+      queryRef: "query" as never,
+      queryTerms: [],
+      limit: 3,
+      deadlineAt: "2026-09-06T00:01:00.000Z",
+    }),
+  ).resolves.toEqual([]);
+  const waited = performance.now() - started;
+  expect(waited).toBeGreaterThanOrEqual(2900);
+  expect(waited).toBeLessThan(4500);
+  expect(send).toHaveBeenCalledTimes(1);
+  expect(vectorFailures).toHaveLength(1);
+  expect(begin.mock.calls.map(([input]) => input.logicalSlot)).toEqual([
+    "context-memory-search:v1",
+  ]);
+  expect(permits[0]?.markUnknown).not.toHaveBeenCalled();
+  expect(permits[0]?.settle).toHaveBeenCalledWith(
+    expect.objectContaining({ reportedCostMicros: 164, outputTokens: 0 }),
+  );
+  expect(diagnostics).toEqual([
+    { component: "agent-service", event: "memory.embedding_skipped", afterMs: "3000" },
+  ]);
+});
+
+it("gives a slow recall-tool embedding three seconds, then asks once more under a new invocation", async () => {
   const selected = selectedEmbeddingConfiguration(temporaryDirectory);
   const configuration = {
     ...selected,
@@ -1110,24 +1203,37 @@ it("gives a slow memory-search embedding three seconds, then asks once more unde
   });
   const started = performance.now();
   await expect(
-    memory.search({
-      ownerId: configuration.ownerId,
-      agentId: configuration.agentId,
-      runId: "run-embedding-retry" as never,
-      executionLease: {} as never,
-      dataClassification: "private",
-      queryRef: "query" as never,
-      queryTerms: [],
-      limit: 3,
-      deadlineAt: "2026-09-06T00:01:00.000Z",
-    }),
+    memory.embedWithin(
+      {
+        ownerId: configuration.ownerId,
+        agentId: configuration.agentId,
+        runId: "run-embedding-retry" as never,
+        executionLease: {} as never,
+        deadlineAt: "2026-09-06T00:01:00.000Z",
+        dataClassification: "private",
+        slot: "memory-recall:call-1",
+      },
+      async () => {
+        if (!boundary) throw new Error("BOUNDARY_MISSING");
+        await boundary(
+          {
+            identity: "fixture",
+            model: "alibaba/qwen3-embedding-8b",
+            input: "query",
+            dimensions: 4096,
+          },
+          send,
+        );
+        return [];
+      },
+    ),
   ).resolves.toEqual([]);
   expect(performance.now() - started).toBeGreaterThanOrEqual(2900);
   expect(send).toHaveBeenCalledTimes(2);
   expect(begin.mock.calls.map(([input]) => input.ordinal)).toEqual([1, 2]);
   expect(begin.mock.calls.map(([input]) => input.logicalSlot)).toEqual([
-    "context-memory-search:v1",
-    "context-memory-search:v1:attempt:2",
+    "memory-recall:call-1",
+    "memory-recall:call-1:attempt:2",
   ]);
   expect(permits[0]?.markUnknown).not.toHaveBeenCalled();
   expect(permits[0]?.settle).toHaveBeenCalledWith(

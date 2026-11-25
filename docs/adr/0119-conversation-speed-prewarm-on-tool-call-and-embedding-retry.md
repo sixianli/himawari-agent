@@ -58,6 +58,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ## 与 ADR 0085 的关系
 
 本 ADR 修改 [ADR 0085 的决定](0085-remove-per-turn-system-gaps.md#decision)第 1 点"第一次真正用到 `bash`、`write`、`edit` 时才启动"：启动时机提前到模型开始写这三个工具之一的调用时。ADR 0085 去掉每轮预热的理由仍然成立：不用工具的轮次仍然不预热，也不会在模型开始回答前就和流式写盘抢磁盘。ADR 0085 的其余决定不变。
+- 2026-11-26：修改本 ADR 第 2 条，只改每轮回答前自动找记忆这一条路径：第一次向量请求 3 秒没回就不再重发，直接让这一轮按关键词和实体找记忆（[ADR 0223](0223-chat-memory-lookup-falls-back-to-keywords.md) 的退路），写诊断 `memory.embedding_skipped`。起因：东京生产机 2026-11-25 实测，外网向量请求 7 轮里 6 轮第一次超时，重发又要 4.5–9.7 秒，简单问题整轮 13 秒，其中约 8 秒是在等向量；回答前的等待因此最多 3 秒。模型调用的回忆工具、对话记忆写入等其他运行内路径仍按原样重发一次（`apps/agent-service/src/production-run-memory.ts`）。
 
 [↑ 返回阅读导航](#contents)
 

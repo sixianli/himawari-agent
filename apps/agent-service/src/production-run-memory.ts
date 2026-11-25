@@ -399,6 +399,14 @@ export function createProductionRunMemory(options: {
         return await embedOnce(request, send, 1, FIRST_EMBEDDING_ATTEMPT_MS);
       } catch (error) {
         if (!(error instanceof Error) || error.message !== EMBEDDING_ATTEMPT_TIMED_OUT) throw error;
+        if (scope.getStore()?.embeddingSlot === undefined) {
+          diagnose({
+            component: "agent-service",
+            event: "memory.embedding_skipped",
+            afterMs: String(FIRST_EMBEDDING_ATTEMPT_MS),
+          });
+          throw error;
+        }
         diagnose({
           component: "agent-service",
           event: "memory.embedding_retried",
