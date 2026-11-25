@@ -156,9 +156,9 @@ regexTarget = "secret"
 regexes = ['''^(?:aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4|9da9b391de9bb545e047bdfd5d9abefe32ee41937acf6c3b06aae33d85d0a4b4|def76fb086971c7867b829c23a26261e38d9d74e02139253b38aeb9df8b4b50a|977648852447cb6587327ff3205b0a84cf2fc9f05621d6c8e88a497caafab2e1|4d777ef5bdc1aa36227abdfb77c3e49e7b9c892d16e1b6bda41c393504828be4|17bd5d6e9364ca49a534e1502076593317c298d4a663623091ed45388f004874)$''']
 
 [[allowlists]]
-description = "保险箱合约夹具里用固定假钥匙算出的密文（wrappedKey、password 字段，base64），手机和服务器测试互相解开用；只限这一个夹具文件（Andy 2026-11-25 同意）"
+description = "保险箱合约夹具里用固定假钥匙算出的四个密文（wrappedKey、password 字段的 base64，逐个精确值），手机和服务器测试互相解开用；只限这一个夹具文件（Andy 2026-11-25 同意）"
 condition = "AND"
 targetRules = ["generic-api-key"]
 paths = ['''(?:^|/)clients/apple/Tests/HimawariCoreTests/Fixtures/vault-contract\.json$''']
-regexTarget = "line"
-regexes = ['''^\s*"(?:wrappedKey|password)": "[A-Za-z0-9+/]{40,}={0,2}",?\s*$''']
+regexTarget = "secret"
+regexes = ['''^(?:OJcMhbm3WDiSpM1vIJuD1qnNNVIJ0hTf75YUIS9f/c6Qo98Y9w4CnxSW0UGHkewWlVHlFpwsGvui/nsG|tByJMmanrteJYrzRyAz6eC7I\+9mY5n5XMjMmS01n940gxxayiFeZE/6q|XGIcgad/HQpwhhB3ypIea5eB2sEm5ufBGncMjFIZKSwR44rKumK8mSkH|uZP0fC70wm4e\+scCIDFNsUTSMXyWlwzXpo70DxbK9KJ6kd4XjfSuZN9OQSvjdn9coV0ImLS4JBvMBl2U)$''']
