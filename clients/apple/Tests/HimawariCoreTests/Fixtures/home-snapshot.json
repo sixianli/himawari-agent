@@ -42,7 +42,7 @@
           "binding": "b-insight:mail-42-mute"
         }
       ],
-      "rank": "unscored",
+      "rank": "awaiting",
       "dataClassification": "private"
     },
     {

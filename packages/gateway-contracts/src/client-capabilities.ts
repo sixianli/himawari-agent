@@ -145,7 +145,6 @@ export const CLIENT_CAPABILITY_TABLE: readonly ClientCapabilityEntry[] = Object.
   query("v2", "proactive.sources.read"),
   change("v2", "proactive.source.settings.set"),
   tighten("v2", "proactive.source.switch_off"),
-  change("v2", "proactive.backoff.restore"),
   query("v2", "muse.overview.read"),
   change("v2", "muse.item.rate"),
   tightenOrChange("v2", "muse.intake.set", { paused: true }),

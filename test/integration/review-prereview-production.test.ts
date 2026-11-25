@@ -204,7 +204,6 @@ describe("[P4-8] model pre-rating in the running service", () => {
             reduction: { ...DEFAULT_REVIEW_PREREVIEW.reduction, ...settings.reduction },
           },
           reviewMemoryUnusedDays: 90,
-          backoffThreshold: 3,
         },
         timeZone: "Asia/Tokyo",
         store,

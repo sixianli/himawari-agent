@@ -20,7 +20,6 @@ import type {
   GatewayReadModelPort,
   GitHubIntegrationStatePort,
   GovernanceMutationReceiptStorePort,
-  HomeUrgencyStorePort,
   InboxStorePort,
   LedgerObservationPort,
   McpConnectionStorePort,
@@ -1069,15 +1068,6 @@ export class SqliteDurableAdapters {
     });
   }
 
-  homeUrgency(): HomeUrgencyStorePort {
-    return Object.freeze<HomeUrgencyStorePort>({
-      listScores: (input) => this.context.read("homeUrgency.listScores", input),
-      listRecentFailures: (input) => this.context.read("homeUrgency.listRecentFailures", input),
-      countSince: (input) => this.context.read("homeUrgency.countSince", input),
-      recordCall: (input) => this.context.write("homeUrgency.recordCall", input),
-    });
-  }
-
   ownerRules(): OwnerRuleStorePort {
     return Object.freeze<OwnerRuleStorePort>({
       list: (input) => this.context.read("ownerRule.list", input),
@@ -1227,9 +1217,6 @@ export class SqliteDurableAdapters {
       markPushEnqueued: (input) => this.context.write("proactive.markPushEnqueued", input),
       readPush: (input) => this.context.read("proactive.readPush", input),
       readInsights: (input) => this.context.read("proactive.readInsights", input),
-      previewBackoff: (input) => this.context.read("proactive.previewBackoff", input),
-      listBackoff: (input) => this.context.read("proactive.listBackoff", input),
-      restoreBackoff: (input) => this.context.write("proactive.restoreBackoff", input),
       listSourceSettings: (input) => this.context.read("proactive.listSourceSettings", input),
       writeSourceSettings: (input) => this.context.write("proactive.writeSourceSettings", input),
       processedSince: (input) => this.context.read("proactive.processedSince", input),

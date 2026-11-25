@@ -26,7 +26,6 @@ export * from "./gateway.js";
 export * from "./github.js";
 export * from "./governance.js";
 export * from "./health.js";
-export * from "./home-urgency.js";
 export * from "./host-files.js";
 export * from "./host-workspace-gateway.js";
 export * from "./identity.js";

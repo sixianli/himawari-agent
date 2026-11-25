@@ -291,7 +291,6 @@ export interface ProactiveConfiguration {
   readonly reviewSilentSharePermille: number;
   readonly reviewPrereview: ReviewPrereviewConfiguration;
   readonly reviewMemoryUnusedDays: number;
-  readonly backoffThreshold: number;
 }
 
 export interface ReviewPrereviewConfiguration {
@@ -458,7 +457,6 @@ export interface RunPolicyConfiguration {
   readonly searchAsk?: SearchAskConfiguration;
   readonly perception?: PerceptionConfiguration;
   readonly voiceAddressee?: VoiceAddresseeRouteConfiguration;
-  readonly homeUrgency?: HomeUrgencyConfiguration;
   readonly proactive?: ProactiveConfiguration;
   readonly coding?: CodingRouteConfiguration;
   readonly publicSearch?: PublicSearchRouteConfiguration;
@@ -513,17 +511,4 @@ export interface ProductConfiguration {
 
 export interface ConfigurationPort {
   load(): Promise<ProductConfiguration>;
-}
-
-export interface HomeUrgencyConfiguration {
-  readonly enabled: boolean;
-  readonly modelRef?: string;
-  readonly dailyLimit: number;
-  readonly dailyCostMicros: number;
-  readonly perCall: number;
-  readonly referenceLimit: number;
-  readonly requestTimeoutMs: number;
-  readonly checkIntervalSeconds: number;
-  readonly retryAfterHours: number;
-  readonly affirmLabelMax: Readonly<Record<string, number>>;
 }

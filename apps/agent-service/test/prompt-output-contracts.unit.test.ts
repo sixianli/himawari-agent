@@ -48,9 +48,7 @@ const PARSERS: Readonly<Record<string, unknown>> = {
   parseLeakVerdict: application.parseLeakVerdict,
   parsePrereview: application.parsePrereview,
   parsePerceptionExtraction: application.parsePerceptionExtraction,
-  parsePerceptionSourceCheck: application.parsePerceptionSourceCheck,
   parsePerceptionImage: application.parsePerceptionImage,
-  parseHomeUrgency: application.parseHomeUrgency,
   parseRuleReviewAnswer: application.parseRuleReviewAnswer,
   voiceAddresseeProbability: platform.voiceAddresseeProbability,
 };
@@ -82,15 +80,9 @@ describe("[PROMPT-CONTRACT] background prompts and the parsers that read their a
         "eval.real-memory.judge",
         "eval.real-memory.leak-judge",
         "eval.real-memory.question",
-        "home.urgency",
         "memory.capture",
         "perception.extract",
         "perception.image.understand",
-        "perception.source.calendar",
-        "perception.source.location",
-        "perception.source.message",
-        "perception.source.screen",
-        "perception.source.speech",
         "memory.classification",
         "memory.confirmation-judge",
         "memory.conversation-review",
@@ -198,23 +190,6 @@ describe("[PROMPT-CONTRACT] background prompts and the parsers that read their a
     expect(application.parseJudgeVerdict("答对了")).toBeNull();
   });
 
-  it("home urgency: accepts the items JSON the prompt asks for, and rejects a renamed key and plain text", () => {
-    expect(
-      application
-        .parseHomeUrgency(
-          JSON.stringify({
-            items: [{ n: 1, score: 640, sentence: "给田中发确认邮件", affirm: "发出去" }],
-          }),
-          1,
-        )
-        .get(1),
-    ).toEqual({ score: 640, sentence: "给田中发确认邮件", affirm: "发出去" });
-    expect(
-      application.parseHomeUrgency(JSON.stringify({ scores: [{ n: 1, score: 640 }] }), 1).size,
-    ).toBe(0);
-    expect(application.parseHomeUrgency("第一件最要紧。", 1).size).toBe(0);
-  });
-
   it("[iOS-5] perception extraction: accepts the JSON the prompt asks for and rejects a renamed list", () => {
     const answer = {
       candidates: [
@@ -242,36 +217,7 @@ describe("[PROMPT-CONTRACT] background prompts and the parsers that read their a
     expect(application.parsePerceptionExtraction("没有值得记的。", 12)).toBeNull();
   });
 
-  it("[iOS-5] perception source check and image reading: accept the JSON their prompts ask for", () => {
-    expect(
-      application.parsePerceptionSourceCheck(
-        JSON.stringify({
-          items: [
-            {
-              id: "a",
-              result: "remind",
-              what: "水费 15 号前交",
-              due: "2026-11-15",
-              reason: "有截止日期",
-            },
-            { id: "b", result: "ignore" },
-          ],
-        }),
-        ["a", "b"],
-      ),
-    ).toEqual([
-      {
-        id: "a",
-        result: "remind",
-        what: "水费 15 号前交",
-        due: "2026-11-15",
-        reason: "有截止日期",
-      },
-      { id: "b", result: "ignore" },
-    ]);
-    expect(
-      application.parsePerceptionSourceCheck(JSON.stringify({ results: [] }), ["a"]),
-    ).toBeNull();
+  it("[iOS-5] perception image reading: accepts the JSON its prompt asks for", () => {
     expect(
       application.parsePerceptionImage(
         JSON.stringify({ text: "发票 120 元", description: "一张发票" }),

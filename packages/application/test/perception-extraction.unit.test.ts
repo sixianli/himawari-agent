@@ -4,12 +4,10 @@ import {
   buildPerceptionExtractionChunks,
   COMMAND_UTTERANCE_BATCH,
   commandUtteranceBatches,
-  buildPerceptionSourceCheckPrompt,
   type PerceptionExtractionSource,
   type PerceptionRecord,
   parsePerceptionExtraction,
   parsePerceptionImage,
-  parsePerceptionSourceCheck,
   perceptionCalendarTable,
   quotedSource,
 } from "../src/index.js";
@@ -220,53 +218,7 @@ describe("perception extraction output", () => {
   });
 });
 
-describe("perception source checks", () => {
-  it("orders items by time and ends with the current time", () => {
-    const prompt = buildPerceptionSourceCheckPrompt({
-      kind: "message",
-      items: [
-        { id: "b", atMs: 2, line: '{"id":"b"}' },
-        { id: "a", atMs: 1, line: '{"id":"a"}' },
-      ],
-      calendar: ["2026-11-12 周四"],
-      now: "2026-11-12T12:00",
-    });
-    expect(prompt.indexOf('{"id":"a"}')).toBeLessThan(prompt.indexOf('{"id":"b"}'));
-    expect(prompt.endsWith("2026-11-12T12:00")).toBe(true);
-  });
-
-  it("treats every item the model left out or wrote wrongly as ignore", () => {
-    const verdicts = parsePerceptionSourceCheck(
-      JSON.stringify({
-        items: [
-          {
-            id: "a",
-            result: "remind",
-            what: "水费 15 号前交",
-            due: "2026-11-15",
-            reason: "有截止日期",
-          },
-          { id: "b", result: "remind", what: "x", due: "下周", reason: "y" },
-          { id: "zzz", result: "remind", what: "x", due: null, reason: "y" },
-          { id: "a", result: "ignore" },
-        ],
-      }),
-      ["a", "b", "c"],
-    );
-    expect(verdicts).toEqual([
-      {
-        id: "a",
-        result: "remind",
-        what: "水费 15 号前交",
-        due: "2026-11-15",
-        reason: "有截止日期",
-      },
-      { id: "b", result: "ignore" },
-      { id: "c", result: "ignore" },
-    ]);
-    expect(parsePerceptionSourceCheck("不知道", ["a"])).toBeNull();
-  });
-
+describe("perception image reading", () => {
   it("reads an image result only when it has both text and a short description", () => {
     expect(parsePerceptionImage('{"text":"发票 120 元","description":"一张发票"}')).toEqual({
       text: "发票 120 元",
