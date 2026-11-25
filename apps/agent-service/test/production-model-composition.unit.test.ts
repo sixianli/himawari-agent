@@ -1032,7 +1032,7 @@ it("[P3-2] a memory tool search whose Run lost its execution lease while embeddi
   expect(recorded).toEqual([false, true, true, true, false]);
 });
 
-it("stops waiting for a slow per-turn memory-search embedding after three seconds so the answer is not held", async () => {
+it("drops the automatic memory lookup for the turn when its embedding takes over three seconds", async () => {
   const selected = selectedEmbeddingConfiguration(temporaryDirectory);
   const configuration = {
     ...selected,
@@ -1085,7 +1085,7 @@ it("stops waiting for a slow per-turn memory-search embedding after three second
         } catch (error) {
           vectorFailures.push(error);
         }
-        return [];
+        return [{ memory: { id: "keyword-only-hit" }, score: 0.5 }] as never;
       },
     },
     admission: async () => ({ begin }) as never,

@@ -68,7 +68,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 ## 与 ADR 0119 的关系
 
-本 ADR 修改 [ADR 0119 第 2 条](0119-conversation-speed-prewarm-on-tool-call-and-embedding-retry.md#decision)中“超时就把这次记为‘结果不确定’”和“用新的调用序号（`ordinal` 2）重新登记”：改为按上限结清，并用新的调用位置。3 秒的时限、只重发一次、后台记忆整理不重发，这几点不变。2026-11-26 起，每轮回答前自动找记忆这条路径超时后不再重发，直接改用关键词和实体（见 [ADR 0119 后续](0119-conversation-speed-prewarm-on-tool-call-and-embedding-retry.md#follow-up)）；本条的按上限结清对它照样适用，新调用位置只用于回忆工具等仍会重发的路径。
+本 ADR 修改 [ADR 0119 第 2 条](0119-conversation-speed-prewarm-on-tool-call-and-embedding-retry.md#decision)中“超时就把这次记为‘结果不确定’”和“用新的调用序号（`ordinal` 2）重新登记”：改为按上限结清，并用新的调用位置。3 秒的时限、只重发一次、后台记忆整理不重发，这几点不变。2026-11-26 起，每轮回答前自动找记忆这条路径超时后不再重发，这一轮不带自动找到的记忆（见 [ADR 0119 后续](0119-conversation-speed-prewarm-on-tool-call-and-embedding-retry.md#follow-up)）；本条的按上限结清对它照样适用，新调用位置只用于回忆工具等仍会重发的路径。
 
 [↑ 返回阅读导航](#contents)
 
