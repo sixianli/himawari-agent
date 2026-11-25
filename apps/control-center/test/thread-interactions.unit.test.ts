@@ -357,6 +357,8 @@ describe("thread control center interactions", () => {
         turnId: "turn-answer",
         runId: null,
         committedAt: NOW,
+        options: null,
+        chosenFrom: null,
       },
     ];
     await render();
@@ -380,6 +382,8 @@ describe("thread control center interactions", () => {
       turnId: `source-turn-${Math.ceil(sequence / 2)}`,
       runId: null,
       committedAt: NOW,
+      options: null,
+      chosenFrom: null,
     });
     readText.mockImplementation(async (ref: string) => ({
       content: ref === "title-source" ? "原来的对话" : ref,
@@ -440,6 +444,8 @@ describe("thread control center interactions", () => {
       turnId: `turn-${sequence}`,
       runId: null,
       committedAt: NOW,
+      options: null,
+      chosenFrom: null,
     });
     readText.mockImplementation(async (ref: string) => ({ content: ref }));
     query.mockImplementation(async (request, signal) =>
@@ -1205,6 +1211,8 @@ describe("thread control center interactions", () => {
         turnId: "turn-ui",
         runId: "run-ui",
         committedAt: NOW,
+        options: null,
+        chosenFrom: null,
       },
     ];
     state = {
@@ -1269,6 +1277,8 @@ describe("thread control center interactions", () => {
           turnId: "turn-ui",
           runId: "run-ui",
           committedAt: NOW,
+          options: null,
+          chosenFrom: null,
         },
       ];
       options = { ...options, configuration: { ...configuration, executionStateAvailable: true } };
@@ -1326,6 +1336,8 @@ describe("thread control center interactions", () => {
         turnId: "turn-ui",
         runId: "run-ui",
         committedAt: NOW,
+        options: null,
+        chosenFrom: null,
       },
     ];
     options = {
@@ -1401,6 +1413,8 @@ describe("thread control center interactions", () => {
         turnId: "turn-ui",
         runId: "run-ui",
         committedAt: NOW,
+        options: null,
+        chosenFrom: null,
       },
     ];
     await render();
@@ -1484,6 +1498,8 @@ describe("thread control center interactions", () => {
         turnId: "turn-ui",
         runId: "run-ui",
         committedAt: NOW,
+        options: null,
+        chosenFrom: null,
       },
     ];
     options = {
@@ -1683,6 +1699,8 @@ describe("thread control center interactions", () => {
         turnId: "turn-ui",
         runId: "run-ui",
         committedAt: NOW,
+        options: null,
+        chosenFrom: null,
       },
     ];
     options = {
@@ -1768,6 +1786,8 @@ describe("thread control center interactions", () => {
         turnId: "turn-ui",
         runId: "run-ui",
         committedAt: NOW,
+        options: null,
+        chosenFrom: null,
       },
     ];
     options = {
@@ -2195,6 +2215,8 @@ describe("thread control center interactions", () => {
         turnId: sent.payload.turnId,
         runId: sent.payload.runId,
         committedAt: NOW,
+        options: null,
+        chosenFrom: null,
       },
     ];
     readText.mockClear();
@@ -2688,6 +2710,8 @@ it("[UI-50] shows each message as soon as its own text arrives, newest first, wi
     turnId: `turn-${Math.ceil(sequence / 2)}`,
     runId: null,
     committedAt: NOW,
+    options: null,
+    chosenFrom: null,
   });
   threadMessages = [row(1, "owner"), row(2, "agent"), row(3, "owner"), row(4, "agent")];
   const asked: string[] = [];
@@ -2758,6 +2782,8 @@ describe("pushed conversation updates", () => {
     turnId: `turn-${sequence}`,
     runId: null,
     committedAt: NOW,
+    options: null,
+    chosenFrom: null,
   });
   const executionState = (runRevision: number, revision: string): ThreadExecutionState => ({
     runRevision,
@@ -3227,6 +3253,8 @@ describe("more panel", () => {
     turnId: `turn-${runId}`,
     runId,
     committedAt: NOW,
+    options: null,
+    chosenFrom: null,
   });
   const panelText = () => container.querySelector(".more-panel")?.textContent ?? "";
 

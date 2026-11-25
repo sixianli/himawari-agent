@@ -1,9 +1,6 @@
 import HimawariCore
 import HimawariDesign
 import SwiftUI
-#if canImport(VisionKit)
-import VisionKit
-#endif
 
 struct PairingView: View {
     let model: AppModel
@@ -323,8 +320,8 @@ struct PairingScanner: View {
     private var camera: some View {
         Group {
             #if canImport(VisionKit) && os(iOS)
-            if DataScannerViewController.isSupported && DataScannerViewController.isAvailable {
-                CodeScanner(found: found).ignoresSafeArea()
+            if QRCodeScanner.available {
+                QRCodeScanner(accepts: { $0.hasPrefix(PairingInvitation.scheme + ":") }, found: found).ignoresSafeArea()
                 ScannerFrame(caption: Text(L.text("pairing.aim")))
             } else {
                 EmptyStateView(Text(L.text("pairing.cameraUnavailable")))
@@ -336,55 +333,3 @@ struct PairingScanner: View {
         }
     }
 }
-
-#if canImport(VisionKit) && os(iOS)
-struct CodeScanner: UIViewControllerRepresentable {
-    let found: (String) -> Void
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(found: found)
-    }
-
-    func makeUIViewController(context: Context) -> DataScannerViewController {
-        let controller = DataScannerViewController(
-            recognizedDataTypes: [.barcode(symbologies: [.qr])],
-            qualityLevel: .balanced,
-            recognizesMultipleItems: false,
-            isHighFrameRateTrackingEnabled: false,
-            isHighlightingEnabled: false
-        )
-        controller.delegate = context.coordinator
-        return controller
-    }
-
-    func updateUIViewController(_ controller: DataScannerViewController, context: Context) {
-        if !controller.isScanning { try? controller.startScanning() }
-    }
-
-    static func dismantleUIViewController(_ controller: DataScannerViewController, coordinator: Coordinator) {
-        controller.stopScanning()
-    }
-
-    @MainActor
-    final class Coordinator: NSObject, DataScannerViewControllerDelegate {
-        private let found: (String) -> Void
-        private var delivered = false
-
-        init(found: @escaping (String) -> Void) {
-            self.found = found
-        }
-
-        func dataScanner(_ dataScanner: DataScannerViewController, didAdd addedItems: [RecognizedItem], allItems: [RecognizedItem]) {
-            guard !delivered else { return }
-            for item in addedItems {
-                if case let .barcode(code) = item, let payload = code.payloadStringValue, payload.hasPrefix(PairingInvitation.scheme + ":") {
-                    delivered = true
-                    dataScanner.stopScanning()
-                    found(payload)
-                    return
-                }
-            }
-        }
-    }
-}
-#endif

@@ -18,6 +18,8 @@ import {
   DEFAULT_VOICE_GATES,
   DEVICE_CONFIGURATION_DEFAULTS,
   type DeviceActionService,
+  type PairedDeviceScope,
+  type VaultService,
   defaultDeviceHardLimits,
   type ExecutionLiveFeed,
   type GatewayAccessDecision,
@@ -33,6 +35,7 @@ import {
   PORT_ERROR_CODES,
   type ProductConfiguration,
   ProductThreadGatewayAdapter,
+  type ThreadMessageOptionsPort,
   perceptionSearchEvidenceText,
   RecentAuthenticationGuard,
   type RunLifecyclePort,
@@ -267,6 +270,7 @@ export interface ProductionHttpCompositionSecretSources {
 }
 
 export interface ProductionHttpCompositionOptions {
+  readonly messageOptions?: ThreadMessageOptionsPort;
   readonly capabilityReactivation?: CapabilityReactivationVerifierPort;
   readonly listenUnixSocketPath?: string;
   readonly modelCatalog?: readonly {
@@ -292,6 +296,7 @@ export interface ProductionHttpCompositionOptions {
     readonly service: DeviceActionService;
     readonly hub: DeviceActionHub;
   };
+  readonly vault?: VaultService;
   readonly deviceNotifications?: {
     readonly hub: DeviceNotificationHub;
     readonly presence: DevicePresence;
@@ -1084,6 +1089,7 @@ export async function createProductionHttpComposition(
   });
   const environment = options.executionEnvironment;
   const threadAdapter = new ProductThreadGatewayAdapter({
+    ...(options.messageOptions ? { messageOptions: options.messageOptions } : {}),
     validateModelSelection: (selection, classification) => {
       const model = options.modelCatalog?.find((entry) => entry.ref === selection.modelRef);
       const descriptor = configuration.modelDescriptors.find(
@@ -1839,6 +1845,12 @@ export async function createProductionHttpComposition(
                   : undefined,
               hub: options.deviceActions.hub,
             },
+          }
+        : {}),
+      ...(options.vault
+        ? {
+            vault: (scope: PairedDeviceScope) =>
+              scope.ownerId === ownerId && scope.agentId === agentId ? options.vault : undefined,
           }
         : {}),
       voiceGates: () => DEFAULT_VOICE_GATES,

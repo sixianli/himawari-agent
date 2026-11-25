@@ -100,6 +100,8 @@ const detail = (): Detail => ({
         turnId: "turn:news",
         runId: completedRun.runId,
         committedAt: at(0),
+        options: null,
+        chosenFrom: null,
       },
       {
         messageId: "message:agent",
@@ -111,6 +113,8 @@ const detail = (): Detail => ({
         turnId: "turn:news",
         runId: completedRun.runId,
         committedAt: at(27082),
+        options: null,
+        chosenFrom: null,
       },
     ],
     runs: [completedRun],
@@ -210,6 +214,8 @@ const bgHistory = (finished: boolean) => {
                     turnId: "turn:notice",
                     runId: "run:notice",
                     committedAt: at(520_000),
+                    options: null,
+                    chosenFrom: null,
                   },
                 ]
               : []),

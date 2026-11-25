@@ -16,6 +16,7 @@ import {
 } from "./production-conversation-tools.js";
 import { MAIL_READ_CAPABILITY_REF } from "./production-mail-read.js";
 import { MANAGED_TASK_ACTIONS } from "./production-managed-tasks.js";
+import { OFFER_OPTIONS_CAPABILITY_REF } from "./production-message-options.js";
 import { MEMORY_OPEN_CAPABILITY_REF } from "./production-memory-open.js";
 import { MEMORY_RECALL_CAPABILITY_REF } from "./production-memory-recall.js";
 import {
@@ -33,6 +34,7 @@ import {
   REMINDER_SET_CAPABILITY_REF,
 } from "./production-reminder-writer.js";
 import { TELL_OWNER_CAPABILITY_REF } from "./production-tell-owner.js";
+import { VAULT_LIST_CAPABILITY_REF } from "./production-vault-tools.js";
 
 export const BUILT_IN_CAPABILITY_VERSION = "1.0.0";
 
@@ -336,6 +338,16 @@ export const PRODUCTION_TOOL_ACTION_ROWS: readonly ToolActionRow[] = Object.free
   },
   {
     ...OWNER_WRITE_DEFAULTS,
+    tool: "offer_options",
+    himawariSideOnly: true,
+    capabilityRef: OFFER_OPTIONS_CAPABILITY_REF,
+    operation: "offer",
+    targetType: "owner-options",
+    standingRuleChange: false,
+    detail: detail({ zh: "给你选项", en: "Offer you choices", ja: "選択肢を出す" }),
+  },
+  {
+    ...OWNER_WRITE_DEFAULTS,
     tool: "reminder_set",
     himawariSideOnly: true,
     capabilityRef: REMINDER_SET_CAPABILITY_REF,
@@ -447,6 +459,19 @@ export const PRODUCTION_TOOL_ACTION_ROWS: readonly ToolActionRow[] = Object.free
       { zh: "让设备做一件事", en: "Ask a device to act", ja: "デバイスに操作を依頼" },
       "action",
     ),
+  },
+  {
+    ...READ_DEFAULTS,
+    tool: "vault_list",
+    family: "builtin",
+    capabilityRef: VAULT_LIST_CAPABILITY_REF,
+    operation: "list",
+    targetType: "owner-vault",
+    resultOrigin: "owner_data",
+    authorization: "read",
+    executor: "owner_scoped",
+    deduplication: "run_and_tool_call",
+    detail: detail({ zh: "看保险箱里有哪些项", en: "List vault items", ja: "保管庫の項目を一覧" }),
   },
 ] satisfies ToolActionRow[]);
 

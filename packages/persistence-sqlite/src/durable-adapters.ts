@@ -23,6 +23,7 @@ import type {
   HomeUrgencyStorePort,
   LedgerObservationPort,
   McpConnectionStorePort,
+  VaultStorePort,
   McpMemorySyncStorePort,
   MemoryBookStorePort,
   MemoryCaptureBacklogPort,
@@ -1036,6 +1037,21 @@ export class SqliteDurableAdapters {
       decideProject: (input) => this.context.write("mcpMemorySync.decideProject", input),
       decideNote: (input) => this.context.write("mcpMemorySync.decideNote", input),
       resolveAttention: (input) => this.context.write("mcpMemorySync.resolveAttention", input),
+    });
+  }
+
+  vault(): VaultStorePort {
+    return Object.freeze<VaultStorePort>({
+      listItems: (input) => this.context.read("vault.listItems", input),
+      readManifest: (input) => this.context.read("vault.readManifest", input),
+      applyChange: (input) => this.context.write("vault.applyChange", input),
+      createRequest: (input) => this.context.write("vault.createRequest", input),
+      readRequest: (input) => this.context.read("vault.readRequest", input),
+      listPendingRequests: (input) => this.context.read("vault.listPendingRequests", input),
+      decideRequest: (input) => this.context.write("vault.decideRequest", input),
+      expireOverdue: (input) => this.context.write("vault.expireOverdue", input),
+      recordUsage: (input) => this.context.write("vault.recordUsage", input),
+      listUsage: (input) => this.context.read("vault.listUsage", input),
     });
   }
 
