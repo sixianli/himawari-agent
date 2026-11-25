@@ -25,25 +25,33 @@ public struct MemoryRootView: View {
     @State private var selectedRule: RuleSummary?
     private let talk: (String) -> Void
     private let opening: Opening?
+    private let back: (() -> Void)?
 
     public init(api: DeviceAPI, confirmKey: DeviceKeySigner, talk: @escaping (String) -> Void) {
         let gateway = ManageGateway(transport: SignedDeviceTransport(http: api.http, confirmKey: confirmKey))
         _store = State(initialValue: MemoryStore(gateway: gateway))
         self.talk = talk
         opening = nil
+        back = nil
     }
 
-    init(store: MemoryStore, tab: Tab = .remembered, opening: Opening? = nil, talk: @escaping (String) -> Void = { _ in }) {
+    init(store: MemoryStore, tab: Tab = .remembered, opening: Opening? = nil, talk: @escaping (String) -> Void = { _ in }, back: (() -> Void)? = nil) {
         _store = State(initialValue: store)
         _tab = State(initialValue: tab)
         self.opening = opening
         self.talk = talk
+        self.back = back
     }
 
     public var body: some View {
         ZStack(alignment: .topTrailing) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
+                    if let back {
+                        GlassCircleButton(Text(M.back), action: back) {
+                            Icon(.chevronLeft, size: DesignTokens.IconSize.glassButton)
+                        }
+                    }
                     ScreenTitle(Text(M.memoryTitle))
                     MemorySegment(selection: $tab)
                     content

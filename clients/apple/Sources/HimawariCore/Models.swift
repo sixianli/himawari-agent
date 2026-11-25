@@ -97,6 +97,8 @@ public struct DeviceConfiguration: Codable, Sendable, Equatable {
     public let attachments: AttachmentLimits?
     public let perception: PerceptionSummary?
 
+    public var acceptsChatAttachments: Bool { attachments != nil }
+
     public func limit(_ key: String) -> Int64? {
         limits.first { $0.key == key }?.value
     }
@@ -151,6 +153,10 @@ public struct ThreadRunSummary: Codable, Sendable, Equatable {
     public let runId: String
     public let revision: Int
     public let status: String
+
+    public static let workingStates: Set<String> = ["accepted", "building_context", "running", "reconciling_external_result"]
+
+    public var isWorking: Bool { Self.workingStates.contains(status) }
 }
 
 public struct ThreadCollection: Codable, Sendable, Equatable {
