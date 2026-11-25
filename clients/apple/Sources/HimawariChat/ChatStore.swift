@@ -226,7 +226,10 @@ public final class ChatStore {
 
     public func processLine(for runId: String, in threadId: String) -> ProcessLine? {
         guard let run = run(runId, in: threadId) else { return nil }
-        return ProcessLine.make(records: executions[runId] ?? [], runStatus: run.status)
+        let records = executions[runId]
+        let line = ProcessLine.make(records: records ?? [], runStatus: run.status)
+        if ProcessLine.terminalRunStatuses.contains(run.status) && records == nil { return nil }
+        return line.hasNothingToShow ? nil : line
     }
 
     public func transcript(in threadId: String) -> [TranscriptItem] {
