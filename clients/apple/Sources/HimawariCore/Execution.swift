@@ -168,3 +168,10 @@ public enum ProcessLine: Sendable, Equatable {
         return .working(current: current, setback: setback)
     }
 }
+
+public extension ProcessLine {
+    var hasNothingToShow: Bool {
+        if case let .finished(steps, _) = self { return steps.isEmpty }
+        return false
+    }
+}

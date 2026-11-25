@@ -38,3 +38,10 @@ public struct StreamingReply: Sendable, Equatable {
         .joined(separator: "\n\n")
     }
 }
+
+public extension StreamingReply {
+    func isSettled(in detail: ThreadDetail?) -> Bool {
+        guard let run = detail?.runs.first(where: { $0.runId == runId }) else { return false }
+        return ProcessLine.terminalRunStatuses.contains(run.status)
+    }
+}
