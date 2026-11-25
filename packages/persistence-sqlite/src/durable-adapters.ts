@@ -1098,6 +1098,13 @@ export class SqliteDurableAdapters {
       updateTask: (input) => this.context.write("subthread.updateTask", input),
       listTasks: (input) => this.context.read("subthread.listTasks", input),
       listTaskChanges: (input) => this.context.read("subthread.listTaskChanges", input),
+      markStuck: (input) => this.context.write("subthread.markStuck", input),
+      recordResult: (input) => this.context.write("subthread.recordResult", input),
+      listResults: (input) => this.context.read("subthread.listResults", input),
+      readResult: (input) => this.context.write("subthread.readResult", input),
+      waitResult: (input) => this.context.write("subthread.waitResult", input),
+      listResultNotices: (input) => this.context.read("subthread.listResultNotices", input),
+      deleteResultNotice: (input) => this.context.write("subthread.deleteResultNotice", input),
     });
   }
 
