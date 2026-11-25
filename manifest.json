@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "pr": 637,
+  "batch": "main-3",
+  "files": [
+    {
+      "path": "next-2-main-dark.png",
+      "bytes": 300149,
+      "sha256": "42d07c3890c9d80addcd54e5fb7e1355a1f5fdd1b2fab70be15d5025e96efbc4"
+    },
+    {
+      "path": "next-2-main-light.png",
+      "bytes": 331128,
+      "sha256": "c3c97e387e7e1ba8615df80bec9304c9623cc2072f44452fbccee798810101ef"
+    }
+  ]
+}
