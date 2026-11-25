@@ -1913,8 +1913,11 @@ it.each(["connection loss", "missing cost", "budget exceeded"] as const)(
             .all("run:memory-fallback-recall"),
         ).toEqual([{ source: "embedding", status: "settled" }]);
         await expect
-          .poll(() => turnIndexEmbeddings("run:memory-fallback-recall").length, { timeout: 30_000 })
-          .toBeGreaterThan(0);
+          .poll(() => turnIndexEmbeddings("run:memory-fallback-recall"), { timeout: 30_000 })
+          .toEqual([
+            { logicalSlot: "conversation-turn-1:run:memory-fallback-recall", status: "settled" },
+            { logicalSlot: "conversation-turn-2:run:memory-fallback-recall", status: "settled" },
+          ]);
         expect(
           database
             .prepare("SELECT status FROM model_budget_accounts WHERE account_id = ?")
