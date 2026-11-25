@@ -1,12 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 
-PROD_TARGET="root@84.247.157.41"
+PROD_ACCOUNT="himawari-prod"
 PROD_UNIT="himawari-prod.service"
 PROD_NODE="/opt/himawari/node/bin/node"
 PROD_DATABASE="/var/lib/himawari/state/data/product.sqlite"
 PROD_CONFIGURATION="/etc/himawari/config.json"
-PROD_SERVICE_UID="999"
 
 usage() {
   cat >&2 <<'TEXT'
@@ -39,13 +38,23 @@ require_match() {
   [[ "$value" =~ $pattern ]] || refuse "$what is not allowed: $(printf '%q' "$value")"
 }
 
+prod_target() {
+  local host="${HIMAWARI_PROD_HOST:-${HIMAWARI_PACKET_HOST:-}}"
+  [[ -n "$host" ]] || refuse "give the production host with HIMAWARI_PROD_HOST (or HIMAWARI_PACKET_HOST)"
+  require_match "$host" '^[A-Za-z0-9]([A-Za-z0-9.:-]*[A-Za-z0-9])?$' "production host"
+  printf 'root@%s' "$host"
+}
+
 remote() {
-  ssh -o BatchMode=yes -o ConnectTimeout=20 "$PROD_TARGET" "$1"
+  local target
+  target="$(prod_target)"
+  ssh -o BatchMode=yes -o ConnectTimeout=20 "$target" "$1"
 }
 
 database_query() {
-  local mode="$1" first="${2:-}" second="${3:-}"
-  ssh -o BatchMode=yes -o ConnectTimeout=20 "$PROD_TARGET" \
+  local mode="$1" first="${2:-}" second="${3:-}" target
+  target="$(prod_target)"
+  ssh -o BatchMode=yes -o ConnectTimeout=20 "$target" \
     "cd /tmp && $PROD_NODE --no-warnings - $mode $first $second" <<JS
 const { DatabaseSync } = require("node:sqlite");
 const database = new DatabaseSync("$PROD_DATABASE", { readOnly: true });
@@ -132,8 +141,10 @@ JS
 }
 
 system_instruction_query() {
-  ssh -o BatchMode=yes -o ConnectTimeout=20 "$PROD_TARGET" \
-    "cd /tmp && $PROD_NODE --no-warnings - $PROD_CONFIGURATION $PROD_SERVICE_UID" <<'JS'
+  local target
+  target="$(prod_target)"
+  ssh -o BatchMode=yes -o ConnectTimeout=20 "$target" \
+    "cd /tmp && $PROD_NODE --no-warnings - $PROD_CONFIGURATION \$(id -u $PROD_ACCOUNT)" <<'JS'
 const { openSync, fstatSync, lstatSync, readFileSync, closeSync, constants } = require("node:fs");
 const path = require("node:path");
 const fail = (code) => {
