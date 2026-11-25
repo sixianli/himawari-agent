@@ -18,6 +18,8 @@ import {
   DEFAULT_VOICE_GATES,
   DEVICE_CONFIGURATION_DEFAULTS,
   type DeviceActionService,
+  type PairedDeviceScope,
+  type VaultService,
   defaultDeviceHardLimits,
   type ExecutionLiveFeed,
   type GatewayAccessDecision,
@@ -294,6 +296,7 @@ export interface ProductionHttpCompositionOptions {
     readonly service: DeviceActionService;
     readonly hub: DeviceActionHub;
   };
+  readonly vault?: VaultService;
   readonly deviceNotifications?: {
     readonly hub: DeviceNotificationHub;
     readonly presence: DevicePresence;
@@ -1842,6 +1845,12 @@ export async function createProductionHttpComposition(
                   : undefined,
               hub: options.deviceActions.hub,
             },
+          }
+        : {}),
+      ...(options.vault
+        ? {
+            vault: (scope: PairedDeviceScope) =>
+              scope.ownerId === ownerId && scope.agentId === agentId ? options.vault : undefined,
           }
         : {}),
       voiceGates: () => DEFAULT_VOICE_GATES,

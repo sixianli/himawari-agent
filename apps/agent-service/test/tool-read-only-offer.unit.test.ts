@@ -39,6 +39,7 @@ describe("read-only tool offer", () => {
       "reminder_list",
       "rule_list",
       "tool_result_recall",
+      "vault_list",
       "web_fetch",
       "web_search",
     ]);

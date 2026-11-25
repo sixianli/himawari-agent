@@ -39,6 +39,7 @@ import {
   reviewMemoryVisible,
   ThreadCommandService,
   unreadablePushRule,
+  VaultService,
   WorkerDelegationAdmissionService,
 } from "@himawari-agent/application";
 import {
@@ -105,6 +106,7 @@ import {
   writeAgentServiceBootBinding,
   writeAuthorityFile,
   writeServiceDiagnostic,
+  NodeVaultCrypto,
 } from "@himawari-agent/platform-node";
 import {
   admissionCostForConfiguredPiModel,
@@ -193,6 +195,7 @@ import { ProductionOwnerRuleTools, ProductionOwnerRuleWriter } from "./productio
 import { ProductionPayloadBrokerHandler } from "./production-payload-broker-handler.js";
 import { ProductionPerceptionExtraction } from "./production-perception-extraction.js";
 import { ProductionPerceptionTools } from "./production-perception-tools.js";
+import { ProductionVaultTools } from "./production-vault-tools.js";
 import {
   createProactivePushSource,
   PREREVIEW_MAX_OUTPUT_TOKENS,
@@ -746,6 +749,7 @@ export async function startTenantRuntime(
     nowMilliseconds: () => Date.parse(productionClock().now()),
   });
   let deviceActions: ReturnType<typeof createProductionDeviceActions> | undefined;
+  let vault: VaultService | undefined;
   let runs: ReturnType<typeof createProductionRunComposition> | undefined;
   let runDrain: ReturnType<ProductionRunDispatchLoop["stop"]> | undefined;
   let resourceOnlyLoop: ProductionRunDispatchLoop | undefined;
@@ -1766,6 +1770,17 @@ export async function startTenantRuntime(
           clock,
         }),
       });
+      vault = new VaultService({
+        store: repository.vault(),
+        crypto: new NodeVaultCrypto(),
+        notifier: {
+          approvalNeeded: async (input) => {
+            await applePush?.requestVaultApproval(input);
+          },
+        },
+        now: () => new Date(clock.now()),
+      });
+      const activeVault = vault;
       deviceActions = createProductionDeviceActions({
         scope: perceptionScope,
         store: repository.deviceActions(),
@@ -1836,6 +1851,10 @@ export async function startTenantRuntime(
         ownerScope,
         externalContent,
         perception: perceptionTools,
+        vault: new ProductionVaultTools({
+          scope: perceptionScope,
+          list: (scope) => activeVault.listForModel(scope),
+        }),
         fileReadEnabled: configuration.runPolicy?.fileRead !== undefined,
         readOnlyRun: async (runId) => {
           const source = await runSources.read(runId);
@@ -3461,6 +3480,7 @@ export async function startTenantRuntime(
         ...(deviceActions
           ? { deviceActions: { service: deviceActions.service, hub: deviceActionHub } }
           : {}),
+        ...(vault ? { vault } : {}),
         deviceNotifications: {
           hub: deviceNotificationHub,
           presence: devicePresence,
