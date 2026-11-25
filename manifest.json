@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "pr": 637,
+  "batch": "main-2",
+  "files": [
+    {
+      "path": "04-chat-dark.png",
+      "bytes": 299963,
+      "sha256": "b2426790b67fb4134e07c40a8f941ef5df30ffd572ac3d30e1219e2fc33f6c3a"
+    },
+    {
+      "path": "04-chat-light.png",
+      "bytes": 331215,
+      "sha256": "4787933d5d6dba4de54db3a9ee17c445b6d7bb75644c7a3724b804eb38744922"
+    },
+    {
+      "path": "16-chat-states-5-answering-dark.png",
+      "bytes": 254114,
+      "sha256": "644b38692b1fefe990b4b976a9e094c29d8d5847846d411f44b06aba7c6b1e30"
+    },
+    {
+      "path": "16-chat-states-5-answering-light.png",
+      "bytes": 283228,
+      "sha256": "34496194aa5ec2fdd308f36dad3bda220bf8838c1d894f2b3564bafd5b7e9b56"
+    },
+    {
+      "path": "next-2-chat-options-chosen-dark.png",
+      "bytes": 282803,
+      "sha256": "108209cbcd6043a11173538ac47316ee2d0eec6923cbd0be834a699069ab9554"
+    },
+    {
+      "path": "next-2-chat-options-chosen-light.png",
+      "bytes": 310302,
+      "sha256": "4758113b339ba5cd71f97aa285397b595d75fb113c4b46e2b97367e066d00610"
+    },
+    {
+      "path": "next-2-chat-options-dark.png",
+      "bytes": 298169,
+      "sha256": "90ab93dbbca1429ac270348eb85bae0ec66416ba34ee2114742fc5882f6e715a"
+    },
+    {
+      "path": "next-2-chat-options-light.png",
+      "bytes": 327420,
+      "sha256": "d390cea74a35e20cbf823342bb90a108ff08503daed9e047b733e5f2306fc8d5"
+    },
+    {
+      "path": "next-2-main-dark.png",
+      "bytes": 298362,
+      "sha256": "29a3ff03bc7d954354ea8a8776ad791172e5a5a5ad1f3bb2c71dd8fa446ee9c6"
+    },
+    {
+      "path": "next-2-main-light.png",
+      "bytes": 329617,
+      "sha256": "722ab0f034abe729fee484bc9a0dc609b49b436e212a7aa1eed38ab0685832c1"
+    },
+    {
+      "path": "next-3-her-dark.png",
+      "bytes": 282305,
+      "sha256": "5b09f9a8b2562a2371aced1a9786a0255fdd81c0d6129aa8c4afd428c618b3aa"
+    },
+    {
+      "path": "next-3-her-light.png",
+      "bytes": 410434,
+      "sha256": "fcddc43cf6f8ab303dadbcc0d4412a08b98efa822567f62c1d5497acdd4bd2f5"
+    }
+  ]
+}
