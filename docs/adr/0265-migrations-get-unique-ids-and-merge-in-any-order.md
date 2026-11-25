@@ -157,7 +157,7 @@ date: "2026-11-14"
 
 ## 冲突怎样自动发现
 
-新增检查 `npm run check:migration-conflicts`，加进 `package.json` 的 `check:steps`（`npm run check` 只跑这里列出的步骤，`scripts/run-all-checks.mjs:31`）、CI 和打包（见上一节）。它在内存里建库跑迁移；打包脚本调它时有 5 分钟上限，其余靠 CI 作业自己的超时（见“后果和风险”）。
+新增检查 `npm run check:migration-conflicts`，加进 `package.json` 的 `check:steps`（`npm run check` 只跑这里列出的步骤，`scripts/run-all-checks.mjs` 的 `stepNames`）、CI 和打包（见上一节）。它在内存里建库跑迁移；打包脚本调它时有 5 分钟上限，其余靠 CI 作业自己的超时（见“后果和风险”）。
 
 起初的设计是“只和本 PR 写代码时看不到的迁移比”（按 `git merge-base` 划分）。DeepSeek 审核指出：PR 只要把 main 并进来，旧的迁移就不再算“看不到的”，过时的重建照样能过；空库里又没有数据，暴露不了“搬旧数据时违反新约束”。所以改成下面三条，都不依赖 PR 什么时候并过 main：
 
