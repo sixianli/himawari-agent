@@ -140,6 +140,16 @@ struct MainShell: View {
                 listening = ListeningController(api: model.api, chat: chat)
             }
         }
+        #if os(iOS)
+        .onAppear { NotificationRouter.shared.mainChatOnScreen = !herOpen }
+        .onDisappear { NotificationRouter.shared.mainChatOnScreen = false }
+        .onChange(of: herOpen) { _, open in NotificationRouter.shared.mainChatOnScreen = !open }
+        .onChange(of: NotificationRouter.shared.approvalsRequested, initial: true) { _, requested in
+            guard requested else { return }
+            NotificationRouter.shared.approvalsRequested = false
+            herOpen = true
+        }
+        #endif
     }
 
     private func findMainThread() async {

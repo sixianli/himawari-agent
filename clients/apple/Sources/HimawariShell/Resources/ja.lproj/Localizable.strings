@@ -44,3 +44,5 @@
 "watch.offer.watch" = "Watchで使う";
 "watch.offer.cancel" = "使わない";
 "main.retry" = "つながりません。タップしてもう一度";
+"push.approve" = "承認";
+"push.deny" = "承認しない";

@@ -41,8 +41,44 @@ final class ListenActivityController {
     }
 }
 
+public enum ListenNotificationRouting {
+    public static var categories: Set<UNNotificationCategory> {
+        [
+            UNNotificationCategory(
+                identifier: ListenNotifications.pausedCategory,
+                actions: [UNNotificationAction(identifier: ListenNotifications.continueAction, title: ListenNoticeText.continueAction, options: [.foreground])],
+                intentIdentifiers: []
+            ),
+            UNNotificationCategory(
+                identifier: ListenNotifications.askCategory,
+                actions: [
+                    UNNotificationAction(identifier: ListenNotifications.notMeAction, title: ListenNoticeText.notMeAction, options: []),
+                    UNNotificationAction(identifier: ListenNotifications.itsMeAction, title: ListenNoticeText.itsMeAction, options: [.authenticationRequired]),
+                ],
+                intentIdentifiers: []
+            ),
+            UNNotificationCategory(identifier: ListenNotifications.noticeCategory, actions: [], intentIdentifiers: []),
+        ]
+    }
+
+    public static func handles(category: String) -> Bool {
+        [ListenNotifications.pausedCategory, ListenNotifications.askCategory, ListenNotifications.noticeCategory].contains(category)
+    }
+
+    public static func respond(category: String, actionIdentifier: String) async {
+        let command: ListenCommand? = switch (category, actionIdentifier) {
+        case (ListenNotifications.askCategory, ListenNotifications.notMeAction): .notMe
+        case (ListenNotifications.askCategory, ListenNotifications.itsMeAction): .itsMe
+        case (ListenNotifications.pausedCategory, _): .resume
+        default: nil
+        }
+        guard let command else { return }
+        await ListenCommandCenter.shared.perform(command)
+    }
+}
+
 @MainActor
-final class ListenNotifications: NSObject, UNUserNotificationCenterDelegate {
+final class ListenNotifications {
     static let pausedCategory = "listen.paused"
     static let askCategory = "listen.ask"
     static let noticeCategory = "listen.notice"
@@ -52,26 +88,6 @@ final class ListenNotifications: NSObject, UNUserNotificationCenterDelegate {
     static let pauseEndedId = "listen.pauseEnded"
 
     private let center = UNUserNotificationCenter.current()
-
-    func install() {
-        center.delegate = self
-        center.setNotificationCategories([
-            UNNotificationCategory(
-                identifier: Self.pausedCategory,
-                actions: [UNNotificationAction(identifier: Self.continueAction, title: ListenNoticeText.continueAction, options: [.foreground])],
-                intentIdentifiers: []
-            ),
-            UNNotificationCategory(
-                identifier: Self.askCategory,
-                actions: [
-                    UNNotificationAction(identifier: Self.notMeAction, title: ListenNoticeText.notMeAction, options: []),
-                    UNNotificationAction(identifier: Self.itsMeAction, title: ListenNoticeText.itsMeAction, options: [.authenticationRequired]),
-                ],
-                intentIdentifiers: []
-            ),
-            UNNotificationCategory(identifier: Self.noticeCategory, actions: [], intentIdentifiers: []),
-        ])
-    }
 
     func prepare() async {
         _ = try? await center.requestAuthorization(options: [.alert, .sound])
@@ -102,22 +118,6 @@ final class ListenNotifications: NSObject, UNUserNotificationCenterDelegate {
         content.interruptionLevel = .active
         let trigger = date.map { UNTimeIntervalNotificationTrigger(timeInterval: max(1, $0.timeIntervalSinceNow), repeats: false) }
         center.add(UNNotificationRequest(identifier: id, content: content, trigger: trigger))
-    }
-
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
-        let category = response.notification.request.content.categoryIdentifier
-        let command: ListenCommand? = switch (category, response.actionIdentifier) {
-        case (Self.askCategory, Self.notMeAction): .notMe
-        case (Self.askCategory, Self.itsMeAction): .itsMe
-        case (Self.pausedCategory, _): .resume
-        default: nil
-        }
-        guard let command else { return }
-        await ListenCommandCenter.shared.perform(command)
-    }
-
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
-        [.banner, .sound]
     }
 }
 #endif
