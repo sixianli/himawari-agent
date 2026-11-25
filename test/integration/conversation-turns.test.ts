@@ -675,7 +675,7 @@ describe.each(["worker", "direct"] as const)("conversation turns through %s", (e
     }
   });
 
-  it("[ADR-0286] reports the span of days with conversation for the memory list, only at levels the reader may see", async () => {
+  it("[ADR-0286] reports the span of days with conversation for the memory list, only at levels the reader may see and only for conversations conversation_search can find", async () => {
     const resource = await fixture();
     try {
       const store = resource.repository.conversationTurns();
@@ -683,6 +683,7 @@ describe.each(["worker", "direct"] as const)("conversation turns through %s", (e
       expect(await store.span({ ...scope, allowedClassifications: ALL })).toBeUndefined();
       await resource.service.indexDue({ ...resource.scope, limit: 50 });
       expect(await store.span({ ...scope, allowedClassifications: ALL })).toEqual({
+        dataClassification: "private",
         firstDay: "2026-11-20",
         lastDay: "2026-11-22",
         days: 3,
@@ -696,6 +697,18 @@ describe.each(["worker", "direct"] as const)("conversation turns through %s", (e
           allowedClassifications: ALL,
         }),
       ).toBeUndefined();
+      resource.sql((connection) =>
+        connection
+          .prepare("UPDATE threads SET status = 'trashed', trashed_at = ? WHERE id = ?")
+          .run("2026-11-24T00:00:00.000Z", OTHER),
+      );
+      expect(await store.span({ ...scope, allowedClassifications: ALL })).toEqual({
+        dataClassification: "private",
+        firstDay: "2026-11-20",
+        lastDay: "2026-11-21",
+        days: 2,
+        months: [{ month: "2026-11", days: 2 }],
+      });
     } finally {
       await resource.repository.close();
     }

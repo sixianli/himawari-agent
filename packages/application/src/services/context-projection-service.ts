@@ -773,6 +773,7 @@ function isContextEnvelope(value: unknown): value is ProductContextEnvelopeV1 {
           item["kind"] === "memory" ||
           item["kind"] === "owner-rules" ||
           item["kind"] === "memory-snapshot" ||
+          item["kind"] === "owner-profile" ||
           item["kind"] === "owner-agenda" ||
           item["kind"] === "capability-summary" ||
           item["kind"] === "runtime-environment") &&

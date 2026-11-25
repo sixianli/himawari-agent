@@ -220,6 +220,7 @@ describe("owner profile composition", () => {
         span: async (input) => {
           spans.push(input);
           return {
+            dataClassification: "private",
             firstDay: "2026-09-30",
             lastDay: "2026-10-25",
             days: 12,
@@ -258,6 +259,33 @@ describe("owner profile composition", () => {
     expect(spans).toEqual([
       { ownerId: OWNER_ID, agentId: AGENT_ID, allowedClassifications: ["public", "private"] },
     ]);
+  });
+
+  it("[ADR-0286] marks the memory list at least as private as the old conversations it counts", async () => {
+    const profile = new OwnerProfileService({
+      state: { listActive: async () => [], numbers: async () => [] },
+      conversations: {
+        span: async () => ({
+          dataClassification: "sensitive",
+          firstDay: "2026-10-01",
+          lastDay: "2026-10-01",
+          days: 1,
+          months: [{ month: "2026-10", days: 1 }],
+        }),
+      },
+      readText: async () => undefined,
+      storeText: async () => undefined,
+      digest: (text) => `digest-${text.length}`,
+    });
+    const composed = await profile.compose({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      maxClassification: "sensitive",
+      now: NOW,
+    });
+    expect(composed.blocks.find(({ kind }) => kind === "memory-snapshot")?.dataClassification).toBe(
+      "sensitive",
+    );
   });
   it("[MEMORY-DATE] leaves dates out of the rules and the memory list", async () => {
     const stored: string[] = [];

@@ -3,12 +3,15 @@ import {
   CHAT_MEMORY_CHANGE_ADDED,
   CHAT_MEMORY_CHANGE_CHANGED,
   CHAT_MEMORY_CHANGE_REMOVED,
+  CHAT_MEMORY_CHANGES_MARKER,
   CHAT_MEMORY_SNAPSHOT_MARKER,
   MEMORY_SNAPSHOT_HEADER,
   MEMORY_SNAPSHOT_OMITTED,
   MEMORY_SNAPSHOT_REACHABLE_HEADER,
+  type PromptEntry,
   renderPrompt,
 } from "@himawari-agent/prompt-catalog";
+import { CONTEXT_MARKER_PREFIXES } from "./runtime-environment-block.js";
 
 type ContextBlock = RuntimeProjection["contextBlocks"][number];
 
@@ -40,10 +43,11 @@ function userTexts(message: Record<string, unknown>): string[] {
 }
 
 function snapshotIn(text: string): string | undefined {
-  const marker = `${CHAT_MEMORY_SNAPSHOT_MARKER.text}\n`;
-  const start = text.lastIndexOf(marker);
+  const marker = `\n${CHAT_MEMORY_SNAPSHOT_MARKER.text}\n`;
+  const source = `\n${text}`;
+  const start = source.lastIndexOf(marker);
   if (start < 0) return undefined;
-  const content = text.slice(start + marker.length);
+  const content = source.slice(start + marker.length);
   const endHeader = `\n${MEMORY_SNAPSHOT_REACHABLE_HEADER.text}\n`;
   const reachable = content.indexOf(endHeader);
   if (reachable < 0) return undefined;
@@ -52,7 +56,20 @@ function snapshotIn(text: string): string | undefined {
   return content.slice(0, reachable + endHeader.length + (stop < 0 ? after.length : stop));
 }
 
-export function previousMemorySnapshot(messages: readonly unknown[]): string | undefined {
+function changesIn(context: string): string | undefined {
+  const marker = `\n${CHAT_MEMORY_CHANGES_MARKER.text}\n`;
+  const start = context.lastIndexOf(marker);
+  if (start < 0) return undefined;
+  const content = context.slice(start + marker.length);
+  const next = Math.min(
+    ...CONTEXT_MARKER_PREFIXES.map((prefix) => content.indexOf(prefix)).filter(
+      (index) => index >= 0,
+    ),
+  );
+  return Number.isFinite(next) ? content.slice(0, next) : content;
+}
+
+function summaryEnd(messages: readonly unknown[]): number {
   let start = 0;
   messages.forEach((message, index) => {
     if (
@@ -61,27 +78,109 @@ export function previousMemorySnapshot(messages: readonly unknown[]): string | u
     )
       start = index + 1;
   });
+  return start;
+}
+
+function contextOf(text: string): string | undefined {
+  if (!text.startsWith(CONTEXT_OPEN)) return undefined;
+  const end = text.indexOf(CONTEXT_CLOSE);
+  return end < 0 ? text : text.slice(0, end + 1);
+}
+
+function snapshotMessage(message: Record<string, unknown>): string | undefined {
+  return message["role"] === "custom" &&
+    message["customType"] === MEMORY_SNAPSHOT_MESSAGE_TYPE &&
+    typeof message["content"] === "string"
+    ? snapshotIn(message["content"])
+    : undefined;
+}
+
+export function previousMemorySnapshot(messages: readonly unknown[]): string | undefined {
+  const start = summaryEnd(messages);
   for (let index = messages.length - 1; index >= start; index -= 1) {
     const message = messages[index];
     if (!record(message)) continue;
-    if (
-      message["role"] === "custom" &&
-      message["customType"] === MEMORY_SNAPSHOT_MESSAGE_TYPE &&
-      typeof message["content"] === "string"
-    ) {
-      const found = snapshotIn(message["content"]);
+    if (message["role"] === "custom") {
+      const found = snapshotMessage(message);
       if (found !== undefined) return found;
       continue;
     }
     if (message["role"] !== "user") continue;
     for (const text of userTexts(message).reverse()) {
-      if (!text.startsWith(CONTEXT_OPEN)) continue;
-      const end = text.indexOf(CONTEXT_CLOSE);
-      const found = snapshotIn(end < 0 ? text : text.slice(0, end + 1));
+      const context = contextOf(text);
+      const found = context === undefined ? undefined : snapshotIn(context);
       if (found !== undefined) return found;
     }
   }
   return undefined;
+}
+
+function textSegments(entry: Pick<PromptEntry, "id" | "segments">): string[] {
+  return entry.segments.flatMap((segment) => (segment.kind === "text" ? [segment.text] : []));
+}
+
+const [ADDED_PREFIX = "", SECTION_CLOSE = ""] = textSegments(CHAT_MEMORY_CHANGE_ADDED);
+const [CHANGED_PREFIX = ""] = textSegments(CHAT_MEMORY_CHANGE_CHANGED);
+const [REMOVED_PREFIX = "", REMOVED_SUFFIX = ""] = textSegments(CHAT_MEMORY_CHANGE_REMOVED);
+
+function numbered(line: string): number | undefined {
+  const match = /^(\d+)/u.exec(line);
+  return match?.[1] ? Number(match[1]) : undefined;
+}
+
+function sectionedChange(rest: string): (SnapshotEntry & { number: number }) | undefined {
+  for (
+    let close = rest.indexOf(SECTION_CLOSE);
+    close >= 0;
+    close = rest.indexOf(SECTION_CLOSE, close + 1)
+  ) {
+    const line = rest.slice(close + SECTION_CLOSE.length);
+    const number = numbered(line);
+    if (number !== undefined) return { number, section: rest.slice(0, close), line };
+  }
+  return undefined;
+}
+
+function applyChanges(known: Map<number, SnapshotEntry>, changes: string): void {
+  for (const line of changes.split("\n")) {
+    const prefix = [ADDED_PREFIX, CHANGED_PREFIX].find((candidate) => line.startsWith(candidate));
+    if (prefix) {
+      const change = sectionedChange(line.slice(prefix.length));
+      if (change) known.set(change.number, { section: change.section, line: change.line });
+      continue;
+    }
+    if (line.startsWith(REMOVED_PREFIX) && line.endsWith(REMOVED_SUFFIX)) {
+      const number = numbered(line.slice(REMOVED_PREFIX.length));
+      if (number !== undefined) known.delete(number);
+    }
+  }
+}
+
+function knownMemories(
+  messages: readonly unknown[],
+): ReadonlyMap<number, SnapshotEntry> | undefined {
+  let known: Map<number, SnapshotEntry> | undefined;
+  for (const message of messages.slice(summaryEnd(messages))) {
+    if (!record(message)) continue;
+    if (message["role"] === "custom") {
+      const found = snapshotMessage(message);
+      if (found !== undefined) known = entries(found);
+      continue;
+    }
+    if (message["role"] !== "user") continue;
+    for (const text of userTexts(message)) {
+      const context = contextOf(text);
+      if (context === undefined) continue;
+      const found = snapshotIn(context);
+      if (found !== undefined) {
+        known = entries(found);
+        continue;
+      }
+      const changes = known ? changesIn(context) : undefined;
+      if (known && changes !== undefined) applyChanges(known, changes);
+    }
+  }
+  return known;
 }
 
 function entries(snapshot: string): Map<number, SnapshotEntry> {
@@ -100,18 +199,28 @@ function entries(snapshot: string): Map<number, SnapshotEntry> {
   return found;
 }
 
-const OMITTED_TAIL = MEMORY_SNAPSHOT_OMITTED.segments
-  .flatMap((segment) => (segment.kind === "text" ? [segment.text] : []))
-  .at(-1);
+const [OMITTED_PREFIX = "", OMITTED_COUNT = "", OMITTED_TAIL = ""] =
+  textSegments(MEMORY_SNAPSHOT_OMITTED);
 
-function hasOmissions(snapshot: string): boolean {
-  return OMITTED_TAIL !== undefined && snapshot.includes(OMITTED_TAIL);
+function omittedSections(snapshot: string): ReadonlySet<string> {
+  const lines = snapshot.split("\n");
+  const reachable = lines.indexOf(MEMORY_SNAPSHOT_REACHABLE_HEADER.text);
+  const sections = new Set<string>();
+  if (reachable < 0) return sections;
+  for (const line of lines.slice(reachable + 1)) {
+    if (!line.startsWith(OMITTED_PREFIX) || !line.endsWith(OMITTED_TAIL)) continue;
+    const count = line.indexOf(OMITTED_COUNT, OMITTED_PREFIX.length);
+    if (count >= 0) sections.add(line.slice(OMITTED_PREFIX.length, count));
+  }
+  return sections;
 }
 
-export function memoryChanges(previous: string, current: string): string | undefined {
-  const before = entries(previous);
+function changesSince(
+  before: ReadonlyMap<number, SnapshotEntry>,
+  current: string,
+): string | undefined {
   const after = entries(current);
-  const reportRemovals = !hasOmissions(current);
+  const omitted = omittedSections(current);
   const numbers = [...new Set([...before.keys(), ...after.keys()])].sort(
     (left, right) => left - right,
   );
@@ -125,10 +234,14 @@ export function memoryChanges(previous: string, current: string): string | undef
       lines.push(
         renderPrompt(CHAT_MEMORY_CHANGE_CHANGED, { category: now.section, line: now.line }),
       );
-    else if (old && !now && reportRemovals)
+    else if (old && !now && !omitted.has(old.section))
       lines.push(renderPrompt(CHAT_MEMORY_CHANGE_REMOVED, { line: old.line }));
   }
   return lines.length > 0 ? lines.join("\n") : undefined;
+}
+
+export function memoryChanges(previous: string, current: string): string | undefined {
+  return changesSince(entries(previous), current);
 }
 
 export function splitMemorySnapshot(projection: RuntimeProjection): {
@@ -141,9 +254,9 @@ export function splitMemorySnapshot(projection: RuntimeProjection): {
   const [current] = snapshots;
   const blocks = projection.contextBlocks.filter(({ kind }) => kind !== MEMORY_SNAPSHOT_KIND);
   if (!current) return { blocks, snapshot: undefined, changes: undefined };
-  const previous = previousMemorySnapshot(projection.nativeHistory?.messages ?? []);
-  if (previous === undefined) return { blocks, snapshot: current, changes: undefined };
-  const changed = memoryChanges(previous, current.content);
+  const known = knownMemories(projection.nativeHistory?.messages ?? []);
+  if (known === undefined) return { blocks, snapshot: current, changes: undefined };
+  const changed = changesSince(known, current.content);
   return {
     blocks,
     snapshot: undefined,

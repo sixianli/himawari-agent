@@ -446,7 +446,15 @@ export class OwnerProfileService implements OwnerProfilePort {
       );
     const snapshot = await this.#snapshot(input, listed, ceiling);
     if (snapshot)
-      blocks.push(await this.#block(input, "memory-snapshot", snapshot.text, snapshot.memories));
+      blocks.push(
+        await this.#block(
+          input,
+          "memory-snapshot",
+          snapshot.text,
+          snapshot.memories,
+          snapshot.floor,
+        ),
+      );
     if (agenda.lines.length > 0 || agenda.omitted > 0)
       blocks.push(
         await this.#block(
@@ -473,7 +481,14 @@ export class OwnerProfileService implements OwnerProfilePort {
     input: { readonly ownerId: OwnerId; readonly agentId: AgentId },
     valid: readonly ProductMemoryRecord[],
     ceiling: number,
-  ): Promise<{ text: string; memories: readonly ProductMemoryRecord[] } | undefined> {
+  ): Promise<
+    | {
+        text: string;
+        memories: readonly ProductMemoryRecord[];
+        floor: DataClassification | undefined;
+      }
+    | undefined
+  > {
     const listed = valid.filter((memory) => memory.attributes?.category !== "rule");
     const numbers = new Map<MemoryId, number>();
     for (let start = 0; start < listed.length; start += MEMORY_NUMBER_BATCH) {
@@ -569,6 +584,7 @@ export class OwnerProfileService implements OwnerProfilePort {
     return {
       text,
       memories: lines.filter(({ memory }) => kept.has(memory.id)).map(({ memory }) => memory),
+      floor: span?.dataClassification,
     };
   }
 

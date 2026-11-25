@@ -64,6 +64,11 @@ const sentSnapshot = (content: string) => [
   `${contextBlockMarker(rules)}\n${rules.content}`,
 ];
 
+const sentChanges = (content: string) => [
+  `${contextBlockMarker(rules)}\n${rules.content}`,
+  `${contextBlockMarker({ ...snapshot(content), kind: "memory-changes", ref: "memory-changes" })}\n${content}`,
+];
+
 const projection = (
   blocks: readonly RuntimeProjectionContextBlock[],
   messages?: readonly unknown[],
@@ -176,6 +181,87 @@ describe("[ADR-0286] the memory list is sent once per conversation and later tur
     );
     expect(splitMemorySnapshot(projection([snapshot(SNAPSHOT_A)], history)).snapshot).toBe(
       undefined,
+    );
+  });
+
+  it("names a change once, then only what changed since the model last heard about it", () => {
+    const changed = list("身份", "8 1998年出生", "12主人住在东京", "偏好", "37喝咖啡加果汁");
+    const history = [
+      sentTurn(sentSnapshot(SNAPSHOT_A)),
+      sentTurn(sentChanges("- 改为（偏好）37喝咖啡加果汁")),
+    ];
+    expect(splitMemorySnapshot(projection([snapshot(changed)], history)).changes).toBeUndefined();
+    expect(splitMemorySnapshot(projection([snapshot(SNAPSHOT_A)], history)).changes?.content).toBe(
+      "- 改为（偏好）37喝咖啡不加糖",
+    );
+    expect(
+      splitMemorySnapshot(
+        projection([snapshot(list("身份", "8 1998年出生", "12主人住在东京"))], history),
+      ).changes?.content,
+    ).toBe("- 已不再有效：37喝咖啡加果汁（清单里这条别再用；按编号打开能看到原因和取代它的那条）");
+  });
+
+  it("REVERSE: names a memory as added again after it was reported no longer valid", () => {
+    const history = [
+      sentTurn(sentSnapshot(SNAPSHOT_A)),
+      sentTurn(
+        sentChanges(
+          "- 已不再有效：12主人住在东京（清单里这条别再用；按编号打开能看到原因和取代它的那条）",
+        ),
+      ),
+    ];
+    expect(
+      splitMemorySnapshot(
+        projection([snapshot(list("身份", "8 1998年出生", "偏好", "37喝咖啡不加糖"))], history),
+      ).changes,
+    ).toBeUndefined();
+    expect(splitMemorySnapshot(projection([snapshot(SNAPSHOT_A)], history)).changes?.content).toBe(
+      "- 新增（身份）12主人住在东京",
+    );
+  });
+
+  it("follows a change in the category whose name has brackets of its own", () => {
+    const tentative = "待确认（主人还没确认过）";
+    const history = [
+      sentTurn(sentSnapshot(SNAPSHOT_A)),
+      sentTurn(sentChanges(`- 新增（${tentative}）60（暂定）3月搬家`)),
+    ];
+    const current = list(
+      "身份",
+      "8 1998年出生",
+      "12主人住在东京",
+      "偏好",
+      "37喝咖啡不加糖",
+      tentative,
+      "60（暂定）3月搬家",
+    );
+    expect(splitMemorySnapshot(projection([snapshot(current)], history)).changes).toBeUndefined();
+  });
+
+  it("still names memories gone from a category that was listed in full when another category left some out", () => {
+    const current = [
+      HEADER,
+      "身份",
+      "8 1998年出生",
+      ...REACHABLE,
+      "- 偏好另有 1 条因篇幅没有列出，可以用 recall 搜。",
+    ].join("\n");
+    expect(memoryChanges(SNAPSHOT_A, current)).toBe(
+      "- 已不再有效：12主人住在东京（清单里这条别再用；按编号打开能看到原因和取代它的那条）",
+    );
+  });
+
+  it("REVERSE: a memory whose words look like the list marker or the left-out note does not change how the list is read", () => {
+    const tricky = list(
+      "身份",
+      `8 1998年出生${CHAT_MEMORY_SNAPSHOT_MARKER.text}`,
+      "12主人住在东京 身份另有 1 条因篇幅没有列出，可以用 recall 搜。",
+    );
+    expect(previousMemorySnapshot([sentTurn(sentSnapshot(tricky))])).toBe(tricky);
+    expect(
+      memoryChanges(tricky, list("身份", `8 1998年出生${CHAT_MEMORY_SNAPSHOT_MARKER.text}`)),
+    ).toBe(
+      "- 已不再有效：12主人住在东京 身份另有 1 条因篇幅没有列出，可以用 recall 搜。（清单里这条别再用；按编号打开能看到原因和取代它的那条）",
     );
   });
 });

@@ -33,6 +33,11 @@ const searchScope = `c.owner_id = @ownerId AND c.agent_id = @agentId
   AND EXISTS (SELECT 1 FROM threads t WHERE t.id = c.thread_id AND t.status = 'open'
     AND t.origin = 'owner')`;
 
+const spanScope = `c.owner_id = @ownerId AND c.agent_id = @agentId
+  AND c.classification IN (SELECT value FROM json_each(@allowed))
+  AND EXISTS (SELECT 1 FROM threads t WHERE t.id = c.thread_id AND t.status = 'open'
+    AND t.origin = 'owner')`;
+
 type TurnRow = Omit<ConversationTurn, "ownerId" | "agentId" | "threadId"> & {
   readonly ownerId: string;
   readonly agentId: string;
@@ -341,24 +346,36 @@ export class SqliteConversationTurnOperations {
     agentId: AgentId;
     allowedClassifications: readonly string[];
   }): ConversationSpan | undefined {
+    const scope = {
+      ownerId: input.ownerId,
+      agentId: input.agentId,
+      allowed: JSON.stringify(input.allowedClassifications),
+    };
     const months = this.database
       .prepare(
-        `SELECT substr(day, 1, 7) AS month, count(DISTINCT day) AS days,
-          min(day) AS firstDay, max(day) AS lastDay
-        FROM conversation_turns
-        WHERE owner_id = @ownerId AND agent_id = @agentId
-          AND classification IN (SELECT value FROM json_each(@allowed))
+        `SELECT substr(c.day, 1, 7) AS month, count(DISTINCT c.day) AS days,
+          min(c.day) AS firstDay, max(c.day) AS lastDay
+        FROM conversation_turns c
+        WHERE ${spanScope}
         GROUP BY month ORDER BY month`,
       )
-      .all({
-        ownerId: input.ownerId,
-        agentId: input.agentId,
-        allowed: JSON.stringify(input.allowedClassifications),
-      }) as { month: string; days: number; firstDay: string; lastDay: string }[];
+      .all(scope) as { month: string; days: number; firstDay: string; lastDay: string }[];
     const [first] = months;
     const last = months.at(-1);
     if (!first || !last) return undefined;
+    const seen = new Set(
+      (
+        this.database
+          .prepare(`SELECT DISTINCT c.classification AS value FROM conversation_turns c
+            WHERE ${spanScope}`)
+          .all(scope) as { value: string }[]
+      ).map(({ value }) => value),
+    );
     return Object.freeze({
+      dataClassification:
+        (["restricted", "sensitive", "private", "public"] as const).find((level) =>
+          seen.has(level),
+        ) ?? "public",
       firstDay: first.firstDay,
       lastDay: last.lastDay,
       days: months.reduce((sum, { days }) => sum + days, 0),

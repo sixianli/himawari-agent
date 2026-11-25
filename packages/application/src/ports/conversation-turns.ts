@@ -39,6 +39,7 @@ export interface ConversationTurnWatermark {
 }
 
 export interface ConversationSpan {
+  readonly dataClassification: DataClassification;
   readonly firstDay: string;
   readonly lastDay: string;
   readonly days: number;
