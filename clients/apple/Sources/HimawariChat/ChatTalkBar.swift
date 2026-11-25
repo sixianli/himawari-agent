@@ -67,7 +67,7 @@ struct TalkLevels: View {
     let levels: [Double]
 
     var body: some View {
-        let count = Int(DesignTokens.Chat.talkBars)
+        let count = Int(DesignTokens.Chat.talkBarsOnTalkPage)
         let recent = Array(levels.suffix(count))
         let padded = Array(repeating: 0, count: max(0, count - recent.count)) + recent
         HStack(spacing: DesignTokens.Chat.talkBarGap) {
@@ -80,7 +80,7 @@ struct TalkLevels: View {
                     )
             }
         }
-        .frame(height: DesignTokens.Chat.talkBarBox)
+        .frame(height: DesignTokens.Chat.talkBarAreaHeight)
         .accessibilityHidden(true)
         .animation(.easeOut(duration: 0.1), value: levels)
     }

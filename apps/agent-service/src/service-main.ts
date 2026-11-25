@@ -112,6 +112,7 @@ import {
   getPiModelPresentation,
 } from "@himawari-agent/runtime-pi";
 import { BuiltInActionRuleSwitches } from "./action-rule-switches.js";
+import { OwnerAllowances } from "./owner-allowances.js";
 import { monitorFollowUpCacheHits } from "./cache-hit-monitor.js";
 import { classifiedThreadTitleReader } from "./classified-thread-title.js";
 import { COMMAND_SILENCE_CHECK_INTERVAL_MS, CommandSilenceWatch } from "./command-silence-watch.js";
@@ -126,6 +127,7 @@ import { backgroundCommandLimits } from "./production-background-commands.js";
 import { createProductionCapabilityReactivationVerifier } from "./production-capability-reactivation.js";
 import {
   DEFAULT_TOOL_RESULT_SHARE,
+  MEMORY_SNAPSHOT_WINDOW_SHARE,
   ProductionConversationTools,
   toolResultCharacters,
 } from "./production-conversation-tools.js";
@@ -1592,6 +1594,10 @@ export async function startTenantRuntime(
         primaryModel && "contextWindow" in primaryModel ? primaryModel.contextWindow : undefined,
         configuration.memory.toolResultShare ?? DEFAULT_TOOL_RESULT_SHARE,
       );
+      const memorySnapshotCharacters = toolResultCharacters(
+        primaryModel && "contextWindow" in primaryModel ? primaryModel.contextWindow : undefined,
+        MEMORY_SNAPSHOT_WINDOW_SHARE,
+      );
       const conversationTools = conversationTurns
         ? new ProductionConversationTools({
             ownerId: configuration.ownerId,
@@ -1734,6 +1740,13 @@ export async function startTenantRuntime(
         clock,
         ids,
         intentLifetimeMs: configuration.deadlines.workerRequestMs,
+        allowances: new OwnerAllowances({
+          configuration,
+          state: repository,
+          store: repository.authorizationStore(),
+          authority: () => invocationAuthority().lease,
+          clock,
+        }),
       });
       deviceActions = createProductionDeviceActions({
         scope: perceptionScope,
@@ -3127,6 +3140,7 @@ export async function startTenantRuntime(
       observation.start();
       const live = new ExecutionLiveFeed();
       runs = createProductionRunComposition({
+        memorySnapshotCharacters,
         externalContent,
         ...(configuration.runPolicy?.toolRefusals
           ? { toolRefusalLimits: configuration.runPolicy.toolRefusals }
@@ -3479,6 +3493,13 @@ export async function startTenantRuntime(
           actionRules: new BuiltInActionRuleSwitches({
             configuration,
             state: repository,
+            authority: () => invocationAuthority().lease,
+            clock,
+          }),
+          allowances: new OwnerAllowances({
+            configuration,
+            state: repository,
+            store: repository.authorizationStore(),
             authority: () => invocationAuthority().lease,
             clock,
           }),

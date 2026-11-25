@@ -1259,7 +1259,11 @@ describe.each(["worker", "direct"] as const)("decision ledger through %s", (exec
     const clock = new ManualClock(T0);
     const adapters = createReferenceAdapterSet({ scope, clock });
     const profile = new OwnerProfileService({
-      state: { listActive: async () => PROFILE_RECORDS },
+      state: {
+        listActive: async () => PROFILE_RECORDS,
+        numbers: async ({ memoryIds }) =>
+          memoryIds.map((memoryId, index) => ({ memoryId, number: index + 1 })),
+      },
       pins: {
         listProfilePins: async () =>
           [...settings.pins].map(([memoryId, pinned]) => ({
@@ -1441,7 +1445,9 @@ describe.each(["worker", "direct"] as const)("decision ledger through %s", (exec
         },
       );
       const formed = await form();
-      expect(formed.envelope.contextBlocks.some(({ kind }) => kind === "owner-profile")).toBe(true);
+      expect(formed.envelope.contextBlocks.some(({ kind }) => kind === "memory-snapshot")).toBe(
+        true,
+      );
       expect(await profileRows(list)).toEqual([]);
     } finally {
       await repository.close();

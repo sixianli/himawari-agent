@@ -41,23 +41,11 @@ public enum ManageLayout {
         public static let cornerRadius: CGFloat = 36
     }
 
-    public enum ExportSheet {
-        public static let topPadding: CGFloat = 96
-        public static let gap: CGFloat = 18
-        public static let mark: CGFloat = 92
-        public static let doneIcon: CGFloat = 72
-        public static let barWidth: CGFloat = 300
-        public static let barHeight: CGFloat = 6
-        public static let buttonGap: CGFloat = 12
-        public static let title = TypeToken(size: 26, weight: 600, lineHeight: nil, face: .himawari, tracking: 0)
-    }
-
     public enum Segment {
         public static let inset: CGFloat = 4
     }
 
     public enum SettingsSheet {
-        public static let rootGap: CGFloat = 24
         public static let pageGap: CGFloat = 20
         public static let cardListGap: CGFloat = 14
         public static let headerButton: CGFloat = 48
@@ -71,52 +59,15 @@ public enum ManageLayout {
         public static let rowGap: CGFloat = 14
         public static let rowTextGap: CGFloat = 2
         public static let rowValue = TypeToken(size: 17, weight: 400, lineHeight: 17 * 1.35, face: .system, tracking: 0)
-        public static let identityPaddingVertical: CGFloat = 18
-        public static let identityPaddingHorizontal: CGFloat = 20
-        public static let identityGap: CGFloat = 16
-        public static let identityMark: CGFloat = 46
-        public static let identityTextGap: CGFloat = 3
-        public static let identityName = TypeToken(size: 19, weight: 500, lineHeight: nil, face: .system, tracking: 0)
-    }
-
-    public enum TuningSheet {
-        public static let value = TypeToken(size: 44, weight: 600, lineHeight: nil, face: .himawari, tracking: 0)
-        public static let gap: CGFloat = 18
-        public static let buttonHeight: CGFloat = 48
-    }
-
-    public enum ProposalCard {
-        public static let title = TypeToken(size: 19, weight: 600, lineHeight: 19 * 1.4, face: .himawari, tracking: 0)
-        public static let gap: CGFloat = 12
-        public static let buttonHeight: CGFloat = 44
-        public static let buttonGap: CGFloat = 10
-        public static let chevron: CGFloat = 14
     }
 
     public enum DeviceSheet {
         public static let rowGap: CGFloat = 16
-        public static let rowTrailingPadding: CGFloat = 18
         public static let rowTextGap: CGFloat = 10
         public static let addLinkPadding: CGFloat = 20
         public static let linkMinHeight: CGFloat = 44
         public static let detailGap: CGFloat = 22
-        public static let pairingGap: CGFloat = 24
-        public static let scanTopPadding: CGFloat = 18
-        public static let askTopPadding: CGFloat = 40
-        public static let qrCard: CGFloat = 236
-        public static let qrCardRadius: CGFloat = 32
-        public static let qrCode: CGFloat = 180
-        public static let qrCodeRadius: CGFloat = 10
-        public static let kindIcon: CGFloat = 76
-        public static let expiredGap: CGFloat = 18
-        public static let expiredTopPadding: CGFloat = 24
-        public static let expiredCard: CGFloat = 220
-        public static let expiredCardRadius: CGFloat = 28
-        public static let expiredIcon: CGFloat = 84
-        public static let expiredTitle = TypeToken(size: 24, weight: 600, lineHeight: nil, face: .himawari, tracking: 0)
-        public static let actionIcon: CGFloat = 22
         public static let buttonGap: CGFloat = 8
-        public static let scanTitle = TypeToken(size: 22, weight: 600, lineHeight: 22 * 1.5, face: .himawari, tracking: 0)
         public static let askTitle = TypeToken(size: 24, weight: 600, lineHeight: 24 * 1.45, face: .himawari, tracking: 0)
         public static let pairingNumber = TypeToken(size: 54, weight: 700, lineHeight: nil, face: .rounded, tracking: 2)
         public static let hint = TypeToken(size: 17, weight: 400, lineHeight: 17 * 1.5, face: .system, tracking: 0)

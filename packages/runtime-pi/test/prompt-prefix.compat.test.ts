@@ -479,9 +479,10 @@ const memoryBlock = (content: string, ref = "memory-1"): RuntimeProjectionContex
 
 const ownerProfile: RuntimeProjectionContextBlock = {
   authority: "non-authoritative",
-  kind: "owner-profile",
-  ref: "owner-profile:agent",
-  content: "主人档案：\n身份：\n- 主人住在东京都北区。",
+  kind: "memory-snapshot",
+  ref: "memory-snapshot:agent",
+  content:
+    "记忆清单（每条前面是编号；要看日期、原话和旧版本，用 memory_open 按编号打开）：\n身份\n1主人住在东京都北区。\n偏好\n2我喜欢喝美式\n你还能查到的：\n- 清单里每条只有一句话，日期、原话和旧版本没有放进来，用 memory_open 按编号打开。",
   dataClassification: "private",
 };
 
@@ -865,7 +866,10 @@ describe("[I-66] PROMPT-PREFIX every request only appends to the one before it",
     expect(last(1)).not.toContain("工作目录：");
     expect(last(2)).toContain("工作目录：本轮没有。");
     expect(last(2)).toContain("2026-11-05 01:00:00 GMT+09:00，星期四。");
-    expect(last(2).indexOf("工作目录：")).toBeGreaterThan(last(2).indexOf("主人档案"));
+    expect(last(0).indexOf("工作目录：")).toBeGreaterThan(last(0).indexOf("1主人住在东京都北区。"));
+    expect(last(0).indexOf("1主人住在东京都北区。")).toBeGreaterThan(0);
+    expect(last(1)).not.toContain("1主人住在东京都北区。");
+    expect(last(2)).not.toContain("1主人住在东京都北区。");
     expect(last(2).indexOf("以上运行环境说明")).toBeLessThan(
       last(2).indexOf("</himawari-context>"),
     );
