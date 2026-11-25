@@ -9,7 +9,7 @@ import * as runtime from "./runtime.js";
 import * as tools from "./tools.js";
 
 export const TRUSTED_PROMPT_TEXTS: readonly string[] = trustedPromptTexts(
-  [background, chat, evaluation, memory, perception, review, runtime, tools].flatMap(
-    (module) => Object.values(module),
+  [background, chat, evaluation, memory, perception, review, runtime, tools].flatMap((module) =>
+    Object.values(module),
   ),
 );
