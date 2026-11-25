@@ -28,6 +28,7 @@ UNITS = ['first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eig
 TEENS = ['tenth', 'eleventh', 'twelfth', 'thirteenth', 'fourteenth', 'fifteenth', 'sixteenth', 'seventeenth', 'eighteenth', 'nineteenth']
 TENS = [('twenty', 'twentieth'), ('thirty', 'thirtieth'), ('forty', 'fortieth'), ('fifty', 'fiftieth'), ('sixty', 'sixtieth'), ('seventy', 'seventieth'), ('eighty', 'eightieth'), ('ninety', 'ninetieth')]
 FIRST_INSTALL_LABEL = 'firstinstall'
+FIRST_TOOLS_CAPABILITY_REFS = ('himawari.pi-coding', 'himawari.public-search', 'himawari.public-fetch')
 ORDINALS = UNITS + TEENS + [word for base, ordinal in TENS for word in [ordinal] + [base + unit for unit in UNITS]]
 MIGRATIONS = 'packages/persistence-sqlite/src/migrations'
 MIGRATION_ENGINE = 'packages/persistence-sqlite/src/migration-engine.ts'
@@ -306,6 +307,7 @@ def discovery_script():
         "    'model': {key: models[0].get(key) for key in ('contextWindow', 'maxTokens')} if len(models) == 1 else None,",
         "    'publicFetchMaximumBytes': fetch.get('maximumBytes') if isinstance(fetch, dict) else None,",
         "    'budgetsPresent': 'budgets' in config,",
+        "    'capabilityDeploymentPresent': isinstance(config.get('capabilityDeployment'), dict),",
         "    'configSha256': hashlib.sha256(config_bytes).hexdigest(),",
         "    'unitSha256': hashlib.sha256(unit).hexdigest(),",
         "    'newPathsExist': [path for path in (prefix_new, operations_new) if os.path.lexists(path)],",
@@ -393,6 +395,8 @@ def interpret_discovery(facts, instance, label=None):
         'ORIGINAL_CONTEXT_WINDOW': model['contextWindow'],
         'ORIGINAL_MAX_TOKENS': model['maxTokens'],
         'ORIGINAL_PUBLIC_FETCH_BYTES': fetch_bytes,
+        'FIRST_TOOLS': '0' if facts.get('capabilityDeploymentPresent', True) else '1',
+        'NEW_CAPABILITY_REFS_JSON': json.dumps([] if facts.get('capabilityDeploymentPresent', True) else list(FIRST_TOOLS_CAPABILITY_REFS), separators=(',', ':')),
         'DISCOVERED_CONFIG_SHA256': facts.get('configSha256'),
         'DISCOVERED_UNIT_SHA256': facts.get('unitSha256'),
         'SOURCE_CACHE_COMMITS': sorted(commit for commit in facts.get('sourceCacheCommits', []) if re.fullmatch(r'[0-9a-f]{40}', commit)),

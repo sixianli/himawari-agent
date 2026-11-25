@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 
 export const webProviderSecretRef = "deepseek-web";
 export const webNetwork = Object.freeze(["mcp.exa.ai:443", "api.deepseek.com:443"]);
-export const newCapabilityRefs = Object.freeze([]);
+export const newCapabilityRefs = Object.freeze(__PKT_NEW_CAPABILITY_REFS_JSON__);
 const displayNames = Object.freeze({ pi: "已授权目录 Pi 工具", search: "公开网页搜索（Exa）", fetch: "公开网页读取" });
 
 export function createCapabilityManifest({ key, binding, ownerId, workerInstanceId, signerRef, issuedAt, observedAt }) {
