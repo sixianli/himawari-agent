@@ -33,6 +33,8 @@ const record = (
   kind: name.startsWith("runtime.") ? "status" : "tool",
   input: "",
   output: "",
+  activity: "",
+  activityIcon: "",
   text: "",
   occurredAt: at(seconds),
 });

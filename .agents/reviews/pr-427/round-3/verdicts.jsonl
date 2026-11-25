@@ -1,0 +1,5 @@
+{"id": "r3-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "循环停止判断是否看到去掉后的参数，没有自动检查", "valid": true, "class": "error", "severity": "low", "trigger": "Pi 升级后 tool_result 的 input 不再是钩子改过的那个对象", "consequence": "模型每次换一句 activity 就能绕过工具循环停止", "modelSeverity": "中", "reason": "现行为正确：Pi 1.5.0 agent-loop.js 里 beforeToolCall 和 afterToolCall 拿的是同一个 validatedArgs 对象；缺的是测试，已补真实 Pi 会话用例（不删参数时失败）"}
+{"id": "r3-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "U+061C 清洗没有对应测试，反向删除不会失败", "valid": true, "class": "error", "severity": "low", "trigger": "以后从正则里去掉 U+061C", "consequence": "没有测试报警", "modelSeverity": "低"}
+{"id": "r3-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`handleToolsCarryActivity` 只测了“旧冻结不带参数”，没测“新冻结带参数 + 句柄工具”的正向路径", "valid": true, "class": "error", "severity": "low", "trigger": "以后把判断写错", "consequence": "句柄工具丢参数时没有测试报警", "modelSeverity": "低"}
+{"id": "r3-4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "旧冻结开头下 `activityTools` 对句柄/非句柄工具不对称", "valid": false, "class": "error"}
+{"id": "r3-5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "新必填字段会破坏旧客户端，ADR 已写明", "valid": false, "class": "error"}
