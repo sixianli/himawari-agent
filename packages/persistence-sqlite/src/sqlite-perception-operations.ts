@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
 import type {
   DeviceMirrorItem,
+  PerceptionDeletion,
+  PerceptionDeletionCounts,
+  PerceptionDeletionScope,
+  PerceptionDeletionTarget,
   LimitUsageRow,
   PerceptionDayPage,
   PerceptionDayRow,
@@ -279,6 +283,10 @@ export class SqlitePerceptionOperations {
       for (const record of input.records) {
         if (known.has(record.id) || outcomes.has(record.id)) {
           if (!outcomes.has(record.id)) outcomes.set(record.id, "duplicate");
+          continue;
+        }
+        if (this.suppressed(input, input.deviceId, record)) {
+          outcomes.set(record.id, "suppressed_by_deletion");
           continue;
         }
         outcomes.set(record.id, "stored");
@@ -861,6 +869,10 @@ export class SqlitePerceptionOperations {
           continue;
         }
         seen.add(point.occurredAtMs);
+        if (this.trackSuppressed(input, input.deviceId, point)) {
+          duplicates += 1;
+          continue;
+        }
         if (room === 0) {
           limitReached += 1;
           continue;
@@ -934,6 +946,12 @@ export class SqlitePerceptionOperations {
           now,
           expiresAt,
         );
+      for (const recordId of input.recordIds)
+        this.database
+          .prepare(
+            "INSERT OR IGNORE INTO device_upload_grant_records (token_hash, record_id) VALUES (?, ?)",
+          )
+          .run(input.tokenHash, recordId);
       return "created" as const;
     })();
   }
@@ -941,8 +959,15 @@ export class SqlitePerceptionOperations {
   protected op_readUploadGrant(input: Input<"readUploadGrant">): UploadGrant | undefined {
     const row = this.database
       .prepare(`SELECT ${grantColumns} FROM device_upload_grants WHERE token_hash = ?`)
-      .get(input.tokenHash) as UploadGrant | undefined;
-    return row ? Object.freeze(row) : undefined;
+      .get(input.tokenHash) as Omit<UploadGrant, "recordIds"> | undefined;
+    if (!row) return undefined;
+    const recordIds = this.database
+      .prepare(
+        "SELECT record_id FROM device_upload_grant_records WHERE token_hash = ? ORDER BY record_id",
+      )
+      .pluck()
+      .all(input.tokenHash) as string[];
+    return Object.freeze({ ...row, recordIds: Object.freeze(recordIds) });
   }
 
   protected op_completeUploadGrant(input: Input<"completeUploadGrant">): void {
@@ -960,14 +985,25 @@ export class SqlitePerceptionOperations {
     const periodStart = this.time(input.periodStart);
     const receivedAt = this.time(input.item.receivedAt);
     return this.database.transaction(() => {
+      const link = () => {
+        for (const recordId of input.recordIds ?? [])
+          this.database
+            .prepare(
+              `INSERT OR IGNORE INTO perception_media_links (owner_id, agent_id, media_id, record_id)
+               VALUES (?, ?, ?, ?)`,
+            )
+            .run(input.ownerId, input.agentId, input.item.id, recordId);
+      };
       if (
         this.database
           .prepare(
             "SELECT 1 FROM perception_media_items WHERE id = ? AND owner_id = ? AND agent_id = ?",
           )
           .get(input.item.id, input.ownerId, input.agentId)
-      )
+      ) {
+        link();
         return Object.freeze({ stored: false, duplicate: true, reached: null });
+      }
       for (const reservation of input.reservations) {
         const room =
           reservation.limit === null
@@ -999,6 +1035,7 @@ export class SqlitePerceptionOperations {
           input.item.milliseconds,
           receivedAt,
         );
+      link();
       return Object.freeze({ stored: true, duplicate: false, reached: null });
     })();
   }
@@ -1339,7 +1376,456 @@ export class SqlitePerceptionOperations {
             WHERE owner_id = ? AND agent_id = ? AND received_at < ?`,
         )
         .run(input.ownerId, input.agentId, this.time(input.mediaBefore)).changes;
+      this.database
+        .prepare(
+          `DELETE FROM perception_deletions
+            WHERE owner_id = ? AND agent_id = ? AND status = 'planned' AND expires_at <= ?`,
+        )
+        .run(input.ownerId, input.agentId, now);
       return Object.freeze({ trackPoints, records, grants, media });
     })();
+  }
+
+  private deletionTime(value: string): string {
+    return this.time(value);
+  }
+
+  private scopeMatch(
+    input: PerceptionScope,
+    deviceId: string,
+    record: {
+      readonly id?: string;
+      readonly type?: string;
+      readonly localDay: string;
+      readonly occurredAtMs: number;
+    },
+    track: boolean,
+  ): boolean {
+    const rows = this.database
+      .prepare(
+        `SELECT kind, local_day AS day, types, record_ids AS recordIds, track
+           FROM perception_deletion_scopes
+          WHERE owner_id = ? AND agent_id = ? AND bound_ms >= ?
+            AND (device_id IS NULL OR device_id = ?)`,
+      )
+      .all(input.ownerId, input.agentId, record.occurredAtMs, deviceId) as {
+      kind: string;
+      day: string | null;
+      types: string;
+      recordIds: string;
+      track: number;
+    }[];
+    for (const row of rows) {
+      if (track) {
+        if (row.track !== 1) continue;
+        if (row.kind === "day" && row.day === record.localDay) return true;
+        if (row.kind === "types") return true;
+        continue;
+      }
+      if (
+        (row.kind === "records" || row.kind === "episode") &&
+        record.id !== undefined &&
+        (JSON.parse(row.recordIds) as string[]).includes(record.id)
+      )
+        return true;
+      if (row.kind === "day" && row.day === record.localDay) return true;
+      if (
+        row.kind === "types" &&
+        record.type !== undefined &&
+        (JSON.parse(row.types) as string[]).includes(record.type)
+      )
+        return true;
+    }
+    return false;
+  }
+
+  private suppressed(
+    input: PerceptionScope,
+    deviceId: string,
+    record: {
+      readonly id: string;
+      readonly type: string;
+      readonly localDay: string;
+      readonly occurredAtMs: number;
+    },
+  ): boolean {
+    const idScopes = this.database
+      .prepare(
+        `SELECT 1 FROM perception_deletion_scopes
+          WHERE owner_id = ? AND agent_id = ?
+            AND EXISTS (SELECT 1 FROM json_each(record_ids) WHERE value = ?)`,
+      )
+      .get(input.ownerId, input.agentId, record.id);
+    if (idScopes) return true;
+    return this.scopeMatch(input, deviceId, record, false);
+  }
+
+  private trackSuppressed(
+    input: PerceptionScope,
+    deviceId: string,
+    point: { readonly localDay: string; readonly occurredAtMs: number },
+  ): boolean {
+    return this.scopeMatch(input, deviceId, point, true);
+  }
+
+  private deletionRecordIds(
+    scope: PerceptionScope,
+    target: PerceptionDeletionTarget,
+    boundMs: number,
+  ): string[] {
+    const base = { ownerId: scope.ownerId, agentId: scope.agentId, device: target.deviceId };
+    const device = "AND (@device IS NULL OR device_id = @device)";
+    const rows = (sql: string, extra: Record<string, unknown>) =>
+      this.database
+        .prepare(sql)
+        .pluck()
+        .all({ ...base, ...extra }) as string[];
+    switch (target.kind) {
+      case "records":
+        return rows(
+          `SELECT id FROM perception_records
+            WHERE owner_id = @ownerId AND agent_id = @agentId
+              AND id IN (SELECT value FROM json_each(@ids)) ORDER BY id`,
+          { ids: JSON.stringify(target.ids) },
+        );
+      case "episode":
+        return rows(
+          `SELECT id FROM perception_records
+            WHERE owner_id = @ownerId AND agent_id = @agentId AND episode_id = @episode
+              AND received_at_ms <= @bound ORDER BY id`,
+          { episode: target.episodeId, bound: boundMs },
+        );
+      case "day":
+        return rows(
+          `SELECT id FROM perception_records
+            WHERE owner_id = @ownerId AND agent_id = @agentId AND local_day = @day
+              AND received_at_ms <= @bound ${device} ORDER BY id`,
+          { day: target.day, bound: boundMs },
+        );
+      case "types":
+        return rows(
+          `SELECT id FROM perception_records
+            WHERE owner_id = @ownerId AND agent_id = @agentId
+              AND type IN (SELECT value FROM json_each(@types))
+              AND received_at_ms <= @bound ${device} ORDER BY id`,
+          { types: JSON.stringify(target.types), bound: boundMs },
+        );
+    }
+  }
+
+  private deletionTrack(target: PerceptionDeletionTarget, trackTypes: readonly string[]): boolean {
+    return (
+      target.kind === "day" ||
+      (target.kind === "types" && target.types.some((type) => trackTypes.includes(type)))
+    );
+  }
+
+  private trackWhere(target: PerceptionDeletionTarget): string {
+    return `owner_id = @ownerId AND agent_id = @agentId AND occurred_at_ms <= @bound
+      AND (@device IS NULL OR device_id = @device)
+      ${target.kind === "day" ? "AND local_day = @day" : ""}`;
+  }
+
+  private trackParameters(
+    scope: PerceptionScope,
+    target: PerceptionDeletionTarget,
+    boundMs: number,
+  ) {
+    return {
+      ownerId: scope.ownerId,
+      agentId: scope.agentId,
+      bound: boundMs,
+      device: target.deviceId,
+      ...(target.kind === "day" ? { day: target.day } : {}),
+    };
+  }
+
+  private deletionMedia(scope: PerceptionScope, ids: readonly string[]): string[] {
+    if (ids.length === 0) return [];
+    return this.database
+      .prepare(
+        `SELECT DISTINCT l.media_id FROM perception_media_links l
+          WHERE l.owner_id = ? AND l.agent_id = ?
+            AND l.record_id IN (SELECT value FROM json_each(?))
+            AND NOT EXISTS (
+              SELECT 1 FROM perception_media_links other
+                JOIN perception_records r ON r.id = other.record_id
+               WHERE other.media_id = l.media_id
+                 AND other.record_id NOT IN (SELECT value FROM json_each(?)))`,
+      )
+      .pluck()
+      .all(scope.ownerId, scope.agentId, JSON.stringify(ids), JSON.stringify(ids)) as string[];
+  }
+
+  private readDeletionRow(scope: PerceptionScope, id: string): PerceptionDeletion | undefined {
+    const row = this.database
+      .prepare(
+        `SELECT id, status, target, bound_ms AS boundMs, plan, receipt, created_at AS createdAt,
+                expires_at AS expiresAt, started_at AS startedAt, finished_at AS finishedAt,
+                json_array_length(pending_refs) AS pendingPayloads
+           FROM perception_deletions WHERE id = ? AND owner_id = ? AND agent_id = ?`,
+      )
+      .get(id, scope.ownerId, scope.agentId) as
+      | (Omit<PerceptionDeletion, "target" | "plan" | "receipt"> & {
+          target: string;
+          plan: string;
+          receipt: string | null;
+        })
+      | undefined;
+    if (!row) return undefined;
+    return Object.freeze({
+      ...row,
+      target: Object.freeze(JSON.parse(row.target)) as PerceptionDeletionTarget,
+      plan: Object.freeze(JSON.parse(row.plan)) as PerceptionDeletionCounts,
+      receipt: row.receipt
+        ? (Object.freeze(JSON.parse(row.receipt)) as PerceptionDeletionCounts)
+        : null,
+    });
+  }
+
+  protected op_planDeletion(input: Input<"planDeletion">) {
+    const now = this.deletionTime(input.now);
+    const expiresAt = this.deletionTime(input.expiresAt);
+    const boundMs = Date.parse(now);
+    return this.database.transaction(() => {
+      if (
+        input.target.deviceId !== null &&
+        !this.database
+          .prepare("SELECT 1 FROM paired_devices WHERE id = ? AND owner_id = ? AND agent_id = ?")
+          .get(input.target.deviceId, input.ownerId, input.agentId)
+      )
+        return "device_unknown" as const;
+      if (
+        input.target.kind === "episode" &&
+        !this.database
+          .prepare(
+            "SELECT 1 FROM perception_episodes WHERE id = ? AND owner_id = ? AND agent_id = ?",
+          )
+          .get(input.target.episodeId, input.ownerId, input.agentId)
+      )
+        return "episode_unknown" as const;
+      const ids = this.deletionRecordIds(input, input.target, boundMs);
+      const track = this.deletionTrack(input.target, input.trackTypes)
+        ? (this.database
+            .prepare(
+              `SELECT COUNT(*) FROM location_track_points WHERE ${this.trackWhere(input.target)}`,
+            )
+            .pluck()
+            .get(this.trackParameters(input, input.target, boundMs)) as number)
+        : 0;
+      const plan: PerceptionDeletionCounts = {
+        records: ids.length,
+        trackPoints: track,
+        media: this.deletionMedia(input, ids).length,
+      };
+      this.database
+        .prepare(
+          `INSERT INTO perception_deletions
+             (id, owner_id, agent_id, status, target, bound_ms, plan, created_at, expires_at)
+           VALUES (?, ?, ?, 'planned', ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          input.id,
+          input.ownerId,
+          input.agentId,
+          JSON.stringify(input.target),
+          boundMs,
+          JSON.stringify(plan),
+          now,
+          expiresAt,
+        );
+      return this.readDeletionRow(input, input.id) as PerceptionDeletion;
+    })();
+  }
+
+  protected op_readDeletion(input: Input<"readDeletion">) {
+    return this.readDeletionRow(input, input.id);
+  }
+
+  protected op_startDeletion(input: Input<"startDeletion">) {
+    const now = this.deletionTime(input.now);
+    return this.database.transaction(() => {
+      const deletion = this.readDeletionRow(input, input.id);
+      if (!deletion) return "unknown" as const;
+      if (deletion.status !== "planned") return deletion;
+      if (deletion.expiresAt <= now) return "expired" as const;
+      const { target, boundMs } = deletion;
+      const ids = this.deletionRecordIds(input, target, boundMs);
+      const mediaIds = this.deletionMedia(input, ids);
+      const refs = ids.length
+        ? (this.database
+            .prepare(
+              `SELECT DISTINCT content_ref FROM perception_records
+                WHERE id IN (SELECT value FROM json_each(?)) AND content_ref IS NOT NULL`,
+            )
+            .pluck()
+            .all(JSON.stringify(ids)) as string[])
+        : [];
+      const episodes = ids.length
+        ? (this.database
+            .prepare(
+              `SELECT DISTINCT episode_id FROM perception_records
+                WHERE id IN (SELECT value FROM json_each(?)) AND episode_id IS NOT NULL`,
+            )
+            .pluck()
+            .all(JSON.stringify(ids)) as string[])
+        : [];
+      this.database
+        .prepare("DELETE FROM perception_records WHERE id IN (SELECT value FROM json_each(?))")
+        .run(JSON.stringify(ids));
+      this.recount(episodes);
+      if (mediaIds.length)
+        this.database
+          .prepare(
+            "DELETE FROM perception_media_items WHERE id IN (SELECT value FROM json_each(?))",
+          )
+          .run(JSON.stringify(mediaIds));
+      const track = this.deletionTrack(target, input.trackTypes);
+      const trackPoints = track
+        ? this.database
+            .prepare(`DELETE FROM location_track_points WHERE ${this.trackWhere(target)}`)
+            .run(this.trackParameters(input, target, boundMs)).changes
+        : 0;
+      this.database
+        .prepare(
+          `INSERT INTO perception_deletion_scopes
+             (deletion_id, owner_id, agent_id, kind, device_id, local_day, types, record_ids, track,
+              bound_ms, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          input.id,
+          input.ownerId,
+          input.agentId,
+          target.kind,
+          target.deviceId,
+          target.kind === "day" ? target.day : null,
+          JSON.stringify(target.kind === "types" ? target.types : []),
+          JSON.stringify(ids),
+          track ? 1 : 0,
+          boundMs,
+          now,
+        );
+      const receipt: PerceptionDeletionCounts = {
+        records: ids.length,
+        trackPoints,
+        media: mediaIds.length,
+      };
+      this.database
+        .prepare(
+          `UPDATE perception_deletions
+              SET status = 'running', started_at = ?, receipt = ?, pending_refs = ?
+            WHERE id = ?`,
+        )
+        .run(now, JSON.stringify(receipt), JSON.stringify(refs), input.id);
+      return this.readDeletionRow(input, input.id) as PerceptionDeletion;
+    })();
+  }
+
+  protected op_cleanDeletion(input: Input<"cleanDeletion">) {
+    const now = this.deletionTime(input.now);
+    return this.database.transaction(() => {
+      const row = this.database
+        .prepare(
+          `SELECT pending_refs AS pending, status, attempts FROM perception_deletions
+            WHERE id = ? AND owner_id = ? AND agent_id = ?`,
+        )
+        .get(input.id, input.ownerId, input.agentId) as
+        | { pending: string; status: string; attempts: number }
+        | undefined;
+      if (!row) return this.fail("PORT_NOT_FOUND", "Perception deletion is unknown");
+      const deletion = this.readDeletionRow(input, input.id) as PerceptionDeletion;
+      if (row.status !== "running")
+        return Object.freeze({ deletion, paths: Object.freeze([]), progressed: false });
+      const pending = JSON.parse(row.pending) as string[];
+      const take = pending.slice(0, Math.max(1, input.chunk));
+      const rest = pending.slice(take.length);
+      const paths: string[] = [];
+      for (const ref of take) {
+        const payload = this.database
+          .prepare(
+            "SELECT ciphertext_path AS path FROM payloads WHERE ref = ? AND owner_id = ? AND agent_id = ?",
+          )
+          .get(ref, input.ownerId, input.agentId) as { path: string | null } | undefined;
+        if (!payload) continue;
+        this.database.prepare("DELETE FROM payloads WHERE ref = ?").run(ref);
+        if (payload.path) paths.push(payload.path);
+      }
+      this.database
+        .prepare(
+          "UPDATE perception_deletions SET pending_refs = ?, attempts = attempts + 1 WHERE id = ?",
+        )
+        .run(JSON.stringify(rest), input.id);
+      if (rest.length === 0) {
+        const remaining = this.deletionRecordIds(input, deletion.target, deletion.boundMs);
+        if (remaining.length === 0)
+          this.database
+            .prepare(
+              "UPDATE perception_deletions SET status = 'verified', finished_at = ? WHERE id = ?",
+            )
+            .run(now, input.id);
+      }
+      const after = this.readDeletionRow(input, input.id) as PerceptionDeletion;
+      return Object.freeze({
+        deletion: after,
+        paths: Object.freeze(paths),
+        progressed: take.length > 0 || after.status === "verified",
+      });
+    })();
+  }
+
+  protected op_openDeletions(input: Input<"openDeletions">): readonly string[] {
+    return this.database
+      .prepare(
+        `SELECT id FROM perception_deletions
+          WHERE owner_id = ? AND agent_id = ? AND status = 'running' ORDER BY created_at, id`,
+      )
+      .pluck()
+      .all(input.ownerId, input.agentId) as string[];
+  }
+
+  protected op_readDeletionScopes(input: Input<"readDeletionScopes">) {
+    const rows = this.database
+      .prepare(
+        `SELECT revision, kind, device_id AS deviceId, local_day AS day, types,
+                CASE WHEN kind IN ('records', 'episode') THEN record_ids ELSE '[]' END AS recordIds,
+                track, bound_ms AS boundMs
+           FROM perception_deletion_scopes
+          WHERE owner_id = ? AND agent_id = ? AND revision > ? ORDER BY revision LIMIT ?`,
+      )
+      .all(input.ownerId, input.agentId, input.after, input.limit) as {
+      revision: number;
+      kind: PerceptionDeletionScope["kind"];
+      deviceId: string | null;
+      day: string | null;
+      types: string;
+      recordIds: string;
+      track: number;
+      boundMs: number;
+    }[];
+    const revision =
+      (this.database
+        .prepare(
+          "SELECT MAX(revision) FROM perception_deletion_scopes WHERE owner_id = ? AND agent_id = ?",
+        )
+        .pluck()
+        .get(input.ownerId, input.agentId) as number | null) ?? 0;
+    return Object.freeze({
+      scopes: Object.freeze(
+        rows.map((row) =>
+          Object.freeze({
+            revision: row.revision,
+            kind: row.kind,
+            deviceId: row.deviceId,
+            day: row.day,
+            types: Object.freeze(JSON.parse(row.types) as string[]),
+            recordIds: Object.freeze(JSON.parse(row.recordIds) as string[]),
+            track: row.track === 1,
+            boundMs: row.boundMs,
+          }),
+        ),
+      ),
+      revision,
+    });
   }
 }
