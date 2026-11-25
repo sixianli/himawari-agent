@@ -52,6 +52,17 @@ final class RecordingExchange: HTTPExchange, @unchecked Sendable {
         #expect(exchange.requests.count == 1)
     }
 
+    @Test func aRefusedStreamIsReportedWithItsStatusAndCode() async throws {
+        let exchange = RecordingExchange([], streams: [(429, [#"{"error":{"code":"DEVICE_STREAM_LIMIT"}}"#]), (403, [#"{"error":{"code":"DEVICE_REVOKED"}}"#])])
+        let (http, _) = try client(exchange)
+        let seen = ProblemBox()
+        StreamDiagnostics.shared.observe { seen.add($0) }
+        defer { StreamDiagnostics.shared.observe(nil) }
+        let stream = DeviceEventStream(http: http, path: "threads/thr_1/execution-stream", cursors: nil, heartbeat: { 30 })
+        for await _ in stream.start() {}
+        #expect(seen.all == [.refused(path: "threads/thr_1/execution-stream", status: 429, code: "DEVICE_STREAM_LIMIT")])
+    }
+
     @Test func streamCorrectsTheClockOnceWhenTheServerSaysSkewed() async throws {
         let skewed = #"{"error":{"code":"DEVICE_SIGNATURE_CLOCK_SKEW","serverTime":"2027-01-15T08:10:00Z"}}"#
         let exchange = RecordingExchange([], streams: [(401, [skewed]), (200, [])])
@@ -349,5 +360,18 @@ final class RecordingExchange: HTTPExchange, @unchecked Sendable {
         #expect(view.revision == 4)
         #expect(exchange.requests[0].url?.path.hasSuffix("approvals/challenge") == true)
         #expect(try nonces(exchange.requests[1]) == [challenge, challenge])
+    }
+}
+
+final class ProblemBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var problems: [StreamProblem] = []
+
+    func add(_ problem: StreamProblem) {
+        lock.withLock { problems.append(problem) }
+    }
+
+    var all: [StreamProblem] {
+        lock.withLock { problems }
     }
 }
