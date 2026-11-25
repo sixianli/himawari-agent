@@ -7,7 +7,7 @@ import { checkoutFromCache, fetchBundleIntoCache, sourceCachePath } from "./sour
 const root = realpathSync(mkdtempSync(path.join(process.env.HIMAWARI_TEST_TEMP_ROOT ?? os.tmpdir(), "source-cache-")));
 const env = { PATH: process.env.PATH, HOME: root, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null", GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@example.invalid", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@example.invalid" };
 const run = (command, args, name) => execFileSync(command, args, { env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
-const git = (cwd, ...args) => run("git", ["-c", "maintenance.auto=false", "-C", cwd, ...args]);
+const git = (cwd, ...args) => run("git", ["-c", "maintenance.auto=false", "-c", "gc.auto=0", "-C", cwd, ...args]);
 const results = [];
 const check = (name, passed, detail = "") => results.push({ name, passed: Boolean(passed), detail: String(detail) });
 const throws = (action) => { try { action(); return ""; } catch (error) { return String(error.message); } };

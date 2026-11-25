@@ -2,7 +2,7 @@ import { chmodSync, lstatSync, realpathSync } from "node:fs";
 import path from "node:path";
 
 const fail = (condition, message) => { if (!condition) throw new Error(message); };
-const quietGit = ["-c", "core.hooksPath=/dev/null", "-c", "maintenance.auto=false"];
+const quietGit = ["-c", "core.hooksPath=/dev/null", "-c", "maintenance.auto=false", "-c", "gc.auto=0"];
 
 export function sourceCachePath(prefix) {
   return path.join(path.dirname(path.dirname(prefix)), "source-cache.git");
