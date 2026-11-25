@@ -13,6 +13,7 @@ import type {
 import {
   AgentThreadGatewayService,
   ApplicationPortError,
+  approvalBodyPreview,
   DEFAULT_HOME_FEED,
   DEFAULT_SEARCH_ASK,
   DEFAULT_VOICE_GATES,
@@ -1647,6 +1648,12 @@ export async function createProductionHttpComposition(
   });
   await perception.prepareDirectories();
   await perception.resumeDeletions({ ownerId, agentId }).catch(() => undefined);
+  const approvalThreadTitle = classifiedThreadTitleReader({
+    configuration,
+    threads,
+    payloads: memoryPayloads,
+    protector: payloadProtector,
+  });
   const gatewayV2 = createProductionApprovalGateway({
     configuration,
     ...(options.capabilityReactivation
@@ -1663,6 +1670,19 @@ export async function createProductionHttpComposition(
       ? {
           onApprovalResolved: async (approval) => {
             await options.deviceActions?.service.reconcile(approval.id);
+          },
+        }
+      : {}),
+    ...(subthreads
+      ? {
+          approvalOrigin: async (threadId: string) => {
+            const parent = await subthreads.parentOf(threadId).catch(() => undefined);
+            if (!parent) return null;
+            const title = await approvalThreadTitle(parent).catch(() => null);
+            return {
+              threadId: parent,
+              threadTitle: title === null ? null : (approvalBodyPreview(title, 120) ?? null),
+            };
           },
         }
       : {}),
