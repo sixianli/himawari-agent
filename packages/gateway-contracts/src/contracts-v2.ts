@@ -63,9 +63,6 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "owner.preferences.read",
   "owner.preferences.snapshot",
   "owner.preferences.set",
-  "delivery_timing.settings.read",
-  "delivery_timing.settings.snapshot",
-  "delivery_timing.settings.change",
   "quiet_hours.read",
   "quiet_hours.snapshot",
   "quiet_hours.set",
@@ -565,42 +562,8 @@ const ownerPreferencesSetCommandSchema = object({
   ...commandEnvelope("owner.preferences.set"),
   payload: object({ ...ownerPreferencesSchema, expectedRevision: integer(0) }),
 });
-const deliveryTimingSettingsQuerySchema = object({
-  ...envelope("query", "delivery_timing.settings.read"),
-  payload: object({ locale: enumeration(["zh-CN", "en", "ja"]) }),
-});
 const settingValueKindSchema = enumeration(["ratio", "duration", "count"]);
 const settingStorageUnitSchema = enumeration(["permille", "ms", "s", "min", "h", "d", "count"]);
-const deliveryTimingSettingsSnapshotSchema = object({
-  ...envelope("snapshot", "delivery_timing.settings.snapshot"),
-  payload: object({
-    items: array(
-      object({
-        key: machineString,
-        label: boundedString(80),
-        description: boundedString(240),
-        unit: boundedString(16),
-        kind: settingValueKindSchema,
-        storageUnit: settingStorageUnitSchema,
-        value: integer(0),
-        defaultValue: integer(0),
-        minimum: integer(0),
-        maximum: integer(0),
-        overridden: booleanValue,
-      }),
-    ),
-    revision: integer(0),
-    generatedAt: timestamp,
-  }),
-});
-const deliveryTimingSettingsChangeCommandSchema = object({
-  ...commandEnvelope("delivery_timing.settings.change"),
-  payload: object({
-    expectedRevision: integer(0),
-    key: machineString,
-    value: nullable(integer(0)),
-  }),
-});
 const quietClock = proactiveClockSchema;
 const quietHoursQuerySchema = object({
   ...envelope("query", "quiet_hours.read"),
@@ -3841,9 +3804,6 @@ const schemasByType = {
   "owner.preferences.read": ownerPreferencesQuerySchema,
   "owner.preferences.snapshot": ownerPreferencesSnapshotSchema,
   "owner.preferences.set": ownerPreferencesSetCommandSchema,
-  "delivery_timing.settings.read": deliveryTimingSettingsQuerySchema,
-  "delivery_timing.settings.snapshot": deliveryTimingSettingsSnapshotSchema,
-  "delivery_timing.settings.change": deliveryTimingSettingsChangeCommandSchema,
   "quiet_hours.read": quietHoursQuerySchema,
   "quiet_hours.snapshot": quietHoursSnapshotSchema,
   "quiet_hours.set": quietHoursSetCommandSchema,
