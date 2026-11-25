@@ -51,7 +51,7 @@ Andy 在方案 v3 上同意的 C：“上线时一次性恢复因闲置被归档
 
 ## 决定
 
-1. **词表、实体、事件段词表收 public、private、sensitive 三档**，restricted（受限）仍不收。
+1. **词表、实体、事件段词表收 public、private、sensitive 三档**，restricted（受限）仍不收。[ADR 0286](0286-the-main-model-reads-and-writes-memory-itself.md) 决定 4 起记忆不再分出 sensitive，密码、密钥由程序拒存；第 1 到 3 条的分档和遮盖在 0286 编码完成后只剩“像密钥的词不进词表”这一道兜底。
 2. **建词表之前先遮盖，再丢掉像密钥的词**（`maskForIndex`，在 `packages/sensitive-capture/src/secret-like.ts`）。
    - 先用出口遮盖的固定规则集、不带对话上下文（`maskSensitiveText`）遮盖：认得出的密码、验证码、卡号、证件号、密钥换成“[密码]”这类占位文字。
    - 规则认出的值（`findSensitiveValues`），在同一段文字里再出现时也去掉。出口遮盖只在“密码：”后面那一处认出值，后面单独再写一次的同一个值认不出来（例如“Wi-Fi 密码：sunflower，客人来了就告诉他 sunflower”）。规则交出来的值常带着上下文：“密码是sunflower。客人来了”里认出的值是整段 `sunflower。客人来了`，`password=hunter2x` 认出的是整串。所以每个值原样和其中每一段由英文字母、数字和常见符号组成的串（去掉首尾的句点、感叹号、问号）一起去掉，两者都只取 4 个字符以上的；额外取的段不含中文，免得把正常的话从词表里删掉；但原样的值如果带着中文后文（例如 `sunflower。客人来了`），同样一整段再出现时会整段去掉。代价是值里夹着的普通英文词（例如 `abc:hello:xyz` 里的 `hello`、私钥块里的 `BEGIN`）在这条记忆的词表里也被去掉，按意思仍能搜到。出口遮盖的密码规则遇到紧跟 `[` 的值不认（为了不重复遮盖自己的占位），所以再把原文里的方括号换成空格认一遍，“密码是[sunflower]”这类写法也能去掉。代价是密码关键词后面紧跟的方括号说明（例如“密码：[由系统自动生成]”）也会被当成值，在这条记忆的词表里去掉，按意思仍能搜到：宁可多删，不让秘密进明文词表。去掉时按整词匹配：值的首尾是英文字母、数字或下划线时，前后不能紧挨同类字符（`test` 不会删掉 `contest` 里的那段）。只有遮盖自己留下的占位（`[密码]`、`[验证码]`、`[证件号]`、`[密钥]`、`[银行卡 尾号1111]` 这五种）里面不动，正文里普通的方括号照常检查。
@@ -103,7 +103,7 @@ GitHub 的密钥扫描在“已知服务方格式”之外另加两层兜底：�
 
 - [ADR 0193：存入记忆的内容必须能被模型看到](0193-memory-is-visible-to-the-model.md)
 - [ADR 0183：只在数据离开时遮盖](0183-mask-only-when-data-leaves-and-keep-the-original-inside.md)
-- [ADR 0185：密码、密钥标敏感而不是丢弃](0185-mark-passwords-and-keys-sensitive-instead-of-dropping-them.md)
+- [ADR 0185：密码、密钥标敏感而不是丢弃](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0185-mark-passwords-and-keys-sensitive-instead-of-dropping-them.md)
 - 代码：`packages/sensitive-capture/src/secret-like.ts`、`packages/memory-engine/src/segmentation.ts`、`packages/persistence-sqlite/src/sqlite-memory-maintenance.ts`、`apps/admin-cli/src/memory-command.ts`
 
 [返回目录](#contents)

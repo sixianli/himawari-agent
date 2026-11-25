@@ -23,7 +23,7 @@ date: "2026-11-08"
 
 ## 背景
 
-[ADR 0185](0185-mark-passwords-and-keys-sensitive-instead-of-dropping-them.md) 的“已知缺口”写明：“password is abc12345”和“Wi-Fi 密码 abc12345”认不出。原因在 `packages/sensitive-capture/src/redaction.ts` 的密码规则：关键词后面必须紧跟冒号、等号或“是/为/は”才认作密码，没有英文 “is”，也没有“关键词 + 空格 + 值”的写法。这条规则同时管发给模型和搜索的遮盖，以及存储时的敏感判断（`classificationWithIdentifiers`），所以认不出的值会原样发给模型、含它的提醒推送也会显示正文。Andy 2026-11-08 问起这个缺口，协调者要求修。
+[ADR 0185](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0185-mark-passwords-and-keys-sensitive-instead-of-dropping-them.md) 的“已知缺口”写明：“password is abc12345”和“Wi-Fi 密码 abc12345”认不出。原因在 `packages/sensitive-capture/src/redaction.ts` 的密码规则：关键词后面必须紧跟冒号、等号或“是/为/は”才认作密码，没有英文 “is”，也没有“关键词 + 空格 + 值”的写法。这条规则同时管发给模型和搜索的遮盖，以及存储时的敏感判断（`classificationWithIdentifiers`），所以认不出的值会原样发给模型、含它的提醒推送也会显示正文。Andy 2026-11-08 问起这个缺口，协调者要求修。
 
 <a id="decision"></a>
 
@@ -67,5 +67,5 @@ date: "2026-11-08"
 
 ## 关联文档
 
-- [ADR 0185：密码、密钥、证件号、银行卡号标成敏感，不再标受限丢弃](0185-mark-passwords-and-keys-sensitive-instead-of-dropping-them.md)
+- [ADR 0185：密码、密钥、证件号、银行卡号标成敏感，不再标受限丢弃](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0185-mark-passwords-and-keys-sensitive-instead-of-dropping-them.md)
 - [ADR 0183：只在数据发往外部时遮盖，内部存储和展示用原文](0183-mask-only-when-data-leaves-and-keep-the-original-inside.md)

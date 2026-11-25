@@ -14,7 +14,7 @@
 - 原则之间冲突时按这个顺序裁决：用户主权，其次边界与可逆性，其次记忆可靠性，其次主动性与效率。当一个设计在两条原则之间取舍时，要写明它依据的是哪一条原则。
 - “自有优先、数据自持”（"Owned first, data held by the owner"）取代了早先“本地优先”（"local-first"）的说法：Himawari 在哪里运行、数据存在哪里，由 Andy 控制，可以是 Andy 租用的服务器。不得把 Himawari 描述为本地优先。
 - PRD（产品需求文档）规定一个版本的范围，可以推迟愿景中的部分内容，但不得与愿景矛盾。只有用户能修改愿景正文；新版本替换整份文档，并在附录中记录改动，并新开一份采纳 ADR 取代上一份。
-- 自 v2.2 起，Andy 定的规则是硬性设定，不是记忆：规则写进程序、必定执行、每条有回归测试；记忆只保存规则的出处和修改历史。护城河是四样资产：记忆图谱、Agent 规则手册、长尾工具库、决策记录。把规则当记忆条目存储或注入的现有设计是已知缺口，列在 [ADR 0134](docs/adr/0134-adopt-product-vision-v2-2.md) 里，不是目标；现行愿景 v2.3 的采纳记录是 [ADR 0153](docs/adr/0153-adopt-product-vision-v2-3.md)。
+- 自 v2.2 起，Andy 定的规则是硬性设定，不是记忆：规则写进程序、必定执行、每条有回归测试；记忆只保存规则的出处和修改历史。护城河是四样资产：记忆图谱、Agent 规则手册、长尾工具库、决策记录。把规则当记忆条目存储或注入的现有设计是已知缺口，列在 [ADR 0134](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0134-adopt-product-vision-v2-2.md) 里，不是目标；现行愿景 v2.3 的采纳记录是 [ADR 0153](docs/adr/0153-adopt-product-vision-v2-3.md)。
 
 <a id="glossary"></a>
 ## 词表

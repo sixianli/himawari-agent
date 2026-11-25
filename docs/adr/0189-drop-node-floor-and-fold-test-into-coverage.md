@@ -4,7 +4,7 @@ document_type: adr
 decision_status: accepted
 supersedes: ""
 superseded_by: ""
-amends: "docs/adr/0176-ci-on-ovh-vps.md"
+amends: ""
 date: "2026-11-08"
 ---
 
@@ -25,7 +25,7 @@ date: "2026-11-08"
 
 ## 背景
 
-按 [ADR 0176](0176-ci-on-ovh-vps.md)，PR 的 CI（持续集成，每次推送后自动跑的检查）在 OVH 的 VPS（按月租用的云服务器）上的两个 runner（替 GitHub 执行 CI 任务的程序）里运行。2026-11-08 之前，每个 PR 要跑 9 个作业，其中三个作业把同一批测试跑了三遍：
+按 [ADR 0176](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0176-ci-on-ovh-vps.md)，PR 的 CI（持续集成，每次推送后自动跑的检查）在 OVH 的 VPS（按月租用的云服务器）上的两个 runner（替 GitHub 执行 CI 任务的程序）里运行。2026-11-08 之前，每个 PR 要跑 9 个作业，其中三个作业把同一批测试跑了三遍：
 
 - `node-floor`（用项目声明支持的最低 Node 版本 `22.19.0` 干净安装、构建，再跑 unit、contracts、integration、e2e、pi-compat 五个测试项目）。`22.19.0` 来自 Pi（项目用的 Agent 运行库）当时接受的最低版本，写在 `package.json` 的 `engines.node`（声明项目支持哪些 Node 版本的字段）里。
 - `test`（Node `22.22.3`，用 Linux 构建包逐个跑上面五个项目，每个项目核对实际跑的测试文件和应有的文件一致）。
@@ -56,7 +56,7 @@ VPS 上 2026-11-07 的运行 42362797124 里，这三个作业分别用了 39.9�
    - e2e 和 pi-compat 在覆盖率那次调用和覆盖率比较结束之后接着跑（覆盖率失败也照样跑，两边的失败一起报告），用原来 `test` 作业的做法（`scripts/ci/test.mjs` 的 `runTests`，只传这两个项目）逐个跑：核对测试文件集合、`--retry 0`、跑完核对构建包没变。
    - 覆盖率那次调用里的四个项目，不再单独核对测试文件集合：`scripts/ci/check-coverage.mjs` 已经核对这四个项目的测试文件清单是否完整。
 4. **本地入口不变成两个命令。**`npm test` 改成 `local.mjs --check coverage`，仍然一条命令跑全部测试。
-5. **改作业清单的 PR 自己能过闸门。**按 [ADR 0160](0160-self-hosted-runner-on-hermes.md) 决定第 6 条的做法，`scripts/ci/check-policy.mjs` 新增 `upgradeRetiredTestChecks`：目标分支上的策略只有在 `test`、`node-floor` 两项和 `coverage`、`required` 的相关字段都和 2026-11-08 的 main 逐字段完全一样时，才升级成新写法；任何一个字段不同都原样返回，交给策略校验拒绝。
+5. **改作业清单的 PR 自己能过闸门。**按 [ADR 0160](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0160-self-hosted-runner-on-hermes.md) 决定第 6 条的做法，`scripts/ci/check-policy.mjs` 新增 `upgradeRetiredTestChecks`：目标分支上的策略只有在 `test`、`node-floor` 两项和 `coverage`、`required` 的相关字段都和 2026-11-08 的 main 逐字段完全一样时，才升级成新写法；任何一个字段不同都原样返回，交给策略校验拒绝。
 6. **macOS 的 test 成员一并去掉。**它从 ADR 0160 起一直暂停（`paused: true`），从没在 VPS 上跑过。以后恢复 macOS 检查时，要另加一个 macOS 的测试作业，并写新的 ADR。
 
 [↑ 返回阅读导航](#contents)
@@ -86,8 +86,8 @@ VPS 上 2026-11-07 的运行 42362797124 里，这三个作业分别用了 39.9�
 
 ## 关联文档
 
-- [GitHub CI 与质量门禁设计](../execution/specs/2026-09-03-github-ci-quality-gates-design.md)
-- [ADR 0160：CI 改在 Hermes 上的自托管 runner 运行，macOS 检查暂停](0160-self-hosted-runner-on-hermes.md)
-- [ADR 0176：CI 全部搬到 OVH 的 VPS 上](0176-ci-on-ovh-vps.md)
+- [GitHub CI 与质量门禁设计](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/execution/specs/2026-09-03-github-ci-quality-gates-design.md)
+- [ADR 0160：CI 改在 Hermes 上的自托管 runner 运行，macOS 检查暂停](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0160-self-hosted-runner-on-hermes.md)
+- [ADR 0176：CI 全部搬到 OVH 的 VPS 上](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0176-ci-on-ovh-vps.md)
 
 [↑ 返回阅读导航](#contents)

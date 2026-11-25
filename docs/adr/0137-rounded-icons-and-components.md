@@ -2,7 +2,7 @@
 status: active
 document_type: adr
 decision_status: accepted
-supersedes: "docs/adr/0136-soft-line-icons-and-components.md"
+supersedes: ""
 superseded_by: ""
 date: "2026-10-31"
 ---
@@ -23,7 +23,7 @@ date: "2026-10-31"
 
 ## 背景
 
-[ADR 0136](0136-soft-line-icons-and-components.md) 按方案 4“柔线”改了全站，还没合并上线。Andy 随后要看“如果所有组件按方案 1 圆润重新设计，整个界面是什么样”，线程在真实页面上换样式截了全部 13 个页面。2026-10-31 Andy 在[按自有品牌风格重做 iPhone 和 Mac 界面](#references)线程回复：“我很喜欢这一套设计方案。你必须把这一套所有的图标和组件继续完善，画得完美一点，然后把整套 UI 的设计风格应用到整个应用的 UI 里面，任何地方都要保持设计风格一致。包括图标在内，如果哪里需要加新图标，设计时必须以这一套风格为基础。”
+[ADR 0136](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0136-soft-line-icons-and-components.md) 按方案 4“柔线”改了全站，还没合并上线。Andy 随后要看“如果所有组件按方案 1 圆润重新设计，整个界面是什么样”，线程在真实页面上换样式截了全部 13 个页面。2026-10-31 Andy 在[按自有品牌风格重做 iPhone 和 Mac 界面](#references)线程回复：“我很喜欢这一套设计方案。你必须把这一套所有的图标和组件继续完善，画得完美一点，然后把整套 UI 的设计风格应用到整个应用的 UI 里面，任何地方都要保持设计风格一致。包括图标在内，如果哪里需要加新图标，设计时必须以这一套风格为基础。”
 
 [↑ 返回阅读导航](#contents)
 
@@ -69,7 +69,7 @@ date: "2026-10-31"
 
 ## 关联文档
 
-- [ADR 0136](0136-soft-line-icons-and-components.md)：被本 ADR 取代的柔线方案
+- [ADR 0136](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0136-soft-line-icons-and-components.md)：被本 ADR 取代的柔线方案
 - [网页设计规范](../ui-ux-design-guide.md)：规则 12、23、41、42
 - 讨论线程：按自有品牌风格重做 iPhone 和 Mac 界面（项目线程）；全站效果图 <https://claude.ai/artifact/Nc3DnUvMVun86kYsvzWDD8>
 

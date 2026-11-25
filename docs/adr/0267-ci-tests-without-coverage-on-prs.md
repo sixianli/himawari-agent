@@ -26,7 +26,7 @@ date: "2026-11-14"
 
 ## 背景
 
-CI（每次推送后 GitHub Actions 自动跑的检查）里，`coverage` 作业（覆盖率作业：跑大部分测试，同时统计每行代码有没有被测试走到）要跑六个测试项目，其中 unit、contracts、tooling、integration 四个带覆盖率统计，而且要先等 `policy` 作业，而 policy 里又重复跑了一遍 tooling 测试（仓库脚本自己的测试）。[ADR 0266](0266-ci-policy-static-security-run-on-the-oracle-arm-machine.md) 已经把 policy、static、security 搬到 Oracle 的 ARM 机器上。这份 ADR 定下再往下的两步：PR 上不再统计覆盖率，tooling 测试单独在 ARM 上并行跑；覆盖率改成每天夜里在 main 上统计一次，只出报告。
+CI（每次推送后 GitHub Actions 自动跑的检查）里，`coverage` 作业（覆盖率作业：跑大部分测试，同时统计每行代码有没有被测试走到）要跑六个测试项目，其中 unit、contracts、tooling、integration 四个带覆盖率统计，而且要先等 `policy` 作业，而 policy 里又重复跑了一遍 tooling 测试（仓库脚本自己的测试）。[ADR 0266](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0266-ci-policy-static-security-run-on-the-oracle-arm-machine.md) 已经把 policy、static、security 搬到 Oracle 的 ARM 机器上。这份 ADR 定下再往下的两步：PR 上不再统计覆盖率，tooling 测试单独在 ARM 上并行跑；覆盖率改成每天夜里在 main 上统计一次，只出报告。
 
 <a id="premises"></a>
 
@@ -55,10 +55,10 @@ CI（每次推送后 GitHub Actions 自动跑的检查）里，`coverage` 作业
 分两步，每步一个 PR：
 
 1. **PR 上照跑全部测试，但不统计覆盖率**（随这份 ADR 的 PR 实施）。
-   - `coverage` 作业改名 `tests`，仍在 CI 服务器上、仍等 policy 和 build，跑 unit、contracts、integration、e2e、pi-compat 五个项目。`scripts/ci/run.mjs` 默认不统计覆盖率，只有传 `--coverage measure`（或者仓库还没有覆盖率基线、要生成初始基线时）才统计。`--coverage` 给别的值直接报错 `CI_COVERAGE_OPTION_INVALID`。
-   - 新增 `tooling` 作业，在 Oracle 的 ARM 机器上跑，只等 policy，和 tests 并行。policy 作业不再跑任何测试。
+   - `coverage` 作业改名 `tests`，仍等 policy 和 build，跑 unit、contracts、integration、e2e、pi-compat 五个项目。`scripts/ci/run.mjs` 默认不统计覆盖率，只有传 `--coverage measure`（或者仓库还没有覆盖率基线、要生成初始基线时）才统计。`--coverage` 给别的值直接报错 `CI_COVERAGE_OPTION_INVALID`。
+   - 新增 `tooling` 作业，在 ARM 机器上跑（机器现在是 GitHub 的 `ubuntu-24.04-arm`，见 [ADR 0287](0287-ci-runs-on-github-hosted-runners.md)），只等 policy，和 tests 并行。policy 作业不再跑任何测试。
    - 本地入口跟着改：`npm test` 运行 `scripts/ci/local.mjs --check tests`，`npm run test:tooling` 运行 `--check tooling`。[ADR 0189](0189-drop-node-floor-and-fold-test-into-coverage.md) 决定 4 的 `--check coverage` 和 [ADR 0064](0064-layer3-individual-trigger-scope.md) 示例里的 `coverage` 从此都换成 `tests`，`coverage` 这个检查名已经不存在。
-   - `ci/required`（汇总作业）等 tests 和 tooling，去 ARM 机器取 policy、static、tooling、security 四份报告。
+   - `ci/required`（汇总作业）等 tests 和 tooling，收齐各检查的报告（怎么在作业之间传，见 ADR 0287 决定 3）。
    - 装依赖时 npm 的下载缓存从作业工作区里的 `.ci-output/npm-cache`（汇总作业的 `scripts/ci/install-gate-dependencies.mjs` 至今仍用它）挪到 runner 账号的 `~/.cache/himawari-ci/npm`，跨作业保留，满 7 天整个清空重建（`scripts/ci/install-dependencies.mjs` 的 `--cache runner`）。npm 照旧按锁文件里的摘要核对每个包，所以缓存被改坏只会让安装失败，不会装进别的东西。
    - main 上旧的 7 作业策略（policy 带 tooling 或不带、coverage 带全部测试）由 `upgradeCoverageToTests` 升级成新的 8 作业形状，摘要照旧按原始字节算；只认那一种完整写法，其他写法照样被拒。
 2. **每天夜里在 main 上统计一次覆盖率，只出报告，不挡 PR。** 定时在日本时间 03:00，用 `run.mjs --check tests --coverage measure` 跑同样的测试并统计覆盖率，和基线比较的结果写进报告。具体放在哪个工作流、报告怎样给人看，在第 2 步的 PR 里定，写进这份 ADR 的后续修订。

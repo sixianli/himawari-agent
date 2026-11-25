@@ -11,12 +11,12 @@ date: "2026-10-21"
 # 测试主机操作 Runbook：在 Hermes 和云服务器测试账号上跑测试并还回空间
 
 <!-- runbook-contract:
-- docs/adr/0056-cloud-server-also-test-host.md
+- https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0056-cloud-server-also-test-host.md
 - scripts/ci/context.mjs
 - ci/policy.json
 -->
 
-本手册把原先写在 `AGENTS.md` 里的测试主机操作步骤集中到一处：怎样连 Hermes（局域网里的 Linux 测试服务器）和云服务器的测试账号 `himawari-ci`，目录和临时数据放在哪里，跑测试时要记录什么，跑完怎样把磁盘空间还回去。规则本身来自 [ADR 0057](../adr/0057-batch-layers-one-two-for-small-defects.md) 和它保留的 [ADR 0056](../adr/0056-cloud-server-also-test-host.md)；`AGENTS.md` 只留硬边界并链接到这里。
+本手册把原先写在 `AGENTS.md` 里的测试主机操作步骤集中到一处：怎样连 Hermes（局域网里的 Linux 测试服务器）和云服务器的测试账号 `himawari-ci`，目录和临时数据放在哪里，跑测试时要记录什么，跑完怎样把磁盘空间还回去。规则本身来自 [ADR 0057](../adr/0057-batch-layers-one-two-for-small-defects.md) 和它保留的 [ADR 0056](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0056-cloud-server-also-test-host.md)；`AGENTS.md` 只留硬边界并链接到这里。
 
 ## 阅读导航
 
@@ -43,7 +43,7 @@ date: "2026-10-21"
 
 ## Authoritative Sources
 
-- 测试和部署的位置、云测试账号的限制、Hermes 的目录：[SOURCE: docs/adr/0056-cloud-server-also-test-host.md#decision]
+- 测试和部署的位置、云测试账号的限制、Hermes 的目录：[SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0056-cloud-server-also-test-host.md#decision]
 - 测试分层和触发时机：[SOURCE: docs/adr/0057-batch-layers-one-two-for-small-defects.md#decision]
 - CI 入口拒绝 `.ci-output/` 之外的输出路径（`CI_OUTPUT_OUTSIDE_RUN_DIRECTORY`）：`scripts/ci/context.mjs`
 - 必过的 CI 检查清单：`ci/policy.json`

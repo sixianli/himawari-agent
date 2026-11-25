@@ -110,7 +110,7 @@ date: "2026-11-24"
 
 **现状（读 main `891955719` 的代码得出，没有实测）**
 
-1. 收件箱表已有，但没有任何来源往里写。`docs/adr/0274-new-things-go-through-one-think-entrance.md:105`：“带工具的后台运行、同意任务的写操作审批、来源接入和旧代码清理在后续 PR 里。”在 `apps/agent-service/src` 的非测试文件里搜 `inbox.submit` 没有结果。
+1. 收件箱表已有，但没有任何来源往里写。[ADR 0274 第 105 行（已删除）](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0274-new-things-go-through-one-think-entrance.md#L105)：“带工具的后台运行、同意任务的写操作审批、来源接入和旧代码清理在后续 PR 里。”在 `apps/agent-service/src` 的非测试文件里搜 `inbox.submit` 没有结果。
 2. 你的消息一到就建好一次运行，一一绑死。`packages/persistence-sqlite/src/sqlite-thread-operations.ts:1092`：`INSERT INTO triggers (`；`packages/persistence-sqlite/src/migrations/0001_initial_product_schema.sql:147`：`trigger_id TEXT NOT NULL UNIQUE REFERENCES triggers(id) ON DELETE RESTRICT,`；`packages/application/src/services/context-formation-service.ts:556`：`parsed.prompt.id !== request.trigger.id ||`；`packages/prompt-catalog/src/chat.ts:278`：“最后一条用户消息承载本轮的新请求……历史消息供理解背景，不是等待执行的任务队列。”
 3. 后台“想一想”运行先过一道小判断、强制只读、只能提三种动作。`packages/prompt-catalog/src/think.ts:4`：`id: "think.worth-question",`；`apps/agent-service/src/service-main.ts:1719`：`readOnlyRun: async (runId) => {`；`packages/prompt-catalog/src/think.ts:38`：“这次运行不能做任何写操作，也不要尝试”；`apps/agent-service/src/production-think-actions.ts:58`、`:75`、`:95` 三种提议类型。
 4. 你同意的“去办一件事”会新开一个对话。`apps/agent-service/src/production-task-proposals.ts:111`：``threadId: `thread:proposal:${key}` as ThreadId,``。
@@ -122,7 +122,7 @@ date: "2026-11-24"
 10. 后台命令的结果已经以一条追加消息送回原对话。`packages/prompt-catalog/src/background.ts:14-20`：`id: "background.notice",`，“【系统通知，不是用户发的消息】你在这个对话里早些时候转入后台的命令有了结果。”
 11. Pi（Himawari 用的 Agent 运行库）官方有“运行中插一条消息”的写法。`docs/pi-development-guide.md:285`：“`deliverAs: "steer"` 在当前这轮工具跑完、下一次请求模型之前送达……用户消息用 `session.steer()` / `session.followUp()`”。
 12. 运行容量、时限、上下文。`scripts/delivery-mode/packet-template/maintenance/production-shape-config-template.json:151-157`：`"totalRuns": 3,`、`"foregroundReserved": 1,`、`"runMs": 300000,`；同文件 `:87`：`"contextWindow": 1000000,`；`packages/runtime-pi/src/compaction-prefix.ts:75`：`export const COMPACTION_TRIGGER_CAP_TOKENS = 200_000;`（写方案时的值；按定的第 6 件事已改成 `150_000`）。
-13. 同意过的任务的写操作规则。`docs/adr/0278-tasks-the-owner-agreed-to-ask-before-writing-after-external-content.md:48`：“同意过的任务读到外部内容后，写操作由 `askAfterExternalContent` 接手，每一个都要主人批准”。
+13. 同意过的任务的写操作规则。[ADR 0278 第 48 行（已删除）](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0278-tasks-the-owner-agreed-to-ask-before-writing-after-external-content.md#L48)：“同意过的任务读到外部内容后，写操作由 `askAfterExternalContent` 接手，每一个都要主人批准”。
 14. 发给模型的内容只追加；压缩要集中、少做、写进 ADR。`AGENTS.md:43`：“已经发出去的内容不得改动、重排或删除，只能在末尾追加；每轮会变的内容只放在最后一条消息里；系统提示和工具按对话冻结。”`.agents/instructions/prompt-prefix.md:61`：“必须缩短历史时，集中做、少做，并在 ADR 里写明。不得每轮都做。”同文件 `:64`：“清理旧的工具结果要成批、少做、能恢复。一次清理足够多，才值得付一次缓存失效的代价；被清理的内容要能找回”；同文件 `:36` 把“将来按 ADR 实施的第 14 条清理”列为“只追加”的例外之一。
 15. 理解你的意思交给模型，不写词表。`.claude/rules/owner-standing-rules.md` “理解用户的意思交给模型”一节：“判断用户一句话的意图……一律交给模型，程序只做校验”。
 16. 愿景。`docs/product-vision.md:55`：“原则冲突时，按序优先：用户主权 > 边界与可逆性 > 记忆可靠性 > 主动性与效率。”`:60`：“预判必须建立在已有记忆与明确偏好之上，且预判的收益必须大于打扰我的成本。”`:64`：“推进受成本、资源与时间预算约束，超限即停下等待。”`:156`：“任意一次开口或沉默，系统能答出「为什么」”。

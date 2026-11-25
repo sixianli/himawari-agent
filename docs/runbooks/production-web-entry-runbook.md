@@ -11,12 +11,12 @@ date: "2026-10-27"
 # 生产网页入口与登录 Runbook
 
 <!-- runbook-contract:
-- docs/adr/0089-web-push-only-owner-entry.md
+- https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0089-web-push-only-owner-entry.md
 - docs/backlog/BL-20261027-008-config-change-preflight-and-verified-rollback.md
 - packages/platform-node/src/identity-gateway.ts
 -->
 
-本手册记录 2026-10-27 起生产网页怎样从公网打开、怎样登录，以及登录出问题时怎样查、怎样退回。起因是为了让 iPhone 收网页推送（Web Push，浏览器在网页关着时也能弹出的通知），生产入口从“Mac 上开 ssh 隧道访问 `127.0.0.1:8400`”改成了公网域名 `https://himawari.siyi.win`（[ADR 0089](../adr/0089-web-push-only-owner-entry.md)）。切换当天的两次停服见[工程案例 30](../engineering-casebook.md#case-login-switch-outage)。本手册里的时间都是日本时间（JST）。
+本手册记录 2026-10-27 起生产网页怎样从公网打开、怎样登录，以及登录出问题时怎样查、怎样退回。起因是为了让 iPhone 收网页推送（Web Push，浏览器在网页关着时也能弹出的通知），生产入口从“Mac 上开 ssh 隧道访问 `127.0.0.1:8400`”改成了公网域名 `https://himawari.siyi.win`（[ADR 0089](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0089-web-push-only-owner-entry.md)）。切换当天的两次停服见[工程案例 30](../engineering-casebook.md#case-login-switch-outage)。本手册里的时间都是日本时间（JST）。
 
 ## 阅读导航
 
@@ -36,7 +36,7 @@ date: "2026-10-27"
 ## Scope
 
 - 适用：用户在手机或电脑上打开生产网页、登录、开通知；Claude 排查“打不开”“登不进”“收不到通知”；改 Cloudflare Access（Cloudflare 提供的登录关卡）的登录方式或允许的邮箱；把登录方式退回 Himawari 自带登录。
-- 不适用：Hermes 测试机的入口（`https://himawari-test.siyi.win`，见 [Hermes 控制中心升级 Runbook](hermes-control-center-upgrade-runbook.md)）；程序上线和回滚（按各次上线包执行）；服务器登录和内核（见[生产云服务器访问 Runbook](production-server-access-runbook.md)）。
+- 不适用：Hermes 测试机的入口（`https://himawari-test.siyi.win`，见 [Hermes 控制中心升级 Runbook](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/runbooks/hermes-control-center-upgrade-runbook.md)）；程序上线和回滚（按各次上线包执行）；服务器登录和内核（见[生产云服务器访问 Runbook](production-server-access-runbook.md)）。
 - 目标：生产机 `84.247.157.41` 上的 `/etc/himawari/config.json`、`himawari-prod.service`、数据库里 `owner_identity_bindings`（主人和登录身份的绑定表）那一行、`cloudflared.service`（Cloudflare 隧道程序）；Cloudflare 账号 `341855223c647728540929c55d92ccc8` 下的隧道 `himawari-prod` 和 Access 应用 “Himawari”。
 
 [返回导航](#阅读导航)
@@ -45,7 +45,7 @@ date: "2026-10-27"
 
 ## Authoritative Sources
 
-- 只用网页推送、入口改成公网域名并由 Access 认证的决定：[SOURCE: docs/adr/0089-web-push-only-owner-entry.md]
+- 只用网页推送、入口改成公网域名并由 Access 认证的决定：[SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0089-web-push-only-owner-entry.md]
 - 改配置和改登录方式也要走预检和可验证回滚：[SOURCE: docs/backlog/BL-20261027-008-config-change-preflight-and-verified-rollback.md]
 - Access 身份怎样换成 Himawari 的主人：`packages/platform-node/src/identity-gateway.ts`。绑定用的引用是 `sha256:` 加上 `签发方地址 + 空字符 + 用户编号` 的 SHA-256；签发方是 `https://sinimite-work.cloudflareaccess.com`，用户编号是 Access 令牌里的 `sub`，同一 Cloudflare 账号下一个邮箱对应一个编号。每次登录还会带着 `CF_Authorization` cookie 去签发方的 `/cdn-cgi/access/get-identity` 核对编号。
 - 网页端口什么时候打开：`apps/agent-service/src/service-main.ts` 的 `webEnabled`，`publicMode` 为真，或身份方式是 `built-in` 且配了 `http`。

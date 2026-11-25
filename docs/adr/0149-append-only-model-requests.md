@@ -2,7 +2,7 @@
 status: active
 document_type: adr
 decision_status: accepted
-supersedes: docs/adr/0104-turn-material-in-last-user-message.md
+supersedes: ""
 superseded_by: ""
 date: "2026-11-02"
 ---
@@ -38,7 +38,7 @@ date: "2026-11-02"
 
 生产上逐字符对比这个对话两轮的请求内容（只读，数据来自 `model_usage_observations` 和 `provider_request` 记录）：第 2 轮第一次请求和第 1 轮最后一次请求，前 10954 个字符相同，相当于系统提示加工具定义，约 4.2k token，从第 2 条消息起不同。第 1 轮里这条用户消息是 705 字符的 `<himawari-context>` 资料块加提问，第 2 轮同一条消息被换成只有 62 字符的提问。它后面的回答、工具调用、搜索结果原样保留，但前面变了，对按开头匹配的缓存来说全部作废。
 
-代码在 `packages/runtime-pi/src/pi-runtime-adapter.ts` 的 `withOwnerWords`：每次 `message_end` 存历史前，把本轮发出去的那条用户消息换回主人原话。这是 [ADR 0104](0104-turn-material-in-last-user-message.md) 的一条决定，它的理由是「前面的消息每轮都相同，可以被缓存命中」，这个理由是错的：模型上一轮见到的是带资料块的版本，下一轮见到的是不带的版本，前面的消息恰恰每轮都不同。当时的缓存测量只比较了同一次请求里的重复，没有比较相邻两轮。
+代码在 `packages/runtime-pi/src/pi-runtime-adapter.ts` 的 `withOwnerWords`：每次 `message_end` 存历史前，把本轮发出去的那条用户消息换回主人原话。这是 [ADR 0104](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0104-turn-material-in-last-user-message.md) 的一条决定，它的理由是「前面的消息每轮都相同，可以被缓存命中」，这个理由是错的：模型上一轮见到的是带资料块的版本，下一轮见到的是不带的版本，前面的消息恰恰每轮都不同。当时的缓存测量只比较了同一次请求里的重复，没有比较相邻两轮。
 
 影响：2026-11-01 06:00 到 15:44（UTC）的 92 次 chat 请求里，每个对话「第 2 轮及以后的第一次请求」共 18 次，输入合计约 46.2 万 token，只命中约 4.1 万（9%），占全部输入 148 万 token 的约 31%。同一轮内前缀严格追加的请求，47 次里 36 次命中。
 
@@ -113,7 +113,7 @@ date: "2026-11-02"
 
 ## 关联文档
 
-- 取代：[ADR 0104](0104-turn-material-in-last-user-message.md)
+- 取代：[ADR 0104](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0104-turn-material-in-last-user-message.md)
 - [ADR 0128：记录每次模型请求的缓存用量](0128-record-cache-usage-of-every-model-request.md)
 - [ADR 0148：所有模型请求只走一个进程内出口](0148-send-every-model-request-through-one-in-process-egress.md)
 - 事故：[I-66](../incidents-and-gates.md#incidents)

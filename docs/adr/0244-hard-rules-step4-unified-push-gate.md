@@ -48,7 +48,7 @@ date: "2026-11-12"
 ## 决定
 
 1. **闸门放在发送点 `#deliver`，不放在入队点 `#collect`。**入队时还不知道哪些设备、什么时间会发；发送点才有这条推送要发的时刻。同一轮里同一个来源键只判断一次，结果给所有设备共用。
-2. **新增闸门名 `push_delivery`**，事实有四个：`push_class`（`scheduled_reminder`、`approval`、`run_result`、`mail_reminder`、`muse_outage`、`unknown`）、`local_minutes`、`local_weekday`、`local_previous_weekday`（主人所在时区，默认 `"UTC"`，生产配置里写实际时区）。规则的结果只有一种：延后到静默时段结束。
+2. **新增闸门名 `push_delivery`**，事实有四个：`push_class`（`scheduled_reminder`、`approval`、`run_result`、`mail_reminder`、`muse_outage`、`unknown`；[ADR 0285](0285-one-main-thread-subthreads-and-one-inbox.md) 决定 6 加“她的话”这一类，主人消息叫起的运行不再推“已完成”，改推她回的那句话，安静时段规则也管“她的话”）、`local_minutes`、`local_weekday`、`local_previous_weekday`（主人所在时区，默认 `"UTC"`，生产配置里写实际时区）。规则的结果只有一种：延后到静默时段结束。
 3. **审批、Muse 告警和认不出的来源由代码直接放行，不交给规则判断。**这样规则写错、判断器出错都拦不住它们。目前唯一的规则类型也不碰审批；Andy 11-10 定的“普通审批可以延后但不得过期、高风险审批和告警不受影响”留给以后扩展，到时另写 ADR。
 4. **新增主人规则类型 `push_quiet_hours`**：参数是时段（`periods`，每段有星期、开始、结束，可跨零点）和适用类别（`classes`）。默认管任务完成或失败、邮件提醒；主人明说“包括我自己定的提醒”才含到点提醒。注册时必须带测试文件（`packages/application/test/rule-type-push-quiet-hours.unit.test.ts`），规则自带的命中和不命中例子必须能在判断器里重现。不再另做设置页开关。
 5. **一句话立规则要认得“夜里别提醒我”。**`rule_set` 里“这是长期有效的话”的判断另加了一族“别提醒我、不要提醒我、别打扰我”的说法（`QUIET_REQUEST_MARKERS`），它单独不算长期，必须同时有“夜里、晚上、周末、每天”这类反复出现的时段词（`RECURRING_TIME_MARKERS`）才算；整句话里只要有“今晚、现在、这次、这封、明天、这个周末、下个月、今年”之类一次性或限时的词（`ONE_OFF_MARKERS`，不分子句），就只算提议；“从现在起”这类开头不算一次性。这张词表对所有规则类型通用，所以“今年起每次……”这类邮件规则也只会先成提议，不会直接生效；词表是启发式的，漏掉的说法最坏结果是多立一条主人可以撤销的规则。`rule_set` 的工具定义改了，所以这次上线后所有老对话的系统提示和工具重建一次（Andy 已接受）。

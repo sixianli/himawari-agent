@@ -23,7 +23,7 @@ superseded_by: ""
 
 ## Origin
 
-- 来源：[SOURCE: docs/execution/specs/2026-10-26-web-push-design.md]（“验证”一节最后一条真机检查），以及 [SOURCE: docs/adr/0089-web-push-only-owner-entry.md]（“后果”一节的未验证项）。
+- 来源：[SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/execution/specs/2026-10-26-web-push-design.md]（“验证”一节最后一条真机检查），以及 [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0089-web-push-only-owner-entry.md]（“后果”一节的未验证项）。
 
 ## Notes
 

@@ -110,7 +110,7 @@ ADR 0157 第 1 条写“个别具体的值（合成 token、示例密码等）�
 ## 关联文档
 
 - [ADR 0157](0157-gitleaks-allowlist-for-evidence-digests.md)：资格证据摘要的形状白名单。
-- [GitHub CI 与质量门禁设计](../execution/specs/2026-09-03-github-ci-quality-gates-design.md#security-and-exceptions)：例外和白名单的现行规范。
+- [GitHub CI 与质量门禁设计](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/execution/specs/2026-09-03-github-ci-quality-gates-design.md#security-and-exceptions)：例外和白名单的现行规范。
 - `ci/rules/gitleaks.toml`、`ci/security-exceptions.json`、`scripts/ci/security-exceptions.mjs`：实现。
 - `test/tooling/gitleaks-allowlist.test.mjs`、`test/tooling/gitleaks-config.test.mjs`：测试。
 

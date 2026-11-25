@@ -44,4 +44,4 @@ date: "2026-08-25"
 
 ## Links
 
-- [SOURCE: docs/prd-v0.1.md#attention-and-delivery]
+- [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/prd-v0.1.md#attention-and-delivery]

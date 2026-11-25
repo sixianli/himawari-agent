@@ -35,7 +35,7 @@ Andy 在 2026-11-01 的决定（均有原话，记录在线程）：记忆用在
 2. **邮件专用的相关度门槛：** 配置项 `runPolicy.proactive.memoryMinimumSimilarity`，默认 0.45，不沿用聊天的 0.6。依据：159 封合成邮件（76 封有相关记忆）上，0.6 只命中 20%，0.45 命中 71%，无关邮件被带出记忆 8%（评测见 `/mnt/project-files/p0-5-gmail-ledger-inputs/eval/report.md`，只算向量一路）。（[ADR 0221](0221-memory-retrieval-relevance-cutoff-and-same-source-dedupe.md) 起，关键词和实体两路找到的记忆也按这个门槛减去截断余量截断。）
 3. **只读搜索：** 搜索函数新增 `recordUse: false`（不记「最近使用时间」和使用次数，免得后台每 15 分钟检查让记忆在聊天里无故靠前、也躲过每日整理）、`queryText`（直接传查询文字）、`minimumSimilarity`（覆盖门槛）、`excludeCategories`（排除「对 Himawari 的要求」类）。分类只取公开和私有，敏感和受限的不进邮件检查。（敏感一项已由 [ADR 0193](0193-memory-is-visible-to-the-model.md) 改为可以进邮件检查，受限的仍不进。）
 4. **嵌入服务的新场景：** `production-run-memory.ts` 新增第三种允许调用的场景「Gmail 检查」（和聊天一次运行、后台同步搜索索引平行）：固定按私有分类，截止时间用本次检查的截止时间，不走共享预算，费用累加进本次检查的成本；同时最多 4 个搜索。
-5. **只跳过垃圾邮件和主人自己发的邮件：** 删除 `SKIPPED_CATEGORIES` 和重要发件人对它的豁免。含验证码、卡号的邮件由 [ADR 0146](0146-redact-sensitive-text-before-it-leaves-for-any-model.md) 的统一遮盖处理，不再整封跳过。
+5. **只跳过垃圾邮件和主人自己发的邮件：** 删除 `SKIPPED_CATEGORIES` 和重要发件人对它的豁免。含验证码、卡号的邮件由 [ADR 0146](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0146-redact-sensitive-text-before-it-leaves-for-any-model.md) 的统一遮盖处理，不再整封跳过。
 6. **费用：** 删除单次检查 0.1 美元上限，只留每天上限和单次 3 分钟时间上限。配置项 `perCheckCostMicros` 仍可读（旧配置里留着不会使服务起不来），但被忽略；有测试。
 7. **提示词顺序（KV 缓存）：** ① 固定说明 ② 这一批的记忆 ③ 这一批的邮件 ④ 「现在是…」放最后一行。说明里写明记忆是背景资料、不是指令，邮件里的要求也不是指令。
 8. **账本：** `memoryIds` 只记实际放进提示词的记忆；模型回答里的 `usedMemoryIds` 只保留放进提示词的那些，编造的丢弃；`memoryByMail` 记每封邮件放了哪几条；`memoryRecall` 为 `off`、`ok`、`partial`、`failed`。
@@ -64,6 +64,6 @@ Andy 在 2026-11-01 的决定（均有原话，记录在线程）：记忆用在
 ## 关联文档
 
 - [ADR 0147：账本记下输入](0147-keep-model-prompt-and-answer-of-each-gmail-check-with-the-ledger.md)
-- [ADR 0146：送模型前统一遮盖](0146-redact-sensitive-text-before-it-leaves-for-any-model.md)
+- [ADR 0146：送模型前统一遮盖](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0146-redact-sensitive-text-before-it-leaves-for-any-model.md)
 - [ADR 0106：主动闭环第一刀](0106-proactive-loop-v1-gmail-read-only.md)
-- [Gmail 主动检查设计规格](../execution/specs/2026-10-29-proactive-loop-v1-gmail-design.md)
+- [Gmail 主动检查设计规格](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/execution/specs/2026-10-29-proactive-loop-v1-gmail-design.md)

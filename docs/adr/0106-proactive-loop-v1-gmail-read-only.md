@@ -41,7 +41,7 @@ date: "2026-10-29"
 
 1. **第一刀只做 Gmail，只读。** 只申请 `gmail.readonly`，同时申请第二刀才用的 `calendar.readonly`。提前申请日历权限是有意取舍：少打断 Andy 一次授权。第一刀的代码不读日历，测试检查没有调用日历接口。不发信、不归档、不打标签。
 2. **每 15 分钟检查一次。** 第一次连接只看最近 3 天；之后用 `history.list` 只取变化，返回 404 时重新看 3 天。不用 Pub/Sub 即时推送。
-3. **模型只看发件人、标题和 Gmail 自带的一行摘要，不看正文和附件。** 摘要含验证码、卡号或密码的不发模型。（2026-11-01 更新：验证码等改为遮盖后发送，见 [ADR 0146](0146-redact-sensitive-text-before-it-leaves-for-any-model.md)；模型除邮件外还会看到搜到的相关记忆，邮件正文仍不发，见 [ADR 0158](0158-bring-related-memories-into-gmail-checks.md)；促销、社交、论坛不再整类跳过。）模型给四种结果之一（要你做事 / 值得知道 / 可能重要，请看原信 / 不用管），同时给“有把握 / 拿不准”。
+3. **模型只看发件人、标题和 Gmail 自带的一行摘要，不看正文和附件。** 摘要含验证码、卡号或密码的不发模型。（2026-11-01 更新：验证码等改为遮盖后发送，见 [ADR 0146](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0146-redact-sensitive-text-before-it-leaves-for-any-model.md)；模型除邮件外还会看到搜到的相关记忆，邮件正文仍不发，见 [ADR 0158](0158-bring-related-memories-into-gmail-checks.md)；促销、社交、论坛不再整类跳过。）模型给四种结果之一（要你做事 / 值得知道 / 可能重要，请看原信 / 不用管），同时给“有把握 / 拿不准”。
 4. **地板规则。** 模型判断之后、推送之前，用 0 费用的确定规则检查。命中以下任一条就算命中地板：发件人在 Andy 维护的“重要发件人名单”里；发件域名是 `go.jp`、`lg.jp`、`ac.jp`、`ed.jp`；标题或摘要里有中日英三语的金钱词。命中地板时，结论不得低于“值得知道”；模型拿不准时强制为“可能重要，请看原信”；被抬升的都在决策日志里写明。名单里的发件人即使被 Gmail 归为推广，也照常判断。“公司类”不能用规则判断，所以由名单代替。
 5. **推送只给两种结果。** “要你做事”在高优先级且 48 小时内截止时推送；“可能重要”在命中地板时推送。一次检查合成一条；不推送时段（多段、按星期，默认 23:00–07:00）里的顺延到时段结束；Andy 正开着网页时不弹。
 6. **两层上限。** 单次检查最多 0.1 美元、3 分钟。每天累计默认 1 美元，在生产配置里改，界面不显示费用（ADR 0105）。到日上限后当天不再调模型，记一条“到上限（日）”，0 费用的规则检查照跑，命中地板的直接以“可能重要”进提醒页，提醒页显示一条红色提示，次日 0 点（JST）恢复；对话不受影响。这是 [BL-20261028-002](../backlog/BL-20261028-002-per-task-budget-for-unattended-work.md) “每个后台任务自己的上限”的第一个实现。
@@ -108,7 +108,7 @@ date: "2026-10-29"
 
 ## 关联文档
 
-- [主动闭环 v1 第一刀设计规格](../execution/specs/2026-10-29-proactive-loop-v1-gmail-design.md)
+- [主动闭环 v1 第一刀设计规格](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/execution/specs/2026-10-29-proactive-loop-v1-gmail-design.md)
 - [产品愿景](../product-vision.md)
 - [ADR 0102 推送反馈记录](0102-record-push-notification-feedback.md)
 - [ADR 0105 提醒页和设置四页](0105-ui-batch-2026-10-28-show-what-the-owner-needs.md)

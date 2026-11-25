@@ -5,7 +5,7 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-11-12"
-amended_by: "docs/adr/0266-ci-policy-static-security-run-on-the-oracle-arm-machine.md"
+amended_by: ""
 ---
 
 # ADR 0253：让 Himawari 能在 linux-arm64 上跑检查、跑沙箱、出包和做资格验证（测试用途）
@@ -105,7 +105,7 @@ Andy 有一台 Oracle 东京区的 ARM 云服务器（aarch64，即 64 位 ARM �
 
 ## 关联文档
 
-- [ADR 0176：CI 在 OVH 的云服务器上跑](0176-ci-on-ovh-vps.md)
+- [ADR 0176：CI 在 OVH 的云服务器上跑](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0176-ci-on-ovh-vps.md)
 - [事故和门槛](../incidents-and-gates.md)（I-73：只看改动本身，没核对每个值的产生处和使用处）
 - [安装、启动和停止操作手册](../runbooks/install-start-stop-runbook.md)
 

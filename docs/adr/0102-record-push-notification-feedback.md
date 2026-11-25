@@ -26,11 +26,11 @@ date: "2026-10-28"
 
 ## 背景
 
-[产品愿景](../product-vision.md#jarvis-test) 的 Jarvis Test 第 10 条要求：“连续 30 天统计主动提醒的命中率与误扰率，命中率上升、误扰率下降，趋势可量化”；护城河第 3 样“主动性的校准数据”也只能靠长期记录积累。评审（[ADR 0101](0101-adopt-product-vision-v2-1.md)）指出系统现在不记录“发了哪条提醒、Andy 怎么反应”。Andy 2026-10-28 14:12（日本时间）对这条建议回复：“同意”。
+[产品愿景](../product-vision.md#jarvis-test) 的 Jarvis Test 第 10 条要求：“连续 30 天统计主动提醒的命中率与误扰率，命中率上升、误扰率下降，趋势可量化”；护城河第 3 样“主动性的校准数据”也只能靠长期记录积累。评审（[ADR 0101](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0101-adopt-product-vision-v2-1.md)）指出系统现在不记录“发了哪条提醒、Andy 怎么反应”。Andy 2026-10-28 14:12（日本时间）对这条建议回复：“同意”。
 
 现状（读代码确认）：
 
-- 网页推送（[ADR 0089](0089-web-push-only-owner-entry.md)，服务器经浏览器厂商的推送服务把通知送到 Andy 开了通知的设备）有三类：到期记忆提醒（reminder）、等待审批（approval）、任务完成或失败（run）。
+- 网页推送（[ADR 0089](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0089-web-push-only-owner-entry.md)，服务器经浏览器厂商的推送服务把通知送到 Andy 开了通知的设备）有三类：到期记忆提醒（reminder）、等待审批（approval）、任务完成或失败（run）。
 - 发送队列表 `web_push_outbox` 和每台设备的发送记录表 `web_push_attempts`（迁移 0058）记下了“发给哪台设备、成没成功”，但队列在过期 7 天后连同发送记录一起删掉，所以留不住 30 天。
 - 设备上的后台脚本（`apps/control-center/public/sw.js`，Service Worker：浏览器在页面关着时也能运行的脚本）只在点通知时打开对应页面，不告诉服务器“点了”；划掉通知时什么都不做。
 
@@ -115,8 +115,8 @@ ORDER BY f.first_sent_at;
 ## 关联文档
 
 - [SOURCE: docs/product-vision.md#jarvis-test]
-- [SOURCE: docs/adr/0089-web-push-only-owner-entry.md]
-- [SOURCE: docs/adr/0101-adopt-product-vision-v2-1.md]
+- [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0089-web-push-only-owner-entry.md]
+- [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0101-adopt-product-vision-v2-1.md]
 - [SOURCE: docs/backlog/BL-20261028-004-proactive-notification-feedback-log.md]
 - 工程案例库：[案例 38](../engineering-casebook.md#case-push-feedback)
 

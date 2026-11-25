@@ -2,7 +2,7 @@
 status: active
 document_type: adr
 decision_status: accepted
-supersedes: "docs/adr/0060-hard-constraint-on-third-repeat.md"
+supersedes: ""
 superseded_by: ""
 amended_by: "docs/adr/0269-load-instructions-on-demand-at-thread-start.md"
 date: "2026-10-29"
@@ -24,7 +24,7 @@ date: "2026-10-29"
 
 ## 背景
 
-[ADR 0060](0060-hard-constraint-on-third-repeat.md) 规定：编码代理（Claude、Codex、opencode 等替 Andy 写代码和跑测试的程序）同一错误第三次出现时，停下来找根因并加硬约束（代理无法跳过的检查）；一次错误不需要记录。它管的是代理自己的操作失误，不管产品和上线出的事故。
+[ADR 0060](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0060-hard-constraint-on-third-repeat.md) 规定：编码代理（Claude、Codex、opencode 等替 Andy 写代码和跑测试的程序）同一错误第三次出现时，停下来找根因并加硬约束（代理无法跳过的检查）；一次错误不需要记录。它管的是代理自己的操作失误，不管产品和上线出的事故。
 
 2026-10-28 晚（日本时间，下同）出了两件事，都是“前面已经吃过亏、却没有任何检查拦住”：
 
@@ -96,7 +96,7 @@ date: "2026-10-29"
 
 ## 关联文档
 
-- 被取代的决定：[ADR 0060](0060-hard-constraint-on-third-repeat.md)。
+- 被取代的决定：[ADR 0060](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0060-hard-constraint-on-third-repeat.md)。
 - 事故与门槛清单：[docs/incidents-and-gates.md](../incidents-and-gates.md)。
 - 代理反复犯的错误：[docs/lessons.md](../lessons.md)。
 - 发布走查上线门槛：[docs/lessons.md 的“上线验收只查了首页 200 没真点网页”](../lessons.md#release-without-browser-walkthrough)。

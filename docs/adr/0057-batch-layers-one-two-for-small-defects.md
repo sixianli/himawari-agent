@@ -2,7 +2,7 @@
 status: active
 document_type: adr
 decision_status: accepted
-supersedes: "docs/adr/0056-cloud-server-also-test-host.md,docs/adr/0052-third-production-host-acceptance-exception.md,docs/adr/0051-second-production-host-acceptance-exception.md,docs/adr/0050-hermes-root-disk-cleanup-without-floor.md,docs/adr/0049-first-production-host-acceptance-exception.md,docs/adr/0047-test-checkout-on-hermes-nvme.md,docs/adr/0046-tests-back-on-hermes.md,docs/adr/0045-short-test-temp-root.md,docs/adr/0044-tests-on-cloud-server.md,docs/adr/0043-push-every-commit-full-test-before-merge.md,docs/adr/0042-hermes-test-scratch-on-root-disk.md,docs/adr/0041-test-hosts-and-production-server.md,docs/adr/0038-test-layer-trigger-timing.md"
+supersedes: ""
 superseded_by: ""
 date: "2026-10-18"
 ---
@@ -25,7 +25,7 @@ date: "2026-10-18"
 
 ## 背景
 
-开发时的测试分层（第 0 层定向测试、第 1 层 `npm run check` 静态检查、第 2 层受影响模块测试、第 3 层构建加完整 `npm test`、第 4 层真实产品路径）和各层的运行时机，写在 [ADR 0052 的测试层级](0052-third-production-host-acceptance-exception.md#layers)里，由 [ADR 0056](0056-cloud-server-also-test-host.md#unchanged) 原样沿用。其中第 1 层是“每次提交之前”，第 2 层是“一个缺陷或功能修稳定、准备提交时”，所以一批里的每个独立缺陷都要在提交前各跑一次第 1–2 层。
+开发时的测试分层（第 0 层定向测试、第 1 层 `npm run check` 静态检查、第 2 层受影响模块测试、第 3 层构建加完整 `npm test`、第 4 层真实产品路径）和各层的运行时机，写在 [ADR 0052 的测试层级](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0052-third-production-host-acceptance-exception.md#layers)里，由 [ADR 0056](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0056-cloud-server-also-test-host.md#unchanged) 原样沿用。其中第 1 层是“每次提交之前”，第 2 层是“一个缺陷或功能修稳定、准备提交时”，所以一批里的每个独立缺陷都要在提交前各跑一次第 1–2 层。
 
 2026-10-18，R2-P2（同一轮的 `bash` 和写文件工具复用常驻沙箱）的第 4 层发现 4 个产品缺陷，按缺陷分别提交。缺陷 1 提交前的第 1–2 层在 Hermes（局域网里的 Linux 测试服务器）上用了 56 分钟，缺陷 4 用了 20 分钟；这期间 Hermes 上唯一的测试检出目录被占着，opencode（负责写代码和跑测试的编程代理）的下一个缺陷的修前修后运行只能排队。Claude 分析这次进度慢的原因后，建议一批缺陷叠好后只跑一次第 1–2 层，用户在 G146 同意（原话记在长任务目标文件 `.agents/tasks/round2-tool-execution/goal.md`）。
 
@@ -44,7 +44,7 @@ date: "2026-10-18"
 3. **失败就回到第 0 层。** 第 1–2 层失败时，回到出问题的那个缺陷的第 0 层修好，再对新的最上面一版重跑第 1–2 层。
 4. **提交说明照实写。** 每个提交的说明写明第 1–2 层跑在哪一版上（叠好的补丁组合的 SHA-256，或最上面那个提交），并写明这个提交本身没有单独跑过第 1–2 层。
 5. **单个缺陷或单个功能不变。** 一批里只有一项时，仍是提交前跑一次第 1–2 层。
-6. **第 3 层不变。**（2026-10-21 补充：哪些改动要单独跑完整第 3 层，由 [ADR 0064](0064-layer3-individual-trigger-scope.md) 细化——只在检查阶段运行的 `scripts/ci/` 脚本改成“对应检查步骤加 tooling 项目”，其余照本条。） 第 3 层仍在一批的最终版本上跑一次；[提前运行完整测试的情况](0052-third-production-host-acceptance-exception.md#early-full)（例如改动涉及 Agent Service 与 Execution Worker 之间的通信协议）仍然适用：这样的改动放在一批的最上面，批次的第 3 层就是它自己的第 3 层。
+6. **第 3 层不变。**（2026-10-21 补充：哪些改动要单独跑完整第 3 层，由 [ADR 0064](0064-layer3-individual-trigger-scope.md) 细化——只在检查阶段运行的 `scripts/ci/` 脚本改成“对应检查步骤加 tooling 项目”，其余照本条。） 第 3 层仍在一批的最终版本上跑一次；[提前运行完整测试的情况](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0052-third-production-host-acceptance-exception.md#early-full)（例如改动涉及 Agent Service 与 Execution Worker 之间的通信协议）仍然适用：这样的改动放在一批的最上面，批次的第 3 层就是它自己的第 3 层。
 
 <a id="unchanged"></a>
 
@@ -52,11 +52,11 @@ date: "2026-10-18"
 
 除上一节外，ADR 0056 的全部决定不变，直接按它的各节执行：
 
-- 测试和部署的位置：[ADR 0056 的测试和部署的位置](0056-cloud-server-also-test-host.md#hosts)。
-- 云服务器上的测试账号 `himawari-ci` 和它的限制：[ADR 0056 的云服务器测试账号](0056-cloud-server-also-test-host.md#cloud-test-host)。
-- 生产部署的限定主机验收：[ADR 0056 的限定主机验收](0056-cloud-server-also-test-host.md#first-install-acceptance)。
-- Hermes 的连接和目录：[ADR 0056 的 Hermes 连接和目录](0056-cloud-server-also-test-host.md#storage)。
-- 时限不放宽、其他各层的触发时机、提交推送：[ADR 0056 的不变部分](0056-cloud-server-also-test-host.md#unchanged)。
+- 测试和部署的位置：[ADR 0056 的测试和部署的位置](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0056-cloud-server-also-test-host.md#hosts)。
+- 云服务器上的测试账号 `himawari-ci` 和它的限制：[ADR 0056 的云服务器测试账号](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0056-cloud-server-also-test-host.md#cloud-test-host)。
+- 生产部署的限定主机验收：[ADR 0056 的限定主机验收](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0056-cloud-server-also-test-host.md#first-install-acceptance)。
+- Hermes 的连接和目录：[ADR 0056 的 Hermes 连接和目录](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0056-cloud-server-also-test-host.md#storage)。
+- 时限不放宽、其他各层的触发时机、提交推送：[ADR 0056 的不变部分](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0056-cloud-server-also-test-host.md#unchanged)。
 
 [↑ 返回阅读导航](#contents)
 
@@ -88,7 +88,7 @@ date: "2026-10-18"
 
 ## 关联文档
 
-- 前序决定：[ADR 0056](0056-cloud-server-also-test-host.md)、[ADR 0052 的测试层级](0052-third-production-host-acceptance-exception.md#layers)。
+- 前序决定：[ADR 0056](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0056-cloud-server-also-test-host.md)、[ADR 0052 的测试层级](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0052-third-production-host-acceptance-exception.md#layers)。
 - 更早的测试位置和测试时机决定（ADR 0038、0041–0047、0049–0052）原先由 ADR 0056 取代，现在一并由本 ADR 取代：文档校验要求取代者必须有效，所以它们的 `superseded_by` 都改指向本 ADR，内容不变。
 - 当前架构：[SOURCE: docs/architecture-v0.1.md]
 

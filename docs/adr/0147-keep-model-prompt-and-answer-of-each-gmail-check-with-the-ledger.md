@@ -83,7 +83,7 @@ date: "2026-11-01"
 
 - [ADR 0143：决策账本](0143-decision-ledger-for-model-gate-decisions.md)
 - [ADR 0106：主动闭环第一刀（只读 Gmail）](0106-proactive-loop-v1-gmail-read-only.md)
-- [Gmail 主动检查设计规格](../execution/specs/2026-10-29-proactive-loop-v1-gmail-design.md)
+- [Gmail 主动检查设计规格](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/execution/specs/2026-10-29-proactive-loop-v1-gmail-design.md)
 - [产品愿景 v2.2](../product-vision.md)
 
 [返回目录](#contents)

@@ -44,4 +44,4 @@ Agent 可以分析问题、生成候选补丁、在隔离环境运行测试和�
 
 ## Links
 
-- [SOURCE: docs/prd-v0.1.md#agent-topology-and-capabilities]
+- [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/prd-v0.1.md#agent-topology-and-capabilities]

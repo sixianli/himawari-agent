@@ -44,5 +44,5 @@ Himawari Agent 必须同时支持网页、桌面、命令行、移动设备、�
 
 ## Links
 
-- [SOURCE: docs/prd-v0.1.md#goals]
-- [SOURCE: docs/prd-v0.1.md#scope]
+- [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/prd-v0.1.md#goals]
+- [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/prd-v0.1.md#scope]

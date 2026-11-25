@@ -336,7 +336,7 @@ def report(problems, label):
             print(f'  {path}{suffix}', file=sys.stderr)
     if problems:
         print('Run these files in Layer 0 and declare each on its own "Layer-0-tests: <path>" line in the commit message', file=sys.stderr)
-        print('(docs/adr/0066-layer0-related-tests-declared.md; docs/lessons.md#layer0-related-tests).', file=sys.stderr)
+        print('(.agents/instructions/test-trigger-timing.md; docs/lessons.md#layer0-related-tests).', file=sys.stderr)
 
 
 def head_base():
@@ -358,7 +358,7 @@ def read_message(path):
 
 def commit_msg(message_file):
     if git('rev-parse', '-q', '--verify', 'MERGE_HEAD', check=False).strip():
-        print('L0_RELATED_TESTS_SKIPPED_MERGE commit: merge commits are not checked (ADR 0066)', file=sys.stderr)
+        print('L0_RELATED_TESTS_SKIPPED_MERGE commit: merge commits are not checked (test-trigger-timing.md)', file=sys.stderr)
         return 0
     message = read_message(message_file)
     base = head_base()
@@ -373,7 +373,7 @@ def commit_msg(message_file):
 def check_commit(commit, message=None):
     parents = git('rev-list', '--parents', '-n', '1', commit).split()[1:]
     if len(parents) > 1:
-        print(f'L0_RELATED_TESTS_SKIPPED_MERGE {commit[:12]}: merge commits are not checked (ADR 0066)', file=sys.stderr)
+        print(f'L0_RELATED_TESTS_SKIPPED_MERGE {commit[:12]}: merge commits are not checked (test-trigger-timing.md)', file=sys.stderr)
         return []
     if message is None:
         message = git('show', '-s', '--format=%B', commit)

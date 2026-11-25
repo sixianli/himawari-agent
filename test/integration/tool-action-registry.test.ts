@@ -671,7 +671,7 @@ it("[ADR-0285] REVERSE: the same external-event reminder asks when the reminder 
   }
 });
 
-it("[ADR-0278] lets a task the owner agreed to set a reminder when nothing external was read, without marking the run", async () => {
+it("[ADR-0285] lets a task the owner agreed to set a reminder when nothing external was read, without marking the run", async () => {
   const s = await setup({ sourceType: "external_event", ownerApprovedTask: true });
   try {
     const set = s.call("reminder.set", "call:approved", {
@@ -686,7 +686,7 @@ it("[ADR-0278] lets a task the owner agreed to set a reminder when nothing exter
   }
 });
 
-it("[ADR-0278] asks the owner, instead of refusing, when a task the owner agreed to writes after reading external content", async () => {
+it("[ADR-0285] asks the owner, instead of refusing, when a task the owner agreed to writes after reading external content", async () => {
   const s = await setup({
     sourceType: "external_event",
     ownerApprovedTask: true,

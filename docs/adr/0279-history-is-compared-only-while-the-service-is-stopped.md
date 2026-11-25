@@ -34,7 +34,7 @@ Andy 2026-11-15 的要求：找根因，不打补丁，也不做一次性豁免�
 ## 前提
 
 1. 服务停着时，12 张历史表已经连续按“整表摘要完全相等”比较：`scripts/delivery-mode/packet-template/maintenance/P-readback-design.md` 的“历史不变的比较链”第 1 到 4 条，最后一次是 `scripts/delivery-mode/packet-template/systemd/S7-switch-start-readback.py` 里换服务定义和启动新版本之前的 `if upgraded_state['history'] != state['history']: raise …SWITCH_HISTORY_CHANGED`。出包时迁移改历史表会被 `make-packet.py` 的 `PACKET_MIGRATION_TOUCHES_PRESERVED_TABLES` 拒绝。I-108 里这些检查都通过了。
-2. 运行中的服务合法地改和删这些表的老行：`packages/persistence-sqlite/src` 里对 `runs`、`threads`、预算两张表、模型调用记录、对话检查点、沙箱执行记录都有 UPDATE，`runs`、`threads`、`sandbox_execution_records` 另有 DELETE；[ADR 0277](0277-the-system-deletes-expired-think-threads.md) 的决定 2 还让服务启动后每小时删一次到期的“想一想”对话。12 张表里只有 4 张有 `revision` 列（runs、threads、run_coordination_checkpoints、model_budget_accounts，我把 112 个迁移在内存 SQLite 里跑完后核的）。
+2. 运行中的服务合法地改和删这些表的老行：`packages/persistence-sqlite/src` 里对 `runs`、`threads`、预算两张表、模型调用记录、对话检查点、沙箱执行记录都有 UPDATE，`runs`、`threads`、`sandbox_execution_records` 另有 DELETE；[ADR 0277](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0277-the-system-deletes-expired-think-threads.md) 的决定 2 还让服务启动后每小时删一次到期的“想一想”对话。12 张表里只有 4 张有 `revision` 列（runs、threads、run_coordination_checkpoints、model_budget_accounts，我把 112 个迁移在内存 SQLite 里跑完后核的）。
 3. 旧的 S8 逐行比对只允许两处例外：`sandbox_execution_records.recovery_json`，以及迁移 `thread_origin` 加的 `threads.origin` 列；其余列一变就以 `HISTORY_ROW_CHANGED` 失败（`3cbd7735` 的 `P-readback-design.md` 第 42 行，本 PR 删掉了它）。
 
 <a id="decision"></a>

@@ -29,7 +29,7 @@ date: "2026-10-28"
 
 ## 背景
 
-[产品愿景](../product-vision.md#jarvis-test) 的 Jarvis Test 有 10 个场景，[ADR 0101](0101-adopt-product-vision-v2-1.md) 的评审按代码核对后认为，现在只有三条能直接写成自动评测：
+[产品愿景](../product-vision.md#jarvis-test) 的 Jarvis Test 有 10 个场景，[ADR 0101](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0101-adopt-product-vision-v2-1.md) 的评审按代码核对后认为，现在只有三条能直接写成自动评测：
 
 - **#1 跨时间记忆纠正**：三周前纠正过的偏好，今天不提醒也照新的做，旧偏好不再出现。
 - **#6 状态判断纪律**：退款、预订、申请这类问题，先读完全文、先搜索再下结论；证据不够时说“未确认”。
@@ -200,7 +200,7 @@ Jarvis Test 量的是**拼装层和行为**：
   - [BL-20261028-006](../backlog/BL-20261028-006-jarvis-test-memory-correction-negative-cases.md)：#1 补“不该套用”的负例；
   - 等真模型层稳定通过后，按 [BL-20261028-003](../backlog/BL-20261028-003-jarvis-test-eval-first-three.md) 的原计划把它转成提交前的回归评测。
 - 2026-10-29 跟进：Andy 定下不再调用 Claude、OpenAI 等贵模型，第二层裁判改为 `alibaba/qwen3.8-flash`，模型名集中到 `test/fixtures/jarvis-test/models.json`，见 [ADR 0111](0111-no-expensive-models-anywhere.md)；同日 Andy 改选 `zai/glm-5.3-flash`（见 ADR 0111 后果一节的跟进）。
-- 2026-10-28 跟进：[ADR 0104](0104-turn-material-in-last-user-message.md) 把“本轮请求时间”从系统指令移到运行时发出的最后一条用户消息里。Jarvis Test 的运行时同样按用例时区换算，用例日期照旧经请求时间传给模型；系统指令里不再出现日期。
+- 2026-10-28 跟进：[ADR 0104](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0104-turn-material-in-last-user-message.md) 把“本轮请求时间”从系统指令移到运行时发出的最后一条用户消息里。Jarvis Test 的运行时同样按用例时区换算，用例日期照旧经请求时间传给模型；系统指令里不再出现日期。
 
 [返回阅读导航](#contents)
 
@@ -209,7 +209,7 @@ Jarvis Test 量的是**拼装层和行为**：
 ## 关联文档
 
 - [产品愿景 Jarvis Test](../product-vision.md#jarvis-test)
-- [ADR 0101 采纳产品愿景 v2.1](0101-adopt-product-vision-v2-1.md)
+- [ADR 0101 采纳产品愿景 v2.1](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0101-adopt-product-vision-v2-1.md)
 - [BL-20261028-003 前三条自动评测](../backlog/BL-20261028-003-jarvis-test-eval-first-three.md)
 - [案例 39](../engineering-casebook.md#case-jarvis-test-evals)
 - [ADR 0111 不再调用贵模型](0111-no-expensive-models-anywhere.md)
