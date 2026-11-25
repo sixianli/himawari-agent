@@ -43,7 +43,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 3. **找不到原话的记忆显示“来源已不可查”**，来源对话已被删除的沿用原有的“来源对话已删除”，整理记忆产生的沿用“整理记忆”，手动添加的沿用“你手动添加”。
 4. **提醒工具创建的记忆单独一类“提醒创建，无原话”**（推荐的做法，已采用）：这类记忆的 `sourceRefs` 是合成的 `memory-content:reminder:*`，本来就不对应任何消息，把它们算作“来源已不可查”会虚增数字。判定：有来源对话，匹配不到消息，并且全部引用都以 `memory-content:reminder:` 开头。详情里仍保留“来源对话”入口，打开那次对话（不定位句子）。放弃的另一种做法是只加类别、不留入口：提醒是在那次对话里说出来的，入口有用，没有理由拿掉。
 5. **导入的记忆明确写“导入自 Codex / 其他 AI / Himawari 导出文件”，不假装能跳**，计入单独的“没有原话”类。
-6. **条数的定义**（记忆页顶部显示，只读脚本 `scripts/operations/memory-source-report.mjs` 用同一套分类）：只数使用中和已归档的记忆；类别互不重叠，依次判断：属于某个导入批次（导入）、手动添加、有来源对话且能匹配到消息（能跳到原话）、有来源对话但引用全是提醒的合成引用（提醒创建）、有来源对话但匹配不到（来源已不可查）、没有来源对话且最早的历史记录标了来源已删（来源对话已删除）、其余（整理记忆产生的）。（2026-11-11 起，[ADR 0225](0225-external-agents-propose-memory-with-in-client-confirmation.md)：在手动添加之后、能跳到原话之前多判断一类「外部 agent 提议、主人确认的」，按记忆编号前缀 `memory:mcp:` 判断。后续：[ADR 0226](0226-external-agents-propose-rules-through-the-rule-proposal-flow.md) 把外部提议的规则类记忆（前缀 `memory:rule:mcp:`）也归为这一类。）
+6. **条数的定义**（记忆页顶部显示，只读脚本 `scripts/operations/memory-source-report.mjs` 用同一套分类）：只数使用中和已归档的记忆；类别互不重叠，依次判断：属于某个导入批次（导入）、手动添加、有来源对话且能匹配到消息（能跳到原话）、有来源对话但引用全是提醒的合成引用（提醒创建）、有来源对话但匹配不到（来源已不可查）、没有来源对话且最早的历史记录标了来源已删（来源对话已删除）、其余（整理记忆产生的）。（2026-11-11 起，[ADR 0225](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0225-external-agents-propose-memory-with-in-client-confirmation.md)：在手动添加之后、能跳到原话之前多判断一类「外部 agent 提议、主人确认的」，按记忆编号前缀 `memory:mcp:` 判断。后续：[ADR 0226](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0226-external-agents-propose-rules-through-the-rule-proposal-flow.md) 把外部提议的规则类记忆（前缀 `memory:rule:mcp:`）也归为这一类。）
 
 <a id="differences"></a>
 

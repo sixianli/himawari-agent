@@ -4,7 +4,7 @@ document_type: adr
 decision_status: accepted
 supersedes: "https://github.com/sixianli/himawari-agent/blob/193794f098a53fdd0ee93f37d1f1de630ff6c7c1/docs/adr/0272-owner-proposals-join-the-data-export-format-v4.md"
 superseded_by: ""
-amends: "docs/adr/0246-external-proposals-join-the-data-export-and-web.md"
+amends: "https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0246-external-proposals-join-the-data-export-and-web.md"
 date: "2026-11-25"
 covers: ""
 verified_at: "bac37972f7ca3e74cb3eee53ce278a6e595a7705"
@@ -58,5 +58,5 @@ verified_at: "bac37972f7ca3e74cb3eee53ce278a6e595a7705"
 
 - 旧的 v4 导出文件不能再导入。
 - 上线前要从生产配置里删掉 `runPolicy.ownerProposals`（如果有），否则新版起不来。
-- [ADR 0246](0246-external-proposals-join-the-data-export-and-web.md) 里的版本号是当时的，现行格式以本 ADR 为准。
+- [ADR 0246](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0246-external-proposals-join-the-data-export-and-web.md) 里的版本号是当时的，现行格式以本 ADR 为准。
 - 事故清单不加行：删功能，不是事故修复。

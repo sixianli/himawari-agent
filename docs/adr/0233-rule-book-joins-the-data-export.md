@@ -95,6 +95,6 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 - [ADR 0211](0211-hard-rule-points-back-to-its-rule-memory.md)：规则记着来源记忆、待重审。
 - [ADR 0213](0213-owner-sentence-becomes-a-standing-rule.md)：一句话变规则。
 - 代码：`packages/persistence-sqlite/src/data-export/rules.ts`、`export.ts`、`verify.ts`、`import.ts`。
-- [ADR 0246](0246-external-proposals-join-the-data-export-and-web.md)：其他 agent 的提议进入导出，格式升到 v3（后续）。
+- [ADR 0246](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0246-external-proposals-join-the-data-export-and-web.md)：其他 agent 的提议进入导出，格式升到 v3（后续）。
 
 [返回阅读导航](#contents)

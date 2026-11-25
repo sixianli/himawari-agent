@@ -82,6 +82,6 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ## 关联文档
 
 - [ADR 0106：主动闭环 v1 第一刀：Gmail 只读](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0106-proactive-loop-v1-gmail-read-only.md)
-- [ADR 0227：对外 MCP 入口改为校验 Cloudflare Access 登录凭证](0227-mcp-entry-checks-cloudflare-access-sign-in.md)
+- [ADR 0227：对外 MCP 入口改为校验 Cloudflare Access 登录凭证](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0227-mcp-entry-checks-cloudflare-access-sign-in.md)
 
 [返回阅读导航](#contents)

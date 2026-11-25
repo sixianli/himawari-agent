@@ -5736,7 +5736,7 @@ Andy 想让 Muse（他的另一个 agent）、Claude Code 和 Claude App 通过 
 
 **相关 ADR/PR**
 
-[ADR 0228](adr/0228-external-memory-proposals-wait-for-owner-confirmation.md)（部分取代 [ADR 0225](adr/0225-external-agents-propose-memory-with-in-client-confirmation.md) 决定 2、3、6）、迁移 0093、PR #389（同一任务的 Cloudflare 登录部分）。
+[ADR 0228](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0228-external-memory-proposals-wait-for-owner-confirmation.md)（部分取代 [ADR 0225](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0225-external-agents-propose-memory-with-in-client-confirmation.md) 决定 2、3、6）、迁移 0093、PR #389（同一任务的 Cloudflare 登录部分）。
 
 **面试 30 秒版**
 
@@ -5810,7 +5810,7 @@ Himawari 的每个关键判断（读完邮件提醒没提醒、记忆存没存�
 - 范围。外部读取能读到 sensitive（敏感）级别的记忆，对外只按格式遮密码、验证码、证件号、银行卡号这类值，不按级别整条隐藏（`production-memory-recall.ts` 用 `modelVisibleClassifications()`，即 public、private、sensitive 三级）。这一条是方案审核时对着代码查出来的；此前的文档没有把它当作对外暴露的范围来处理。
 
 **我们的方案**
-[ADR 0242](adr/0242-external-agents-join-the-memory-hub-through-one-entry.md)。门仍然只有 MCP 一个；读一个动作（`start_here`，一次给出主人概况、习惯、规则摘要和今天的情况），推一个动作（`sync_memories`，对方把自己已经记好的笔记成批推过来，可以重复推，改了认得出；装了助手程序的那一档，删了也认得出）。触发按对方的能力分四档：能跑钩子（agent 在固定时刻自动执行的一条命令）的，装一个只读的小助手程序，开场自动读、每句话自动搜、对话结束自动推，全程不经对方模型；没有钩子的降档，如实标为“尽力而为”或手动。身份改成主人在网页上建接入，带密钥的专属网址定身份，读取级别默认到 private。关于主人的内容先进待确认，项目笔记单独存。
+[ADR 0242](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0242-external-agents-join-the-memory-hub-through-one-entry.md)。门仍然只有 MCP 一个；读一个动作（`start_here`，一次给出主人概况、习惯、规则摘要和今天的情况），推一个动作（`sync_memories`，对方把自己已经记好的笔记成批推过来，可以重复推，改了认得出；装了助手程序的那一档，删了也认得出）。触发按对方的能力分四档：能跑钩子（agent 在固定时刻自动执行的一条命令）的，装一个只读的小助手程序，开场自动读、每句话自动搜、对话结束自动推，全程不经对方模型；没有钩子的降档，如实标为“尽力而为”或手动。身份改成主人在网页上建接入，带密钥的专属网址定身份，读取级别默认到 private。关于主人的内容先进待确认，项目笔记单独存。
 
 **方案讨论与备选**
 
@@ -5835,7 +5835,7 @@ Himawari 的每个关键判断（读完邮件提醒没提醒、记忆存没存�
 未测量：写本案例时只有决定，还没有实施。讨论费用 0.26 美元，出处是 `.agents/reviews/topic-p5-memory-hub/usage.jsonl`。实施后补“自动读取、自动同步各多少次，空手而归多少次”。
 
 **相关 ADR/PR**
-[ADR 0242](adr/0242-external-agents-join-the-memory-hub-through-one-entry.md)；被它改掉部分决定的 [ADR 0219](adr/0219-read-only-mcp-entry-with-static-token.md)、[ADR 0225](adr/0225-external-agents-propose-memory-with-in-client-confirmation.md)、[ADR 0226](adr/0226-external-agents-propose-rules-through-the-rule-proposal-flow.md)、[ADR 0227](adr/0227-mcp-entry-checks-cloudflare-access-sign-in.md)；PR #411。
+[ADR 0242](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0242-external-agents-join-the-memory-hub-through-one-entry.md)；被它改掉部分决定的 [ADR 0219](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0219-read-only-mcp-entry-with-static-token.md)、[ADR 0225](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0225-external-agents-propose-memory-with-in-client-confirmation.md)、[ADR 0226](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0226-external-agents-propose-rules-through-the-rule-proposal-flow.md)、[ADR 0227](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0227-mcp-entry-checks-cloudflare-access-sign-in.md)；PR #411。
 
 **面试 30 秒版**
 “我给个人 agent 开了 MCP 入口，想让别的 AI 都来读写同一份记忆，做完才发现入口不等于会被用：读和存都靠对方模型自觉，身份是自报的，敏感记忆也读得到。我重做了方案：读和推各一个动作，能跑钩子的客户端装一个只读的小助手，开场自动读、结束自动把它记的笔记推过来；每个接入由主人建、有自己的密钥和读取上限；不采集对话原文，所以不花模型的钱。方案让两个低价模型独立审了一遍，查出我原稿六处会出错，花了 0.26 美元。”
@@ -5877,7 +5877,7 @@ Himawari 整理记忆时会从几条记忆推出一条新结论（`reflect`）�
 - 方案讨论费用 0.48 美元，出处是 `/mnt/project-files/p4-1-correction-propagation/integrated-plan.md` 开头。
 
 **相关 ADR/PR**
-[ADR 0232](adr/0232-memory-corrections-flag-derived-memories-and-recheck-rules.md)；被它补充的 [ADR 0211](adr/0211-hard-rule-points-back-to-its-rule-memory.md)、[ADR 0219](adr/0219-read-only-mcp-entry-with-static-token.md)；迁移 0095。
+[ADR 0232](adr/0232-memory-corrections-flag-derived-memories-and-recheck-rules.md)；被它补充的 [ADR 0211](adr/0211-hard-rule-points-back-to-its-rule-memory.md)、[ADR 0219](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0219-read-only-mcp-entry-with-static-token.md)；迁移 0095。
 
 **面试 30 秒版**
 “我的个人 agent 会从几条记忆推出新结论，主人的硬规则也挂在某条记忆上。主人改了一条记忆，下游的结论和规则还按旧的走。我让数据库触发器在同一事务里标直接下游，程序再沿依据链展开，因为 SQLite 触发器里不能递归；规则由模型重读来源后程序比参数，对不上就暂停、给建议值，模型挂了不停规则。主人每次处理都记进决策记录，周报算‘标了多少、认可多少’，样本不到 5 条不出比例。”

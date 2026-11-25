@@ -3,7 +3,7 @@ status: active
 document_type: adr
 decision_status: accepted
 supersedes: ""
-amends: "docs/adr/0211-hard-rule-points-back-to-its-rule-memory.md, docs/adr/0219-read-only-mcp-entry-with-static-token.md"
+amends: "docs/adr/0211-hard-rule-points-back-to-its-rule-memory.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0219-read-only-mcp-entry-with-static-token.md"
 superseded_by: ""
 date: "2026-11-12"
 covers: "packages/persistence-sqlite/src/sqlite-correction-review-operations.ts, packages/persistence-sqlite/src/sqlite-memory-consolidation-operations.ts"
@@ -94,7 +94,7 @@ Himawari 的记忆不是孤立的：整理记忆（“做梦”）时，模型�
 - 迁移 0095 重建 `decision_ledger` 及引用它的全部子表（含 0091 的 `decision_prereviews`）、`rule_book_rules`、`rule_book_history`、`model_usage_observations`，新增 `memory_review_items` 和两个触发器，删掉 0087 的两个旧触发器。迁移不可逆，回退要从迁移前的快照恢复。
 - 规则核对是新的后台模型调用，只在来源记忆变化时发生，每条最多 1 次成功调用加 3 次失败重试，用量按用途 `rule-review` 记在模型用量里；它不占邮件检查的每日费用上限。没有配置邮件检查的部署不会自动核对，规则停在待重审并照常执行（已暂停的保持暂停），硬规则只在查邮件时起作用，这种部署上清单写的“系统会在查邮件前自动核对”因为没有查邮件而不会发生。
 - 网关新增 `memory.review.read`、`memory.review.respond`、`memory.review.reportMissed`；周报快照多一个 `correction` 字段。
-- 对 [ADR 0219](0219-read-only-mcp-entry-with-static-token.md)：MCP `rule_book` 里规则的 `status` 可以是 `suspended`，此时 `enforced` 为假。
+- 对 [ADR 0219](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0219-read-only-mcp-entry-with-static-token.md)：MCP `rule_book` 里规则的 `status` 可以是 `suspended`，此时 `enforced` 为假。
 - 本 ADR 不改规则类记忆那条给模型看的文字（ADR 0211 决定 5 说的软偏好路径），规则暂停时这条文字是否也要拿掉，会改变发给模型的内容，另行出方案。
 
 <a id="references"></a>
@@ -102,6 +102,6 @@ Himawari 的记忆不是孤立的：整理记忆（“做梦”）时，模型�
 ## 关联文档
 
 - [ADR 0211：硬规则指回它的规则记忆](0211-hard-rule-points-back-to-its-rule-memory.md)
-- [ADR 0219：只读 MCP 入口](0219-read-only-mcp-entry-with-static-token.md)
+- [ADR 0219：只读 MCP 入口](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0219-read-only-mcp-entry-with-static-token.md)
 - [ADR 0209：规则手册](0209-rule-book-with-cel-expressions-and-judge.md)
 - [工程案例库](../engineering-casebook.md)
