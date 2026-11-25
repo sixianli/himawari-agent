@@ -150,7 +150,6 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(settings.tuning[.think]?.items.count, 2)
         XCTAssertFalse(settings.tuning[.think]?.shown.first?.name.isEmpty ?? true)
         XCTAssertFalse(settings.tuning[.think]?.shown.first?.unit.isEmpty ?? true)
-        XCTAssertNil(settings.tuning[.delivery])
         XCTAssertEqual(settings.tuning[.think]?.items.first?.step, 10)
         try await settings.changeTuning(.think, key: "queueLimit", value: 30, reason: "改")
         try await settings.changeTuning(.think, key: "queueLimit", value: nil, reason: "改")

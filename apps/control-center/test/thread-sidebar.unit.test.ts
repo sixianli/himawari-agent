@@ -100,6 +100,30 @@ describe("thread sidebar navigation", () => {
     expect(markup).not.toContain("新建对话");
   });
 
+  it("marks the main conversation when it has background programs or needs attention", () => {
+    const main = thread("main", null);
+    const mainLink = (markup: string) =>
+      markup.match(/<a[^>]*href="\/threads\/main"[^>]*>.*?<\/a>/)?.[0] ?? "";
+    const running = render([main], false, true, {
+      mainThreadId: "main",
+      runningThreadIds: ["main"],
+    });
+    expect(mainLink(running)).toContain('class="thread-running" role="img"');
+    const pending = render([main], false, true, {
+      mainThreadId: "main",
+      pendingThreadIds: ["main"],
+      runningThreadIds: ["main"],
+    });
+    expect(mainLink(pending)).toContain('class="thread-attention" role="img"');
+    expect(mainLink(pending)).not.toContain("thread-running");
+    const quiet = render([main], false, true, {
+      mainThreadId: "main",
+      runningThreadIds: ["recent"],
+    });
+    expect(mainLink(quiet)).not.toContain("thread-running");
+    expect(mainLink(quiet)).not.toContain("thread-attention");
+  });
+
   it("shows quiet placeholders only before the first collection arrives", () => {
     const markup = render([], true, false);
     expect(markup).toContain('class="thread-loading-skeleton"');

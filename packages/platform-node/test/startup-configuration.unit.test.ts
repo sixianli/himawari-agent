@@ -5,7 +5,6 @@ import path from "node:path";
 import {
   DEFAULT_HOME_FEED,
   DEFAULT_SEARCH_ASK,
-  DELIVERY_TIMING_DEFAULTS,
   DEVICE_HARD_LIMIT_KEYS,
   IMPORT_DUPLICATE_DEFAULTS,
   PERCEPTION_CONFIGURATION_DEFAULTS,
@@ -335,45 +334,18 @@ describe("strict product configuration", () => {
       expect(() => parseProductConfiguration(withAddressee(invalid), at)).toThrow();
   });
 
-  it("[IOS-4] accepts the delivery timing decision model only with a model, a key, a price and values in range", () => {
-    const withTiming = (deliveryTiming: unknown) => {
-      const input = config(path.join(tmpdir(), "himawari-delivery-timing"));
-      input["runPolicy"] = {
-        version: "policy-delivery-timing",
-        systemInstruction: "test",
-        memoryLimit: 10,
-        maxSelectedMemories: 1,
-        deliveryTiming,
-      };
-      return input;
+  it("accepts the retired deliveryTiming key and drops it from the run policy", () => {
+    const input = config(path.join(tmpdir(), "himawari-delivery-timing"));
+    input["runPolicy"] = {
+      version: "policy-delivery-timing",
+      systemInstruction: "test",
+      memoryLimit: 10,
+      maxSelectedMemories: 1,
+      deliveryTiming: { model: "typesafe-ai/jev", busyAtLeastPermille: 850 },
     };
-    const at = "2026-11-15T00:00:00.000Z";
-    const base = {
-      model: "typesafe-ai/jev",
-      secretRef: "vercel-ai-gateway-api-key",
-      inputMicrosPerMillionTokens: 42_000,
-    };
-    expect(parseProductConfiguration(withTiming(base), at).runPolicy?.deliveryTiming).toEqual({
-      ...DELIVERY_TIMING_DEFAULTS,
-      ...base,
-    });
-    expect(
-      parseProductConfiguration(
-        withTiming({ ...base, busyAtLeastPermille: 850, recheckSeconds: 120 }),
-        at,
-      ).runPolicy?.deliveryTiming,
-    ).toMatchObject({ busyAtLeastPermille: 850, recheckSeconds: 120 });
-    const { model: _model, ...withoutModel } = base;
-    for (const invalid of [
-      withoutModel,
-      { ...base, inputMicrosPerMillionTokens: 0 },
-      { ...base, busyAtLeastPermille: 400 },
-      { ...base, recheckSeconds: 10 },
-      { ...base, maximumDeferSeconds: 90_000 },
-      { ...base, baseUrl: "https://example.test" },
-      "on",
-    ])
-      expect(() => parseProductConfiguration(withTiming(invalid), at)).toThrow();
+    const policy = parseProductConfiguration(input, "2026-11-15T00:00:00.000Z").runPolicy;
+    expect(policy?.retiredKeys).toEqual(["deliveryTiming"]);
+    expect(policy && "deliveryTiming" in policy).toBe(false);
   });
 
   it("accepts a Magpie primary on a loopback address without gateway routing", () => {

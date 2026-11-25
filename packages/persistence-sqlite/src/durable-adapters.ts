@@ -13,7 +13,6 @@ import type {
   CapabilityRegistryStorePort,
   ConversationTurnStorePort,
   DecisionLedgerPort,
-  DeliveryTimingSettingsStorePort,
   DeviceActionStorePort,
   ExecutionEnvironmentStorePort,
   ExternalMemoryProposalStorePort,
@@ -1200,13 +1199,6 @@ export class SqliteDurableAdapters {
       processedSince: (input) => this.context.read("proactive.processedSince", input),
     });
   }
-  deliveryTimingSettings(): DeliveryTimingSettingsStorePort {
-    return Object.freeze<DeliveryTimingSettingsStorePort>({
-      read: (input) => this.context.read("deliveryTimingSettings.read", input),
-      write: (input) => this.context.write("deliveryTimingSettings.write", input),
-    });
-  }
-
   ownerPreferences(): OwnerPreferencesStorePort {
     return Object.freeze<OwnerPreferencesStorePort>({
       read: (input) => this.context.read("ownerPreferences.read", input),
@@ -1395,7 +1387,6 @@ export class SqliteDurableAdapters {
       listDue: (input) => this.context.read("webPush.listDue", input),
       listRecent: (input) => this.context.read("webPush.listRecent", input),
       deferItem: (input) => this.context.write("webPush.deferItem", input),
-      recordDeliveryTiming: (input) => this.context.write("webPush.recordDeliveryTiming", input),
       recordAttempt: (input) => this.context.write("webPush.recordAttempt", input),
       recordReactions: (input) => this.context.write("webPush.recordReactions", input),
       listFeedback: (input) => this.context.read("webPush.listFeedback", input),

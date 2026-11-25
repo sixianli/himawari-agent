@@ -146,6 +146,10 @@
   border-radius: 50%;
   animation: thread-running-spin 1s linear infinite;
 }
+.thread-sidebar-main > .thread-attention,
+.thread-sidebar-main > .thread-running {
+  margin-left: auto;
+}
 @keyframes thread-running-spin {
   to {
     transform: rotate(360deg);

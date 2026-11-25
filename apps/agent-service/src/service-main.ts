@@ -15,7 +15,6 @@ import {
   type DataClassification,
   DEFAULT_HOME_URGENCY,
   DEFAULT_PROACTIVE_MEMORY_LIMITS,
-  DELIVERY_TIMING_DEFAULTS,
   DEVICE_CONFIGURATION_DEFAULTS,
   DurableMemoryService,
   defaultDeviceHardLimits,
@@ -118,7 +117,7 @@ import { classifiedThreadTitleReader } from "./classified-thread-title.js";
 import { COMMAND_SILENCE_CHECK_INTERVAL_MS, CommandSilenceWatch } from "./command-silence-watch.js";
 import { ContextExternalContent } from "./context-external-content.js";
 import { createLocalVectorCatchUp } from "./local-vector-catch-up.js";
-import { MacPlacement } from "./mac-placement.js";
+import { MAC_PRESENCE_WINDOW_SECONDS, MacPlacement } from "./mac-placement.js";
 import { OwnerScopeAuthorization } from "./owner-scope-authorization.js";
 import { ProductionApplePush } from "./production-apple-push.js";
 import { createProductionAuthorityLifecycle } from "./production-authority-lifecycle.js";
@@ -132,11 +131,6 @@ import {
   toolResultCharacters,
 } from "./production-conversation-tools.js";
 import { retrievalDegradeRecorder } from "./production-decision-ledger.js";
-import {
-  createDeliveryTimingSource,
-  DeliveryTimingHolder,
-  productionDeliveryTiming,
-} from "./production-delivery-timing.js";
 import { productionDeviceActionAuthorization } from "./production-device-action-authorization.js";
 import { createProductionDeviceActions } from "./production-device-actions.js";
 import { ProductionExecutionAdmissionHandler } from "./production-execution-admission-handler.js";
@@ -745,8 +739,7 @@ export async function startTenantRuntime(
   const macPlacement = new MacPlacement({
     hub: deviceNotificationHub,
     presence: devicePresence,
-    windowMilliseconds: () =>
-      (deliveryTimingHolder?.current() ?? DELIVERY_TIMING_DEFAULTS).macPresenceSeconds * 1000,
+    windowMilliseconds: () => MAC_PRESENCE_WINDOW_SECONDS * 1000,
     nowMilliseconds: () => Date.parse(productionClock().now()),
   });
   let deviceActions: ReturnType<typeof createProductionDeviceActions> | undefined;
@@ -762,7 +755,6 @@ export async function startTenantRuntime(
   let runMemoryEpisodes: MemoryEpisodeService | undefined;
   let requeueStaleMemoryVectors: () => Promise<void> = async () => {};
   let webPush: ProductionWebPush | undefined;
-  let deliveryTimingHolder: DeliveryTimingHolder | undefined;
   let applePush: ProductionApplePush | undefined;
   let applePushSender: ReturnType<typeof createApplePushSender> | undefined;
   let proactive: ProductionProactive | undefined;
@@ -2996,18 +2988,6 @@ export async function startTenantRuntime(
               }),
           });
         }
-        const timingConfiguration = configuration.runPolicy?.deliveryTiming;
-        const timingModel = productionDeliveryTiming(configuration, sources.provider);
-        if (timingModel && timingConfiguration)
-          deliveryTimingHolder = new DeliveryTimingHolder(
-            timingConfiguration,
-            (
-              await pushRepository.deliveryTimingSettings().read({
-                ownerId: configuration.ownerId,
-                agentId: configuration.agentId,
-              })
-            ).overrides,
-          );
         webPush = new ProductionWebPush({
           placement: macPlacement,
           ownerId: configuration.ownerId,
@@ -3110,25 +3090,6 @@ export async function startTenantRuntime(
               const rule = enforceableOwnerRule(row);
               return rule?.gate === "push_delivery" ? [rule] : [];
             }),
-          ...(timingModel && deliveryTimingHolder
-            ? {
-                timing: createDeliveryTimingSource({
-                  model: timingModel,
-                  configuration: deliveryTimingHolder.current,
-                  store: pushRepository.perception(),
-                  scope: {
-                    ownerId: configuration.ownerId,
-                    agentId: configuration.agentId,
-                  },
-                  reserve: async (micros) =>
-                    (await http?.perception.reserveModelCost(
-                      { ownerId: configuration.ownerId, agentId: configuration.agentId },
-                      micros,
-                    )) ?? false,
-                  now: () => Date.parse(clock.now()),
-                }),
-              }
-            : {}),
           onGateFailure: ({ sourceKey }) =>
             writeServiceDiagnostic(errorOutput, {
               component: "agent-service",
@@ -3509,7 +3470,6 @@ export async function startTenantRuntime(
         ...(capabilityReactivation ? { capabilityReactivation } : {}),
         ...(input.listen?.kind === "unix" ? { listenUnixSocketPath: input.listen.path } : {}),
         live,
-        ...(deliveryTimingHolder ? { deliveryTimingSettings: deliveryTimingHolder } : {}),
         webPush: {
           presence: webPushPresence,
           push: webPush,

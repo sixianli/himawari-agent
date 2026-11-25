@@ -877,11 +877,6 @@
     "changedIn": "ADR 0230",
     "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
   },
-  "push.delivery-timing-question": {
-    "sha256": "7a4acf576f5c548096f329256986510d4269229e4b32c822d52f200132c161e9",
-    "changedIn": "ADR 0273",
-    "reason": "推送送达时机：发通知前问判断模型此刻打扰主人是不是不合适"
-  },
   "review.prereview": {
     "sha256": "b4a2529b91a91177aae2b4203f8fe4d23b8135bcc659b73c24ecc8e28a1ecda6",
     "changedIn": "P4-8",

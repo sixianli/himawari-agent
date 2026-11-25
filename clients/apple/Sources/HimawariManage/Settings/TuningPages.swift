@@ -10,7 +10,7 @@ struct TuningListPage: View {
     let open: (String) -> Void
     let back: () -> Void
 
-    private var title: String { kind == .think ? M.thinkTitle : M.notificationsTitle }
+    private var title: String { M.thinkTitle }
 
     var body: some View {
         SettingsPage(gap: SL.pageGap) {
@@ -20,7 +20,7 @@ struct TuningListPage: View {
                     Text(M.tuningDisabled).hmType(DesignTokens.TypeScale.secondary).foregroundStyle(Color.hmMuted)
                         .padding(.horizontal, SL.groupLabelPadding)
                 }
-                SettingsGroup(label: kind == .delivery ? M.deliveryGroup : nil) {
+                SettingsGroup(label: nil) {
                     ForEach(Array(snapshot.shown.enumerated()), id: \.element.id) { index, item in
                         Button { open(item.key) } label: {
                             SettingsRow(
@@ -101,7 +101,7 @@ struct TuningEditPage: View {
                         .disabled(busy || !item.overridden)
                 }
             } else {
-                SheetHeader(title: M.notificationsTitle, leading: .back, action: back)
+                SheetHeader(title: M.thinkTitle, leading: .back, action: back)
                 EmptyStateView(Text(M.loadFailed)).frame(minHeight: DesignTokens.Size.emptyMinHeight)
             }
         }

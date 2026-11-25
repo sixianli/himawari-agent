@@ -503,7 +503,7 @@ export async function qualifyBrowser({
     await page
       .locator(".thread-search-results")
       .getByRole("link")
-      .filter({ hasText: "主对话" })
+      .filter({ hasText: "计划讨论" })
       .first()
       .click();
     await threadSearch.fill("");
