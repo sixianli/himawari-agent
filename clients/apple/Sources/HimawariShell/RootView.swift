@@ -187,6 +187,9 @@ struct MainShell: View {
             senses: model.senses.map { senses in
                 AnyView(SensesView(model: senses) { HandoverEntryRows() })
             },
+            perceptionDeletion: model.senses.map { senses in
+                { (close: @escaping () -> Void) -> AnyView in AnyView(PerceptionDeletionView(model: PerceptionDeletionModel(senses: senses), close: close)) }
+            },
             sensesOn: { model.senses?.status?.senses.count },
             talk: { text in
                 herOpen = false

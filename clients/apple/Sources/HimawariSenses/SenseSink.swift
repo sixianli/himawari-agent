@@ -16,13 +16,15 @@ public final class SenseSink {
     private let mirror: MirrorSync
     private let configuration: () -> DeviceConfiguration?
     private let store: LocalStore
+    private let deletions: PerceptionDeletionSync?
     private var flushing: Task<Void, Never>?
     public private(set) var lastReport: SenseUploadReport?
 
-    public init(queue: PerceptionQueue, mirror: MirrorSync, store: LocalStore, configuration: @escaping () -> DeviceConfiguration?) {
+    public init(queue: PerceptionQueue, mirror: MirrorSync, store: LocalStore, deletions: PerceptionDeletionSync? = nil, configuration: @escaping () -> DeviceConfiguration?) {
         self.queue = queue
         self.mirror = mirror
         self.store = store
+        self.deletions = deletions
         self.configuration = configuration
     }
 
@@ -88,6 +90,7 @@ public final class SenseSink {
 
     public func flush() async {
         guard let configuration = configuration() else { return }
+        await deletions?.sync()
         lastReport = await queue.flush(configuration: configuration, today: Self.today())
     }
 

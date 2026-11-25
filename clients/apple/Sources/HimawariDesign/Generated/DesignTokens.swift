@@ -297,6 +297,17 @@ public enum DesignTokens {
         public static let attachTileIcon: CGFloat = 26
         public static let attachTileIconGap: CGFloat = 8
         public static let attachTitleSize: CGFloat = 18
+        public static let backgroundAlertDot: CGFloat = 6
+        public static let backgroundCardGap: CGFloat = 16
+        public static let backgroundCardHeaderPaddingY: CGFloat = 14
+        public static let backgroundCardPaddingY: CGFloat = 6
+        public static let backgroundPageGap: CGFloat = 20
+        public static let backgroundRowLineGap: CGFloat = 3
+        public static let backgroundRowPaddingY: CGFloat = 12
+        public static let backgroundSectionGap: CGFloat = 8
+        public static let backgroundStepPaddingY: CGFloat = 10
+        public static let backgroundTagPaddingX: CGFloat = 8
+        public static let backgroundTagPaddingY: CGFloat = 3
         public static let codeHeaderPaddingTop: CGFloat = 8
         public static let codePadding: CGFloat = 12
         public static let codeRadius: CGFloat = 12

@@ -268,6 +268,58 @@ import Testing
         #expect(MirrorFields.fit(["allDay": .bool(true)], rules: rules) == nil)
     }
 
+    @Test func deletionsMadeOnTheServerAlsoRemoveWhatThisIPhoneHasNotSentYet() async throws {
+        let exchange = RecordingExchange([])
+        let store = try temporaryStore()
+        let deviceAPI = try api(exchange)
+        let queue = PerceptionQueue(store: store, transport: deviceAPI)
+        let visit = try SenseRecordBuilder.record(SenseObservations.visit(latitude: 34.7, longitude: 135.5, accuracyMeters: nil, arrivedAt: moment, departedAt: nil, placeName: nil), types: Self.types, textLimit: 8)
+        let morning = try SenseRecordBuilder.record(SenseObservations.clipboard(text: "a", sourceApp: nil, at: moment), types: Self.types, textLimit: 8)
+        let later = try SenseRecordBuilder.record(SenseObservations.clipboard(text: "b", sourceApp: nil, at: moment.addingTimeInterval(3600)), types: Self.types, textLimit: 8)
+        let health = try SenseRecordBuilder.record(SenseObservations.motion(.walking, certainty: .high, at: moment.addingTimeInterval(-86_400)), types: Self.types, textLimit: 8)
+        for record in [visit, morning, later, health] { try await queue.add(record) }
+        try await queue.add(TrackPointUpload(at: moment, latitude: 34.7, longitude: 135.5, accuracyMeters: nil, speedMetersPerSecond: nil))
+        let through = HandoverPlanner.timestamp(moment.addingTimeInterval(60))
+        func scope(_ revision: Int, _ kind: String, device: Any = NSNull(), day: Any = NSNull(), types: [String] = [], ids: [String] = [], track: Bool = false) -> [String: Any] {
+            ["revision": revision, "kind": kind, "deviceId": device, "day": day, "types": types, "recordIds": ids, "includesTrack": track, "through": through]
+        }
+        exchange.enqueue(json(["revision": 2, "latest": 3, "scopes": [
+            scope(1, "types", device: "dev_other", types: ["motion.activity"]),
+            scope(2, "records", ids: [visit.id]),
+        ]]))
+        exchange.enqueue(json(["revision": 3, "latest": 3, "scopes": [scope(3, "day", day: "2027-01-15", track: true)]]))
+        let sync = PerceptionDeletionSync(store: store, source: deviceAPI, queue: queue, thisDevice: "dev_this", timeZone: TimeZone(identifier: "UTC")!)
+        #expect(await sync.sync() == 3)
+        #expect(await queue.pendingRecords.map(\.id).sorted() == [later.id, health.id].sorted())
+        #expect(await queue.pendingPoints.isEmpty)
+        #expect(exchange.requests.map { $0.url?.query } == ["after=0", "after=2"])
+        #expect(exchange.requests.allSatisfy { $0.httpMethod == "GET" && $0.url?.path == "/api/device/v1/perception/deletions" })
+        #expect(await sync.revision == 3)
+
+        exchange.enqueue(json(["revision": 3, "latest": 3, "scopes": [[String: Any]]()]))
+        let reopened = PerceptionDeletionSync(store: store, source: deviceAPI, queue: queue, thisDevice: "dev_this", timeZone: TimeZone(identifier: "UTC")!)
+        #expect(await reopened.sync() == 0)
+        #expect(exchange.requests.last?.url?.query == "after=3")
+        #expect(await queue.pendingRecords.count == 2)
+    }
+
+    @Test func deletionTargetsSendEveryFieldTheServerChecks() throws {
+        func encoded(_ target: PerceptionDeletionTarget) throws -> [String: Any] {
+            try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(target)) as? [String: Any])
+        }
+        let records = try encoded(.records(["perception:AAAAAAAAAAAAAAAAAAAAAAAA"]))
+        #expect(records["kind"] as? String == "records")
+        #expect(records["ids"] as? [String] == ["perception:AAAAAAAAAAAAAAAAAAAAAAAA"])
+        #expect(Set(records.keys) == ["kind", "ids", "episodeId", "day", "deviceId", "types"])
+        let day = try encoded(.day("2027-01-15", deviceId: nil))
+        #expect(day["day"] as? String == "2027-01-15")
+        #expect(day["deviceId"] is NSNull)
+        #expect(day["ids"] as? [String] == [])
+        #expect(try encoded(.episode("episode:x"))["episodeId"] as? String == "episode:x")
+        #expect(PerceptionTime.shift(day: "2027-03-01", by: -1) == "2027-02-28")
+        #expect(PerceptionTime.shift(day: "2027-01-01", by: -1) == "2026-12-31")
+    }
+
     @Test func gatewayReadsAskForTheItemTypesAndTurningOnOrDeletingAsksForFaceID() async throws {
         let exchange = RecordingExchange([])
         let gateway = SensesGateway(api: try api(exchange), confirmation: Confirmation(signer: try SoftwareKeySigner()))
@@ -298,17 +350,46 @@ import Testing
         try await gateway.setSense("vision", enabled: false, expectedRevision: 5, reason: "关掉相册")
         #expect(exchange.requests[3].value(forHTTPHeaderField: "Signature-Input")?.contains("confirm=") == false)
 
+        exchange.enqueue(json(["type": "perception.deletion.snapshot", "payload": Self.deletion(status: "planned")]))
         exchange.enqueue(json(["challenge": "DELETECHALLENGE", "expiresAt": "2027-01-15T08:06:00Z"]))
+        exchange.enqueue(json(["type": "command.result", "payload": [:]]))
+        exchange.enqueue(json(["type": "perception.deletion.snapshot", "payload": Self.deletion(status: "verified")]))
+        let deleted = try await gateway.delete(.types(["location.visit"], deviceId: "dev_AAAAAAAAAAAAAAAAAAAAAA"), reason: "删")
+        #expect(deleted.status == "verified")
+        #expect(deleted.removed == 3)
+        let plan = try body(exchange.requests[4])
+        #expect(plan["type"] as? String == "perception.deletion.plan")
+        #expect(exchange.requests[4].value(forHTTPHeaderField: "Signature-Input")?.contains("confirm=") == false)
+        let target = try #require(plan["payload"] as? [String: Any])
+        #expect(target["kind"] as? String == "types")
+        #expect(target["types"] as? [String] == ["location.visit"])
+        #expect(target["ids"] as? [String] == [])
+        #expect(target["episodeId"] is NSNull)
+        #expect(target["day"] is NSNull)
+        #expect(target["deviceId"] as? String == "dev_AAAAAAAAAAAAAAAAAAAAAA")
+        #expect(exchange.requests[5].url?.path == "/api/device/v1/approvals/challenge")
+        #expect(exchange.requests[6].value(forHTTPHeaderField: "Signature-Input")?.contains("nonce=\"DELETECHALLENGE\"") == true)
+        let delete = try body(exchange.requests[6])
+        #expect(delete["type"] as? String == "perception.records.delete")
+        #expect((delete["payload"] as? [String: Any])?["planId"] as? String == "plan-1")
+        let readBack = try body(exchange.requests[7])
+        #expect(readBack["type"] as? String == "perception.deletion.read")
+        #expect((readBack["payload"] as? [String: Any])?["planId"] as? String == "plan-1")
+
         exchange.enqueue(HTTPExchangeResponse(status: 404, body: Data(#"{"error":{"code":"DEVICE_GATEWAY_TYPE_UNKNOWN"}}"#.utf8)))
         await #expect(throws: SensesGatewayError.notInstalled) {
-            _ = try await gateway.deleteRecords(types: ["location.visit"], deviceId: "dev_AAAAAAAAAAAAAAAAAAAAAA", reason: "删")
+            _ = try await gateway.delete(.episode("episode:0123456789abcdef0123456789abcdef"), reason: "删")
         }
-        #expect(exchange.requests[4].url?.path == "/api/device/v1/approvals/challenge")
-        #expect(exchange.requests[5].value(forHTTPHeaderField: "Signature-Input")?.contains("nonce=\"DELETECHALLENGE\"") == true)
-        let delete = try body(exchange.requests[5])
-        let target = try #require((delete["payload"] as? [String: Any])?["target"] as? [String: Any])
-        #expect(target["kind"] as? String == "types")
-        #expect(target["deviceId"] as? String == "dev_AAAAAAAAAAAAAAAAAAAAAA")
+        #expect(exchange.requests.count == 9)
+    }
+
+    static func deletion(status: String) -> [String: Any] {
+        let counts: [String: Any] = ["records": 2, "trackPoints": 1, "media": 0]
+        return [
+            "planId": "plan-1", "status": status, "plan": counts, "deleted": status == "verified" ? counts : NSNull(),
+            "expiresAt": "2027-01-15T08:10:00Z", "pendingPayloads": 0, "deletionRevision": 7, "keptElsewhere": [],
+            "generatedAt": "2027-01-15T08:00:00Z",
+        ]
     }
 }
 

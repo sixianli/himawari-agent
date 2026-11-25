@@ -146,6 +146,15 @@ public actor PerceptionQueue {
         try save()
     }
 
+    func discard(records recordMatches: (PerceptionRecordUpload) -> Bool, points pointMatches: (TrackPointUpload) -> Bool) throws -> Int {
+        let before = records.count + points.count
+        records.removeAll(where: recordMatches)
+        points.removeAll(where: pointMatches)
+        let removed = before - records.count - points.count
+        if removed > 0 { try save() }
+        return removed
+    }
+
     public func flush(configuration: DeviceConfiguration, today: String) async -> SenseUploadReport {
         var report = SenseUploadReport()
         if let blocked = store.read(pauseName).flatMap({ String(data: $0, encoding: .utf8) }), blocked == today {

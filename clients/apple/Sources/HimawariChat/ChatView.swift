@@ -40,6 +40,7 @@ public struct ChatView: View {
     @State private var copiedShown = false
     @State private var replyingTo: ThreadMessage?
     @State private var flashing: String?
+    @State private var backgroundOpen = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     #if os(iOS)
     @State private var safari: SafariLink?
@@ -338,10 +339,27 @@ public struct ChatView: View {
                 .padding(.horizontal, DesignTokens.Size.pagePaddingX)
                 .frame(height: DesignTokens.Chat.puckSize)
             }
-            ChatPuck(busy: avatarBusy, open: openHerPage)
+            VStack(spacing: DesignTokens.Chat.puckBannerGap) {
+                ChatPuck(busy: avatarBusy, open: openHerPage)
+                if let work = shownBackgroundWork {
+                    BackgroundWorkCapsule(work: work) { backgroundOpen = true }
+                        .transition(reduceMotion ? .identity : .opacity)
+                }
+            }
         }
         .padding(.top, DesignTokens.Chat.puckTop)
         .frame(maxWidth: .infinity)
+        .sheet(isPresented: $backgroundOpen) {
+            BackgroundWorkSheet(store: store) { backgroundOpen = false }
+                .presentationDetents([.medium, .large])
+                .presentationCornerRadius(DesignTokens.Radius.sheetTop)
+                .presentationBackground(Color.hmBackground)
+        }
+    }
+
+    private var shownBackgroundWork: BackgroundWork? {
+        guard close == nil, let work = store.backgroundWork, work.showsEntry else { return nil }
+        return work
     }
 
     private var transcript: some View {
@@ -419,7 +437,7 @@ public struct ChatView: View {
                 }
             }
             .padding(.horizontal, DesignTokens.Size.chatPaddingX)
-            .padding(.top, Self.headerHeight + DesignTokens.Chat.puckContentGap + (store.offlineShown ? DesignTokens.Chat.puckBannerGap + bannerHeight : 0))
+            .padding(.top, Self.headerHeight + DesignTokens.Chat.puckContentGap + (shownBackgroundWork == nil ? 0 : DesignTokens.Chat.puckBannerGap + DesignTokens.Avatar.backgroundPillHeight) + (store.offlineShown ? DesignTokens.Chat.puckBannerGap + bannerHeight : 0))
             .padding(.bottom, 110)
         }
         .defaultScrollAnchor(.bottom, for: .alignment)
