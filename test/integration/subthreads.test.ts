@@ -18,6 +18,7 @@ import {
 import { createReferenceAdapterSet } from "@himawari-agent/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import { ContextExternalContent } from "../../apps/agent-service/src/context-external-content.ts";
+import { ProductionApprovalAnswers } from "../../apps/agent-service/src/production-approval-answers.ts";
 import { ProductionInbox } from "../../apps/agent-service/src/production-inbox.ts";
 import {
   InboxRunRegistry,
@@ -1609,6 +1610,74 @@ describe("subthreads opened by the main conversation", () => {
     await f.worker.claim();
     expect(f.query("SELECT approval_run_id FROM subthreads")).toEqual([{ approval_run_id: null }]);
     expect(continues()).toEqual([{ n: 1 }]);
+  });
+
+  it("[ADR-0285] turns the owner's answer to an approval card into one inbox row, then carries the subthread on", async () => {
+    const f = await fixture();
+    const opened = await f.open();
+    await f.finish(await f.mainThread.ensure(), opened.runId);
+    const first = await f.started(opened.subthread);
+    await f.call(first.runId, "task_create", {
+      subject: "订票",
+      description: "订最便宜的一班",
+      active_form: "正在订票",
+    });
+    const setStatus = (status: string) => {
+      const handle = openQualifiedDatabase(f.file);
+      try {
+        handle.prepare("UPDATE runs SET status = ? WHERE id = ?").run(status, first.runId);
+      } finally {
+        handle.close();
+      }
+    };
+    setStatus("awaiting_approval");
+    await first.handled;
+    const answers = new ProductionApprovalAnswers({
+      threadOf: async (runId) =>
+        f.query<{ thread_id: string }>("SELECT thread_id FROM runs WHERE id = ?", runId)[0]
+          ?.thread_id,
+      mainThread: f.mainThread,
+    });
+    answers.registerSource(f.inbox.sources);
+    answers.attach(f.inbox);
+    const approval = {
+      id: "approval-ticket",
+      runId: first.runId,
+      status: "approved",
+    } as never;
+    await answers.answered(approval);
+    await answers.answered(approval);
+    await answers.answered({
+      id: "approval-ticket",
+      runId: first.runId,
+      status: "pending",
+    } as never);
+    const rows = () =>
+      f.query<{ thread_id: string; status: string; from_owner: number; priority: number }>(
+        "SELECT thread_id, status, from_owner, priority FROM inbox_events WHERE source_kind = 'approval_answer'",
+      );
+    expect(rows()).toEqual([
+      { thread_id: opened.subthread, status: "queued", from_owner: 1, priority: 1 },
+    ]);
+    const claim = await f.worker.claim();
+    expect(claim?.fromOwner).toBe(true);
+    const handled = f.worker.handle(claim as never);
+    setStatus("running");
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    setStatus("accepted");
+    await f.finish(opened.subthread, first.runId);
+    expect(await handled).toMatchObject({ status: "done", result: "handled" });
+    expect(
+      f.query(
+        "SELECT outcome, reason_code FROM inbox_events WHERE source_kind = 'approval_answer'",
+      ),
+    ).toEqual([{ outcome: "resumed", reason_code: "approval_answered" }]);
+    expect(f.query("SELECT approval_run_id FROM subthreads")).toEqual([{ approval_run_id: null }]);
+    expect(
+      f.query("SELECT COUNT(*) AS n FROM inbox_events WHERE source_kind = 'subthread_continue'"),
+    ).toEqual([{ n: 1 }]);
+    await answers.answered(approval);
+    expect(rows()).toHaveLength(1);
   });
 
   it("REVERSE: does not carry a subthread on after its approval run was cancelled", async () => {

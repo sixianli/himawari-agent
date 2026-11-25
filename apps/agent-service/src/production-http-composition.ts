@@ -157,6 +157,7 @@ import {
   ProductionInboxControl,
   ProductionInboxSettings,
 } from "./production-inbox-settings.js";
+import { ProductionApprovalAnswers } from "./production-approval-answers.js";
 import {
   PRODUCTION_TIMER_OPERATIONS,
   ProductionTimerControl,
@@ -1342,6 +1343,17 @@ export async function createProductionHttpComposition(
     reminderInbox.attach(inbox.inbox);
     reminderInbox.start();
   }
+  const approvalRuns = repository.runLifecycle(ownerId, agentId, authority);
+  const approvalAnswers = mainThreadInbox
+    ? new ProductionApprovalAnswers({
+        threadOf: async (runId) => (await approvalRuns.readRun(runId as never))?.run.threadId,
+        mainThread,
+      })
+    : undefined;
+  if (approvalAnswers) {
+    approvalAnswers.registerSource(inbox.inbox.sources);
+    approvalAnswers.attach(inbox.inbox);
+  }
   const subthreads = mainThreadInbox?.subthreads;
   if (subthreads) {
     subthreads.registerSources(inbox.inbox.sources);
@@ -1685,9 +1697,10 @@ export async function createProductionHttpComposition(
     recentAuthentication,
     clock: { now: clock },
     authority: options.authority,
-    ...(options.deviceActions
+    ...(options.deviceActions || approvalAnswers
       ? {
           onApprovalResolved: async (approval) => {
+            await approvalAnswers?.answered(approval);
             await options.deviceActions?.service.reconcile(approval.id);
           },
         }
