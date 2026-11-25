@@ -128,9 +128,6 @@ export const messages = {
   "answer.copy": "Copy answer",
   "answer.copied": "Copied",
   "answer.copyHint": "Copy only the answer text above, without sources or files",
-  "answer.fork": "Branch into new chat",
-  "answer.forkHint":
-    "Branch into a new chat with everything up to this turn. The original stays as it is.",
   "fork.banner": "Branched from “{title}” at turn {turn}",
   "fork.bannerMissing": "Branched from another chat that no longer exists",
   "fork.openSource": "Open original",
@@ -306,6 +303,7 @@ export const messages = {
   "chat.nextAction.failedBeforeAnyOperation":
     "No tool operation ran in this turn. You can send it again.",
   "appearance.theme": "Theme",
+  "chat.main": "Main conversation",
   "chat.untitled": "New conversation",
   "chat.latest": "Back to latest",
   "chat.placeholder": "Go on, I remember everything we've talked about 🌻",
@@ -555,7 +553,6 @@ export const messages = {
   "improvements.title": "Improvements awaiting adoption",
   "threads.draft": "Message draft",
   "threads.send": "Send",
-  "threads.new": "New thread",
   "threads.search": "Search threads",
   "threads.messages": "Committed messages",
   "threads.rename": "Rename",

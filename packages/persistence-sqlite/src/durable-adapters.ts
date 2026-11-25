@@ -934,6 +934,8 @@ export class SqliteDurableAdapters {
       appendHistory: (input) => this.context.write("memory.appendHistory", input),
       listHistory: (input) => this.context.read("memory.listHistory", input),
       readHistory: (input) => this.context.read("memory.readHistory", input),
+      numbers: (input) => this.context.read("memory.numbers", input),
+      byNumber: (input) => this.context.read("memory.byNumber", input),
     });
   }
 
@@ -1544,6 +1546,8 @@ export class SqliteDurableAdapters {
         this.context.read("thread.inspectDeletionImpact", { ownerId, agentId, threadId }),
       resolveDeletionTask: (input) => this.context.write("thread.resolveDeletionTask", { input }),
       requestDeletion: (input) => this.context.write("thread.requestDeletion", { input }),
+      readMain: (ownerId, agentId) => this.context.read("thread.readMain", { ownerId, agentId }),
+      claimMain: (input) => this.context.write("thread.claimMain", { input }),
     });
   }
 

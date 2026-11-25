@@ -130,9 +130,6 @@ export const messages = {
   "answer.copy": "回答をコピー",
   "answer.copied": "コピーしました",
   "answer.copyHint": "上の回答本文だけをコピーします（出典とファイルは含みません）",
-  "answer.fork": "新しい会話に分岐",
-  "answer.forkHint":
-    "このターンまでの内容をすべて引き継いで新しい会話に分岐します。元の会話はそのままです。",
   "fork.banner": "「{title}」の第 {turn} ターンから分岐",
   "fork.bannerMissing": "別の会話から分岐しました。元の会話はもうありません",
   "fork.openSource": "元の会話を開く",
@@ -307,6 +304,7 @@ export const messages = {
   "chat.nextAction.failedBeforeAnyOperation":
     "このターンではツール操作を実行していません。そのまま再送信できます。",
   "appearance.theme": "テーマ",
+  "chat.main": "メインの会話",
   "chat.untitled": "新しい会話",
   "chat.latest": "最新に戻る",
   "chat.placeholder": "続けてどうぞ。ここまでの話はちゃんと覚えてるよ 🌻",
@@ -561,7 +559,6 @@ export const messages = {
   "improvements.title": "採用待ちの改善",
   "threads.draft": "メッセージ下書き",
   "threads.send": "送信",
-  "threads.new": "新しいスレッド",
   "threads.search": "スレッドを検索",
   "threads.messages": "確定済みメッセージ",
   "threads.rename": "名前を変更",

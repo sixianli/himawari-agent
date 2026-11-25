@@ -54,6 +54,15 @@ export const TOOL_CONVERSATION_OPEN = fixedPrompt({
   text: "打开以前的一段对话，读某个位置前后的原话。conversationId 和 sequence 取自 conversation_search 的结果；direction 填 later 从 sequence 往后读，填 earlier 从 sequence 往前读，不填就往后读。结果里的 earlierFrom、laterFrom 是往前、往后接着读的位置：往前接着读，把 earlierFrom 填进 sequence 并填 direction earlier；往后接着读，把 laterFrom 填进 sequence 并填 direction later。值为 null 说明那一头已经读完；不为 null 时那一头也可能刚好没有更多原话，接着读拿到空的 lines 就说明读完了。",
 });
 
+export const TOOL_MEMORY_OPEN = fixedPrompt({
+  id: "tools.memory-open",
+  purpose: "memory_open 工具的描述：按编号打开一条记忆，看日期、出处原话和以前的版本",
+  usedBy: ["apps/agent-service/src/production-memory-open.ts"],
+  layer: "tools",
+  output: "free-text",
+  text: "按编号打开一条记忆，看它的全文、日期、现在还算不算数，以及它的每个版本和当时主人的原话。number 是记忆的编号，取自 recall 结果里的 number。答案取决于这条记忆的细节（什么时候说的、原话怎么说、以前是什么样）时，先打开它再答。结果里 correctedBy 是后来取代它的那条记忆的编号；versions 从早到晚排列，每项的 quote 是那一次主人的原话（没有原话时为 null），conversationId 是那次对话的编号（对话已删除时为 null），想读前后原话，用 conversation_search 搜这句原话找到位置再打开。正文太长时分在几页里：每页的 text 接着上一页往下，正文给完以后的页不再有 text；版本的正文和原话太长时截断，以“…”结尾。结果里有 nextPage 时，还没看完，把它填进 page 接着看。",
+});
+
 export const TOOL_TASK_STATUS = fixedPrompt({
   id: "tools.execution-task-status",
   purpose: "execution_task_status 工具的描述",
@@ -225,6 +234,15 @@ export const TOOL_RESULT_CONVERSATION_EMPTY = fixedPrompt({
   text: "没有找到相关的旧对话。不要编造；可以换个说法或放宽日期再找一次，仍然找不到就如实告诉主人。",
 });
 
+export const TOOL_RESULT_CONVERSATION_NO_MORE = fixedPrompt({
+  id: "tool-result.conversation-no-more",
+  purpose: "搜以前的对话时页码超过最后一页的说明：前面的页已经列完，不等于没有找到",
+  usedBy: ["apps/agent-service/src/production-conversation-tools.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "这一页没有更多结果了：前面几页已经列完了这次搜到的全部对话。这不代表没有找到，答案以前面几页的内容为准。",
+});
+
 export const TOOL_RESULT_CONVERSATION_NOT_FOUND = fixedPrompt({
   id: "tool-result.conversation-not-found",
   purpose: "打开以前的对话时对话不存在或已删除的说明",
@@ -250,6 +268,33 @@ export const TOOL_RESULT_CONVERSATION_INPUT_INVALID = fixedPrompt({
   layer: "tool-result",
   output: "free-text",
   text: "参数不对，没有查。query 不能为空；from、to 要写日历上真实存在的日期（YYYY-MM-DD），from 不能晚于 to；page 和 sequence 要写从 1 开始的整数；只能用工具定义里列出的参数。改正后再查一次。",
+});
+
+export const TOOL_RESULT_MEMORY_NOT_FOUND = fixedPrompt({
+  id: "tool-result.memory-not-found",
+  purpose: "按编号打开记忆时没有这条记忆的说明",
+  usedBy: ["apps/agent-service/src/production-memory-open.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "没有这个编号的记忆：它可能已经永久删除，或者编号写错了。不要猜它的内容。",
+});
+
+export const TOOL_RESULT_MEMORY_OPEN_UNAVAILABLE = fixedPrompt({
+  id: "tool-result.memory-open-unavailable",
+  purpose: "按编号打开记忆失败时工具结果里的说明",
+  usedBy: ["apps/agent-service/src/production-runtime-tools.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "这条记忆暂时打不开。不要编造，告诉主人现在查不了这条记忆的细节。",
+});
+
+export const TOOL_RESULT_MEMORY_OPEN_INPUT_INVALID = fixedPrompt({
+  id: "tool-result.memory-open-input-invalid",
+  purpose: "按编号打开记忆参数不对时工具结果里的说明：告诉模型怎么改正",
+  usedBy: ["apps/agent-service/src/production-runtime-tools.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "参数不对，没有打开。number 和 page 要写从 1 开始的整数；只能用工具定义里列出的参数。改正后再打开一次。",
 });
 
 export const TOOL_RESULT_REMINDER_MEMORY_NOT_READY = fixedPrompt({

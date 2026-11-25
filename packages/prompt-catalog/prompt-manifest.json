@@ -892,6 +892,11 @@
     "changedIn": "ADR 0286",
     "reason": "第 1 步：主模型自己搜旧对话原话、打开旧对话读前后原话"
   },
+  "tool-result.conversation-no-more": {
+    "sha256": "29a4dbd6a34bc51ef7f0652430f9ce5112ee135d078a0a688f98300e1f6303b6",
+    "changedIn": "ADR 0286",
+    "reason": "第 2 步：按编号打开记忆的工具 memory_open、它的结果说明，以及搜旧对话翻过最后一页时的说明"
+  },
   "tool-result.conversation-not-found": {
     "sha256": "765d685120ef5c71f11a9bfc8205e1c28b7340267f2479a26cc0b72faa496fea",
     "changedIn": "ADR 0286",
@@ -901,6 +906,21 @@
     "sha256": "a6c46eaa599dceedcd9d4e2a8d12d59d3509db1ac8b3fb6d4c4d079e7aa7626c",
     "changedIn": "ADR 0286",
     "reason": "第 1 步：主模型自己搜旧对话原话、打开旧对话读前后原话"
+  },
+  "tool-result.memory-not-found": {
+    "sha256": "1ab6cbe616379cdac423122bde3126f72dbbbec9204646630906e0515072e9ae",
+    "changedIn": "ADR 0286",
+    "reason": "第 2 步：按编号打开记忆的工具 memory_open 和它的结果说明"
+  },
+  "tool-result.memory-open-input-invalid": {
+    "sha256": "abeb36db15a5da58a32d53a159508d30c189d9a5d0f6e63944668508fe8ca82e",
+    "changedIn": "ADR 0286",
+    "reason": "第 2 步：按编号打开记忆的工具 memory_open 和它的结果说明"
+  },
+  "tool-result.memory-open-unavailable": {
+    "sha256": "30bcedd8b5b898c18cf78a2fffcf0abd8160c1577c9b364e9e078eb10821273b",
+    "changedIn": "ADR 0286",
+    "reason": "第 2 步：按编号打开记忆的工具 memory_open 和它的结果说明"
   },
   "tool-result.recall-empty": {
     "sha256": "090780a7a4f47147438eca475d03271fc4684b3197681040cc36078e3c9e8cf0",
@@ -1051,6 +1071,11 @@
     "sha256": "b40eb04624d620833941271a7884d38ee312e4784aca68a8e672eefbdbf85055",
     "changedIn": "ADR 0166",
     "reason": "W-16：新增参数说明，任务编号从哪里抄；它不在冻结记录里，每次请求现拼，改它会让所有用到它的对话整段重算一次，所以随 PR-A/PR-B 同一次上线（不在后台命令模式时它是句柄工具）"
+  },
+  "tools.memory-open": {
+    "sha256": "06f505a9fdabbf8065acd951f9657a3d4f644add9e637365cdc41906bd602140",
+    "changedIn": "ADR 0286",
+    "reason": "第 2 步：按编号打开记忆的工具 memory_open 和它的结果说明"
   },
   "tools.move-directory": {
     "sha256": "d8f94421f7ec0dacf4c53d77757ddace3d4edbe9ada61d8aa0fd04bc542bc9c2",

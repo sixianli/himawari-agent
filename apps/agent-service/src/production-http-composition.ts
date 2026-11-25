@@ -219,6 +219,7 @@ import { registerTaskProposalHandler } from "./production-task-proposals.js";
 import { productionInbox } from "./production-inbox-composition.js";
 import type { InboxDelivery } from "./production-inbox-worker.js";
 import { ThreadDeletionRetry } from "./production-thread-deletion-retry.js";
+import { ProductionMainThread } from "./production-main-thread.js";
 import {
   PRODUCTION_INBOX_OPERATIONS,
   ProductionInboxControl,
@@ -1073,6 +1074,15 @@ export async function createProductionHttpComposition(
     authority: () => authorityForConfiguration(configuration, options.authority()),
     recentAuthentication,
   });
+  const mainThread = new ProductionMainThread({
+    ownerId,
+    agentId,
+    threads,
+    commands: threadCommands,
+    payloads: repository.payloadStore(ownerId, agentId),
+    protector: payloadProtector,
+    clock: { now: clock },
+  });
   const environment = options.executionEnvironment;
   const threadAdapter = new ProductThreadGatewayAdapter({
     validateModelSelection: (selection, classification) => {
@@ -1142,6 +1152,7 @@ export async function createProductionHttpComposition(
       authority: () => authorityForConfiguration(configuration, options.authority()),
     }),
     deletion: threadDeletion,
+    mainThread,
     clock: { now: clock },
   });
   const threadAccess = new ProductionThreadGatewayAccessPolicy({
@@ -1300,10 +1311,20 @@ export async function createProductionHttpComposition(
       agentId,
       now: clock,
     });
+  const ensureMainThread = () =>
+    mainThread.ensure().then(
+      () => undefined,
+      (error: unknown) =>
+        options.threadDeletionDiagnostic?.({
+          code: "thread.main_ensure_failed",
+          error: error instanceof Error ? error.name : "unknown",
+        }),
+    );
   const threadDeletionRetry = new ThreadDeletionRetry({
     deletion: {
       retryIncompleteThreadDeletions: (input) =>
         retentionDeletion().retryIncompleteThreadDeletions(input),
+      deleteLegacyThreads: (input) => retentionDeletion().deleteLegacyThreads(input),
     },
     ...(options.threadDeletionDiagnostic ? { onDiagnostic: options.threadDeletionDiagnostic } : {}),
   });
@@ -1890,6 +1911,7 @@ export async function createProductionHttpComposition(
         });
         searchIndexer.start();
         home.startScoring();
+        await ensureMainThread();
         inbox.loop?.start();
         threadDeletionRetry.start();
         return address;
@@ -1905,6 +1927,7 @@ export async function createProductionHttpComposition(
       }
       searchIndexer.start();
       home.startScoring();
+      await ensureMainThread();
       inbox.loop?.start();
       threadDeletionRetry.start();
       return unixSocketPath;

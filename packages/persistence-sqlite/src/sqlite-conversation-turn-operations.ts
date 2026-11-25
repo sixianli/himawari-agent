@@ -313,6 +313,7 @@ export class SqliteConversationTurnOperations {
         FROM threads t
         JOIN (SELECT thread_id, max(sequence) AS last_sequence, max(committed_at) AS last_at
           FROM thread_messages WHERE owner_id = @ownerId AND agent_id = @agentId
+            AND internal = 0
           GROUP BY thread_id) m ON m.thread_id = t.id
         LEFT JOIN (SELECT thread_id, max(first_sequence) AS indexed_from,
             max(last_sequence) AS indexed_through

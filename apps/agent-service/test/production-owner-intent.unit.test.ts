@@ -10,6 +10,7 @@ interface Message {
   readonly dataClassification: "public" | "private" | "sensitive" | "restricted";
   readonly contentRef: string;
   readonly text: string;
+  readonly internal?: true;
 }
 
 const message = (sequence: number, text: string, overrides: Partial<Message> = {}): Message => ({
@@ -31,7 +32,9 @@ function dependencies(messages: readonly Message[]) {
       readCommittedMessagesByIds: async ({ messageIds }: { messageIds: readonly string[] }) =>
         messages.filter(({ id }) => messageIds.includes(id)) as never,
       listMessages: async (_o: unknown, _a: unknown, _t: unknown, after: number, limit: number) =>
-        messages.filter(({ sequence }) => sequence > after).slice(0, limit) as never,
+        messages
+          .filter(({ sequence, internal }) => sequence > after && internal !== true)
+          .slice(0, limit) as never,
     },
     readText: async (ref: string) => messages.find(({ contentRef }) => contentRef === ref)?.text,
   };
@@ -111,4 +114,15 @@ it("[ADR-0257] counts the JSON-escaped size of the owner words against the byte 
   );
   expect(wire).toBeLessThanOrEqual(20_000 + 2 * words.length);
   expect(words.at(-1)).toContain("第 6 句");
+});
+
+it("[PR631-R2-1] returns nothing, so the owner is asked, when the triggering message is hidden from the owner, even with earlier owner words in the window", async () => {
+  const messages = [
+    message(1, "明天九点提醒我给房东回电话"),
+    message(2, "收件箱来了一封邮件", { internal: true }),
+  ];
+  expect(await collectOwnerWords(dependencies(messages), source(1))).toEqual([
+    "明天九点提醒我给房东回电话",
+  ]);
+  expect(await collectOwnerWords(dependencies(messages), source(2))).toEqual([]);
 });

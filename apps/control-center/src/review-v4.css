@@ -3907,6 +3907,7 @@ code.more-row-name {
   border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
   padding: 10px 6px;
 }
+.thread-sidebar-actions > .app-link[aria-current="page"],
 .thread-sidebar-actions .action-button[aria-pressed="true"] {
   background: var(--surface-muted);
 }

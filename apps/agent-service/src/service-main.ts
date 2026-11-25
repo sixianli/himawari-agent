@@ -27,6 +27,7 @@ import {
   modelUsagePurpose,
   modelVisibleClassifications,
   OwnerProfileService,
+  type PayloadRef,
   PERCEPTION_CONFIGURATION_DEFAULTS,
   type ProductConfiguration,
   prereviewPromptId,
@@ -173,6 +174,7 @@ import {
   importDuplicateFailureCode,
   productionImportDuplicateChecker,
 } from "./production-memory-import-duplicates.js";
+import { ProductionMemoryOpen } from "./production-memory-open.js";
 import { ProductionMemoryRecall } from "./production-memory-recall.js";
 import { ProductionMemoryWorker } from "./production-memory-worker.js";
 import {
@@ -1594,17 +1596,16 @@ export async function startTenantRuntime(
       const primaryModel = configuration.modelDescriptors.find(
         (descriptor) => descriptor.role === "primary",
       );
+      const toolPageCharacters = toolResultCharacters(
+        primaryModel && "contextWindow" in primaryModel ? primaryModel.contextWindow : undefined,
+        configuration.memory.toolResultShare ?? DEFAULT_TOOL_RESULT_SHARE,
+      );
       const conversationTools = conversationTurns
         ? new ProductionConversationTools({
             ownerId: configuration.ownerId,
             agentId: configuration.agentId,
             turns: conversationTurns,
-            pageCharacters: toolResultCharacters(
-              primaryModel && "contextWindow" in primaryModel
-                ? primaryModel.contextWindow
-                : undefined,
-              configuration.memory.toolResultShare ?? DEFAULT_TOOL_RESULT_SHARE,
-            ),
+            pageCharacters: toolPageCharacters,
             embedWithin: (invocation, slot, operation) =>
               recallEmbedWithin(invocation, slot, operation),
             ...(configuration.runPolicy?.timeZone
@@ -1614,6 +1615,29 @@ export async function startTenantRuntime(
         : undefined;
       const recallProjection = memoryComposition.projection;
       const recallProtector = protector;
+      const readMemoryPayloadText = async (ref: PayloadRef) => {
+        const payload = await payloads.get(ref);
+        if (!payload || payload.contentType !== "text/plain") return undefined;
+        return {
+          text: new TextDecoder("utf-8", { fatal: true }).decode(
+            await recallProtector.unprotect({
+              ownerId: configuration.ownerId,
+              agentId: configuration.agentId,
+              payload,
+            }),
+          ),
+          dataClassification: payload.dataClassification,
+        };
+      };
+      const readMemoryText = async (ref: PayloadRef) => (await readMemoryPayloadText(ref))?.text;
+      const memoryOpen = new ProductionMemoryOpen({
+        ownerId: configuration.ownerId,
+        agentId: configuration.agentId,
+        state: repository.productMemoryState(),
+        readText: (ref) => readMemoryPayloadText(ref),
+        pageCharacters: toolPageCharacters,
+        now: () => clock.now(),
+      });
       const memoryRecall = new ProductionMemoryRecall({
         ownerId: configuration.ownerId,
         agentId: configuration.agentId,
@@ -1624,17 +1648,7 @@ export async function startTenantRuntime(
           search: (input) =>
             runMemoryEpisodes ? runMemoryEpisodes.search(input) : Promise.resolve([]),
         },
-        readText: async (record) => {
-          const payload = await payloads.get(record.contentRef);
-          if (!payload || payload.contentType !== "text/plain") return undefined;
-          return new TextDecoder("utf-8", { fatal: true }).decode(
-            await recallProtector.unprotect({
-              ownerId: configuration.ownerId,
-              agentId: configuration.agentId,
-              payload,
-            }),
-          );
-        },
+        readText: (record) => readMemoryText(record.contentRef),
         embedWithin: recallEmbedWithin,
         now: () => clock.now(),
         ...(configuration.runPolicy?.timeZone
@@ -1780,6 +1794,7 @@ export async function startTenantRuntime(
       const tools = new ProductionRuntimeTools({
         memoryRecall,
         ...(conversationTools ? { conversations: conversationTools } : {}),
+        memoryOpen,
         reminders: reminderTools,
         ownerRules: ownerRuleTools,
         toolActions,

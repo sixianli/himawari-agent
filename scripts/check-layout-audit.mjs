@@ -234,7 +234,6 @@ export function labels(locale) {
     weeklyTab: value("reminders.tab.report"),
     reviewExpand: value("dailyReview.expand"),
     files: value("library.title"),
-    fork: value("answer.fork"),
     personalization: value("review.settings.personalization"),
     general: value("review.settings.general"),
     tools: value("review.settings.tools"),
@@ -303,14 +302,6 @@ export const SCENES = {
     act: async (page) => {
       await page.locator(".turn-process > summary").first().click();
       await page.waitForTimeout(200);
-    },
-  },
-  branched: {
-    path: "/threads/thread-main",
-    act: async (page, text) => {
-      await page.getByRole("button", { name: text.fork, exact: true }).first().click();
-      await page.waitForTimeout(700);
-      await page.mouse.move(1, 1);
     },
   },
   settingsPersonalization: {
