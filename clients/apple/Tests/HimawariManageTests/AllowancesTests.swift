@@ -22,7 +22,7 @@ private actor AllowanceServer: DeviceTransport {
             return DeviceResponse(status: 200, body: Data(#"{"payload":{"memories":[],"imports":[],"capturePaused":false}}"#.utf8))
         case .string("memory.rules.read"):
             return DeviceResponse(status: 200, body: Data(Self.rules.utf8))
-        case .string("approval.allowance.revoke") where refuseRevoke:
+        case .string("approval.allowance.revoke"), .string("approval.allowance.days.set") where refuseRevoke:
             return DeviceResponse(status: 409, body: Data(#"{"error":{"code":"PORT_CONFLICT"}}"#.utf8))
         default:
             return DeviceResponse(status: 200, body: Data("{}".utf8))
@@ -82,6 +82,40 @@ final class AllowancesTests: XCTestCase {
         let confirmed = await server.confirmed
         XCTAssertFalse(confirmed.contains("approval.allowance.revoke"))
         XCTAssertFalse(await server.sent.contains { $0["type"] == .string("memory.rule.respond") })
+    }
+
+    func testTheDayCountComesWithTheRuleBook() async throws {
+        let store = await store(AllowanceServer(refuseRevoke: false))
+        XCTAssertEqual(store.allowanceDays, 7)
+    }
+
+    func testChangingTheDayCountAsksForFaceIDAndShowsTheNewNumber() async throws {
+        let server = AllowanceServer(refuseRevoke: false)
+        let store = await store(server)
+        try await store.setAllowanceDays(14, reason: "r")
+        XCTAssertEqual(store.allowanceDays, 14)
+        let command = await server.sent.first { $0["type"] == .string("approval.allowance.days.set") }
+        XCTAssertEqual(command?["payload"], .object(["days": .number(14)]))
+        XCTAssertEqual(command?["risk"], .string("medium"))
+        let confirmed = await server.confirmed
+        XCTAssertTrue(confirmed.contains("approval.allowance.days.set"))
+    }
+
+    func testAFailedDayChangeKeepsTheOldNumber() async throws {
+        let store = await store(AllowanceServer(refuseRevoke: true))
+        do {
+            try await store.setAllowanceDays(14, reason: "r")
+            XCTFail("change should fail")
+        } catch {}
+        XCTAssertEqual(store.allowanceDays, 7)
+    }
+
+    func testADayCountOutsideTheContractIsNotSent() async throws {
+        let server = AllowanceServer(refuseRevoke: false)
+        let store = await store(server)
+        try await store.setAllowanceDays(ClientCapabilities.allowanceDays.upperBound + 1, reason: "r")
+        XCTAssertEqual(store.allowanceDays, 7)
+        XCTAssertFalse(await server.sent.contains { $0["type"] == .string("approval.allowance.days.set") })
     }
 
     func testAFailedRevokePutsTheRowBackWhereItWas() async throws {

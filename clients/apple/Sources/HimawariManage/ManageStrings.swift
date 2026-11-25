@@ -51,8 +51,20 @@ enum M {
     static var devicesTitle: String { text("设备", ja: "デバイス", en: "Devices") }
     static var allowancesTitle: String { text("同意过的事", ja: "承認したこと", en: "What you've allowed") }
     static func allowancesSummary(_ count: Int) -> String {
-        text("\(count) 条“不用再问”", ja: "\(count) 件「もう聞かない」", en: "\(count) she won't ask again")
+        if count == 0 { return text("还没有“不用再问”的事", ja: "「もう聞かない」ことはまだありません", en: "Nothing she skips asking yet") }
+        return text("\(count) 条“不用再问”", ja: "\(count) 件「もう聞かない」", en: "\(count) she won't ask again")
     }
+    static var allowancesEmpty: String {
+        text(
+            "在同意卡片上选“几天内”或“以后都行”的，会列在这里。",
+            ja: "承認カードで「数日間」や「今後ずっと」を選んだものが、ここに並びます。",
+            en: "Anything you allow for a few days or always on an approval card shows up here."
+        )
+    }
+    static var allowanceDaysTitle: String { text("“几天内都行”是几天", ja: "「数日間」は何日", en: "How many days \"a few days\" lasts") }
+    static func allowanceDaysValue(_ days: Int) -> String { text("\(days) 天", ja: "\(days)日", en: days == 1 ? "1 day" : "\(days) days") }
+    static var allowanceDaysDone: String { text("好", ja: "OK", en: "OK") }
+    static var allowanceDaysFailed: String { text("没改成，再试一次", ja: "変更できませんでした。もう一度試してください", en: "Couldn't change it. Try again") }
     static var revoke: String { text("撤销", ja: "取り消す", en: "Revoke") }
     static var revokeFailed: String { text("没撤掉，再试一次", ja: "取り消せませんでした。もう一度試してください", en: "Couldn't revoke. Try again") }
     static var allowancesFoot: String {

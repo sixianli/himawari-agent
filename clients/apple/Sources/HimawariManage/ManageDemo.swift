@@ -17,6 +17,8 @@ public enum ManageDemoScreen: String, CaseIterable, Sendable {
     case herDevices = "next-3-her-devices"
     case herNotifications = "next-3-her-notifications"
     case herAllowances = "next-3-her-allowances"
+    case herAllowancesEmpty = "next-3-her-allowances-empty"
+    case herAllowanceDays = "next-3-her-allowance-days"
 }
 
 public struct ManageDemoView: View {
@@ -52,13 +54,19 @@ public struct ManageDemoView: View {
             her([.notifications])
         case .herAllowances:
             her([.allowances])
+        case .herAllowancesEmpty:
+            her([.allowances], allowances: false)
+        case .herAllowanceDays:
+            AllowanceDaysSheet(days: 7) { _ in }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .himawariScreenBackground()
         }
     }
 
-    private func her(_ path: [HerPage.Page]) -> some View {
+    private func her(_ path: [HerPage.Page], allowances: Bool = true) -> some View {
         HerPage(
             settings: ManageDemo.settingsStore(),
-            memory: ManageDemo.memoryStore(),
+            memory: ManageDemo.memoryStore(allowances: allowances),
             quietHours: QuietHoursStore(gateway: ManageDemo.gateway()),
             listening: DemoListening(),
             actions: .demo(),
@@ -76,8 +84,8 @@ final class DemoListening: HerListening {
 
 enum ManageDemo {
     static let phoneId = "dev_demoPhone000000000000"
-    @MainActor static func memoryStore() -> MemoryStore {
-        MemoryStore(gateway: gateway())
+    @MainActor static func memoryStore(allowances: Bool = true) -> MemoryStore {
+        MemoryStore(gateway: gateway(allowances: allowances))
     }
 
     @MainActor static func settingsStore() -> SettingsStore {
@@ -87,14 +95,14 @@ enum ManageDemo {
         )
     }
 
-    static func gateway() -> ManageGateway {
-        ManageGateway(transport: DemoTransport(), makeIdentifier: { UUID().uuidString })
+    static func gateway(allowances: Bool = true) -> ManageGateway {
+        ManageGateway(transport: DemoTransport(allowances: allowances), makeIdentifier: { UUID().uuidString })
     }
 
-    static func answer(_ type: String) -> String {
+    static func answer(_ type: String, allowances: Bool) -> String {
         switch type {
         case "memory.overview.read": memories
-        case "memory.rules.read": rules
+        case "memory.rules.read": allowances ? rules : #"{"payload":{"rules":[],"allowances":[],"allowanceDays":7}}"#
         case "device.list.read": devices
         case "quiet_hours.read": #"{"payload":{"version":"v1","editable":true,"enabled":true,"start":"23:00","end":"07:00","classes":["scheduled_reminder","run_result","mail_reminder","her_words"],"rules":[{"ruleId":"rule-quiet","summary":"晚上 11 点到早上 7 点别推"}]}}"#
         default: "{}"
@@ -141,13 +149,19 @@ enum ManageDemo {
 }
 
 private actor DemoTransport: DeviceTransport {
+    let allowances: Bool
+
+    init(allowances: Bool) {
+        self.allowances = allowances
+    }
+
     nonisolated func post(path: String, json: Data, nonce: String?, confirm: ConfirmPrompt?) async throws -> DeviceResponse {
         if path == ManageGateway.challengePath {
             return DeviceResponse(status: 201, body: Data(#"{"challenge":"demo","expiresAt":"2999-01-01T00:00:00Z"}"#.utf8))
         }
         let body = (try? JSONDecoder().decode([String: JSONValue].self, from: json)) ?? [:]
         guard case .string(let type)? = body["type"] else { return DeviceResponse(status: 200, body: Data("{}".utf8)) }
-        return DeviceResponse(status: 200, body: Data(ManageDemo.answer(type).utf8))
+        return DeviceResponse(status: 200, body: Data(ManageDemo.answer(type, allowances: allowances).utf8))
     }
 }
 #endif

@@ -75,6 +75,7 @@ public struct RuleUse: Decodable, Sendable, Hashable {
 public struct RuleBook: Decodable, Sendable {
     public let rules: [RuleSummary]
     public var allowances: [OwnerAllowance]? = nil
+    public var allowanceDays: Int? = nil
 }
 
 public struct OwnerAllowance: Decodable, Sendable, Hashable, Identifiable {
