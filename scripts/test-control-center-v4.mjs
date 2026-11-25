@@ -1,7 +1,16 @@
-import { expect } from "@playwright/test";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { expect } from "@playwright/test";
 import { collectPageErrors } from "./browser-page-errors.mjs";
+
+async function browserRequest(baseUrl, pathname, data) {
+  const response = await fetch(`${baseUrl}${pathname}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) throw new Error(`CONTROL_CENTER_FIXTURE_REQUEST_FAILED:${pathname}`);
+}
 
 async function qualifyImmediateStartup(browser, baseUrl, output) {
   const cases = [];
@@ -63,16 +72,24 @@ async function qualifyImmediateStartup(browser, baseUrl, output) {
           failConfig = false;
           await entry.getByRole("button", { name: "重试", exact: true }).click();
         }
+        await expect(page).toHaveURL(/\/threads\/thread-home$/);
+        await expect.poll(() => detailQuery?.payload.threadId).toBe("thread-home");
+        const before = await (
+          await page.request.post(`${baseUrl}/api/gateway/thread/v3/queries`, {
+            data: { ...detailQuery, payload: { ...detailQuery.payload, afterSequence: 0 } },
+          })
+        ).json();
         await textarea.fill(text);
         await expect(send).toBeEnabled();
         await expect(page.locator(".app-shell")).toHaveAttribute("data-connection", "connecting");
         await send.click();
         await textarea.press("Enter");
-        await expect(page.locator(".thread-message-owner")).toContainText(text);
+        await expect(page.locator(".thread-message-owner").filter({ hasText: text })).toHaveCount(
+          1,
+        );
         await expect(textarea).toHaveValue("");
-        await expect
-          .poll(() => commands.map((x) => x.type))
-          .toEqual(["thread.create", "thread.message.submit"]);
+        await expect.poll(() => commands.map((x) => x.type)).toEqual(["thread.message.submit"]);
+        expect(commands[0].payload.threadId).toBe("thread-home");
         await expect(page.locator(".app-shell")).toHaveAttribute("data-connection", "connecting");
         await expect.poll(() => detailQuery?.payload.threadId).toBe(commands[0].payload.threadId);
         const snapshot = await (
@@ -80,8 +97,8 @@ async function qualifyImmediateStartup(browser, baseUrl, output) {
             data: { ...detailQuery, payload: { ...detailQuery.payload, afterSequence: 0 } },
           })
         ).json();
-        expect(snapshot.payload.messages).toHaveLength(1);
-        expect(snapshot.payload.runs).toHaveLength(1);
+        expect(snapshot.payload.messages).toHaveLength(before.payload.messages.length + 1);
+        expect(snapshot.payload.runs).toHaveLength(before.payload.runs.length + 1);
         if (output)
           await page.screenshot({
             path: path.join(output, `${name}-before-stream.png`),
@@ -89,9 +106,10 @@ async function qualifyImmediateStartup(browser, baseUrl, output) {
         releaseEvents();
         await expect(page.locator(".app-shell")).toHaveAttribute("data-connection", "connected");
         await page.reload();
-        await expect(page.locator(".thread-message-owner")).toContainText(text);
-        await expect(page.locator(".thread-message-owner")).toHaveCount(1);
-        expect(commands).toHaveLength(2);
+        await expect(page.locator(".thread-message-owner").filter({ hasText: text })).toHaveCount(
+          1,
+        );
+        expect(commands).toHaveLength(1);
         expect(errors).toEqual([]);
         expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
           width,
@@ -106,6 +124,7 @@ async function qualifyImmediateStartup(browser, baseUrl, output) {
         releaseEvents();
         await context.unrouteAll({ behavior: "wait" });
         await context.close();
+        await browserRequest(baseUrl, "/__fixture/finish-runs", { threadId: "thread-home" });
       }
     }
 
@@ -216,9 +235,11 @@ export async function qualifyControlCenterV4(browser, baseUrl, out) {
     await slider.press("Escape");
     if (out) await page.screenshot({ path: out + "/desktop.png" });
     await page.getByRole("button", { name: "发送", exact: true }).click();
-    await expect(page).toHaveURL(/\/threads\/thread/);
+    await expect(page).toHaveURL(/\/threads\/thread-home$/);
     await expect(textarea).toHaveValue("");
-    await expect(page.locator(".thread-message-owner")).toContainText("初始化期间的草稿");
+    await expect(
+      page.locator(".thread-message-owner").filter({ hasText: "初始化期间的草稿" }),
+    ).toHaveCount(1);
     for (const width of [390, 320]) {
       await page.setViewportSize({ width, height: 820 });
       if (out) await page.screenshot({ path: out + `/mobile-${width}.png` });
@@ -248,6 +269,7 @@ export async function qualifyControlCenterV4(browser, baseUrl, out) {
     release();
     await context.unrouteAll({ behavior: "wait" });
     await context.close();
+    await browserRequest(baseUrl, "/__fixture/finish-runs", { threadId: "thread-home" });
   }
 
   return {

@@ -348,6 +348,7 @@ export function useThreadControlCenter(
   const refreshTimer = useRef<number | undefined>(undefined);
   const selectedThreadId = route.objectId ?? null;
   const [mainThreadId, setMainThreadId] = useState<string | null>(null);
+  const [mainLookupSettled, setMainLookupSettled] = useState(false);
   useEffect(() => {
     if (!active || !client || !configuration) return;
     const controller = new AbortController();
@@ -359,11 +360,20 @@ export function useThreadControlCenter(
       })
       .catch((caught: unknown) => {
         if ((caught as { readonly status?: unknown } | null)?.status === 401) onUnauthorized();
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setMainLookupSettled(true);
       });
     return () => controller.abort();
   }, [active, client, configuration, onUnauthorized]);
+  const openingMain =
+    !selectedThreadId &&
+    !page &&
+    !route.status &&
+    Boolean(client && configuration) &&
+    (!mainLookupSettled || mainThreadId !== null);
   useEffect(() => {
-    if (!mainThreadId || selectedThreadId || page || route.status) return;
+    if (!mainThreadId || selectedThreadId || route.page || route.status) return;
     navigate({
       ...route,
       objectId: mainThreadId,
@@ -371,7 +381,7 @@ export function useThreadControlCenter(
       afterCursor: null,
       view: "content",
     });
-  }, [mainThreadId, selectedThreadId, page, route, navigate]);
+  }, [mainThreadId, selectedThreadId, route, navigate]);
   const selectedIdRef = useRef(selectedThreadId);
   selectedIdRef.current = selectedThreadId;
   const shownThreadId = useRef<string | null>(null);
@@ -1741,7 +1751,7 @@ export function useThreadControlCenter(
       ) : (
         <div className="thread-content">
           {feedback}
-          {!detail && selectedThreadId && !shownOutgoing ? (
+          {openingMain || (!detail && selectedThreadId && !shownOutgoing) ? (
             <ThreadLoadingSkeleton scope="conversation" />
           ) : (!detail ||
               (!detail.payload.messages.length && !detail.payload.runs.length && !forkedThread)) &&
@@ -1809,81 +1819,83 @@ export function useThreadControlCenter(
               />
             </>
           )}
-          <ChatComposer
-            key={`composer:${selectedThreadId ?? "new"}`}
-            fresh={!selectedThreadId}
-            onUpload={
-              client
-                ? (content, as) =>
-                    as === "image"
-                      ? client.protectImage(content, "private")
-                      : client.protectAttachment(content, "private")
-                : undefined
-            }
-            readImage={readImage}
-            draft={draft}
-            onDraft={(value) => {
-              setDraft(value);
-              storage.saveDraft(selectedThreadId ?? "new", value);
-            }}
-            onSubmit={() => void submitDraft()}
-            retryPending={Boolean(unresolvedSubmission)}
-            connected={Boolean(client && configuration) && connection !== "offline"}
-            pending={mutationStatus === "pending"}
-            model={configuration?.primaryModel?.model}
-            models={availableModels}
-            modelRef={selectedModel?.ref ?? ""}
-            thinkingLevel={selectedThinking}
-            onModelChange={(ref) =>
-              options.onModelChoiceChange?.({
-                modelRef: ref,
-                thinkingLevel: defaultThinkingLevel(
-                  availableModels.find((item) => item.ref === ref)?.thinkingLevels ?? [],
-                ),
-              })
-            }
-            onThinkingChange={(level) =>
-              options.onModelChoiceChange?.({
-                modelRef: selectedModel?.ref ?? modelRef,
-                thinkingLevel: level,
-              })
-            }
-            onStop={
-              configuration?.canCancelRun &&
-              (detail?.payload.runs ?? []).some((run) => canStop(run))
-                ? () => {
-                    const run = (detail?.payload.runs ?? []).find((item) => canStop(item));
-                    if (run)
-                      void performIntent({
-                        kind: "stop",
-                        runId: run.runId,
-                        revision: run.revision,
-                      });
-                  }
-                : undefined
-            }
-            message={message}
-            environment={
-              configuration?.executionEnvironmentAvailable ? (
-                <ExecutionEnvironmentLine
-                  environment={environment}
-                  threadTitle={threadTitle}
-                  onOpen={() => void loadEnvironment()}
-                  onOpenThread={(threadId) =>
-                    navigate({ ...route, objectId: threadId, status: null, view: "content" })
-                  }
-                  message={message}
-                />
-              ) : null
-            }
-            canSend={
-              !(shownOutgoing && !shownOutgoing.failed) &&
-              (!selectedThreadId || detail?.payload.thread.threadId === selectedThreadId) &&
-              (Boolean(unresolvedSubmission) ||
-                ((!detail || detail.payload.thread.status === "active") &&
-                  !(detail?.payload.runs ?? []).some((run) => !isAnsweredRun(run))))
-            }
-          />
+          {openingMain ? null : (
+            <ChatComposer
+              key={`composer:${selectedThreadId ?? "new"}`}
+              fresh={!selectedThreadId}
+              onUpload={
+                client
+                  ? (content, as) =>
+                      as === "image"
+                        ? client.protectImage(content, "private")
+                        : client.protectAttachment(content, "private")
+                  : undefined
+              }
+              readImage={readImage}
+              draft={draft}
+              onDraft={(value) => {
+                setDraft(value);
+                storage.saveDraft(selectedThreadId ?? "new", value);
+              }}
+              onSubmit={() => void submitDraft()}
+              retryPending={Boolean(unresolvedSubmission)}
+              connected={Boolean(client && configuration) && connection !== "offline"}
+              pending={mutationStatus === "pending"}
+              model={configuration?.primaryModel?.model}
+              models={availableModels}
+              modelRef={selectedModel?.ref ?? ""}
+              thinkingLevel={selectedThinking}
+              onModelChange={(ref) =>
+                options.onModelChoiceChange?.({
+                  modelRef: ref,
+                  thinkingLevel: defaultThinkingLevel(
+                    availableModels.find((item) => item.ref === ref)?.thinkingLevels ?? [],
+                  ),
+                })
+              }
+              onThinkingChange={(level) =>
+                options.onModelChoiceChange?.({
+                  modelRef: selectedModel?.ref ?? modelRef,
+                  thinkingLevel: level,
+                })
+              }
+              onStop={
+                configuration?.canCancelRun &&
+                (detail?.payload.runs ?? []).some((run) => canStop(run))
+                  ? () => {
+                      const run = (detail?.payload.runs ?? []).find((item) => canStop(item));
+                      if (run)
+                        void performIntent({
+                          kind: "stop",
+                          runId: run.runId,
+                          revision: run.revision,
+                        });
+                    }
+                  : undefined
+              }
+              message={message}
+              environment={
+                configuration?.executionEnvironmentAvailable ? (
+                  <ExecutionEnvironmentLine
+                    environment={environment}
+                    threadTitle={threadTitle}
+                    onOpen={() => void loadEnvironment()}
+                    onOpenThread={(threadId) =>
+                      navigate({ ...route, objectId: threadId, status: null, view: "content" })
+                    }
+                    message={message}
+                  />
+                ) : null
+              }
+              canSend={
+                !(shownOutgoing && !shownOutgoing.failed) &&
+                (!selectedThreadId || detail?.payload.thread.threadId === selectedThreadId) &&
+                (Boolean(unresolvedSubmission) ||
+                  ((!detail || detail.payload.thread.status === "active") &&
+                    !(detail?.payload.runs ?? []).some((run) => !isAnsweredRun(run))))
+              }
+            />
+          )}
           {!client || !configuration ? (
             <output className="composer-readiness">{message("review.preparing")}</output>
           ) : null}
