@@ -193,7 +193,7 @@ with tempfile.TemporaryDirectory(dir=os.environ['HIMAWARI_TEST_TEMP_ROOT']) as d
     module.EVIDENCE = root / 'evidence'
     module.CONFIG = root / 'etc' / 'config.json'
     module.SNAPSHOT = root / 'deployment' / 'capability-deployment.json'
-    module.safe_file = lambda filename, uid=0, mode=None: original_safe_file(filename, os.getuid() if uid in (0, 999) else uid, mode)
+    module.safe_file = lambda filename, uid=0, mode=None: original_safe_file(filename, os.getuid() if uid in (0, __PKT_SERVICE_UID__) else uid, mode)
     os.fchown = lambda fd, uid, gid: None
     try:
         def leftover_path(target):
@@ -247,5 +247,5 @@ with tempfile.TemporaryDirectory(dir=os.environ['HIMAWARI_TEST_TEMP_ROOT']) as d
         module.SNAPSHOT = original_snapshot
 
 
-print(json.dumps({'passed': all(item['passed'] for item in cases), 'scope': 'S9 concrete approval, restore proof, restored S0 capability catalog and unchanged G90 grant, bound original unit, S2 inspect-only stop proof and interrupted prepare temporary files', 'total': len(cases), 'failed': [item for item in cases if not item['passed']], 'sourceSha256': hashlib.sha256(source_bytes).hexdigest(), 'fixtureSha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(), 'stopProofOwnershipAdaptation': 'safe_file owners 0 and 999 mapped to the fixture account and fchown skipped; all other checks unchanged', 'productionExecutionProved': False}))
+print(json.dumps({'passed': all(item['passed'] for item in cases), 'scope': 'S9 concrete approval, restore proof, restored S0 capability catalog and unchanged G90 grant, bound original unit, S2 inspect-only stop proof and interrupted prepare temporary files', 'total': len(cases), 'failed': [item for item in cases if not item['passed']], 'sourceSha256': hashlib.sha256(source_bytes).hexdigest(), 'fixtureSha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(), 'stopProofOwnershipAdaptation': 'safe_file owners 0 and __PKT_SERVICE_UID__ mapped to the fixture account and fchown skipped; all other checks unchanged', 'productionExecutionProved': False}))
 raise SystemExit(0 if all(item['passed'] for item in cases) else 1)

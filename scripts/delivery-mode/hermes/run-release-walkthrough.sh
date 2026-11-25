@@ -28,7 +28,7 @@ fi
 run=$1
 [[ "$run" =~ ^[a-z0-9-]+$ ]] || fail RUN_ID_INVALID 64
 out=$(setting workRoot)/$run
-mapfile -t artifacts < <(ls "$out"/materials/linux-x64-abi127-*-1.tar.gz 2>/dev/null)
+mapfile -t artifacts < <(ls "$out"/materials/linux-"$(setting arch)"-abi[0-9]*-*-1.tar.gz 2>/dev/null)
 [[ "${#artifacts[@]}" -eq 1 ]] || fail "ARTIFACT_COUNT ${#artifacts[@]}" 2
 revision=$(/usr/bin/python3 -I -c 'import json, sys; print(json.load(open(sys.argv[1]))["testedSha"])' "$out/materials/context.json")
 cd "$source" || fail SOURCE_MISSING 3

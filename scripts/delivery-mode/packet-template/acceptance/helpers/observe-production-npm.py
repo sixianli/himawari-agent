@@ -108,7 +108,7 @@ path_chain(node)
 if node.resolve(strict=True) != node or requested.resolve(strict=True) != npm_cli or npm_cli.resolve(strict=True) != npm_cli:
     raise RuntimeError('__PKT_LABEL_UPPER___NPM_FIXED_PUBLIC_TOOL_LAYOUT_CHANGED')
 node_bytes = regular_bytes(node)
-if sha(node_bytes) != 'e6ec2c188d83d813f81f2de8aea084d74dce603ac1abedd0a30ad941b10087b2':
+if sha(node_bytes) != '__PKT_NODE_SHA256__':
     raise RuntimeError('__PKT_LABEL_UPPER___NPM_LOCKED_NODE_CHANGED')
 package = json.loads(regular_bytes(npm_root / 'package.json'))
 if package['name'] != 'npm' or not isinstance(package['version'], str) or not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', package['version']):
@@ -131,7 +131,7 @@ if arguments.expected:
     expected_path = Path(arguments.expected)
     if expected_path != Path('/var/tmp/himawari-__PKT_LABEL__-__PKT_DATE_COMPACT__/packet/inputs/npm-observed.json'):
         raise RuntimeError('__PKT_LABEL_UPPER___NPM_FROZEN_OBSERVATION_PATH_REQUIRED')
-    expected_bytes = regular_bytes(expected_path, 988)
+    expected_bytes = regular_bytes(expected_path, __PKT_SERVICE_GID__)
     expected = json.loads(expected_bytes)
     for key in ['schemaVersion', 'passed', 'hostname', 'actorUid', 'readOnly', 'networkCommandsIssued', 'node', 'npm']:
         if report[key] != expected[key]:

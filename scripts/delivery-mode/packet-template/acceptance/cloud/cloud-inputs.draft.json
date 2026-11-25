@@ -3,7 +3,7 @@
   "status": "candidate-G118-__PKT_LABEL__-change-not-executed-not-signed",
   "productionQualificationIssued": false,
   "expectedHostname": "__PKT_HOSTNAME__",
-  "acceptanceUid": 999,
+  "acceptanceUid": __PKT_SERVICE_UID__,
   "acceptanceAccount": "himawari-prod",
   "runtime": "/opt/himawari/releases/__PKT_DATE__-__PKT_LABEL__/lib/himawari-agent",
   "candidate": {

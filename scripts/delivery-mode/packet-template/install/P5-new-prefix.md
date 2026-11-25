@@ -10,12 +10,12 @@ S1 分两步，都经[步骤入口](../steps/README.md)运行：`S1_TRANSPORT` �
 
 | 路径 | 属主、权限和作用 |
 | --- | --- |
-| `/var/tmp/himawari-__PKT_LABEL__-__PKT_DATE_COMPACT__` | root:988 0750，独占新建；放包、输入、验证源码和验收目录。 |
-| `…/packet`、`/opt/himawari/operations/__PKT_LABEL__-__PKT_DATE_COMPACT__` | 目录 root:988 0750，冻结文件 root:988 0640。签署辅助文件不在 S1 发布，由 S6 的发布步骤按其规则发布。 |
+| `/var/tmp/himawari-__PKT_LABEL__-__PKT_DATE_COMPACT__` | root:__PKT_SERVICE_GID__ 0750，独占新建；放包、输入、验证源码和验收目录。 |
+| `…/packet`、`/opt/himawari/operations/__PKT_LABEL__-__PKT_DATE_COMPACT__` | 目录 root:__PKT_SERVICE_GID__ 0750，冻结文件 root:__PKT_SERVICE_GID__ 0640。签署辅助文件不在 S1 发布，由 S6 的发布步骤按其规则发布。 |
 | `…/acceptance` | 生产账号 0700，后续普通账号验收和 read 用的受控目录。 |
-| `/var/lib/himawari/__PKT_LABEL__-__PKT_DATE_COMPACT__-evidence` | 生产账号 0700；结果和原件 0600，S7 的 root 启动报告另为 root:988 0640。 |
+| `/var/lib/himawari/__PKT_LABEL__-__PKT_DATE_COMPACT__-evidence` | 生产账号 0700；结果和原件 0600，S7 的 root 启动报告另为 root:__PKT_SERVICE_GID__ 0640。 |
 | `/opt/himawari/releases/__PKT_DATE__-__PKT_LABEL__` | 新的完整正式安装，root 所有；目录 0755、运行时普通文件 0644、命令包装 0755。旧版本 `__PKT_DATE__-__PKT_LABEL__` 保持不动。 |
-| `…/validation` | root:988 0750；原始源码字节和权限作为已核验输入保留，S6 复制到普通账号自己的短临时目录后才使用。 |
+| `…/validation` | root:__PKT_SERVICE_GID__ 0750；原始源码字节和权限作为已核验输入保留，S6 复制到普通账号自己的短临时目录后才使用。 |
 
 脚本拒绝：错误主机或账号、Node 的 SHA 变化、旧 unit 或旧配置的 SHA 与绑定不符、任一目标已存在、符号链接、冻结文件增删或摘要变化。输入由 [p5-materials.json](p5-materials.json) 绑定：精确的源码 bundle、候选安装包、构建上下文、整份锁定依赖归档及其证明、`npm ls` 的 JSON 和 Python 归档。生产上不运行 `npm ci`、构建、检查、测试，也不下载工具。
 

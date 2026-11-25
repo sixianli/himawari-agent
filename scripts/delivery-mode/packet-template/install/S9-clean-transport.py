@@ -64,7 +64,7 @@ def retain_json(name, value):
     data = (json.dumps(value, indent=2) + '\n').encode()
     with filename.open('xb') as stream:
         os.fchmod(stream.fileno(), 0o640)
-        os.fchown(stream.fileno(), 0, 988)
+        os.fchown(stream.fileno(), 0, __PKT_SERVICE_GID__)
         stream.write(data)
         stream.flush()
         os.fsync(stream.fileno())
@@ -72,7 +72,7 @@ def retain_json(name, value):
     return {'path': str(filename), 'sha256': sha(data), 'bytes': len(data)}
 
 
-def validate_created_identity(root, receipt, uid=0, gid=988, mode=0o750):
+def validate_created_identity(root, receipt, uid=0, gid=__PKT_SERVICE_GID__, mode=0o750):
     require(receipt['schemaVersion'] == 'himawari.__PKT_LABEL__-change-owned-directories.v1' and receipt['passed'] is True and receipt['actor'] == {'uid': 0, 'hostname': '__PKT_HOSTNAME__'}, '__PKT_LABEL_UPPER___TRANSPORT_CREATION_PROOF_REQUIRED')
     matches = [entry for entry in receipt['directories'] if entry['path'] == str(root)]
     require(len(matches) == 1, '__PKT_LABEL_UPPER___TRANSPORT_CREATED_PATH_AMBIGUOUS')
@@ -275,7 +275,7 @@ def process_survey():
 
 def phase_readbacks():
     receipts = {}
-    for name, uid in (('s1-result.json', 999), ('s6-qualification-readback.json', 0), ('s6-service-read-launch.json', 0), ('s7-orchestration-result.json', 0), ('s7-startup-verification.json', 0), ('s8_readback-result.json', 999)):
+    for name, uid in (('s1-result.json', __PKT_SERVICE_UID__), ('s6-qualification-readback.json', 0), ('s6-service-read-launch.json', 0), ('s7-orchestration-result.json', 0), ('s7-startup-verification.json', 0), ('s8_readback-result.json', __PKT_SERVICE_UID__)):
         data = safe_file(EVIDENCE / name, uid)
         value = json.loads(data)
         require(value['passed'] is True, '__PKT_LABEL_UPPER___TRANSPORT_REQUIRED_PHASE_NOT_PASSED')
@@ -288,15 +288,15 @@ def phase_readbacks():
     startup = receipts['s7-startup-verification.json']['value']
     require(startup['signatureVerified'] is True and startup['liveHostVerified'] is True, '__PKT_LABEL_UPPER___TRANSPORT_STARTUP_NOT_VERIFIED')
     s8 = receipts['s8_readback-result.json']['value']
-    require(s8['action'] == 'S8_READBACK' and s8['state']['path'] == str(EVIDENCE / 's8-database-readback.json') and s8['state']['sha256'] == sha(safe_file(EVIDENCE / 's8-database-readback.json', 999, 0o600)), '__PKT_LABEL_UPPER___TRANSPORT_S8_READBACK_CHANGED')
+    require(s8['action'] == 'S8_READBACK' and s8['state']['path'] == str(EVIDENCE / 's8-database-readback.json') and s8['state']['sha256'] == sha(safe_file(EVIDENCE / 's8-database-readback.json', __PKT_SERVICE_UID__, 0o600)), '__PKT_LABEL_UPPER___TRANSPORT_S8_READBACK_CHANGED')
     return receipts
 
 
 def permanent_readback(binding, phases):
-    configuration_bytes = safe_file(CONFIG, 999, 0o600)
+    configuration_bytes = safe_file(CONFIG, __PKT_SERVICE_UID__, 0o600)
     configuration = json.loads(configuration_bytes)
     snapshot_path = STATE / 'deployment/capability-deployment.json'
-    snapshot_bytes = safe_file(snapshot_path, 999, 0o600)
+    snapshot_bytes = safe_file(snapshot_path, __PKT_SERVICE_UID__, 0o600)
     protection_bytes = safe_file(OPS / 'runtime-protection.json')
     unit_bytes = safe_file(UNIT)
     startup = phases['s7-startup-verification.json']['value']
@@ -329,7 +329,7 @@ def reference_survey(inventory):
             if not filename.is_file() or filename.suffix not in RETAINED_EXTENSIONS or 'transport-retained-' in str(filename) or filename.name.startswith('s9-transport-'):
                 continue
             info = filename.lstat()
-            require(not filename.is_symlink() and info.st_uid in (0, 999) and info.st_nlink == 1, '__PKT_LABEL_UPPER___TRANSPORT_REFERENCE_SOURCE_UNSAFE')
+            require(not filename.is_symlink() and info.st_uid in (0, __PKT_SERVICE_UID__) and info.st_nlink == 1, '__PKT_LABEL_UPPER___TRANSPORT_REFERENCE_SOURCE_UNSAFE')
             text = filename.read_text(errors='strict')
             if str(STAGE) not in text:
                 continue
@@ -358,7 +358,7 @@ def preflight(binding):
     require(head == material['sourceHead'] and not changed, '__PKT_LABEL_UPPER___TRANSPORT_VALIDATION_SOURCE_MODIFIED')
     mounts = mount_survey()
     first = process_survey()
-    inventory = inventory_tree(STAGE, {0, 999})
+    inventory = inventory_tree(STAGE, {0, __PKT_SERVICE_UID__})
     phases = phase_readbacks()
     permanent = permanent_readback(binding, phases)
     references = reference_survey(inventory)
@@ -369,10 +369,10 @@ def preflight(binding):
 def main():
     require(sys.argv[1:] in (['--preflight'], ['--apply']) and sys.executable == '/usr/bin/python3' and sys.flags.isolated == 1 and sys.platform == 'linux' and os.geteuid() == 0 and socket.gethostname() == '__PKT_HOSTNAME__' and Path(__file__).resolve() == OPS / 'install/S9-clean-transport.py', '__PKT_LABEL_UPPER___TRANSPORT_EXPLICIT_FIXED_TARGET_REQUIRED')
     account = pwd.getpwnam('himawari-prod')
-    require((account.pw_uid, account.pw_gid) == (999, 988), '__PKT_LABEL_UPPER___TRANSPORT_SERVICE_ACCOUNT_CHANGED')
+    require((account.pw_uid, account.pw_gid) == (__PKT_SERVICE_UID__, __PKT_SERVICE_GID__), '__PKT_LABEL_UPPER___TRANSPORT_SERVICE_ACCOUNT_CHANGED')
     os.chdir('/')
     evidence_info = EVIDENCE.lstat()
-    require(EVIDENCE.resolve() == EVIDENCE and evidence_info.st_uid == 999 and evidence_info.st_gid == 988 and stat.S_IMODE(evidence_info.st_mode) == 0o700, '__PKT_LABEL_UPPER___TRANSPORT_EVIDENCE_UNSAFE')
+    require(EVIDENCE.resolve() == EVIDENCE and evidence_info.st_uid == __PKT_SERVICE_UID__ and evidence_info.st_gid == __PKT_SERVICE_GID__ and stat.S_IMODE(evidence_info.st_mode) == 0o700, '__PKT_LABEL_UPPER___TRANSPORT_EVIDENCE_UNSAFE')
     binding = load(OPS / 'inputs/bindings.json')
     require(binding['status'] == 'frozen-approved' and binding['approvals']['packageRef'] and binding['paths']['newOperations'] == str(OPS) and binding['paths']['evidenceRoot'] == str(EVIDENCE), '__PKT_LABEL_UPPER___TRANSPORT_FROZEN_APPROVAL_REQUIRED')
     freeze = load(STAGE / 'packet/freeze-manifest.json')
@@ -390,7 +390,7 @@ def main():
             next_file = EVIDENCE / ('s9-transport-preflight.next-' + suffix)
             with next_file.open('xb') as stream:
                 os.fchmod(stream.fileno(), 0o640)
-                os.fchown(stream.fileno(), 0, 988)
+                os.fchown(stream.fileno(), 0, __PKT_SERVICE_GID__)
                 stream.write(safe_file(retained_plan['path'], 0, 0o640))
                 stream.flush()
                 os.fsync(stream.fileno())
@@ -406,15 +406,15 @@ def main():
             require(plan['retainedBytes'] <= shutil.disk_usage('/').free, '__PKT_LABEL_UPPER___TRANSPORT_ARCHIVE_SPACE_INSUFFICIENT')
             archive = EVIDENCE / ('transport-retained-' + suffix)
             archive.mkdir(mode=0o700)
-            os.chown(archive, 0, 988)
-            records = archive_retained(STAGE, archive, plan['inventory'], {0, 999})
+            os.chown(archive, 0, __PKT_SERVICE_GID__)
+            records = archive_retained(STAGE, archive, plan['inventory'], {0, __PKT_SERVICE_UID__})
             result['retainedEvidence'] = retain_json('s9-transport-retained-' + suffix + '.json', {'sourceRoot': str(STAGE), 'permanentRoot': str(archive), 'files': records, 'retainedFileCount': len(records)})
             result['finalProcessSurvey'] = process_survey()
             result['finalMountSurvey'] = mount_survey()
             permanent_readback(binding, phase_readbacks())
             validate_created_identity(STAGE, load(EVIDENCE / 's1-owned-directories.json', 0, 0o640))
             retain_json('s9-transport-before-delete-' + suffix + '.json', result)
-            remove_reviewed_tree(STAGE, plan['inventory'], {0, 999})
+            remove_reviewed_tree(STAGE, plan['inventory'], {0, __PKT_SERVICE_UID__})
             for record in records:
                 require(file_sha(record['path']) == record['sha256'], '__PKT_LABEL_UPPER___TRANSPORT_RETAINED_EVIDENCE_LOST_AFTER_DELETE')
             permanent_readback(binding, phase_readbacks())

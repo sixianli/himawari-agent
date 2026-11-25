@@ -443,7 +443,7 @@ export function loadBinding(requireStartupReport = true) {
   assert.equal(process.getgid(), fixed.gid, "__PKT_LABEL_UPPER___MAINTENANCE_ACTOR_INVALID");
   assert.equal(hostname(), "__PKT_HOSTNAME__", "__PKT_LABEL_UPPER___MAINTENANCE_HOST_INVALID");
   assert.equal(realpathSync(process.execPath), node, "__PKT_LABEL_UPPER___MAINTENANCE_NODE_INVALID");
-  assert.equal(sha(readFileSync(node)), "e6ec2c188d83d813f81f2de8aea084d74dce603ac1abedd0a30ad941b10087b2", "__PKT_LABEL_UPPER___MAINTENANCE_NODE_CHANGED");
+  assert.equal(sha(readFileSync(node)), "__PKT_NODE_SHA256__", "__PKT_LABEL_UPPER___MAINTENANCE_NODE_CHANGED");
   assert.equal(process.env.HOME, fixed.stateRoot, "__PKT_LABEL_UPPER___MAINTENANCE_HOME_INVALID");
   assert.equal(process.env.PATH, "/opt/himawari/node/bin:/usr/bin:/bin", "__PKT_LABEL_UPPER___MAINTENANCE_PATH_INVALID");
   assert.equal(process.umask(), 0o022, "__PKT_LABEL_UPPER___MAINTENANCE_UMASK_INVALID");
