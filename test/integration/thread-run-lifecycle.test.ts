@@ -47,7 +47,10 @@ import {
   type RunId,
   type ThreadId,
 } from "@himawari-agent/domain";
-import { threadGatewayMessageSchema } from "@himawari-agent/gateway-contracts";
+import {
+  threadExecutionRecordSchema,
+  threadGatewayMessageSchema,
+} from "@himawari-agent/gateway-contracts";
 import {
   openQualifiedDatabase,
   SqliteGovernedDeletionAdapter,
@@ -3805,6 +3808,126 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
       phase: "failed",
       output: "Result needs reconciliation",
     });
+  });
+
+  it("[ICON-2] puts the model's activity and icon on the tool step and keeps them out of its input", async () => {
+    const setup = await executionFixture();
+    const artifactPort = setup.repository.runPayloadArtifactPort(ownerId, agentId, {
+      product: authority,
+      lease,
+    });
+    const scope = {
+      ownerId,
+      agentId,
+      sessionId: setup.input.runtime.sessionId,
+      threadId: setup.admitted.thread.id,
+      runId: setup.runId,
+      turnId: null,
+      parentEventId: null,
+      causationId: null,
+      correlationId: "activity-test",
+      actorId: "activity-test",
+      dataClassification: "private" as const,
+    };
+    const capture = async (kind: string, value: unknown) => {
+      const ref = `activity:${kind}`;
+      await artifactPort.commit({
+        runId: setup.runId,
+        purpose: "trace",
+        operationKey: `runtime:${setup.runId}:${kind}:${ref}`,
+        payload: await setup.protector.protect({
+          ownerId,
+          agentId,
+          ref,
+          dataClassification: "private",
+          contentType: "application/json",
+          plaintext: new TextEncoder().encode(JSON.stringify(value)),
+          createdAt: clock.now(),
+        }),
+      });
+      return ref;
+    };
+    const calls = [
+      {
+        id: "call-weather",
+        arguments: {
+          query: "东京 明天 天气",
+          activity: "  查东京\n明天的\u202e天气\u0007\u061c  ",
+          activityIcon: "cloud",
+        },
+      },
+      {
+        id: "call-unknown-icon",
+        arguments: {
+          query: "rust",
+          activity: "查资料",
+          activityIcon: "rocket",
+        },
+      },
+      {
+        id: "call-plain",
+        arguments: { query: "plain", activityIcon: "cloud" },
+      },
+    ];
+    const messageRef = await capture("message", {
+      role: "assistant",
+      timestamp: 1,
+      model: "actual-model",
+      stopReason: "toolUse",
+      content: calls.map((call) => ({
+        type: "toolCall",
+        name: "web_search",
+        ...call,
+      })),
+    });
+    await setup.trace.record({
+      ...scope,
+      eventType: "runtime.message",
+      payload: { role: "assistant", phase: "ended", payloadRef: messageRef },
+    });
+    for (const call of calls) {
+      const intentRef = await capture(`intent-${call.id}`, {
+        toolCallId: call.id,
+        toolName: "web_search",
+        arguments: call.arguments,
+      });
+      await setup.trace.record({
+        ...scope,
+        eventType: "runtime.tool_intent",
+        payload: { capabilityRef: "web.search", payloadRef: intentRef },
+      });
+    }
+    const projection = new ThreadExecutionProjection({
+      threads: setup.repository.threadRepository(),
+      trace: setup.repository.traceStore(),
+      payloads: (owner, agent) =>
+        setup.repository.payloadStore(createOwnerId(owner), createAgentId(agent)),
+      protector: setup.protector,
+    });
+    const { records } = await projection.read({
+      ownerId,
+      agentId,
+      threadId: setup.admitted.thread.id,
+      runId: setup.runId,
+      afterSequence: 0,
+      limit: 100,
+    });
+    const tools = records.filter((record) => record.kind === "tool");
+    expect(tools).toHaveLength(6);
+    expect(tools.map(({ activity, activityIcon }) => [activity, activityIcon])).toEqual([
+      ["查东京 明天的 天气", "cloud"],
+      ["查资料", "puzzle"],
+      ["搜索网页", "cloud"],
+      ["查东京 明天的 天气", "cloud"],
+      ["查资料", "puzzle"],
+      ["搜索网页", "cloud"],
+    ]);
+    for (const tool of tools) {
+      expect(tool.input).not.toContain("activity");
+      expect(JSON.parse(tool.input)).toHaveProperty("query");
+    }
+    for (const record of records)
+      expect(() => threadExecutionRecordSchema.parse(record)).not.toThrow();
   });
 
   it("persists a generated title and publishes its update without changing Run state", async () => {
