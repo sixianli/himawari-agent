@@ -460,26 +460,58 @@ describe("owner profile composition", () => {
     expect(result.blocks.map(({ dataClassification }) => dataClassification)).toEqual(["public"]);
   });
 
-  it("[ADR-0286] keeps the memory list within its budget, most important first, and says what was left out", async () => {
-    const stored: string[] = [];
-    const profile = new OwnerProfileService({
-      state: { listActive: async () => records, numbers: numbersOf(records) },
-      readText: async (record) => TEXT[record.id],
-      storeText: async ({ text }) => {
-        stored.push(text);
-      },
-      digest: (text) => `digest-${text.length}`,
-      snapshotCharacterBudget: 20,
-    });
-    const result = await profile.compose({
-      ownerId: OWNER_ID,
-      agentId: AGENT_ID,
-      maxClassification: "private",
-      now: NOW,
-    });
-    expect(result.memoryIds).toEqual(["memory-language", "memory-name", "memory-daughter"]);
-    expect(stored.at(-1)).toContain("- 偏好另有 2 条因篇幅没有列出，可以用 recall 搜。");
-    expect(stored.at(-1)).not.toContain("身份另有");
+  it("[ADR-0286] keeps the whole memory list within its budget, most important first, and says what was left out", async () => {
+    const long = (id: string) => (TEXT[id] ?? "").repeat(6);
+    const snapshotOf = async (snapshotCharacterBudget?: number) => {
+      const stored: string[] = [];
+      const profile = new OwnerProfileService({
+        state: { listActive: async () => records, numbers: numbersOf(records) },
+        conversations: {
+          span: async () => ({
+            dataClassification: "private",
+            firstDay: "2026-09-30",
+            lastDay: "2026-10-25",
+            days: 12,
+            months: [
+              { month: "2026-09", days: 1 },
+              { month: "2026-10", days: 11 },
+            ],
+          }),
+        },
+        readText: async (record) => long(record.id),
+        storeText: async ({ text }) => {
+          stored.push(text);
+        },
+        digest: (text) => `digest-${text.length}`,
+        ...(snapshotCharacterBudget === undefined ? {} : { snapshotCharacterBudget }),
+      });
+      const result = await profile.compose({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        maxClassification: "private",
+        now: NOW,
+      });
+      return { memoryIds: result.memoryIds, text: stored.at(-1) ?? "" };
+    };
+    const full = await snapshotOf();
+    expect(full.text).not.toContain("因篇幅没有列出");
+    expect((await snapshotOf(full.text.length)).text).toBe(full.text);
+
+    const floor = (await snapshotOf(1)).text.length;
+    expect(floor).toBeLessThan(full.text.length);
+    const named = ["身份", `2${long("memory-name")}`, "人际关系", `3${long("memory-daughter")}`];
+    const budget = floor + named.reduce((sum, line) => sum + line.length + 1, 0);
+    const tight = await snapshotOf(budget);
+    expect(tight.text.length).toBeLessThanOrEqual(budget);
+    expect(tight.memoryIds).toEqual(["memory-language", "memory-name", "memory-daughter"]);
+    expect(tight.text).toContain("- 偏好另有 2 条因篇幅没有列出，可以用 recall 搜。");
+    expect(tight.text).not.toContain("身份另有");
+    expect(tight.text).toContain("- 旧对话：从 2026-09-30 到 2026-10-25");
+
+    for (let budget = floor; budget < full.text.length; budget += 1) {
+      const { text } = await snapshotOf(budget);
+      expect(text.length).toBeLessThanOrEqual(budget);
+    }
   });
   it("[P2-2] a profile block that is too long drops the rule memory text but never a hard rule", async () => {
     const { profile } = service(records, 5);

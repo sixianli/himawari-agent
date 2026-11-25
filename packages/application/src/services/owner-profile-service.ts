@@ -527,42 +527,16 @@ export class OwnerProfileService implements OwnerProfilePort {
     });
     if (lines.length === 0 && !span) return undefined;
     const limit = this.#options.snapshotCharacterBudget ?? MEMORY_SNAPSHOT_CHARACTER_BUDGET;
-    let remaining = limit;
-    const kept = new Set<MemoryId>();
-    for (const entry of [...lines].sort(
-      (left, right) =>
-        (right.memory.attributes?.importancePermille ?? 0) -
-          (left.memory.attributes?.importancePermille ?? 0) ||
-        byCodeUnit(right.memory.updatedAt, left.memory.updatedAt) ||
-        left.number - right.number,
-    )) {
-      if (entry.line.length + 1 > remaining) continue;
-      remaining -= entry.line.length + 1;
-      kept.add(entry.memory.id);
-    }
-    const sections = [
-      ...SNAPSHOT_SECTIONS.map(([, title]) => title),
-      MEMORY_SNAPSHOT_TENTATIVE.text,
-    ];
-    const body: string[] = [];
-    const omitted: string[] = [];
-    for (const title of sections) {
-      const inSection = lines
+    const titles = [...SNAPSHOT_SECTIONS.map(([, title]) => title), MEMORY_SNAPSHOT_TENTATIVE.text];
+    const bySection = titles.map((title) => ({
+      title,
+      entries: lines
         .filter(({ section }) => section === title)
-        .sort((left, right) => left.number - right.number);
-      const shown = inSection.filter(({ memory }) => kept.has(memory.id));
-      if (shown.length > 0) body.push(title, ...shown.map(({ line }) => line));
-      if (shown.length < inSection.length)
-        omitted.push(
-          renderPrompt(MEMORY_SNAPSHOT_OMITTED, {
-            category: title,
-            count: String(inSection.length - shown.length),
-          }),
-        );
-    }
-    const text = [
-      MEMORY_SNAPSHOT_HEADER.text,
-      ...body,
+        .sort((left, right) => left.number - right.number),
+    }));
+    const omittedLine = (title: string, count: number) =>
+      renderPrompt(MEMORY_SNAPSHOT_OMITTED, { category: title, count: String(count) });
+    const reachable = [
       MEMORY_SNAPSHOT_REACHABLE_HEADER.text,
       MEMORY_SNAPSHOT_REACHABLE_DETAILS.text,
       ...(span
@@ -579,8 +553,51 @@ export class OwnerProfileService implements OwnerProfilePort {
             }),
           ]
         : []),
-      ...omitted,
-    ].join("\n");
+    ];
+    const render = (kept: ReadonlySet<MemoryId>) => {
+      const body: string[] = [];
+      const omitted: string[] = [];
+      for (const { title, entries } of bySection) {
+        const shown = entries.filter(({ memory }) => kept.has(memory.id));
+        if (shown.length > 0) body.push(title, ...shown.map(({ line }) => line));
+        if (shown.length < entries.length)
+          omitted.push(omittedLine(title, entries.length - shown.length));
+      }
+      return [MEMORY_SNAPSHOT_HEADER.text, ...body, ...reachable, ...omitted].join("\n");
+    };
+    const fitWithinLimit = () => {
+      const kept = new Set<MemoryId>();
+      const cost = (texts: readonly string[]) =>
+        texts.reduce((sum, text) => sum + text.length + 1, 0);
+      let remaining =
+        limit +
+        1 -
+        cost([MEMORY_SNAPSHOT_HEADER.text, ...reachable]) -
+        cost(
+          bySection
+            .filter(({ entries }) => entries.length > 0)
+            .map(({ title, entries }) => omittedLine(title, entries.length)),
+        );
+      const opened = new Set<string>();
+      for (const entry of [...lines].sort(
+        (left, right) =>
+          (right.memory.attributes?.importancePermille ?? 0) -
+            (left.memory.attributes?.importancePermille ?? 0) ||
+          byCodeUnit(right.memory.updatedAt, left.memory.updatedAt) ||
+          left.number - right.number,
+      )) {
+        const needed =
+          entry.line.length + 1 + (opened.has(entry.section) ? 0 : entry.section.length + 1);
+        if (needed > remaining) continue;
+        remaining -= needed;
+        opened.add(entry.section);
+        kept.add(entry.memory.id);
+      }
+      return kept;
+    };
+    const everything = new Set(lines.map(({ memory }) => memory.id));
+    const kept = render(everything).length <= limit ? everything : fitWithinLimit();
+    const text = render(kept);
     return {
       text,
       memories: lines.filter(({ memory }) => kept.has(memory.id)).map(({ memory }) => memory),
