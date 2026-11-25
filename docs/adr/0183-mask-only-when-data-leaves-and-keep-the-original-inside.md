@@ -68,7 +68,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ## 后果
 
 - 正面：主人明说要记的事能记住；记忆和标题里不再出现被拦下的空洞结果。
-- 负面：主人的数据库里会有密码、密钥的明文拷贝；`[密钥]` 无法还原；经批准的敏感记忆存成普通分类（[ADR 0166](0166-prompt-wording-batch-1-system-and-tools.md) 之前的设计）后，提醒的推送正文是否显示取决于记忆的数据分级（`dataClassification`）。
+- 负面：主人的数据库里会有密码、密钥的明文拷贝；`[密钥]` 无法还原；经批准的敏感记忆存成普通分类（[ADR 0166](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0166-prompt-wording-batch-1-system-and-tools.md) 之前的设计）后，提醒的推送正文是否显示取决于记忆的数据分级（`dataClassification`）。
 - 已知缺口：自动检测只会在卡号、证件号时把 private 或 public 提到 sensitive，密码、密钥不会；模型自报的 sensitive、restricted 和来源分类仍会提高分类，推送正文是否显示取决于最终的 `dataClassification`，所以没被提高的含密码、密钥的提醒会在推送通知正文里原样显示；推送内容按端到端加密发给主人的浏览器，但会显示在锁屏上。要兑现“推送不显示正文”，需要把密码、密钥检测加进分类提升规则或让推送正文一律不带记忆文字，这是产品取舍，留给 Andy 定。（[ADR 0185](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0185-mark-passwords-and-keys-sensitive-instead-of-dropping-them.md) 已关闭这一条。）
 - 已知缺口（留给敏感信息识别升级）：密码规则取值到空白、逗号、分号为止；服务端“添加记忆”不检查敏感不能置顶；网页编辑和导入不重新判分类；审批门槛依赖模型自报的 `explicit`。
 - 与 PRD 的关系：[PRD v0.2](../prd-v0.2.md) “非目标”和“机器秘密、敏感数据与可观察 Trace”两节原来写着机器秘密不进长期记忆、要在记忆提取之前排除。Andy 2026-11-08 说“改 PRD”，这几句已改成与本决定一致，覆盖清单（[test/fixtures/v0.2/coverage-manifest.json](https://github.com/sixianli/himawari-agent/blob/6abd00099bce49f2231aebdea8174e8fb6ff46e8/test/qualification/evidence/workspace-authorization-lifecycle/p1-error-contract-01/input-freeze.json)）和 S0 规格里记录的 PRD 摘要同步更新。
@@ -81,7 +81,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 - [ADR 0148：所有模型请求走同一个进程内出口](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0148-send-every-model-request-through-one-in-process-egress.md)
 - [ADR 0167：敏感信息识别包](0167-sensitive-capture-package.md)
-- [ADR 0166：提示词措辞第 1 批](0166-prompt-wording-batch-1-system-and-tools.md)
+- [ADR 0166：提示词措辞第 1 批](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0166-prompt-wording-batch-1-system-and-tools.md)
 - [ADR 0143：模型门槛决定的账本](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0143-decision-ledger-for-model-gate-decisions.md)
 - [产品愿景 v2.3：自有优先、数据自持](../product-vision.md)
 - 代码：`packages/sensitive-capture/src/restoration.ts`、`packages/sensitive-capture/src/identifiers.ts`、`apps/agent-service/src/production-memory-capture.ts`、`apps/agent-service/src/production-thread-titles.ts`

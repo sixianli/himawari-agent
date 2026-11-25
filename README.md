@@ -47,7 +47,7 @@ Agent Service ── 网关（HTTP 接口、事件流）
 - **产品状态以 SQLite 为准**，Pi 的会话只是运行时的投影（[ADR 0296](docs/adr/0296-foundational-architecture-principles.md)、[ADR 0296](docs/adr/0296-foundational-architecture-principles.md)）。
 - **授权在模型之外判断**，模型只能提出要做什么（[ADR 0296](docs/adr/0296-foundational-architecture-principles.md)、[ADR 0257](docs/adr/0257-consequential-tool-calls-go-through-one-authorization-exit.md)）。
 - **会执行代码的工具不在主进程里跑**，由 Worker 起沙箱执行（[ADR 0298](docs/adr/0298-where-tools-run.md)、[ADR 0298](docs/adr/0298-where-tools-run.md)）。
-- **发给模型的内容只追加**，固定内容在前、每轮会变的在最后，让 KV 缓存命中（[ADR 0149](docs/adr/0149-append-only-model-requests.md)、[KV 缓存规范](docs/kv-cache-guide.md)）。
+- **发给模型的内容只追加**，固定内容在前、每轮会变的在最后，让 KV 缓存命中（[ADR 0303](docs/adr/0303-what-the-model-is-sent.md)、[KV 缓存规范](docs/kv-cache-guide.md)）。
 - **需要理解意思的判断交给模型**，程序只做格式、出处、额度这类固定校验，不用关键词表猜意思（[ADR 0249](docs/adr/0249-the-model-judges-meaning-where-word-lists-guessed-it.md)）。
 
 正在按新设计改的两块：一个主对话加后台子线程、所有新事情走同一个收件箱（[ADR 0285](docs/adr/0285-one-main-thread-subthreads-and-one-inbox.md)）；主模型自己读写记忆（[ADR 0286](docs/adr/0286-the-main-model-reads-and-writes-memory-itself.md)）。

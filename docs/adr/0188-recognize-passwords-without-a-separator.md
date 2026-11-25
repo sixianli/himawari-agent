@@ -53,7 +53,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 - 正面：常见的口头写法被遮盖，含它们的提醒、记忆、导入行被标敏感。
 - 负面：规则仍是启发式，全字母的口令、关键词与值之间隔着别的词（“密码我设成了 abc12345”）的写法仍认不出；少数普通句子（如 “密码 abc123 已过期”、`password is a1b2c3 hex`）会被误标，方向是保守的。
-- 发给模型的内容：这是遮盖规则的变化，但已有对话发出过的字节不变。做法是给遮盖规则编版本（`EGRESS_RULESET_CURRENT`，现在是 2；这两条宽松规则从 2 起生效，1 是此前的规则），版本记在按对话冻结的提示记录里（[ADR 0165](0165-freeze-the-request-head-per-conversation.md)，存在记录的 `identity_json`，不加列）：
+- 发给模型的内容：这是遮盖规则的变化，但已有对话发出过的字节不变。做法是给遮盖规则编版本（`EGRESS_RULESET_CURRENT`，现在是 2；这两条宽松规则从 2 起生效，1 是此前的规则），版本记在按对话冻结的提示记录里（[ADR 0165](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0165-freeze-the-request-head-per-conversation.md)，存在记录的 `identity_json`，不加列）：
   - 新对话的第一条记录写当前版本；
   - 上线时已有历史、第一次建记录的对话（来源 `rollout`）写版本 1；
   - 上线前已存在的记录没有这个字段，读出来按版本 1；是否换新的判断不看这个字段，所以不会因此换新；

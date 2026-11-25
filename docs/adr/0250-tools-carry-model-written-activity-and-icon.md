@@ -103,7 +103,7 @@ verified_at: "cbda12b8fc3e2f2273f1048c46bbf39060938cc3"
 
 - [Pi 二次开发规范：工具执行前拦截或改参数](../pi-development-guide.md#pattern-tool-call)
 - [发给模型的内容只追加](../../.agents/instructions/prompt-prefix.md)
-- [ADR 0165：按对话冻结请求开头](0165-freeze-the-request-head-per-conversation.md)
+- [ADR 0165：按对话冻结请求开头](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0165-freeze-the-request-head-per-conversation.md)
 - [ADR 0203：照 Pi 官方的扩展写法](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0203-follow-pi-official-extension-patterns.md)
 
 [返回阅读导航](#contents)

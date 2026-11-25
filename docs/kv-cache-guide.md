@@ -56,11 +56,11 @@ Andy 在 2026-11-05 要求把这些做法整理成最佳实践，用来指导 Hi
 | # | 做法 | 来源 | Himawari 现状 |
 |---|---|---|---|
 | 1 | 固定的在前，会变的在后：工具定义 → 系统提示 → 历史 → 最后一条用户消息 | S1、S2、S4、S5 | 做到 |
-| 2 | 每轮会变的内容只放最后一条用户消息；系统提示和工具定义里没有会变的值 | S5、S7 | 做到（[ADR 0164](adr/0164-move-changing-values-out-of-the-request-head.md)：运行环境说明放在最后一条消息里，只在第一轮、内容变化时和压缩后发）；感知记录的内容只作为 `perception_read` 这一次调用的工具结果追加在末尾，不进系统提示、工具定义，也不插到更早的位置 |
+| 2 | 每轮会变的内容只放最后一条用户消息；系统提示和工具定义里没有会变的值 | S5、S7 | 做到（[ADR 0303](adr/0303-what-the-model-is-sent.md)：运行环境说明放在最后一条消息里，只在第一轮、内容变化时和压缩后发）；感知记录的内容只作为 `perception_read` 这一次调用的工具结果追加在末尾，不进系统提示、工具定义，也不插到更早的位置 |
 | 3 | 告诉模型新情况时追加消息，不改系统提示 | S5、S6 | 做到（ADR 0164：工具循环停止、运行中压缩后补发运行环境说明都用追加消息） |
-| 4 | 已发内容不改、不重排、不删，只追加 | S2、S7 | 做到（[ADR 0149](adr/0149-append-only-model-requests.md)）；例外四种，见规则第 4 条 |
+| 4 | 已发内容不改、不重排、不删，只追加 | S2、S7 | 做到（[ADR 0303](adr/0303-what-the-model-is-sent.md)）；例外四种，见规则第 4 条 |
 | 5 | 存历史存实际发出去的那条 | 本项目事故 I-66 | 做到；出口遮盖除外：历史存遮盖前的内容，每次发送时确定地重新遮盖（遮盖密钥不变、前面的历史不变、对话的遮盖规则版本不变时字节相同；规则版本随冻结的提示记录固定，见 [ADR 0188](adr/0188-recognize-passwords-without-a-separator.md)） |
-| 6 | 系统提示和工具按对话冻结，只在规定的几种情况下换新并留记录 | S6 | 做到（[ADR 0165](adr/0165-freeze-the-request-head-per-conversation.md)）；“工具参数结构变了也换新”2026-11-05 获批并已实现（只改说明文字不换新）；只在一轮运行开始时判断，运行中途不换新 |
+| 6 | 系统提示和工具按对话冻结，只在规定的几种情况下换新并留记录 | S6 | 做到（[ADR 0303](adr/0303-what-the-model-is-sent.md)）；“工具参数结构变了也换新”2026-11-05 获批并已实现（只改说明文字不换新）；只在一轮运行开始时判断，运行中途不换新 |
 | 7 | 工具集合尽量不变，不能用的工具由执行端拒绝，而不是删掉 | S2、S5、S7 | 部分做到：本项目选择“工具集合变了换新一次”，只因执行句柄出现的工具接在冻结工具后面并计数；它们出现或消失的那一轮，冻结工具之后的系统提示和历史整段重算。`device_action`、`perception_read` 两个工具的定义是固定文字，和有没有配对设备、设备支持哪些动作无关；现在能做什么由 `device_action` 的 `describe` 结果告诉模型，所以配对、换设备、加动作都不会改变请求开头。这两个工具上线的那一次，每个老对话按“工具集合变了”换新一次 |
 | 8 | 同一对话中途不换模型、不换推理强度，其他请求参数保持稳定 | S1、S2、S6 | 换模型或推理强度会换新一次（ADR 0165），没有阻止中途更换 |
 | 9 | 同一对话的请求送到同一个服务方 | S2、S6 | Magpie 发会话亲和头（`packages/runtime-pi/src/configured-model-binding.ts` 的 `sendSessionAffinityHeaders`）；没有传缓存路由键；实际是否稳定**未核实**，见[已知差距](#gaps) |
@@ -69,7 +69,7 @@ Andy 在 2026-11-05 要求把这些做法整理成最佳实践，用来指导 Hi
 | 12 | 压缩集中做、少做，用总输入费用判断是否值得 | S2、S8 | 压缩由 Pi 自动触发；没有按费用评估 |
 | 13 | 压缩请求沿用原对话的系统提示和工具 | S5、S6 | 做到（[ADR 0294](adr/0294-building-on-pi.md)：摘要请求用上一次普通请求的系统提示、工具和切点前的历史，末尾追加总结指令；拆分轮、溢出压缩、对不上或放不进窗口时退回 Pi 默认请求） |
 | 14 | 清理旧工具结果要成批、少做、能恢复 | S7、S8 | 做到（[ADR 0285](adr/0285-one-main-thread-subthreads-and-one-inbox.md) 第 8 条）：Pi 的 `context` 钩子在压缩线的三分之二（15 万时是 10 万）以上、留最近 3 次、一次至少清 5000 token 时，把较早的工具结果换成占位；清了哪些由历史逐条重放算出，字节确定；`tool_result_recall` 按编号取回原文；压缩线从 20 万改成 15 万 |
-| 15 | 后台调用也是固定的在前、会变的在后 | S2、S4 | 大体做到（例如邮件判断把当前时间放在最后）；遮盖占位符说明作为后台调用的系统提示放在最前面（`packages/runtime-pi/src/egress-context.ts` 的 `backgroundModelContext`，[ADR 0166](adr/0166-prompt-wording-batch-1-system-and-tools.md)），原来接在整段提示最后、排在当前时间之后；感知抽取（`packages/application/src/services/perception-extraction.ts`）按同样的顺序排：固定说明、资料包装、这一段的记录（按时间和编号排序）、还没完成的待办（按编号排序）、日历表、当前时间；没有统一检查。回看对话（`memory.conversation-review`，[ADR 0231](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0231-review-past-conversations-to-fix-memory.md)）按固定指令、本段数据 JSON、最后一行当地日期的顺序排，提示渲染黄金文件 `apps/agent-service/test/__prompt_golden__/memory.conversation-review.txt` 锁住固定部分 |
+| 15 | 后台调用也是固定的在前、会变的在后 | S2、S4 | 大体做到（例如邮件判断把当前时间放在最后）；遮盖占位符说明作为后台调用的系统提示放在最前面（`packages/runtime-pi/src/egress-context.ts` 的 `backgroundModelContext`，[ADR 0303](adr/0303-what-the-model-is-sent.md)），原来接在整段提示最后、排在当前时间之后；感知抽取（`packages/application/src/services/perception-extraction.ts`）按同样的顺序排：固定说明、资料包装、这一段的记录（按时间和编号排序）、还没完成的待办（按编号排序）、日历表、当前时间；没有统一检查。回看对话（`memory.conversation-review`，[ADR 0231](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0231-review-past-conversations-to-fix-memory.md)）按固定指令、本段数据 JSON、最后一行当地日期的顺序排，提示渲染黄金文件 `apps/agent-service/test/__prompt_golden__/memory.conversation-review.txt` 锁住固定部分 |
 | 16 | 分叉出去的辅助计算沿用父对话的开头 | S5 | 没做（对话标题、记忆捕获各自另起开头） |
 | 17 | 开头相同的并发请求，等第一个开始返回再发 | S1 | 同一对话一般不并发，未专门处理 |
 

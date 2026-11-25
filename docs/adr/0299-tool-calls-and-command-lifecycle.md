@@ -2,7 +2,7 @@
 status: active
 document_type: adr
 decision_status: accepted
-supersedes: "https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0023-durable-hitl-execution.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0035-tool-deadline-continues-run.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0040-background-output-closed-after-bash-returns.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0053-workspace-auto-approval-like-codex.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0077-workspace-risk-by-operation.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0078-authority-check-once-then-version-compare.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0079-parallel-read-only-tools-and-host-web-tools.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0097-bash-writes-workspace-with-change-ledger.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0098-move-long-bash-commands-to-background.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0119-conversation-speed-prewarm-on-tool-call-and-embedding-retry.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0125-streamed-tool-call-recorded-as-progress-not-snapshots.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0127-settle-unknown-result-run-once-resources-released.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0139-prewarmed-environment-outlives-background-commands.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0140-settle-early-only-without-recoverable-result.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0141-tolerate-transient-broker-errors-while-polling-a-running-command.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0144-log-commands-silent-for-30-seconds-without-stopping-them.md"
+supersedes: "https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0085-remove-per-turn-system-gaps.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0023-durable-hitl-execution.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0035-tool-deadline-continues-run.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0040-background-output-closed-after-bash-returns.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0053-workspace-auto-approval-like-codex.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0077-workspace-risk-by-operation.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0078-authority-check-once-then-version-compare.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0079-parallel-read-only-tools-and-host-web-tools.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0097-bash-writes-workspace-with-change-ledger.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0098-move-long-bash-commands-to-background.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0119-conversation-speed-prewarm-on-tool-call-and-embedding-retry.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0125-streamed-tool-call-recorded-as-progress-not-snapshots.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0127-settle-unknown-result-run-once-resources-released.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0139-prewarmed-environment-outlives-background-commands.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0140-settle-early-only-without-recoverable-result.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0141-tolerate-transient-broker-errors-while-polling-a-running-command.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0144-log-commands-silent-for-30-seconds-without-stopping-them.md"
 superseded_by: ""
 date: "2026-11-26"
 covers: "apps/agent-service/src/production-background-commands.ts, apps/agent-service/src/production-background-runs.ts, apps/agent-service/src/production-payload-broker-handler.ts, apps/agent-service/src/production-workspace-ledger.ts, apps/agent-service/src/production-tool-call-prewarm.ts, apps/agent-service/src/production-task-environments.ts, apps/agent-service/src/production-run-dispatcher.ts, apps/execution-worker/src/production-sandbox-execution-v2.ts, apps/execution-worker/src/broker-poll-tolerance.ts, packages/platform-node/src/public-web-egress.ts"
@@ -26,6 +26,7 @@ verified_at: "7d0ffcd52cbb69d4941871cf9bf08d93f3843da8"
   - [预热和环境期限](#prewarm)
   - [结果未知时的收尾](#unknown)
   - [流式工具调用和日志](#progress)
+  - [不让 Himawari 自己拖慢每一轮](#no-self-wait)
 - [放弃的做法](#rejected)
 - [后果](#consequences)
 
@@ -33,7 +34,7 @@ verified_at: "7d0ffcd52cbb69d4941871cf9bf08d93f3843da8"
 
 ## 背景
 
-一次工具调用从模型写出它、经过批准、在沙箱里执行、到结果回到模型，中间每一步怎么做，原来分散在十六份 ADR 里（0023、0035、0040、0053、0077 到 0079、0097、0098、0119、0125、0127、0139 到 0141、0144），后面的多次修正前面的。这份 ADR 只写现在为真的做法。工具在哪里执行、怎样隔离，见 [ADR 0298](0298-where-tools-run.md)。旧文全文在 `supersedes` 列的固定提交链接里。
+一次工具调用从模型写出它、经过批准、在沙箱里执行、到结果回到模型，中间每一步怎么做，原来分散在十六份 ADR 里（0023、0035、0040、0053、0085、0077 到 0079、0097、0098、0119、0125、0127、0139 到 0141、0144），后面的多次修正前面的。这份 ADR 只写现在为真的做法。工具在哪里执行、怎样隔离，见 [ADR 0298](0298-where-tools-run.md)。旧文全文在 `supersedes` 列的固定提交链接里。
 
 <a id="decision"></a>
 
@@ -107,6 +108,15 @@ verified_at: "7d0ffcd52cbb69d4941871cf9bf08d93f3843da8"
 - 模型流式写工具参数时，只记录进度（路径、行数），事件为 `runtime.tool_call.writing`，不存每一刻的参数快照。
 - 命令 30 秒没有任何输出时写诊断 `sandbox.command.silent`，不停止命令。
 - 命令退出未知、启动前被拒、执行中丢失、因轮询出错被取消，各写一条诊断，不静默吞掉。
+
+<a id="no-self-wait"></a>
+
+### 不让 Himawari 自己拖慢每一轮
+
+- 网关的命令接口收下命令后立刻叫醒调度器，不等每秒一次的兜底轮询。
+- 起标题、记忆写入等后台模型调用和回答同时开始；找记忆和读档案同时进行。
+- 流式事件只在阶段、结束状态或诊断码变化时才写进度检查点。
+- 每轮结束写一行分段计时 `run.timing`，查慢在哪一段。
 
 [返回目录](#contents)
 

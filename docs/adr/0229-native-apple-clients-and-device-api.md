@@ -179,7 +179,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 - [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0089-web-push-only-owner-entry.md]
 - [SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0234-one-program-per-person-database-file.md]
 - [SOURCE: docs/adr/0162-receive-muse-data-through-a-service-token-and-an-app-secret.md]
-- [SOURCE: docs/adr/0165-freeze-the-request-head-per-conversation.md]
+- [SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0165-freeze-the-request-head-per-conversation.md]
 - [SOURCE: docs/adr/0230-perception-records-and-memories-inferred-from-perception.md]
 - [SOURCE: docs/execution/specs/2026-11-11-apple-device-body-design.md]
 - [SOURCE: docs/product-vision.md]

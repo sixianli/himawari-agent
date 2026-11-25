@@ -30,7 +30,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 Himawari 的产品数据库是 SQLite（一种单文件数据库），用 WAL（先把改动追加到一个日志文件，再定期并回主文件）加 `synchronous = FULL`：每次提交都要等硬盘确认“真的写到盘上了”才继续。生产机每次这样的确认实测要 11.5–18.7 毫秒（[BL-20261001-002](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261001-002-回-到-同-步-写-入-快-的.md)）。
 
-一轮回答里，过程记录（`trace_events` 表里的执行过程事件，以及用途为 `trace` 的事件内容，比如“思考了”“搜了哪些”“等你确认”）要写几十到上百条。[ADR 0085](0085-remove-per-turn-system-gaps.md) 已经去掉了每个事件的进度检查点写入，但每个流式事件仍有三次等硬盘的提交：事件内容、事件记录，以及运行层自己保存的一份。网页从数据库读这些事件，所以它们排队等硬盘时，步骤显示和确认卡片就会落后。
+一轮回答里，过程记录（`trace_events` 表里的执行过程事件，以及用途为 `trace` 的事件内容，比如“思考了”“搜了哪些”“等你确认”）要写几十到上百条。[ADR 0085](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0085-remove-per-turn-system-gaps.md) 已经去掉了每个事件的进度检查点写入，但每个流式事件仍有三次等硬盘的提交：事件内容、事件记录，以及运行层自己保存的一份。网页从数据库读这些事件，所以它们排队等硬盘时，步骤显示和确认卡片就会落后。
 
 2026-10-26 Andy 在两个选项中选了“过程记录不等落盘”（原话：“我也选择这一个”），另一个选项是维持全部等落盘。
 
@@ -83,7 +83,7 @@ Himawari 的产品数据库是 SQLite（一种单文件数据库），用 WAL（
 
 - 好处：每个流式事件少了两次等硬盘确认（事件内容和事件记录），步骤和确认卡片出现得更及时。
 - 代价：整台生产机断电或操作系统崩溃时，最后一次等硬盘的提交之后写的过程记录可能丢失，网页里那一轮的步骤会少几条；对话内容、回答、记忆、审批和外部动作记录不受影响。服务进程崩溃或重启不丢任何记录。
-- 后续：第十三版上线后，用 [ADR 0085](0085-remove-per-turn-system-gaps.md) 的 `run.timing` 里 `trace.record` 和 `payload.commit` 的耗时核对效果，结果写进[工程案例库](../engineering-casebook.md#case-run-gaps)。
+- 后续：第十三版上线后，用 [ADR 0085](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0085-remove-per-turn-system-gaps.md) 的 `run.timing` 里 `trace.record` 和 `payload.commit` 的耗时核对效果，结果写进[工程案例库](../engineering-casebook.md#case-run-gaps)。
 
 [↑ 返回阅读导航](#contents)
 
@@ -92,8 +92,8 @@ Himawari 的产品数据库是 SQLite（一种单文件数据库），用 WAL（
 ## 关联文档
 
 - [ADR 0018：以 SQLite 作为单权威部署的产品状态库](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0018-sqlite-product-state-authority.md)
-- [ADR 0085：去掉每轮回答里 Himawari 自己造成的等待](0085-remove-per-turn-system-gaps.md)
+- [ADR 0085：去掉每轮回答里 Himawari 自己造成的等待](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0085-remove-per-turn-system-gaps.md)
 - [BL-20261001-002：回到同步写入快的测试机后恢复 5 秒默认测试时限（含生产机同步写入实测）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261001-002-回-到-同-步-写-入-快-的.md)
 - [工程案例库：每轮回答里的系统空档](../engineering-casebook.md#case-run-gaps)
 - [SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0018-sqlite-product-state-authority.md]
-- [SOURCE: docs/adr/0085-remove-per-turn-system-gaps.md]
+- [SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0085-remove-per-turn-system-gaps.md]

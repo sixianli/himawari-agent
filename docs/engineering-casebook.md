@@ -514,7 +514,7 @@ Andy 在生产里问“今天有什么新闻”，等了约 49 秒才看到完�
 
 **后续（2026-10-26）**
 
-第十二版的生产日志显示，每轮预热用了 4.9–7.5 秒，并且和事件写入变慢、运行完成推迟的时间点重合，没用工具的一轮也照样预热。按 Andy 同意的方案 B 先去掉了每轮预热，改为用到才启动，见[案例 24](#case-run-gaps) 和 [ADR 0085](adr/0085-remove-per-turn-system-gaps.md)；按对话复用仍是下一步。
+第十二版的生产日志显示，每轮预热用了 4.9–7.5 秒，并且和事件写入变慢、运行完成推迟的时间点重合，没用工具的一轮也照样预热。按 Andy 同意的方案 B 先去掉了每轮预热，改为用到才启动，见[案例 24](#case-run-gaps) 和 [ADR 0085](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0085-remove-per-turn-system-gaps.md)；按对话复用仍是下一步。
 
 **相关 ADR/PR**
 
@@ -1468,7 +1468,7 @@ Andy 决定不用 Bark 过渡，所有推送只走网页推送，并定下生产
 
 **相关 ADR/PR**
 
-[ADR 0084](adr/0084-himawari-identity-system-prompt.md)；[原生运行历史规格](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-11-native-runtime-history-design.md#数据与流程)（2026-10-26 补充）；提交 `d30d59c`（原做法）；发现问题的 [PR #39](https://github.com/sixianli/himawari-agent/pull/39)。
+[ADR 0084](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0084-himawari-identity-system-prompt.md)；[原生运行历史规格](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-11-native-runtime-history-design.md#数据与流程)（2026-10-26 补充）；提交 `d30d59c`（原做法）；发现问题的 [PR #39](https://github.com/sixianli/himawari-agent/pull/39)。
 
 **面试 30 秒版**
 
@@ -1598,7 +1598,7 @@ Andy 决定不用 Bark 过渡，所有推送只走网页推送，并定下生产
 
 **相关 ADR/PR**
 
-[ADR 0085](adr/0085-remove-per-turn-system-gaps.md)；[ADR 0054 的预热补充](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md#resident-prewarm)；[BL-20261024-006](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/backlog/BL-20261024-006-first-tool-call-cold-start.md)；[BL-20261001-002](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261001-002-回-到-同-步-写-入-快-的.md)；PR #44（已合并，合并提交 `f7b68a2`）；[ADR 0088](adr/0088-process-records-skip-disk-sync.md)（后续）。
+[ADR 0085](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0085-remove-per-turn-system-gaps.md)；[ADR 0054 的预热补充](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md#resident-prewarm)；[BL-20261024-006](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/backlog/BL-20261024-006-first-tool-call-cold-start.md)；[BL-20261001-002](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261001-002-回-到-同-步-写-入-快-的.md)；PR #44（已合并，合并提交 `f7b68a2`）；[ADR 0088](adr/0088-process-records-skip-disk-sync.md)（后续）。
 
 **面试 30 秒版**
 
@@ -2499,7 +2499,7 @@ Agent 一轮里会跑后台命令、写出文件，这些都是附属结果，�
 
 **相关 ADR/PR**
 
-[ADR 0101](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0101-adopt-product-vision-v2-1.md)、[产品愿景](product-vision.md)、[ADR 0076](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0076-no-model-cost-budget-limits.md)、[ADR 0084](adr/0084-himawari-identity-system-prompt.md)、[ADR 0083](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0083-isolated-instance-per-person-with-owner-entry.md)；PR 见分支 `claude/project-thread-rfq0gv`。
+[ADR 0101](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0101-adopt-product-vision-v2-1.md)、[产品愿景](product-vision.md)、[ADR 0076](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0076-no-model-cost-budget-limits.md)、[ADR 0084](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0084-himawari-identity-system-prompt.md)、[ADR 0083](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0083-isolated-instance-per-person-with-owner-entry.md)；PR 见分支 `claude/project-thread-rfq0gv`。
 
 **面试 30 秒版**
 
@@ -4162,7 +4162,7 @@ Andy 先要一个“隐私最好、价格最低”的方案。调研比较了 12
 写了一个只读脚本 speed-profile.mjs：在生产机上读最近的轮次，只输出时间、次数和长度，不输出对话内容；把每轮拆成“发送 → 找记忆 → 第一次模型请求 → 等到第一个字 → 思考 → 写字 → 工具开工 → 工具执行”，审批等待单独列出并剔除。13 轮（10-29 23:46 到 10-30 00:22）的结果：
 
 1. **模型出第一个字前等 5.1 秒（中位数，28 次请求，合计 142 秒，占 32%）。** 等待时间和请求大小无关：4 千 token、没命中缓存的请求等 5.0 秒，2 万 token、大部分命中缓存的请求也等 5.1 秒，所以不是提示词太长。再在生产机上用短请求实测（每组 5 次）：经 Magpie（本机模型路由程序）路由组中位数 3.0 秒，直指 OpenCode Go 2.5 秒，走 CodeBuddy 新加坡 1.1 秒，生产机到 opencode.ai 的网络只占约 0.5 秒。路由组每次先试两个在生产机上一直被拒（429）的免费模型，平时多花约 0.5 秒，冷却过后的第一次多花约 4 秒（23:46 那一轮等了 9.0 秒，Magpie 日志同一分钟有两条 429）。
-2. **每个工具开工前空等 3.2 秒（中位数）。** 日志 `sandbox.srt_session.timing` 显示：写文件、执行命令各要新开一个常驻沙箱会话，各 3.2–5.0 秒；而 [ADR 0085](adr/0085-remove-per-turn-system-gaps.md) 去掉每轮预热后，会话要等工具请求走完准入和派发（2.4–6.7 秒）才开始启动，两段串行。
+2. **每个工具开工前空等 3.2 秒（中位数）。** 日志 `sandbox.srt_session.timing` 显示：写文件、执行命令各要新开一个常驻沙箱会话，各 3.2–5.0 秒；而 [ADR 0085](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0085-remove-per-turn-system-gaps.md) 去掉每轮预热后，会话要等工具请求走完准入和派发（2.4–6.7 秒）才开始启动，两段串行。
 3. **模型开工前 3.4 秒（中位数）。** 其中找记忆要先经 Vercel 把问题变成向量，中位数 1.5 秒；隔几分钟再发的第一轮 1.9–9.1 秒，而向量请求的超时等于整个模型请求的时限，慢的那次只能干等。
 
 模型真正“思考”的时间中位数只有 1.5 秒。
@@ -4223,7 +4223,7 @@ OpenAI 的“流式”Himawari 早已做到，但第一个字本身就要 5 秒�
 
 **相关 ADR/PR**
 
-[ADR 0119](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0119-conversation-speed-prewarm-on-tool-call-and-embedding-retry.md)、[ADR 0123](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0123-cut-off-embedding-attempt-charged-at-its-ceiling.md)、[ADR 0124](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0124-unknown-model-call-blocks-only-its-own-resend.md)、[ADR 0085](adr/0085-remove-per-turn-system-gaps.md)、[ADR 0117](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0117-magpie-routes-models-through-owned-subscriptions.md)、[事故清单 I-25、I-30、I-36、I-37](incidents-and-gates.md#incidents)、[案例 59：工具前后空等](#case-tool-gap-host-check)、[案例 24：每轮系统空档](#case-run-gaps)；PR 在分支 `claude/project-thread-jimoqj`。
+[ADR 0119](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0119-conversation-speed-prewarm-on-tool-call-and-embedding-retry.md)、[ADR 0123](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0123-cut-off-embedding-attempt-charged-at-its-ceiling.md)、[ADR 0124](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0124-unknown-model-call-blocks-only-its-own-resend.md)、[ADR 0085](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0085-remove-per-turn-system-gaps.md)、[ADR 0117](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0117-magpie-routes-models-through-owned-subscriptions.md)、[事故清单 I-25、I-30、I-36、I-37](incidents-and-gates.md#incidents)、[案例 59：工具前后空等](#case-tool-gap-host-check)、[案例 24：每轮系统空档](#case-run-gaps)；PR 在分支 `claude/project-thread-jimoqj`。
 
 **面试 30 秒版**
 
@@ -5269,7 +5269,7 @@ Andy 看到“崩溃已有处理、生产没有卡住证据”后选了“只记
 
 **相关 ADR/PR**
 
-[ADR 0149](adr/0149-append-only-model-requests.md)（取代 [ADR 0104](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0104-turn-material-in-last-user-message.md)）、[ADR 0128](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0128-record-cache-usage-of-every-model-request.md)、事故 [I-66](incidents-and-gates.md#incidents)。
+[ADR 0149](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0149-append-only-model-requests.md)（取代 [ADR 0104](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0104-turn-material-in-last-user-message.md)）、[ADR 0128](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0128-record-cache-usage-of-every-model-request.md)、事故 [I-66](incidents-and-gates.md#incidents)。
 
 **面试 30 秒版**
 
@@ -5478,7 +5478,7 @@ Pi 在 0.86 和 0.87 改了两处核心约定：发给模型的请求不再分�
 - 生产命中率变化：未测量（还没上线）。
 
 **相关 ADR/PR**
-[ADR 0198](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0198-upgrade-pi-to-1-5-0.md)、[ADR 0165](adr/0165-freeze-the-request-head-per-conversation.md)、PR #338。
+[ADR 0198](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0198-upgrade-pi-to-1-5-0.md)、[ADR 0165](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0165-freeze-the-request-head-per-conversation.md)、PR #338。
 
 **面试 30 秒版**
 “我们的 Agent 跑在开源框架 Pi 上，跨大版本升级时 Pi 把系统提示改成放在消息里，并且会话历史只认它自己的会话管理器。我们按对话冻结请求开头来保证 KV 缓存命中，直接升级会让这层冻结静默失效。我按 Pi 官方文档把审批续跑改成用会话条目恢复，请求开头仍由我们生成再交给 Pi 的官方函数，并加了反向测试。最后用新旧两版生成同一请求做逐字节比对，证明老对话的缓存一个字节都没变。”

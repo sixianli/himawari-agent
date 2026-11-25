@@ -176,7 +176,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 - [SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0179-keep-low-confidence-memory-candidates-as-tentative.md]
 - [SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0106-proactive-loop-v1-gmail-read-only.md]
 - [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0146-redact-sensitive-text-before-it-leaves-for-any-model.md]
-- [SOURCE: docs/adr/0149-append-only-model-requests.md]
+- [SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0149-append-only-model-requests.md]
 - [SOURCE: docs/adr/0229-native-apple-clients-and-device-api.md]
 - [SOURCE: docs/execution/specs/2026-11-11-apple-device-body-design.md]
 - [SOURCE: docs/product-vision.md]
