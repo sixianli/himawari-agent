@@ -168,6 +168,7 @@ public final class ChatStore {
     }
 
     private func restartConnections() {
+        notice?.retrying()
         events.restartConnection()
         watched?.stream.restartConnection()
     }

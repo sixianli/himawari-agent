@@ -70,6 +70,8 @@ public final class DeviceEventStream: @unchecked Sendable {
     private let lock = NSLock()
     private var task: Task<Void, Never>?
     private var wake: CheckedContinuation<Void, Never>?
+    private var pauseNumber = 0
+    private var wakePending = false
     private var restartRequested = false
     private var continuation: AsyncStream<DeviceStreamEvent>.Continuation?
 
@@ -115,6 +117,16 @@ public final class DeviceEventStream: @unchecked Sendable {
     public func reconnectNow() {
         let pending = lock.withLock { () -> CheckedContinuation<Void, Never>? in
             defer { wake = nil }
+            if wake == nil { wakePending = true }
+            return wake
+        }
+        pending?.resume()
+    }
+
+    private func endPause(_ number: Int) {
+        let pending = lock.withLock { () -> CheckedContinuation<Void, Never>? in
+            guard pauseNumber == number else { return nil }
+            defer { wake = nil }
             return wake
         }
         pending?.resume()
@@ -129,7 +141,10 @@ public final class DeviceEventStream: @unchecked Sendable {
             var ending: StreamEnding
             lock.withLock { restartRequested = false }
             do {
-                let chunks = try await http.openStream(DeviceRequest(method: "GET", path: path, query: query))
+                guard let chunks = try await open(DeviceRequest(method: "GET", path: path, query: query)) else {
+                    continue
+                }
+                lock.withLock { wakePending = false }
                 continuation.yield(.connected)
                 let openedAt = Date()
                 if let droppedAt {
@@ -215,12 +230,39 @@ public final class DeviceEventStream: @unchecked Sendable {
 
     static let checkNanoseconds: UInt64 = 250_000_000
 
+    private func open(_ request: DeviceRequest) async throws -> AsyncThrowingStream<String, Error>? {
+        try await withThrowingTaskGroup(of: AsyncThrowingStream<String, Error>?.self) { group in
+            group.addTask { try await self.http.openStream(request) }
+            group.addTask {
+                while !Task.isCancelled {
+                    try await Task.sleep(nanoseconds: Self.checkNanoseconds)
+                    if self.takeRestart() { return nil }
+                }
+                throw CancellationError()
+            }
+            defer { group.cancelAll() }
+            return try await group.next() ?? nil
+        }
+    }
+
     private func pause(seconds: TimeInterval) async {
         await withCheckedContinuation { (wakeUp: CheckedContinuation<Void, Never>) in
-            lock.withLock { wake = wakeUp }
+            let number = lock.withLock { () -> Int? in
+                if wakePending {
+                    wakePending = false
+                    return nil
+                }
+                pauseNumber += 1
+                wake = wakeUp
+                return pauseNumber
+            }
+            guard let number else {
+                wakeUp.resume()
+                return
+            }
             Task { [weak self] in
                 try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
-                self?.reconnectNow()
+                self?.endPause(number)
             }
         }
     }
