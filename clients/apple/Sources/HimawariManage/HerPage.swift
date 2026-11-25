@@ -8,6 +8,12 @@ public protocol HerListening: AnyObject, Sendable {
     func deleteVoiceprint()
 }
 
+public enum HerVaultCount: Equatable, Sendable {
+    case unsupported
+    case unknown
+    case items(Int)
+}
+
 public struct HerPage: View {
     enum Page: Hashable {
         case memory
@@ -24,6 +30,8 @@ public struct HerPage: View {
     @State private var quietHours: QuietHoursStore
     @State private var path: [Page] = []
     @State private var sensesOpen = false
+    @State private var vaultCount: HerVaultCount = .unknown
+    @State private var vaultOpen = false
     private let listening: (any HerListening)?
     private let actions: DeviceActionsModel?
     private let openListening: () -> Void
@@ -32,6 +40,8 @@ public struct HerPage: View {
     private let talk: (String) -> Void
     private let close: () -> Void
     private let removedThisDevice: () -> Void
+    private let countVault: () async -> HerVaultCount
+    private let vault: ((@escaping () -> Void) -> AnyView)?
 
     public init(
         api: DeviceAPI,
@@ -60,9 +70,23 @@ public struct HerPage: View {
         self.talk = talk
         self.close = close
         self.removedThisDevice = removedThisDevice
+        countVault = {
+            do {
+                return .items(try await api.vaultSnapshot().items.count)
+            } catch DeviceAPIError.server(let status, _, _, _) where status == 404 {
+                return .unsupported
+            } catch {
+                return .unknown
+            }
+        }
+        #if canImport(CryptoKit) && canImport(Security) && canImport(LocalAuthentication)
+        vault = { close in AnyView(VaultRootView(api: api, confirmKey: confirmKey, close: close)) }
+        #else
+        vault = nil
+        #endif
     }
 
-    init(settings: SettingsStore, memory: MemoryStore, quietHours: QuietHoursStore, listening: (any HerListening)? = nil, actions: DeviceActionsModel? = nil, senses: AnyView? = nil, path: [Page] = []) {
+    init(settings: SettingsStore, memory: MemoryStore, quietHours: QuietHoursStore, listening: (any HerListening)? = nil, actions: DeviceActionsModel? = nil, senses: AnyView? = nil, vaultItems: HerVaultCount = .items(3), path: [Page] = []) {
         _settings = State(initialValue: settings)
         _memory = State(initialValue: memory)
         _quietHours = State(initialValue: quietHours)
@@ -75,6 +99,9 @@ public struct HerPage: View {
         talk = { _ in }
         close = {}
         removedThisDevice = {}
+        let shown = vaultItems
+        countVault = { shown }
+        vault = nil
     }
 
     public var body: some View {
@@ -98,9 +125,15 @@ public struct HerPage: View {
                     }
                     SettingsGroup(label: nil) {
                         Button { path.append(.allowances) } label: {
-                            HerRow(icon: .shieldCheck, title: M.allowancesTitle, subtitle: M.allowancesSummary(memory.allowances.count), last: true)
+                            HerRow(icon: .shieldCheck, title: M.allowancesTitle, subtitle: M.allowancesSummary(memory.allowances.count), last: vaultCount == .unsupported)
                         }
                         .buttonStyle(.plain)
+                        if vaultCount != .unsupported {
+                            Button { vaultOpen = true } label: {
+                                HerRow(icon: .key, title: M.vaultTitle, subtitle: M.vaultSummary(vaultCount), last: true)
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                     SettingsGroup(label: nil) {
                         if let hours = quietHours.hours {
@@ -173,6 +206,9 @@ public struct HerPage: View {
         .sheet(isPresented: $sensesOpen) {
             senses
         }
+        .sheet(isPresented: $vaultOpen, onDismiss: { Task { vaultCount = await countVault() } }) {
+            vault?({ vaultOpen = false })
+        }
     }
 
     private var devicesSummary: String? {
@@ -184,7 +220,9 @@ public struct HerPage: View {
         async let settingsLoaded: Void = settings.load()
         async let memoryLoaded: Void = memory.load()
         async let quietLoaded: Void = quietHours.load()
+        async let vaultLoaded = countVault()
         _ = await (settingsLoaded, memoryLoaded, quietLoaded)
+        vaultCount = await vaultLoaded
     }
 }
 

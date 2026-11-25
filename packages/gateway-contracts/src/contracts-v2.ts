@@ -2040,6 +2040,7 @@ export const MEMORY_EXTERNAL_CATEGORY_NAMES = MEMORY_CATEGORY_NAMES.filter(
 );
 export const MEMORY_EXTERNAL_RESPOND_MAXIMUM = 500;
 export const MCP_SYNC_NOTE_TEXT_MAXIMUM = 60_000;
+export const MEMORY_TRASH_RETENTION_DAYS = 7;
 export const MEMORY_HISTORY_KIND_NAMES = [
   "created",
   "updated",
