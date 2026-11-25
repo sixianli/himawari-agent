@@ -297,7 +297,6 @@ describe("strict product configuration", () => {
         version: "policy-voice-addressee",
         systemInstruction: "test",
         memoryLimit: 10,
-        maxSelectedMemories: 1,
         voiceAddressee,
       };
       return input;
@@ -340,7 +339,6 @@ describe("strict product configuration", () => {
       version: "policy-delivery-timing",
       systemInstruction: "test",
       memoryLimit: 10,
-      maxSelectedMemories: 1,
       deliveryTiming: { model: "typesafe-ai/jev", busyAtLeastPermille: 850 },
     };
     const policy = parseProductConfiguration(input, "2026-11-15T00:00:00.000Z").runPolicy;
@@ -1128,24 +1126,24 @@ describe("startup and drain coordinator", () => {
   );
 });
 
-it("validates the versioned Run policy and rejects inconsistent Memory bounds", () => {
+it("validates the versioned Run policy and only records the retired related-memory count", () => {
   const raw = config("/tmp/himawari-policy-config");
   raw["runPolicy"] = {
     version: "policy-v1",
     systemInstruction: "可信指令",
     memoryLimit: 10,
-    maxSelectedMemories: 5,
   };
   expect(parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.version).toBe(
     "policy-v1",
   );
   raw["runPolicy"] = { ...(raw["runPolicy"] as object), maxSelectedMemories: 11 };
-  expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
+  expect(parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.retiredKeys).toEqual(
+    ["maxSelectedMemories"],
+  );
   raw["runPolicy"] = {
     version: "policy-v1",
     systemInstruction: "可信指令",
     memoryLimit: 10,
-    maxSelectedMemories: 5,
     allowUntrustedTools: true,
   };
   expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
@@ -1157,7 +1155,6 @@ it("[HOME-settings] fills home feed settings from the defaults and rejects value
     version: "policy-v1",
     systemInstruction: "可信指令",
     memoryLimit: 10,
-    maxSelectedMemories: 5,
   };
   raw["runPolicy"] = policy;
   expect(
@@ -1187,7 +1184,6 @@ it("reads the search answer limits from runPolicy.searchAsk and rejects values o
     version: "policy-v1",
     systemInstruction: "可信指令",
     memoryLimit: 10,
-    maxSelectedMemories: 5,
   };
   raw["runPolicy"] = policy;
   expect(
@@ -1223,7 +1219,6 @@ it("[RULE-memory-visible] accepts the retired maxMemoryClassification key withou
     version: "policy-v1",
     systemInstruction: "可信指令",
     memoryLimit: 10,
-    maxSelectedMemories: 5,
     maxMemoryClassification: "public",
   };
   const policy = parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy;
@@ -1245,7 +1240,6 @@ it("parses private search without allowing a mixed directory grant", () => {
     version: "1",
     systemInstruction: "test",
     memoryLimit: 10,
-    maxSelectedMemories: 1,
     publicSearch: route,
   };
   raw["runPolicy"] = policy;
@@ -1275,7 +1269,6 @@ it("parses ordered web providers and a fetch route without accepting unregistere
     version: "1",
     systemInstruction: "test",
     memoryLimit: 10,
-    maxSelectedMemories: 1,
   };
   raw["runPolicy"] = {
     ...policy,
@@ -1311,7 +1304,6 @@ it("[NL-11] lets a page fetch return up to 100 KiB while search keeps its own li
     version: "1",
     systemInstruction: "test",
     memoryLimit: 10,
-    maxSelectedMemories: 1,
   };
   raw["runPolicy"] = { ...policy, publicFetch: route };
   expect(
@@ -1338,7 +1330,6 @@ it("requires a configured web-provider secret for each provider that needs one",
     version: "1",
     systemInstruction: "test",
     memoryLimit: 10,
-    maxSelectedMemories: 1,
   };
   const references = raw["secretReferences"] as unknown[];
   raw["secretReferences"] = [
@@ -1388,7 +1379,6 @@ it("accepts a dedicated review model and rejects one the router could also selec
     version: "policy-v1",
     systemInstruction: "可信指令",
     memoryLimit: 10,
-    maxSelectedMemories: 5,
     automaticReview: review,
   };
   raw["runPolicy"] = policy;
@@ -1447,7 +1437,6 @@ it("accepts a TypeSafe decision model as the configured reviewer and rejects its
     version: "policy-v1",
     systemInstruction: "可信指令",
     memoryLimit: 10,
-    maxSelectedMemories: 5,
     automaticReview: review,
   };
   raw["runPolicy"] = policy;
@@ -1507,7 +1496,6 @@ describe("[R2-T2] coding route approval mode", () => {
       version: "policy-v1",
       systemInstruction: "test",
       memoryLimit: 10,
-      maxSelectedMemories: 1,
       coding: {
         hostId: "host",
         workerInstanceId: "worker",
@@ -1548,7 +1536,6 @@ it("[WP-7] accepts web push only with a web-push secret and an https or mailto s
     version: "1",
     systemInstruction: "test",
     memoryLimit: 10,
-    maxSelectedMemories: 1,
   };
   const references = raw["secretReferences"] as unknown[];
   raw["secretReferences"] = [
@@ -1590,7 +1577,6 @@ it("[P3] parses every perception setting with its default and rejects unknown or
     version: "1",
     systemInstruction: "test",
     memoryLimit: 10,
-    maxSelectedMemories: 1,
   };
   const parse = (perception: unknown) => {
     raw["runPolicy"] = { ...policy, perception };
@@ -1615,7 +1601,6 @@ it("[IOS-4] accepts Apple push only with an apple-push secret, web push, Apple i
     version: "1",
     systemInstruction: "test",
     memoryLimit: 10,
-    maxSelectedMemories: 1,
     webPush: { secretRef: "web-push-vapid", subject: "https://himawari.siyi.win" },
   };
   const references = raw["secretReferences"] as unknown[];
@@ -1682,7 +1667,6 @@ it("[P1-1] parses the ten device hard limits with defaults and rejects unknown o
     version: "1",
     systemInstruction: "test",
     memoryLimit: 10,
-    maxSelectedMemories: 1,
   };
   const parse = (device: unknown) => {
     raw["runPolicy"] = { ...policy, device };
@@ -1712,7 +1696,6 @@ it("[PG-12] accepts proactive Gmail checks only with a Google client secret and 
     version: "1",
     systemInstruction: "test",
     memoryLimit: 10,
-    maxSelectedMemories: 1,
   };
   const references = raw["secretReferences"] as unknown[];
   raw["secretReferences"] = [
@@ -1874,7 +1857,6 @@ it("[PG-12][reverse] rejects a proactive model that the mail check cannot call, 
     version: "1",
     systemInstruction: "test",
     memoryLimit: 10,
-    maxSelectedMemories: 1,
   };
   const gmail = { clientId: "123-abc.apps.googleusercontent.com", clientSecretRef: "google-oauth" };
   raw["runPolicy"] = { ...policy, proactive: { modelRef: "model-primary", gmail } };
@@ -1893,7 +1875,6 @@ it("[P6-demo] accepts a fake inbox in place of Gmail, in one of the offered lang
     version: "1",
     systemInstruction: "test",
     memoryLimit: 10,
-    maxSelectedMemories: 1,
   };
   const references = raw["secretReferences"] as unknown[];
   raw["secretReferences"] = [
@@ -1928,7 +1909,6 @@ it("[P5-3] accepts the MCP entry only behind Cloudflare Access, with its own aud
     version: "1",
     systemInstruction: "test",
     memoryLimit: 10,
-    maxSelectedMemories: 1,
   };
   const accessIdentity = {
     issuer: "https://team.cloudflareaccess.com",
@@ -2072,7 +2052,6 @@ it("accepts Muse intake only with a boolean switch and one secret whose purpose 
     version: "1",
     systemInstruction: "test",
     memoryLimit: 10,
-    maxSelectedMemories: 1,
   };
   const references = raw["secretReferences"] as unknown[];
   raw["secretReferences"] = [
@@ -2115,7 +2094,6 @@ it("accepts home urgency scoring settings, fills in the defaults, and refuses va
     version: "1",
     systemInstruction: "test",
     memoryLimit: 10,
-    maxSelectedMemories: 1,
   };
   raw["runPolicy"] = { ...policy, homeUrgency: {} };
   expect(parseProductConfiguration(raw, "2026-11-12T00:00:00.000Z").runPolicy?.homeUrgency).toEqual(
@@ -2212,7 +2190,6 @@ it("[A4] accepts a duplicate-judgement route that names a model-auth secret, fil
     version: "1",
     systemInstruction: "test",
     memoryLimit: 10,
-    maxSelectedMemories: 1,
   };
   const secrets = raw["secretReferences"] as Record<string, unknown>[];
   const modelAuth = secrets.find(({ purpose }) => purpose === "model-auth");
@@ -2258,7 +2235,6 @@ it("[P4-5] accepts a real memory eval with a model that may see private and sens
     version: "1",
     systemInstruction: "test",
     memoryLimit: 10,
-    maxSelectedMemories: 1,
   };
   const realEval = {
     mode: "once",
@@ -2374,7 +2350,6 @@ it("accepts the approval preview length only from 1 to 2000 characters and leave
     version: "1",
     systemInstruction: "test",
     memoryLimit: 10,
-    maxSelectedMemories: 1,
   };
   raw["runPolicy"] = { ...policy };
   expect(
@@ -2406,7 +2381,6 @@ it("[ADR-0257] reads the owner intent check settings and rejects values out of r
     version: "1",
     systemInstruction: "test",
     memoryLimit: 10,
-    maxSelectedMemories: 1,
   };
   raw["runPolicy"] = { ...policy };
   expect(
@@ -2449,7 +2423,6 @@ it("[ADR-0257] reads the tool refusal limits from the run policy and rejects val
     version: "1",
     systemInstruction: "test",
     memoryLimit: 10,
-    maxSelectedMemories: 1,
   };
   raw["runPolicy"] = { ...policy };
   expect(

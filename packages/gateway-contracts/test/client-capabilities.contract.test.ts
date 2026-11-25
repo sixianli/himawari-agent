@@ -145,6 +145,7 @@ describe("[第11批] 客户端能力表", () => {
     ])
       expect(tiers(type), type).toBe("change");
     expect(tiers("data.export.cancel")).toBe("routine");
+    expect(tiers("timers.change")).toBe("routine");
   });
 
   it("正文还带别的设置的开关整个算改，暂停提醒用只有方向的单独类型", () => {

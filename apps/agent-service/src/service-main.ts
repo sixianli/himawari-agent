@@ -196,6 +196,7 @@ import { ProductionOwnerRuleTools, ProductionOwnerRuleWriter } from "./productio
 import { ProductionOwnerSteering } from "./production-owner-steering.js";
 import { ProductionPayloadBrokerHandler } from "./production-payload-broker-handler.js";
 import { ProductionPerceptionExtraction } from "./production-perception-extraction.js";
+import { ProductionPerceptionInbox } from "./production-perception-inbox.js";
 import { ProductionPerceptionTools } from "./production-perception-tools.js";
 import {
   createProactivePushSource,
@@ -212,6 +213,7 @@ import {
   type ProductionRealEval,
   RealEvalSampleExpiry,
 } from "./production-real-eval.js";
+import { ProductionReminderInbox } from "./production-reminder-inbox.js";
 import { ProductionReminderTools, ProductionReminderWriter } from "./production-reminder-writer.js";
 import { createProductionRunComposition } from "./production-run-composition.js";
 import { ProductionRunDispatchLoop } from "./production-run-dispatch-loop.js";
@@ -765,6 +767,8 @@ export async function startTenantRuntime(
   let runMemoryEpisodes: MemoryEpisodeService | undefined;
   let requeueStaleMemoryVectors: () => Promise<void> = async () => {};
   let webPush: ProductionWebPush | undefined;
+  let reminderInbox: ProductionReminderInbox | undefined;
+  let timerSubthreads: ProductionSubthreads | undefined;
   let applePush: ProductionApplePush | undefined;
   let applePushSender: ReturnType<typeof createApplePushSender> | undefined;
   let proactive: ProductionProactive | undefined;
@@ -777,6 +781,7 @@ export async function startTenantRuntime(
   let observation: ProductionObservation | undefined;
   let realEval: ProductionRealEval | RealEvalSampleExpiry | undefined;
   let perceptionExtraction: ProductionPerceptionExtraction | undefined;
+  let perceptionInbox: ProductionPerceptionInbox | undefined;
   const webPushPresence = new WebPushPresence();
   let durableMemory: DurableMemoryService | undefined;
   let protector: PayloadProtectorPort | undefined;
@@ -824,6 +829,16 @@ export async function startTenantRuntime(
       }
       runtimeTimers.clear();
     },
+    close: () => undefined,
+  });
+  lifecycle.register({
+    name: "reminder-inbox",
+    stopAccepting: () => reminderInbox?.stop(),
+    close: () => undefined,
+  });
+  lifecycle.register({
+    name: "subthread-timers",
+    stopAccepting: () => timerSubthreads?.stopTimers(),
     close: () => undefined,
   });
   lifecycle.register({
@@ -1821,6 +1836,68 @@ export async function startTenantRuntime(
         configuration.agentId,
       );
       const inboxRuns = new InboxRunRegistry();
+      const mainMessageExists = async (threadId: string, messageId: string) =>
+        (
+          await requireValue(repository)
+            .threadRepository()
+            .readCommittedMessagesByIds({
+              ownerId: configuration.ownerId,
+              agentId: configuration.agentId,
+              threadId: threadId as never,
+              messageIds: [messageId as never],
+            })
+        ).length > 0;
+      const reminderDueFormat = new Intl.DateTimeFormat("zh-CN", {
+        dateStyle: "medium",
+        timeStyle: "short",
+        ...(reminderTimeZone ? { timeZone: reminderTimeZone } : {}),
+      });
+      reminderInbox = new ProductionReminderInbox({
+        ownerId: configuration.ownerId,
+        agentId: configuration.agentId,
+        reminders: repository.memoryReminders(),
+        reminderText: async (reminder) => {
+          const [memory] = await requireValue(repository)
+            .productMemoryState()
+            .readMany({
+              ownerId: configuration.ownerId,
+              agentId: configuration.agentId,
+              memoryIds: [reminder.memoryId],
+            });
+          if (!memory || memory.status !== "active") return undefined;
+          const payload = await payloads.get(memory.contentRef);
+          if (!payload || payload.contentType !== "text/plain") return undefined;
+          const text = new TextDecoder()
+            .decode(
+              await recallProtector.unprotect({
+                ownerId: configuration.ownerId,
+                agentId: configuration.agentId,
+                payload,
+              }),
+            )
+            .replace(/\s+/gu, " ")
+            .trim();
+          return text.length > 0 ? text : undefined;
+        },
+        formatDue: (dueAt) => reminderDueFormat.format(new Date(dueAt)),
+        messageExists: mainMessageExists,
+        commands: new ThreadCommandService({
+          repository: repository.threadRepository(),
+          clock: { now: () => clock.now() },
+          authority: () => activeAuthority.authorityFence(),
+        }),
+        ledger: repository.decisionLedger(),
+        push: { enqueue: (input) => requireValue(repository).webPush().enqueue(input) },
+        payloads,
+        protector,
+        clock: { now: () => clock.now() },
+        onFailure: (error) =>
+          writeServiceDiagnostic(errorOutput, {
+            component: "agent-service",
+            event: "reminder_inbox.failed",
+            code: stableErrorCode(error),
+          }),
+      });
       const tellOwner = new ProductionTellOwner({
         ownerId: configuration.ownerId,
         agentId: configuration.agentId,
@@ -1835,6 +1912,7 @@ export async function startTenantRuntime(
         payloads,
         protector,
         clock: { now: () => clock.now() },
+        messageExists: mainMessageExists,
       });
       const subthreadStore = repository.subthreads();
       const threadTasks: ProductionThreadTasks = new ProductionThreadTasks({
@@ -1868,7 +1946,15 @@ export async function startTenantRuntime(
         payloads,
         protector,
         clock: { now: () => clock.now() },
+        ...(reminderTimeZone ? { timeZone: reminderTimeZone } : {}),
+        onTimerFailure: (error) =>
+          writeServiceDiagnostic(errorOutput, {
+            component: "agent-service",
+            event: "subthread_timers.failed",
+            code: stableErrorCode(error),
+          }),
       });
+      timerSubthreads = subthreads;
       const steering = new ProductionOwnerSteering({
         ownerId: configuration.ownerId,
         agentId: configuration.agentId,
@@ -2564,7 +2650,6 @@ export async function startTenantRuntime(
           configuration: realEvalConfiguration,
           scope: { ownerId: configuration.ownerId, agentId: configuration.agentId },
           memoryLimit: configuration.runPolicy?.memoryLimit ?? 1,
-          maxSelectedMemories: configuration.runPolicy?.maxSelectedMemories ?? 0,
           recallEstimateMicros: configuration.modelDescriptors.some(
             ({ role }) => role === "embedding",
           )
@@ -2658,9 +2743,17 @@ export async function startTenantRuntime(
           configuration.runPolicy?.perception ?? PERCEPTION_CONFIGURATION_DEFAULTS;
         const extractionTimeZone = configuration.runPolicy?.timeZone ?? "UTC";
         let extractionEgress: ReturnType<typeof createProductionModelEgress> | undefined;
+        const episodeInbox = new ProductionPerceptionInbox({
+          scope: extractionScope,
+          store: repository.perception(),
+          timeZone: extractionTimeZone,
+          clock: { now: () => clock.now() },
+        });
+        perceptionInbox = episodeInbox;
         perceptionExtraction = new ProductionPerceptionExtraction({
           scope: extractionScope,
           store: repository.perception(),
+          onEpisode: (input) => episodeInbox.episode(input),
           model: createRealEvalModel({
             modelRef: extractionModelRef,
             invoker: (maxOutputTokens) =>
@@ -3066,6 +3159,7 @@ export async function startTenantRuntime(
               })
             ).locale,
           reminders: pushRepository.memoryReminders(),
+          ...(reminderInbox ? { remindersViaInbox: true } : {}),
           memories: pushRepository.productMemoryState(),
           readMemoryText: (record) => readPlain(record.contentRef),
           listApprovals: () =>
@@ -3544,6 +3638,13 @@ export async function startTenantRuntime(
             registry: inboxRuns,
             externalContent,
             subthreads,
+            ...(reminderInbox ? { reminders: reminderInbox } : {}),
+            ...(perceptionInbox ? { perception: perceptionInbox } : {}),
+            timerReminders: {
+              writer: reminderWriter,
+              read: (id: string) => requireValue(repository).memoryReminders().read(id),
+            },
+            ...(reminderTimeZone ? { timeZone: reminderTimeZone } : {}),
           },
           onDiagnostic: (event: Record<string, string>) =>
             writeServiceDiagnostic(errorOutput, { component: "agent-service", ...event }),

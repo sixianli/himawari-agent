@@ -167,6 +167,8 @@ export const CLIENT_CAPABILITY_TABLE: readonly ClientCapabilityEntry[] = Object.
   change("v2", "perception.records.delete"),
   query("v2", "think.settings.read"),
   change("v2", "think.settings.change"),
+  query("v2", "timers.read"),
+  routine("v2", "timers.change"),
   query("v2", "sensitive.interceptions.read"),
   change("v2", "sensitive.interceptions.clear"),
   query("v2", "memory.overview.read"),

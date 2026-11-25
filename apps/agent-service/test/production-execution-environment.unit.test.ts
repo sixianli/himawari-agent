@@ -14,7 +14,6 @@ const policy = (patch: Partial<RunPolicyConfiguration>): RunPolicyConfiguration 
   version: "policy-v1",
   systemInstruction: "instruction",
   memoryLimit: 1,
-  maxSelectedMemories: 1,
   ...patch,
 });
 const refusals =

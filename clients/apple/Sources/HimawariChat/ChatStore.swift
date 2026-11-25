@@ -6,9 +6,13 @@ public enum TranscriptItem: Identifiable, Equatable {
     case message(ThreadMessage)
     case process(runId: String)
 
+    public static func id(ofMessage messageId: String) -> String {
+        "message:\(messageId)"
+    }
+
     public var id: String {
         switch self {
-        case let .message(message): "message:\(message.messageId)"
+        case let .message(message): Self.id(ofMessage: message.messageId)
         case let .process(runId): "process:\(runId)"
         }
     }
@@ -34,6 +38,7 @@ public final class ChatStore {
     public internal(set) var offlineShown = false
     public private(set) var loadingThreads = false
     public internal(set) var executions: [String: [ExecutionRecord]] = [:]
+    public internal(set) var backgroundWork: BackgroundWork?
 
     @ObservationIgnored private let api: DeviceAPI
     @ObservationIgnored private let outbox: Outbox
@@ -50,6 +55,7 @@ public final class ChatStore {
     @ObservationIgnored private var createdRevisions: [String: Int] = [:]
     @ObservationIgnored private var pendingTextRefs: Set<String> = []
     @ObservationIgnored private var executionLoads = ReloadGate<String>()
+    @ObservationIgnored private var backgroundLoads = ReloadGate<String>()
     @ObservationIgnored private let heartbeatSeconds: @Sendable () -> TimeInterval
     @ObservationIgnored private var watched: (threadId: String, stream: DeviceEventStream, task: Task<Void, Never>)?
     @ObservationIgnored private let answerLocale: AnswerLocale
@@ -281,6 +287,24 @@ public final class ChatStore {
         }
     }
 
+    public func refreshBackgroundWork() async {
+        guard !frozen else { return }
+        guard backgroundLoads.begin("work") else { return }
+        while true {
+            do {
+                backgroundWork = try await api.backgroundWork()
+            } catch {
+                backgroundLoads.cancel("work")
+                return
+            }
+            if frozen {
+                backgroundLoads.cancel("work")
+                return
+            }
+            if !backgroundLoads.finish("work") { return }
+        }
+    }
+
     public func prefetch(_ threadId: String) {
         guard !frozen else { return }
         guard details[threadId] == nil else { return }
@@ -386,6 +410,7 @@ public final class ChatStore {
             connection = .online
             onDeviceActions()
             await flush()
+            await refreshBackgroundWork()
         case .deviceActions:
             onDeviceActions()
         case .disconnected:
@@ -395,6 +420,7 @@ public final class ChatStore {
                 await load(threadEvent.threadId)
             }
             await refreshThreads()
+            await refreshBackgroundWork()
         case let .executionText(chunk):
             guard !StreamingReply(runId: chunk.runId).isSettled(in: details[chunk.threadId]) else { break }
             var reply = streaming[chunk.threadId].flatMap { $0.runId == chunk.runId ? $0 : nil } ?? StreamingReply(runId: chunk.runId)
@@ -404,7 +430,10 @@ public final class ChatStore {
             if details[threadId] != nil {
                 await load(threadId)
                 await loadExecution(runId, in: threadId)
+            } else if executions[runId] != nil {
+                await loadExecution(runId, in: threadId)
             }
+            await refreshBackgroundWork()
         case .notificationDeliver, .notificationWithdraw:
             onNotification?(event)
         case .unavailable:
@@ -412,6 +441,7 @@ public final class ChatStore {
         case .resyncRequired:
             await refreshThreads()
             for threadId in details.keys { await load(threadId) }
+            await refreshBackgroundWork()
         case .sessionInvalid:
             connection = .offline
             onSessionInvalid()

@@ -13,6 +13,7 @@ import type {
 import {
   AgentThreadGatewayService,
   ApplicationPortError,
+  approvalBodyPreview,
   DEFAULT_HOME_FEED,
   DEFAULT_SEARCH_ASK,
   DEFAULT_VOICE_GATES,
@@ -123,6 +124,7 @@ import { classifiedThreadTitleReader } from "./classified-thread-title.js";
 import type { ContextExternalContent } from "./context-external-content.js";
 import type { OwnerAllowances } from "./owner-allowances.js";
 import type { ProductionApplePush } from "./production-apple-push.js";
+import { ProductionApprovalAnswers } from "./production-approval-answers.js";
 import {
   createProductionApprovalGateway,
   PRODUCTION_APPROVAL_OPERATIONS,
@@ -176,6 +178,7 @@ import {
   PRODUCTION_MEMORY_OPERATIONS,
   ProductionMemoryControl,
 } from "./production-memory-control.js";
+import { ProductionMemoryInbox } from "./production-memory-inbox.js";
 import { flushSensitiveInterceptions } from "./production-model-egress.js";
 import { type ProductionMuseIntake, registerMuseIntakeRoute } from "./production-muse-intake.js";
 import {
@@ -195,6 +198,7 @@ import {
   PRODUCTION_PERCEPTION_OPERATIONS,
   ProductionPerceptionControl,
 } from "./production-perception-control.js";
+import type { ProductionPerceptionInbox } from "./production-perception-inbox.js";
 import {
   PROACTIVE_GOOGLE_CALLBACK_PATH,
   PROACTIVE_GOOGLE_START_PATH,
@@ -205,6 +209,7 @@ import {
   PRODUCTION_QUIET_HOURS_OPERATIONS,
   ProductionQuietHoursControl,
 } from "./production-quiet-hours-control.js";
+import type { ProductionReminderInbox } from "./production-reminder-inbox.js";
 import {
   PRODUCTION_SEARCH_OPERATIONS,
   ProductionSearchControl,
@@ -218,8 +223,17 @@ import {
   PRODUCTION_SERVER_STATUS_OPERATIONS,
   ProductionServerStatusControl,
 } from "./production-server-status-control.js";
-import type { ProductionSubthreads } from "./production-subthreads.js";
+import {
+  DEFAULT_TIMER_TIME_ZONE,
+  localTime,
+  type ProductionSubthreads,
+} from "./production-subthreads.js";
 import { ThreadDeletionRetry } from "./production-thread-deletion-retry.js";
+import {
+  PRODUCTION_TIMER_OPERATIONS,
+  ProductionTimerControl,
+  type TimerReminders,
+} from "./production-timer-control.js";
 import { type ProductionWebPush, WebPushPresence } from "./production-web-push.js";
 import {
   PRODUCTION_WEB_PUSH_OPERATIONS,
@@ -346,6 +360,10 @@ export interface ProductionHttpCompositionOptions {
       readonly registry: InboxRunRegistry;
       readonly externalContent: Pick<ContextExternalContent, "mark">;
       readonly subthreads?: ProductionSubthreads;
+      readonly reminders?: ProductionReminderInbox;
+      readonly perception?: ProductionPerceptionInbox;
+      readonly timerReminders?: TimerReminders;
+      readonly timeZone?: string;
     };
     readonly onDiagnostic?: (event: Record<string, string>) => void;
   };
@@ -817,6 +835,7 @@ function routeOptions(
   mcpConnectionsAvailable: boolean,
   searchAvailable: boolean,
   capabilityReactivationAvailable: boolean,
+  timersAvailable: boolean,
 ): HttpGatewayServerOptions {
   const http = configuration.http;
   if (!http || !configuration.identity) {
@@ -866,6 +885,7 @@ function routeOptions(
         ...(mcpConnectionsAvailable ? PRODUCTION_MCP_CONNECTION_OPERATIONS : []),
         ...PRODUCTION_PERCEPTION_OPERATIONS,
         ...PRODUCTION_INBOX_OPERATIONS,
+        ...(timersAvailable ? PRODUCTION_TIMER_OPERATIONS : []),
       ],
       agentId: configuration.agentId,
       deploymentId: configuration.deploymentId,
@@ -1311,6 +1331,7 @@ export async function createProductionHttpComposition(
           ...(options.cancelRun ? { cancelRun: options.cancelRun } : {}),
           ...(mainThreadInbox.subthreads ? { subthreads: mainThreadInbox.subthreads } : {}),
           checkpoints: repository.runCheckpointStore(ownerId, agentId, authority),
+          ...(mainThreadInbox.reminders ? { reminders: mainThreadInbox.reminders } : {}),
         })
       : undefined);
   const inbox = productionInbox({
@@ -1323,6 +1344,48 @@ export async function createProductionHttpComposition(
     ...(inboxDelivery ? { delivery: inboxDelivery } : {}),
     ...(options.inbox?.onDiagnostic ? { onDiagnostic: options.inbox.onDiagnostic } : {}),
   });
+  const reminderInbox = mainThreadInbox?.reminders;
+  if (reminderInbox) {
+    reminderInbox.registerSource(inbox.inbox.sources);
+    reminderInbox.attach(inbox.inbox);
+    reminderInbox.start();
+  }
+  const approvalRuns = repository.runLifecycle(ownerId, agentId, authority);
+  const approvalAnswers = mainThreadInbox
+    ? new ProductionApprovalAnswers({
+        threadOf: async (runId) => (await approvalRuns.readRun(runId as never))?.run.threadId,
+        mainThread,
+      })
+    : undefined;
+  if (approvalAnswers) {
+    approvalAnswers.registerSource(inbox.inbox.sources);
+    approvalAnswers.attach(inbox.inbox);
+  }
+  const memoryInbox = mainThreadInbox
+    ? new ProductionMemoryInbox({
+        ownerId,
+        agentId,
+        state: repository.productMemoryState(),
+        mainThread,
+        formatTime: (iso) =>
+          localTime(iso, options.inbox?.mainThread?.timeZone ?? DEFAULT_TIMER_TIME_ZONE),
+        clock: { now: clock },
+        onFailure: (error: unknown) =>
+          options.inbox?.onDiagnostic?.({
+            event: "inbox.memory_source_failed",
+            error: error instanceof Error ? error.message.slice(0, 120) : "unknown",
+          }),
+      })
+    : undefined;
+  if (memoryInbox) {
+    memoryInbox.registerSource(inbox.inbox.sources);
+    memoryInbox.attach(inbox.inbox);
+  }
+  const perceptionInbox = mainThreadInbox?.perception;
+  if (perceptionInbox) {
+    perceptionInbox.registerSource(inbox.inbox.sources);
+    perceptionInbox.attach(inbox.inbox);
+  }
   const subthreads = mainThreadInbox?.subthreads;
   if (subthreads) {
     subthreads.registerSources(inbox.inbox.sources);
@@ -1350,6 +1413,7 @@ export async function createProductionHttpComposition(
           }
         : {}),
     });
+    subthreads.startTimers();
   }
   if (options.proactive) {
     inbox.inbox.sources.register({
@@ -1647,6 +1711,12 @@ export async function createProductionHttpComposition(
   });
   await perception.prepareDirectories();
   await perception.resumeDeletions({ ownerId, agentId }).catch(() => undefined);
+  const approvalThreadTitle = classifiedThreadTitleReader({
+    configuration,
+    threads,
+    payloads: memoryPayloads,
+    protector: payloadProtector,
+  });
   const gatewayV2 = createProductionApprovalGateway({
     configuration,
     ...(options.capabilityReactivation
@@ -1659,10 +1729,24 @@ export async function createProductionHttpComposition(
     recentAuthentication,
     clock: { now: clock },
     authority: options.authority,
-    ...(options.deviceActions
+    ...(options.deviceActions || approvalAnswers
       ? {
           onApprovalResolved: async (approval) => {
+            await approvalAnswers?.answered(approval);
             await options.deviceActions?.service.reconcile(approval.id);
+          },
+        }
+      : {}),
+    ...(subthreads
+      ? {
+          approvalOrigin: async (threadId: string) => {
+            const parent = await subthreads.parentOf(threadId).catch(() => undefined);
+            if (!parent) return null;
+            const title = await approvalThreadTitle(parent).catch(() => null);
+            return {
+              threadId: parent,
+              threadTitle: title === null ? null : (approvalBodyPreview(title, 120) ?? null),
+            };
           },
         }
       : {}),
@@ -1711,6 +1795,21 @@ export async function createProductionHttpComposition(
       scope: { ownerId, agentId },
       clock: { now: clock },
     }),
+    ...(options.inbox?.mainThread?.subthreads
+      ? {
+          timerControl: new ProductionTimerControl({
+            subthreads: options.inbox.mainThread.subthreads,
+            ...(options.inbox.mainThread.timerReminders
+              ? { reminders: options.inbox.mainThread.timerReminders }
+              : {}),
+            ...(options.inbox.mainThread.timeZone
+              ? { timeZone: options.inbox.mainThread.timeZone }
+              : {}),
+            scope: { ownerId, agentId },
+            clock: { now: clock },
+          }),
+        }
+      : {}),
     perceptionControl: new ProductionPerceptionControl({
       configuration,
       perception,
@@ -1792,6 +1891,7 @@ export async function createProductionHttpComposition(
       Boolean(options.mcpRead),
       Boolean(searchControl),
       options.capabilityReactivation !== undefined,
+      Boolean(options.inbox?.mainThread?.subthreads),
     ),
     gatewayV2,
     threadSearch,
@@ -1924,6 +2024,7 @@ export async function createProductionHttpComposition(
         home.startScoring();
         await ensureMainThread();
         inbox.loop?.start();
+        memoryInbox?.start();
         threadDeletionRetry.start();
         return address;
       }
@@ -1940,11 +2041,13 @@ export async function createProductionHttpComposition(
       home.startScoring();
       await ensureMainThread();
       inbox.loop?.start();
+      memoryInbox?.start();
       threadDeletionRetry.start();
       return unixSocketPath;
     },
     close: async () => {
       searchIndexer.stop();
+      await memoryInbox?.stop();
       await inbox.loop?.stop();
       await threadDeletionRetry.stop();
       await home.stopScoring();

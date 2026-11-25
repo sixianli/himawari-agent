@@ -467,6 +467,18 @@ describe("[WP-3] web push dispatch", () => {
     expect(context.sender.requests).toHaveLength(8);
   });
 
+  it("[ADR-0285] REVERSE: leaves a due reminder to the inbox when reminders go through her, and still pushes approvals", async () => {
+    const context = await setup();
+    await context.subscribe("phone", "zh-CN");
+    const push = context.create({ remindersViaInbox: true });
+    context.setClock(T0);
+    context.reminder("r1", "private");
+    context.approval("a1", "high");
+    await push.tick();
+    const sent = context.sender.notifications();
+    expect(sent.map(({ notification }) => notification["title"])).toEqual(["等你审批 · 高风险"]);
+  });
+
   it("[HOME-count] sends no badge when the home count is unavailable or cannot be read, and reads it only when something is sent", async () => {
     const context = await setup();
     await context.subscribe("phone", "zh-CN");

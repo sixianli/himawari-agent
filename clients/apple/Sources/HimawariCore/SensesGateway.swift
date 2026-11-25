@@ -52,9 +52,21 @@ public struct PerceptionRecordView: Codable, Sendable, Equatable, Identifiable {
     }
 }
 
+public struct PerceptionEpisodeView: Codable, Sendable, Equatable, Identifiable {
+    public let id: String
+    public let startedAt: String
+    public let endedAt: String
+    public let recordCount: Int
+    public let senses: [String]
+    public let types: [String]
+    public let preview: String?
+    public let summary: String?
+}
+
 public struct PerceptionDayRow: Codable, Sendable, Equatable {
     public let kind: String
     public let at: String
+    public let episode: PerceptionEpisodeView?
     public let record: PerceptionRecordView?
 }
 
@@ -65,14 +77,16 @@ public struct PerceptionDaySnapshot: Codable, Sendable, Equatable {
     public let nextCursor: String?
 }
 
-public struct PerceptionDeleteResult: Codable, Sendable, Equatable {
-    public struct Counts: Codable, Sendable, Equatable {
-        public let records: Int
-        public let trackPoints: Int
-        public let media: Int
-    }
+public struct PerceptionEpisodeSnapshot: Codable, Sendable, Equatable {
+    public let episode: PerceptionEpisodeView?
+    public let records: [PerceptionRecordView]
+    public let nextCursor: String?
 
-    public let deleted: Counts
+    public init(episode: PerceptionEpisodeView?, records: [PerceptionRecordView], nextCursor: String?) {
+        self.episode = episode
+        self.records = records
+        self.nextCursor = nextCursor
+    }
 }
 
 public enum SensesGatewayError: Error, Sendable, Equatable {
@@ -100,6 +114,10 @@ public final class SensesGateway: Sendable {
     }
 
     public func day(types: [String], cursor: String? = nil) async throws -> PerceptionDaySnapshot {
+        try await day(nil, types: types, cursor: cursor)
+    }
+
+    public func day(_ day: String?, types: [String]? = nil, cursor: String? = nil) async throws -> PerceptionDaySnapshot {
         struct Payload: Encodable {
             let day: String?
             let sense: String?
@@ -116,7 +134,23 @@ public final class SensesGateway: Sendable {
 
             enum CodingKeys: String, CodingKey { case day, sense, types, cursor }
         }
-        return try await query("perception.day.read", payload: Payload(day: nil, sense: nil, types: types, cursor: cursor))
+        return try await query("perception.day.read", payload: Payload(day: day, sense: nil, types: types, cursor: cursor))
+    }
+
+    public func episode(_ episodeId: String, cursor: String? = nil) async throws -> PerceptionEpisodeSnapshot {
+        struct Payload: Encodable {
+            let episodeId: String
+            let cursor: String?
+
+            func encode(to encoder: Encoder) throws {
+                var container = encoder.container(keyedBy: CodingKeys.self)
+                try container.encode(episodeId, forKey: .episodeId)
+                try container.encode(cursor, forKey: .cursor)
+            }
+
+            enum CodingKeys: String, CodingKey { case episodeId, cursor }
+        }
+        return try await query("perception.episode.read", payload: Payload(episodeId: episodeId, cursor: cursor))
     }
 
     public func setSense(_ sense: String, enabled: Bool, expectedRevision: Int, reason: String) async throws {
@@ -131,25 +165,22 @@ public final class SensesGateway: Sendable {
         ), confirm: true, reason: reason)
     }
 
-    public func deleteRecords(types: [String], deviceId: String?, reason: String) async throws -> PerceptionDeleteResult {
-        struct Target: Encodable {
-            let kind = "types"
-            let types: [String]
-            let deviceId: String?
-
-            func encode(to encoder: Encoder) throws {
-                var container = encoder.container(keyedBy: CodingKeys.self)
-                try container.encode(kind, forKey: .kind)
-                try container.encode(types, forKey: .types)
-                try container.encode(deviceId, forKey: .deviceId)
-            }
-
-            enum CodingKeys: String, CodingKey { case kind, types, deviceId }
-        }
-        struct Payload: Encodable { let target: Target }
-        let data = try await command("perception.records.delete", payload: Payload(target: Target(types: types, deviceId: deviceId)), confirm: true, reason: reason)
-        return try decodePayload(PerceptionDeleteResult.self, data)
+    public func planDeletion(_ target: PerceptionDeletionTarget) async throws -> PerceptionDeletionSnapshot {
+        try await query("perception.deletion.plan", payload: target)
     }
+
+    public func readDeletion(_ planId: String) async throws -> PerceptionDeletionSnapshot {
+        try await query("perception.deletion.read", payload: PlanPayload(planId: planId))
+    }
+
+    public func delete(_ target: PerceptionDeletionTarget, reason: String) async throws -> PerceptionDeletionSnapshot {
+        let plan = try await planDeletion(target)
+        guard let planId = plan.planId else { throw DeviceAPIError.invalidResponse }
+        try await command("perception.records.delete", payload: PlanPayload(planId: planId), confirm: true, reason: reason)
+        return try await readDeletion(planId)
+    }
+
+    struct PlanPayload: Encodable { let planId: String }
 
     struct EmptyPayload: Encodable {}
 

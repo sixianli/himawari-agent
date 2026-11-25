@@ -28,7 +28,10 @@ final class RecordingSensesService: SensesService {
     func setSense(_ sense: String, enabled: Bool, revision: Int, reason: String) async throws {}
     func refreshServer() async { server = serverAfterRefresh }
     func setRetention(key: String, days: Int?, revision: Int, reason: String) async throws {}
-    func deleteRecords(_ item: SenseItem, reason: String) async throws -> PerceptionDeleteResult { throw SensesGatewayError.notInstalled }
+    func deleteRecords(_ item: SenseItem, reason: String) async throws -> PerceptionDeletionSnapshot { throw SensesGatewayError.notInstalled }
+    func dayPage(_ day: String?, cursor: String?) async throws -> PerceptionDaySnapshot { throw SensesGatewayError.notInstalled }
+    func episode(_ episodeId: String, cursor: String?) async throws -> PerceptionEpisodeSnapshot { throw SensesGatewayError.notInstalled }
+    func delete(_ target: PerceptionDeletionTarget, reason: String) async throws -> PerceptionDeletionSnapshot { throw SensesGatewayError.notInstalled }
     var mirrorCounts: [SenseItem: Int] = [:]
     func mirrorCount(_ item: SenseItem) async -> Int? { mirrorCounts[item] }
     func clearMirror(_ item: SenseItem) async throws {}

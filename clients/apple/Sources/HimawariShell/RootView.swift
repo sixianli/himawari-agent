@@ -128,8 +128,10 @@ struct MainShell: View {
                 ListenOverlay(controller: listening)
             }
         }
-        .hmCover(isPresented: $herOpen) {
+        .sheet(isPresented: $herOpen) {
             herPage
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
         }
         #if os(iOS)
         .hmCover(isPresented: Binding(get: { listening?.recordingKitOpen ?? false }, set: { listening?.recordingKitOpen = $0 })) {
@@ -184,6 +186,9 @@ struct MainShell: View {
             openListening: { herListenOpen = true },
             senses: model.senses.map { senses in
                 AnyView(SensesView(model: senses) { HandoverEntryRows() })
+            },
+            perceptionDeletion: model.senses.map { senses in
+                { (close: @escaping () -> Void) -> AnyView in AnyView(PerceptionDeletionView(model: PerceptionDeletionModel(senses: senses), close: close)) }
             },
             sensesOn: { model.senses?.status?.senses.count },
             talk: { text in

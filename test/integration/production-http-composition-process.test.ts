@@ -1243,7 +1243,6 @@ async function openInstalledMain(
     version: "installed-policy-v1",
     systemInstruction: "请用中文回答。",
     memoryLimit: 10,
-    maxSelectedMemories: 5,
     ...(options.coding
       ? {
           coding: {
@@ -1593,7 +1592,15 @@ function readRunBilling(database: ReturnType<typeof openQualifiedDatabase>, runI
   return { identities, allocations, accounts };
 }
 
+function answerMemoryCapture(memories: readonly object[]) {
+  return (input: Readonly<Record<string, unknown>>) =>
+    JSON.stringify(input["messages"]).includes(MEMORY_CAPTURE.text.slice(0, 24))
+      ? { text: JSON.stringify({ memories }) }
+      : { text: "安装后的持久回答" };
+}
+
 it("[R2-L5] executes authenticated HTTP requests and persists gateway costs after restart", async () => {
+  chatReply = answerMemoryCapture([]);
   const service = await openInstalledMain();
   await service.command("thread.create", "installed-main-create", {
     threadId: "thread-production-main",
@@ -1676,7 +1683,7 @@ it("[R2-L5] executes authenticated HTTP requests and persists gateway costs afte
         },
         { timeout: 30_000 },
       )
-      .toBe(6);
+      .toBe(5);
     const modelCalls = providerRequests.filter(({ path: route }) => route.startsWith("/v1/"));
     for (const call of modelCalls) {
       expect(call.body?.["model"]).toBe(
@@ -1706,7 +1713,6 @@ it("[R2-L5] executes authenticated HTTP requests and persists gateway costs afte
         "agent-stream",
         "embedding",
         "embedding",
-        "model-port",
         "model-port",
         "model-port",
       ]);
@@ -1803,6 +1809,7 @@ it("[R2-L5] executes authenticated HTTP requests and persists gateway costs afte
     expect(unavailable.status).toBe(503);
     expect(unavailable.body).not.toMatchObject({ status: "ready" });
   } finally {
+    chatReply = undefined;
     await service.stop();
   }
 }, 90_000);
@@ -1812,10 +1819,6 @@ it.each(["connection loss", "missing cost", "budget exceeded"] as const)(
   async (failure) => {
     const service = await openInstalledMain();
     const threadId = "thread-memory-fallback";
-    const capture = (memories: readonly object[]) => (input: Readonly<Record<string, unknown>>) =>
-      JSON.stringify(input["messages"]).includes(MEMORY_CAPTURE.text.slice(0, 24))
-        ? { text: JSON.stringify({ memories }) }
-        : { text: "安装后的持久回答" };
     const degradeRows = () => {
       const database = openQualifiedDatabase(databasePath);
       try {
@@ -1834,7 +1837,7 @@ it.each(["connection loss", "missing cost", "budget exceeded"] as const)(
         answerLocale: "zh-CN",
         resultRef: await service.upload("memory-fallback-create-payload", "create"),
       });
-      chatReply = capture([
+      chatReply = answerMemoryCapture([
         {
           kind: "durable_fact",
           decision: "create",
@@ -1869,7 +1872,7 @@ it.each(["connection loss", "missing cost", "budget exceeded"] as const)(
         .toEqual({ indexed: 1 });
       expect(degradeRows()).toEqual([]);
 
-      chatReply = capture([]);
+      chatReply = answerMemoryCapture([]);
       dropEmbeddingConnections = failure === "connection loss";
       embeddingCostAvailable = failure !== "missing cost";
       rejectEmbeddingsOverBudget = failure === "budget exceeded";
@@ -2445,10 +2448,6 @@ async function waitForThreadRun(
 
 it("[PR-A] [iOS-8] a half sentence prepared while the owner speaks sends the model the same bytes, memories and order as no preparation", async () => {
   const service = await openInstalledMain();
-  const capture = (memories: readonly object[]) => (input: Readonly<Record<string, unknown>>) =>
-    JSON.stringify(input["messages"]).includes(MEMORY_CAPTURE.text.slice(0, 24))
-      ? { text: JSON.stringify({ memories }) }
-      : { text: "安装后的持久回答" };
   const remembered = [
     "主人想把每周的会都改到下午开",
     "主人想把明天的例会改到下午三点",
@@ -2463,7 +2462,7 @@ it("[PR-A] [iOS-8] a half sentence prepared while the owner speaks sends the mod
     });
     for (const [index, text] of remembered.entries()) {
       const quote = `请记住，${text.replace("主人", "我")}`;
-      chatReply = capture([
+      chatReply = answerMemoryCapture([
         {
           kind: "durable_fact",
           decision: "create",
@@ -2503,7 +2502,7 @@ it("[PR-A] [iOS-8] a half sentence prepared while the owner speaks sends the mod
         { timeout: 30_000 },
       )
       .toEqual({ indexed: remembered.length });
-    chatReply = capture([]);
+    chatReply = answerMemoryCapture([]);
     const device = await pairInstalledDevice(service);
     const finalWords = "帮我把明天的会改到下午。";
     const spoken = async (name: string, partial: string | null) => {

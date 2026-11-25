@@ -1,3 +1,4 @@
+import type { CalibrationDecisionRow } from "@himawari-agent/calibration";
 import { createAgentId, createMemoryId, createOwnerId } from "@himawari-agent/domain";
 import {
   REAL_EVAL_ANSWER,
@@ -5,7 +6,6 @@ import {
   REAL_EVAL_LEAK_JUDGE,
   REAL_EVAL_QUESTION,
 } from "@himawari-agent/prompt-catalog";
-import type { CalibrationDecisionRow } from "@himawari-agent/calibration";
 import { describe, expect, it } from "vitest";
 import type { ProductMemoryRecord } from "../src/ports/memory-projection.js";
 import type {
@@ -217,7 +217,6 @@ function harness(options: {
     now: () => new Date(START + tick++ * 1000).toISOString(),
     newId: () => `id-${++id}`,
     promptSha256: "a".repeat(64),
-    maxSelectedMemories: 2,
     recallEstimateMicros: options.recallEstimateMicros ?? 0,
     listMemories: async () => state.memories,
     readMemoryText: async (record) => {
@@ -649,7 +648,6 @@ describe("[P4-5] real memory eval run", () => {
       now: () => "2026-11-11T00:00:00.000Z",
       newId: () => "fixed-id",
       promptSha256: "a".repeat(64),
-      maxSelectedMemories: 2,
       recallEstimateMicros: 0,
       listMemories: async () => test.memories,
       readMemoryText: async () => "主人早上只喝燕麦拿铁，不加糖",

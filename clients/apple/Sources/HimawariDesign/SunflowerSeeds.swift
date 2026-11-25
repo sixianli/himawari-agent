@@ -50,10 +50,24 @@ public enum SunflowerSeeds {
         Double(seeds) / fullGrowthSeconds
     }
 
+    public static func breathing(seconds: Double, seeds: Int, low: Double) -> Double {
+        let count = Double(seeds)
+        let rate = growthPerSecond(seeds: seeds)
+        let leg = count * (1 - low) / rate
+        guard leg > 0 else { return count }
+        let phase = abs(seconds).truncatingRemainder(dividingBy: 2 * leg)
+        let rising = phase <= leg ? phase : 2 * leg - phase
+        return count * low + rising * rate
+    }
+
+    public static func growingOnce(seconds: Double, seeds: Int) -> Double {
+        min(resting(seeds: seeds), max(0, seconds) * growthPerSecond(seeds: seeds))
+    }
+
     public static var reach: Double { reach() }
     public static var resting: Double { resting() }
 
-    public static func at(growth: Double, seeds: Int = seedCount) -> [SunflowerSeed] {
+    public static func at(growth: Double, seeds: Int = seedCount, startsEmpty: Bool = false) -> [SunflowerSeed] {
         let count = Double(seeds)
         let spacing = discRadius / count.squareRoot()
         let seedScale = seedScale(seeds)
@@ -61,7 +75,7 @@ public enum SunflowerSeeds {
         return (0..<(seeds + 2)).compactMap { (slot: Int) -> SunflowerSeed? in
             let order = newest - Double(slot)
             let age = growth - order
-            guard age >= 0, age <= count else { return nil }
+            guard age >= 0, age <= count, !startsEmpty || order >= 0 else { return nil }
             let share = age / count
             let distance = spacing * age.squareRoot()
             let angle = order * goldenAngle

@@ -208,6 +208,7 @@ export interface ProductionWebPushOptions {
   readonly sender: WebPushSenderPort;
   readonly presence: WebPushPresence;
   readonly reminders: Pick<MemoryReminderStorePort, "listDue" | "read">;
+  readonly remindersViaInbox?: boolean;
   readonly memories: Pick<ProductMemoryStatePort, "readMany">;
   readonly readMemoryText: (memory: ProductMemoryRecord) => Promise<string | undefined>;
   readonly listApprovals: () => Promise<readonly ApprovalRequest[]>;
@@ -391,7 +392,7 @@ export class ProductionWebPush {
     const { ownerId, agentId, store } = this.#options;
     const scope = { ownerId, agentId };
     const items: WebPushOutboxItem[] = [];
-    for (const reminder of reminders)
+    for (const reminder of this.#options.remindersViaInbox ? [] : reminders)
       items.push({
         ...scope,
         sourceKey: `reminder:${reminder.id}:${reminder.remindAt}`,

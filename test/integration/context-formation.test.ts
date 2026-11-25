@@ -108,7 +108,6 @@ function request(sourceType: "user_message" | "schedule" | "external_event") {
     memoryQueryRef: "payload-memory-query-01",
     memoryQueryTerms: ["beef", "dinner"],
     memoryLimit: 10,
-    maxSelectedMemories: 2,
     capabilities: [
       {
         ref: "restaurant-search",
@@ -453,35 +452,25 @@ describe("Task 9 Memory and context formation", () => {
     });
   });
 
-  it("writes one ledger row naming the memories cut by the selection limit", async () => {
+  it("[ADR-0286] brings every memory that clears the relevance threshold, with no count cap, and leaves out unrelated ones", async () => {
     const written: DecisionLedgerWrite[] = [];
     const { adapters, service } = createService(undefined, {
       append: async (write) => {
         written.push(write);
       },
     });
-    for (const id of ["memory-a", "memory-b", "memory-c"])
+    const related = Array.from({ length: 7 }, (_, index) => `memory-beef-${index}`);
+    for (const id of [...related, "memory-piano"])
       await seedMemory(adapters.memory, {
         id,
         contentRef: `payload-${id}`,
         sourceRef: `trace-${id}`,
-        searchTerms: ["beef"],
+        searchTerms: [id === "memory-piano" ? "piano" : "beef"],
         dataClassification: "private",
       });
     const formed = await service.form(request("user_message"));
-    const cut = formed.candidates
-      .map(({ id }) => id)
-      .filter((id) => !formed.selected.some((memory) => memory.id === id));
-    expect(cut).toHaveLength(1);
-    expect(written).toHaveLength(1);
-    expect(written[0]).toMatchObject({
-      kind: "context_truncation",
-      outcome: "truncated",
-      reasonCode: "selection_limit_reached",
-      subjectRef: RUN_ID,
-      inputs: { memoryIds: cut, ruleIds: [] },
-      contentRef: null,
-    });
+    expect(formed.selected.map(({ id }) => id).sort()).toEqual([...related].sort());
+    expect(written).toEqual([]);
   });
 
   it("writes no ledger row when nothing was cut or only classification excluded a memory", async () => {

@@ -21,6 +21,14 @@ public enum ManageDemoScreen: String, CaseIterable, Sendable {
     case herAllowanceDays = "next-3-her-allowance-days"
     case memoryVersions = "next-4-memory-versions"
     case memoryTrash = "next-4-memory-trash"
+    case herAbout = "next-6-her-about"
+    case herTimers = "next-9-timers"
+    case herTimersEmpty = "next-9-timers-empty"
+    case herTimersReminders = "next-9-timers-reminders"
+    case herTimerRecurring = "next-9-timer-recurring"
+    case herTimerReminder = "next-9-timer-reminder"
+    case herTimerPaused = "next-9-timer-paused"
+    case herNoTimers = "next-9-her-no-timers"
 }
 
 public struct ManageDemoView: View {
@@ -56,6 +64,8 @@ public struct ManageDemoView: View {
             her([.notifications])
         case .herAllowances:
             her([.allowances])
+        case .herAbout:
+            her([.about])
         case .herAllowancesEmpty:
             her([.allowances], allowances: false)
         case .memoryVersions:
@@ -64,6 +74,20 @@ public struct ManageDemoView: View {
             NavigationStack {
                 MemoryTrashPage(store: ManageDemo.loadedMemoryStore()) {}
             }
+        case .herTimers:
+            her([.timers])
+        case .herTimersEmpty:
+            her([.timers], timers: .demo([]))
+        case .herTimersReminders:
+            her([.timers], timers: .demo(TimersStore.demoTimers().filter { $0.kind == .reminder }))
+        case .herTimerRecurring:
+            her([.timers, .timer(TimersStore.demoNewsId)])
+        case .herTimerReminder:
+            her([.timers, .timer(TimersStore.demoRentId)])
+        case .herTimerPaused:
+            her([.timers, .timer(TimersStore.demoTanakaId)])
+        case .herNoTimers:
+            her([], timers: TimersStore(timers: nil))
         case .herAllowanceDays:
             AllowanceDaysSheet(days: 7) { _ in }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -71,11 +95,12 @@ public struct ManageDemoView: View {
         }
     }
 
-    private func her(_ path: [HerPage.Page], allowances: Bool = true) -> some View {
+    private func her(_ path: [HerPage.Page], allowances: Bool = true, timers: TimersStore = .demo()) -> some View {
         HerPage(
             settings: ManageDemo.settingsStore(),
             memory: ManageDemo.memoryStore(allowances: allowances),
             quietHours: QuietHoursStore(gateway: ManageDemo.gateway()),
+            timers: timers,
             listening: DemoListening(),
             actions: .demo(),
             senses: AnyView(EmptyView()),
@@ -88,6 +113,32 @@ public struct ManageDemoView: View {
 final class DemoListening: HerListening {
     let hasVoiceprint = true
     func deleteVoiceprint() {}
+}
+
+extension TimersStore {
+    static let demoRentId = "timer-rent"
+    static let demoNewsId = "timer-news"
+    static let demoTanakaId = "timer-tanaka"
+
+    static func demo(_ timers: [OwnerTimer] = demoTimers()) -> TimersStore {
+        TimersStore(timers: timers)
+    }
+
+    static func demoTimers(now: Date = Date(), calendar: Calendar = .current) -> [OwnerTimer] {
+        func at(days: Int, _ hour: Int, _ minute: Int = 0) -> Date {
+            let day = calendar.date(byAdding: .day, value: days, to: calendar.startOfDay(for: now)) ?? now
+            return calendar.date(bySettingHour: hour, minute: minute, second: 0, of: day) ?? day
+        }
+        return [
+            OwnerTimer(timerId: "timer-gone", kind: .followUp, title: "问房东修空调", task: "问房东修空调", schedule: "周四", createdBy: .her, status: .cancelled, runBudgetMicros: 50_000, createdAt: at(days: -10, 9)),
+            OwnerTimer(timerId: "timer-done", kind: .reminder, title: "拿快递", task: "拿快递", schedule: "昨天 18:00", createdBy: .owner, status: .finished, lastAt: at(days: -1, 18), runCount: 1, createdAt: at(days: -2, 9)),
+            OwnerTimer(timerId: demoTanakaId, kind: .followUp, title: nil, task: "周五前没收到田中的报价单就提醒我追一下，顺便问交期", schedule: "周五 10:00", createdBy: .her, status: .paused, runBudgetMicros: 50_000, createdAt: at(days: -3, 11)),
+            OwnerTimer(timerId: demoNewsId, kind: .recurring, title: "AI 新闻简报", task: "每天早上整理 AI 新闻，挑三条最重要的，每条两句话说清楚。只看英文一手来源。", ownerWords: "- 以后每天早上给我看看 AI 新闻\n- 只要英文的一手来源\n- 别超过三条\n- 每条两句话就够了\n- 周末也要", schedule: "每天 8:00", createdBy: .agreed, nextAt: at(days: 1, 8), lastAt: at(days: 0, 8), runCount: 12, spentMicros: 61_000, runBudgetMicros: 20_000, lastResult: OwnerTimer.LastResult(text: "挑了三条：一家实验室发了新的开源模型；一份报告说推理成本半年降了一半；一个编程助手加了后台运行。", at: at(days: 0, 8, 2)), createdAt: at(days: -13, 21)),
+            OwnerTimer(timerId: "timer-week", kind: .recurring, title: "周报草稿", task: "每周五晚上把这周的事整理成周报草稿", schedule: "每周五 21:00", createdBy: .owner, nextAt: at(days: 3, 21), runCount: 2, spentMicros: 4_000, runBudgetMicros: 30_000, createdAt: at(days: -15, 20)),
+            OwnerTimer(timerId: demoRentId, kind: .reminder, title: "交房租", task: "提醒我交房租", schedule: "下月 1 日 9:00", createdBy: .owner, nextAt: at(days: 6, 9), createdAt: at(days: -1, 22)),
+            OwnerTimer(timerId: "timer-call", kind: .reminder, title: "给妈妈打电话", task: "提醒我给妈妈打电话", schedule: "今晚 20:00", createdBy: .agreed, nextAt: at(days: 0, 20), createdAt: at(days: 0, 9)),
+        ]
+    }
 }
 
 enum ManageDemo {

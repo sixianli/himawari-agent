@@ -365,6 +365,7 @@ export async function buildChatExport(options: ChatExportOptions): Promise<ChatE
       }
       const attachments: ChatMessageLine["attachments"][number][] = [];
       const body = raw
+        .replace(/^<reply to="[^"<>\n]*"\/>\n?/u, "")
         .replace(ATTACHMENT_TAG, (_match, name: string, rest: string) => {
           const attributes = new Map<string, string>();
           for (const [, key, value] of rest.matchAll(ATTRIBUTE))

@@ -15,7 +15,7 @@ import {
 } from "@himawari-agent/domain";
 import type { ExecutionV2Event, ExecutionV2Request } from "@himawari-agent/execution-contracts";
 import { CapabilityDeploymentSnapshotLoader } from "@himawari-agent/platform-node";
-import { createReferenceAdapterSet } from "@himawari-agent/testing";
+import { createReferenceAdapterSet, testModelEgress } from "@himawari-agent/testing";
 import Database from "better-sqlite3";
 import { expect, it, vi } from "vitest";
 import { createProductionRunComposition } from "../../apps/agent-service/src/production-run-composition.ts";
@@ -32,7 +32,6 @@ import {
   T1,
   T2,
 } from "../fixtures/sqlite-capability-invocation-fixture.ts";
-import { testModelEgress } from "@himawari-agent/testing";
 
 it.each([
   { coding: false, scenario: "resume" },
@@ -495,7 +494,6 @@ it.each([
           capabilities: [],
           capabilityHandleRefs: coding ? [] : [handleRef],
           memoryLimit: 1,
-          maxSelectedMemories: 0,
         }),
         clock,
         ids: adapters.ids,

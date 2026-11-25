@@ -8,6 +8,7 @@ import type {
   SubthreadExchangeRecord,
   SubthreadRecord,
   SubthreadStorePort,
+  SubthreadTimerRecord,
   ThreadTaskChangeOutcome,
   ThreadTaskChangeRecord,
   ThreadTaskRecord,
@@ -27,8 +28,26 @@ const subthreadColumns = `thread_id AS threadId, parent_thread_id AS parentThrea
   open_key AS openKey, opened_by_run_id AS openedByRunId, brief_ref AS briefRef,
   result_ref AS resultRef, classification, status, stuck_at AS stuckAt,
   progress_ref AS progressRef, progress_at AS progressAt, asked_at AS askedAt,
-  budget_micros AS budgetMicros, budget_hit_at AS budgetHitAt, title,
+  budget_micros AS budgetMicros, budget_hit_at AS budgetHitAt, title, approval_run_id AS approvalRunId,
   created_at AS createdAt, updated_at AS updatedAt`;
+
+const timerColumns = `id, thread_id AS threadId, schedule, task_ref AS taskRef,
+  owner_words_ref AS ownerWordsRef,
+  created_by AS createdBy, status, next_at AS nextAt, last_scheduled_at AS lastScheduledAt,
+  run_count AS runCount, run_budget_micros AS runBudgetMicros, created_at AS createdAt,
+  updated_at AS updatedAt`;
+const TIMER_STATUSES: readonly string[] = ["active", "paused", "cancelled", "finished"];
+const TIMER_CREATORS: readonly string[] = ["owner", "agreed", "self"];
+const MAX_TIMER_LIST = 200;
+
+type TimerRow = Omit<SubthreadTimerRecord, "schedule"> & { readonly schedule: string };
+
+function timer(row: TimerRow): SubthreadTimerRecord {
+  return Object.freeze({
+    ...row,
+    schedule: Object.freeze(JSON.parse(row.schedule) as Record<string, unknown>),
+  });
+}
 
 const entryColumns = `e.writer_thread_id AS writerThreadId, e.name, e.version,
   e.summary_ref AS summaryRef, e.body_ref AS bodyRef, e.classification,
@@ -130,6 +149,20 @@ export class SqliteSubthreadOperations {
         return this.recordExchange(payload as Input<"recordExchange">);
       case "subthread.listExchanges":
         return this.listExchanges(payload as Input<"listExchanges">);
+      case "subthread.listAwaitingApproval":
+        return this.listAwaitingApproval(payload as Input<"listAwaitingApproval">);
+      case "subthread.createTimer":
+        return this.createTimer(payload as Input<"createTimer">);
+      case "subthread.readTimer":
+        return this.readTimer(payload as Input<"readTimer">);
+      case "subthread.listTimers":
+        return this.listTimers(payload as Input<"listTimers">);
+      case "subthread.listDueTimers":
+        return this.listDueTimers(payload as Input<"listDueTimers">);
+      case "subthread.advanceTimer":
+        return this.advanceTimer(payload as Input<"advanceTimer">);
+      case "subthread.setTimerStatus":
+        return this.setTimerStatus(payload as Input<"setTimerStatus">);
       case "subthread.markStuck":
         return this.markStuck(payload as Input<"markStuck">);
       case "subthread.recordResult":
@@ -338,6 +371,9 @@ export class SqliteSubthreadOperations {
           input.budgetMicros < 1 ||
           input.budgetMicros > MAX_BUDGET_MICROS)) ||
       (input.budgetHit !== undefined && typeof input.budgetHit !== "boolean") ||
+      (input.approvalRunId !== undefined &&
+        input.approvalRunId !== null &&
+        !text(input.approvalRunId, 256)) ||
       !validTime(input.now)
     )
       this.invalid("Subthread activity is invalid");
@@ -376,6 +412,13 @@ export class SqliteSubthreadOperations {
              WHERE owner_id = ? AND agent_id = ? AND thread_id = ?`,
           )
           .run(input.budgetMicros, input.now, input.ownerId, input.agentId, input.threadId);
+      if (input.approvalRunId !== undefined)
+        this.database
+          .prepare(
+            `UPDATE subthreads SET approval_run_id = ?, updated_at = ?
+             WHERE owner_id = ? AND agent_id = ? AND thread_id = ?`,
+          )
+          .run(input.approvalRunId, input.now, input.ownerId, input.agentId, input.threadId);
       if (input.budgetHit !== undefined)
         this.database
           .prepare(
@@ -483,6 +526,183 @@ export class SqliteSubthreadOperations {
           ) as SubthreadExchangeRecord[]
       ).map((row) => Object.freeze({ ...row })),
     );
+  }
+
+  private listAwaitingApproval(input: Input<"listAwaitingApproval">): readonly SubthreadRecord[] {
+    return Object.freeze(
+      (
+        this.database
+          .prepare(
+            `SELECT ${subthreadColumns} FROM subthreads
+             WHERE owner_id = ? AND agent_id = ? AND approval_run_id IS NOT NULL
+             ORDER BY thread_id LIMIT 200`,
+          )
+          .all(input.ownerId, input.agentId) as SubthreadRecord[]
+      ).map((row) => Object.freeze({ ...row })),
+    );
+  }
+
+  private createTimer(input: Input<"createTimer">): SubthreadTimerRecord {
+    const schedule = JSON.stringify(input.schedule ?? null);
+    if (
+      !text(input.id, 128) ||
+      !text(input.threadId, 256) ||
+      typeof input.schedule !== "object" ||
+      input.schedule === null ||
+      Array.isArray(input.schedule) ||
+      schedule.length > 1000 ||
+      !text(input.taskRef, 256) ||
+      (input.ownerWordsRef !== null && !text(input.ownerWordsRef, 256)) ||
+      !TIMER_CREATORS.includes(input.createdBy) ||
+      (input.nextAt !== null && !validTime(input.nextAt)) ||
+      !Number.isSafeInteger(input.runBudgetMicros) ||
+      input.runBudgetMicros < 1 ||
+      input.runBudgetMicros > MAX_BUDGET_MICROS ||
+      !validTime(input.now)
+    )
+      this.invalid("Subthread timer is invalid");
+    this.assertDiskHeadroom();
+    this.database
+      .prepare(
+        `INSERT OR IGNORE INTO subthread_timers
+          (id, owner_id, agent_id, thread_id, schedule, task_ref, owner_words_ref, created_by,
+           status, next_at, last_scheduled_at, run_count, run_budget_micros, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, NULL, 0, ?, ?, ?)`,
+      )
+      .run(
+        input.id,
+        input.ownerId,
+        input.agentId,
+        input.threadId,
+        schedule,
+        input.taskRef,
+        input.ownerWordsRef,
+        input.createdBy,
+        input.nextAt,
+        input.runBudgetMicros,
+        input.now,
+        input.now,
+      );
+    const created = this.readTimer(input);
+    if (!created) return this.invalid("Subthread timer was not stored");
+    return created;
+  }
+
+  private readTimer(input: Input<"readTimer">): SubthreadTimerRecord | undefined {
+    if (!text(input.id, 128)) this.invalid("Subthread timer query is invalid");
+    const row = this.database
+      .prepare(
+        `SELECT ${timerColumns} FROM subthread_timers
+         WHERE owner_id = ? AND agent_id = ? AND id = ?`,
+      )
+      .get(input.ownerId, input.agentId, input.id) as TimerRow | undefined;
+    return row ? timer(row) : undefined;
+  }
+
+  private listTimers(input: Input<"listTimers">): readonly SubthreadTimerRecord[] {
+    if (!Number.isSafeInteger(input.limit) || input.limit < 1 || input.limit > MAX_TIMER_LIST)
+      this.invalid("Subthread timer list is invalid");
+    return Object.freeze(
+      (
+        this.database
+          .prepare(
+            `SELECT ${timerColumns} FROM subthread_timers
+             WHERE owner_id = ? AND agent_id = ?
+             ORDER BY CASE status WHEN 'active' THEN 0 WHEN 'paused' THEN 1 ELSE 2 END,
+               coalesce(next_at, updated_at), id
+             LIMIT ?`,
+          )
+          .all(input.ownerId, input.agentId, input.limit) as TimerRow[]
+      ).map(timer),
+    );
+  }
+
+  private listDueTimers(input: Input<"listDueTimers">): readonly SubthreadTimerRecord[] {
+    if (
+      !validTime(input.now) ||
+      !Number.isSafeInteger(input.limit) ||
+      input.limit < 1 ||
+      input.limit > MAX_TIMER_LIST
+    )
+      this.invalid("Subthread due timer query is invalid");
+    return Object.freeze(
+      (
+        this.database
+          .prepare(
+            `SELECT ${timerColumns} FROM subthread_timers
+             WHERE owner_id = ? AND agent_id = ? AND status = 'active'
+               AND next_at IS NOT NULL AND next_at <= ?
+             ORDER BY next_at, id LIMIT ?`,
+          )
+          .all(input.ownerId, input.agentId, input.now, input.limit) as TimerRow[]
+      ).map(timer),
+    );
+  }
+
+  private advanceTimer(input: Input<"advanceTimer">): SubthreadTimerRecord | undefined {
+    if (
+      !text(input.id, 128) ||
+      (input.scheduledAt !== null && !validTime(input.scheduledAt)) ||
+      (input.nextAt !== null && !validTime(input.nextAt)) ||
+      typeof input.finished !== "boolean" ||
+      !validTime(input.now)
+    )
+      this.invalid("Subthread timer advance is invalid");
+    this.database
+      .prepare(
+        `UPDATE subthread_timers SET
+           last_scheduled_at = coalesce(?, last_scheduled_at),
+           run_count = run_count + CASE WHEN ? IS NULL THEN 0 ELSE 1 END,
+           next_at = ?,
+           status = CASE WHEN ? = 1 THEN 'finished' ELSE status END,
+           updated_at = ?
+         WHERE owner_id = ? AND agent_id = ? AND id = ? AND status = 'active'
+           AND (? IS NULL OR last_scheduled_at IS NULL OR last_scheduled_at < ?)`,
+      )
+      .run(
+        input.scheduledAt,
+        input.scheduledAt,
+        input.nextAt,
+        input.finished ? 1 : 0,
+        input.now,
+        input.ownerId,
+        input.agentId,
+        input.id,
+        input.scheduledAt,
+        input.scheduledAt,
+      );
+    return this.readTimer(input);
+  }
+
+  private setTimerStatus(input: Input<"setTimerStatus">): SubthreadTimerRecord | undefined {
+    if (
+      !text(input.id, 128) ||
+      !Array.isArray(input.from) ||
+      input.from.length === 0 ||
+      !input.from.every((status) => TIMER_STATUSES.includes(status)) ||
+      !TIMER_STATUSES.includes(input.to) ||
+      (input.nextAt !== undefined && input.nextAt !== null && !validTime(input.nextAt)) ||
+      !validTime(input.now)
+    )
+      this.invalid("Subthread timer status change is invalid");
+    const from = input.from.map(() => "?").join(", ");
+    this.database
+      .prepare(
+        `UPDATE subthread_timers SET status = ?,
+           next_at = CASE WHEN ? = 1 THEN ? ELSE next_at END, updated_at = ?
+         WHERE owner_id = ? AND agent_id = ? AND id = ? AND status IN (${from})`,
+      )
+      .run(
+        input.to,
+        input.nextAt === undefined ? 0 : 1,
+        input.nextAt ?? null,
+        input.now,
+        input.ownerId,
+        input.agentId,
+        input.id,
+        ...input.from,
+      );
+    return this.readTimer(input);
   }
 
   private spentMicros(input: Input<"spentMicros">): number {

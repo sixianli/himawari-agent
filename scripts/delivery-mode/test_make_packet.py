@@ -897,6 +897,19 @@ class ArmTargetTest(RenderedPacket):
         with unittest.mock.patch.object(packet_maker, 'git', return_value=json.dumps(lock)), self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_PYTHON_VERSION_UNSUPPORTED'):
             packet_maker.python_material_sha('e' * 40, 'x64')
 
+    def test_host_tools_script_reads_the_python_name_from_the_lock_and_installs_every_builder_tool(self):
+        script = (HERE.parent.parent / 'scripts/install/prepare-host-tools.sh').read_text()
+        lock = json.loads((HERE.parent.parent / 'ci/toolchain-lock.json').read_text())
+        self.assertNotIn(lock['python']['version'], script)
+        self.assertIn("python_material=$builder_root/materials/python-$python_version.tar.gz", script)
+        arm = json.loads((HERE / 'hermes/builder-arm64.json').read_text())
+        self.assertEqual(Path(arm['pythonMaterial']).name, 'python-' + lock['python']['version'] + '.tar.gz')
+        for step in ('builder-python', 'builder-tools', 'builder-fd', 'builder-browsers'):
+            self.assertIn('step ' + step, script)
+        for setting in ('tools', 'browsers', 'piToolBin'):
+            self.assertIn(Path(arm[setting]).name, script.replace('$tools_dir', 'tools').replace('$toolbin', 'pi-tools-bin') + 'browsers')
+        self.assertIn('fd-pins.json', script)
+
     def test_the_arm_builder_is_the_target_itself_and_never_the_rehearsal_host(self):
         settings = packet_maker.load_builder('arm64', 'tokyo-a1', '192.0.2.7')
         self.assertEqual((settings['hostname'], settings['transport'], settings['address']), ('tokyo-a1', 'target-ssh', '192.0.2.7'))
@@ -2082,6 +2095,89 @@ class ProductionStartupBudgetTest(unittest.TestCase):
         deadlines = re.findall(r'deadline = time\.monotonic\(\) \+ ([0-9]+)\n', switch)
         self.assertEqual(len(deadlines), 1)
         self.assertGreater(int(deadlines[0]) * 1000, budget_ms + INSTANCE['startupReadyMarginSeconds'] * 1000)
+
+
+FIRST_TOOLS_REFS = ['himawari.pi-coding', 'himawari.public-search', 'himawari.public-fetch']
+FIRST_TOOLS_PARAMETERS = {'FIRST_TOOLS': '1', 'NEW_CAPABILITY_REFS_JSON': json.dumps(FIRST_TOOLS_REFS, separators=(',', ':'))}
+
+
+class FirstToolsMaintenanceTest(RenderedPacket):
+    TAG = '[PG-2]'
+
+    def hashes(self, packet):
+        return {path.relative_to(packet).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest() for path in packet.rglob('*') if path.is_file()}
+
+    def s9(self, packet):
+        spec = importlib.util.spec_from_file_location('s9_control_' + packet.name, packet / 'maintenance' / 'S9-control-files.py')
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_the_two_renders_differ_only_in_the_files_that_carry_the_new_capability_list(self):
+        upgrade = self.hashes(self.render())
+        first = self.hashes(self.render(**FIRST_TOOLS_PARAMETERS))
+        self.assertEqual(set(upgrade), set(first))
+        self.assertEqual({name for name in upgrade if upgrade[name] != first[name]}, {'signing/cloud-capability-manifest.mjs', 'signing/verify-capability-manifest.mjs', 'signing/finalize-binding-inputs.py', 'systemd/S2-stop-and-inspect.py', 'systemd/S7-switch-start-readback.py', 'systemd/S7-startup-readback.mjs', 'install/S9-clean-transport.py'})
+
+    def test_maintenance_fixtures_pass_in_the_first_tools_render(self):
+        packet = self.render(**FIRST_TOOLS_PARAMETERS)
+        scratch = self.root / 'fixture-temp-first'
+        scratch.mkdir()
+        result = subprocess.run([shutil.which('node'), str(packet / 'maintenance' / 'verify-fixtures.mjs')], capture_output=True, text=True, cwd=HERE.parents[1], env={**os.environ, 'HIMAWARI_TEST_TEMP_ROOT': str(scratch)}, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr[-2000:])
+        counts = json.loads(result.stdout.strip().splitlines()[-1])['counts']
+        for group in ('firstToolsAccepted', 'firstToolsPendingAccepted', 'firstToolsRegisteredAccepted', 'firstToolsGrantRejections', 'firstToolsPendingRejections', 'firstToolsRegisteredRejections'):
+            self.assertGreater(counts[group], 0, group)
+
+    def frozen(self, capabilities):
+        grant_bytes = json.dumps({'id': 'directory:himawari-prod-workspace-20261015', 'revision': 1})
+        grant = {'routeKey': 'coding', 'grantId': 'directory:himawari-prod-workspace-20261015', 'stateRevision': 1, 'metadataSha256': hashlib.sha256(grant_bytes.encode()).hexdigest()}
+        return {'directoryGrants': [grant], 'capabilities': capabilities}, {'revision': 1, 'value_json': grant_bytes}
+
+    def test_s9_restore_of_a_first_tools_deployment_needs_a_catalog_with_no_registrations(self):
+        module = self.s9(self.render(**FIRST_TOOLS_PARAMETERS))
+        binding = {'workspace': {'decisionRef': 'G90', 'routeKey': 'coding', 'grantId': 'directory:himawari-prod-workspace-20261015', 'canonicalPath': '/var/lib/himawari/workspace', 'subdirectories': ['files', 'repos']}}
+        frozen, grant_row = self.frozen([])
+        self.assertEqual(module.validate_restored_catalog(binding, frozen, grant_row, {}, True, 0)['capabilityUpgradeDiscarded'], True)
+        row = {'id': 'himawari.pi-coding', 'version': '1.0.0', 'status': 'active', 'revision': 1, 'integrity': 'sha256:' + 'a' * 64, 'record_json': '{}'}
+        for rows, count in (({}, 1), ({'himawari.pi-coding': row}, 1), ({}, None)):
+            with self.assertRaisesRegex(RuntimeError, 'TWELFTH_S9_RESTORED_CATALOG_NOT_AT_S0'):
+                module.validate_restored_catalog(binding, frozen, grant_row, rows, True, count)
+        with self.assertRaisesRegex(RuntimeError, 'TWELFTH_S9_FROZEN_CATALOG_INVALID'):
+            module.validate_restored_catalog(binding, frozen, grant_row, {})
+        with self.assertRaisesRegex(RuntimeError, 'TWELFTH_S9_RESTORED_GRANT_CHANGED'):
+            module.validate_restored_catalog(binding, frozen, {'revision': 2, 'value_json': grant_row['value_json']}, {}, True, 0)
+
+    def test_s9_control_files_skip_the_snapshot_and_attestation_only_when_they_are_absent_in_a_first_tools_restore(self):
+        module = self.s9(self.render(**FIRST_TOOLS_PARAMETERS))
+        for name in ('CONFIG', 'UNIT', 'SNAPSHOT', 'ATTESTATION'):
+            setattr(module, name, self.root / name.lower())
+        for name in ('CONFIG', 'UNIT'):
+            getattr(module, name).write_text('x')
+        self.assertEqual([entry[1] for entry in module.control_files(False)], ['config.json', 'unit.service', 'capability-deployment.json', 'startup-attestation.json'])
+        self.assertEqual([entry[1] for entry in module.control_files(True)], ['config.json', 'unit.service'])
+        module.SNAPSHOT.write_text('x')
+        self.assertEqual([entry[1] for entry in module.control_files(True)], ['config.json', 'unit.service', 'capability-deployment.json'])
+
+    def test_s9_first_tools_state_is_read_from_the_original_configuration_and_must_match_the_frozen_catalog(self):
+        module = self.s9(self.render(**FIRST_TOOLS_PARAMETERS))
+        module.EVIDENCE = self.root / 'evidence'
+        module.EVIDENCE.mkdir()
+        module.safe_file = lambda filename, uid=0, mode=None: Path(filename).read_bytes()
+        module.OLD_CONFIG_SHA = hashlib.sha256(b'{"runPolicy": {}}').hexdigest()
+        (module.EVIDENCE / 'original-config.json').write_bytes(b'{"runPolicy": {}}')
+        self.assertIs(module.first_tools_restore({'capabilities': []}), True)
+        with self.assertRaisesRegex(RuntimeError, 'TWELFTH_S9_FIRST_TOOLS_STATE_INCONSISTENT'):
+            module.first_tools_restore({'capabilities': [{'capabilityRef': 'himawari.pi-coding'}]})
+        installed = b'{"capabilityDeployment": {"snapshotPath": "/x", "sha256": "sha256:00"}}'
+        (module.EVIDENCE / 'original-config.json').write_bytes(installed)
+        module.OLD_CONFIG_SHA = hashlib.sha256(installed).hexdigest()
+        self.assertIs(module.first_tools_restore({'capabilities': [{'capabilityRef': 'himawari.pi-coding'}]}), False)
+        with self.assertRaisesRegex(RuntimeError, 'TWELFTH_S9_FIRST_TOOLS_STATE_INCONSISTENT'):
+            module.first_tools_restore({'capabilities': []})
+        module.OLD_CONFIG_SHA = '0' * 64
+        with self.assertRaisesRegex(RuntimeError, 'TWELFTH_S9_ORIGINAL_CONTROL_BYTES_CHANGED'):
+            module.first_tools_restore({'capabilities': []})
 
 
 if __name__ == '__main__':

@@ -13,10 +13,18 @@ import type {
   RuntimeToolInvocation,
   SubthreadRecord,
   SubthreadStorePort,
+  SubthreadTimerCreator,
+  SubthreadTimerRecord,
+  SubthreadTimerStatus,
   ThreadCommandService,
   ThreadRepositoryPort,
 } from "@himawari-agent/application";
-import { classificationRank, highestClassification } from "@himawari-agent/application";
+import {
+  type DurableSchedule,
+  classificationRank,
+  evaluateDurableSchedule,
+  highestClassification,
+} from "@himawari-agent/application";
 import type { ThreadBackgroundWork } from "@himawari-agent/gateway-contracts";
 import {
   RESULT_BOARD_CHANGED,
@@ -26,6 +34,7 @@ import {
   RESULT_BOARD_GONE_STUCK,
   RESULT_BOARD_READY,
   renderPrompt,
+  SUBTHREAD_APPROVAL_WAITING,
   SUBTHREAD_BRIEF,
   SUBTHREAD_BUDGET_REACHED,
   SUBTHREAD_CONTINUE,
@@ -34,9 +43,15 @@ import {
   SUBTHREAD_EVENT,
   SUBTHREAD_MESSAGES_PREFACE,
   SUBTHREAD_STATUS_BOARD_HEADER,
+  TIMER_BRIEF,
+  TIMER_DUE,
+  TIMER_SCHEDULE_DAILY,
+  TIMER_SCHEDULE_EVERY,
+  TIMER_SCHEDULE_ONCE,
   TOOL_OPEN_SUBTHREAD,
   TOOL_RECORD_RESULT,
   TOOL_RETURN_RESULT,
+  TOOL_SCHEDULE_TASK,
   TOOL_SEND_TO_SUBTHREAD,
   TOOL_STOP_SUBTHREAD,
   TOOL_TELL_MAIN,
@@ -63,6 +78,7 @@ export const MAIN_SUBTHREAD_TOOLS = [
   "send_to_subthread",
   "stop_subthread",
   "view_subthread",
+  "schedule_task",
 ] as const;
 export const SUBTHREAD_SIDE_TOOLS = [
   "tell_main",
@@ -76,6 +92,16 @@ export const MAIN_NOTE_EVENT_KIND = "main_note";
 export const RESULT_BOARD_EVENT_KIND = "result_board";
 export const SUBTHREAD_CONTINUE_EVENT_KIND = "subthread_continue";
 export const DEFAULT_SUBTHREAD_BUDGET_MICROS = 500_000;
+export const TIMER_EVENT_KIND = "timer";
+export const DEFAULT_TIMER_TIME_ZONE = "Asia/Tokyo";
+const TIMER_TICK_MS = 10_000;
+const TIMER_MISFIRE_GRACE_MS = 400 * 86_400_000;
+const TIMER_MIN_MINUTES = 5;
+const TIMER_MAX_MINUTES = 525_600;
+const TIMER_DUE_BATCH = 50;
+const TIMER_LIST_LIMIT = 200;
+const TIMER_CREATORS: readonly SubthreadTimerCreator[] = ["owner", "agreed", "self"];
+const DAILY_TIME = /^([01][0-9]|2[0-3]):([0-5][0-9])$/u;
 
 const FIELD_LIMIT = 4000;
 const RESULT_LIMIT = 8000;
@@ -120,6 +146,7 @@ const MICROS = 1_000_000;
 type BackgroundActivity =
   | "queued"
   | "running"
+  | "waiting_approval"
   | "waiting_answer"
   | "waiting_result"
   | "idle"
@@ -232,7 +259,80 @@ export function mainSubthreadDescriptors(): readonly RuntimeToolDescriptor[] {
       true,
     ),
     viewResultsDescriptor(true),
+    descriptor("schedule_task", TOOL_SCHEDULE_TASK.text, {
+      type: "object",
+      properties: {
+        task: field(FIELD_LIMIT),
+        schedule: {
+          type: "object",
+          properties: {
+            once_at: field(40),
+            daily_at: { type: "string", pattern: DAILY_TIME.source },
+            every_minutes: {
+              type: "integer",
+              minimum: TIMER_MIN_MINUTES,
+              maximum: TIMER_MAX_MINUTES,
+            },
+          },
+          minProperties: 1,
+          maxProperties: 1,
+          additionalProperties: false,
+        },
+        created_by: { type: "string", enum: [...TIMER_CREATORS] },
+        owner_messages: {
+          type: "array",
+          items: field(256),
+          maxItems: OWNER_MESSAGES_LIMIT,
+          uniqueItems: true,
+        },
+        matter: field(MATTER_LIMIT),
+        title: field(SUBTHREAD_TITLE_LIMIT),
+        budget: budgetField,
+      },
+      required: ["task", "schedule", "created_by", "matter", "title"],
+      additionalProperties: false,
+    }),
   ];
+}
+
+type TimerSchedule = DurableSchedule & { readonly timeZone: string };
+
+export function localTime(iso: string, timeZone: string): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date(iso));
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((candidate) => candidate.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")} ${part("hour")}:${part("minute")}（${timeZone}）`;
+}
+
+function scheduleText(schedule: TimerSchedule): string {
+  if (schedule.kind === "one_shot")
+    return renderPrompt(TIMER_SCHEDULE_ONCE, { at: localTime(schedule.at, schedule.timeZone) });
+  if (schedule.kind === "daily")
+    return renderPrompt(TIMER_SCHEDULE_DAILY, {
+      time: `${String(schedule.hour).padStart(2, "0")}:${String(schedule.minute).padStart(2, "0")}`,
+      timeZone: schedule.timeZone,
+    });
+  return renderPrompt(TIMER_SCHEDULE_EVERY, {
+    minutes: String(Math.round(schedule.intervalMs / 60_000)),
+  });
+}
+
+export interface SubthreadTimerView {
+  readonly timer: SubthreadTimerRecord;
+  readonly title: string | null;
+  readonly task: string;
+  readonly ownerWords: string | null;
+  readonly lastResult: { readonly text: string; readonly at: string } | null;
+  readonly schedule: string;
+  readonly spentMicros: number;
 }
 
 function viewResultsDescriptor(needsMatter: boolean): RuntimeToolDescriptor {
@@ -338,6 +438,63 @@ function nameArgument(value: unknown): string {
   return name;
 }
 
+function scheduleArgument(value: unknown, now: string, timeZone: string): TimerSchedule {
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    throw new SubthreadToolError("INPUT_INVALID");
+  const entries = Object.entries(value as Record<string, unknown>);
+  if (entries.length !== 1) throw new SubthreadToolError("INPUT_INVALID");
+  const [[key, raw]] = entries as [[string, unknown]];
+  if (key === "once_at") {
+    if (typeof raw !== "string" || raw.length > 40 || !/(Z|[+-]\d{2}:\d{2})$/u.test(raw))
+      throw new SubthreadToolError("INPUT_INVALID");
+    const at = Date.parse(raw);
+    if (!Number.isFinite(at)) throw new SubthreadToolError("INPUT_INVALID");
+    return {
+      kind: "one_shot",
+      at: new Date(Math.max(at, Date.parse(now))).toISOString(),
+      misfireGraceMs: TIMER_MISFIRE_GRACE_MS,
+      timeZone,
+    };
+  }
+  if (key === "daily_at") {
+    const match = typeof raw === "string" ? DAILY_TIME.exec(raw) : null;
+    if (!match) throw new SubthreadToolError("INPUT_INVALID");
+    return {
+      kind: "daily",
+      timeZone,
+      hour: Number(match[1]),
+      minute: Number(match[2]),
+      misfireGraceMs: TIMER_MISFIRE_GRACE_MS,
+    };
+  }
+  if (key === "every_minutes") {
+    if (
+      typeof raw !== "number" ||
+      !Number.isSafeInteger(raw) ||
+      raw < TIMER_MIN_MINUTES ||
+      raw > TIMER_MAX_MINUTES
+    )
+      throw new SubthreadToolError("INPUT_INVALID");
+    return {
+      kind: "interval",
+      anchorAt: new Date(Date.parse(now) + raw * 60_000).toISOString(),
+      intervalMs: raw * 60_000,
+      misfireGraceMs: TIMER_MISFIRE_GRACE_MS,
+      timeZone,
+    };
+  }
+  throw new SubthreadToolError("INPUT_INVALID");
+}
+
+function nextFrom(schedule: TimerSchedule, now: string): string | null {
+  if (schedule.kind === "one_shot") return schedule.at < now ? now : schedule.at;
+  return evaluateDurableSchedule(schedule, { now, lastScheduledAt: null }).nextAt;
+}
+
+function storedSchedule(value: Readonly<Record<string, unknown>>): TimerSchedule {
+  return value as unknown as TimerSchedule;
+}
+
 export interface ProductionSubthreadsOptions {
   readonly ownerId: OwnerRuleScope["ownerId"];
   readonly agentId: OwnerRuleScope["agentId"];
@@ -352,6 +509,9 @@ export interface ProductionSubthreadsOptions {
   readonly protector: PayloadProtectorPort;
   readonly clock: ClockPort;
   readonly defaultBudgetMicros?: number;
+  readonly timeZone?: string;
+  readonly timerTickMs?: number;
+  readonly onTimerFailure?: (error: unknown) => void;
 }
 
 export type SubthreadRunEnding = "continued" | "over_budget" | "settled";
@@ -362,6 +522,8 @@ export class ProductionSubthreads {
   readonly #options: ProductionSubthreadsOptions;
   #attached: SubthreadInboxAttachment | undefined;
   #draining: Promise<void> = Promise.resolve();
+  #timerLoop: ReturnType<typeof setInterval> | undefined;
+  #ticking: Promise<void> | undefined;
 
   constructor(options: ProductionSubthreadsOptions) {
     this.#options = options;
@@ -402,6 +564,14 @@ export class ProductionSubthreads {
       verbatim: true,
     });
     registry.register({
+      kind: TIMER_EVENT_KIND,
+      describe: "定时",
+      externalContent: false,
+      fromOwner: false,
+      priority: 2,
+      verbatim: true,
+    });
+    registry.register({
       kind: RESULT_BOARD_EVENT_KIND,
       describe: "结果板",
       externalContent: false,
@@ -436,16 +606,19 @@ export class ProductionSubthreads {
       readonly text: string;
     }[],
   ) {
+    const timers = events.filter((event) => event.sourceKind === TIMER_EVENT_KIND);
     const board = events.filter((event) => event.sourceKind === RESULT_BOARD_EVENT_KIND);
     const continuing = events.filter((event) => event.sourceKind === SUBTHREAD_CONTINUE_EVENT_KIND);
     const notes = events.filter(
       (event) =>
         event.sourceKind !== RESULT_BOARD_EVENT_KIND &&
         event.sourceKind !== SUBTHREAD_CONTINUE_EVENT_KIND &&
+        event.sourceKind !== TIMER_EVENT_KIND &&
         !event.sourceRef.startsWith("brief:"),
     );
     return [
       ...events.filter((event) => event.sourceRef.startsWith("brief:")).map((event) => event.text),
+      ...timers.map((event) => event.text),
       ...board.map((event) => event.text),
       ...continuing.slice(-1).map((event) => event.text),
       ...(notes.length > 0 ? [SUBTHREAD_MESSAGES_PREFACE.text] : []),
@@ -528,6 +701,8 @@ export class ProductionSubthreads {
         return this.#stop(conversation.threadId, args);
       case "view_subthread":
         return this.#view(conversation.threadId, args);
+      case "schedule_task":
+        return this.#schedule(invocation, conversation.threadId, args);
       case "tell_main":
         return this.#tellMain(invocation, conversation.threadId, args);
       case "return_result":
@@ -591,6 +766,42 @@ export class ProductionSubthreads {
       });
     }
     return true;
+  }
+
+  async parentOf(threadId: string): Promise<string | undefined> {
+    return (await this.#options.store.read({ ...this.#scope, threadId }))?.parentThreadId;
+  }
+
+  async awaitingApproval(input: { readonly threadId: string; readonly runId: string }) {
+    const subthread = await this.open(input.threadId);
+    if (!subthread) return;
+    if (subthread.approvalRunId !== input.runId)
+      await this.#options.store.noteActivity({
+        ...this.#scope,
+        threadId: input.threadId,
+        approvalRunId: input.runId,
+        now: this.#options.clock.now(),
+      });
+    await this.#submit({
+      kind: SUBTHREAD_EVENT_KIND,
+      sourceRef: `approval:${digest([input.threadId, input.runId])}`,
+      text: this.#event(subthread, "approval", SUBTHREAD_APPROVAL_WAITING.text),
+      threadId: null,
+      externalContent: await this.#marked(input.threadId),
+    });
+  }
+
+  listAwaitingApproval(): Promise<readonly SubthreadRecord[]> {
+    return this.#options.store.listAwaitingApproval(this.#scope);
+  }
+
+  async approvalSettled(threadId: string): Promise<void> {
+    await this.#options.store.noteActivity({
+      ...this.#scope,
+      threadId,
+      approvalRunId: null,
+      now: this.#options.clock.now(),
+    });
   }
 
   async afterRun(input: {
@@ -695,15 +906,17 @@ export class ProductionSubthreads {
         ? "finished"
         : subthread.budgetHitAt !== null
           ? "over_budget"
-          : subthread.askedAt !== null
-            ? "waiting_answer"
-            : queues.waiting.has(subthread.threadId)
-              ? "waiting_result"
-              : active.some((run) => run.status !== "accepted")
-                ? "running"
-                : active.length > 0 || queues.queued.has(subthread.threadId)
-                  ? "queued"
-                  : "idle";
+          : active.some((run) => run.status === "awaiting_approval")
+            ? "waiting_approval"
+            : subthread.askedAt !== null
+              ? "waiting_answer"
+              : queues.waiting.has(subthread.threadId)
+                ? "waiting_result"
+                : active.some((run) => run.status !== "accepted")
+                  ? "running"
+                  : active.length > 0 || queues.queued.has(subthread.threadId)
+                    ? "queued"
+                    : "idle";
     return { activity, runCount: runs.length, runs };
   }
 
@@ -736,7 +949,7 @@ export class ProductionSubthreads {
       const row = {
         subthreadId: subthread.threadId,
         status: subthread.status,
-        activity,
+        activity: activity === "waiting_approval" ? "running" : activity,
         openedAt: subthread.createdAt,
         updatedAt: subthread.updatedAt,
         progress: progress === undefined ? null : [...progress].slice(0, 2000).join(""),
@@ -1038,8 +1251,309 @@ export class ProductionSubthreads {
         now: this.#options.clock.now(),
       });
     await this.drainNotices();
+    await this.#cancelTimersOf(subthread.threadId);
     await this.#attached?.cancelThreadRuns?.(subthread.threadId);
     return { value: { stopped: true, subthread: subthread.threadId } };
+  }
+
+  async #schedule(
+    invocation: RuntimeToolInvocation,
+    main: string,
+    args: Readonly<Record<string, unknown>>,
+  ): Promise<Result> {
+    onlyArguments(args, [
+      "task",
+      "schedule",
+      "created_by",
+      "owner_messages",
+      "matter",
+      "title",
+      "budget",
+    ]);
+    const ids = args["owner_messages"] ?? [];
+    if (
+      !Array.isArray(ids) ||
+      ids.length > OWNER_MESSAGES_LIMIT ||
+      !ids.every((id) => typeof id === "string" && id.length > 0 && id.length <= 256) ||
+      new Set(ids).size !== ids.length
+    )
+      throw new SubthreadToolError("INPUT_INVALID");
+    const runBudgetMicros =
+      budgetArgument(args["budget"]) ??
+      this.#options.defaultBudgetMicros ??
+      DEFAULT_SUBTHREAD_BUDGET_MICROS;
+    const title = oneLine(textArgument(args["title"], SUBTHREAD_TITLE_LIMIT * 4));
+    if (title.length === 0 || [...title].length > SUBTHREAD_TITLE_LIMIT)
+      throw new SubthreadToolError("INPUT_INVALID");
+    const task = textArgument(args["task"], FIELD_LIMIT);
+    const matter = textArgument(args["matter"], MATTER_LIMIT).replace(/\s+/gu, " ");
+    const createdBy = args["created_by"];
+    if (!TIMER_CREATORS.includes(createdBy as SubthreadTimerCreator))
+      throw new SubthreadToolError("INPUT_INVALID");
+    const now = this.#options.clock.now();
+    const schedule = scheduleArgument(args["schedule"], now, this.#timeZone);
+    const openKey = digest([invocation.runId, invocation.toolCallId]);
+    const timerId = `timer:${openKey}`;
+    const existing = await this.#options.store.readTimer({ ...this.#scope, id: timerId });
+    if (existing)
+      return {
+        value: { subthread: existing.threadId, timer: existing.id, next_at: existing.nextAt },
+      };
+    const threadId = `thread:subthread:${openKey}`;
+    const briefRef = `subthread-brief:${openKey}`;
+    const briefText = renderPrompt(TIMER_BRIEF, { task, schedule: scheduleText(schedule) });
+    const classification = await this.#put(briefRef, briefText);
+    const taskRef = `timer-task:${openKey}`;
+    await this.#put(taskRef, task);
+    const ownerWordsRef = ids.length > 0 ? `timer-owner-words:${openKey}` : null;
+    if (ownerWordsRef)
+      await this.#put(ownerWordsRef, await this.#ownerWords(main, ids as string[]));
+    await this.#options.commands.create({
+      ownerId: this.#options.ownerId as Create["ownerId"],
+      agentId: this.#options.agentId as Create["agentId"],
+      threadId: threadId as NonNullable<Create["threadId"]>,
+      idempotencyKey: `subthread:${openKey}`,
+      origin: "think",
+      resultRef: briefRef as Create["resultRef"],
+    });
+    for (const { origin } of await this.#options.externalContent.readThread(main))
+      await this.#options.externalContent.markThread(threadId, invocation.runId, origin);
+    await this.#options.store.open({
+      ...this.#scope,
+      threadId,
+      parentThreadId: main,
+      matter,
+      title,
+      openKey,
+      openedByRunId: invocation.runId,
+      briefRef,
+      classification,
+      now,
+    });
+    await this.#exchange({
+      threadId,
+      direction: "to_subthread",
+      kind: "brief",
+      text: briefText,
+      key: "brief",
+    });
+    const timer = await this.#options.store.createTimer({
+      ...this.#scope,
+      id: timerId,
+      threadId,
+      schedule: schedule as unknown as Readonly<Record<string, unknown>>,
+      taskRef,
+      ownerWordsRef,
+      createdBy: createdBy as SubthreadTimerCreator,
+      nextAt: nextFrom(schedule, now),
+      runBudgetMicros,
+      now,
+    });
+    return {
+      value: {
+        subthread: threadId,
+        timer: timer.id,
+        next_at: timer.nextAt,
+        next_local: timer.nextAt ? localTime(timer.nextAt, this.#timeZone) : null,
+      },
+    };
+  }
+
+  get #timeZone(): string {
+    return this.#options.timeZone ?? DEFAULT_TIMER_TIME_ZONE;
+  }
+
+  startTimers(): void {
+    if (this.#timerLoop) return;
+    this.#timerLoop = setInterval(() => {
+      void this.tickTimers().catch((error: unknown) => this.#options.onTimerFailure?.(error));
+    }, this.#options.timerTickMs ?? TIMER_TICK_MS);
+    this.#timerLoop.unref?.();
+    void this.tickTimers().catch((error: unknown) => this.#options.onTimerFailure?.(error));
+  }
+
+  stopTimers(): void {
+    if (this.#timerLoop) clearInterval(this.#timerLoop);
+    this.#timerLoop = undefined;
+  }
+
+  tickTimers(): Promise<void> {
+    if (this.#ticking) return this.#ticking;
+    const tick = this.#tick().finally(() => {
+      this.#ticking = undefined;
+    });
+    this.#ticking = tick;
+    return tick;
+  }
+
+  async #tick(): Promise<void> {
+    if (!this.#attached?.inbox) return;
+    const now = this.#options.clock.now();
+    const due = await this.#options.store.listDueTimers({
+      ...this.#scope,
+      now,
+      limit: TIMER_DUE_BATCH,
+    });
+    for (const timer of due) await this.#fire(timer, now);
+  }
+
+  async #fire(timer: SubthreadTimerRecord, now: string): Promise<void> {
+    const subthread = await this.open(timer.threadId);
+    if (!subthread) {
+      await this.#setTimer(timer.id, ["active", "paused"], "cancelled");
+      return;
+    }
+    const schedule = storedSchedule(timer.schedule);
+    const evaluation = evaluateDurableSchedule(schedule, {
+      now,
+      lastScheduledAt: timer.lastScheduledAt,
+    });
+    if (evaluation.outcome !== "due" || evaluation.scheduledAt === null) {
+      await this.#options.store.advanceTimer({
+        ...this.#scope,
+        id: timer.id,
+        scheduledAt: null,
+        nextAt: evaluation.nextAt,
+        finished: schedule.kind === "one_shot" && evaluation.nextAt === null,
+        now,
+      });
+      return;
+    }
+    const spent = await this.#spent(subthread);
+    await this.#options.store.noteActivity({
+      ...this.#scope,
+      threadId: subthread.threadId,
+      budgetMicros: Math.min(MAX_BUDGET_DOLLARS * MICROS, spent + timer.runBudgetMicros),
+      now,
+    });
+    const due = renderPrompt(TIMER_DUE, {
+      run: String(timer.runCount + 1),
+      due: localTime(evaluation.scheduledAt, schedule.timeZone ?? this.#timeZone),
+    });
+    const brief = timer.runCount === 0 ? await this.#text(subthread.briefRef) : undefined;
+    await this.#submit({
+      kind: TIMER_EVENT_KIND,
+      sourceRef: timer.id,
+      version: evaluation.scheduledAt,
+      text: brief === undefined ? due : `${brief}\n\n${due}`,
+      threadId: subthread.threadId,
+      externalContent: false,
+    });
+    await this.#options.store.advanceTimer({
+      ...this.#scope,
+      id: timer.id,
+      scheduledAt: evaluation.scheduledAt,
+      nextAt: schedule.kind === "one_shot" ? null : evaluation.nextAt,
+      finished: schedule.kind === "one_shot",
+      now,
+    });
+  }
+
+  async #setTimer(
+    id: string,
+    from: readonly SubthreadTimerStatus[],
+    to: SubthreadTimerStatus,
+    nextAt?: string | null,
+  ): Promise<SubthreadTimerRecord | undefined> {
+    return this.#options.store.setTimerStatus({
+      ...this.#scope,
+      id,
+      from,
+      to,
+      ...(nextAt !== undefined ? { nextAt } : {}),
+      now: this.#options.clock.now(),
+    });
+  }
+
+  async #cancelTimersOf(threadId: string): Promise<void> {
+    for (const timer of await this.#options.store.listTimers({
+      ...this.#scope,
+      limit: TIMER_LIST_LIMIT,
+    }))
+      if (timer.threadId === threadId)
+        await this.#setTimer(timer.id, ["active", "paused"], "cancelled");
+  }
+
+  async listTimers(): Promise<readonly SubthreadTimerView[]> {
+    const views: SubthreadTimerView[] = [];
+    for (const timer of await this.#options.store.listTimers({
+      ...this.#scope,
+      limit: TIMER_LIST_LIMIT,
+    })) {
+      const subthread = await this.#options.store.read({
+        ...this.#scope,
+        threadId: timer.threadId,
+      });
+      views.push({
+        timer,
+        title: subthread?.title ?? null,
+        task: (await this.#text(timer.taskRef)) ?? "",
+        ownerWords: timer.ownerWordsRef ? ((await this.#text(timer.ownerWordsRef)) ?? null) : null,
+        lastResult: await this.#lastResult(timer),
+        schedule: scheduleText(storedSchedule(timer.schedule)),
+        spentMicros: await this.#options.store.spentMicros({
+          ...this.#scope,
+          threadId: timer.threadId,
+        }),
+      });
+    }
+    return views;
+  }
+
+  async #lastResult(
+    timer: SubthreadTimerRecord,
+  ): Promise<{ readonly text: string; readonly at: string } | null> {
+    if (timer.lastScheduledAt === null) return null;
+    const exchanges = await this.#options.store.listExchanges({
+      ...this.#scope,
+      threadId: timer.threadId,
+      limit: BACKGROUND_EXCHANGES,
+    });
+    const last = [...exchanges]
+      .filter(
+        (exchange) =>
+          exchange.direction === "to_main" &&
+          exchange.kind !== "budget" &&
+          exchange.createdAt >= (timer.lastScheduledAt ?? ""),
+      )
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
+      .at(-1);
+    if (!last) return null;
+    const text = await this.#text(last.textRef);
+    return text === undefined ? null : { text, at: last.createdAt };
+  }
+
+  async pauseTimer(id: string): Promise<SubthreadTimerRecord | undefined> {
+    return this.#setTimer(id, ["active"], "paused");
+  }
+
+  async resumeTimer(id: string): Promise<SubthreadTimerRecord | undefined> {
+    const timer = await this.#options.store.readTimer({ ...this.#scope, id });
+    if (!timer || timer.status !== "paused") return timer;
+    return this.#setTimer(
+      id,
+      ["paused"],
+      "active",
+      nextFrom(storedSchedule(timer.schedule), this.#options.clock.now()),
+    );
+  }
+
+  async cancelTimer(id: string): Promise<SubthreadTimerRecord | undefined> {
+    const timer = await this.#setTimer(id, ["active", "paused"], "cancelled");
+    if (timer?.status === "cancelled") {
+      const subthread = await this.open(timer.threadId);
+      if (subthread)
+        await this.#options.store.settle({
+          ...this.#scope,
+          threadId: subthread.threadId,
+          to: "stopped",
+          resultRef: null,
+          now: this.#options.clock.now(),
+        });
+      await this.drainNotices();
+      await this.#attached?.cancelThreadRuns?.(timer.threadId);
+    }
+    return timer;
   }
 
   async #view(main: string, args: Readonly<Record<string, unknown>>): Promise<Result> {
