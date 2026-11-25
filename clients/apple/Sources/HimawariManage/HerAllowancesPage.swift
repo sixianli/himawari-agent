@@ -44,6 +44,7 @@ struct HerAllowancesPage: View {
                 try await memory.setAllowanceDays(days, reason: M.allowanceDaysTitle)
             }
             .presentationDetents([.medium])
+            .presentationDragIndicator(.visible)
             .presentationCornerRadius(ManageLayout.DetailSheetShape.cornerRadius)
             .presentationBackground(Color.hmBackground)
         }
