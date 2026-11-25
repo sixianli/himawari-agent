@@ -7,7 +7,7 @@
 "chat.queued.discard" = "Discard";
 "common.ok" = "OK";
 "process.thinking" = "Thinking";
-"process.waiting" = "Waiting for your approval";
+"process.waiting" = "Needs your OK";
 "process.seconds" = "%d s";
 "process.expand" = "Show each step";
 "process.didThings" = "Did %d things";

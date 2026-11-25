@@ -2342,13 +2342,14 @@ it("[ADR-0257] only the listing, recall, conversation, mail, perception and vaul
       .sort(),
   ).toEqual([
     "device_action",
+    "offer_options",
     "reminder_cancel",
     "reminder_set",
     "rule_set",
     "rule_undo",
     "tell_owner",
   ]);
-  expect(builtin).toHaveLength(16);
+  expect(builtin).toHaveLength(17);
 });
 
 it("[ADR-0257] runs a tool with consequences only after the exit allows it, and never asks the exit for a read", async () => {

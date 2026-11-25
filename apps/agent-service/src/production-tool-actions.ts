@@ -16,6 +16,7 @@ import {
 } from "./production-conversation-tools.js";
 import { MAIL_READ_CAPABILITY_REF } from "./production-mail-read.js";
 import { MANAGED_TASK_ACTIONS } from "./production-managed-tasks.js";
+import { OFFER_OPTIONS_CAPABILITY_REF } from "./production-message-options.js";
 import { MEMORY_OPEN_CAPABILITY_REF } from "./production-memory-open.js";
 import { MEMORY_RECALL_CAPABILITY_REF } from "./production-memory-recall.js";
 import {
@@ -334,6 +335,16 @@ export const PRODUCTION_TOOL_ACTION_ROWS: readonly ToolActionRow[] = Object.free
     targetType: "owner-message",
     standingRuleChange: false,
     detail: detail({ zh: "告诉你", en: "Tell you", ja: "あなたに伝える" }, "text"),
+  },
+  {
+    ...OWNER_WRITE_DEFAULTS,
+    tool: "offer_options",
+    himawariSideOnly: true,
+    capabilityRef: OFFER_OPTIONS_CAPABILITY_REF,
+    operation: "offer",
+    targetType: "owner-options",
+    standingRuleChange: false,
+    detail: detail({ zh: "给你选项", en: "Offer you choices", ja: "選択肢を出す" }),
   },
   {
     ...OWNER_WRITE_DEFAULTS,

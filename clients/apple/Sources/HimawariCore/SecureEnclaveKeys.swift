@@ -18,19 +18,47 @@ public struct SecureEnclaveKeySigner: DeviceKeySigner {
     }
 
     public func sign(_ message: Data, reason: String?) async throws -> Data {
-        let context = LAContext()
+        try key(reason: reason, context: LAContext()).signature(for: message).rawRepresentation
+    }
+
+    public func held() -> any DeviceKeySigner {
+        HeldSecureEnclaveKeySigner(signer: self)
+    }
+
+    fileprivate func key(reason: String?, context: LAContext) throws -> SecureEnclave.P256.Signing.PrivateKey {
         #if !os(watchOS)
         if let reason { context.localizedReason = reason }
         #endif
-        let key: SecureEnclave.P256.Signing.PrivateKey
         do {
-            key = try store.load(role, context: role == .confirm ? context : nil)
+            return try store.load(role, context: role == .confirm ? context : nil)
         } catch let error as DeviceKeyError {
             throw error
         } catch {
             throw DeviceKeyError.keyUnreadable(role)
         }
-        return try key.signature(for: message).rawRepresentation
+    }
+}
+
+final class HeldSecureEnclaveKeySigner: DeviceKeySigner, @unchecked Sendable {
+    private let signer: SecureEnclaveKeySigner
+    private let context = LAContext()
+    private let lock = NSLock()
+    private var loaded: SecureEnclave.P256.Signing.PrivateKey?
+
+    init(signer: SecureEnclaveKeySigner) {
+        self.signer = signer
+    }
+
+    func publicKeySPKI() throws -> Data {
+        try signer.publicKeySPKI()
+    }
+
+    func sign(_ message: Data, reason: String?) async throws -> Data {
+        try lock.withLock {
+            let key = try loaded ?? signer.key(reason: reason, context: context)
+            loaded = key
+            return try key.signature(for: message).rawRepresentation
+        }
     }
 }
 

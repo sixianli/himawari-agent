@@ -35,6 +35,7 @@ import {
   PORT_ERROR_CODES,
   type ProductConfiguration,
   ProductThreadGatewayAdapter,
+  type ThreadMessageOptionsPort,
   perceptionSearchEvidenceText,
   RecentAuthenticationGuard,
   type RunLifecyclePort,
@@ -269,6 +270,7 @@ export interface ProductionHttpCompositionSecretSources {
 }
 
 export interface ProductionHttpCompositionOptions {
+  readonly messageOptions?: ThreadMessageOptionsPort;
   readonly capabilityReactivation?: CapabilityReactivationVerifierPort;
   readonly listenUnixSocketPath?: string;
   readonly modelCatalog?: readonly {
@@ -1087,6 +1089,7 @@ export async function createProductionHttpComposition(
   });
   const environment = options.executionEnvironment;
   const threadAdapter = new ProductThreadGatewayAdapter({
+    ...(options.messageOptions ? { messageOptions: options.messageOptions } : {}),
     validateModelSelection: (selection, classification) => {
       const model = options.modelCatalog?.find((entry) => entry.ref === selection.modelRef);
       const descriptor = configuration.modelDescriptors.find(

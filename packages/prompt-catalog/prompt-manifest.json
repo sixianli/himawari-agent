@@ -782,6 +782,11 @@
     "changedIn": "ADR 0286",
     "reason": "记忆清单快照：开局附一次记忆清单，之后每轮只附记忆变化，并加先打开再回答细节的规则"
   },
+  "options.dismiss-label": {
+    "sha256": "1a604648b817a010197f27a8cbcb80053eba98feb2eae59e13372688f24aac3e",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 1 步：每组选项最后的“不用了”"
+  },
   "perception.data-notice": {
     "sha256": "da76be06e6177f16d79d1d00289481149234b0e618e9c71b703dee79dba2eeb2",
     "changedIn": "ADR 0230",
@@ -1140,6 +1145,11 @@
       "reason": "执行端的硬条件，目标已存在时报 HOST_FILE_TARGET_EXISTS"
     }
   },
+  "tools.offer-options": {
+    "sha256": "e21b3a1f2be8bd5691f7c7434d2f2ed9712a202e8e2494afe193fc029593cac9",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 1 步：她在消息下面挂可点的下一步"
+  },
   "tools.perception-read": {
     "sha256": "52a384947d102d95e7b068169bdbc4f0363417cab34ae51f7e557de61ad7e3a1",
     "changedIn": "ADR 0230",
@@ -1354,6 +1364,11 @@
     "sha256": "2483d17f8d376af5a389b98b74c068119b99c7eee8985f7455088fc1fe1805bb",
     "changedIn": "ADR 0285",
     "reason": "Always On 第 1 步：mail_read 参数不对时给她的说明"
+  },
+  "tools.result.offer-options.rejected": {
+    "sha256": "5e269660121b367c4d105dbbe32730a33a90c26a5c3c8282798b3af073b9bdc3",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 1 步：选项没挂上时给她的说明"
   },
   "tools.result.perception-read.empty": {
     "sha256": "417a658e6eb2cf55730417f26aa581d053d9653635643a9f6659c7af6261b7cd",

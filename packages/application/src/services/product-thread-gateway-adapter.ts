@@ -8,6 +8,7 @@ import {
   createThreadId,
   createTurnId,
   type ProductThread,
+  type ProductThreadMessage,
 } from "@himawari-agent/domain";
 import {
   type ThreadExecutionEventsSubscription,
@@ -16,6 +17,7 @@ import {
   type ThreadGatewayEvent,
   type ThreadGatewayQuery,
   type ThreadGatewayRequestResult,
+  type MessageOptionsV3,
   type ThreadGatewaySubscription,
   threadGatewayMessageSchema,
 } from "@himawari-agent/gateway-contracts";
@@ -38,7 +40,35 @@ import type { ThreadDeletionCoordinationService } from "./thread-deletion-coordi
 import type { ThreadForkService } from "./thread-fork-service.js";
 import type { ThreadQueryService } from "./thread-query-service.js";
 
+export interface ThreadMessageOptionsPort {
+  decorate(input: {
+    readonly ownerId: string;
+    readonly agentId: string;
+    readonly threadId: string;
+    readonly messages: readonly ProductThreadMessage[];
+  }): Promise<
+    ReadonlyMap<
+      string,
+      {
+        readonly options: MessageOptionsV3 | null;
+        readonly chosenFrom: { readonly setId: string; readonly optionId: string } | null;
+      }
+    >
+  >;
+  choose(input: {
+    readonly ownerId: ReturnType<typeof createOwnerId>;
+    readonly agentId: ReturnType<typeof createAgentId>;
+    readonly threadId: ReturnType<typeof createThreadId>;
+    readonly messageId: string;
+    readonly setId: string;
+    readonly optionId: string;
+    readonly idempotencyKey: string;
+    readonly authentication: GatewayAuthenticationContext;
+  }): Promise<ThreadCommandOutcome>;
+}
+
 export interface ProductThreadGatewayAdapterDependencies {
+  readonly messageOptions?: ThreadMessageOptionsPort;
   readonly execution?: {
     readState?(input: {
       ownerId: string;
@@ -380,6 +410,14 @@ export class ProductThreadGatewayAdapter
           query.payload.limit,
         );
         const lastMessage = result.messages.at(-1);
+        const decorations = this.#dependencies.messageOptions
+          ? await this.#dependencies.messageOptions.decorate({
+              ownerId,
+              agentId,
+              threadId: result.thread.id,
+              messages: result.messages,
+            })
+          : new Map();
         return parseResult({
           ...responseEnvelope(query, "snapshot", "thread.detail_snapshot"),
           payload: {
@@ -394,6 +432,8 @@ export class ProductThreadGatewayAdapter
               turnId: message.turnId,
               runId: message.runId,
               committedAt: message.committedAt,
+              options: decorations.get(message.id)?.options ?? null,
+              chosenFrom: decorations.get(message.id)?.chosenFrom ?? null,
             })),
             runs: result.runs.map((run) => ({ ...run, runId: run.runId })),
             nextSequence:
@@ -883,6 +923,22 @@ export class ProductThreadGatewayAdapter
           authentication,
           idempotencyKey: command.idempotencyKey,
           resultRef: command.payload.resultRef,
+        });
+      case "thread.option.choose":
+        if (!this.#dependencies.messageOptions)
+          throw new ApplicationPortError(
+            PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+            "MESSAGE_OPTIONS_NOT_INSTALLED",
+          );
+        return this.#dependencies.messageOptions.choose({
+          ownerId,
+          agentId,
+          threadId: createThreadId(command.payload.threadId),
+          messageId: command.payload.messageId,
+          setId: command.payload.setId,
+          optionId: command.payload.optionId,
+          idempotencyKey: command.idempotencyKey,
+          authentication,
         });
       case "thread.task.resolve":
         return this.#dependencies.deletion.resolveTask({

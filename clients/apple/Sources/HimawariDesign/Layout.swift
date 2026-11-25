@@ -49,8 +49,6 @@ public enum ManageLayout {
         public static let pageGap: CGFloat = 20
         public static let cardListGap: CGFloat = 14
         public static let headerButton: CGFloat = 48
-        public static let headerIcon: CGFloat = 18
-        public static let backIcon: CGFloat = 22
         public static let groupGap: CGFloat = 10
         public static let groupLabelPadding: CGFloat = 4
         public static let rowsPaddingHorizontal: CGFloat = 20
