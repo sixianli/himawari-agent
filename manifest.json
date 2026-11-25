@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "pr": 647,
+  "batch": "main-1",
+  "files": [
+    {
+      "path": "next-3-her-allowances-dark.png",
+      "bytes": 184536,
+      "sha256": "228359dc4bd9203c490cf58c1072ce1cc2ffc4fc3e5d4ff6fd9a5ebaf60f6f2c"
+    },
+    {
+      "path": "next-3-her-allowances-light.png",
+      "bytes": 239223,
+      "sha256": "bc163dd4f79e2df947ad75fcf7fec46da38e942ad2b4ec4420dd5a9d34e500e3"
+    },
+    {
+      "path": "next-3-her-approvals-dark.png",
+      "bytes": 366973,
+      "sha256": "24f9a9eeb8b7e71d1e2e595af7877693cc06611d86aa00f035da905039343474"
+    },
+    {
+      "path": "next-3-her-approvals-light.png",
+      "bytes": 594178,
+      "sha256": "ff0cadb20790168fb0af526b7e5a018db93bc48cd47119b1e00d01ceddfadf64"
+    },
+    {
+      "path": "next-3-her-dark.png",
+      "bytes": 325262,
+      "sha256": "6b1aa4a64db6a593f8a050c7de691d13eb370b529d14ab247a6848329e6e7313"
+    },
+    {
+      "path": "next-3-her-light.png",
+      "bytes": 473632,
+      "sha256": "dc9aa90608a5ea0b9821a61250ab498180ffa01f58f28e395d4b6188fc21ed51"
+    }
+  ]
+}
