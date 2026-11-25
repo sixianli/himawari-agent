@@ -315,6 +315,7 @@ export interface PostAgentMessageInput {
   readonly committedAt: string;
   readonly resultRef: PayloadRef;
   readonly authority: ProductAuthorityFence;
+  readonly afterRunEnded?: true;
 }
 
 export interface ThreadRepositoryPort {

@@ -359,6 +359,11 @@
     "changedIn": "ADR 0285",
     "reason": "Always On 第 1 步：外来的事进主对话（内部的系统消息、最后写的话主人看不到），她用 tell_owner 开口并自己决定推不推"
   },
+  "inbox.reminder-due": {
+    "sha256": "09aefd73ed2483202fc34b726c46f9cf05d41dd9a569ba8d5ecab1c3b5e9a7cc",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 4 步：主人定的提醒到点时进收件箱叫醒她，由她在主对话里提醒、决定推不推；她那一趟失败或太慢时程序按原话写进主对话并推送"
+  },
   "inbox.events.preface": {
     "sha256": "94d617cdfb83e5870cf7edc6eff624e1a998625223432e255462ea6c8dbc16fd",
     "changedIn": "ADR 0285",

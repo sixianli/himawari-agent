@@ -228,6 +228,7 @@ import {
 } from "./production-sandbox-services.js";
 import { ProductionServiceLifecycle } from "./production-service-lifecycle.js";
 import { ProductionSubthreads } from "./production-subthreads.js";
+import { ProductionReminderInbox } from "./production-reminder-inbox.js";
 import { ProductionTellOwner } from "./production-tell-owner.js";
 import { ProductionThreadTasks } from "./production-thread-tasks.js";
 import { productionToolActionRegistry } from "./production-tool-actions.js";
@@ -765,6 +766,7 @@ export async function startTenantRuntime(
   let runMemoryEpisodes: MemoryEpisodeService | undefined;
   let requeueStaleMemoryVectors: () => Promise<void> = async () => {};
   let webPush: ProductionWebPush | undefined;
+  let reminderInbox: ProductionReminderInbox | undefined;
   let applePush: ProductionApplePush | undefined;
   let applePushSender: ReturnType<typeof createApplePushSender> | undefined;
   let proactive: ProductionProactive | undefined;
@@ -824,6 +826,11 @@ export async function startTenantRuntime(
       }
       runtimeTimers.clear();
     },
+    close: () => undefined,
+  });
+  lifecycle.register({
+    name: "reminder-inbox",
+    stopAccepting: () => reminderInbox?.stop(),
     close: () => undefined,
   });
   lifecycle.register({
@@ -1821,6 +1828,68 @@ export async function startTenantRuntime(
         configuration.agentId,
       );
       const inboxRuns = new InboxRunRegistry();
+      const mainMessageExists = async (threadId: string, messageId: string) =>
+        (
+          await requireValue(repository)
+            .threadRepository()
+            .readCommittedMessagesByIds({
+              ownerId: configuration.ownerId,
+              agentId: configuration.agentId,
+              threadId: threadId as never,
+              messageIds: [messageId as never],
+            })
+        ).length > 0;
+      const reminderDueFormat = new Intl.DateTimeFormat("zh-CN", {
+        dateStyle: "medium",
+        timeStyle: "short",
+        ...(reminderTimeZone ? { timeZone: reminderTimeZone } : {}),
+      });
+      reminderInbox = new ProductionReminderInbox({
+        ownerId: configuration.ownerId,
+        agentId: configuration.agentId,
+        reminders: repository.memoryReminders(),
+        reminderText: async (reminder) => {
+          const [memory] = await requireValue(repository)
+            .productMemoryState()
+            .readMany({
+              ownerId: configuration.ownerId,
+              agentId: configuration.agentId,
+              memoryIds: [reminder.memoryId],
+            });
+          if (!memory || memory.status !== "active") return undefined;
+          const payload = await payloads.get(memory.contentRef);
+          if (!payload || payload.contentType !== "text/plain") return undefined;
+          const text = new TextDecoder()
+            .decode(
+              await recallProtector.unprotect({
+                ownerId: configuration.ownerId,
+                agentId: configuration.agentId,
+                payload,
+              }),
+            )
+            .replace(/\s+/gu, " ")
+            .trim();
+          return text.length > 0 ? text : undefined;
+        },
+        formatDue: (dueAt) => reminderDueFormat.format(new Date(dueAt)),
+        messageExists: mainMessageExists,
+        commands: new ThreadCommandService({
+          repository: repository.threadRepository(),
+          clock: { now: () => clock.now() },
+          authority: () => activeAuthority.authorityFence(),
+        }),
+        ledger: repository.decisionLedger(),
+        push: { enqueue: (input) => requireValue(repository).webPush().enqueue(input) },
+        payloads,
+        protector,
+        clock: { now: () => clock.now() },
+        onFailure: (error) =>
+          writeServiceDiagnostic(errorOutput, {
+            component: "agent-service",
+            event: "reminder_inbox.failed",
+            code: stableErrorCode(error),
+          }),
+      });
       const tellOwner = new ProductionTellOwner({
         ownerId: configuration.ownerId,
         agentId: configuration.agentId,
@@ -1835,6 +1904,7 @@ export async function startTenantRuntime(
         payloads,
         protector,
         clock: { now: () => clock.now() },
+        messageExists: mainMessageExists,
       });
       const subthreadStore = repository.subthreads();
       const threadTasks: ProductionThreadTasks = new ProductionThreadTasks({
@@ -3066,6 +3136,7 @@ export async function startTenantRuntime(
               })
             ).locale,
           reminders: pushRepository.memoryReminders(),
+          ...(reminderInbox ? { remindersViaInbox: true } : {}),
           memories: pushRepository.productMemoryState(),
           readMemoryText: (record) => readPlain(record.contentRef),
           listApprovals: () =>
@@ -3544,6 +3615,7 @@ export async function startTenantRuntime(
             registry: inboxRuns,
             externalContent,
             subthreads,
+            ...(reminderInbox ? { reminders: reminderInbox } : {}),
           },
           onDiagnostic: (event: Record<string, string>) =>
             writeServiceDiagnostic(errorOutput, { component: "agent-service", ...event }),

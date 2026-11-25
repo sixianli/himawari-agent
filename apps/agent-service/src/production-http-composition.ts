@@ -219,6 +219,7 @@ import {
   PRODUCTION_SERVER_STATUS_OPERATIONS,
   ProductionServerStatusControl,
 } from "./production-server-status-control.js";
+import type { ProductionReminderInbox } from "./production-reminder-inbox.js";
 import type { ProductionSubthreads } from "./production-subthreads.js";
 import { ThreadDeletionRetry } from "./production-thread-deletion-retry.js";
 import { type ProductionWebPush, WebPushPresence } from "./production-web-push.js";
@@ -347,6 +348,7 @@ export interface ProductionHttpCompositionOptions {
       readonly registry: InboxRunRegistry;
       readonly externalContent: Pick<ContextExternalContent, "mark">;
       readonly subthreads?: ProductionSubthreads;
+      readonly reminders?: ProductionReminderInbox;
     };
     readonly onDiagnostic?: (event: Record<string, string>) => void;
   };
@@ -1312,6 +1314,7 @@ export async function createProductionHttpComposition(
           ...(options.cancelRun ? { cancelRun: options.cancelRun } : {}),
           ...(mainThreadInbox.subthreads ? { subthreads: mainThreadInbox.subthreads } : {}),
           checkpoints: repository.runCheckpointStore(ownerId, agentId, authority),
+          ...(mainThreadInbox.reminders ? { reminders: mainThreadInbox.reminders } : {}),
         })
       : undefined);
   const inbox = productionInbox({
@@ -1324,6 +1327,12 @@ export async function createProductionHttpComposition(
     ...(inboxDelivery ? { delivery: inboxDelivery } : {}),
     ...(options.inbox?.onDiagnostic ? { onDiagnostic: options.inbox.onDiagnostic } : {}),
   });
+  const reminderInbox = mainThreadInbox?.reminders;
+  if (reminderInbox) {
+    reminderInbox.registerSource(inbox.inbox.sources);
+    reminderInbox.attach(inbox.inbox);
+    reminderInbox.start();
+  }
   const subthreads = mainThreadInbox?.subthreads;
   if (subthreads) {
     subthreads.registerSources(inbox.inbox.sources);

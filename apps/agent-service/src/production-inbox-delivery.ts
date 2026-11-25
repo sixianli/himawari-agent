@@ -28,6 +28,7 @@ import type {
   InboxDeliveryResult,
 } from "./production-inbox-worker.js";
 import type { ProductionMainThread } from "./production-main-thread.js";
+import { isReminderEvent, type ProductionReminderInbox } from "./production-reminder-inbox.js";
 import type { ProductionSubthreads } from "./production-subthreads.js";
 
 type Admission = Parameters<ThreadCommandService["admitOwnerMessage"]>[0];
@@ -40,6 +41,7 @@ const TERMINAL = new Set(["completed", "failed", "cancelled"]);
 const POLL_MS = 1_000;
 const ADMIT_ATTEMPTS = 3;
 const DAY_MS = 86_400_000;
+const REMINDER_GRACE_MS = 90_000;
 
 export interface InboxRunEvent {
   readonly entryId: string;
@@ -131,6 +133,8 @@ export interface InboxDeliveryOptions {
     | "approvalSettled"
   >;
   readonly checkpoints?: Pick<RunCheckpointStore, "read">;
+  readonly reminders?: Pick<ProductionReminderInbox, "ensureTold">;
+  readonly reminderGraceMs?: number;
   readonly pollMs?: number;
   readonly sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
 }
@@ -200,9 +204,27 @@ export class ProductionInboxDelivery implements InboxDelivery {
       const classification = await this.#writeMessage(contentRef, inboxEventsMessage(events));
       await this.#admit(main, key, events, runId, contentRef, classification, true);
       await this.#markOutside(runId, events);
-      const status = await this.#await(main, runId, contentRef, signal, true);
+      let status: string;
+      try {
+        status = await this.#await(main, runId, contentRef, signal, true, false, () =>
+          this.#remind(run),
+        );
+      } catch (error) {
+        await this.#remind(run).catch(() => undefined);
+        throw error;
+      }
       if (status === "yielded") return { status: "yield" };
-      if (status !== "completed") return { status: "retry", reasonCode: `run_${status}` };
+      const reminded = await this.#remind(run);
+      if (status !== "completed") {
+        if (reminded && run.events.every(isReminderEvent))
+          return {
+            status: "handled",
+            outcome: "reminder_fallback",
+            reasonCode: `run_${status}`,
+            runId,
+          };
+        return { status: "retry", reasonCode: `run_${status}` };
+      }
       const told = await this.#recordSilence(run);
       return {
         status: "handled",
@@ -213,6 +235,14 @@ export class ProductionInboxDelivery implements InboxDelivery {
     } finally {
       this.#options.registry.close(runId);
     }
+  }
+
+  async #remind(run: InboxRun): Promise<boolean> {
+    const reminders = this.#options.reminders;
+    if (!reminders) return false;
+    for (const event of run.events.filter(isReminderEvent))
+      await reminders.ensureTold({ threadId: run.threadId, runId: run.runId, event });
+    return true;
   }
 
   async #deliverToSubthread(
@@ -372,6 +402,7 @@ export class ProductionInboxDelivery implements InboxDelivery {
     signal: AbortSignal,
     yieldToOwner: boolean,
     parkOnApproval = false,
+    whenSlow?: () => Promise<unknown>,
   ): Promise<string> {
     const sleep = this.#options.sleep ?? defaultSleep;
     const cancel = () =>
@@ -390,8 +421,15 @@ export class ProductionInboxDelivery implements InboxDelivery {
               () => false,
             )
         : Promise.resolve(false);
+    const slowAt = Date.now() + (this.#options.reminderGraceMs ?? REMINDER_GRACE_MS);
+    let slow = whenSlow;
     try {
       for (;;) {
+        if (slow && Date.now() >= slowAt) {
+          const late = slow;
+          slow = undefined;
+          await late().catch(() => undefined);
+        }
         const stored = await this.#options.runs.readRun(runId);
         if (stored && TERMINAL.has(stored.run.status)) return stored.run.status;
         if (parkOnApproval && stored?.run.status === "awaiting_approval") return stored.run.status;

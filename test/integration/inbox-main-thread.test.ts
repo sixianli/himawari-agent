@@ -1,7 +1,11 @@
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { type PayloadProtectorPort, ThreadCommandService } from "@himawari-agent/application";
+import {
+  type MemoryReminder,
+  type PayloadProtectorPort,
+  ThreadCommandService,
+} from "@himawari-agent/application";
 import {
   createAgentId,
   createAuthorityLeaseId,
@@ -28,6 +32,10 @@ import {
 } from "../../apps/agent-service/src/production-inbox-delivery.ts";
 import { ProductionInboxWorker } from "../../apps/agent-service/src/production-inbox-worker.ts";
 import { ProductionMainThread } from "../../apps/agent-service/src/production-main-thread.ts";
+import {
+  ProductionReminderInbox,
+  reminderMessageId,
+} from "../../apps/agent-service/src/production-reminder-inbox.ts";
 import {
   ProductionTellOwner,
   TellOwnerInputError,
@@ -56,7 +64,7 @@ describe("outside events in the main conversation", () => {
     await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true })));
   });
 
-  async function fixture() {
+  async function fixture(options: { readonly reminderGraceMs?: number } = {}) {
     const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-inbox-main-"));
     directories.push(stateRoot);
     await mkdir(path.join(stateRoot, "data"));
@@ -119,6 +127,34 @@ describe("outside events in the main conversation", () => {
     });
     const registry = new InboxRunRegistry();
     const ledger = repository.decisionLedger();
+    const messageExists = async (threadId: string, messageId: string) =>
+      (
+        await threads.readCommittedMessagesByIds({
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          threadId: threadId as never,
+          messageIds: [messageId as never],
+        })
+      ).length > 0;
+    const due: MemoryReminder[] = [];
+    const reminders = new ProductionReminderInbox({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      reminders: {
+        listDue: async () => due,
+        read: async (id) => due.find((reminder) => reminder.id === id),
+      },
+      reminderText: async (reminder) =>
+        reminder.memoryId === "memory:rent" ? "交房租" : undefined,
+      formatDue: (dueAt) => `北京时间 ${dueAt.slice(11, 16)}`,
+      messageExists,
+      commands,
+      ledger,
+      push: repository.webPush(),
+      payloads,
+      protector,
+      clock: { now },
+    });
     const delivery = new ProductionInboxDelivery({
       ownerId: OWNER_ID,
       agentId: AGENT_ID,
@@ -133,6 +169,10 @@ describe("outside events in the main conversation", () => {
       protector,
       clock: { now },
       pollMs: 5,
+      reminders,
+      ...(options.reminderGraceMs !== undefined
+        ? { reminderGraceMs: options.reminderGraceMs }
+        : {}),
       cancelRun: async ({ runId }) => {
         const handle = openQualifiedDatabase(file);
         try {
@@ -152,6 +192,7 @@ describe("outside events in the main conversation", () => {
       payloads,
       protector,
       clock: { now },
+      messageExists,
     });
     const store = repository.inbox();
     const inbox = new ProductionInbox({ scope, store, payloads, protector, clock: { now } });
@@ -162,6 +203,8 @@ describe("outside events in the main conversation", () => {
       fromOwner: false,
       priority: 5,
     });
+    reminders.registerSource(inbox.sources);
+    reminders.attach(inbox);
     const worker = new ProductionInboxWorker({
       scope,
       inbox,
@@ -252,6 +295,8 @@ describe("outside events in the main conversation", () => {
       finish,
       mail,
       clock,
+      due,
+      reminders,
     };
   }
 
@@ -443,5 +488,126 @@ describe("outside events in the main conversation", () => {
       externalEventOrigin({ sourceType: "external_event", sourceId } as never);
     expect(origin("message:inbox:mail:aaa")).toBe("external_event:mail");
     expect(origin("message:inbox:mail:bbb")).toBe("external_event:mail");
+  });
+
+  const rent = (remindAt = "2026-11-25T00:00:00.000Z"): MemoryReminder =>
+    ({
+      id: "reminder:rent",
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      memoryId: "memory:rent",
+      dueAt: remindAt,
+      remindAt,
+      repeat: "none",
+      status: "scheduled",
+      dismissedAt: null,
+      createdAt: START,
+      updatedAt: START,
+    }) as MemoryReminder;
+
+  it("[ADR-0285] wakes her for a due reminder, once, and lets her leave it in the main conversation without pushing", async () => {
+    const f = await fixture();
+    f.due.push(rent());
+    expect(await f.reminders.tick()).toBe(1);
+    await f.reminders.tick();
+    expect(
+      f.query<{ source_kind: string; priority: number }>(
+        "SELECT source_kind, priority FROM inbox_events",
+      ),
+    ).toEqual([{ source_kind: "reminder", priority: 1 }]);
+    const claim = await f.worker.claim();
+    if (!claim) throw new Error("no claim");
+    const handled = f.worker.handle(claim);
+    const runId = await f.admitted();
+    const eventText =
+      (await f.text(
+        f.query<{ content_ref: string }>(
+          "SELECT content_ref FROM thread_messages WHERE run_id = ? AND role <> 'agent'",
+          runId,
+        )[0]?.content_ref ?? "",
+      )) ?? "";
+    expect(eventText).toContain("主人定的提醒到点了：交房租（定的时间：北京时间 00:00）");
+    const said = (await f.tellOwner.run({
+      runId,
+      toolCallId: "call-rent",
+      capabilityRef: "owner.tell",
+      capabilityHandleRef: null,
+      arguments: {
+        text: "交房租的提醒到了，你上午说已经交了，所以没推手机。",
+        push: false,
+        reason: "主人说过已经交了",
+      },
+    } as never)) as { messageId: string; pushed: boolean };
+    expect(said.messageId).toBe(reminderMessageId("reminder:rent", rent().remindAt));
+    await f.finish(runId, "已经交了，不推");
+    expect(await handled).toMatchObject({ result: "handled" });
+    const main = await f.mainThread.ensure();
+    const visible = await f.threads.listMessages(OWNER_ID, AGENT_ID, main, 0, 20);
+    expect(visible.map(({ id }) => id)).toEqual([said.messageId]);
+    expect(f.query("SELECT 1 FROM web_push_outbox")).toEqual([]);
+    expect(
+      f.query<{ verdict: string; reason_code: string }>(
+        "SELECT verdict, reason_code FROM decision_ledger WHERE kind = 'proactive'",
+      ),
+    ).toEqual([{ verdict: "silent", reason_code: "told_in_app" }]);
+  });
+
+  it("REVERSE: writes the reminder's own words into the main conversation and pushes them when her run fails", async () => {
+    const f = await fixture();
+    f.due.push(rent());
+    await f.reminders.tick();
+    const claim = await f.worker.claim();
+    if (!claim) throw new Error("no claim");
+    const handled = f.worker.handle(claim);
+    const runId = await f.admitted();
+    const handle = openQualifiedDatabase(
+      f.query<{ file: string }>("PRAGMA database_list")[0]?.file ?? "",
+    );
+    try {
+      handle.prepare("UPDATE runs SET status = 'failed' WHERE id = ?").run(runId);
+    } finally {
+      handle.close();
+    }
+    expect(await handled).toMatchObject({ result: "handled" });
+    expect(f.query<{ outcome: string }>("SELECT outcome FROM inbox_events")).toEqual([
+      { outcome: "reminder_fallback" },
+    ]);
+    const main = await f.mainThread.ensure();
+    const visible = await f.threads.listMessages(OWNER_ID, AGENT_ID, main, 0, 20);
+    const messageId = reminderMessageId("reminder:rent", rent().remindAt);
+    expect(visible.map(({ id }) => id)).toEqual([messageId]);
+    expect(await f.text(visible[0]?.contentRef ?? "")).toBe("交房租");
+    expect(
+      f.query<{ kind: string; source_ref: string }>("SELECT kind, source_ref FROM web_push_outbox"),
+    ).toEqual([{ kind: "reminder", source_ref: messageId }]);
+  });
+
+  it("REVERSE: keeps one reminder message when her run is too slow and then finishes late", async () => {
+    const f = await fixture({ reminderGraceMs: 0 });
+    f.due.push(rent());
+    await f.reminders.tick();
+    const claim = await f.worker.claim();
+    if (!claim) throw new Error("no claim");
+    const handled = f.worker.handle(claim);
+    const runId = await f.admitted();
+    const messageId = reminderMessageId("reminder:rent", rent().remindAt);
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+      if (f.query("SELECT 1 FROM thread_messages WHERE id = ?", messageId).length > 0) break;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    const late = (await f.tellOwner.run({
+      runId,
+      toolCallId: "call-late",
+      capabilityRef: "owner.tell",
+      capabilityHandleRef: null,
+      arguments: { text: "该交房租了", push: true, reason: "到点了" },
+    } as never)) as { alreadyTold?: boolean };
+    expect(late.alreadyTold).toBe(true);
+    await f.finish(runId, "到点提醒");
+    expect(await handled).toMatchObject({ result: "handled" });
+    const main = await f.mainThread.ensure();
+    const visible = await f.threads.listMessages(OWNER_ID, AGENT_ID, main, 0, 20);
+    expect(visible.map(({ id }) => id)).toEqual([messageId]);
+    expect(f.query("SELECT 1 FROM web_push_outbox")).toHaveLength(1);
   });
 });
