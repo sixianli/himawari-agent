@@ -220,9 +220,8 @@ public struct HerPage: View {
         async let settingsLoaded: Void = settings.load()
         async let memoryLoaded: Void = memory.load()
         async let quietLoaded: Void = quietHours.load()
-        async let vaultLoaded = countVault()
+        vaultCount = await countVault()
         _ = await (settingsLoaded, memoryLoaded, quietLoaded)
-        vaultCount = await vaultLoaded
     }
 }
 
