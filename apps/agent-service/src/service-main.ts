@@ -127,6 +127,7 @@ import { backgroundCommandLimits } from "./production-background-commands.js";
 import { createProductionCapabilityReactivationVerifier } from "./production-capability-reactivation.js";
 import {
   DEFAULT_TOOL_RESULT_SHARE,
+  MEMORY_SNAPSHOT_WINDOW_SHARE,
   ProductionConversationTools,
   toolResultCharacters,
 } from "./production-conversation-tools.js";
@@ -1593,6 +1594,10 @@ export async function startTenantRuntime(
       const toolPageCharacters = toolResultCharacters(
         primaryModel && "contextWindow" in primaryModel ? primaryModel.contextWindow : undefined,
         configuration.memory.toolResultShare ?? DEFAULT_TOOL_RESULT_SHARE,
+      );
+      const memorySnapshotCharacters = toolResultCharacters(
+        primaryModel && "contextWindow" in primaryModel ? primaryModel.contextWindow : undefined,
+        MEMORY_SNAPSHOT_WINDOW_SHARE,
       );
       const conversationTools = conversationTurns
         ? new ProductionConversationTools({
@@ -3191,6 +3196,7 @@ export async function startTenantRuntime(
       observation.start();
       const live = new ExecutionLiveFeed();
       runs = createProductionRunComposition({
+        memorySnapshotCharacters,
         externalContent,
         ...(configuration.runPolicy?.toolRefusals
           ? { toolRefusalLimits: configuration.runPolicy.toolRefusals }

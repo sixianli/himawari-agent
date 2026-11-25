@@ -364,3 +364,88 @@ export const OWNER_AGENDA_OMITTED = templatePrompt({
   output: "free-text",
   segments: [text("（另有 "), slot("count"), text(" 项因篇幅没有列出。）")],
 });
+
+export const MEMORY_SNAPSHOT_HEADER = fixedPrompt({
+  id: "memory.snapshot.header",
+  purpose: "记忆清单的第一行：说明每条前面是编号、细节怎么看",
+  usedBy: [
+    "packages/application/src/services/owner-profile-service.ts",
+    "packages/runtime-pi/src/memory-snapshot-block.ts",
+  ],
+  layer: "last-user-message",
+  output: "free-text",
+  text: "记忆清单（每条前面是编号；要看日期、原话和旧版本，用 memory_open 按编号打开）：",
+});
+
+export const MEMORY_SNAPSHOT_TENTATIVE = fixedPrompt({
+  id: "memory.snapshot.tentative",
+  purpose: "记忆清单里还没经主人确认的那一类的类别名",
+  usedBy: ["packages/application/src/services/owner-profile-service.ts"],
+  layer: "last-user-message",
+  output: "free-text",
+  text: "待确认（主人还没确认过）",
+});
+
+export const MEMORY_SNAPSHOT_REACHABLE_HEADER = fixedPrompt({
+  id: "memory.snapshot.reachable-header",
+  purpose: "记忆清单末尾“你还能查到的”一段的开头：没放进清单、但能自己查到的东西",
+  usedBy: [
+    "packages/application/src/services/owner-profile-service.ts",
+    "packages/runtime-pi/src/memory-snapshot-block.ts",
+  ],
+  layer: "last-user-message",
+  output: "free-text",
+  text: "你还能查到的：",
+});
+
+export const MEMORY_SNAPSHOT_REACHABLE_DETAILS = fixedPrompt({
+  id: "memory.snapshot.reachable-details",
+  purpose: "“你还能查到的”第一条：清单每条只有一句话，细节按编号打开",
+  usedBy: ["packages/application/src/services/owner-profile-service.ts"],
+  layer: "last-user-message",
+  output: "free-text",
+  text: "- 清单里每条只有一句话，日期、原话和旧版本没有放进来，用 memory_open 按编号打开。",
+});
+
+export const MEMORY_SNAPSHOT_CONVERSATIONS = templatePrompt({
+  id: "memory.snapshot.conversations",
+  purpose: "“你还能查到的”里旧对话的范围：从哪天到哪天、共几天有对话、每月几天",
+  usedBy: ["packages/application/src/services/owner-profile-service.ts"],
+  layer: "last-user-message",
+  output: "free-text",
+  segments: [
+    text("- 旧对话：从 "),
+    slot("first"),
+    text(" 到 "),
+    slot("last"),
+    text("，共 "),
+    slot("days"),
+    text(" 天有对话（"),
+    slot("months"),
+    text("），都能用 conversation_search 搜当时的原话。"),
+  ],
+});
+
+export const MEMORY_SNAPSHOT_MONTH = templatePrompt({
+  id: "memory.snapshot.month",
+  purpose: "旧对话范围里某个月有几天有对话",
+  usedBy: ["packages/application/src/services/owner-profile-service.ts"],
+  layer: "last-user-message",
+  output: "free-text",
+  segments: [slot("month"), text(" "), slot("days"), text(" 天")],
+});
+
+export const MEMORY_SNAPSHOT_OMITTED = templatePrompt({
+  id: "memory.snapshot.omitted",
+  purpose: "记忆清单放不下时，告诉模型某一类还有几条没列出、可以搜",
+  usedBy: ["packages/application/src/services/owner-profile-service.ts"],
+  layer: "last-user-message",
+  output: "free-text",
+  segments: [
+    text("- "),
+    slot("category"),
+    text("另有 "),
+    slot("count"),
+    text(" 条因篇幅没有列出，可以用 recall 搜。"),
+  ],
+});
