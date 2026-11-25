@@ -115,6 +115,12 @@ import {
   type PiToolRefusalLimits,
 } from "./pi-tool-progress-guard.js";
 import {
+  carriesToolActivity,
+  processIconsSection,
+  removeToolActivity,
+  withToolActivityParameters,
+} from "./tool-activity.js";
+import {
   observeProviderRejections,
   type ProviderRejection,
 } from "./provider-rejection-observation.js";
@@ -629,6 +635,7 @@ function productSystemPrompt(
           ].join("\n"),
         ]
       : []),
+    ...processIconsSection(tools),
   ].join("\n\n");
 }
 
@@ -1420,16 +1427,20 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         },
         hasHistory: projection.nativeHistory !== undefined || projection.history.length > 0,
       });
+      const handleToolsCarryActivity =
+        !bundle ||
+        (JSON.parse(bundle.tools) as { readonly parameters: unknown }[]).some(({ parameters }) =>
+          carriesToolActivity(parameters),
+        );
+      const runToolDefinition = (descriptor: RuntimeToolDescriptor) =>
+        this.toolDefinition(descriptor, handleToolsCarryActivity || !isHandleTool(descriptor));
       const systemPrompt =
         bundle?.systemPrompt ??
-        productSystemPrompt(
-          projection.systemInstruction,
-          descriptors.map((descriptor) => this.toolDefinition(descriptor)),
-        );
+        productSystemPrompt(projection.systemInstruction, descriptors.map(runToolDefinition));
       const requestTools = bundle
         ? [
             ...(JSON.parse(bundle.tools) as Tool[]).map(providerTool),
-            ...handleDescriptors.map((descriptor) => providerTool(this.toolDefinition(descriptor))),
+            ...handleDescriptors.map((descriptor) => providerTool(runToolDefinition(descriptor))),
           ]
         : undefined;
       if (handleDescriptors.length > 0)
@@ -1509,6 +1520,11 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       if (descriptorsByName.size !== descriptors.length) {
         throw new TypeError("RUNTIME_DUPLICATE_TOOL_NAME");
       }
+      const activityTools = new Set(
+        descriptors
+          .filter((descriptor) => carriesToolActivity(runToolDefinition(descriptor).parameters))
+          .map(({ name }) => name),
+      );
       const clearingTrigger = toolResultClearingTriggerTokens(binding.model.contextWindow);
       const clearing =
         clearingTrigger === undefined
@@ -1594,7 +1610,8 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
             name: "himawari-tool-outcomes",
             hidden: true,
             factory: (pi: ExtensionAPI) => {
-              pi.on("tool_call", () => {
+              pi.on("tool_call", (event) => {
+                if (activityTools.has(event.toolName)) removeToolActivity(event.input);
                 if (toolProgress.blocked)
                   return { block: true, reason: CHAT_TOOL_LOOP_REJECTED.text };
               });
@@ -1772,7 +1789,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         noTools: "all",
         tools: descriptors.map(({ name }) => name),
         customTools: descriptors.map((descriptor) =>
-          this.createTool(request, descriptor, {
+          this.createTool(request, descriptor, runToolDefinition(descriptor), {
             completedResult: (toolCallId) => {
               const result = restored?.completedResult(toolCallId, descriptor.name);
               if (result) replayedResults.add(toolCallId);
@@ -2104,7 +2121,9 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
     }
   }
 
-  private toolDefinition(descriptor: RuntimeToolDescriptor): PiToolDefinitionText {
+  private toolDefinition(descriptor: RuntimeToolDescriptor, activity = true): PiToolDefinitionText {
+    const withActivity = <Parameters>(parameters: Parameters): Parameters =>
+      activity ? withToolActivityParameters(parameters) : parameters;
     const unavailable = async (): Promise<never> => {
       throw new Error("PI_AGENT_SERVICE_FILE_IO_FORBIDDEN");
     };
@@ -2131,7 +2150,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         name: builtin.name,
         label: builtin.label,
         description: text.description,
-        parameters: text.parameters,
+        parameters: withActivity(text.parameters),
         ...(builtin.promptSnippet === undefined ? {} : { promptSnippet: builtin.promptSnippet }),
         ...(text.promptGuidelines === undefined
           ? {}
@@ -2157,13 +2176,14 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       name: descriptor.name,
       label: descriptor.name,
       description: "description" in descriptor ? descriptor.description : "",
-      parameters: descriptor.parameters as ToolDefinition["parameters"],
+      parameters: withActivity(descriptor.parameters as ToolDefinition["parameters"]),
     };
   }
 
   private createTool(
     request: RuntimeRequest,
     descriptor: RuntimeToolDescriptor,
+    definition: PiToolDefinitionText,
     reconciliation: {
       completedResult(
         toolCallId: string,
@@ -2179,7 +2199,6 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       ): void;
     },
   ): ToolDefinition {
-    const definition = this.toolDefinition(descriptor);
     const parallel = "executionMode" in descriptor && descriptor.executionMode === "parallel";
     if (
       parallel &&

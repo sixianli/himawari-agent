@@ -14,10 +14,6 @@
   "bulb": 1.6,
   "calculator": 1.6,
   "calendar": 1.6,
-  "calendar@frame": {
-    "stroke": 1.6,
-    "drop": ["M4 11h16", "M11 15h1", "M12 15v3"]
-  },
   "calendar@large": 1.3,
   "camera": 1.6,
   "car": 1.6,
@@ -84,6 +80,7 @@
   "qrcode-off": 1.6,
   "scan": 1.6,
   "search": 1.6,
+  "send": 1.8,
   "server": 1.6,
   "server@large": 1.3,
   "share-2": 1.6,

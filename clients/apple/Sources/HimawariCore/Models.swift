@@ -146,7 +146,70 @@ public struct ThreadMessage: Codable, Sendable, Equatable, Identifiable {
     public let turnId: String?
     public let runId: String?
     public let committedAt: String
+    public var options: MessageOptions? = nil
+    public var chosenFrom: ChosenOption? = nil
     public var id: String { messageId }
+}
+
+extension ThreadMessage {
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        messageId = try container.decode(String.self, forKey: .messageId)
+        sequence = try container.decode(Int.self, forKey: .sequence)
+        role = try container.decode(MessageRole.self, forKey: .role)
+        contentRef = try container.decode(String.self, forKey: .contentRef)
+        status = try container.decode(MessageStatus.self, forKey: .status)
+        turnId = try container.decodeIfPresent(String.self, forKey: .turnId)
+        runId = try container.decodeIfPresent(String.self, forKey: .runId)
+        committedAt = try container.decode(String.self, forKey: .committedAt)
+        options = try? container.decodeIfPresent(MessageOptions.self, forKey: .options)
+        chosenFrom = try? container.decodeIfPresent(ChosenOption.self, forKey: .chosenFrom)
+    }
+}
+
+public struct ChosenOption: Codable, Sendable, Equatable {
+    public let setId: String
+    public let optionId: String
+}
+
+public struct MessageOptions: Codable, Sendable, Equatable {
+    public static let dismissId = "dismiss"
+
+    public enum State: String, Codable, Sendable {
+        case open
+        case chosen
+        case stale
+
+        public init(from decoder: any Decoder) throws {
+            self = State(rawValue: try decoder.singleValueContainer().decode(String.self)) ?? .stale
+        }
+    }
+
+    public struct Action: Codable, Sendable, Equatable {
+        public let tool: String
+        public let summary: String
+    }
+
+    public struct Item: Codable, Sendable, Equatable, Identifiable {
+        public let optionId: String
+        public let label: String
+        public let reason: String?
+        public let action: Action?
+        public let state: State
+        public var id: String { optionId }
+        public var isDismiss: Bool { optionId == MessageOptions.dismissId }
+    }
+
+    public let setId: String
+    public let items: [Item]
+
+    public var isOpen: Bool { items.allSatisfy { $0.state == .open } }
+
+    public func choiceKey(threadId: String, messageId: String, item: Item) -> String? {
+        guard item.action != nil else { return nil }
+        let digest = Hashing.sha256(Data([threadId, messageId, setId, item.optionId].joined(separator: "\n").utf8))
+        return "device-option-" + digest.map { String(format: "%02x", $0) }.joined()
+    }
 }
 
 public struct ThreadRunSummary: Codable, Sendable, Equatable {

@@ -43,26 +43,6 @@ public struct ListenEntrySheet: View {
     }
 }
 
-public struct ListenTodayCard: View {
-    private let controller: ListeningController
-    private let open: () -> Void
-
-    public init(controller: ListeningController, open: @escaping () -> Void) {
-        self.controller = controller
-        self.open = open
-    }
-
-    public var body: some View {
-        SensingCard(
-            summary: SensingSummary(paused: !controller.isListening, senses: controller.isListening ? [ListenText.hearingLabel] : [], todayCount: nil),
-            onPause: {
-                if controller.isListening { controller.pauseOneHour() } else { open() }
-            },
-            onOpen: open
-        )
-    }
-}
-
 public struct ListenOverlay: View {
     private let controller: ListeningController
 

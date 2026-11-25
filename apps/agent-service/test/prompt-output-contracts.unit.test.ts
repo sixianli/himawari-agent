@@ -1,4 +1,3 @@
-import type { ProactiveMail } from "@himawari-agent/application";
 import * as application from "@himawari-agent/application";
 import * as platform from "@himawari-agent/platform-node";
 import type { PromptEntry } from "@himawari-agent/prompt-catalog";
@@ -30,24 +29,6 @@ const captured = (output: string) =>
     ownerMessage: message,
   });
 
-const mail: ProactiveMail = {
-  source: "gmail",
-  messageId: "mail-a",
-  threadId: "thread-a",
-  from: "東京ガス",
-  fromAddress: "info@example.com",
-  subject: "11 月のご請求",
-  snippet: "お支払い期限は 11 月 20 日です。",
-  link: "https://mail.example.com/a",
-  receivedAt: "2026-11-04T00:10:00.000Z",
-  categories: [],
-  sentByOwner: false,
-  body: "お支払い期限は 11 月 20 日です。",
-  bodyTruncated: false,
-  bodyUnavailable: false,
-  attachments: [],
-};
-
 const isEntry = (value: unknown): value is PromptEntry =>
   typeof value === "object" &&
   value !== null &&
@@ -61,8 +42,6 @@ const PARSERS: Readonly<Record<string, unknown>> = {
   parseConversationReview: review.parseConversationReview,
   parseImportDuplicateAnswers: application.parseImportDuplicateAnswers,
   parseOwnerIntentDecision: application.parseOwnerIntentDecision,
-  parseJudgements: application.parseJudgements,
-  parseMailReferences: application.parseMailReferences,
   parseAutomaticReviewDecision: application.parseAutomaticReviewDecision,
   parseGeneratedQuestion: application.parseGeneratedQuestion,
   parseJudgeVerdict: application.parseJudgeVerdict,
@@ -104,8 +83,6 @@ describe("[PROMPT-CONTRACT] background prompts and the parsers that read their a
         "eval.real-memory.leak-judge",
         "eval.real-memory.question",
         "home.urgency",
-        "mail.judgment",
-        "mail.reference-extraction",
         "memory.capture",
         "perception.extract",
         "perception.image.understand",
@@ -187,14 +164,6 @@ describe("[PROMPT-CONTRACT] background prompts and the parsers that read their a
     ).toBe(0);
   });
 
-  it("mail judgment: accepts the items JSON the prompt asks for", () => {
-    const parsed = application.parseJudgements(
-      JSON.stringify({ items: [{ id: "mail-a", result: "ignore", confidence: "sure" }] }),
-      [mail],
-    );
-    expect(parsed?.get("mail-a")?.result).toBe("ignore");
-  });
-
   it("[P4-5] real eval question: accepts the JSON the prompt asks for, also inside a Markdown fence", () => {
     const sources = { memory: "主人住在大阪市北区。", quote: "我家在大阪北区" };
     const answer = JSON.stringify({
@@ -244,16 +213,6 @@ describe("[PROMPT-CONTRACT] background prompts and the parsers that read their a
       application.parseHomeUrgency(JSON.stringify({ scores: [{ n: 1, score: 640 }] }), 1).size,
     ).toBe(0);
     expect(application.parseHomeUrgency("第一件最要紧。", 1).size).toBe(0);
-  });
-
-  it("mail judgment: rejects a renamed top-level key and plain text", () => {
-    expect(
-      application.parseJudgements(
-        JSON.stringify({ mails: [{ id: "mail-a", result: "ignore", confidence: "sure" }] }),
-        [mail],
-      ),
-    ).toBeUndefined();
-    expect(application.parseJudgements("全部忽略。", [mail])).toBeUndefined();
   });
 
   it("[iOS-5] perception extraction: accepts the JSON the prompt asks for and rejects a renamed list", () => {
