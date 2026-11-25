@@ -21,13 +21,9 @@ import {
   DEFAULT_HOME_URGENCY,
   DEFAULT_REVIEW_PREREVIEW,
   DEFAULT_SEARCH_ASK,
-  DELIVERY_TIMING_DEFAULTS,
-  DELIVERY_TIMING_RANGES,
   DEVICE_CONFIGURATION_DEFAULTS,
   DEVICE_HARD_LIMIT_KEYS,
   DEVICE_HARD_LIMITS,
-  type DeliveryTimingConfiguration,
-  type DeliveryTimingRouteConfiguration,
   type DeviceConfiguration,
   type DeviceHardLimitKey,
   findEmbeddingProfile,
@@ -1593,35 +1589,6 @@ function parseSearchAsk(value: unknown): NonNullable<RunPolicyConfiguration["sea
   );
 }
 
-function parseDeliveryTiming(value: unknown): DeliveryTimingRouteConfiguration {
-  const field = "configuration.runPolicy.deliveryTiming";
-  const input = record(value, field);
-  const keys = Object.keys(DELIVERY_TIMING_DEFAULTS) as (keyof DeliveryTimingConfiguration)[];
-  rejectUnknown(input, [...keys, "model", "secretRef", "inputMicrosPerMillionTokens"], field);
-  const tuning = Object.fromEntries(
-    keys.map((key) => {
-      const [minimum, maximum] = DELIVERY_TIMING_RANGES[key];
-      return [
-        key,
-        input[key] === undefined
-          ? DELIVERY_TIMING_DEFAULTS[key]
-          : integer(input[key], `${field}.${key}`, minimum, maximum),
-      ];
-    }),
-  ) as unknown as DeliveryTimingConfiguration;
-  return Object.freeze({
-    ...tuning,
-    model: safeReference(input["model"], `${field}.model`),
-    secretRef: safeReference(input["secretRef"], `${field}.secretRef`),
-    inputMicrosPerMillionTokens: integer(
-      input["inputMicrosPerMillionTokens"],
-      `${field}.inputMicrosPerMillionTokens`,
-      1,
-      100_000_000,
-    ),
-  });
-}
-
 function parseVoiceAddressee(value: unknown): VoiceAddresseeRouteConfiguration {
   const field = "configuration.runPolicy.voiceAddressee";
   const input = record(value, field);
@@ -1874,9 +1841,6 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
     ...(input["voiceAddressee"] === undefined
       ? {}
       : { voiceAddressee: parseVoiceAddressee(input["voiceAddressee"]) }),
-    ...(input["deliveryTiming"] === undefined
-      ? {}
-      : { deliveryTiming: parseDeliveryTiming(input["deliveryTiming"]) }),
     ...(input["homeUrgency"] === undefined
       ? {}
       : { homeUrgency: parseHomeUrgency(input["homeUrgency"]) }),
@@ -1910,10 +1874,17 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       0,
       memoryLimit,
     ),
-    ...(input["maxMemoryClassification"] === undefined
-      ? {}
-      : { retiredKeys: Object.freeze(["maxMemoryClassification"]) }),
+    ...retiredRunPolicyKeys(input),
   });
+}
+
+const RETIRED_RUN_POLICY_KEYS = ["maxMemoryClassification", "deliveryTiming"] as const;
+
+function retiredRunPolicyKeys(input: JsonRecord): {
+  readonly retiredKeys?: readonly string[];
+} {
+  const retired = RETIRED_RUN_POLICY_KEYS.filter((key) => input[key] !== undefined);
+  return retired.length === 0 ? {} : { retiredKeys: Object.freeze(retired) };
 }
 
 export const DEVICE_ACCESS_SECRET_PURPOSES = [

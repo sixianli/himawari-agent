@@ -23,7 +23,6 @@ import type {
   CommitStateAndEventsResult,
   ConversationTurnStorePort,
   DecisionLedgerPort,
-  DeliveryTimingSettingsStorePort,
   DeploymentAuthorityStatePort,
   DeviceActionStorePort,
   DurableGitHubMonitorHistoryPolicyPort,
@@ -710,10 +709,6 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   proactive(): ProactiveStorePort {
     return this.durable.proactive();
-  }
-
-  deliveryTimingSettings(): DeliveryTimingSettingsStorePort {
-    return this.durable.deliveryTimingSettings();
   }
 
   ownerPreferences(): OwnerPreferencesStorePort {
