@@ -574,6 +574,17 @@ function npmCi(prefix, lockDir, binary) {
   if (!existsSync(binary)) throw new Error("OPENCODE_INSTALL_FAILED");
 }
 
+function discardPrefix(prefix) {
+  const trash = `${prefix}.discard-${process.pid}-${randomBytes(4).toString("hex")}`;
+  try {
+    renameSync(prefix, trash);
+  } catch (error) {
+    if (error.code === "ENOENT") return;
+    throw error;
+  }
+  rmSync(trash, { recursive: true, force: true });
+}
+
 function installBesideThenRename(prefix, lockDir, binary, lock) {
   const staging = `${prefix}.staging-${process.pid}-${randomBytes(4).toString("hex")}`;
   try {
@@ -585,7 +596,7 @@ function installBesideThenRename(prefix, lockDir, binary, lock) {
       renameSync(staging, prefix);
     } catch {
       if (!existsSync(binary)) {
-        rmSync(prefix, { recursive: true, force: true });
+        discardPrefix(prefix);
         try {
           renameSync(staging, prefix);
         } catch (error) {
@@ -606,7 +617,7 @@ export function installOpencode({ prefix, lockDir = OPENCODE_LOCK_DIR }) {
   let problems = installedIntegrityProblems(prefix, lock);
   if (problems.length > 0 && reused) {
     process.stderr.write(`OPENCODE_REINSTALL ${prefix} ${problems.join(" | ")}\n`);
-    rmSync(prefix, { recursive: true, force: true });
+    discardPrefix(prefix);
     installBesideThenRename(prefix, lockDir, binary, lock);
     problems = installedIntegrityProblems(prefix, lock);
   }
