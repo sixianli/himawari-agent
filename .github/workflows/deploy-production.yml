@@ -102,14 +102,23 @@ jobs:
             UserKnownHostsFile ~/.ssh/known_hosts
           CONFIG
           chmod 600 ~/.ssh/config
-      - name: 出包、上线、读回验证（失败自动回滚）
+      - name: 让服务器自己出包、上线、读回验证（失败自动回滚）
         if: ${{ steps.keys.outputs.ready == 'true' }}
         env:
-          HIMAWARI_PACKET_HOST: ${{ vars.PROD_HOST }}
-          HIMAWARI_DEPLOY_COMMIT: ${{ steps.target.outputs.commit }}
-          HIMAWARI_DEPLOY_SINCE: ${{ inputs.since }}
-          HIMAWARI_DEPLOY_FORCE: ${{ inputs.force }}
-        run: bash scripts/delivery-mode/ci-deploy.sh 2>&1 | tee deploy.log; exit "${PIPESTATUS[0]}"
+          PROD_HOST: ${{ vars.PROD_HOST }}
+          COMMIT: ${{ steps.target.outputs.commit }}
+          SINCE: ${{ inputs.since }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          since="${SINCE:-}"
+          if [ -n "$since" ] && ! printf '%s' "$since" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::since 不是完整的 40 位提交号"
+            exit 1
+          fi
+          force=0
+          [ "$FORCE" = 1 ] && force=1
+          ssh -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=20 "himawari-deploy@$PROD_HOST" "deploy $COMMIT ${since:--} $force" 2>&1 | tee deploy.log
+          exit "${PIPESTATUS[0]}"
       - name: 写运行摘要
         if: ${{ always() && steps.keys.outputs.ready == 'true' }}
         run: |
@@ -125,7 +134,6 @@ jobs:
           name: deploy-log
           path: |
             deploy.log
-            .ci-output/production/**/run-logs/*.log
           if-no-files-found: ignore
           retention-days: 30
       - name: 清掉钥匙
