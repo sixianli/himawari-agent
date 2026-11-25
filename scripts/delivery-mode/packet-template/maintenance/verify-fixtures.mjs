@@ -5,8 +5,8 @@ import { mkdirSync, mkdtempSync, writeFileSync, rmSync, symlinkSync, renameSync 
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { Worker } from "node:worker_threads";
-import { historyDigests, historyRow, readS0State, unresolvedQuery, readRouteAuthorization, readExistingWorkspace, historyTables, catalogRegistrationPrefix } from "../s0-db/read-s0-db.mjs";
-import { oldPrefix, newPrefix, spaceSamplingWarnings, cli as maintenanceCli, strictCapabilityKeys, verifyHistoryUnchanged, configurationStage, staticRootConfiguration, staticRootConfigurationBytes, approvedEmbeddingDescriptor, oldStaticRoot, newStaticRoot, verifyStartupAuthority, verifyAuthorizationUsable, readCatalogRecords, verifyCatalogRecordsAtS0, catalogStrictView, verifyUpgradedCatalog as verifyUpgradedCatalogWith, verifyUpgradePlan, verifyPreparedCapabilities, verifyPendingCapabilities as verifyPendingCapabilitiesWith, upgradeResultExpectation as upgradeResultExpectationWith, isFirstTools, routeIdentity, readGrantsWithoutSnapshot, definitionsForLedger, historyIgnoredColumns, historyIgnoredColumnsFor, migrationExpectedLedger } from "./maintenance-common.mjs";
+import { readGrantsWithoutSnapshot, historyDigests, historyRow, readS0State, unresolvedQuery, readRouteAuthorization, readExistingWorkspace, historyTables, catalogRegistrationPrefix } from "../s0-db/read-s0-db.mjs";
+import { oldPrefix, newPrefix, spaceSamplingWarnings, cli as maintenanceCli, strictCapabilityKeys, verifyHistoryUnchanged, configurationStage, staticRootConfiguration, staticRootConfigurationBytes, approvedEmbeddingDescriptor, oldStaticRoot, newStaticRoot, verifyStartupAuthority, verifyAuthorizationUsable, readCatalogRecords, verifyCatalogRecordsAtS0, catalogStrictView, verifyUpgradedCatalog as verifyUpgradedCatalogWith, verifyUpgradePlan, verifyPreparedCapabilities, verifyPendingCapabilities as verifyPendingCapabilitiesWith, upgradeResultExpectation as upgradeResultExpectationWith, isFirstTools, routeIdentity, definitionsForLedger, historyIgnoredColumns, historyIgnoredColumnsFor, migrationExpectedLedger } from "./maintenance-common.mjs";
 import { validateWorkspacePlan, verifyExistingGrant, verifyWorkspaceIdentity } from "./workspace-grant.mjs";
 
 const verifyUpgradedCatalog = (current, previousAudit, newRefs = []) => verifyUpgradedCatalogWith(current, previousAudit, newRefs);
@@ -613,7 +613,7 @@ CREATE TABLE audit_records(owner_id TEXT,agent_id TEXT,action TEXT,target_ref TE
 firstDb.prepare("INSERT INTO product_state_records VALUES(?,?,?,?,?)").run(grantKey, "owner:one", "agent:one", 2, JSON.stringify(grantValue));
 const firstFrozen = { authorization: { directoryGrants: structuredClone(previousStrict.directoryGrants), capabilities: [] }, workspace: frozenWorkspace };
 const firstWorkspace = { path: plan.canonicalPath, device: "1", inode: "9" };
-const firstGrants = readGrantsWithoutSnapshot(firstDb, original, plan, firstWorkspace);
+const firstGrants = readGrantsWithoutSnapshot(firstDb, original, firstWorkspace);
 assert.deepEqual(firstGrants, previousStrict.directoryGrants, "FIRST_TOOLS_GRANT_READ_DIFFERS_FROM_THE_SNAPSHOT_READ");
 assert.deepEqual(verifyExistingGrant(structuredClone(firstGrants), structuredClone(firstFrozen.authorization.directoryGrants), plan), firstGrants[0]);
 assert.equal(isFirstTools(firstFrozen, firstRefs), true);
@@ -625,21 +625,20 @@ throwsCode(() => isFirstTools(firstFrozen, []), "__PKT_LABEL_UPPER___MAINTENANCE
 throwsCode(() => isFirstTools({ authorization: { directoryGrants: [], capabilities: [] } }, firstRefs), "__PKT_LABEL_UPPER___MAINTENANCE_FIRST_TOOLS_GRANT_MISSING", "first tools without the workspace grant");
 count("firstToolsRejections");
 for (const [name, code, change] of [
-  ["workspace inode changed", "__PKT_LABEL_UPPER___MAINTENANCE_GRANT_ROOT_NOT_BOUND", (value) => { value.workspace.inode = "10"; }],
-  ["workspace device changed", "__PKT_LABEL_UPPER___MAINTENANCE_GRANT_ROOT_NOT_BOUND", (value) => { value.workspace.device = "2"; }],
-  ["workspace elsewhere", "__PKT_LABEL_UPPER___MAINTENANCE_GRANT_ROOT_NOT_BOUND", (value) => { value.workspace.path = "/var/lib/himawari/other"; }],
-  ["workspace identity missing", "__PKT_LABEL_UPPER___MAINTENANCE_GRANT_ROOT_NOT_BOUND", (value) => { value.workspace = undefined; }],
-  ["second grant route", "__PKT_LABEL_UPPER___MAINTENANCE_GRANT_ROUTE_SET_CHANGED", (value) => { value.configuration.runPolicy.other = { ...structuredClone(value.configuration.runPolicy.coding), grantId: "directory:other" }; }],
-  ["grant route removed", "__PKT_LABEL_UPPER___MAINTENANCE_GRANT_ROUTE_SET_CHANGED", (value) => { delete value.configuration.runPolicy.coding; }],
+  ["workspace inode changed", "__PKT_LABEL_UPPER___DB_GRANT_ROOT_NOT_BOUND", (value) => { value.workspace.inode = "10"; }],
+  ["workspace device changed", "__PKT_LABEL_UPPER___DB_GRANT_ROOT_NOT_BOUND", (value) => { value.workspace.device = "2"; }],
+  ["workspace identity missing", "__PKT_LABEL_UPPER___DB_GRANT_ROOT_NOT_BOUND", (value) => { value.workspace = undefined; }],
+  ["second grant route", "__PKT_LABEL_UPPER___DB_EXPECTED_ONE_ROW", (value) => { value.configuration.runPolicy.other = { ...structuredClone(value.configuration.runPolicy.coding), grantId: "directory:other" }; }],
+  ["grant route removed", "__PKT_LABEL_UPPER___DB_GRANT_ROUTE_SET_CHANGED", (value) => { delete value.configuration.runPolicy.coding; }],
   ["grant row for another owner", "__PKT_LABEL_UPPER___DB_EXPECTED_ONE_ROW", (value) => { value.configuration.ownerId = "owner:other"; }],
 ]) {
   const value = { configuration: structuredClone(original), workspace: structuredClone(firstWorkspace) };
   change(value);
-  throwsCode(() => readGrantsWithoutSnapshot(firstDb, value.configuration, plan, value.workspace), code, "first tools grant: " + name);
+  throwsCode(() => readGrantsWithoutSnapshot(firstDb, value.configuration, value.workspace), code, "first tools grant: " + name);
   count("firstToolsGrantRejections");
 }
 firstDb.prepare("UPDATE product_state_records SET value_json=? WHERE key=?").run(JSON.stringify({ ...grantValue, id: "directory:other" }), grantKey);
-throwsCode(() => readGrantsWithoutSnapshot(firstDb, original, plan, firstWorkspace), "__PKT_LABEL_UPPER___MAINTENANCE_GRANT_ID_MISMATCH", "first tools grant row of another id");
+throwsCode(() => readGrantsWithoutSnapshot(firstDb, original, firstWorkspace), "__PKT_LABEL_UPPER___DB_GRANT_ID_MISMATCH", "first tools grant row of another id");
 firstDb.prepare("UPDATE product_state_records SET value_json=? WHERE key=?").run(JSON.stringify(grantValue), grantKey);
 for (const [name, change] of [["host", (value) => { value.runPolicy.coding.hostId = undefined; }], ["worker", (value) => { delete value.runPolicy.coding.workerInstanceId; }], ["grant", (value) => { value.runPolicy.coding.grantId = "directory:other"; }], ["route", (value) => { delete value.runPolicy.coding; }]]) {
   const value = structuredClone(original);

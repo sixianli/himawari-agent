@@ -7,7 +7,7 @@ import { hostname } from "node:os";
 import { pathToFileURL } from "node:url";
 import { Worker } from "node:worker_threads";
 import { createRequire } from "node:module";
-import { fixed, openReadonly, readS0State, readRouteAuthorization, readExistingWorkspace, one, catalogRegistrationPrefix, canonicalJson, historyDigests, historyTables, historyRow, ledgerMigrationId } from "../s0-db/read-s0-db.mjs";
+import { fixed, openReadonly, readGrantsWithoutSnapshot, readS0State, readRouteAuthorization, readExistingWorkspace, one, catalogRegistrationPrefix, canonicalJson, historyDigests, historyTables, historyRow, ledgerMigrationId } from "../s0-db/read-s0-db.mjs";
 import { validateWorkspacePlan, verifyExistingGrant, verifyWorkspaceIdentity } from "./workspace-grant.mjs";
 import { requireNoDatabaseSidecars } from "./raw-copy-recovery.mjs";
 import { newCapabilityRefs, webNetwork, webProviderSecretRef } from "../signing/cloud-capability-manifest.mjs";
@@ -161,22 +161,6 @@ export function routeIdentity(configuration, plan) {
   return { hostId: route.hostId, workerInstanceId: route.workerInstanceId };
 }
 
-export function readGrantsWithoutSnapshot(database, configuration, plan, workspace) {
-  validateWorkspacePlan(plan);
-  const directoryGrants = [];
-  for (const [routeKey, route] of Object.entries(configuration.runPolicy ?? {})) {
-    if (!route || typeof route !== "object" || typeof route.capabilityRef !== "string" || typeof route.grantId !== "string") continue;
-    assert(route.grantId === plan.grantId && routeKey === plan.routeKey, "__PKT_LABEL_UPPER___MAINTENANCE_GRANT_ROUTE_SET_CHANGED");
-    const stored = one(database, "SELECT revision,value_json FROM product_state_records WHERE key=? AND owner_id=? AND agent_id=?", [grantKey(route.grantId), configuration.ownerId, configuration.agentId]);
-    const grant = JSON.parse(stored.value_json);
-    assert.equal(grant.id, route.grantId, "__PKT_LABEL_UPPER___MAINTENANCE_GRANT_ID_MISMATCH");
-    assert(workspace?.path === plan.canonicalPath && typeof workspace.device === "string" && typeof workspace.inode === "string" && grant.canonicalRootId === `${workspace.device}:${workspace.inode}`, "__PKT_LABEL_UPPER___MAINTENANCE_GRANT_ROOT_NOT_BOUND");
-    directoryGrants.push({ routeKey, grantId: grant.id, capabilityRef: route.capabilityRef, capabilityVersion: route.capabilityVersion, revision: grant.revision, stateRevision: stored.revision, hostId: grant.hostId, canonicalRootId: grant.canonicalRootId, displayPath: grant.displayPath, device: workspace.device, inode: workspace.inode, pathPolicy: grant.pathPolicy, mountPolicy: grant.mountPolicy, expiresAt: grant.expiresAt, revokedAt: grant.revokedAt, readAllowed: Array.isArray(grant.operations) && grant.operations.includes("read"), hostMatchesRoute: grant.hostId === route.hostId, rootMatchesSnapshot: workspace.path === grant.displayPath, currentlyUsable: grant.revokedAt === null && Date.parse(grant.expiresAt) > Date.now(), metadataSha256: sha(stored.value_json) });
-  }
-  assert.equal(directoryGrants.length, 1, "__PKT_LABEL_UPPER___MAINTENANCE_GRANT_ROUTE_SET_CHANGED");
-  return directoryGrants;
-}
-
 function readPendingCapabilities(database, binding, snapshot, runnerDigest) {
   return snapshot.capabilities.filter((entry) => newCapabilityRefs.includes(entry.manifest?.ref)).map((entry) => {
     const manifest = entry.manifest;
@@ -259,7 +243,7 @@ export function readCatalogState(binding, { prepared = false, upgraded = false, 
     };
     const unregistered = first && !upgraded;
     const registeredSnapshot = upgraded ? snapshot : unregistered ? null : { ...snapshot, capabilities: snapshot.capabilities.filter((entry) => !newCapabilityRefs.includes(entry.manifest?.ref)) };
-    const authorization = unregistered ? { directoryGrants: readGrantsWithoutSnapshot(database, configuration, plan, readExistingWorkspace(plan.canonicalPath)), capabilities: [] } : readRouteAuthorization(database, configuration, registeredSnapshot, runnerDigest, upgraded ? undefined : catalogRegistrationRuntimeRoot);
+    const authorization = unregistered ? { directoryGrants: readGrantsWithoutSnapshot(database, configuration, readExistingWorkspace(plan.canonicalPath)), capabilities: [] } : readRouteAuthorization(database, configuration, registeredSnapshot, runnerDigest, upgraded ? undefined : catalogRegistrationRuntimeRoot);
     verifyExistingGrant(authorization.directoryGrants, frozen.authorization.directoryGrants, plan);
     const identity = first ? routeIdentity(configuration, plan) : undefined;
     if (identity && upgraded) for (const capability of authorization.capabilities) assert(capability.hostId === identity.hostId && capability.workerInstanceId === identity.workerInstanceId, "__PKT_LABEL_UPPER___MAINTENANCE_FIRST_TOOLS_IDENTITY_CHANGED");

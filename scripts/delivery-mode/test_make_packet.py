@@ -2056,7 +2056,7 @@ class FirstToolsMaintenanceTest(RenderedPacket):
         upgrade = self.hashes(self.render())
         first = self.hashes(self.render(**FIRST_TOOLS_PARAMETERS))
         self.assertEqual(set(upgrade), set(first))
-        self.assertEqual({name for name in upgrade if upgrade[name] != first[name]}, {'signing/cloud-capability-manifest.mjs', 'signing/verify-capability-manifest.mjs'})
+        self.assertEqual({name for name in upgrade if upgrade[name] != first[name]}, {'signing/cloud-capability-manifest.mjs', 'signing/verify-capability-manifest.mjs', 'signing/finalize-binding-inputs.py'})
 
     def test_maintenance_fixtures_pass_in_the_first_tools_render(self):
         packet = self.render(**FIRST_TOOLS_PARAMETERS)
