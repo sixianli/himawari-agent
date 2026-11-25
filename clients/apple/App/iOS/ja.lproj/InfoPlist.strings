@@ -11,4 +11,5 @@
 "NSLocationWhenInUseUsageDescription" = "どこに着いて、どのくらいいたかを記録し、あなた自身のサーバーに保存します。「いまいる場所」をタップしたときは、現在地を Himawari に送ります。";
 "NSLocationAlwaysAndWhenInUseUsageDescription" = "Himawari を開いていなくても、どこに着いてどのくらいいたかを記録し、あなた自身のサーバーに保存します。";
 "NSHealthShareUsageDescription" = "歩数、睡眠、心拍数、ワークアウトを読み取り、あなた自身のサーバーに保存します。";
+"NSHealthUpdateUsageDescription" = "Himawari はヘルスケアデータを読み取るだけで、ヘルスケア App には何も書き込みません。";
 "NSPhotoLibraryUsageDescription" = "新しく撮った写真とスクリーンショットの日時と場所を記録します。その写真そのものはアップロードしません。「+」で選んだ写真は Himawari に送ります。";
