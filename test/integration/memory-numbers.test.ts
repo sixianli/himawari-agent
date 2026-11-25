@@ -117,10 +117,9 @@ describe("[ADR-0286] memory numbers", () => {
     directories.push(directory);
     const database = openQualifiedDatabase(path.join(directory, "product.sqlite"));
     const migrations = await loadBundledMigrations();
-    applyMigrations(
-      database,
-      migrations.filter((migration) => migration.id !== NUMBERS_MIGRATION),
-    );
+    const numbersAt = migrations.findIndex((migration) => migration.id === NUMBERS_MIGRATION);
+    expect(numbersAt).toBeGreaterThan(0);
+    applyMigrations(database, migrations.slice(0, numbersAt));
     seedScope(database);
     insertMemory(database, "memory-late", "2026-11-03T00:00:00.000Z");
     insertMemory(database, "memory-early", "2026-11-01T00:00:00.000Z");
