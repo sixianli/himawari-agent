@@ -70,7 +70,13 @@ export async function collectOwnerWords(
     threadId: source.threadId,
     messageIds: [source.sourceId as never],
   });
-  if (!current || current.role !== "owner" || current.contentRef !== source.payloadRef) return [];
+  if (
+    !current ||
+    current.role !== "owner" ||
+    current.internal === true ||
+    current.contentRef !== source.payloadRef
+  )
+    return [];
   const window = await threads.listMessages(
     ownerId,
     agentId,

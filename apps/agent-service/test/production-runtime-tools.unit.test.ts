@@ -11,6 +11,7 @@ import {
 } from "@himawari-agent/execution-contracts";
 import { describe, expect, it, vi } from "vitest";
 import { ConversationToolInputError } from "../src/production-conversation-tools.js";
+import { MemoryOpenInputError } from "../src/production-memory-open.js";
 import type {
   ProductionHostReadOnlyInput,
   ProductionHostReadOnlyResult,
@@ -1612,6 +1613,67 @@ it("[ADR-0286] marks the run as having read outside content when a past conversa
   expect(mark).toHaveBeenCalledWith(invocation.runId, "recalled_external_conversation");
 });
 
+it("[ADR-0286] opens a memory by its number, marks outside content and reports failures", async () => {
+  const f = fixture();
+  const open = vi.fn(async () => ({
+    output: { number: 37, found: true, text: "喝咖啡不加糖", versions: [] },
+    contentClassification: "private" as const,
+    memoryIds: ["memory:37"],
+    externalContent: false,
+  }));
+  const mark = vi.fn(async () => undefined);
+  const tools = new ProductionRuntimeTools({
+    ...f.options,
+    memoryOpen: { open },
+    externalContent: {
+      mark,
+      read: async () => [],
+      readThread: async () => [],
+    } as unknown as NonNullable<ProductionRuntimeToolsOptions["externalContent"]>,
+  });
+  const names = (
+    await tools.listAuthorized(invocation.runId, [invocation.capabilityHandleRef])
+  ).map((definition) => definition.name);
+  expect(names.at(-1)).toBe("memory_open");
+  const call = {
+    ...invocation,
+    capabilityRef: "memory.open",
+    capabilityHandleRef: null,
+    arguments: { number: 37 },
+  };
+  expect((await tools.preflight(call)).allowed).toBe(true);
+  const first = await tools.execute(call);
+  expect(first.outcome).toBe("succeeded");
+  expect(first.modelContent).toContain("喝咖啡不加糖");
+  expect(await tools.execute(call)).toEqual(first);
+  expect(open).toHaveBeenCalledTimes(1);
+  expect(mark).not.toHaveBeenCalled();
+  open.mockResolvedValueOnce({
+    output: { number: 8, found: true, text: "网页上看到的说法", versions: [] },
+    contentClassification: "private" as const,
+    memoryIds: ["memory:8"],
+    externalContent: true,
+  });
+  expect(await tools.execute({ ...call, toolCallId: "memory-outside" })).toMatchObject({
+    outcome: "succeeded",
+  });
+  expect(mark).toHaveBeenCalledWith(invocation.runId, "recalled_external_record");
+  open.mockRejectedValueOnce(new Error("PAYLOAD_UNREADABLE"));
+  const failed = await tools.execute({ ...call, toolCallId: "memory-failed" });
+  expect(failed).toMatchObject({ outcome: "failed", errorCode: "MEMORY_OPEN_UNAVAILABLE" });
+  expect(failed.modelContent).toContain("不要编造");
+  open.mockRejectedValueOnce(new MemoryOpenInputError());
+  const invalid = await tools.execute({ ...call, toolCallId: "memory-invalid" });
+  expect(invalid).toMatchObject({ outcome: "failed", errorCode: "MEMORY_OPEN_INPUT_INVALID" });
+  expect(invalid.modelContent).toContain("改正后再打开一次");
+  const without = new ProductionRuntimeTools(fixture().options);
+  expect(
+    (await without.listAuthorized(invocation.runId, [invocation.capabilityHandleRef])).map(
+      ({ name }) => name,
+    ),
+  ).not.toContain("memory_open");
+});
+
 it("[ADR-0286] does not offer conversation tools when the conversation index is not configured", async () => {
   const f = fixture();
   const tools = new ProductionRuntimeTools(f.options);
@@ -2104,6 +2166,14 @@ function everyToolOptions(f: ReturnType<typeof fixture>) {
         conversationIds: [],
       }),
     },
+    memoryOpen: {
+      open: async () => ({
+        output: {},
+        contentClassification: "private" as const,
+        memoryIds: [],
+        externalContent: false,
+      }),
+    },
   } satisfies ProductionRuntimeToolsOptions;
 }
 
@@ -2119,9 +2189,14 @@ it("[ADR-0257] offers every tool through the action registry with unchanged defi
   );
   expect(
     createHash("sha256")
-      .update(JSON.stringify(descriptors.slice(0, -2)))
+      .update(JSON.stringify(descriptors.slice(0, -3)))
       .digest("hex"),
   ).toBe(TOOL_DEFINITIONS_BEFORE_CONVERSATIONS_SHA256);
+  expect(
+    createHash("sha256")
+      .update(JSON.stringify(descriptors.slice(0, -1)))
+      .digest("hex"),
+  ).toBe(TOOL_DEFINITIONS_BEFORE_MEMORY_OPEN_SHA256);
   const withoutRegistry = new ToolActionRegistry(
     PRODUCTION_TOOL_ACTION_ROWS.filter(({ tool }) => tool !== "reminder_set"),
   );
@@ -2252,6 +2327,7 @@ it("[ADR-0257] only the listing, recall, conversation and perception read tools 
     "recall",
     "conversation_search",
     "conversation_open",
+    "memory_open",
     "reminder_list",
     "rule_list",
     "tool_result_recall",
@@ -2264,7 +2340,7 @@ it("[ADR-0257] only the listing, recall, conversation and perception read tools 
       .map(({ tool }) => tool)
       .sort(),
   ).toEqual(["device_action", "reminder_cancel", "reminder_set", "rule_set", "rule_undo"]);
-  expect(builtin).toHaveLength(13);
+  expect(builtin).toHaveLength(14);
 });
 
 it("[ADR-0257] runs a tool with consequences only after the exit allows it, and never asks the exit for a read", async () => {
@@ -2343,8 +2419,11 @@ const EVERY_TOOL_NAMES = [
   "tool_result_recall",
   "conversation_search",
   "conversation_open",
+  "memory_open",
 ];
 const EVERY_TOOL_DEFINITIONS_SHA256 =
+  "4141035a01840f7dedd21038f64d395e01e8ebbb3e9a99f42f3fa7661b7696a4";
+const TOOL_DEFINITIONS_BEFORE_MEMORY_OPEN_SHA256 =
   "fd3345339856bda316c02421d4a3168f2a82fcb69af0374752be478a09d619e3";
 const TOOL_DEFINITIONS_BEFORE_CONVERSATIONS_SHA256 =
   "a41c59795408bf1a95dc613c7ed5b761542a72e2798a3fe72c7a1c0197d7af91";

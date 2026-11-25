@@ -76,7 +76,6 @@ async function show(threadId: string) {
         execution: {},
         connection: "connected",
         message: (id) => id,
-        onFork: () => {},
         renderApproval: () => null,
       }),
     );

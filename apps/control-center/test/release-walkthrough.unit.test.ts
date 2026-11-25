@@ -139,6 +139,8 @@ vi.mock("../src/gateway-client.js", async (original) => {
         return { resultRef: "result-walkthrough", replayed: false, status: "accepted" };
       }
       async queryThread(request: { type: string; payload: Record<string, unknown> }) {
+        if (request.type === "thread.main")
+          return snapshot(request, "thread.main_snapshot", { thread });
         if (request.type === "thread.list")
           return snapshot(request, "thread.collection_snapshot", {
             threads: [thread],
@@ -374,7 +376,7 @@ describe("release walkthrough locators against the real control center", () => {
 
     expect(byRole(body, UI.composer)).toBeInstanceOf(HTMLTextAreaElement);
     expect(byRole(body, UI.send)).toBeDefined();
-    expect(byRole(body, UI.newThread)).toBeDefined();
+    expect(byRole(byRole(body, UI.sidebarNavigation), UI.mainThread)).toBeDefined();
 
     const picker = body.querySelector<HTMLDetailsElement>(UI.modelPickerRoot);
     expect(picker).not.toBeNull();
@@ -437,7 +439,7 @@ describe("release walkthrough locators against the real control center", () => {
     expect(
       queryAllByRole(byRole(memory, UI.memoryTabs), UI.memoryTab).length,
     ).toBeGreaterThanOrEqual(2);
-    await click(byRole(byRole(body, UI.sidebarNavigation), UI.newThread[1]));
+    await click(byRole(byRole(body, UI.sidebarNavigation), UI.mainThread));
     expect(queryAllByRole(body, UI.memoryPage)).toHaveLength(0);
 
     await click(byRole(byRole(body, UI.sidebarNavigation), UI.openReminders));
@@ -453,7 +455,7 @@ describe("release walkthrough locators against the real control center", () => {
     });
     expect(library.getAttribute("aria-busy")).toBe("false");
     expect(queryAllByRole(body, UI.remindersPage)).toHaveLength(0);
-    await click(byRole(byRole(body, UI.sidebarNavigation), UI.newThread[1]));
+    await click(byRole(byRole(body, UI.sidebarNavigation), UI.mainThread));
     expect(queryAllByRole(body, UI.filesPage)).toHaveLength(0);
 
     const search = byRole(byRole(body, UI.sidebarNavigation), UI.threadSearch);

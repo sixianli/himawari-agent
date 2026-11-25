@@ -931,9 +931,8 @@ async function expectFinishedTurnShowsStep(turn: Locator, step: string) {
   await uiExpect(page.getByText(UI.noProcessRecords)).toHaveCount(0);
 }
 
-async function newThread() {
-  const [link, button] = UI.newThread;
-  await target(page, link).or(target(page, button)).first().click();
+async function openMainThread() {
+  await target(page, UI.mainThread).first().click();
   await uiExpect(composer()).toBeVisible({ timeout: 20_000 });
 }
 
@@ -1440,7 +1439,7 @@ productDescribe(
 
     it("shows the waiting stage, then the answer, for an ordinary turn", async () => {
       await scenario("01-ordinary-turn", async () => {
-        await newThread();
+        await openMainThread();
         await send("请慢一点回答");
         await uiExpect(page.getByText("等待模型响应").first()).toBeVisible({ timeout: 10_000 });
         await uiExpect(page.getByText("慢回答已完成")).toBeVisible({ timeout: 30_000 });
@@ -1473,7 +1472,7 @@ productDescribe(
 
     it("keeps an already open page working after the service restarts", async () => {
       await scenario("04b-open-page-after-restart", async () => {
-        await newThread();
+        await openMainThread();
         await installation.stop();
         await installation.start();
         const readAnswers = await beginToolRequest("重启后请读取 notes.txt");
@@ -1490,7 +1489,7 @@ productDescribe(
 
     it("keeps every step of a turn visible over a slow connection", async () => {
       await scenario("04c-slow-connection", async () => {
-        await newThread();
+        await openMainThread();
         await page.route("**/api/gateway/**", async (route) => {
           await new Promise((resolve) => setTimeout(resolve, 400));
           await route.continue().catch(() => undefined);
@@ -1627,7 +1626,7 @@ productDescribe(
         const measure = async (text: string) => {
           const samples: number[] = [];
           for (let index = 0; index < 5; index++) {
-            await newThread();
+            await openMainThread();
             const started = performance.now();
             await sendToolRequest(text);
             samples.push(performance.now() - started);
@@ -2030,7 +2029,7 @@ productDescribe(
 
     it("[R2-T14] writes a document that shows a private key's first line and reports success", async () => {
       await scenario("r2t14-pem-note-write", async () => {
-        await newThread();
+        await openMainThread();
         const file = path.join(installation.workspace, "pem-format.md");
         await rm(file, { force: true });
         const text = "请运行 R2T14 讲解私钥格式写入";
@@ -2054,7 +2053,7 @@ productDescribe(
 
     it("[R2-T14] applies an edit beside a private key and masks the part of it the diff shows", async () => {
       await scenario("r2t14-key-notes-edit", async () => {
-        await newThread();
+        await openMainThread();
         const file = path.join(installation.workspace, "key-notes.txt");
         const text = "请运行 R2T14 编辑私钥旁边";
         await writeFile(file, PLAIN_NOTES);
@@ -2101,7 +2100,7 @@ productDescribe(
 
     it("[R2-T14] gives the model Pi's error when an edit's old text is missing and keeps the file", async () => {
       await scenario("r2t14-edit-missing-text", async () => {
-        await newThread();
+        await openMainThread();
         const file = path.join(installation.workspace, "r2t14-missing-text.txt");
         await writeFile(file, MISSING_TEXT_NOTE);
         const text = "请运行 R2T14 编辑找不到原文";
@@ -2144,7 +2143,7 @@ productDescribe(
 
     it("[R2-T14] warns the model once when a written file's result is refused", async () => {
       await scenario("r2t14-full-key-write", async () => {
-        await newThread();
+        await openMainThread();
         const file = path.join(installation.workspace, "r2t14-full-key.pem");
         await rm(file, { force: true });
         const text = "请运行 R2T14 写入完整私钥";
@@ -2195,7 +2194,7 @@ productDescribe(
 
     it("[R2-T14] still stops a repeated failing command that makes no progress", async () => {
       await scenario("r2t14-repeated-failure", async () => {
-        await newThread();
+        await openMainThread();
         const before = new Set(executionReadback().map((record) => record.jobId));
         const text = "请运行 R2T14 重复失败命令";
         const requests = () =>
@@ -2288,7 +2287,7 @@ productDescribe(
 
     it("[R2-T11] delivers both sequential tool results in one turn exactly once", async () => {
       await scenario("08-two-tools", async () => {
-        await newThread();
+        await openMainThread();
         const before = new Set(executionReadback().map((record) => record.jobId));
         const text = "请用命令连续读取两个文件";
         await send(text);
@@ -2335,7 +2334,7 @@ productDescribe(
 
     it("[R2-T11] completes thirty repeated reads without stranding a result or replaying a tool", async () => {
       await scenario("09-thirty-reads", async () => {
-        await newThread();
+        await openMainThread();
         const before = new Set(executionReadback().map((record) => record.jobId));
         for (let index = 1; index <= 30; index++) {
           const text = `第 ${index} 次用命令读取 notes.txt`;
@@ -2404,7 +2403,7 @@ productDescribe(
         } else await page.reload();
         try {
           await scenario(name, async () => {
-            await newThread();
+            await openMainThread();
             const before = new Set(executionReadback().map((record) => record.jobId));
             const text = "准备传输失败验证：请用命令读取 notes.txt";
             await installation.armPreparationTransportFailure(legacy);
@@ -2611,7 +2610,7 @@ productDescribe(
       await page.reload();
       try {
         await scenario("33-preparation-ack-loss", async () => {
-          await newThread();
+          await openMainThread();
           const before = new Set(executionReadback().map((record) => record.jobId));
           const text = "准备登记确认丢失验证：请用命令读取 notes.txt";
           const baseline = await readFile(path.join(installation.workspace, "notes.txt"), "utf8");
@@ -2739,7 +2738,7 @@ productDescribe(
     it("[R2-T11][R2-L4][prod-sandbox-D2] retries an unproved disconnected preparation and resumes its workspace after the original signed final returns", async (testContext) => {
       testContext.skip(!frontBashUsesOneShotSrt, oneShotForegroundSrtIsNonLinuxOnly);
       await scenario("34-preparation-final-recovery", async () => {
-        await newThread();
+        await openMainThread();
         const before = new Set(executionReadback().map((record) => record.jobId));
         const file = path.join(installation.workspace, "hello.txt");
         const baseline = "恢复前原工具不得写入";
@@ -2923,7 +2922,7 @@ productDescribe(
           expect(await readFile(file, "utf8")).toBe(baseline);
           await uiExpect(toolAnswers().last()).toContainText("工具未启动");
           await uiExpect(page.getByRole("button", { name: "停止", exact: true })).toHaveCount(0);
-          await newThread();
+          await openMainThread();
           const nextRead = "释放占用后新对话：请用命令读取 notes.txt";
           await uiExpect(await sendToolRequest(nextRead)).toContainText(NOTE);
           const nextWrite = "释放占用后新对话：请写入 hello.txt";
@@ -2966,7 +2965,7 @@ productDescribe(
     it("[R2-T11][R2-L6][prod-sandbox-admin] ends an unproved reservation offline without replay and admits a new workspace request", async (testContext) => {
       testContext.skip(!frontBashUsesOneShotSrt, oneShotForegroundSrtIsNonLinuxOnly);
       await scenario("35-reservation-administrator-cleanup", async () => {
-        await newThread();
+        await openMainThread();
         const before = new Set(executionReadback().map((record) => record.jobId));
         const file = path.join(installation.workspace, "hello.txt");
         const baseline = "管理员处置不得重放原工具";
@@ -3202,7 +3201,7 @@ productDescribe(
           expect((await installation.preparationFinalHold())?.hostForks).toHaveLength(1);
           expect(executionReadback().filter((row) => !before.has(row.jobId))).toHaveLength(1);
           expect(await readFile(file, "utf8")).toBe(baseline);
-          await newThread();
+          await openMainThread();
           await uiExpect(
             await sendToolRequest("管理员释放后新对话：请用命令读取 notes.txt"),
           ).toContainText(NOTE);
@@ -3339,7 +3338,7 @@ productDescribe(
 
     it("[R2-T11][R2-L4][prod-sandbox-D3] delivers a verified preparation failure with safe service diagnostics", async () => {
       await scenario("12-preparation-failure", async () => {
-        await newThread();
+        await openMainThread();
         const before = new Set(executionReadback().map((record) => record.jobId));
         const file = path.join(installation.workspace, "hello.txt");
         await writeFile(file, "原文件必须保持不变");
@@ -3466,7 +3465,7 @@ productDescribe(
 
     it("measures thirty approved writes without stranding or replaying a tool", async () => {
       await scenario("11-thirty-writes", async () => {
-        await newThread();
+        await openMainThread();
         const before = new Set(executionReadback().map((record) => record.jobId));
         const timings: Array<{
           jobId: string;
@@ -3537,7 +3536,7 @@ productDescribe(
 
     it("[R2-S1][R2-U4] stops a running tool, releases only with proof, never revives the cancelled run, and keeps sending closed until the reloaded conversation has loaded", async () => {
       await scenario("13-stop-running", async () => {
-        await newThread();
+        await openMainThread();
         const before = new Set(executionReadback().map((record) => record.jobId));
         const text = "运行中停止验证";
         await beginToolRequest(text);
@@ -3795,7 +3794,7 @@ productDescribe(
 
     it("records process-group release for a detached child holding foreground output", async () => {
       await scenario("33-detached-output", async () => {
-        await newThread();
+        await openMainThread();
         const text = "脱离进程组输出管道验证";
         const marker = `B3_DETACHED_OUTPUT_${path.basename(path.dirname(installation.workspace))}`;
         expect(marker).toMatch(/^[A-Za-z0-9_-]+$/);
@@ -4151,7 +4150,7 @@ productDescribe(
         }
         try {
           await scenario(name, async () => {
-            await newThread();
+            await openMainThread();
             const before = new Set(executionReadback().map((record) => record.jobId));
             const text = `原执行期限验证-${mode}`;
             if (mode === "recovery") await installation.armFinishGate("after-end");
@@ -4344,7 +4343,7 @@ productDescribe(
 
     it("[R2-S2] reclaims an interrupted running tool after restarting the test services without replay", async () => {
       await scenario("14-restart-running", async () => {
-        await newThread();
+        await openMainThread();
         const before = new Set(executionReadback().map((record) => record.jobId));
         const text = "执行中重启验证";
         await beginToolRequest(text);
@@ -4467,7 +4466,7 @@ productDescribe(
       async (restart) => {
         const name = `15-restart-cleanup-${restart}`;
         await scenario(name, async () => {
-          await newThread();
+          await openMainThread();
           const before = new Set(executionReadback().map((record) => record.jobId));
           const original = `原始工具内容-${restart}-${crypto.randomUUID()}`;
           const changed = `修改后的文件-${crypto.randomUUID()}`;
@@ -4551,7 +4550,7 @@ productDescribe(
       testContext.skip(!frontBashUsesOneShotSrt, residentSessionsReportOneExitResult);
       const name = "20-contradictory-completion";
       await scenario(name, async () => {
-        await newThread();
+        await openMainThread();
         const before = new Set(executionReadback().map((record) => record.jobId));
         const rows = () => executionReadback().filter((record) => !before.has(record.jobId));
         const original = `矛盾退出验证-${crypto.randomUUID()}`;
@@ -4637,7 +4636,7 @@ productDescribe(
     it("[R2-T11][R2-S2] keeps an offline Worker result pending until paired service restart settles LOST", async () => {
       const name = "19-worker-offline-recovery";
       await scenario(name, async () => {
-        await newThread();
+        await openMainThread();
         const before = new Set(executionReadback().map((record) => record.jobId));
         const rows = () => executionReadback().filter((record) => !before.has(record.jobId));
         const resident = !frontBashUsesOneShotSrt;
@@ -4751,7 +4750,7 @@ productDescribe(
         );
         const name = `18-stream-${stage}-${target}`;
         await scenario(name, async () => {
-          await newThread();
+          await openMainThread();
           const before = new Set(executionReadback().map((record) => record.jobId));
           const rows = () => executionReadback().filter((record) => !before.has(record.jobId));
           const original = `原始分块内容-${crypto.randomUUID()}`;
@@ -4846,7 +4845,7 @@ productDescribe(
         testContext.skip(!frontBashUsesOneShotSrt, residentFinishGateStageIsOneShotOnly);
         const name = `16-finish-crash-${stage}`;
         await scenario(name, async () => {
-          await newThread();
+          await openMainThread();
           const before = new Set(executionReadback().map((record) => record.jobId));
           const text = `${stage} 崩溃：请用命令读取 notes.txt`;
           await installation.armFinishGate(stage);
@@ -4959,7 +4958,7 @@ productDescribe(
       async (tool) => {
         const name = `10-delivery-crash-${tool}`;
         await scenario(name, async () => {
-          await newThread();
+          await openMainThread();
           const before = new Set(executionReadback().map((record) => record.jobId));
           await installation.armDeliveryCrash();
           const text =
@@ -5042,7 +5041,7 @@ productDescribe(
 
     it("shows the connection loss while the service restarts and recovers afterwards", async () => {
       await scenario("07-service-restart", async () => {
-        await newThread();
+        await openMainThread();
         const answer = await sendToolRequest("服务重启前：请读取 notes.txt");
         await uiExpect(answer).toContainText(NOTE);
         await capture("07-service-restart-before");
@@ -5149,7 +5148,7 @@ profileDescribe("alternating installed tool profiling", () => {
       sessions.push(current);
       await page.goto(`${installation.origin}/`);
       await uiExpect(composer()).toBeVisible({ timeout: 30_000 });
-      await newThread();
+      await openMainThread();
       return current;
     };
     try {
@@ -5347,12 +5346,8 @@ productDescribe("[R2-T2] workspace auto approval", { timeout: 600_000 }, () => {
   let autoPage: Page;
 
   const autoComposer = () => autoPage.getByRole("textbox", { name: "消息草稿", exact: true });
-  async function newAutoThread() {
-    await autoPage
-      .getByRole("link", { name: "新建对话" })
-      .or(autoPage.getByRole("button", { name: "新建对话" }))
-      .first()
-      .click();
+  async function openAutoMainThread() {
+    await autoPage.getByRole("link", { name: "主对话", exact: true }).first().click();
     await uiExpect(autoComposer()).toBeVisible({ timeout: 20_000 });
   }
   async function autoSend(text: string) {
@@ -5440,7 +5435,7 @@ productDescribe("[R2-T2] workspace auto approval", { timeout: 600_000 }, () => {
 
   it("[R2-T2] runs ls, read, write, edit and an offline bash in one turn without any approval request", async () => {
     const request = "自动批准验证：列目录 读文件 写文件 编辑文件 统计行数";
-    await newAutoThread();
+    await openAutoMainThread();
     await autoSend(request);
     const turn = autoTurn(request);
     await uiExpect(turn.getByText(/自动完成/)).toBeVisible({ timeout: 300_000 });
@@ -5462,7 +5457,7 @@ productDescribe("[R2-T2] workspace auto approval", { timeout: 600_000 }, () => {
     await autoPage.reload();
     await uiExpect(autoComposer()).toBeVisible({ timeout: 30_000 });
 
-    await newAutoThread();
+    await openAutoMainThread();
     await autoSend("请列出工作目录");
     const asking = autoTurn("请列出工作目录");
     await uiExpect(asking.getByRole("button", { name: "允许这一次" })).toBeVisible({
@@ -5625,7 +5620,7 @@ async function searchToggleUsable(toggle: WalkthroughTarget) {
 }
 
 async function expectFileWritingProgress() {
-  await newThread();
+  await openMainThread();
   const streamsBefore = installation.toolStreamStartedAt;
   const turn = await send(WRITE_GAME_REQUEST);
   await uiExpect
@@ -5655,7 +5650,7 @@ async function expectFileWritingProgress() {
 }
 
 async function expectNewsSearchResults(text: string) {
-  await newThread();
+  await openMainThread();
   const turn = await send(text);
   const answer = turn.getByText(/工具返回：/);
   await uiExpect(answer).toHaveCount(1, { timeout: 120_000 });
@@ -5751,7 +5746,7 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
       await closeSettings();
     });
     await scenario("accept-search-approval", async () => {
-      await newThread();
+      await openMainThread();
       const turn = await send(SEARCH_BATCH_REQUEST);
       await uiExpect(turn.getByText(UI.searchBatch)).toBeVisible({ timeout: 120_000 });
       const allow = target(turn, UI.approveSearch);
@@ -5768,7 +5763,7 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
       await expectFinishedTurnShowsStep(turn, UI.searchStep);
     });
     await scenario("accept-long-answer", async () => {
-      await newThread();
+      await openMainThread();
       const turn = await send("请给一个长回答");
       await uiExpect(turn.getByText(LONG_ANSWER_END)).toBeVisible({ timeout: 120_000 });
       await uiExpect(turn.getByText("第1段：", { exact: false })).toHaveCount(1);
@@ -5776,7 +5771,7 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
       await uiExpect(page.getByText(UI.unreadableRecords)).toHaveCount(0);
     });
     await scenario("accept-run-command", async () => {
-      await newThread();
+      await openMainThread();
       const startedAt = Date.now();
       const turn = await send(RUN_COMMAND_REQUEST);
       const answer = turn.getByText(/工具返回：/);
@@ -5793,7 +5788,7 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
       await expectFinishedTurnShowsStep(turn, UI.commandStep);
     });
     await scenario("accept-unrelated-no-memory", async () => {
-      await newThread();
+      await openMainThread();
       const startedAt = Date.now();
       const turn = await send(UNRELATED_REQUEST);
       await uiExpect(turn.getByText(PLAIN_ANSWER)).toBeVisible({ timeout: 120_000 });
@@ -5806,7 +5801,7 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
       await uiExpect(page.getByText(UI.unreadableRecords)).toHaveCount(0);
     });
     await scenario("accept-model-switch", async () => {
-      await newThread();
+      await openMainThread();
       for (const chosen of ACCEPTANCE_SELECTABLE_MODELS) {
         const picker = page.locator(UI.modelPickerRoot);
         if (!(await picker.evaluate((element) => element.hasAttribute("open"))))
@@ -5839,7 +5834,7 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
       }
     });
     await scenario("accept-conversation-search", async () => {
-      await newThread();
+      await openMainThread();
       const turn = await send(SEARCH_TOKEN_REQUEST);
       await uiExpect(turn.getByText(PLAIN_ANSWER)).toBeVisible({ timeout: 120_000 });
       await uiExpect(target(page, UI.stop)).toHaveCount(0, { timeout: 120_000 });
@@ -5869,11 +5864,11 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
       const reminders = target(page, UI.remindersPage);
       await uiExpect(reminders).toBeVisible({ timeout: 30_000 });
       await uiExpect(target(reminders, UI.pageError)).toHaveCount(0);
-      await newThread();
+      await openMainThread();
       await uiExpect(reminders).toHaveCount(0, { timeout: 20_000 });
     });
     await scenario("accept-slow-memory-search", async () => {
-      await newThread();
+      await openMainThread();
       const embeddingsBefore = installation.modelRequests.filter(
         (request) => request.path === "/v1/embeddings",
       ).length;
@@ -5910,7 +5905,7 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
       const library = files.locator(UI.filesLibrary);
       await uiExpect(library).toHaveAttribute("aria-busy", "false", { timeout: 30_000 });
       await uiExpect(target(files, UI.pageError)).toHaveCount(0);
-      await newThread();
+      await openMainThread();
       await uiExpect(files).toHaveCount(0, { timeout: 20_000 });
     });
     await scenario("accept-memory-page", async () => {
@@ -5920,7 +5915,7 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
         timeout: 30_000,
       });
       await uiExpect(target(memory, UI.pageError)).toHaveCount(0);
-      await newThread();
+      await openMainThread();
       await uiExpect(memory).toHaveCount(0, { timeout: 20_000 });
     });
     await scenario("accept-memory-export", async () => {
@@ -5937,7 +5932,7 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
       expect([...head]).toEqual([0x50, 0x4b, 0x03, 0x04]);
       await uiExpect(memory.getByText(UI.exportDone)).toBeVisible({ timeout: 30_000 });
       await uiExpect(target(memory, UI.pageError)).toHaveCount(0);
-      await newThread();
+      await openMainThread();
       await uiExpect(memory).toHaveCount(0, { timeout: 20_000 });
     });
     await scenario("accept-export-requires-login", async () => {
@@ -6152,7 +6147,7 @@ realMagpieDescribe(
       const response = await page.goto(`${installation.origin}/`);
       expect(response?.status()).toBe(200);
       await uiExpect(composer()).toBeVisible({ timeout: 30_000 });
-      await newThread();
+      await openMainThread();
       const options = await openFullModelList();
       const names = (await options.allInnerTexts()).map(
         (text) => text.split("\n")[0]?.trim() ?? "",
@@ -6172,7 +6167,7 @@ realMagpieDescribe(
       for (const { name, index } of order) {
         const started = Date.now();
         try {
-          await newThread();
+          await openMainThread();
           const list = await openFullModelList();
           await list.nth(index).click();
           await uiExpect(page.locator(`${UI.modelPicker} .model-name`)).toHaveText(name, {

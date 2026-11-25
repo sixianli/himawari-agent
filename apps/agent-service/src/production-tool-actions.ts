@@ -15,6 +15,7 @@ import {
   TOOL_RESULT_RECALL_CAPABILITY_REF,
 } from "./production-context-recall.js";
 import { MANAGED_TASK_ACTIONS } from "./production-managed-tasks.js";
+import { MEMORY_OPEN_CAPABILITY_REF } from "./production-memory-open.js";
 import { MEMORY_RECALL_CAPABILITY_REF } from "./production-memory-recall.js";
 import {
   RULE_LIST_CAPABILITY_REF,
@@ -295,6 +296,19 @@ export const PRODUCTION_TOOL_ACTION_ROWS: readonly ToolActionRow[] = Object.free
       { zh: "打开以前的对话", en: "Open a past conversation", ja: "過去の会話を開く" },
       "conversationId",
     ),
+  },
+  {
+    ...READ_DEFAULTS,
+    tool: "memory_open",
+    family: "builtin",
+    capabilityRef: MEMORY_OPEN_CAPABILITY_REF,
+    operation: "open",
+    targetType: "owner-memory-record",
+    resultOrigin: "owner_data",
+    authorization: "read",
+    executor: "owner_scoped",
+    deduplication: "run_and_tool_call",
+    detail: detail({ zh: "打开一条记忆", en: "Open a memory", ja: "記憶を開く" }, "number"),
   },
   {
     ...OWNER_WRITE_DEFAULTS,

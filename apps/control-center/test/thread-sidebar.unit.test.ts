@@ -46,7 +46,6 @@ function render(
         route: routeForSurface("threads"),
         onSearchTextChange: vi.fn(),
         onSearch: vi.fn(),
-        onCreate: vi.fn(),
         onRefresh: vi.fn(),
         onNavigate: vi.fn(),
         ...extra,
@@ -84,11 +83,21 @@ describe("thread sidebar navigation", () => {
     const labels = [...quiet.matchAll(/<button[^>]*>(?:<svg.*?<\/svg>)?([^<]+)/g)].map(
       (match) => match[1],
     );
-    expect(labels.slice(0, 4)).toEqual(["新建对话", "记忆", "提醒", "文件"]);
+    expect(labels.slice(0, 3)).toEqual(["记忆", "提醒", "文件"]);
+    expect(quiet).not.toContain("新建对话");
     expect(quiet).toMatch(/aria-pressed="true"[^>]*><svg[^>]*>.*?<\/svg>记忆/);
     expect(quiet).not.toContain("nav-dot");
     const due = render([], false, true, { onOpenReminders: vi.fn(), remindersDue: 2 });
     expect(due).toContain('class="nav-dot" role="img" aria-label="有 2 个提醒到点了"');
+  });
+
+  it("names the main conversation and offers no way to start another one", () => {
+    const main = { ...thread("main", null), titleRef: "title:recent", messageWatermark: 0 };
+    const markup = render([main, thread("recent", null)], false, true, { mainThreadId: "main" });
+    expect(markup.match(/href="\/threads\/main"/g)).toHaveLength(1);
+    expect(markup).toMatch(/<nav[^>]*><a[^>]*href="\/threads\/main"[^>]*>.*?主对话<\/a>/);
+    expect(markup.match(/title="最近的工作"/g)).toHaveLength(1);
+    expect(markup).not.toContain("新建对话");
   });
 
   it("shows quiet placeholders only before the first collection arrives", () => {

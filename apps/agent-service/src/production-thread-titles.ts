@@ -63,7 +63,8 @@ export class ProductionThreadTitles {
       thread.origin === "think" ||
       thread.status !== "active" ||
       thread.titleRef ||
-      thread.titleSource === "owner"
+      thread.titleSource === "owner" ||
+      (await this.options.threads.readMain(ownerId, agentId)) === threadId
     )
       return;
     const messages = await this.options.threads.listMessages(ownerId, agentId, threadId, 0, 20);
