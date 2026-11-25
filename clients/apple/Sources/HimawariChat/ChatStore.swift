@@ -167,7 +167,7 @@ public final class ChatStore {
     }
 
     public func isBusy(in threadId: String) -> Bool {
-        streaming[threadId] != nil || (details[threadId]?.runs ?? []).contains(where: \.isWorking)
+        streaming[threadId].map { !$0.isSettled(in: details[threadId]) } ?? false || (details[threadId]?.runs ?? []).contains(where: \.isWorking)
     }
 
     public func workingRun(in threadId: String) -> ThreadRunSummary? {
@@ -175,7 +175,7 @@ public final class ChatStore {
     }
 
     public func streamingText(in threadId: String) -> String? {
-        guard let reply = streaming[threadId] else { return nil }
+        guard let reply = streaming[threadId], !reply.isSettled(in: details[threadId]) else { return nil }
         let text = reply.text
         return text.isEmpty ? nil : text
     }
@@ -211,7 +211,7 @@ public final class ChatStore {
                 threads[index] = detail.thread
             }
             await loadTexts(detail.messages.map(\.contentRef) + [detail.thread.titleRef].compactMap { $0 })
-            if detail.runs.allSatisfy({ ["completed", "failed", "cancelled"].contains($0.status) }) {
+            if let reply = streaming[threadId], reply.isSettled(in: detail) || detail.runs.allSatisfy({ ProcessLine.terminalRunStatuses.contains($0.status) }) {
                 streaming[threadId] = nil
             }
             persist()
@@ -381,6 +381,7 @@ public final class ChatStore {
             }
             await refreshThreads()
         case let .executionText(chunk):
+            guard !StreamingReply(runId: chunk.runId).isSettled(in: details[chunk.threadId]) else { break }
             var reply = streaming[chunk.threadId].flatMap { $0.runId == chunk.runId ? $0 : nil } ?? StreamingReply(runId: chunk.runId)
             reply.apply(chunk)
             streaming[chunk.threadId] = reply
