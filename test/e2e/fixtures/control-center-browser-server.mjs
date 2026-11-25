@@ -32,7 +32,7 @@ const capabilitySecretMaterials = new Map([
 ]);
 let recentAuthenticationAvailable = true;
 const payloads = new Map([
-  ["payload:title-main", { content: "主对话", dataClassification: "private" }],
+  ["payload:title-main", { content: "计划讨论", dataClassification: "private" }],
   ["payload:title-research", { content: "研究记录", dataClassification: "private" }],
   ["payload:message-01", { content: "请总结当前计划。", dataClassification: "private" }],
   ["payload:message-02", { content: "计划处于实施阶段。", dataClassification: "private" }],
@@ -45,6 +45,26 @@ const threadEvents = [];
 const threadEventClients = new Set();
 const executionEventClients = new Map();
 const threads = new Map([
+  [
+    "thread-home",
+    {
+      threadId: "thread-home",
+      revision: 1,
+      status: "active",
+      titleRef: null,
+      titleSource: null,
+      titleRevision: 0,
+      pinOrder: null,
+      answerLocale: "zh-CN",
+      messageWatermark: 0,
+      sourceThreadId: null,
+      sourceWatermark: null,
+      createdAt: now,
+      updatedAt: now,
+      messages: [],
+      runs: [],
+    },
+  ],
   [
     "thread-main",
     {
@@ -2089,6 +2109,19 @@ function handleThreadQuery(message) {
       },
     };
   }
+  if (message.type === "thread.main") {
+    const main = threads.get("thread-home");
+    if (!main) return null;
+    return {
+      ...common,
+      type: "thread.main_snapshot",
+      payload: {
+        thread: threadSummary(main),
+        snapshotRef: `snapshot:thread-main:${main.revision}`,
+        generatedAt: now,
+      },
+    };
+  }
   if (message.type === "thread.execution_environment" && executionEnvironment) {
     return {
       ...common,
@@ -2714,6 +2747,23 @@ async function handleRequest(request, response) {
     const message = await body(request);
     recentAuthenticationAvailable = message.available === true;
     json(response, 200, { available: recentAuthenticationAvailable });
+    return;
+  }
+  if (request.method === "POST" && url.pathname === "/__fixture/finish-runs") {
+    const message = await body(request);
+    const thread = threads.get(message.threadId);
+    if (!thread) {
+      json(response, 404, { error: { code: "PORT_NOT_FOUND" } });
+      return;
+    }
+    for (const run of thread.runs)
+      if (run.status === "accepted" || run.status === "running") {
+        run.status = "completed";
+        run.revision += 1;
+        run.updatedAt = new Date().toISOString();
+      }
+    thread.revision += 1;
+    json(response, 200, { threadId: thread.threadId, revision: thread.revision });
     return;
   }
   if (request.method === "POST" && url.pathname === "/__fixture/conflict") {

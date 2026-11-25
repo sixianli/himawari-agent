@@ -1147,13 +1147,6 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "cascade with Owner or Agent deletion",
   ),
   entry(
-    "delivery_timing_settings",
-    "DeliveryTimingSettingsStorePort",
-    "one row per Agent: the owner's changed values for the push delivery timing settings (recheck interval, longest hold, freshness windows and so on), with a revision, shared by every signed-in device",
-    "metadata_only",
-    "cascade with Owner or Agent deletion",
-  ),
-  entry(
     "owner_preferences",
     "OwnerPreferencesStorePort",
     "one row per Agent: the name Himawari calls the owner, the page language, accent color, theme and last chosen model and thinking depth, with a revision, shared by every signed-in device",
