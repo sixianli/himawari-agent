@@ -24,6 +24,7 @@ import {
   type RunPayloadArtifactPort,
   type RuntimeBackgroundCommandNotice,
   type RuntimeRequest,
+  type RuntimeSteerNote,
   type RuntimeToolDescriptor,
   type RuntimeToolExecutionResult,
   type RuntimeToolInvocation,
@@ -54,9 +55,9 @@ import {
   TOOL_RESULT_CONVERSATION_UNAVAILABLE,
   TOOL_RESULT_DEVICE_ACTION_UNAVAILABLE,
   TOOL_RESULT_MAIL_READ_REJECTED,
-  TOOL_RESULT_OFFER_OPTIONS_REJECTED,
   TOOL_RESULT_MEMORY_OPEN_INPUT_INVALID,
   TOOL_RESULT_MEMORY_OPEN_UNAVAILABLE,
+  TOOL_RESULT_OFFER_OPTIONS_REJECTED,
   TOOL_RESULT_RECALL_INPUT_INVALID,
   TOOL_RESULT_RECALL_UNAVAILABLE,
   TOOL_RESULT_REMINDER_MEMORY_NOT_READY,
@@ -111,11 +112,6 @@ import {
   type ProductionMailRead,
 } from "./production-mail-read.js";
 import {
-  OfferOptionsInputError,
-  offerOptionsDescriptor,
-  type ProductionMessageOptions,
-} from "./production-message-options.js";
-import {
   MANAGED_TASK_ACTIONS,
   managedTaskDescriptors,
   type ProductionManagedTasks,
@@ -127,10 +123,16 @@ import {
 } from "./production-memory-open.js";
 import { memoryRecallDescriptor, type ProductionMemoryRecall } from "./production-memory-recall.js";
 import {
+  OfferOptionsInputError,
+  offerOptionsDescriptor,
+  type ProductionMessageOptions,
+} from "./production-message-options.js";
+import {
   OwnerRuleError,
   ownerRuleToolDescriptors,
   type ProductionOwnerRuleTools,
 } from "./production-owner-rules.js";
+import type { ProductionOwnerSteering } from "./production-owner-steering.js";
 import {
   PERCEPTION_READ_CAPABILITY_REF,
   PerceptionToolError,
@@ -143,11 +145,6 @@ import {
   ReminderInputError,
   reminderToolDescriptors,
 } from "./production-reminder-writer.js";
-import {
-  type ProductionVaultTools,
-  VaultToolInputError,
-  vaultToolDescriptors,
-} from "./production-vault-tools.js";
 import {
   SANDBOX_TOOL_RESULT_LOST,
   SANDBOX_TOOL_RESULT_LOST_MESSAGE,
@@ -171,6 +168,11 @@ import {
   tellOwnerDescriptor,
 } from "./production-tell-owner.js";
 import { productionToolActionRegistry } from "./production-tool-actions.js";
+import {
+  type ProductionVaultTools,
+  VaultToolInputError,
+  vaultToolDescriptors,
+} from "./production-vault-tools.js";
 import { beforeDeadline } from "./production-worker-deadline.js";
 import { ProductionWorkerForwardTransport } from "./production-worker-forward-transport.js";
 import type { ProductionWorkerParentBindingRegistryWriter } from "./production-worker-parent-binding-registry.js";
@@ -383,6 +385,7 @@ export type ProductionRuntimeSandbox = Omit<SandboxAdmission, "prepare"> & {
 };
 
 export interface ProductionRuntimeToolsOptions {
+  readonly steering?: Pick<ProductionOwnerSteering, "subscribe">;
   readonly completeSandboxToolResult?: (
     input: { runId: string; invocationId: string },
     delivery: SandboxToolDelivery,
@@ -456,6 +459,13 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
           now: () => options.clock.now(),
         })
       : undefined;
+  }
+
+  subscribeSteer(
+    runId: RuntimeRequest["runId"],
+    listener: (note: RuntimeSteerNote) => boolean,
+  ): () => void {
+    return this.#options.steering?.subscribe(runId, listener) ?? (() => undefined);
   }
 
   subscribeBackground(

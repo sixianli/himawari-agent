@@ -21,6 +21,7 @@ import {
   enforceableOwnerRule,
   type HomeUrgencyRunResult,
   type IdGeneratorPort,
+  INBOX_LOOP_DEFAULTS,
   MemoryCheckupService,
   modelUsagePurpose,
   modelVisibleClassifications,
@@ -89,6 +90,7 @@ import {
   MacOsKeychainProviderSecretSource,
   MacOsKeychainSecretSource,
   MUSE_INTAKE_SECRET_PURPOSE,
+  NodeVaultCrypto,
   PayloadUdsServer,
   parseServiceArguments,
   portErrorSite,
@@ -106,7 +108,6 @@ import {
   writeAgentServiceBootBinding,
   writeAuthorityFile,
   writeServiceDiagnostic,
-  NodeVaultCrypto,
 } from "@himawari-agent/platform-node";
 import {
   admissionCostForConfiguredPiModel,
@@ -114,13 +115,13 @@ import {
   getPiModelPresentation,
 } from "@himawari-agent/runtime-pi";
 import { BuiltInActionRuleSwitches } from "./action-rule-switches.js";
-import { OwnerAllowances } from "./owner-allowances.js";
 import { monitorFollowUpCacheHits } from "./cache-hit-monitor.js";
 import { classifiedThreadTitleReader } from "./classified-thread-title.js";
 import { COMMAND_SILENCE_CHECK_INTERVAL_MS, CommandSilenceWatch } from "./command-silence-watch.js";
 import { ContextExternalContent } from "./context-external-content.js";
 import { createLocalVectorCatchUp } from "./local-vector-catch-up.js";
 import { MAC_PRESENCE_WINDOW_SECONDS, MacPlacement } from "./mac-placement.js";
+import { OwnerAllowances } from "./owner-allowances.js";
 import { OwnerScopeAuthorization } from "./owner-scope-authorization.js";
 import { ProductionApplePush } from "./production-apple-push.js";
 import { createProductionAuthorityLifecycle } from "./production-authority-lifecycle.js";
@@ -151,7 +152,6 @@ import {
 import { InboxRunRegistry } from "./production-inbox-delivery.js";
 import { expandConfigurationWithMagpieModels, priceTiers } from "./production-magpie-models.js";
 import { ProductionMailRead } from "./production-mail-read.js";
-import { ProductionMessageOptions } from "./production-message-options.js";
 import { ProductionMcpMemoryWriter } from "./production-mcp-memory-writer.js";
 import { ProductionMcpRead } from "./production-mcp-read.js";
 import { ProductionMcpRuleWriter } from "./production-mcp-rule-writer.js";
@@ -177,6 +177,7 @@ import {
 import { ProductionMemoryOpen } from "./production-memory-open.js";
 import { ProductionMemoryRecall } from "./production-memory-recall.js";
 import { ProductionMemoryWorker } from "./production-memory-worker.js";
+import { ProductionMessageOptions } from "./production-message-options.js";
 import {
   createProductionModelCompositionFromConfiguration,
   type ProductionConfiguredModelComposition,
@@ -192,10 +193,10 @@ import { ProductionMuseControl } from "./production-muse-intake-control.js";
 import { ProductionObservation, readServiceRevision } from "./production-observation.js";
 import { productionOwnerIntentGate } from "./production-owner-intent.js";
 import { ProductionOwnerRuleTools, ProductionOwnerRuleWriter } from "./production-owner-rules.js";
+import { ProductionOwnerSteering } from "./production-owner-steering.js";
 import { ProductionPayloadBrokerHandler } from "./production-payload-broker-handler.js";
 import { ProductionPerceptionExtraction } from "./production-perception-extraction.js";
 import { ProductionPerceptionTools } from "./production-perception-tools.js";
-import { ProductionVaultTools } from "./production-vault-tools.js";
 import {
   createProactivePushSource,
   PREREVIEW_MAX_OUTPUT_TOKENS,
@@ -229,6 +230,7 @@ import { ProductionServiceLifecycle } from "./production-service-lifecycle.js";
 import { ProductionTellOwner } from "./production-tell-owner.js";
 import { productionToolActionRegistry } from "./production-tool-actions.js";
 import { toolCallSandboxPrewarm } from "./production-tool-call-prewarm.js";
+import { ProductionVaultTools } from "./production-vault-tools.js";
 import { productionVoiceAddressee } from "./production-voice-addressee.js";
 import { ProductionWebPush, WebPushPresence } from "./production-web-push.js";
 import { createProductionWorkerParentBindingRegistry } from "./production-worker-parent-binding-registry.js";
@@ -1832,7 +1834,32 @@ export async function startTenantRuntime(
         protector,
         clock: { now: () => clock.now() },
       });
+      const steering = new ProductionOwnerSteering({
+        ownerId: configuration.ownerId,
+        agentId: configuration.agentId,
+        threads: repository.threadRepository(),
+        payloads,
+        protector,
+        clock: { now: () => clock.now() },
+        limit: async () => {
+          const settings = await requireValue(repository)
+            .inbox()
+            .readSettings({ ownerId: configuration.ownerId, agentId: configuration.agentId })
+            .catch(() => undefined);
+          return Math.max(
+            0,
+            (settings?.overrides["eventsPerRun"] ?? INBOX_LOOP_DEFAULTS.eventsPerRun) - 1,
+          );
+        },
+        onFailure: (error) =>
+          writeServiceDiagnostic(errorOutput, {
+            component: "agent-service",
+            event: "owner_follow_up.failed",
+            code: stableErrorCode(error),
+          }),
+      });
       const tools = new ProductionRuntimeTools({
+        steering,
         memoryRecall,
         tellOwner,
         mailRead: new ProductionMailRead(() => proactive),

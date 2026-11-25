@@ -41,6 +41,7 @@ export type {
   ModelSecretRequirement,
   RuntimeApprovalWait,
   RuntimeBackgroundCommandNotice,
+  RuntimeSteerNote,
   RuntimeCompactionProposal,
   RuntimeContinuationPort,
   RuntimeEvent,

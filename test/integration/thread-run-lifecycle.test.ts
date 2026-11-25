@@ -69,6 +69,7 @@ import {
   testModelEgress,
 } from "@himawari-agent/testing";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ProductionOwnerSteering } from "../../apps/agent-service/src/production-owner-steering.js";
 import { ProductionRunDispatcher } from "../../apps/agent-service/src/production-run-dispatcher.js";
 import { createProductionRunReconciler } from "../../apps/agent-service/src/production-run-reconciler.js";
 import { copyMigratedDatabase } from "../fixtures/sqlite-migrated-template.ts";
@@ -5389,6 +5390,100 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
         [second.message.id, second.message.runId],
         [third.message.id, third.message.runId],
       ]);
+    });
+
+    async function steeringFor(
+      setup: Awaited<ReturnType<typeof fixture>>,
+      runId: RunId,
+      status: string,
+    ) {
+      const database = openQualifiedDatabase(setup.databasePath);
+      try {
+        database.prepare("UPDATE runs SET status = ? WHERE id = ?").run(status, runId);
+      } finally {
+        database.close();
+      }
+      const protector = new EnvelopePayloadProtector({
+        keys: new InMemoryDevelopmentSecretSource({
+          "fold-key@v1": new Uint8Array(32).fill(23),
+        }),
+        activeKey: { keyRef: "fold-key", kekVersion: "v1", dekVersion: "v1" },
+      });
+      return new ProductionOwnerSteering({
+        ownerId,
+        agentId,
+        threads: setup.repository.threadRepository(),
+        payloads: setup.repository.payloadStore(ownerId, agentId),
+        protector,
+        clock,
+        limit: async () => 19,
+        intervalMs: 60_000,
+      });
+    }
+
+    it("steers a message sent while her answer is running into that run, once", async () => {
+      const { send, status, setup } = await foldFixture();
+      const first = await send("a", "帮我比较三家牙科诊所");
+      const later = await send("b", "只要周六开门的");
+      const firstRun = first.message.runId as RunId;
+      const steering = await steeringFor(setup, firstRun, "running");
+      const notes: { ref: string; modelContent: string }[] = [];
+      const stop = steering.subscribe(firstRun, (note) => {
+        notes.push(note);
+        return true;
+      });
+      await steering.poll();
+      await steering.poll();
+      stop();
+      expect(notes).toHaveLength(1);
+      expect(notes[0]?.modelContent).toBe(
+        `<owner-message id="${later.message.id}">\n只要周六开门的\n</owner-message>`,
+      );
+      expect(await status(later.message.runId)).toBe("completed");
+      const third = await send("c", "再加一条：要能刷卡");
+      const again = steering.subscribe(firstRun, (note) => {
+        notes.push(note);
+        return true;
+      });
+      await steering.poll();
+      again();
+      expect(notes).toHaveLength(2);
+      expect(notes[1]?.modelContent).toContain("要能刷卡");
+      expect(await status(third.message.runId)).toBe("completed");
+    });
+
+    it("puts the message back in line when the running answer could not take it", async () => {
+      const { send, status, setup } = await foldFixture();
+      const first = await send("a", "一");
+      const later = await send("b", "二");
+      const firstRun = first.message.runId as RunId;
+      const steering = await steeringFor(setup, firstRun, "running");
+      const stop = steering.subscribe(firstRun, () => false);
+      await steering.poll();
+      stop();
+      expect(await status(later.message.runId)).toBe("accepted");
+      expect(
+        await setup.repository
+          .threadRepository()
+          .readFoldedOwnerMessages({ ownerId, agentId, runId: firstRun }),
+      ).toEqual([]);
+    });
+
+    it("does not steer into a run that is waiting on an approval card", async () => {
+      const { send, status, setup } = await foldFixture();
+      const first = await send("a", "一");
+      const later = await send("b", "二");
+      const firstRun = first.message.runId as RunId;
+      const steering = await steeringFor(setup, firstRun, "awaiting_approval");
+      let called = false;
+      const stop = steering.subscribe(firstRun, () => {
+        called = true;
+        return true;
+      });
+      await steering.poll();
+      stop();
+      expect(called).toBe(false);
+      expect(await status(later.message.runId)).toBe("accepted");
     });
 
     it("does not fold a message when it is the only one waiting", async () => {

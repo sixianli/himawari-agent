@@ -507,7 +507,13 @@ export interface RuntimeBackgroundCommandNotice {
   readonly modelContent: string;
 }
 
+export interface RuntimeSteerNote {
+  readonly ref: string;
+  readonly modelContent: string;
+}
+
 export interface RuntimeToolPort {
+  subscribeSteer?(runId: RunId, listener: (note: RuntimeSteerNote) => boolean): () => void;
   subscribeBackground?(
     runId: RunId,
     listener: (notice: RuntimeBackgroundCommandNotice) => boolean,

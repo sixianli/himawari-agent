@@ -50,8 +50,15 @@ interface FrozenRunInput {
 const CLASSIFICATION_ORDER = ["public", "private", "sensitive", "restricted"] as const;
 const DEFAULT_FOLD_LIMIT = 19;
 
-function neutralized(text: string): string {
-  return text.replaceAll("</owner-message>", "‹/owner-message›");
+export function ownerMessagesPrompt(
+  messages: readonly { readonly id: string; readonly text: string }[],
+): string {
+  return messages
+    .map(
+      ({ id, text }) =>
+        `<owner-message id="${id}">\n${text.replaceAll("</owner-message>", "‹/owner-message›")}\n</owner-message>`,
+    )
+    .join("\n\n");
 }
 
 const OPERATION_KEY = "run-execution-input:v1";
@@ -310,12 +317,7 @@ export class RunExecutionInputService {
     const parts = [{ id: source.sourceId, text: await read(source.payloadRef) }];
     for (const message of folded)
       parts.push({ id: message.messageId, text: await read(message.contentRef) });
-    const text = parts
-      .map(
-        ({ id, text: body }) =>
-          `<owner-message id="${id}">\n${neutralized(body)}\n</owner-message>`,
-      )
-      .join("\n\n");
+    const text = ownerMessagesPrompt(parts);
     const rank = Math.max(
       CLASSIFICATION_ORDER.indexOf(source.dataClassification),
       ...folded.map(({ dataClassification }) => CLASSIFICATION_ORDER.indexOf(dataClassification)),

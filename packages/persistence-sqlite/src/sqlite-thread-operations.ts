@@ -228,6 +228,14 @@ export class SqliteThreadOperations {
         const input = payload as { ownerId: OwnerId; agentId: AgentId; runId: RunId };
         return this.readFoldedOwnerMessages(input.ownerId, input.agentId, input.runId);
       }
+      case "thread.unfoldOwnerRun":
+        return this.unfoldOwnerRun(
+          (
+            payload as {
+              input: { ownerId: OwnerId; agentId: AgentId; runId: RunId; foldedRunId: RunId };
+            }
+          ).input,
+        );
       case "thread.foldQueuedOwnerRuns":
         return this.foldQueuedOwnerRuns((payload as { input: FoldQueuedOwnerRunsInput }).input);
       case "thread.commitAssistantMessage":
@@ -1400,13 +1408,41 @@ export class SqliteThreadOperations {
       .all(runId, ownerId, agentId) as FoldedOwnerMessage[];
   }
 
+  private unfoldOwnerRun(input: {
+    readonly ownerId: OwnerId;
+    readonly agentId: AgentId;
+    readonly runId: RunId;
+    readonly foldedRunId: RunId;
+  }): boolean {
+    const transaction = this.database.transaction(() => {
+      const removed = this.database
+        .prepare(
+          `DELETE FROM run_message_folds
+           WHERE run_id = ? AND folded_run_id = ? AND owner_id = ? AND agent_id = ?`,
+        )
+        .run(input.runId, input.foldedRunId, input.ownerId, input.agentId).changes;
+      if (removed === 0) return false;
+      this.database
+        .prepare(
+          "UPDATE runs SET status = 'accepted', revision = revision + 1 WHERE id = ? AND status = 'completed'",
+        )
+        .run(input.foldedRunId);
+      this.database
+        .prepare("UPDATE turns SET committed_at = NULL WHERE run_id = ?")
+        .run(input.foldedRunId);
+      return true;
+    });
+    return transaction.immediate();
+  }
+
   private foldQueuedOwnerRuns(input: FoldQueuedOwnerRunsInput): readonly FoldedOwnerMessage[] {
     if (!Number.isSafeInteger(input.limit) || input.limit < 0) {
       this.fail("PORT_INVALID_OPERATION", "Fold limit must be a non-negative integer");
     }
     const transaction = this.database.transaction(() => {
       const existing = this.readFoldedOwnerMessages(input.ownerId, input.agentId, input.runId);
-      if (existing.length > 0) return existing;
+      if (!input.whileRunning && existing.length > 0) return existing;
+      const alreadyFolded = new Set(existing.map(({ runId }) => runId as string));
       const head = this.database
         .prepare(
           `SELECT r.status AS status, r.thread_id AS threadId, r.model_selection_json AS selection,
@@ -1428,11 +1464,11 @@ export class SqliteThreadOperations {
       if (
         !head ||
         head.threadId === null ||
-        head.status !== "accepted" ||
+        head.status !== (input.whileRunning ? "running" : "accepted") ||
         head.sourceType !== "user_message" ||
-        input.limit === 0
+        input.limit <= existing.length
       )
-        return [];
+        return input.whileRunning ? [] : existing;
       const later = this.database
         .prepare(
           `SELECT r.id AS runId, r.status AS status, r.model_selection_json AS selection,
@@ -1454,8 +1490,9 @@ export class SqliteThreadOperations {
       }[];
       const followers: string[] = [];
       for (const candidate of later) {
+        if (alreadyFolded.has(candidate.runId)) continue;
         if (
-          followers.length >= input.limit ||
+          followers.length + existing.length >= input.limit ||
           candidate.status !== "accepted" ||
           candidate.started === 1 ||
           candidate.sourceType !== "user_message" ||
@@ -1470,7 +1507,8 @@ export class SqliteThreadOperations {
          JOIN runs r ON r.trigger_id = t.id
          WHERE r.id = ? AND m.run_id = r.id AND m.role = 'owner' AND m.message_status = 'committed'`,
       );
-      let position = 0;
+      let position = existing.length;
+      const added: string[] = [];
       for (const runId of followers) {
         const message = messageOf.get(runId) as { id: string } | undefined;
         if (!message) break;
@@ -1490,8 +1528,10 @@ export class SqliteThreadOperations {
             ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
           )
           .run(input.ownerId, input.agentId, input.runId, runId, message.id, position, input.now);
+        added.push(runId);
       }
-      return this.readFoldedOwnerMessages(input.ownerId, input.agentId, input.runId);
+      const all = this.readFoldedOwnerMessages(input.ownerId, input.agentId, input.runId);
+      return input.whileRunning ? all.filter(({ runId }) => added.includes(runId)) : all;
     });
     return transaction.immediate();
   }

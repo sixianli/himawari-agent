@@ -425,6 +425,7 @@ const PI_CONTEXT_WINDOW_EXHAUSTED = "PI_CONTEXT_WINDOW_EXHAUSTED";
 const PI_REQUEST_HEAD_DIVERGED = "PI_REQUEST_HEAD_DIVERGED";
 const MIN_CONTEXT_ANSWER_TOKENS = 512;
 const BACKGROUND_COMMAND_MESSAGE_TYPE = "himawari.background.command";
+const OWNER_FOLLOW_UP_MESSAGE_TYPE = "himawari.owner.follow_up";
 
 const POLICY_BLOCKED_TEXT: Readonly<Record<string, string>> = {
   TASK_RESOURCE_AUTHORITY_REQUIRED: TOOL_POLICY_BLOCKED_TASK_MANAGEMENT.text,
@@ -1344,7 +1345,8 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
     session: AgentSession,
     canContinue: () => boolean,
   ): Promise<void> {
-    if (!this.#dependencies.tools.subscribeBackground) return;
+    if (!this.#dependencies.tools.subscribeBackground && !this.#dependencies.tools.subscribeSteer)
+      return;
     while (canContinue() && session.agent.hasQueuedMessages()) {
       await session.agent.continue();
       await session.waitForIdle();
@@ -1860,6 +1862,22 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         },
       );
 
+      const unsubscribeSteer = this.#dependencies.tools.subscribeSteer?.(request.runId, (note) => {
+        if (!session.isStreaming) return false;
+        void session
+          .sendCustomMessage(
+            {
+              customType: OWNER_FOLLOW_UP_MESSAGE_TYPE,
+              content: note.modelContent,
+              display: false,
+              details: { ref: note.ref },
+            },
+            { deliverAs: "steer" },
+          )
+          .catch(() => session.abort());
+        return true;
+      });
+
       const unsubscribe = session.subscribe((event) => {
         if (event.type === "compaction_start") compacting = true;
         if (event.type === "compaction_end") {
@@ -2019,6 +2037,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         await eventChain;
         await this.#historyWrites.get(request.runId);
       } finally {
+        unsubscribeSteer?.();
         unsubscribeBackground?.();
         unsubscribe();
         session.dispose();

@@ -53,6 +53,7 @@ export interface FoldQueuedOwnerRunsInput {
   readonly runId: RunId;
   readonly limit: number;
   readonly now: string;
+  readonly whileRunning?: true;
 }
 
 export interface FoldedOwnerMessage {
@@ -337,6 +338,12 @@ export interface ThreadRepositoryPort {
     receipt: ThreadMutationReceipt;
   }>;
   foldQueuedOwnerRuns(input: FoldQueuedOwnerRunsInput): Promise<readonly FoldedOwnerMessage[]>;
+  unfoldOwnerRun(input: {
+    readonly ownerId: OwnerId;
+    readonly agentId: AgentId;
+    readonly runId: RunId;
+    readonly foldedRunId: RunId;
+  }): Promise<boolean>;
   readFoldedOwnerMessages(input: {
     readonly ownerId: OwnerId;
     readonly agentId: AgentId;
