@@ -59,7 +59,7 @@ final class MemoryStoreTests: XCTestCase {
         let store = MemoryStore(gateway: ManageGateway(transport: MemoryServer(), makeIdentifier: { "0123456789abcdef0123" }))
         XCTAssertNil(store.summary(categoryLabel: { $0 }))
         await store.load()
-        XCTAssertEqual(store.summary(categoryLabel: { $0 }), MemorySummary(memories: 3, topics: 2, rules: 1))
+        XCTAssertEqual(store.summary(categoryLabel: { $0 }), MemorySummary(memories: 3, rules: 1))
     }
 
     func testPausingMemorySendsTheSettingsCommandAndReloads() async throws {

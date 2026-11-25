@@ -239,6 +239,7 @@ public enum ClientCapabilities {
     public static let referencePlaceholder = "device"
     public static let serverFilledReferences = ["authorizationRef", "recentAuthenticationRef"]
     public static let allowanceDays: ClosedRange<Int> = 1...90
+    public static let memoryTrashDays = 7
 
     public static func find(_ gateway: ClientGateway, _ type: String) -> ClientCapability? {
         all.first { $0.gateway == gateway && $0.type == type }

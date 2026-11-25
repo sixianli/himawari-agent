@@ -9,7 +9,7 @@ covers: "apps/agent-service/src/production-mcp-read.ts, apps/agent-service/src/p
 verified_at: "7d0ffcd52cbb69d4941871cf9bf08d93f3843da8"
 ---
 
-# ADR 0291：外部 agent 经一个 MCP 入口读写 Himawari 的记忆
+# ADR 0307：外部 agent 经一个 MCP 入口读写 Himawari 的记忆
 
 <a id="contents"></a>
 

@@ -52,17 +52,6 @@ final class RecordingExchange: HTTPExchange, @unchecked Sendable {
         #expect(exchange.requests.count == 1)
     }
 
-    @Test func aRefusedStreamIsReportedWithItsStatusAndCode() async throws {
-        let exchange = RecordingExchange([], streams: [(429, [#"{"error":{"code":"DEVICE_STREAM_LIMIT"}}"#]), (403, [#"{"error":{"code":"DEVICE_REVOKED"}}"#])])
-        let (http, _) = try client(exchange)
-        let seen = ProblemBox()
-        StreamDiagnostics.shared.observe { seen.add($0) }
-        defer { StreamDiagnostics.shared.observe(nil) }
-        let stream = DeviceEventStream(http: http, path: "threads/thr_1/execution-stream", cursors: nil, heartbeat: { 30 })
-        for await _ in stream.start() {}
-        #expect(seen.all == [.refused(path: "threads/thr_1/execution-stream", status: 429, code: "DEVICE_STREAM_LIMIT")])
-    }
-
     @Test func streamCorrectsTheClockOnceWhenTheServerSaysSkewed() async throws {
         let skewed = #"{"error":{"code":"DEVICE_SIGNATURE_CLOCK_SKEW","serverTime":"2027-01-15T08:10:00Z"}}"#
         let exchange = RecordingExchange([], streams: [(401, [skewed]), (200, [])])
@@ -373,5 +362,49 @@ final class ProblemBox: @unchecked Sendable {
 
     var all: [StreamProblem] {
         lock.withLock { problems }
+    }
+}
+
+@Suite(.serialized) struct DeviceEventStreamDiagnosticsTests {
+    private func client(_ exchange: RecordingExchange) throws -> DeviceHTTPClient {
+        let http = DeviceHTTPClient(exchange: exchange, now: { Date(timeIntervalSince1970: 1_800_000_000) })
+        http.use(DeviceCredentials(origin: try #require(URL(string: "https://himawari.example.test:8443/")), deviceId: "dev_AAAAAAAAAAAAAAAAAAAAAA", access: nil, deviceKey: try SoftwareKeySigner()))
+        return http
+    }
+
+    @Test func aRefusedStreamIsReportedWithItsStatusAndCode() async throws {
+        let exchange = RecordingExchange([], streams: [(429, [#"{"error":{"code":"DEVICE_STREAM_LIMIT"}}"#]), (403, [#"{"error":{"code":"DEVICE_REVOKED"}}"#])])
+        let seen = ProblemBox()
+        StreamDiagnostics.shared.observe { seen.add($0) }
+        defer { StreamDiagnostics.shared.observe(nil) }
+        let stream = DeviceEventStream(http: try client(exchange), path: "threads/thr_1/execution-stream", cursors: nil, heartbeat: { 30 })
+        for await _ in stream.start() {}
+        let refusals = seen.all.filter { if case .refused = $0 { true } else { false } }
+        #expect(refusals == [.refused(path: "threads/thr_1/execution-stream", status: 429, code: "DEVICE_STREAM_LIMIT")])
+    }
+
+    @Test func theServersHourlyReconnectIsNotReportedAsADisconnect() async throws {
+        let rotate = "event: device.reconnect\ndata: {\"reasonCode\":\"CONNECTION_MAX_LIFETIME\"}\n\n"
+        let exchange = RecordingExchange([], streams: [(200, [rotate]), (403, [#"{"error":{"code":"DEVICE_REVOKED"}}"#])])
+        let seen = ProblemBox()
+        StreamDiagnostics.shared.observe { seen.add($0) }
+        defer { StreamDiagnostics.shared.observe(nil) }
+        var events: [DeviceStreamEvent] = []
+        let stream = DeviceEventStream(http: try client(exchange), cursors: nil, heartbeat: { 30 })
+        for await event in stream.start() { events.append(event) }
+        #expect(events == [.connected, .sessionInvalid])
+        #expect(seen.all.contains { if case .dropped(_, .serverRotated, _) = $0 { true } else { false } })
+    }
+
+    @Test func aStreamTheServerClosesIsReportedAsADisconnectWithItsReason() async throws {
+        let exchange = RecordingExchange([], streams: [(200, [": ping\n\n"]), (403, [#"{"error":{"code":"DEVICE_REVOKED"}}"#])])
+        let seen = ProblemBox()
+        StreamDiagnostics.shared.observe { seen.add($0) }
+        defer { StreamDiagnostics.shared.observe(nil) }
+        var events: [DeviceStreamEvent] = []
+        let stream = DeviceEventStream(http: try client(exchange), cursors: nil, heartbeat: { 30 })
+        for await event in stream.start() { events.append(event) }
+        #expect(events == [.connected, .disconnected, .sessionInvalid])
+        #expect(seen.all.contains { if case .dropped(_, .closed, _) = $0 { true } else { false } })
     }
 }

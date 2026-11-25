@@ -28,7 +28,10 @@ public final class ChatStore {
     public internal(set) var details: [String: ThreadDetail] = [:]
     public internal(set) var queued: [OutboxItem] = []
     public internal(set) var streaming: [String: StreamingReply] = [:]
-    public internal(set) var connection: ChatConnection = .offline
+    public internal(set) var connection: ChatConnection = .offline {
+        didSet { notice?.connectionChanged(online: connection == .online) }
+    }
+    public internal(set) var offlineShown = false
     public private(set) var loadingThreads = false
     public internal(set) var executions: [String: [ExecutionRecord]] = [:]
 
@@ -53,6 +56,8 @@ public final class ChatStore {
     @ObservationIgnored private let images: ImageFitting?
     @ObservationIgnored private var wantedThreadId: String?
     @ObservationIgnored private var streamConnections: Int?
+    @ObservationIgnored private var notice: OfflineNotice?
+    @ObservationIgnored private var networkWatch: NetworkChangeWatch?
     @ObservationIgnored public var onNotification: (@MainActor (DeviceStreamEvent) -> Void)?
 
     public init(
@@ -77,6 +82,7 @@ public final class ChatStore {
         threads = snapshot.threads
         texts = snapshot.texts
         details = snapshot.details
+        notice = OfflineNotice { [weak self] shown in self?.offlineShown = shown }
     }
 
     public func start() {
@@ -96,10 +102,12 @@ public final class ChatStore {
             }
             connection = .offline
         })
+        networkWatch = NetworkChangeWatch { [weak self] in self?.restartConnections() }
         Task { await refreshThreads() }
     }
 
     public func stop() {
+        networkWatch = nil
         retryTask?.cancel()
         retryTask = nil
         tasks.forEach { $0.cancel() }
@@ -149,9 +157,13 @@ public final class ChatStore {
 
     public func reconnect() {
         guard !frozen else { return }
-        events.reconnectNow()
-        watched?.stream.reconnectNow()
+        restartConnections()
         Task { await flush() }
+    }
+
+    private func restartConnections() {
+        events.restartConnection()
+        watched?.stream.restartConnection()
     }
 
     public func title(for thread: ThreadSummary) -> String? {
