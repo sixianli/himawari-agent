@@ -12,7 +12,7 @@ for (let i = 2; i < process.argv.length; i += 2) {
   fail(["--source-root", "--modules-root", "--output", "--npm-cli"].includes(key) && value && path.isAbsolute(value) && !args[key], "P5_ARGUMENT_INVALID");
   args[key] = value;
 }
-fail(Object.keys(args).length === 4 && process.version === "v22.22.3" && process.platform === "linux" && process.arch === "x64", "P5_ENVIRONMENT_INVALID");
+fail(Object.keys(args).length === 4 && process.version === "v22.22.3" && process.platform === "linux" && process.arch === "__PKT_NODE_ARCH__", "P5_ENVIRONMENT_INVALID");
 const source = realpathSync(args["--source-root"]), modules = realpathSync(args["--modules-root"]), output = path.resolve(args["--output"]);
 fail(source === args["--source-root"] && modules === args["--modules-root"] && path.basename(modules) === "node_modules", "P5_SOURCE_PATH_INVALID");
 fail(!output.startsWith(source + path.sep) && !output.startsWith(modules + path.sep), "P5_OUTPUT_OVERLAP");

@@ -43,7 +43,7 @@ class CollectedDependenciesTest(unittest.TestCase):
         self.write(npm / 'bin/npm-cli.js', 'process.stdout.write("{}\\n");\n')
         self.npm = npm / 'bin/npm-cli.js'
         self.preload = self.write(self.root / 'pin-node.mjs', 'Object.defineProperty(process, "version", { value: "' + PINNED_NODE + '" });\n')
-        self.collector = self.write(self.root / 'collect.mjs', COLLECTOR.read_text().replace('__PKT_COMMIT__', self.head))
+        self.collector = self.write(self.root / 'collect.mjs', COLLECTOR.read_text().replace('__PKT_COMMIT__', self.head).replace('__PKT_NODE_ARCH__', subprocess.run(['node', '-p', 'process.arch'], capture_output=True, text=True, check=True).stdout.strip()))
 
     def tearDown(self):
         self.directory.cleanup()

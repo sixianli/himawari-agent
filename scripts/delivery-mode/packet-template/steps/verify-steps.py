@@ -13,7 +13,7 @@ import tarfile
 import tempfile
 
 sys.dont_write_bytecode = True
-if len(sys.argv) != 2 or sys.platform != 'linux' or os.getuid() == 0 or socket.gethostname() != 'hermes-home':
+if len(sys.argv) != 2 or sys.platform != 'linux' or os.getuid() == 0 or socket.gethostname() != '__PKT_BUILDER_HOSTNAME__':
     raise RuntimeError('HERMES_STEP_FIXTURE_REQUIRED')
 scratch = Path(sys.argv[1])
 if scratch.resolve() != scratch or scratch.stat().st_uid != os.getuid() or stat.S_IMODE(scratch.stat().st_mode) != 0o700 or len(str(scratch)) != 10:

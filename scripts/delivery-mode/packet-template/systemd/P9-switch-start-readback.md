@@ -34,7 +34,7 @@ S7 切换脚本（`S7_SWITCH_START`）在替换 unit 之前还要求：
 - 正式配置已经由 `S7_CONFIG_APPLY` 和 `S7_CATALOG_UPGRADE` 改过：与 S2 保存的 `original-config.json` 相比，只改了 `http.staticRoot`，并且 `capabilityDeployment` 已指向新快照，其他字段逐字相同；原配置 SHA 等于 S0 读到的摘要；绑定里没有 `configurationChange`；
 - `S7_DB_STATUS`、`S7_CONFIG_APPLY` 和 `S7_CATALOG_UPGRADE` 三份报告都 passed、绑定 SHA 一致，报告引用的每份证据文件 SHA 不变；
 - `s7-config-apply.json` 记录的配置前后 SHA 和字节数，与脚本自己按原配置算出的新配置一致；`s7-static-root-authorization.json` 里的授权等于 S0 冻结读回；
-- 授权计划固定为 G90 的 `directory:himawari-prod-workspace-20261015`（目录 `/var/lib/himawari/workspace`，子目录 `files`、`repos`），原配置的编码路由指向它；目录当前的 device/inode、属主 999:988 和权限 0700 等于 S0 冻结读回；
+- 授权计划固定为 G90 的 `directory:himawari-prod-workspace-20261015`（目录 `/var/lib/himawari/workspace`，子目录 `files`、`repos`），原配置的编码路由指向它；目录当前的 device/inode、属主 __PKT_SERVICE_UID__:__PKT_SERVICE_GID__ 和权限 0700 等于 S0 冻结读回；
 - 升级报告列出的能力正好是 S0 读回的三个能力；升级审计只在原有记录后追加三条 `owner.capability.upgrade`，每个能力一条；当前快照 SHA 与配置里的 `capabilityDeployment` 和升级报告一致；升级后的读回 `s7-catalog-after.json` 里授权和工作目录不变，每个能力都是 active、没有待定声明、登记等于快照声明；
 - 切换前的读回 `s7-preswitch-state.json` 和升级后的读回 `s7-catalog-after56.json` 都是 Schema 56/56、门槛为零、没有未结束的 Run、部署租约等于绑定，两者历史表相同；升级后的状态读回 `s7-post-upgrade-state.json` 里 `integrityCheck` 和 `foreignKeys` 都是 ok、迁移记录 56 条、Schema 56/56；
 - 完整 S6 验收报告（`cloud-__PKT_LABEL__-change`）及清理通过、一次服务环境真实 read 和独立清理通过、签名公开材料和新保护文件存在。
@@ -121,7 +121,7 @@ umask 022
 - `ExecStartPre` 在本次启动恰好产生一份 `installation-verified`，与启动证明、快照和安装回执的摘要一致；签名与真实主机核验都通过；快照里的每个能力（Pi、搜索、读网页三个）都有本次签名。
 - 部署身份与 S0 一致，epoch（租约代数）等于绑定的 `authority.authorityEpoch`。正式启动领取新租约，启动后的 fencing token（防止旧进程继续写的递增编号）必须大于 S0 绑定的值，并与当前数据库、两个启动绑定和双方就绪日志完全相同。
 - Worker 与 Agent 使用同一 worker 实例和启动身份；双方真实就绪，协议为 `execution.v2`，Worker 的适配器清单来自本次已核验的快照；Agent 使用正式 Pi 和 Memory 路径。
-- 两个子进程实际 UID/GID 为 999/988，没有新权限和 capability；Node 和执行入口来自新运行时，父进程是本次的新 supervisor（`__PKT_LABEL__-__PKT_DATE_COMPACT__/pair-supervisor.mjs`）。
+- 两个子进程实际 UID/GID 为 __PKT_SERVICE_UID__/__PKT_SERVICE_GID__，没有新权限和 capability；Node 和执行入口来自新运行时，父进程是本次的新 supervisor（`__PKT_LABEL__-__PKT_DATE_COMPACT__/pair-supervisor.mjs`）。
 - HTTP 只监听配置中的本机地址，监听由当前 Agent 持有；执行 socket 为服务账号拥有的 0600 socket。外部监听、额外启动、错误、超时、心跳丢失等事件均拒绝。
 
 Doctor（自检命令）实际有七个依赖键。已知 [BL-20261008-007](../../../../docs/backlog/BL-20261008-007-doctor-把-已-配-置-内-置-身.md) 只允许 `identity=unavailable` 且 `ready=false`；`authority`、`schema`、`sqlite`、`payload`、`worker`、`memory` 六项必须全部 `available`。[verify-doctor.mjs](verify-doctor.mjs) 独立检查输出，不能以一条 success 或 ActiveState 代替两进程检查。
@@ -161,6 +161,6 @@ S8 读回成功后，先保留全部原报告、状态读回、资源观察、�
 
 按用户决定 G180 的快速模式，第十二次不在 Hermes（用户的另一台 Linux 服务器）上跑 L2–L4 测试、不做整包演练，也不做“生产形状演练”。冻结前只运行包自带的检查：`systemd/fixtures/verify-doctor.test.mjs`（用锁定的 Node 检查 `verify-doctor.mjs` 对 Doctor 输出的判断）、`maintenance/verify-fixtures.mjs` 等固定样例检查、`inputs/check-packet-consistency.py` 和 `steps/verify-steps.py`。它们都没有执行固定生产目标的 S7 脚本。
 
-因此第十二次的 `S7_CONFIG_APPLY` 和能力升级，第一次完整运行就在生产上；生产上的真实 systemd、AppArmor（Ubuntu 的程序访问限制）、UID 999 和当前数据库状态，由 Andy 在批准后的冻结操作中检查，不能用任何固定样例的结果代替。
+因此第十二次的 `S7_CONFIG_APPLY` 和能力升级，第一次完整运行就在生产上；生产上的真实 systemd、AppArmor（Ubuntu 的程序访问限制）、UID __PKT_SERVICE_UID__ 和当前数据库状态，由 Andy 在批准后的冻结操作中检查，不能用任何固定样例的结果代替。
 
 [返回导航](#s7第十二次变更__PKT_LABEL__-__PKT_DATE_COMPACT__的能力升级服务切换与启动)

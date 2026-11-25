@@ -28,7 +28,7 @@ bash <操作包目录>/steps/run-user-step.sh <动作>
 
 S1 之后的动作都由 [run-step.py](run-step.py) 在服务器上以 root 执行。它要求：
 
-- 参数是 `--approved-r2l13-__PKT_LABEL__-step <动作> <冻结 SHA>`，用 `/usr/bin/python3 -I` 运行，主机名 `__PKT_HOSTNAME__`，生产账号 `himawari-prod` 仍是 uid 999、gid 988。
+- 参数是 `--approved-r2l13-__PKT_LABEL__-step <动作> <冻结 SHA>`，用 `/usr/bin/python3 -I` 运行，主机名 `__PKT_HOSTNAME__`，生产账号 `himawari-prod` 仍是 uid __PKT_SERVICE_UID__、gid __PKT_SERVICE_GID__。
 - 运输目录 `/var/tmp/himawari-__PKT_LABEL__-__PKT_DATE_COMPACT__/packet` 的冻结清单 SHA 与参数相同，清单内每个文件字节不变，批准引用是 `round2/R2-L13/__PKT_LABEL__-__PKT_DATE_COMPACT__/reviewed`。
 - 操作目录 `/opt/himawari/operations/__PKT_LABEL__-__PKT_DATE_COMPACT__` 里由 S1 发布的每个文件仍与冻结包一致。
 - S1 报告 `s1-result.json` 存在且 passed。
@@ -88,7 +88,7 @@ S1 之后的动作都由 [run-step.py](run-step.py) 在服务器上以 root 执�
 
 ## 包自带检查
 
-[verify-steps.py](verify-steps.py) 是一个固定样例检查，不是整包演练。它要求在主机名为 `hermes-home` 的 Hermes 上用普通账号运行，参数是 10 字节的私有临时目录。它用一个假的 `ssh` 程序记录命令和标准输入，不连网络，检查：动作映射、拒绝未批准动作、退出码保留、远端 SHA 检查内容、S1 传输流内容，以及接收端对改字节、多成员、缺成员、重复成员、路径越界、错误冻结 SHA、目标已存在、父目录权限不安全的拒绝；还检查本地冻结核对只忽略包根目录下的 `run-logs/`，其他位置的 `run-logs/` 或多出的文件仍被拒绝；依赖缓存一组：存入缓存、从缓存补上声明的成员并照旧整体核对、没声明或没冻结的缺成员被拒绝、改过或是符号链接的缓存条目被删掉并失败、权限不对或是目录的条目被下次整包传输替换、超上限时修剪、缓存目录不安全或建不起来时整包传输照常、接收端核对缓存指令、本地一侧读包参数里的 `MATERIAL_CACHE_JSON` 并把命中的成员留在流外。
+[verify-steps.py](verify-steps.py) 是一个固定样例检查，不是整包演练。它要求在主机名为 `__PKT_BUILDER_HOSTNAME__` 的 Hermes 上用普通账号运行，参数是 10 字节的私有临时目录。它用一个假的 `ssh` 程序记录命令和标准输入，不连网络，检查：动作映射、拒绝未批准动作、退出码保留、远端 SHA 检查内容、S1 传输流内容，以及接收端对改字节、多成员、缺成员、重复成员、路径越界、错误冻结 SHA、目标已存在、父目录权限不安全的拒绝；还检查本地冻结核对只忽略包根目录下的 `run-logs/`，其他位置的 `run-logs/` 或多出的文件仍被拒绝；依赖缓存一组：存入缓存、从缓存补上声明的成员并照旧整体核对、没声明或没冻结的缺成员被拒绝、改过或是符号链接的缓存条目被删掉并失败、权限不对或是目录的条目被下次整包传输替换、超上限时修剪、缓存目录不安全或建不起来时整包传输照常、接收端核对缓存指令、本地一侧读包参数里的 `MATERIAL_CACHE_JSON` 并把命中的成员留在流外。
 
 这个检查不运行任何一个生产步骤，所以 `S7_CONFIG_APPLY` 和能力升级，第一次完整运行就在生产上。
 

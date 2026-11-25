@@ -18,7 +18,7 @@ packet = stage / 'packet'
 qualification = Path('/var/lib/himawari/qualification/__PKT_LABEL__-__PKT_DATE_COMPACT__')
 runtime = Path('/opt/himawari/releases/__PKT_DATE__-__PKT_LABEL__/lib/himawari-agent')
 account = pwd.getpwnam('himawari-prod')
-if sys.platform != 'linux' or sys.executable != '/usr/bin/python3' or sys.flags.isolated != 1 or os.geteuid() != 0 or socket.gethostname() != '__PKT_HOSTNAME__' or sys.argv[1:] != ['--approved-s6-binding-publication'] or account.pw_uid != 999 or account.pw_gid != 988:
+if sys.platform != 'linux' or sys.executable != '/usr/bin/python3' or sys.flags.isolated != 1 or os.geteuid() != 0 or socket.gethostname() != '__PKT_HOSTNAME__' or sys.argv[1:] != ['--approved-s6-binding-publication'] or account.pw_uid != __PKT_SERVICE_UID__ or account.pw_gid != __PKT_SERVICE_GID__:
     raise RuntimeError('APPROVED___PKT_LABEL_UPPER___CLOUD_ROOT_BINDING_REQUIRED')
 os.umask(0o077)
 

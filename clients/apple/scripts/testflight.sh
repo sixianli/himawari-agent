@@ -85,7 +85,21 @@ archive_signed() {
   export_and_upload
 }
 
+check_archive_kind() {
+  local apps
+  apps="$(ls "$archive/Products/Applications")"
+  [ "$apps" = "Himawari.app" ] || {
+    echo "TESTFLIGHT_EXTRA_APPS archive must hold only Himawari.app, found: $(echo $apps)" >&2
+    exit 1
+  }
+  /usr/libexec/PlistBuddy -c 'Print :ApplicationProperties:ApplicationPath' "$archive/Info.plist" >/dev/null || {
+    echo "TESTFLIGHT_GENERIC_ARCHIVE archive has no ApplicationProperties, so it cannot be exported" >&2
+    exit 1
+  }
+}
+
 check_entitlements() {
+  check_archive_kind
   local app="$archive/Products/Applications/Himawari.app"
   [ -d "$app" ] || { echo "TESTFLIGHT_NO_APP $app" >&2; exit 1; }
   while IFS= read -r bundle; do
