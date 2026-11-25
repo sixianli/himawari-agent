@@ -85,6 +85,7 @@ public enum IconName: String, CaseIterable, Sendable {
     case serverLarge = "server-large"
     case share2 = "share-2"
     case settings
+    case shieldCheck = "shield-check"
     case shieldLock = "shield-lock"
     case stack2 = "stack-2"
     case table

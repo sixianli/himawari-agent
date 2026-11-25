@@ -117,15 +117,16 @@ public final class DeviceActionsModel {
         deviceActionsChanged()
     }
 
-    public func respond(_ approval: PendingApproval, approved: Bool) async {
+    public func respond(_ approval: PendingApproval, approved: Bool, allowFor: ApprovalAllowFor = .once) async {
         guard let api, !busy.contains(approval.id) else { return }
         busy.insert(approval.id)
         defer { busy.remove(approval.id) }
         problem = nil
         do {
-            let reply = try await api.respond(to: approval, approved: approved, confirm: confirm, reason: approval.title)
+            let reply = try await api.respond(to: approval, approved: approved, allowFor: allowFor, confirm: confirm, reason: approval.title)
             if approved && approval.recentAuthenticationRequired { Haptics.shared.report(.faceIDSucceeded) }
             if reply == .changed { problem = DeviceActionsText.changed }
+            if reply == .allowanceNotSaved { problem = DeviceActionsText.allowanceNotSaved }
             pending.removeAll { $0.id == approval.id }
         } catch {
             if approved && approval.recentAuthenticationRequired { Haptics.shared.report(.faceIDFailed) }

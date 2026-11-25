@@ -3,6 +3,11 @@ import Foundation
 public protocol DeviceKeySigner: Sendable {
     func publicKeySPKI() throws -> Data
     func sign(_ message: Data, reason: String?) async throws -> Data
+    func held() -> any DeviceKeySigner
+}
+
+public extension DeviceKeySigner {
+    func held() -> any DeviceKeySigner { self }
 }
 
 public enum DeviceKeyRole: String, Sendable, CaseIterable {

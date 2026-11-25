@@ -1,6 +1,7 @@
 import {
   array,
   booleanValue,
+  boundedString,
   ContractValidationError,
   enumeration,
   type InferSchema,
@@ -31,6 +32,7 @@ export const THREAD_GATEWAY_MESSAGE_TYPES = [
   "thread.trash",
   "thread.delete_permanently",
   "thread.task.resolve",
+  "thread.option.choose",
   "thread.deletion_impact",
   "thread.events",
   "thread.execution_events",
@@ -96,6 +98,7 @@ const threadCommandTypeSchema = enumeration([
   "thread.trash",
   "thread.delete_permanently",
   "thread.task.resolve",
+  "thread.option.choose",
 ]);
 const runStatusSchema = enumeration([
   "accepted",
@@ -152,6 +155,16 @@ export const submitThreadMessageV3CommandSchema = object({
     dataClassification: classificationSchema,
     occurredAt: timestamp,
     resultRef: machineString,
+  }),
+});
+
+export const chooseThreadOptionV3CommandSchema = object({
+  ...commandEnvelope("thread.option.choose"),
+  payload: object({
+    threadId: machineString,
+    messageId: machineString,
+    setId: machineString,
+    optionId: machineString,
   }),
 });
 
@@ -382,6 +395,24 @@ export const threadSummaryV3Schema = object({
   updatedAt: timestamp,
 });
 
+export const MESSAGE_OPTION_DISMISS_ID = "dismiss" as const;
+
+export const messageOptionsV3Schema = object({
+  setId: machineString,
+  items: array(
+    object({
+      optionId: machineString,
+      label: boundedString(200),
+      reason: nullable(boundedString(500)),
+      action: nullable(object({ tool: machineString, summary: boundedString(1000) })),
+      state: enumeration(["open", "chosen", "stale"]),
+    }),
+  ),
+});
+export type MessageOptionsV3 = InferSchema<typeof messageOptionsV3Schema>;
+
+export const chosenOptionV3Schema = object({ setId: machineString, optionId: machineString });
+
 export const threadMessageSummaryV3Schema = object({
   messageId: machineString,
   sequence: integer(1),
@@ -392,6 +423,8 @@ export const threadMessageSummaryV3Schema = object({
   turnId: nullable(machineString),
   runId: nullable(machineString),
   committedAt: timestamp,
+  options: nullable(messageOptionsV3Schema),
+  chosenFrom: nullable(chosenOptionV3Schema),
 });
 
 export const threadRunSummaryV3Schema = object({
@@ -749,6 +782,7 @@ const schemasByType = {
   "thread.trash": trashThreadV3CommandSchema,
   "thread.delete_permanently": deleteThreadPermanentlyV3CommandSchema,
   "thread.task.resolve": resolveThreadTaskV3CommandSchema,
+  "thread.option.choose": chooseThreadOptionV3CommandSchema,
   "thread.deletion_impact": threadDeletionImpactV3QuerySchema,
   "thread.events": threadEventsV3SubscriptionSchema,
   "thread.execution_events": threadExecutionEventsSubscriptionSchema,

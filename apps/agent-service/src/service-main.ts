@@ -149,6 +149,7 @@ import {
 import { InboxRunRegistry } from "./production-inbox-delivery.js";
 import { expandConfigurationWithMagpieModels, priceTiers } from "./production-magpie-models.js";
 import { ProductionMailRead } from "./production-mail-read.js";
+import { ProductionMessageOptions } from "./production-message-options.js";
 import { ProductionMcpMemoryWriter } from "./production-mcp-memory-writer.js";
 import { ProductionMcpRead } from "./production-mcp-read.js";
 import { ProductionMcpRuleWriter } from "./production-mcp-rule-writer.js";
@@ -1718,9 +1719,26 @@ export async function startTenantRuntime(
         payloads: repository.payloadStore(configuration.ownerId, configuration.agentId),
         protector: recallProtector,
       });
+      const messageOptions = new ProductionMessageOptions({
+        ownerId: configuration.ownerId,
+        agentId: configuration.agentId,
+        state: repository,
+        authority: () => invocationAuthority().lease,
+        registry: toolActions,
+        threads: repository.threadRepository(),
+        commands: new ThreadCommandService({
+          repository: repository.threadRepository(),
+          clock: { now: () => clock.now() },
+          authority: () => activeAuthority.authorityFence(),
+        }),
+        payloads,
+        protector,
+        clock: { now: () => clock.now() },
+      });
       const ownerScope = new OwnerScopeAuthorization({
         configuration,
         externalContent,
+        optionGrants: messageOptions,
         ...(ownerIntent ? { ownerIntent } : {}),
         store: repository.authorizationStore(),
         audit: repository.auditLedger(),
@@ -1809,6 +1827,7 @@ export async function startTenantRuntime(
         memoryRecall,
         tellOwner,
         mailRead: new ProductionMailRead(() => proactive),
+        messageOptions,
         ...(conversationTools ? { conversations: conversationTools } : {}),
         memoryOpen,
         reminders: reminderTools,
@@ -3450,6 +3469,7 @@ export async function startTenantRuntime(
         ...(proactive ? { proactive } : {}),
         threadDeletionDiagnostic: (event: Record<string, string>) =>
           writeServiceDiagnostic(errorOutput, { component: "agent-service", ...event }),
+        messageOptions,
         inbox: {
           mainThread: { registry: inboxRuns, externalContent },
           onDiagnostic: (event: Record<string, string>) =>

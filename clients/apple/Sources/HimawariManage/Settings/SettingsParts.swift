@@ -15,14 +15,9 @@ struct SheetHeader: View {
 
     var body: some View {
         HStack {
-            Button(action: action) {
-                Icon(leading == .close ? .x : .chevronLeft, size: leading == .close ? SL.headerIcon : SL.backIcon)
-                    .foregroundStyle(Color.hmText)
-                    .frame(width: SL.headerButton, height: SL.headerButton)
-                    .background(Color.hmFill, in: Circle())
+            GlassCircleButton(Text(leading == .close ? M.close : M.back), size: SL.headerButton, action: action) {
+                Icon(leading == .close ? .x : .chevronLeft, size: DesignTokens.IconSize.glassButton)
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(Text(leading == .close ? M.close : M.back))
             Spacer()
             Text(title).hmType(DesignTokens.TypeScale.sheetTitle).foregroundStyle(Color.hmText)
             Spacer()

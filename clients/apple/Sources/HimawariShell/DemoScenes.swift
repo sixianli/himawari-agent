@@ -23,6 +23,7 @@ enum DemoScene: String, CaseIterable {
     case herApprovals = "next-3-her-approvals"
     case herDevices = "next-3-her-devices"
     case herNotifications = "next-3-her-notifications"
+    case herAllowances = "next-3-her-allowances"
     case pairing = "11-pairing"
     case pairingScan = "15-pairing-flow-1-scan"
     case pairingConfirmServer = "15-pairing-flow-1b-confirm-server"
@@ -216,7 +217,7 @@ struct DemoSceneView: View {
             DemoSensesHost(scene: .denied)
         case .listenIntro, .listenEnroll, .listenLive, .listenInterrupted, .listenCalling, .listenAsking, .listenStopped:
             ListenDemoScene(scene: scene)
-        case .memory, .memoryDetail, .memoryEdit, .rules, .ruleDetail, .deviceAbilities, .her, .herApprovals, .herPrivacy, .herDevices, .herNotifications:
+        case .memory, .memoryDetail, .memoryEdit, .rules, .ruleDetail, .deviceAbilities, .her, .herApprovals, .herPrivacy, .herDevices, .herNotifications, .herAllowances:
             EmptyView()
         }
     }

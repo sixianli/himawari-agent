@@ -373,6 +373,17 @@ public enum DesignTokens {
         public static let staleOpacity: CGFloat = 0.42
     }
 
+    public enum Allowance {
+        public static let actionsGap: CGFloat = 14
+        public static let footInset: CGFloat = 6
+        public static let lockedOpacity: CGFloat = 0.5
+        public static let noteGap: CGFloat = 8
+        public static let pageGap: CGFloat = 20
+        public static let segmentGap: CGFloat = 3
+        public static let segmentHeight: CGFloat = 38
+        public static let segmentInset: CGFloat = 3
+    }
+
     public enum TypeScale {
         public static let answer = TypeToken(size: 18, weight: 400, lineHeight: 18 * 1.75, face: .system, tracking: 0)
         public static let badge = TypeToken(size: 12, weight: 700, lineHeight: nil, face: .system, tracking: 0)

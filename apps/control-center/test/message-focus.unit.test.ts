@@ -25,6 +25,8 @@ const owner = (id: string, sequence: number): Detail["payload"]["messages"][numb
   turnId: `turn:${id}`,
   runId: null,
   committedAt: "2026-09-11T00:00:00Z",
+  options: null,
+  chosenFrom: null,
 });
 
 function detailOf(threadId: string): Detail {

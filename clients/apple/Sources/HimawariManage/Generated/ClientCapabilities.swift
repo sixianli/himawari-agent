@@ -220,6 +220,7 @@ public enum ClientCapabilities {
         ClientCapability(gateway: .threadV3, type: "thread.trash", kind: .command, tier: .routine, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .threadV3, type: "thread.delete_permanently", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .threadV3, type: "thread.task.resolve", kind: .command, tier: .routine, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
+        ClientCapability(gateway: .threadV3, type: "thread.option.choose", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .threadV3, type: "thread.deletion_impact", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .threadV3, type: "thread.list", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .threadV3, type: "thread.detail", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
