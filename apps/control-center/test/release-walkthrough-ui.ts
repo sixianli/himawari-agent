@@ -23,10 +23,7 @@ export const RELEASE_WALKTHROUGH_UI = Object.freeze({
   composer: { role: "textbox", name: "消息草稿", exact: true },
   send: { role: "button", name: "发送", exact: true },
   stop: { role: "button", name: "停止", exact: true },
-  newThread: [
-    { role: "link", name: "新建对话" },
-    { role: "button", name: "新建对话" },
-  ],
+  mainThread: { role: "link", name: "主对话", exact: true },
   conversationLoading: '.thread-loading-skeleton[data-scope="conversation"]',
   turn: ".chat-turn",
   settledTurn: ".chat-turn:not(.chat-turn-outgoing)",

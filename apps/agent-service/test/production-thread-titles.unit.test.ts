@@ -48,8 +48,10 @@ async function fixture(empty = false) {
     thread = input.thread;
     return { thread };
   });
+  let main: string | undefined;
   const threads = {
     read: vi.fn(async () => thread),
+    readMain: vi.fn(async () => main),
     listMessages: vi.fn(async () =>
       empty
         ? []
@@ -99,6 +101,9 @@ async function fixture(empty = false) {
     setThread: (value: ThreadUpdateInput["thread"]) => {
       thread = value;
     },
+    setMain: (value: string) => {
+      main = value;
+    },
   };
 }
 
@@ -130,6 +135,16 @@ it("does not send a model request for an already named thread", async () => {
 it("does not send a model request for a thread Himawari opened to think something over", async () => {
   const f = await fixture();
   f.setThread({ ...f.thread(), origin: "think" });
+  f.service.start(f.request);
+  await f.service.stop();
+  expect(f.generate).not.toHaveBeenCalled();
+  expect(f.update).not.toHaveBeenCalled();
+  expect(f.thread().titleRef).toBeNull();
+});
+
+it("does not rename the main conversation after its first message", async () => {
+  const f = await fixture();
+  f.setMain(f.thread().id);
   f.service.start(f.request);
   await f.service.stop();
   expect(f.generate).not.toHaveBeenCalled();

@@ -480,6 +480,69 @@ export class SqliteGovernedDeletionAdapter {
     }
   }
 
+  async deleteLegacyThreads(input: {
+    readonly limit: number;
+  }): Promise<readonly GovernedDeletionReport[]> {
+    if (!Number.isSafeInteger(input.limit) || input.limit < 1 || input.limit > 500) {
+      throw new GovernedDeletionError(
+        GOVERNED_DELETION_ERROR_CODES.INVALID_INPUT,
+        "Legacy thread deletion input is invalid",
+      );
+    }
+    const database = this.#database();
+    database.pragma("busy_timeout = 5000");
+    try {
+      const legacy = this.#legacyThreadIds(database, input.limit, null);
+      const reports: GovernedDeletionReport[] = [];
+      for (const threadId of legacy) {
+        const objectId = safeIdentity(threadId, "thread ID");
+        try {
+          reports.push(
+            await this.#deleteOpen(database, "thread", objectId, (current) => {
+              if (this.#legacyThreadIds(current, 1, objectId).length === 0) {
+                throw new GovernedDeletionError(
+                  GOVERNED_DELETION_ERROR_CODES.CONFLICT,
+                  "Legacy thread is no longer eligible for deletion",
+                  { objectId },
+                );
+              }
+            }),
+          );
+        } catch (error) {
+          if (
+            error instanceof GovernedDeletionError &&
+            error.code === GOVERNED_DELETION_ERROR_CODES.CONFLICT
+          )
+            continue;
+          throw error;
+        }
+      }
+      return Object.freeze(reports);
+    } finally {
+      database.close();
+    }
+  }
+
+  #legacyThreadIds(
+    database: InstanceType<typeof BetterSqlite3>,
+    limit: number,
+    threadId: string | null,
+  ): readonly string[] {
+    return this.#values(
+      database,
+      `SELECT t.id FROM threads t
+      WHERE t.owner_id = ? AND t.agent_id = ? AND t.origin = 'legacy'
+        AND (? IS NULL OR t.id = ?)
+        AND NOT EXISTS (SELECT 1 FROM main_threads m WHERE m.thread_id = t.id)
+        AND NOT EXISTS (SELECT 1 FROM runs r WHERE r.thread_id = t.id
+          AND r.status NOT IN ('completed', 'failed', 'cancelled'))
+        AND NOT EXISTS (SELECT 1 FROM scheduled_jobs j WHERE j.thread_id = t.id
+          AND j.status = 'active')
+      ORDER BY t.updated_at, t.id LIMIT ?`,
+      [this.#options.ownerId, this.#options.agentId, threadId, threadId, limit],
+    );
+  }
+
   async retryIncompleteThreadDeletions(input: {
     readonly limit: number;
   }): Promise<readonly GovernedDeletionReport[]> {

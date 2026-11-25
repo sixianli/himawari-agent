@@ -5,6 +5,9 @@ export interface ThreadDeletionRetryPort {
   retryIncompleteThreadDeletions(input: {
     readonly limit: number;
   }): Promise<readonly { readonly lifecycle: string }[]>;
+  deleteLegacyThreads(input: {
+    readonly limit: number;
+  }): Promise<readonly { readonly lifecycle: string }[]>;
 }
 
 export class ThreadDeletionRetry {
@@ -25,11 +28,20 @@ export class ThreadDeletionRetry {
   }
 
   async runOnce(): Promise<number> {
+    let legacy = 0;
+    for (;;) {
+      const batch = await this.#deletion.deleteLegacyThreads({ limit: BATCH });
+      const verified = batch.filter((report) => report.lifecycle === "deleted_verified").length;
+      legacy += verified;
+      if (batch.length < BATCH || verified === 0) break;
+    }
+    if (legacy > 0)
+      this.#diagnose({ code: "thread_deletion.legacy_deleted", count: String(legacy) });
     const reports = await this.#deletion.retryIncompleteThreadDeletions({ limit: BATCH });
     const incomplete = reports.filter((report) => report.lifecycle !== "deleted_verified").length;
     if (incomplete > 0)
       this.#diagnose({ code: "thread_deletion.retry_incomplete", count: String(incomplete) });
-    return reports.length;
+    return legacy + reports.length;
   }
 
   #diagnose(event: Record<string, string>): void {

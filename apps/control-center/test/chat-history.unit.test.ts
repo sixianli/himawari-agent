@@ -86,7 +86,6 @@ function renderRun(
       ...(state ? { executionStates: { "run:cancel": state }, executionStateAvailable: true } : {}),
       connection: "connected",
       message: (id) => id,
-      onFork: () => {},
       renderApproval: () => null,
       ...extra,
     }),

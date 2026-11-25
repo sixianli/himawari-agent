@@ -5,6 +5,7 @@ export interface MessageSeed {
   readonly role?: "owner" | "agent" | "system";
   readonly status?: "committed" | "partial" | "failed";
   readonly classification?: "public" | "private" | "sensitive" | "restricted";
+  readonly internal?: true;
 }
 
 export async function seedThread(
@@ -49,8 +50,8 @@ export async function seedThread(
     s.database
       .prepare(
         `INSERT INTO thread_messages (id, owner_id, agent_id, thread_id, revision, sequence, role,
-          content_ref, classification, committed_at, message_status)
-        VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)`,
+          content_ref, classification, committed_at, message_status, internal)
+        VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         `${id}-m${sequence}`,
@@ -63,6 +64,7 @@ export async function seedThread(
         classification,
         `2026-11-01T00:00:${String(sequence).padStart(2, "0")}.000Z`,
         message.status ?? "committed",
+        message.internal === true ? 1 : 0,
       );
   }
 }

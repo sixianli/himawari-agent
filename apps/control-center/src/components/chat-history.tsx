@@ -57,7 +57,6 @@ export function ChatHistory({
   executionStateAvailable,
   connection,
   message,
-  onFork,
   onCleanup,
   backgroundCommands = [],
   stoppingRunIds = [],
@@ -99,7 +98,6 @@ export function ChatHistory({
   readonly backgroundCommands?: readonly BackgroundCommandView[] | undefined;
   readonly stoppingRunIds?: readonly string[] | undefined;
   readonly onOpenCommand?: ((key: string | null) => void) | undefined;
-  readonly onFork: (turnId: string, sequence: number) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const following = useRef(true);
@@ -304,12 +302,6 @@ export function ChatHistory({
                         .map((item) => contentByRef[item.contentRef] ?? "")
                         .join("\n\n")}
                       committedAt={agentMessages.at(-1)?.committedAt}
-                      onFork={(() => {
-                        const last = agentMessages.findLast((item) => item.turnId);
-                        return last
-                          ? () => onFork(last.turnId as string, last.sequence)
-                          : undefined;
-                      })()}
                       message={message}
                     />
                   ) : null}
