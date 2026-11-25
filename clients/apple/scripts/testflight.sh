@@ -25,6 +25,7 @@ archive_app() {
     CODE_SIGN_STYLE=Manual \
     CODE_SIGN_IDENTITY=- \
     PROVISIONING_PROFILE_SPECIFIER= \
+    HIMAWARI_RELEASE_CHANNEL=testflight \
     CURRENT_PROJECT_VERSION="$HIMAWARI_BUILD_NUMBER"
   check_entitlements
 }
