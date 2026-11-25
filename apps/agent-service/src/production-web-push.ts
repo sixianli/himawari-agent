@@ -1,17 +1,12 @@
 import { createHash } from "node:crypto";
 import {
   type ApprovalRequest,
-  DELIVERY_TIMING_CLASSES,
-  type DeliveryTimingConfiguration,
-  type DeliveryTimingJudgement,
-  deliveryTimingDeadlineMs,
   herWordsPushKey,
   type MemoryReminder,
   type MemoryReminderStorePort,
   type ProductMemoryRecord,
   type ProductMemoryStatePort,
   PUSH_RULE_PROTECTED_CLASSES,
-  type PushClass,
   PushGate,
   type PushGateDecision,
   pushClassOf,
@@ -238,6 +233,7 @@ export interface ProductionWebPushOptions {
   ) => Promise<
     | {
         readonly dataClassification: string;
+        readonly internal?: true;
         readonly readText: () => Promise<string | undefined>;
       }
     | undefined
@@ -246,18 +242,12 @@ export interface ProductionWebPushOptions {
   readonly timeZone?: string;
   readonly readPushRules?: () => Promise<readonly RuleRecord[]>;
   readonly gate?: PushGate;
-  readonly timing?: DeliveryTimingSource;
   readonly placement?: NotificationPlacement;
   readonly onGateFailure?: (outcome: { readonly sourceKey: string }) => void;
   readonly now: () => string;
   readonly intervalMs?: number;
   readonly onDelivery?: (outcome: { readonly kind: string; readonly code?: string }) => void;
   readonly onFailure: (error: unknown) => void;
-}
-
-export interface DeliveryTimingSource {
-  configuration(): DeliveryTimingConfiguration;
-  judge(pushClass: PushClass, nowMs: number): Promise<DeliveryTimingJudgement>;
 }
 
 export interface MuseChannelPushSource {
@@ -728,9 +718,8 @@ export class ProductionWebPush {
     }
     if (decision.action === "deliver") {
       if (decision.failed) this.#options.onGateFailure?.({ sourceKey: item.sourceKey });
-      const timed = await this.#timed(item, pushClass, now);
-      gated.set(item.sourceKey, timed);
-      return timed;
+      gated.set(item.sourceKey, false);
+      return false;
     }
     const lifeEnd = Date.parse(item.createdAt) + PUSH_TOTAL_LIFE_MS;
     const expiresAt = new Date(
@@ -755,83 +744,6 @@ export class ProductionWebPush {
     }
     gated.set(item.sourceKey, stored);
     return stored;
-  }
-
-  async #timed(item: WebPushOutboxItem, pushClass: PushClass, now: string): Promise<boolean> {
-    const timing = this.#options.timing;
-    if (!timing || !DELIVERY_TIMING_CLASSES.includes(pushClass)) return false;
-    if (this.#options.presence.anyVisible(now)) return false;
-    const { ownerId, agentId, store } = this.#options;
-    try {
-      const configuration = timing.configuration();
-      const nowMs = Date.parse(now);
-      const deadline = deliveryTimingDeadlineMs(
-        pushClass,
-        Date.parse(item.createdAt),
-        configuration,
-      );
-      if (nowMs >= deadline) {
-        if (item.deferredByTiming)
-          await store.recordDeliveryTiming({
-            ownerId,
-            agentId,
-            sourceKey: item.sourceKey,
-            outcome: "deadline_reached",
-            reasonCode: "timing_deadline",
-            deferUntil: null,
-            expiresAt: null,
-            costMicros: 0,
-            now,
-          });
-        return false;
-      }
-      const judgement = await timing.judge(pushClass, nowMs);
-      if (judgement.action === "deliver") {
-        if (
-          judgement.reasonCode === "timing_failed" ||
-          judgement.reasonCode === "timing_budget" ||
-          judgement.reasonCode === "timing_rate"
-        )
-          this.#options.onGateFailure?.({ sourceKey: item.sourceKey });
-        if (judgement.judged)
-          await store.recordDeliveryTiming({
-            ownerId,
-            agentId,
-            sourceKey: item.sourceKey,
-            outcome: "delivered",
-            reasonCode: judgement.reasonCode,
-            deferUntil: null,
-            expiresAt: null,
-            costMicros: 0,
-            now,
-          });
-        return false;
-      }
-      const until = new Date(
-        Math.min(nowMs + configuration.recheckSeconds * 1000, deadline),
-      ).toISOString();
-      const lifeEnd = Date.parse(item.createdAt) + PUSH_TOTAL_LIFE_MS;
-      const expiresAt = new Date(
-        Math.min(
-          Math.max(Date.parse(item.expiresAt), Date.parse(until) + PUSH_DEFER_EXTENSION_MS),
-          lifeEnd,
-        ),
-      ).toISOString();
-      return await store.recordDeliveryTiming({
-        ownerId,
-        agentId,
-        sourceKey: item.sourceKey,
-        outcome: "deferred",
-        reasonCode: `timing_busy_${judgement.signals.join("+")}`.slice(0, 64),
-        deferUntil: until,
-        expiresAt,
-        costMicros: 0,
-        now,
-      });
-    } catch {
-      this.#options.onGateFailure?.({ sourceKey: item.sourceKey });
-      return false;
-    }
   }
 
   async #content(
@@ -881,7 +793,7 @@ export class ProductionWebPush {
       const message = item.threadId
         ? await this.#options.readMessage(item.threadId, item.sourceRef)
         : undefined;
-      if (!message) return { expired: true };
+      if (!message || message.internal === true) return { expired: true };
       const hidden =
         message.dataClassification === "sensitive" || message.dataClassification === "restricted";
       const text = hidden ? undefined : (await message.readText())?.trim();

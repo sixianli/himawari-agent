@@ -11,7 +11,6 @@ export * from "./capabilities/directory-move-scope.js";
 export * from "./capabilities/index.js";
 export * from "./ciphertext-file-store.js";
 export * from "./deepseek-web-provider.js";
-export * from "./delivery-timing-decision.js";
 export * from "./demo-mailbox.js";
 export * from "./demo-mailbox-token.js";
 export * from "./device-action-hub.js";

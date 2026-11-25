@@ -84,7 +84,6 @@ import { SqliteCapabilityInvocationOperations } from "./sqlite-capability-invoca
 import { SqliteCheckpointOperations } from "./sqlite-checkpoint-operations.ts";
 import { SqliteCorrectionReviewOperations } from "./sqlite-correction-review-operations.ts";
 import { SqliteDecisionLedgerOperations } from "./sqlite-decision-ledger-operations.ts";
-import { SqliteDeliveryTimingSettingsOperations } from "./sqlite-delivery-timing-settings-operations.ts";
 import { SqliteExternalMemoryProposalOperations } from "./sqlite-external-memory-proposal-operations.ts";
 import { SqliteMcpConnectionOperations } from "./sqlite-mcp-connection-operations.ts";
 import { SqliteVaultOperations } from "./sqlite-vault-operations.ts";
@@ -406,7 +405,6 @@ export class SqliteDurableOperations {
   private readonly museIntake: SqliteMuseIntakeOperations;
   private readonly ledgerObservation: SqliteLedgerObservationOperations;
   private readonly ownerPreferences: SqliteOwnerPreferencesOperations;
-  private readonly deliveryTimingSettings: SqliteDeliveryTimingSettingsOperations;
   private readonly modelUsage: SqliteModelUsageOperations;
   private readonly realEval: SqliteRealEvalOperations;
   private readonly webPush: SqliteWebPushOperations;
@@ -535,11 +533,6 @@ export class SqliteDurableOperations {
       assertDiskHeadroom,
     );
     this.ownerPreferences = new SqliteOwnerPreferencesOperations(
-      database,
-      fail,
-      assertDiskHeadroom,
-    );
-    this.deliveryTimingSettings = new SqliteDeliveryTimingSettingsOperations(
       database,
       fail,
       assertDiskHeadroom,
@@ -740,8 +733,6 @@ export class SqliteDurableOperations {
       return this.ledgerObservation.execute(operation, payload);
     if (operation.startsWith("ownerPreferences."))
       return this.ownerPreferences.execute(operation, payload);
-    if (operation.startsWith("deliveryTimingSettings."))
-      return this.deliveryTimingSettings.execute(operation, payload);
     if (operation.startsWith("modelUsage.")) return this.modelUsage.execute(operation, payload);
     if (operation.startsWith("realEval.")) return this.realEval.execute(operation, payload);
     if (operation.startsWith("webPush.")) return this.webPush.execute(operation, payload);
