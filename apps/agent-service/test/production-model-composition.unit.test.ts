@@ -658,7 +658,6 @@ it("selects trusted Run policy and binds instruction content across configuratio
       timeZone: "Asia/Tokyo",
       systemInstruction: "可信系统指令",
       memoryLimit: 10,
-      maxSelectedMemories: 5,
     },
   };
   const source: RunExecutionSource = {

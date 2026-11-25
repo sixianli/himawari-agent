@@ -32,7 +32,6 @@ export interface RunExecutionPolicy {
   readonly runtimeEnvironmentRef?: string;
   readonly capabilityHandleRefs: readonly string[];
   readonly memoryLimit: number;
-  readonly maxSelectedMemories: number;
 }
 
 interface FrozenRunInput {
@@ -90,9 +89,6 @@ function assertPolicy(policy: RunExecutionPolicy): void {
     !Number.isSafeInteger(policy.memoryLimit) ||
     policy.memoryLimit < 1 ||
     policy.memoryLimit > 1000 ||
-    !Number.isSafeInteger(policy.maxSelectedMemories) ||
-    policy.maxSelectedMemories < 0 ||
-    policy.maxSelectedMemories > policy.memoryLimit ||
     !Array.isArray(policy.capabilityHandleRefs) ||
     policy.capabilityHandleRefs.some((ref) => typeof ref !== "string" || !ref) ||
     new Set(policy.capabilityHandleRefs).size !== policy.capabilityHandleRefs.length ||
@@ -206,7 +202,6 @@ export class RunExecutionInputService {
         memoryQueryRef: promptRef,
         memoryQueryTerms: [],
         memoryLimit: policy.memoryLimit,
-        maxSelectedMemories: policy.maxSelectedMemories,
         capabilities: policy.capabilities,
         ...(policy.runtimeEnvironmentRef
           ? { runtimeEnvironmentRef: policy.runtimeEnvironmentRef }

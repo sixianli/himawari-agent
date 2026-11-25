@@ -16,6 +16,7 @@ import type {
 import { ContextProjectionService, type RunExecutionSource } from "@himawari-agent/application";
 import { createRunId } from "@himawari-agent/domain";
 import { executeSandboxedPiCodingTool, PiAgentRuntimeAdapter } from "@himawari-agent/runtime-pi";
+import { testModelEgress } from "@himawari-agent/testing";
 import { createProductionModelCompositionFromConfiguration } from "../../../apps/agent-service/src/production-model-composition.js";
 import { createProductionRunPolicy } from "../../../apps/agent-service/src/production-run-policy.js";
 import { ProductionRuntimeTools } from "../../../apps/agent-service/src/production-runtime-tools.js";
@@ -31,16 +32,9 @@ import type {
   JarvisCase,
   JarvisDataset,
 } from "./cases.ts";
-import {
-  AGENT_ID,
-  assembleContext,
-  MAX_SELECTED_MEMORIES,
-  MEMORY_LIMIT,
-  OWNER_ID,
-} from "./context.ts";
+import { AGENT_ID, assembleContext, MEMORY_LIMIT, OWNER_ID } from "./context.ts";
 import type { TrialContext } from "./grade.ts";
 import { fileBytes, type Transcript, type TranscriptStep } from "./graders.ts";
-import { testModelEgress } from "@himawari-agent/testing";
 
 export const SUBJECT_MODEL = {
   id: AI_GATEWAY_PRIMARY_MODEL,
@@ -495,7 +489,6 @@ export function liveConfiguration(stateRoot: string, timeZone: string) {
       timeZone,
       systemInstruction: LIVE_SYSTEM_INSTRUCTION,
       memoryLimit: MEMORY_LIMIT,
-      maxSelectedMemories: MAX_SELECTED_MEMORIES,
       coding: {
         ...route,
         grantId: "grant-jarvis-test",

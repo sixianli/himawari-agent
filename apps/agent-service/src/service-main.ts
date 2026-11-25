@@ -2564,7 +2564,6 @@ export async function startTenantRuntime(
           configuration: realEvalConfiguration,
           scope: { ownerId: configuration.ownerId, agentId: configuration.agentId },
           memoryLimit: configuration.runPolicy?.memoryLimit ?? 1,
-          maxSelectedMemories: configuration.runPolicy?.maxSelectedMemories ?? 0,
           recallEstimateMicros: configuration.modelDescriptors.some(
             ({ role }) => role === "embedding",
           )

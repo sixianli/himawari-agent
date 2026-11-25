@@ -24,21 +24,21 @@ import {
   type ProductContextRunState,
   RUNTIME_ENVIRONMENT_BLOCK_REF,
 } from "../ports/context-projection.js";
+import type { ThreadDistillationStatePort, ThreadSummaryRecord } from "../ports/conversation.js";
 import {
   type DecisionLedgerPort,
   PROFILE_BUDGET_EXCEEDED,
   PROFILE_PINNED_OVER_BUDGET,
   PROFILE_TRUNCATION_REASONS,
 } from "../ports/decision-ledger.js";
-import type { ThreadDistillationStatePort, ThreadSummaryRecord } from "../ports/conversation.js";
 import type { MemoryCandidate, MemoryPort } from "../ports/intelligence.js";
 import { isMemoryDates } from "../ports/memory-dates.js";
 import type { PayloadProtectorPort, PayloadStorePort } from "../ports/observability.js";
 import type { RunPayloadArtifactPort } from "../ports/run-payload-artifacts.js";
 import type { ClockPort, IdGeneratorPort } from "../ports/system.js";
 import type { ThreadContextSnapshot, ThreadRepositoryPort } from "../ports/threads.js";
-import type { OwnerProfile, OwnerProfilePort } from "./owner-profile-service.js";
 import { modelVisibleCeiling } from "./model-visibility.js";
+import type { OwnerProfile, OwnerProfilePort } from "./owner-profile-service.js";
 import { isRuntimeHistoryReference } from "./runtime-history-service.js";
 import type { SessionTraceRecorder } from "./session-trace-recorder.js";
 
@@ -96,7 +96,6 @@ export interface ContextFormationRequest {
   readonly memoryQueryRef: PayloadRef;
   readonly memoryQueryTerms: readonly string[];
   readonly memoryLimit: number;
-  readonly maxSelectedMemories: number;
   readonly capabilities: readonly ContextCapabilitySummary[];
   readonly runtimeEnvironmentRef?: PayloadRef;
   readonly correlationId: CorrelationId;
@@ -282,12 +281,10 @@ export class ContextFormationService implements ContextFormationPort {
         !profileMemoryIds.has(candidate.id) &&
         CLASSIFICATION_RANK[candidate.dataClassification] <= VISIBLE_RANK,
     );
-    const selected: readonly SelectedMemory[] = allowed
-      .slice(0, request.maxSelectedMemories)
-      .map((candidate) => ({
-        ...candidate,
-        reasonCode: "relevant_and_classification_allowed" as const,
-      }));
+    const selected: readonly SelectedMemory[] = allowed.map((candidate) => ({
+      ...candidate,
+      reasonCode: "relevant_and_classification_allowed" as const,
+    }));
     const selectedIds = new Set(selected.map(({ id }) => id));
     const selectionTrace = await this.dependencies.trace.record({
       ...this.traceScope(request),
@@ -309,37 +306,10 @@ export class ContextFormationService implements ContextFormationPort {
             reasonCode:
               CLASSIFICATION_RANK[candidate.dataClassification] > VISIBLE_RANK
                 ? "classification_exceeds_context"
-                : "selection_limit_reached",
+                : "already_in_profile",
           })),
       },
     });
-
-    const truncated = candidates
-      .filter(
-        (candidate) =>
-          !selectedIds.has(candidate.id) &&
-          CLASSIFICATION_RANK[candidate.dataClassification] <= VISIBLE_RANK,
-      )
-      .map(({ id }) => id);
-    if (this.dependencies.ledger && truncated.length > 0) {
-      await this.dependencies.ledger
-        .append({
-          id: this.dependencies.ids.next("ledger"),
-          ownerId: request.ownerId,
-          agentId: request.agentId,
-          kind: "context_truncation",
-          decidedAt: this.dependencies.clock.now(),
-          outcome: "truncated",
-          reasonCode: "selection_limit_reached",
-          subjectRef: request.runId,
-          inputs: { memoryIds: truncated.slice(0, 200), ruleIds: [] },
-          reasonRef: null,
-          contentRef: null,
-          costMicros: 0,
-          durationMs: 0,
-        })
-        .catch(() => undefined);
-    }
 
     const usage = profile.usage;
     if (

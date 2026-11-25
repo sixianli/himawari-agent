@@ -204,7 +204,6 @@ function configuration(configured: boolean): ProductConfiguration {
       version: "review-policy:1",
       systemInstruction: "fixture",
       memoryLimit: 1,
-      maxSelectedMemories: 0,
       ...(configured ? { automaticReview: reviewConfiguration() } : {}),
     },
   };

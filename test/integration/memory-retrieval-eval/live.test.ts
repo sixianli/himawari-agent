@@ -79,7 +79,7 @@ const LIVE = environment.HIMAWARI_MEMORY_EVAL_LIVE === "1";
 const DATASET = path.resolve(
   environment.HIMAWARI_MEMORY_EVAL_DATASET ?? "evals/memory-retrieval/dataset.json",
 );
-const SELECTED_LIMIT = 5;
+const PRODUCTION_MEMORY_LIMIT = 20;
 const PROXY_INJECTED_KEY = "proxy-injected";
 const OWNER_ID = createOwnerId("owner-memory-retrieval-eval");
 const AGENT_ID = createAgentId("agent-memory-retrieval-eval");
@@ -337,7 +337,10 @@ describe.skipIf(!LIVE)("memory retrieval live evaluation", () => {
               ownerId: OWNER_ID,
               agentId: AGENT_ID,
               queryRef: "payload-query",
-              policy: { limit: SELECTED_LIMIT, allowedClassifications: ["public", "private"] },
+              policy: {
+                limit: PRODUCTION_MEMORY_LIMIT,
+                allowedClassifications: ["public", "private"],
+              },
             });
             outcomes.push({
               query,
@@ -381,7 +384,7 @@ describe.skipIf(!LIVE)("memory retrieval live evaluation", () => {
             p95: percentile(latencies, 0.95),
           },
           rssMb: Math.round(process.memoryUsage().rss / 1_000_000),
-          selectedLimit: SELECTED_LIMIT,
+          selectedLimit: PRODUCTION_MEMORY_LIMIT,
           memories: dataset.memories.length,
           queries: dataset.queries.length,
           usage,

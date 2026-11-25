@@ -32,7 +32,6 @@ import type { CaseMemory, JarvisCase, JarvisDataset } from "./cases.ts";
 export const OWNER_ID = createOwnerId("owner-ai-gateway-live-qualification");
 export const AGENT_ID = createAgentId("agent-ai-gateway-live-qualification");
 export const MEMORY_LIMIT = 10;
-export const MAX_SELECTED_MEMORIES = 5;
 const THREAD_ID = createThreadId("thread-jarvis-test");
 const GENERATION_ID = createMemoryGenerationId("generation-jarvis-test");
 const HASH_DIMENSIONS = 256;
@@ -284,7 +283,6 @@ export async function assembleContext(
     memoryQueryRef: queryRef,
     memoryQueryTerms: indexTerms(item.prompt),
     memoryLimit: MEMORY_LIMIT,
-    maxSelectedMemories: MAX_SELECTED_MEMORIES,
     capabilities: [],
     correlationId: `correlation-jarvis-${item.id}` as never,
     causationId: `cause-jarvis-${item.id}`,
