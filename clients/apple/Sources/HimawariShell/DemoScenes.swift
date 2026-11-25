@@ -32,6 +32,10 @@ enum DemoScene: String, CaseIterable {
     case loginBrowsers = "20-himawari-self-2-login-browsers"
     case proposals = "20-himawari-self-3-proposals"
     case thinkSettings = "20-himawari-self-4-think"
+    case her = "next-3-her"
+    case herPrivacy = "next-3-her-privacy"
+    case herDevices = "next-3-her-devices"
+    case herNotifications = "next-3-her-notifications"
     case pairing = "11-pairing"
     case pairingScan = "15-pairing-flow-1-scan"
     case pairingConfirmServer = "15-pairing-flow-1b-confirm-server"
@@ -45,6 +49,11 @@ enum DemoScene: String, CaseIterable {
     case chatOffline = "16-chat-states-4-offline"
     case chatAnswering = "16-chat-states-5-answering"
     case chatSteps = "16-chat-states-6-steps"
+    case chatFormat = "next-2-chat-format"
+    case chatFormatStreaming = "next-2-chat-format-streaming"
+    case chatAttach = "next-2-chat-attach"
+    case chatTalkListening = "next-2-chat-talk-listening"
+    case chatTalkHer = "next-2-chat-talk-her"
     case tabTodayOneDigit = "tab-today-1-digit"
     case sensesOverview = "19-senses-1-overview"
     case sensesIntro = "19-senses-2-intro"
@@ -101,6 +110,7 @@ struct DemoSceneView: View {
         content
             .environment(\.listClock, DemoChatFixtures.now)
             .environment(\.stillFrames, !scene.rawValue.hasPrefix("motion-"))
+            .environment(\.chatVoice, DemoVoice())
             .onAppear { SerifFace.shared.prepare() }
             .task(id: scenePhase) {
                 guard scenePhase == .active else { return }
@@ -171,12 +181,28 @@ struct DemoSceneView: View {
             chat(DemoChatFixtures.answered())
         case .chatNew:
             ChatView(store: .demo(DemoChatState()), threadId: nil) {}
+                .environment(\.chatCanAttach, true)
         case .chatSending:
             chat(DemoChatFixtures.sending())
         case .chatOffline:
             chat(DemoChatFixtures.offline())
         case .chatAnswering, .motionShimmer:
             chat(DemoChatFixtures.answering())
+        case .chatFormat:
+            chat(DemoChatFixtures.formatted())
+        case .chatFormatStreaming:
+            chat(DemoChatFixtures.formattedStreaming())
+        case .chatAttach:
+            chat(DemoChatFixtures.offline())
+                .environment(\.chatOpensAttachSheet, true)
+        case .chatTalkListening:
+            chat(DemoChatFixtures.formatted())
+                .environment(\.chatTalk, DemoTalk(phase: .listening, heard: DemoChatFixtures.talkHeard))
+                .environment(\.chatOpensTalk, true)
+        case .chatTalkHer:
+            chat(DemoChatFixtures.formattedStreaming())
+                .environment(\.chatTalk, DemoTalk(phase: .herTurn))
+                .environment(\.chatOpensTalk, true)
         case .chatSteps:
             chat(DemoChatFixtures.answered())
                 .environment(\.processStepsOpenAfter, 1)
@@ -233,7 +259,7 @@ struct DemoSceneView: View {
         case .memory, .memoryDetail, .memoryEdit, .rules, .ruleDetail, .settings, .device, .deviceAbilities, .addDevice, .addDeviceAsking,
             .addDeviceExpired, .files, .exportPacking, .exportReady, .capabilities,
             .capabilitiesReactivated, .capabilitiesReactivateFailed, .loginBrowsers, .proposals,
-            .thinkSettings:
+            .thinkSettings, .her, .herPrivacy, .herDevices, .herNotifications:
             EmptyView()
         }
     }
@@ -249,6 +275,7 @@ struct DemoSceneView: View {
 
     private func chat(_ state: DemoChatState) -> some View {
         ChatView(store: .demo(state), threadId: DemoChatFixtures.osakaThreadId) {}
+            .environment(\.chatCanAttach, true)
     }
 }
 

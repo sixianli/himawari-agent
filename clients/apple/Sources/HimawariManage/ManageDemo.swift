@@ -25,6 +25,10 @@ public enum ManageDemoScreen: String, CaseIterable, Sendable {
     case loginBrowsers = "20-himawari-self-2-login-browsers"
     case proposals = "20-himawari-self-3-proposals"
     case thinkSettings = "20-himawari-self-4-think"
+    case her = "next-3-her"
+    case herPrivacy = "next-3-her-privacy"
+    case herDevices = "next-3-her-devices"
+    case herNotifications = "next-3-her-notifications"
 }
 
 public struct ManageDemoView: View {
@@ -73,6 +77,14 @@ public struct ManageDemoView: View {
             SettingsRootView(store: ManageDemo.settingsStore(), path: [.proposals]) {}
         case .thinkSettings:
             SettingsRootView(store: ManageDemo.settingsStore(), path: [.tuningList(.think)]) {}
+        case .her:
+            her([])
+        case .herPrivacy:
+            her([.privacy])
+        case .herDevices:
+            her([.devices])
+        case .herNotifications:
+            her([.notifications])
         case .addDevice:
             pairing(.showing(link: ManageDemo.link, expiresAt: ManageDemo.frozenNow.addingTimeInterval(581)))
         case .addDeviceAsking:
@@ -80,6 +92,17 @@ public struct ManageDemoView: View {
         case .addDeviceExpired:
             pairing(.expired(minutes: 10))
         }
+    }
+
+    private func her(_ path: [HerPage.Page]) -> some View {
+        HerPage(
+            settings: ManageDemo.settingsStore(),
+            memory: ManageDemo.memoryStore(),
+            quietHours: QuietHoursStore(gateway: ManageDemo.gateway()),
+            listening: DemoListening(),
+            senses: AnyView(EmptyView()),
+            path: path
+        )
     }
 
     private func exporting(_ stage: DataExportStage) -> some View {
@@ -96,6 +119,12 @@ public struct ManageDemoView: View {
                 .environment(\.pairingClock, ManageDemo.frozenNow)
         }
     }
+}
+
+@MainActor
+final class DemoListening: HerListening {
+    let hasVoiceprint = true
+    func deleteVoiceprint() {}
 }
 
 enum ManageDemo {
@@ -157,6 +186,7 @@ enum ManageDemo {
         case "memory.overview.read": memories
         case "memory.rules.read": rules
         case "device.list.read": devices
+        case "quiet_hours.read": #"{"payload":{"version":"v1","editable":true,"enabled":true,"start":"23:00","end":"07:00","classes":["scheduled_reminder","run_result","mail_reminder","her_words"],"rules":[{"ruleId":"rule-quiet","summary":"晚上 11 点到早上 7 点别推"}]}}"#
         case "server.status.read":
             #"{"payload":{"live":true,"ready":true,"status":"healthy","dependencies":[],"generatedAt":"2026-11-12T00:00:00Z"}}"#
         case "login.devices.read": loginDevices

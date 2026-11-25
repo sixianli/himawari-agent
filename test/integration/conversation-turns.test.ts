@@ -818,6 +818,8 @@ describe.each(["worker", "direct"] as const)("conversation turns through %s", (e
       expect(crowded?.lines.some(({ text }) => text.startsWith("面试当天"))).toBe(false);
       const beyond = await call("conversation.search", { query: "面试", page: 9 });
       expect(beyond.output["turns"]).toEqual([]);
+      expect(String(beyond.output["note"])).toContain("这不代表没有找到");
+      expect(String(beyond.output["note"])).not.toContain("不要编造");
       const seen: number[] = [];
       for (let sequence: number | null = 1; sequence !== null; ) {
         const opened = await call("conversation.open", { conversationId: TALK, sequence });

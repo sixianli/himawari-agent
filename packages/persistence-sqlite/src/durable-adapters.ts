@@ -933,6 +933,8 @@ export class SqliteDurableAdapters {
       appendHistory: (input) => this.context.write("memory.appendHistory", input),
       listHistory: (input) => this.context.read("memory.listHistory", input),
       readHistory: (input) => this.context.read("memory.readHistory", input),
+      numbers: (input) => this.context.read("memory.numbers", input),
+      byNumber: (input) => this.context.read("memory.byNumber", input),
     });
   }
 
