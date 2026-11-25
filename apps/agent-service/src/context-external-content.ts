@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import { PORT_ERROR_CODES } from "@himawari-agent/application";
 import type {
   AuthorityFence,
   ClockPort,
@@ -10,8 +9,10 @@ import type {
   RunExecutionSource,
   RunExecutionSourcePort,
 } from "@himawari-agent/application";
+import { PORT_ERROR_CODES } from "@himawari-agent/application";
 
 type RunId = RunExecutionSource["runId"];
+
 import { EXTERNAL_CONTENT_SOURCE_REF_PREFIX } from "@himawari-agent/gateway-contracts";
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 
@@ -218,7 +219,14 @@ export class ContextExternalContent {
   async mark(runId: RunId, origin: string): Promise<void> {
     const [scope] = await this.#scopes(runId);
     if (!scope) return;
-    const key = externalContentKey(scope);
+    await this.#enqueue(externalContentKey(scope), runId, origin);
+  }
+
+  async markThread(threadId: string, runId: RunId, origin: string): Promise<void> {
+    await this.#enqueue(externalContentKey({ threadId, runId }), runId, origin);
+  }
+
+  async #enqueue(key: string, runId: RunId, origin: string): Promise<void> {
     const previous = this.#pending.get(key) ?? Promise.resolve();
     const current = previous.catch(() => undefined).then(() => this.#write(key, runId, origin));
     this.#pending.set(key, current);

@@ -655,6 +655,9 @@ export class SqliteWebPushOperations {
              AND status IN ('completed', 'failed')
              AND NOT EXISTS (SELECT 1 FROM threads hidden
                WHERE hidden.id = runs.thread_id AND hidden.origin = 'think')
+             AND NOT EXISTS (SELECT 1 FROM triggers trigger
+               JOIN thread_messages source ON source.id = trigger.source_id
+               WHERE trigger.id = runs.trigger_id AND source.internal = 1)
              AND NOT EXISTS (SELECT 1 FROM run_background_holds hold
                WHERE hold.owner_id = runs.owner_id AND hold.agent_id = runs.agent_id
                  AND hold.run_id = runs.id)

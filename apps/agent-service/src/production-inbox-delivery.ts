@@ -27,6 +27,7 @@ import type {
   InboxDeliveryResult,
 } from "./production-inbox-worker.js";
 import type { ProductionMainThread } from "./production-main-thread.js";
+import type { ProductionSubthreads } from "./production-subthreads.js";
 
 type Admission = Parameters<ThreadCommandService["admitOwnerMessage"]>[0];
 type OwnerId = Admission["ownerId"];
@@ -82,6 +83,13 @@ function neutralized(text: string): string {
   return text.replaceAll("</outside-events>", "‹/outside-events›");
 }
 
+function batchKey(events: readonly InboxDeliveryEvent[]): string {
+  return createHash("sha256")
+    .update(JSON.stringify(events.map(({ entry }) => [entry.id, entry.attempts])))
+    .digest("hex")
+    .slice(0, 32);
+}
+
 export function inboxEventsMessage(events: readonly InboxDeliveryEvent[]): string {
   return [
     INBOX_EVENTS_PREFACE.text,
@@ -111,6 +119,7 @@ export interface InboxDeliveryOptions {
   readonly cancelRun?: (
     input: Pick<CancelCoordinatedRunInput, "runId" | "command">,
   ) => Promise<void>;
+  readonly subthreads?: Pick<ProductionSubthreads, "open" | "subthreadMessage">;
   readonly pollMs?: number;
   readonly sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
 }
@@ -158,18 +167,10 @@ export class ProductionInboxDelivery implements InboxDelivery {
     const agentId = this.#options.agentId as AgentId;
     const main = await this.#options.mainThread.ensure();
     if (input.threadId !== null && input.threadId !== main)
-      return {
-        status: "handled",
-        outcome: "unsupported",
-        reasonCode: "thread_unsupported",
-        runId: null,
-      };
+      return this.#deliverToSubthread(input.threadId as ThreadId, events, signal);
     const busy = await this.#options.threads.listRuns(ownerId, agentId, main);
     if (busy.some((run) => !TERMINAL.has(run.status))) return { status: "yield" };
-    const key = createHash("sha256")
-      .update(JSON.stringify(events.map(({ entry }) => [entry.id, entry.attempts])))
-      .digest("hex")
-      .slice(0, 32);
+    const key = batchKey(events);
     const runId = `run:inbox:${key}` as RunId;
     const contentRef = `inbox-message:${key}`;
     const run: InboxRun = {
@@ -186,12 +187,9 @@ export class ProductionInboxDelivery implements InboxDelivery {
     this.#options.registry.open(run);
     try {
       const classification = await this.#writeMessage(contentRef, inboxEventsMessage(events));
-      await this.#admit(main, key, first.entry.sourceKind, runId, contentRef, classification);
-      for (const kind of new Set(
-        events.filter(({ entry }) => entry.externalContent).map(({ entry }) => entry.sourceKind),
-      ))
-        await this.#options.externalContent.mark(runId, inboxEventOrigin(kind));
-      const status = await this.#await(main, runId, contentRef, signal);
+      await this.#admit(main, key, events, runId, contentRef, classification, true);
+      await this.#markOutside(runId, events);
+      const status = await this.#await(main, runId, contentRef, signal, true);
       if (status === "yielded") return { status: "yield" };
       if (status !== "completed") return { status: "retry", reasonCode: `run_${status}` };
       const told = await this.#recordSilence(run);
@@ -204,6 +202,43 @@ export class ProductionInboxDelivery implements InboxDelivery {
     } finally {
       this.#options.registry.close(runId);
     }
+  }
+
+  async #deliverToSubthread(
+    threadId: ThreadId,
+    events: readonly InboxDeliveryEvent[],
+    signal: AbortSignal,
+  ): Promise<InboxDeliveryResult> {
+    const subthreads = this.#options.subthreads;
+    if (!subthreads || !(await subthreads.open(threadId)))
+      return { status: "handled", outcome: "closed", reasonCode: "subthread_closed", runId: null };
+    const busy = await this.#options.threads.listRuns(
+      this.#options.ownerId as OwnerId,
+      this.#options.agentId as AgentId,
+      threadId,
+    );
+    if (busy.some((run) => !TERMINAL.has(run.status))) return { status: "yield" };
+    const key = batchKey(events);
+    const runId = `run:inbox:${key}` as RunId;
+    const contentRef = `inbox-message:${key}`;
+    const classification = await this.#writeMessage(
+      contentRef,
+      subthreads.subthreadMessage(
+        events.map(({ entry, summary }) => ({ sourceRef: entry.sourceRef, text: summary })),
+      ),
+    );
+    await this.#admit(threadId, key, events, runId, contentRef, classification, false);
+    await this.#markOutside(runId, events);
+    const status = await this.#await(threadId, runId, contentRef, signal, false);
+    if (status !== "completed") return { status: "retry", reasonCode: `run_${status}` };
+    return { status: "handled", outcome: "delivered", reasonCode: "subthread_ran", runId };
+  }
+
+  async #markOutside(runId: RunId, events: readonly InboxDeliveryEvent[]): Promise<void> {
+    for (const kind of new Set(
+      events.filter(({ entry }) => entry.externalContent).map(({ entry }) => entry.sourceKind),
+    ))
+      await this.#options.externalContent.mark(runId, inboxEventOrigin(kind));
   }
 
   async #writeMessage(ref: string, message: string) {
@@ -227,21 +262,24 @@ export class ProductionInboxDelivery implements InboxDelivery {
   async #admit(
     threadId: ThreadId,
     key: string,
-    kind: string,
+    events: readonly InboxDeliveryEvent[],
     runId: RunId,
     contentRef: string,
     dataClassification: Admission["dataClassification"],
+    internal: boolean,
   ): Promise<void> {
     const ownerId = this.#options.ownerId as OwnerId;
     const agentId = this.#options.agentId as AgentId;
+    const kind = events[0]?.entry.sourceKind ?? "inbox";
+    const outside = events.some(({ entry }) => entry.externalContent);
     let lastError: unknown;
     for (let attempt = 0; attempt < ADMIT_ATTEMPTS; attempt += 1) {
       const thread = await this.#options.threads.read(ownerId, agentId, threadId);
-      if (!thread) throw new Error("INBOX_MAIN_THREAD_MISSING");
+      if (!thread) throw new Error("INBOX_THREAD_MISSING");
       try {
         await this.#options.commands.admitOwnerMessage({
-          triggerSource: "external_event",
-          internal: true,
+          triggerSource: outside ? "external_event" : "schedule",
+          ...(internal ? { internal: true as const } : {}),
           ownerId,
           agentId,
           threadId,
@@ -269,10 +307,11 @@ export class ProductionInboxDelivery implements InboxDelivery {
   }
 
   async #await(
-    main: ThreadId,
+    threadId: ThreadId,
     runId: RunId,
     contentRef: string,
     signal: AbortSignal,
+    yieldToOwner: boolean,
   ): Promise<string> {
     const sleep = this.#options.sleep ?? defaultSleep;
     const cancel = () =>
@@ -295,7 +334,12 @@ export class ProductionInboxDelivery implements InboxDelivery {
       for (;;) {
         const stored = await this.#options.runs.readRun(runId);
         if (stored && TERMINAL.has(stored.run.status)) return stored.run.status;
-        if (this.#options.cancelRun && (await this.#ownerWaiting(main)) && (await cancel()))
+        if (
+          yieldToOwner &&
+          this.#options.cancelRun &&
+          (await this.#ownerWaiting(threadId)) &&
+          (await cancel())
+        )
           return "yielded";
         await sleep(this.#options.pollMs ?? POLL_MS, signal);
       }
