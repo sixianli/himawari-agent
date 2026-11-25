@@ -122,6 +122,7 @@ export class ContextProjectionService implements RuntimeProjectionPort {
         content: prompt,
         occurredAt: envelope.prompt.occurredAt,
         ...(images.length ? { images: Object.freeze(images) } : {}),
+        ...(envelope.prompt.sourceType === "external_event" ? { from: "outside" as const } : {}),
       }),
       contextBlocks: Object.freeze([...contextBlocks, ...workerBlocks]),
     });
@@ -772,6 +773,7 @@ function isContextEnvelope(value: unknown): value is ProductContextEnvelopeV1 {
         (item["kind"] === "thread-summary" ||
           item["kind"] === "memory" ||
           item["kind"] === "owner-rules" ||
+          item["kind"] === "memory-snapshot" ||
           item["kind"] === "owner-profile" ||
           item["kind"] === "owner-agenda" ||
           item["kind"] === "capability-summary" ||

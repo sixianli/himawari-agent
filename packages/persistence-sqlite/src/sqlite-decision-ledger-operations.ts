@@ -16,13 +16,14 @@ import {
   type GapCaseMarkRow,
   type MailTrace,
   type MuseReferenceEntry,
-  type RuleLastUse,
   type MuseReferenceWrite,
+  type RuleLastUse,
+  SPOKEN_VERDICTS,
 } from "@himawari-agent/application/decision-ledger";
+import { GMAIL_SOURCE } from "@himawari-agent/application/proactive-sources";
 import { parseRuleRef, type RuleBookVersion } from "@himawari-agent/application/rule-ref";
 import { readCalibrationRows } from "@himawari-agent/calibration";
 import { readPrereviewWeek } from "@himawari-agent/calibration/prereview";
-import { GMAIL_SOURCE } from "@himawari-agent/application/proactive-sources";
 import type Database from "better-sqlite3";
 import { summaryInputsValid } from "./sqlite-decision-summary-inputs.ts";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
@@ -303,6 +304,8 @@ export class SqliteDecisionLedgerOperations {
     switch (operation) {
       case "decisionLedger.append":
         return this.append(payload as Input<"append">);
+      case "decisionLedger.recordSpoken":
+        return this.recordSpoken(payload as Input<"recordSpoken">);
       case "decisionLedger.appendIfChanged":
         return this.appendIfChanged(payload as Input<"appendIfChanged">);
       case "decisionLedger.list":
@@ -371,6 +374,58 @@ export class SqliteDecisionLedgerOperations {
     const problem = validateLedgerWrite(write);
     if (problem) this.fail("PORT_INVALID_OPERATION", problem);
     insertLedgerRow(this.database, write);
+  }
+
+  private recordSpoken(write: Input<"recordSpoken">): boolean {
+    this.assertDiskHeadroom();
+    if (
+      !text(write.id, 1, 128) ||
+      !text(write.scenario, 1, 64) ||
+      !/^[a-z][a-z0-9_]*$/u.test(write.scenario) ||
+      !(SPOKEN_VERDICTS as readonly string[]).includes(write.verdict) ||
+      !text(write.reasonCode, 1, 64) ||
+      !text(write.subjectRef, 1, 256) ||
+      !text(write.runId, 1, 256) ||
+      (write.messageId !== null && !text(write.messageId, 1, 256)) ||
+      (write.pushSourceKey !== null && !text(write.pushSourceKey, 1, 256)) ||
+      !idList(write.sourceIds) ||
+      !validTime(write.decidedAt) ||
+      !Number.isSafeInteger(write.durationMs) ||
+      write.durationMs < 0 ||
+      write.durationMs > 86_400_000
+    )
+      this.fail("PORT_INVALID_OPERATION", "Spoken decision is invalid");
+    return (
+      this.database
+        .prepare(
+          `INSERT INTO decision_ledger (
+            id, owner_id, agent_id, kind, scenario, checked_at, counts, verdict, outcome,
+            reason_code, subject_ref, inputs, reason_ref, content_ref, push_source_key,
+            cost_micros, duration_ms, owner_rating, rated_at
+          ) VALUES (?, ?, ?, 'proactive', ?, ?, '{}', ?, NULL, ?, ?, ?, ?, NULL, ?, 0, ?, NULL, NULL)
+          ON CONFLICT (id) DO NOTHING`,
+        )
+        .run(
+          write.id,
+          write.ownerId,
+          write.agentId,
+          write.scenario,
+          write.decidedAt,
+          write.verdict,
+          write.reasonCode,
+          write.subjectRef,
+          JSON.stringify({
+            memoryIds: [],
+            ruleIds: [],
+            sourceIds: write.sourceIds,
+            runId: write.runId,
+            messageId: write.messageId,
+          }),
+          write.reasonRef,
+          write.pushSourceKey,
+          write.durationMs,
+        ).changes > 0
+    );
   }
 
   private appendIfChanged(input: Input<"appendIfChanged">): boolean {

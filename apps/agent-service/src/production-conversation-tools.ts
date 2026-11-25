@@ -26,6 +26,7 @@ type WindowInput = Parameters<ConversationTurnService["window"]>[0];
 export const CONVERSATION_SEARCH_CAPABILITY_REF = "conversation.search";
 export const CONVERSATION_OPEN_CAPABILITY_REF = "conversation.open";
 export const DEFAULT_TOOL_RESULT_SHARE = 0.02;
+export const MEMORY_SNAPSHOT_WINDOW_SHARE = 0.1;
 const DATE = /^\d{4}-\d{2}-\d{2}$/u;
 const SEARCHED_TURNS = 60;
 const MINIMUM_PAGE_CHARACTERS = 2000;

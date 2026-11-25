@@ -5,9 +5,9 @@ import path from "node:path";
 import { checkoutFromCache, fetchBundleIntoCache, sourceCachePath } from "./source-cache.mjs";
 
 const root = realpathSync(mkdtempSync(path.join(process.env.HIMAWARI_TEST_TEMP_ROOT ?? os.tmpdir(), "source-cache-")));
-const env = { PATH: process.env.PATH, HOME: root, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null", GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@example.invalid", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@example.invalid", GIT_CONFIG_COUNT: "2", GIT_CONFIG_KEY_0: "maintenance.auto", GIT_CONFIG_VALUE_0: "false", GIT_CONFIG_KEY_1: "gc.auto", GIT_CONFIG_VALUE_1: "0" };
+const env = { PATH: process.env.PATH, HOME: root, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null", GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@example.invalid", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@example.invalid" };
 const run = (command, args, name) => execFileSync(command, args, { env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
-const git = (cwd, ...args) => run("git", ["-C", cwd, ...args]);
+const git = (cwd, ...args) => run("git", ["-c", "maintenance.auto=false", "-c", "gc.auto=0", "-C", cwd, ...args]);
 const results = [];
 const check = (name, passed, detail = "") => results.push({ name, passed: Boolean(passed), detail: String(detail) });
 const throws = (action) => { try { action(); return ""; } catch (error) { return String(error.message); } };
@@ -67,6 +67,18 @@ try {
   }
   check("a cache created under umask 002 is not group-writable", (statSync(loose).mode & 0o022) === 0);
   check("the next fetch accepts that cache", throws(() => fetchBundleIntoCache(loose, secondBundle, second, run, existsSync(loose))) === "");
+
+  const traced = cacheFor("traced");
+  mkdirSync(path.dirname(traced), { recursive: true });
+  const trace = path.join(root, "git-trace.log");
+  const tracedRun = (command, args) => execFileSync(command, args, { env: { ...env, GIT_TRACE: trace }, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  fetchBundleIntoCache(traced, fullBundle, first, tracedRun, false);
+  fetchBundleIntoCache(traced, secondBundle, second, tracedRun, true);
+  checkoutFromCache(traced, path.join(root, "traced-checkout"), second, tracedRun);
+  const traceLines = readFileSync(trace, "utf8").split("\n");
+  check("the git trace records the traced fetches and the commands they start", traceLines.some((line) => /\bbuilt-in: git fetch\b/.test(line)) && traceLines.some((line) => /\brun_command: /.test(line)), traceLines.slice(0, 3).join("\n").slice(0, 200));
+  const spawned = traceLines.filter((line) => /\b(run_command|built-in): .*\bgit (maintenance run|gc --auto)\b/.test(line));
+  check("cache fetches and checkouts start no automatic git maintenance that could keep writing after they return", spawned.length === 0, spawned.join("\n").slice(0, 200));
 } finally {
   rmSync(root, { recursive: true, force: true });
 }
