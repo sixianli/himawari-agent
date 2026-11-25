@@ -1,0 +1,133 @@
+name: Deploy production
+on:
+  workflow_run:
+    workflows: ["Main confirmation"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: 完整的 40 位提交号；留空就用 main 最新提交
+        required: false
+        type: string
+      since:
+        description: 现在生产上跑的提交（完整 40 位）；留空就从服务器读
+        required: false
+        type: string
+      force:
+        description: 填 1 就算只改了文档也上线
+        required: false
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+defaults:
+  run:
+    shell: bash
+jobs:
+  deploy:
+    name: deploy/production
+    if: ${{ github.repository == 'sixianli/himawari-agent' && (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    environment: production
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - name: 确定要上线的提交
+        id: target
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          INPUT_COMMIT: ${{ inputs.commit }}
+        run: |
+          main_tip="$(git rev-parse HEAD)"
+          if [ "$EVENT_NAME" = workflow_dispatch ]; then
+            commit="${INPUT_COMMIT:-$main_tip}"
+          else
+            commit="$RUN_SHA"
+          fi
+          if ! printf '%s' "$commit" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::提交号不是完整的 40 位：$commit"
+            exit 1
+          fi
+          if [ "$commit" != "$main_tip" ] && [ "$EVENT_NAME" != workflow_dispatch ]; then
+            echo "main 已经往前走了，这个提交不单独上线，由更新的那次确认负责" >> "$GITHUB_STEP_SUMMARY"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git checkout --quiet --detach "$commit"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+      - name: 检查部署钥匙是否已放好
+        id: keys
+        if: ${{ steps.target.outputs.skip == 'false' }}
+        env:
+          PROD_SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
+          PROD_HOST: ${{ vars.PROD_HOST }}
+          PROD_HOST_KEY: ${{ vars.PROD_HOST_KEY }}
+        run: |
+          missing=""
+          [ -n "$PROD_SSH_KEY" ] || missing="$missing PROD_SSH_KEY(secret)"
+          [ -n "$PROD_HOST" ] || missing="$missing PROD_HOST(variable)"
+          [ -n "$PROD_HOST_KEY" ] || missing="$missing PROD_HOST_KEY(variable)"
+          if [ -z "$missing" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::production 环境还缺：$missing，这次不上线"
+            echo "部署钥匙还没放好，缺：$missing" >> "$GITHUB_STEP_SUMMARY"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: 装好 SSH 钥匙并固定服务器指纹
+        if: ${{ steps.keys.outputs.ready == 'true' }}
+        env:
+          PROD_SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
+          PROD_HOST: ${{ vars.PROD_HOST }}
+          PROD_HOST_KEY: ${{ vars.PROD_HOST_KEY }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$PROD_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s %s\n' "$PROD_HOST" "$PROD_HOST_KEY" > ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<CONFIG
+          Host *
+            IdentityFile ~/.ssh/deploy_key
+            IdentitiesOnly yes
+            StrictHostKeyChecking yes
+            UserKnownHostsFile ~/.ssh/known_hosts
+          CONFIG
+          chmod 600 ~/.ssh/config
+      - name: 出包、上线、读回验证（失败自动回滚）
+        if: ${{ steps.keys.outputs.ready == 'true' }}
+        env:
+          HIMAWARI_PACKET_HOST: ${{ vars.PROD_HOST }}
+          HIMAWARI_DEPLOY_COMMIT: ${{ steps.target.outputs.commit }}
+          HIMAWARI_DEPLOY_SINCE: ${{ inputs.since }}
+          HIMAWARI_DEPLOY_FORCE: ${{ inputs.force }}
+        run: bash scripts/delivery-mode/ci-deploy.sh 2>&1 | tee deploy.log; exit "${PIPESTATUS[0]}"
+      - name: 写运行摘要
+        if: ${{ always() && steps.keys.outputs.ready == 'true' }}
+        run: |
+          {
+            echo '```'
+            grep -E '^(CI_DEPLOY_|DEPLOY_RESULT|DEPLOY_STOPPED_AT|PACKET_READY)' deploy.log | cut -c1-300 || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: 保存部署日志
+        if: ${{ always() && steps.keys.outputs.ready == 'true' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: deploy-log
+          path: |
+            deploy.log
+            .ci-output/production/**/run-logs/*.log
+          if-no-files-found: ignore
+          retention-days: 30
+      - name: 清掉钥匙
+        if: ${{ always() }}
+        run: rm -rf ~/.ssh
