@@ -93,7 +93,7 @@ Andy 2026-10-26 在沙箱方案文档里同意了“按对话复用沙箱、用�
 
 - [ADR 0054：只读文件工具在主进程执行，命令和写入复用任务沙箱](0054-readonly-tools-in-host-and-reused-task-sandbox.md)
 - [ADR 0079：同一轮的只读工具并行执行，联网搜索和读网页在服务进程执行](0079-parallel-read-only-tools-and-host-web-tools.md)
-- [BL-20261024-006：每个 Run 第一次用工具要等 9–16 秒](../backlog/BL-20261024-006-first-tool-call-cold-start.md)
+- [BL-20261024-006：每个 Run 第一次用工具要等 9–16 秒](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/backlog/BL-20261024-006-first-tool-call-cold-start.md)
 - [工程案例库：每轮回答里的系统空档](../engineering-casebook.md#case-run-gaps)
 - [ADR 0119：模型开始写工具调用时预热沙箱](0119-conversation-speed-prewarm-on-tool-call-and-embedding-retry.md#amendments)（2026-10-30，修改本 ADR 决定第 1 点的启动时机）
 - [SOURCE: docs/adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md#resident-prewarm]

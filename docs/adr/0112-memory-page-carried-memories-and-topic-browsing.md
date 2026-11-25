@@ -129,7 +129,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 - 好处：Andy 能看到每轮带给模型的是哪些记忆、占了多少字、哪些没放下，也能自己决定带不带。手动添加的记忆不会再全部进档案。
 - 好处：服务端只多了一张表和一个字段，打开开关不会触发嵌入，所以不花模型调用的钱。
 - 代价：自动挑选的规则（重要度 600）仍然没有测量依据。是否重新校准，等 Andy 决定。按“花钱先问”的规则，任何评测都要先报费用。
-- 后续：用模型给手动添加的记忆分类（[BL-20261029-001](../backlog/BL-20261029-001-manual-memory-model-category.md)）；“换主题”（[BL-20261029-002](../backlog/BL-20261029-002-memory-change-topic.md)）；PR #99 合并后改用它的统一日期格式和空状态组件。现在列表里的日期还跟着浏览器语言走（事故 I-15 的范围）。
+- 后续：用模型给手动添加的记忆分类（[BL-20261029-001](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/backlog/BL-20261029-001-manual-memory-model-category.md)）；“换主题”（[BL-20261029-002](../backlog/BL-20261029-002-memory-change-topic.md)）；PR #99 合并后改用它的统一日期格式和空状态组件。现在列表里的日期还跟着浏览器语言走（事故 I-15 的范围）。
 
 [↑ 返回阅读导航](#contents)
 

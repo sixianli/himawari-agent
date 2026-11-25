@@ -53,7 +53,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
    - 划掉：后台脚本在 `notificationclose` 事件里把 `{tag, 时间}` 存进浏览器缓存 `himawari-push-feedback`；下次打开或切回 Himawari 网页时，页面一并回报，成功后删掉缓存。
    - 每次最多回报 50 条；同一条通知的点开和划掉各只记第一次；回报的时间限制在“首次送达”到“服务器当前时间”之间，防止设备时钟不准或伪造。
 5. **保留期**：不自动删除。按每天几条通知估计一年几千行，每行只有编号和时间（大小未测量）；Owner 或 Agent 删除时随之删除。
-6. **本次不做界面**：只开始积累数据。统计页面要先出原型、经 Andy 批准（[设计基线规则](../../AGENTS.md#approved-web-design-baselines)），记在 [BL-20261028-004](../backlog/BL-20261028-004-proactive-notification-feedback-log.md) 的后续里。
+6. **本次不做界面**：只开始积累数据。统计页面要先出原型、经 Andy 批准（[设计基线规则](../../AGENTS.md#approved-web-design-baselines)），记在 [BL-20261028-004](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/backlog/BL-20261028-004-proactive-notification-feedback-log.md) 的后续里。
 
 <a id="analysis"></a>
 
@@ -110,7 +110,7 @@ ORDER BY f.first_sent_at;
 - 好处：从上线那天起开始积累 Jarvis Test 第 10 条要的数据；数据只有编号和时间，不含内容。
 - 代价：iPhone 上“划掉”大概率拿不到，误扰主要靠“24 小时没反应”判断，会把“看到了但不需要点”的通知也算作误扰；这是已知偏差，30 天后看数据再调定义。
 - 迁移号：本表用 0061，因为 0060 已由文件交付功能占用（`0060_thread_artifacts.sql`，已随 PR #68 合进 main）；迁移编号必须连续。
-- 后续：统计页面和命中定义的复核，写在 [BL-20261028-004](../backlog/BL-20261028-004-proactive-notification-feedback-log.md)。上线验收时在 iPhone 上点开一条通知，确认 `opened_at` 有值。
+- 后续：统计页面和命中定义的复核，写在 [BL-20261028-004](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/backlog/BL-20261028-004-proactive-notification-feedback-log.md)。上线验收时在 iPhone 上点开一条通知，确认 `opened_at` 有值。
 
 <a id="references"></a>
 
@@ -119,7 +119,7 @@ ORDER BY f.first_sent_at;
 - [SOURCE: docs/product-vision.md#jarvis-test]
 - [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0089-web-push-only-owner-entry.md]
 - [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0101-adopt-product-vision-v2-1.md]
-- [SOURCE: docs/backlog/BL-20261028-004-proactive-notification-feedback-log.md]
+- [SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/backlog/BL-20261028-004-proactive-notification-feedback-log.md]
 - 工程案例库：[案例 38](../engineering-casebook.md#case-push-feedback)
 
 [返回目录](#contents)
