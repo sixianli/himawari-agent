@@ -5,7 +5,7 @@ import path from "node:path";
 import { checkoutFromCache, fetchBundleIntoCache, sourceCachePath } from "./source-cache.mjs";
 
 const root = realpathSync(mkdtempSync(path.join(process.env.HIMAWARI_TEST_TEMP_ROOT ?? os.tmpdir(), "source-cache-")));
-const env = { PATH: process.env.PATH, HOME: root, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null", GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@example.invalid", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@example.invalid" };
+const env = { PATH: process.env.PATH, HOME: root, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null", GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@example.invalid", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@example.invalid", GIT_CONFIG_COUNT: "2", GIT_CONFIG_KEY_0: "maintenance.auto", GIT_CONFIG_VALUE_0: "false", GIT_CONFIG_KEY_1: "gc.auto", GIT_CONFIG_VALUE_1: "0" };
 const run = (command, args, name) => execFileSync(command, args, { env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 const git = (cwd, ...args) => run("git", ["-C", cwd, ...args]);
 const results = [];
