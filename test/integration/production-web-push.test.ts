@@ -835,6 +835,46 @@ describe("[WP-3] web push dispatch", () => {
     expect(context.rules.outbox("said:7:message")).toBeDefined();
   });
 
+  it("[SAID-1] REVERSE: an internal message between the main conversation and a sub-thread is never pushed", async () => {
+    const context = await setup();
+    await context.subscribe("phone", "zh-CN");
+    const push = context.create({
+      readMessage: async (threadId, messageId) =>
+        messageId === "assistant:inner"
+          ? {
+              dataClassification: "private",
+              internal: true,
+              readText: async () => "子线程：邮件已经看完了。",
+            }
+          : context.readMessage(threadId, messageId),
+    });
+    await push.tick();
+    context.setClock(T0);
+    context.finishRun("run-fine", "completed", at(T0, -5));
+    await context.say("run-fine", "这一条照常推。");
+    await context.store.enqueue({
+      ...scope,
+      items: [
+        {
+          ...scope,
+          sourceKey: await herWordsPushKey({ messageId: "assistant:inner" }),
+          kind: "reminder",
+          sourceRef: "assistant:inner",
+          threadId: "thread-1",
+          createdAt: T0,
+          expiresAt: at(T0, 3_600),
+        },
+      ],
+      cursor: null,
+      now: T0,
+    });
+    await push.tick();
+    await push.tick();
+    expect(context.sender.notifications().map(({ notification }) => notification["body"])).toEqual([
+      "这一条照常推。",
+    ]);
+  });
+
   it("[SAID-1] REVERSE: a sensitive or restricted reply never puts its words on the lock screen", async () => {
     const context = await setup();
     await context.subscribe("phone", "zh-CN");
