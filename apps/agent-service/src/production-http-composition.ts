@@ -157,6 +157,7 @@ import {
   ProductionInboxControl,
   ProductionInboxSettings,
 } from "./production-inbox-settings.js";
+import { PRODUCTION_TIMER_OPERATIONS, ProductionTimerControl } from "./production-timer-control.js";
 import type { InboxDelivery } from "./production-inbox-worker.js";
 import {
   PRODUCTION_LOGIN_DEVICE_OPERATIONS,
@@ -820,6 +821,7 @@ function routeOptions(
   mcpConnectionsAvailable: boolean,
   searchAvailable: boolean,
   capabilityReactivationAvailable: boolean,
+  timersAvailable: boolean,
 ): HttpGatewayServerOptions {
   const http = configuration.http;
   if (!http || !configuration.identity) {
@@ -869,6 +871,7 @@ function routeOptions(
         ...(mcpConnectionsAvailable ? PRODUCTION_MCP_CONNECTION_OPERATIONS : []),
         ...PRODUCTION_PERCEPTION_OPERATIONS,
         ...PRODUCTION_INBOX_OPERATIONS,
+        ...(timersAvailable ? PRODUCTION_TIMER_OPERATIONS : []),
       ],
       agentId: configuration.agentId,
       deploymentId: configuration.deploymentId,
@@ -1741,6 +1744,15 @@ export async function createProductionHttpComposition(
       scope: { ownerId, agentId },
       clock: { now: clock },
     }),
+    ...(options.inbox?.mainThread?.subthreads
+      ? {
+          timerControl: new ProductionTimerControl({
+            subthreads: options.inbox.mainThread.subthreads,
+            scope: { ownerId, agentId },
+            clock: { now: clock },
+          }),
+        }
+      : {}),
     perceptionControl: new ProductionPerceptionControl({
       configuration,
       perception,
@@ -1822,6 +1834,7 @@ export async function createProductionHttpComposition(
       Boolean(options.mcpRead),
       Boolean(searchControl),
       options.capabilityReactivation !== undefined,
+      Boolean(options.inbox?.mainThread?.subthreads),
     ),
     gatewayV2,
     threadSearch,

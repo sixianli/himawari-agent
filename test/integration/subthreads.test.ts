@@ -26,6 +26,7 @@ import {
 import { ProductionInboxWorker } from "../../apps/agent-service/src/production-inbox-worker.ts";
 import { ProductionMainThread } from "../../apps/agent-service/src/production-main-thread.ts";
 import { ProductionSubthreads } from "../../apps/agent-service/src/production-subthreads.ts";
+import { ProductionTimerControl } from "../../apps/agent-service/src/production-timer-control.ts";
 import {
   ProductionThreadTasks,
   SubthreadToolError,
@@ -525,6 +526,78 @@ describe("subthreads opened by the main conversation", () => {
     f.setNow("2026-11-25T00:10:30.000Z");
     await f.subthreads.tickTimers();
     expect(timerEvents(f).map((event) => event.source_ref)).toEqual([paused.timer]);
+  });
+
+  it("[ADR-0285] lists every timer for the owner's App and lets the owner pause, resume and cancel one", async () => {
+    const f = await fixture();
+    const said = await f.ownerSays("list", "每晚九点查一下明天要不要带伞");
+    const scheduled = (
+      (await f.call(said.runId, "schedule_task", {
+        task: "查东京明天会不会下雨",
+        schedule: { daily_at: "21:00" },
+        created_by: "owner",
+        matter: "带伞",
+        title: "查明天带伞",
+      })) as { value: { timer: string } }
+    ).value;
+    const control = new ProductionTimerControl({
+      subthreads: f.subthreads,
+      scope,
+      clock: { now: () => START },
+    });
+    const read = async () =>
+      (
+        (await control.query({
+          kind: "query",
+          type: "timers.read",
+          payload: {},
+        } as never)) as unknown as {
+          payload: { timers: Record<string, unknown>[] };
+        }
+      ).payload.timers;
+    expect(await read()).toEqual([
+      {
+        timerId: scheduled.timer,
+        title: "查明天带伞",
+        task: "查东京明天会不会下雨",
+        schedule: "每天 21:00（Asia/Tokyo）",
+        createdBy: "owner",
+        status: "active",
+        nextAt: "2026-11-25T12:00:00.000Z",
+        lastAt: null,
+        runCount: 0,
+        spentMicros: 0,
+        runBudgetMicros: 500_000,
+        createdAt: START,
+      },
+    ]);
+    const change = (action: string, actorType = "owner", timerId = scheduled.timer) =>
+      control.execute({
+        kind: "command",
+        type: "timers.change",
+        actor: { actorType, actorId: "owner" },
+        scope,
+        payload: { timerId, action },
+      } as never);
+    await change("pause");
+    expect((await read())[0]).toMatchObject({ status: "paused" });
+    await change("pause");
+    expect((await read())[0]).toMatchObject({ status: "paused" });
+    await change("resume");
+    expect((await read())[0]).toMatchObject({
+      status: "active",
+      nextAt: "2026-11-25T12:00:00.000Z",
+    });
+    await expect(change("cancel", "client")).rejects.toThrow("TIMER_OWNER_REQUIRED");
+    await expect(change("cancel", "owner", "timer:missing")).rejects.toThrow("TIMER_NOT_FOUND");
+    expect((await read())[0]).toMatchObject({ status: "active" });
+    await change("cancel");
+    expect((await read())[0]).toMatchObject({ status: "cancelled", nextAt: null });
+    await expect(change("resume")).rejects.toThrow("TIMER_STATE_CHANGED");
+    expect(f.query("SELECT status FROM subthreads")).toEqual([{ status: "stopped" }]);
+    f.setNow("2026-11-25T12:00:05.000Z");
+    await f.subthreads.tickTimers();
+    expect(timerEvents(f)).toEqual([]);
   });
 
   it("REVERSE: refuses a schedule that is not exactly one of the three kinds and stores nothing", async () => {

@@ -322,6 +322,7 @@ function scheduleText(schedule: TimerSchedule): string {
 export interface SubthreadTimerView {
   readonly timer: SubthreadTimerRecord;
   readonly title: string | null;
+  readonly task: string;
   readonly schedule: string;
   readonly spentMicros: number;
 }
@@ -1278,6 +1279,8 @@ export class ProductionSubthreads {
     const briefRef = `subthread-brief:${openKey}`;
     const briefText = renderPrompt(TIMER_BRIEF, { task, schedule: scheduleText(schedule) });
     const classification = await this.#put(briefRef, briefText);
+    const taskRef = `timer-task:${openKey}`;
+    await this.#put(taskRef, task);
     await this.#options.commands.create({
       ownerId: this.#options.ownerId as Create["ownerId"],
       agentId: this.#options.agentId as Create["agentId"],
@@ -1312,7 +1315,7 @@ export class ProductionSubthreads {
       id: timerId,
       threadId,
       schedule: schedule as unknown as Readonly<Record<string, unknown>>,
-      taskRef: briefRef,
+      taskRef,
       createdBy: createdBy as SubthreadTimerCreator,
       nextAt: nextFrom(schedule, now),
       runBudgetMicros,
@@ -1399,7 +1402,7 @@ export class ProductionSubthreads {
       run: String(timer.runCount + 1),
       due: localTime(evaluation.scheduledAt, schedule.timeZone ?? this.#timeZone),
     });
-    const brief = timer.runCount === 0 ? await this.#text(timer.taskRef) : undefined;
+    const brief = timer.runCount === 0 ? await this.#text(subthread.briefRef) : undefined;
     await this.#submit({
       kind: TIMER_EVENT_KIND,
       sourceRef: timer.id,
@@ -1456,6 +1459,7 @@ export class ProductionSubthreads {
       views.push({
         timer,
         title: subthread?.title ?? null,
+        task: (await this.#text(timer.taskRef)) ?? "",
         schedule: scheduleText(storedSchedule(timer.schedule)),
         spentMicros: await this.#options.store.spentMicros({
           ...this.#scope,

@@ -176,6 +176,9 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "think.settings.read",
   "think.settings.snapshot",
   "think.settings.change",
+  "timers.read",
+  "timers.snapshot",
+  "timers.change",
   "server.status.read",
   "server.status.snapshot",
   "home.read",
@@ -1004,6 +1007,39 @@ const thinkSettingsChangeCommandSchema = object({
     expectedRevision: integer(0),
     key: machineString,
     value: nullable(integer(0)),
+  }),
+});
+const timersQuerySchema = object({
+  ...envelope("query", "timers.read"),
+  payload: object({}),
+});
+const timersSnapshotSchema = object({
+  ...envelope("snapshot", "timers.snapshot"),
+  payload: object({
+    timers: array(
+      object({
+        timerId: machineString,
+        title: nullable(boundedString(20)),
+        task: boundedString(4000),
+        schedule: boundedString(200),
+        createdBy: enumeration(["owner", "agreed", "self"]),
+        status: enumeration(["active", "paused", "cancelled", "finished"]),
+        nextAt: nullable(timestamp),
+        lastAt: nullable(timestamp),
+        runCount: integer(0),
+        spentMicros: integer(0),
+        runBudgetMicros: integer(1),
+        createdAt: timestamp,
+      }),
+    ),
+    generatedAt: timestamp,
+  }),
+});
+const timersChangeCommandSchema = object({
+  ...commandEnvelope("timers.change"),
+  payload: object({
+    timerId: machineString,
+    action: enumeration(["pause", "resume", "cancel"]),
   }),
 });
 export const SERVER_STATUS_OVERALL = ["healthy", "degraded", "not_ready", "not_live"] as const;
@@ -3848,6 +3884,9 @@ const schemasByType = {
   "think.settings.read": thinkSettingsQuerySchema,
   "think.settings.snapshot": thinkSettingsSnapshotSchema,
   "think.settings.change": thinkSettingsChangeCommandSchema,
+  "timers.read": timersQuerySchema,
+  "timers.snapshot": timersSnapshotSchema,
+  "timers.change": timersChangeCommandSchema,
   "server.status.read": serverStatusQuerySchema,
   "server.status.snapshot": serverStatusSnapshotSchema,
   "home.read": homeQuerySchema,

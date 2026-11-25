@@ -687,6 +687,30 @@ export const governanceMessages = [
     key: "queueLimit",
     value: null,
   }),
+  fixture("query", "timers.read", {}),
+  fixture("snapshot", "timers.snapshot", {
+    timers: [
+      {
+        timerId: "timer:0123456789abcdef0123456789abcdef",
+        title: "查明天带伞",
+        task: "查东京明天会不会下雨",
+        schedule: "每天 21:00（Asia/Tokyo）",
+        createdBy: "owner",
+        status: "active",
+        nextAt: "2026-11-26T12:00:00.000Z",
+        lastAt: "2026-11-25T12:00:00.000Z",
+        runCount: 1,
+        spentMicros: 12000,
+        runBudgetMicros: 500000,
+        createdAt: "2026-11-25T00:00:00.000Z",
+      },
+    ],
+    generatedAt: "2026-11-25T12:00:05.000Z",
+  }),
+  fixture("command", "timers.change", {
+    timerId: "timer:0123456789abcdef0123456789abcdef",
+    action: "pause",
+  }),
   fixture("query", "server.status.read", {}),
   fixture("snapshot", "server.status.snapshot", {
     live: true,
