@@ -6,11 +6,13 @@ import {
 } from "@himawari-agent/application/runtime-port";
 import type { PromptEntry } from "@himawari-agent/prompt-catalog";
 import * as catalog from "@himawari-agent/prompt-catalog";
+import * as promptCatalog from "@himawari-agent/prompt-catalog";
 import {
   CHAT_IDENTITY,
   MEMORY_CAPTURE,
   renderPrompt,
   TRUSTED_PROMPT_TEXTS,
+  trustedPromptTexts,
 } from "@himawari-agent/prompt-catalog";
 import { describe, expect, it } from "vitest";
 import { memoryCapturePrompt } from "../src/production-memory-capture.js";
@@ -143,6 +145,10 @@ describe("Himawari's own fixed prompt text on the way to the model", () => {
         expect({ id: entry.id, role, reports }).toEqual({ id: entry.id, role, reports: [] });
       }
     }
+  });
+
+  it("[I-78] trusts every fixed text of every catalog module, so a new module cannot be left out", () => {
+    expect(TRUSTED_PROMPT_TEXTS).toEqual(trustedPromptTexts(Object.values(promptCatalog)));
   });
 
   it("[I-78] does not let a keyword in the fixed text reach a number in the data right after it", async () => {

@@ -21,13 +21,9 @@ import {
   DEFAULT_HOME_URGENCY,
   DEFAULT_REVIEW_PREREVIEW,
   DEFAULT_SEARCH_ASK,
-  DELIVERY_TIMING_DEFAULTS,
-  DELIVERY_TIMING_RANGES,
   DEVICE_CONFIGURATION_DEFAULTS,
   DEVICE_HARD_LIMIT_KEYS,
   DEVICE_HARD_LIMITS,
-  type DeliveryTimingConfiguration,
-  type DeliveryTimingRouteConfiguration,
   type DeviceConfiguration,
   type DeviceHardLimitKey,
   findEmbeddingProfile,
@@ -40,10 +36,7 @@ import {
   IMPORT_DUPLICATE_RANGES,
   type ImportDuplicateConfiguration,
   type ImportDuplicateTuning,
-  THINK_SETTING_DEFINITIONS,
-  THINK_WORTH_DEFAULTS,
-  thinkSettingDefinition,
-  type ThinkWorthConfiguration,
+  INBOX_SETTING_DEFINITIONS,
   isWebProviderId,
   LOCAL_ONNX_EMBEDDING_PROVIDER,
   type ModelCostDescriptor,
@@ -1388,63 +1381,21 @@ function parseOwnerProposals(
   });
 }
 
-function parseThinkInbox(value: unknown): NonNullable<RunPolicyConfiguration["thinkInbox"]> {
-  const field = "configuration.runPolicy.thinkInbox";
+function parseInbox(value: unknown): NonNullable<RunPolicyConfiguration["inbox"]> {
+  const field = "configuration.runPolicy.inbox";
   const input = record(value, field);
   const ranges = Object.fromEntries(
-    THINK_SETTING_DEFINITIONS.filter((definition) => definition.unit !== "permille").map(
-      (definition) => [definition.key, [definition.minimum, definition.maximum] as const],
-    ),
+    INBOX_SETTING_DEFINITIONS.map((definition) => [
+      definition.key,
+      [definition.minimum, definition.maximum] as const,
+    ]),
   );
-  rejectUnknown(input, [...Object.keys(ranges), "worth"], field);
+  rejectUnknown(input, Object.keys(ranges), field);
   const parsed: Record<string, number> = {};
   for (const [key, [low, high]] of Object.entries(ranges)) {
     if (input[key] !== undefined) parsed[key] = integer(input[key], `${field}.${key}`, low, high);
   }
-  return Object.freeze({
-    ...parsed,
-    ...(input["worth"] === undefined ? {} : { worth: parseThinkWorth(input["worth"]) }),
-  });
-}
-
-function parseThinkWorth(value: unknown): ThinkWorthConfiguration {
-  const field = "configuration.runPolicy.thinkInbox.worth";
-  const input = record(value, field);
-  rejectUnknown(
-    input,
-    ["model", "secretRef", "yesAtLeastPermille", "noAtMostPermille", "requestTimeoutMs"],
-    field,
-  );
-  const yesAtLeastPermille =
-    input["yesAtLeastPermille"] === undefined
-      ? THINK_WORTH_DEFAULTS.yesAtLeastPermille
-      : integer(
-          input["yesAtLeastPermille"],
-          `${field}.yesAtLeastPermille`,
-          thinkSettingDefinition("yesAtLeastPermille").minimum,
-          thinkSettingDefinition("yesAtLeastPermille").maximum,
-        );
-  const noAtMostPermille =
-    input["noAtMostPermille"] === undefined
-      ? THINK_WORTH_DEFAULTS.noAtMostPermille
-      : integer(
-          input["noAtMostPermille"],
-          `${field}.noAtMostPermille`,
-          thinkSettingDefinition("noAtMostPermille").minimum,
-          thinkSettingDefinition("noAtMostPermille").maximum,
-        );
-  if (noAtMostPermille >= yesAtLeastPermille)
-    throw invalid(`${field}.noAtMostPermille`, "must be smaller than yesAtLeastPermille");
-  return Object.freeze({
-    model: safeReference(input["model"], `${field}.model`),
-    secretRef: safeReference(input["secretRef"], `${field}.secretRef`),
-    yesAtLeastPermille,
-    noAtMostPermille,
-    requestTimeoutMs:
-      input["requestTimeoutMs"] === undefined
-        ? THINK_WORTH_DEFAULTS.requestTimeoutMs
-        : integer(input["requestTimeoutMs"], `${field}.requestTimeoutMs`, 500, 120_000),
-  });
+  return Object.freeze(parsed);
 }
 
 function parseWebPush(value: unknown): NonNullable<RunPolicyConfiguration["webPush"]> {
@@ -1638,35 +1589,6 @@ function parseSearchAsk(value: unknown): NonNullable<RunPolicyConfiguration["sea
   );
 }
 
-function parseDeliveryTiming(value: unknown): DeliveryTimingRouteConfiguration {
-  const field = "configuration.runPolicy.deliveryTiming";
-  const input = record(value, field);
-  const keys = Object.keys(DELIVERY_TIMING_DEFAULTS) as (keyof DeliveryTimingConfiguration)[];
-  rejectUnknown(input, [...keys, "model", "secretRef", "inputMicrosPerMillionTokens"], field);
-  const tuning = Object.fromEntries(
-    keys.map((key) => {
-      const [minimum, maximum] = DELIVERY_TIMING_RANGES[key];
-      return [
-        key,
-        input[key] === undefined
-          ? DELIVERY_TIMING_DEFAULTS[key]
-          : integer(input[key], `${field}.${key}`, minimum, maximum),
-      ];
-    }),
-  ) as unknown as DeliveryTimingConfiguration;
-  return Object.freeze({
-    ...tuning,
-    model: safeReference(input["model"], `${field}.model`),
-    secretRef: safeReference(input["secretRef"], `${field}.secretRef`),
-    inputMicrosPerMillionTokens: integer(
-      input["inputMicrosPerMillionTokens"],
-      `${field}.inputMicrosPerMillionTokens`,
-      1,
-      100_000_000,
-    ),
-  });
-}
-
 function parseVoiceAddressee(value: unknown): VoiceAddresseeRouteConfiguration {
   const field = "configuration.runPolicy.voiceAddressee";
   const input = record(value, field);
@@ -1857,7 +1779,7 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       "realEval",
       "mcpRead",
       "ownerProposals",
-      "thinkInbox",
+      "inbox",
     ],
     "configuration.runPolicy",
   );
@@ -1919,9 +1841,6 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
     ...(input["voiceAddressee"] === undefined
       ? {}
       : { voiceAddressee: parseVoiceAddressee(input["voiceAddressee"]) }),
-    ...(input["deliveryTiming"] === undefined
-      ? {}
-      : { deliveryTiming: parseDeliveryTiming(input["deliveryTiming"]) }),
     ...(input["homeUrgency"] === undefined
       ? {}
       : { homeUrgency: parseHomeUrgency(input["homeUrgency"]) }),
@@ -1934,9 +1853,7 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
     ...(input["ownerProposals"] === undefined
       ? {}
       : { ownerProposals: parseOwnerProposals(input["ownerProposals"]) }),
-    ...(input["thinkInbox"] === undefined
-      ? {}
-      : { thinkInbox: parseThinkInbox(input["thinkInbox"]) }),
+    ...(input["inbox"] === undefined ? {} : { inbox: parseInbox(input["inbox"]) }),
     ...(input["importDuplicates"] === undefined
       ? {}
       : { importDuplicates: parseImportDuplicates(input["importDuplicates"]) }),
@@ -1957,10 +1874,17 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       0,
       memoryLimit,
     ),
-    ...(input["maxMemoryClassification"] === undefined
-      ? {}
-      : { retiredKeys: Object.freeze(["maxMemoryClassification"]) }),
+    ...retiredRunPolicyKeys(input),
   });
+}
+
+const RETIRED_RUN_POLICY_KEYS = ["maxMemoryClassification", "deliveryTiming"] as const;
+
+function retiredRunPolicyKeys(input: JsonRecord): {
+  readonly retiredKeys?: readonly string[];
+} {
+  const retired = RETIRED_RUN_POLICY_KEYS.filter((key) => input[key] !== undefined);
+  return retired.length === 0 ? {} : { retiredKeys: Object.freeze(retired) };
 }
 
 export const DEVICE_ACCESS_SECRET_PURPOSES = [
@@ -2081,6 +2005,7 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       "storagePath",
       "dimensions",
       "minimumSimilarity",
+      "toolResultShare",
       "retrieval",
       "conversationReview",
     ],
@@ -2094,6 +2019,12 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       : unitInterval(memory["minimumSimilarity"], "configuration.memory.minimumSimilarity");
   if (minimumSimilarity !== undefined && (minimumSimilarity <= 0 || minimumSimilarity >= 1))
     throw invalid("configuration.memory.minimumSimilarity", "must be greater than 0 and below 1");
+  const toolResultShare =
+    memory["toolResultShare"] === undefined
+      ? undefined
+      : unitInterval(memory["toolResultShare"], "configuration.memory.toolResultShare");
+  if (toolResultShare !== undefined && (toolResultShare <= 0 || toolResultShare > 0.5))
+    throw invalid("configuration.memory.toolResultShare", "must be greater than 0 and at most 0.5");
   if (memory["adapter"] !== "himawari-sqlite" && memory["adapter"] !== "mem0-oss")
     throw invalid("configuration.memory.adapter", "is unsupported");
   const memoryPath = absolutePath(memory["storagePath"], "configuration.memory.storagePath");
@@ -2250,13 +2181,6 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       "model-auth",
       "configuration.runPolicy.importDuplicates.secretRef",
     );
-  if (runPolicy?.thinkInbox?.worth)
-    assertIdentitySecretReference(
-      secretReferences,
-      runPolicy.thinkInbox.worth.secretRef,
-      "model-auth",
-      "configuration.runPolicy.thinkInbox.worth.secretRef",
-    );
   if (runPolicy?.museIntake)
     assertIdentitySecretReference(
       secretReferences,
@@ -2366,6 +2290,7 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       storagePath: memoryPath,
       dimensions: memoryDimensions,
       ...(minimumSimilarity === undefined ? {} : { minimumSimilarity }),
+      ...(toolResultShare === undefined ? {} : { toolResultShare }),
       ...(retrieval === undefined ? {} : { retrieval }),
       ...(conversationReviewSettings === undefined
         ? {}

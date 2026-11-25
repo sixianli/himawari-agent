@@ -128,9 +128,6 @@ export const messages = {
   "answer.copy": "Copy answer",
   "answer.copied": "Copied",
   "answer.copyHint": "Copy only the answer text above, without sources or files",
-  "answer.fork": "Branch into new chat",
-  "answer.forkHint":
-    "Branch into a new chat with everything up to this turn. The original stays as it is.",
   "fork.banner": "Branched from “{title}” at turn {turn}",
   "fork.bannerMissing": "Branched from another chat that no longer exists",
   "fork.openSource": "Open original",
@@ -182,6 +179,12 @@ export const messages = {
   "chat.search.enable": "Allow web search",
   "chat.search.revoke": "Revoke web search permission",
   "chat.allowOnce": "Allow once",
+  "chat.allowance.legend": "How long this yes lasts",
+  "chat.allowance.option":
+    "{scope, select, once {Just this once} this_task {For this task} days {For {days} days} other {From now on}}",
+  "chat.allowance.allow": "Allow",
+  "chat.allowance.failed":
+    "Allowed this time, but the longer permission wasn’t saved, so you’ll be asked again next time",
   "chat.allowAll": "Allow all {count}",
   "chat.approval.batch": "This step has {count} identical actions. One approval covers them all.",
   "chat.approval.searchBatch": "This step searches {count} times. One approval covers them all.",
@@ -300,6 +303,7 @@ export const messages = {
   "chat.nextAction.failedBeforeAnyOperation":
     "No tool operation ran in this turn. You can send it again.",
   "appearance.theme": "Theme",
+  "chat.main": "Main conversation",
   "chat.untitled": "New conversation",
   "chat.latest": "Back to latest",
   "chat.placeholder": "Go on, I remember everything we've talked about 🌻",
@@ -549,7 +553,6 @@ export const messages = {
   "improvements.title": "Improvements awaiting adoption",
   "threads.draft": "Message draft",
   "threads.send": "Send",
-  "threads.new": "New thread",
   "threads.search": "Search threads",
   "threads.messages": "Committed messages",
   "threads.rename": "Rename",
@@ -721,6 +724,10 @@ export const messages = {
   "memory.page.noUpcoming": "Nothing to remind you about in the next 60 days.",
   "memory.page.yearly": "every year",
   "memory.page.cancelled": "No more reminders for “{text}”; the memory stays",
+  "memory.page.restored": "“{text}” will remind you again",
+  "memory.page.restoreFailed": "Couldn’t bring this reminder back; please try again later",
+  "memory.reminderRestore": "Restore",
+  "reminders.cancelledGroup": "Recently cancelled",
   "memory.page.notify":
     "Due reminders are pushed to every device where you turned on notifications.",
   "memory.page.lines": "{count}",
@@ -928,12 +935,18 @@ export const messages = {
   "rules.reconfirm": "Confirm again",
   "rules.undo": "Undo",
   "rules.builtIn.title": "Built-in rules · {count}",
+  "rules.allowances.title": "Permissions you gave · {count}",
+  "rules.allowances.note":
+    "The same action isn’t asked again while a permission lasts. After an email, web page or other outside content was read, “for some days” and “from now on” don’t count and you are asked.",
+  "rules.allowances.scope":
+    "{scope, select, this_task {Only in that task} days {Until {until}} other {From now on}}",
+  "rules.allowances.revoke": "Take back",
   "rules.builtIn.note":
     "These rules are written into the program and decide whether Himawari asks you before acting. Each one carries examples it must and must not match, and every build runs them. The “just do it” rules can be switched to ask you every time; the “ask you” and “don’t do it” rules are safety floors and cannot be loosened.",
   "rules.builtIn.name":
-    "{id, select, action_preauthorize_owner_data {Changing your own data: just do it} action_preauthorize_own_task_cancel {Stopping its own task: just do it} action_preauthorize_owner_intent_confirmed {After reading outside content, something you clearly asked for: just do it} action_ask_after_external_content {Acting after reading outside content: ask you first} action_refuse_background_after_external_content {Acting in the background after reading outside content: don’t do it} other {Other built-in rule}}",
+    "{id, select, action_preauthorize_owner_data {Changing your own data: just do it} action_preauthorize_own_task_cancel {Stopping its own task: just do it} action_preauthorize_owner_intent_confirmed {After reading outside content, something you clearly asked for: just do it} action_preauthorize_himawari_side_after_external_content {After reading outside content, changing only Himawari’s own records: just do it} action_ask_after_external_content {Acting after reading outside content: ask you first} action_refuse_background_after_external_content {Acting in the background after reading outside content: don’t do it (retired)} other {Other built-in rule}}",
   "rules.builtIn.when":
-    "{id, select, action_preauthorize_owner_data {For example setting a reminder or saving a rule: undoable, sent to no one, medium risk, and nothing from outside such as a web page or task output was read in this conversation.} action_preauthorize_own_task_cancel {For example stopping a background task Himawari started itself. Tasks it did not start are not covered.} action_preauthorize_owner_intent_confirmed {For example setting a reminder you asked for in your own words after a web page was read. Only used when the intent check is on and sure; otherwise a card asks you.} action_ask_after_external_content {For example setting a reminder or changing a rule after reading a web page or task output: a card asks for your OK.} action_refuse_background_after_external_content {For example a scheduled or event-started run that read outside content and wants to change a rule: it is not done and no card is shown; only what it wanted is recorded. A task you agreed to is the exception: a card asks you instead.} other {}}",
+    "{id, select, action_preauthorize_owner_data {For example setting a reminder or saving a rule: undoable, sent to no one, medium risk, and nothing from outside such as a web page or task output was read in this conversation.} action_preauthorize_own_task_cancel {For example stopping a background task Himawari started itself. Tasks it did not start are not covered.} action_preauthorize_owner_intent_confirmed {For example setting a reminder you asked for in your own words after a web page was read. Only used when the intent check is on and sure; otherwise a card asks you.} action_preauthorize_himawari_side_after_external_content {For example setting you a reminder or noting something after reading an email: it only changes Himawari’s own records, can be undone and is sent to no one, so it is done right away and records which email or web page led to it.} action_ask_after_external_content {For example changing your calendar, changing a rule or sending something out after reading an email, web page or task output: whether you or a background run started it, a card asks for your OK.} action_refuse_background_after_external_content {Retired: a background run that read outside content is no longer just refused; a card asks you instead.} other {}}",
   "rules.builtIn.examples": "Examples: {hit} should match, {miss} should not",
   "rules.builtIn.askFirst": "Ask me every time",
   "review.title": "To recheck after memory edits · {count}",

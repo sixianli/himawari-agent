@@ -182,6 +182,23 @@ describe("chat export", () => {
     expect(omitted("受限")).toBe(1);
   });
 
+  it("[PR631-10] messages hidden from the Owner are not exported and not counted as restricted", async () => {
+    const s = await side("internal");
+    await seedThread(s, "t-main", {
+      messages: [
+        { text: "主人说的话" },
+        { text: "后台送来的事件", internal: true },
+        { text: "受限的后台往来", classification: "restricted", internal: true },
+      ],
+    });
+    const { files, manifest } = await exportOf(s);
+    const text = everyText(files);
+    expect(text).not.toContain("后台送来的事件");
+    expect(text).not.toContain("受限的后台往来");
+    expect(jsonl(files)[0]?.messages.map((message) => message.text)).toEqual(["主人说的话"]);
+    expect(manifest.omitted.find((entry) => entry.what.includes("受限"))?.count ?? 0).toBe(0);
+  });
+
   it("threads Himawari opened to think something over are not exported, and are counted", async () => {
     const s = await side("think");
     await seedThread(s, "t-owner", { messages: [{ text: "我自己的对话" }] });

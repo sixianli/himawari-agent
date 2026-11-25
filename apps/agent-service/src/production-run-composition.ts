@@ -83,7 +83,10 @@ import { ProductionUploadedFiles } from "./production-uploaded-files.js";
 
 export interface ProductionRunCompositionOptions {
   readonly egress: ModelEgress;
-  readonly externalContent?: Pick<ContextExternalContent, "mark" | "read" | "readThread">;
+  readonly externalContent?: Pick<
+    ContextExternalContent,
+    "mark" | "markRunSource" | "read" | "readThread"
+  >;
   readonly toolRefusalLimits?: ToolRefusalConfiguration;
   readonly generateTitle?: (
     request: RuntimeRequest,
@@ -104,7 +107,7 @@ export interface ProductionRunCompositionOptions {
     ) => Promise<string>;
     readonly episodes?: Pick<
       ProductionMemoryEpisodesOptions,
-      "service" | "embedWithin" | "onFailure"
+      "service" | "turns" | "embedWithin" | "onFailure"
     >;
     readonly consolidation?: Pick<
       ProductionMemoryConsolidationOptions,
@@ -183,6 +186,7 @@ export interface ProductionRunCompositionOptions {
   readonly cwd: string;
   readonly agentDir: string;
   readonly timeZone?: string;
+  readonly memorySnapshotCharacters?: number;
   readonly onFailure: (failure: ProductionRunDispatchLoopFailure) => void;
   readonly onRunTiming?: (diagnostic: RunTimingDiagnostic) => void;
   readonly onBackgroundFailure?: (runId: string, error: unknown) => void;
@@ -317,6 +321,10 @@ export function createProductionRunComposition(options: ProductionRunComposition
     },
     digest: (text) => createHash("sha256").update(text).digest("hex"),
     reminders: repository.memoryReminders(),
+    conversations: repository.conversationTurns(),
+    ...(options.memorySnapshotCharacters
+      ? { snapshotCharacterBudget: options.memorySnapshotCharacters }
+      : {}),
     ...(options.timeZone ? { timeZone: options.timeZone } : {}),
   });
   const context = timings.methods(
@@ -358,6 +366,7 @@ export function createProductionRunComposition(options: ProductionRunComposition
   const projection: typeof resolvedProjection = externalContent
     ? Object.assign(Object.create(resolvedProjection) as typeof resolvedProjection, {
         resolveProjection: async (request: RuntimeProjectionRequest) => {
+          await externalContent.markRunSource(request.runId);
           const resolved = await resolvedProjection.resolveProjection(request);
           if (resolved.ownerAttachments)
             await externalContent.mark(request.runId, "owner_attachment");
@@ -582,6 +591,7 @@ export function createProductionRunComposition(options: ProductionRunComposition
   const memoryEpisodes = memoryEpisodeOptions
     ? new ProductionMemoryEpisodes({
         service: memoryEpisodeOptions.service,
+        ...(memoryEpisodeOptions.turns ? { turns: memoryEpisodeOptions.turns } : {}),
         threads: repository.threadRepository(),
         payloads,
         protector,

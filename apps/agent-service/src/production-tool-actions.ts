@@ -6,7 +6,17 @@ import {
   ToolActionRegistry,
   type ToolActionRow,
 } from "@himawari-agent/application";
+import {
+  RUNTIME_CONTEXT_EXECUTOR,
+  TOOL_RESULT_RECALL_CAPABILITY_REF,
+} from "./production-context-recall.js";
+import {
+  CONVERSATION_OPEN_CAPABILITY_REF,
+  CONVERSATION_SEARCH_CAPABILITY_REF,
+} from "./production-conversation-tools.js";
+import { MAIL_READ_CAPABILITY_REF } from "./production-mail-read.js";
 import { MANAGED_TASK_ACTIONS } from "./production-managed-tasks.js";
+import { MEMORY_OPEN_CAPABILITY_REF } from "./production-memory-open.js";
 import { MEMORY_RECALL_CAPABILITY_REF } from "./production-memory-recall.js";
 import {
   RULE_LIST_CAPABILITY_REF,
@@ -22,6 +32,7 @@ import {
   REMINDER_LIST_CAPABILITY_REF,
   REMINDER_SET_CAPABILITY_REF,
 } from "./production-reminder-writer.js";
+import { TELL_OWNER_CAPABILITY_REF } from "./production-tell-owner.js";
 
 export const BUILT_IN_CAPABILITY_VERSION = "1.0.0";
 
@@ -256,8 +267,77 @@ export const PRODUCTION_TOOL_ACTION_ROWS: readonly ToolActionRow[] = Object.free
     detail: detail({ zh: "查记忆", en: "Search memories", ja: "記憶を検索" }, "query"),
   },
   {
+    ...READ_DEFAULTS,
+    tool: "conversation_search",
+    family: "builtin",
+    capabilityRef: CONVERSATION_SEARCH_CAPABILITY_REF,
+    operation: "search",
+    targetType: "owner-conversation",
+    resultOrigin: "owner_data",
+    authorization: "read",
+    executor: "owner_scoped",
+    deduplication: "run_and_tool_call",
+    detail: detail(
+      { zh: "搜以前的对话", en: "Search past conversations", ja: "過去の会話を検索" },
+      "query",
+    ),
+  },
+  {
+    ...READ_DEFAULTS,
+    tool: "conversation_open",
+    family: "builtin",
+    capabilityRef: CONVERSATION_OPEN_CAPABILITY_REF,
+    operation: "open",
+    targetType: "owner-conversation",
+    resultOrigin: "owner_data",
+    authorization: "read",
+    executor: "owner_scoped",
+    deduplication: "run_and_tool_call",
+    detail: detail(
+      { zh: "打开以前的对话", en: "Open a past conversation", ja: "過去の会話を開く" },
+      "conversationId",
+    ),
+  },
+  {
+    ...READ_DEFAULTS,
+    tool: "memory_open",
+    family: "builtin",
+    capabilityRef: MEMORY_OPEN_CAPABILITY_REF,
+    operation: "open",
+    targetType: "owner-memory-record",
+    resultOrigin: "owner_data",
+    authorization: "read",
+    executor: "owner_scoped",
+    deduplication: "run_and_tool_call",
+    detail: detail({ zh: "打开一条记忆", en: "Open a memory", ja: "記憶を開く" }, "number"),
+  },
+  {
+    ...READ_DEFAULTS,
+    tool: "mail_read",
+    family: "builtin",
+    capabilityRef: MAIL_READ_CAPABILITY_REF,
+    operation: "read",
+    targetType: "owner-mail",
+    resultOrigin: "external",
+    authorization: "read",
+    executor: "owner_scoped",
+    deduplication: "run_and_tool_call",
+    detail: detail({ zh: "读整串邮件", en: "Read mail thread", ja: "メールのスレッドを読む" }),
+  },
+  {
+    ...OWNER_WRITE_DEFAULTS,
+    tool: "tell_owner",
+    himawariSideOnly: true,
+    capabilityRef: TELL_OWNER_CAPABILITY_REF,
+    operation: "tell",
+    targetType: "owner-message",
+    standingRuleChange: false,
+    detail: detail({ zh: "告诉你", en: "Tell you", ja: "あなたに伝える" }, "text"),
+  },
+  {
     ...OWNER_WRITE_DEFAULTS,
     tool: "reminder_set",
+    himawariSideOnly: true,
     capabilityRef: REMINDER_SET_CAPABILITY_REF,
     operation: "set",
     targetType: "owner-reminder",
@@ -319,6 +399,26 @@ export const PRODUCTION_TOOL_ACTION_ROWS: readonly ToolActionRow[] = Object.free
     targetType: "owner-rule",
     standingRuleChange: true,
     detail: detail({ zh: "撤销规则", en: "Undo rule", ja: "ルールを取り消す" }, "ruleId"),
+  },
+  {
+    ...READ_DEFAULTS,
+    tool: "tool_result_recall",
+    family: "builtin",
+    capabilityRef: TOOL_RESULT_RECALL_CAPABILITY_REF,
+    operation: "read",
+    targetType: "conversation-context",
+    resultOrigin: "owner_data",
+    authorization: "read",
+    executor: RUNTIME_CONTEXT_EXECUTOR,
+    deduplication: "run_and_tool_call",
+    detail: detail(
+      {
+        zh: "取回已清理的工具结果",
+        en: "Recall a cleared tool result",
+        ja: "整理済みのツール結果を取り戻す",
+      },
+      "toolCallId",
+    ),
   },
   {
     ...READ_DEFAULTS,

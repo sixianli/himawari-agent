@@ -196,6 +196,7 @@ export class ThreadCommandService {
     readonly turnId?: TurnId;
     readonly runId?: RunId;
     readonly occurredAt?: string;
+    readonly internal?: true;
   }) {
     const occurredAt = input.occurredAt ?? this.dependencies.clock.now();
     const idempotencyKey = createIdempotencyKey(input.idempotencyKey);
@@ -227,6 +228,7 @@ export class ThreadCommandService {
         ...(input.triggerSource && input.triggerSource !== "user_message"
           ? { triggerSource: input.triggerSource }
           : {}),
+        ...(input.internal === true ? { internal: true } : {}),
       }),
       occurredAt,
       authority: this.dependencies.authority(),
@@ -271,6 +273,33 @@ export class ThreadCommandService {
         contentRef: input.contentRef,
       }),
       committedAt: input.committedAt ?? this.dependencies.clock.now(),
+      authority: this.dependencies.authority(),
+    });
+  }
+
+  postAgentMessage(input: {
+    readonly ownerId: OwnerId;
+    readonly agentId: AgentId;
+    readonly threadId: ThreadId;
+    readonly runId: RunId;
+    readonly messageId: MessageId;
+    readonly idempotencyKey: string;
+    readonly contentRef: PayloadRef;
+    readonly dataClassification: DataClassification;
+    readonly resultRef: PayloadRef;
+  }) {
+    const idempotencyKey = createIdempotencyKey(input.idempotencyKey);
+    return this.dependencies.repository.postAgentMessage({
+      ...input,
+      idempotencyKey,
+      semanticFingerprint: threadCommandFingerprint({
+        type: "thread.message.post_agent",
+        threadId: input.threadId,
+        runId: input.runId,
+        messageId: input.messageId,
+        contentRef: input.contentRef,
+      }),
+      committedAt: this.dependencies.clock.now(),
       authority: this.dependencies.authority(),
     });
   }

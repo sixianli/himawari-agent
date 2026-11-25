@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8">
+<title>Himawari 锁屏通知和收听状态</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;font-family:-apple-system,"SF Pro Text","PingFang SC","Hiragino Sans GB",system-ui,sans-serif}
+a{color:#f2bb4f}a:hover{color:#f6cd7c}
+button{font-family:inherit}
+.round{font-family:ui-rounded,"SF Pro Rounded",-apple-system,"PingFang SC",system-ui,sans-serif}
+.glass{background:rgba(255,255,255,0.14);backdrop-filter:blur(24px) saturate(160%);-webkit-backdrop-filter:blur(24px) saturate(160%);box-shadow:inset 0 0 0 1px rgba(255,255,255,0.12)}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: radial-gradient(420px 380px at 300px 120px, rgba(201,135,10,0.55), transparent), radial-gradient(380px 420px at 40px 700px, rgba(66,104,42,0.45), transparent), #1b1c19; color: #ffffff; padding: 76px 12px 44px; display: flex; flex-direction: column; justify-content: space-between">
+<div style="display: flex; flex-direction: column; align-items: center; gap: 0">
+<div style="font-size: 20px; font-weight: 500; color: #ecece8">11 月 12 日 周四</div>
+<div class="round" style="font-size: 96px; font-weight: 600; line-height: 1.05; letter-spacing: -2px">10:21</div>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 8px">
+<div class="glass" style="border-radius: 26px; padding: 14px 16px; display: flex; flex-direction: column; gap: 12px">
+<div style="display: flex; align-items: center; gap: 10px">
+<img alt="" src="/_blob/f5bf5edf0931bb1e5bc74d786052b3db" style="width: 24px; height: 24px; border-radius: 6px; background: #fcfcfb">
+<div style="flex: 1; font-size: 15px; font-weight: 600">给田中发邮件</div>
+<div style="font-size: 13px; color: #d6d7d0">现在</div>
+</div>
+<div style="font-size: 15px; line-height: 1.45; color: #ecece8">确认周五 14:00 在新大阪站见面，等你决定</div>
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px">
+<button style="height: 44px; border: 0; border-radius: 22px; background: rgba(255,255,255,0.16); color: #ffffff; font-size: 15px">看内容</button>
+<button style="height: 44px; border: 0; border-radius: 22px; background: rgba(255,255,255,0.16); color: #ffffff; font-size: 15px">不发</button>
+<button style="height: 44px; border: 0; border-radius: 22px; background: #ffffff; color: #1b1c19; font-size: 15px; font-weight: 600">同意</button>
+</div>
+</div>
+
+<div class="glass" style="border-radius: 26px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px">
+<div style="display: flex; align-items: center; gap: 10px">
+<img alt="" src="/_blob/f5bf5edf0931bb1e5bc74d786052b3db" style="width: 24px; height: 24px; border-radius: 6px; background: #fcfcfb">
+<div style="flex: 1; font-size: 15px; font-weight: 600">10:30 的会在 3 楼会议室</div>
+<div style="font-size: 13px; color: #d6d7d0">9:58</div>
+</div>
+<div style="font-size: 15px; line-height: 1.45; color: #ecece8">上次答应给田中看的报价单，我放在这里了</div>
+</div>
+
+<div class="glass" style="border-radius: 26px; padding: 12px 12px 12px 16px; display: flex; align-items: center; gap: 12px">
+<img alt="" src="/_blob/f5bf5edf0931bb1e5bc74d786052b3db" style="width: 36px; height: 36px">
+<div style="flex: 1; display: flex; flex-direction: column; gap: 1px">
+<div style="font-size: 15px; font-weight: 600">在听</div>
+<div class="round" style="font-size: 13px; color: #d6d7d0">和田中开会 · 45 分钟</div>
+</div>
+<button aria-label="暂停收听" style="width: 44px; height: 44px; border: 0; border-radius: 22px; background: rgba(255,255,255,0.16); color: #ffffff; display: flex; align-items: center; justify-content: center">
+<svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4.500" height="14" rx="1.500"/><rect x="13.500" y="5" width="4.500" height="14" rx="1.500"/></svg>
+</button>
+</div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

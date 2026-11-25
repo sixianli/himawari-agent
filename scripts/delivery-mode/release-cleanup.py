@@ -1,5 +1,6 @@
 import base64
 import hashlib
+import importlib.util
 import json
 from pathlib import Path
 import subprocess
@@ -15,10 +16,21 @@ LOCK_PATH = '/run/lock/himawari-release-cleanup.lock'
 SCRATCH_ROOT = '/tmp'
 KEEP_FAILURE_SCENES = 1
 KEEP_FAILED_ACCEPTANCE = 2
+KEEP_FAILED_ATTEMPTS = 2
+FAILED_ATTEMPT_BYTES = 200 * 1024 ** 2
+TARGET_PATHS_LEFT_EXIT = 3
+
+
+def load_target_paths():
+    spec = importlib.util.spec_from_file_location('deploy_target_paths', HERE / 'deploy-target-paths.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def cleanup_plan(binding, keep_failure_scenes=KEEP_FAILURE_SCENES, freeze_sha256=None):
     paths = binding['paths']
+    owned = load_target_paths()
     evidence_parent = str(Path(paths['evidenceRoot']).parent)
     return {
         'hostname': binding['host']['hostname'],
@@ -45,6 +57,10 @@ def cleanup_plan(binding, keep_failure_scenes=KEEP_FAILURE_SCENES, freeze_sha256
         'freezeSha256': freeze_sha256,
         'qualificationTarget': binding['service']['newQualificationEvidenceRoot'],
         'keepFailedAcceptance': KEEP_FAILED_ACCEPTANCE,
+        'targetPaths': owned.target_paths(binding),
+        'targetParents': owned.allowed_parents(binding),
+        'keepFailedAttempts': KEEP_FAILED_ATTEMPTS,
+        'failedAttemptBytes': FAILED_ATTEMPT_BYTES,
     }
 
 
@@ -63,7 +79,10 @@ def main():
     if child.returncode != 0 or line is None:
         print('CLEANUP_FAILED exit=' + str(child.returncode) + ' ' + child.stderr.decode(errors='replace').strip())
         return 1
-    result = json.loads(line.split(' ', 1)[1])
+    return report(json.loads(line.split(' ', 1)[1]))
+
+
+def report(result):
     for item in result['deleted']:
         print('CLEANUP_DELETED ' + item['reason'] + ' ' + item['path'] + ' ' + str(item['bytes']))
     for item in result['trimmed']:
@@ -74,8 +93,10 @@ def main():
         print('CLEANUP_STALE_TRANSPORT pid=' + str(item['pid']) + ' terminated=' + str(item['terminated']).lower())
     for item in result['kept']:
         print('CLEANUP_KEPT ' + item['reason'] + ' ' + item['path'])
+    for item in result.get('targetPathsLeft', []):
+        print('CLEANUP_TARGET_PATH_LEFT ' + item['reason'] + ' ' + item['path'])
     print('CLEANUP_RESULT ' + json.dumps({'mode': result['mode'], 'freedBytes': result['freedBytes'], 'archivedFiles': len(result['archived']), 'rootFreeBeforeBytes': result['rootFreeBeforeBytes'], 'rootFreeAfterBytes': result['rootFreeAfterBytes'], 'report': result.get('report')}))
-    return 0
+    return TARGET_PATHS_LEFT_EXIT if result['mode'] == 'apply' and result.get('targetPathsLeft') else 0
 
 
 if __name__ == '__main__':

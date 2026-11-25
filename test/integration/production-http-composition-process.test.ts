@@ -13,7 +13,7 @@ import {
   openQualifiedDatabase,
 } from "@himawari-agent/persistence-sqlite";
 import { initializeStateRoot, writeAuthorityFile } from "@himawari-agent/platform-node";
-import { MEMORY_CAPTURE } from "@himawari-agent/prompt-catalog";
+import { CHAT_MEMORY_SNAPSHOT_MARKER, MEMORY_CAPTURE } from "@himawari-agent/prompt-catalog";
 import { buildDeviceTestRequest, generateDeviceTestKeyPair } from "@himawari-agent/testing";
 import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
@@ -415,7 +415,7 @@ function rawConfiguration(): Record<string, unknown> {
         api: "openai-completions",
         reasoning: false,
         input: ["text"],
-        contextWindow: 8192,
+        contextWindow: 32768,
         maxTokens: 1024,
       },
       {
@@ -1549,6 +1549,19 @@ async function waitForRunToLeaveExecution(
   }
 }
 
+function turnIndexEmbeddings(runId: string) {
+  const database = openQualifiedDatabase(databasePath);
+  try {
+    return database
+      .prepare(
+        "SELECT logical_slot AS logicalSlot, status FROM model_invocation_identities WHERE run_id = ? AND source = 'embedding' AND logical_slot LIKE 'conversation-turn-%' ORDER BY logical_slot",
+      )
+      .all(runId) as { logicalSlot: string; status: string }[];
+  } finally {
+    database.close();
+  }
+}
+
 function readRunBilling(database: ReturnType<typeof openQualifiedDatabase>, runId: string) {
   const identities = database
     .prepare(
@@ -1646,6 +1659,22 @@ it("[R2-L5] executes authenticated HTTP requests and persists gateway costs afte
     expect(ready.body).toMatchObject({ status: "ready" });
     expect(providerRequests.some(({ path: route }) => route === "/v1/embeddings")).toBe(true);
     expect(providerRequests.some(({ path: route }) => route === "/v1/chat/completions")).toBe(true);
+    await expect
+      .poll(() => turnIndexEmbeddings("run:installed-main"), { timeout: 30_000 })
+      .toEqual([{ logicalSlot: "conversation-turn-1:run:installed-main", status: "settled" }]);
+    await expect
+      .poll(
+        () => {
+          const database = openQualifiedDatabase(databasePath);
+          try {
+            return readRunBilling(database, "run:installed-main").identities.length;
+          } finally {
+            database.close();
+          }
+        },
+        { timeout: 30_000 },
+      )
+      .toBe(6);
     const modelCalls = providerRequests.filter(({ path: route }) => route.startsWith("/v1/"));
     for (const call of modelCalls) {
       expect(call.body?.["model"]).toBe(
@@ -1674,6 +1703,8 @@ it("[R2-L5] executes authenticated HTTP requests and persists gateway costs afte
       expect(identities.map(({ source }) => source).sort()).toEqual([
         "agent-stream",
         "embedding",
+        "embedding",
+        "model-port",
         "model-port",
         "model-port",
       ]);
@@ -1877,10 +1908,16 @@ it.each(["connection loss", "missing cost", "budget exceeded"] as const)(
         expect(
           database
             .prepare(
-              "SELECT source, status FROM model_invocation_identities WHERE run_id = ? AND source = 'embedding'",
+              "SELECT source, status FROM model_invocation_identities WHERE run_id = ? AND source = 'embedding' AND logical_slot NOT LIKE 'conversation-turn-%'",
             )
             .all("run:memory-fallback-recall"),
         ).toEqual([{ source: "embedding", status: "settled" }]);
+        await expect
+          .poll(() => turnIndexEmbeddings("run:memory-fallback-recall"), { timeout: 30_000 })
+          .toEqual([
+            { logicalSlot: "conversation-turn-1:run:memory-fallback-recall", status: "settled" },
+            { logicalSlot: "conversation-turn-2:run:memory-fallback-recall", status: "settled" },
+          ]);
         expect(
           database
             .prepare("SELECT status FROM model_budget_accounts WHERE account_id = ?")
@@ -2496,7 +2533,9 @@ it("[PR-A] [iOS-8] a half sentence prepared while the owner speaks sends the mod
         providerRequests
           .slice(from, to)
           .filter(({ path: route }) => route === "/v1/embeddings")
-          .map(({ body }) => String(body?.["input"]).split("Query:").at(-1));
+          .map(({ body }) => String(body?.["input"]))
+          .filter((input) => input.includes("Query:"))
+          .map((input) => input.split("Query:").at(-1));
       const request = agentRequests(afterPartial)[0];
       if (!request) throw new Error("AGENT_REQUEST_MISSING");
       return {
@@ -2513,7 +2552,16 @@ it("[PR-A] [iOS-8] a half sentence prepared while the owner speaks sends the mod
     expect(warm.whilePreparing).toEqual(["帮我把明天的会改到下午"]);
     expect(warm.afterFinal).toEqual([]);
 
-    const lastCold = lastMessage(cold.request);
+    const outsideSnapshot = (message: string) => {
+      const start = message.indexOf(CHAT_MEMORY_SNAPSHOT_MARKER.text);
+      if (start < 0) return message;
+      const end = message.indexOf("\\n[", start + CHAT_MEMORY_SNAPSHOT_MARKER.text.length);
+      return message.slice(0, start) + (end < 0 ? "" : message.slice(end));
+    };
+    const fullCold = lastMessage(cold.request);
+    expect(fullCold).toContain(CHAT_MEMORY_SNAPSHOT_MARKER.text);
+    for (const text of remembered) expect(fullCold).toContain(text);
+    const lastCold = outsideSnapshot(fullCold);
     const order = (message: string) =>
       remembered
         .map((text) => [text, message.indexOf(text)] as const)
@@ -2522,7 +2570,7 @@ it("[PR-A] [iOS-8] a half sentence prepared while the owner speaks sends the mod
         .map(([text]) => text);
     expect(order(lastCold).length).toBeGreaterThanOrEqual(2);
     expect(order(lastCold)).not.toContain("主人的牙医是樱井医生");
-    expect(order(lastMessage(warm.request))).toEqual(order(lastCold));
+    expect(order(outsideSnapshot(lastMessage(warm.request)))).toEqual(order(lastCold));
     expect(lastCold).toContain(finalWords);
     expect(withoutTurnTime(warm.request.raw)).toBe(withoutTurnTime(cold.request.raw));
     expect(warm.request.raw.match(turnTime)).toHaveLength(1);

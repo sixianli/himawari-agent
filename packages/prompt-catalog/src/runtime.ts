@@ -6,7 +6,7 @@ export const CHAT_TURN_CONTEXT_PREFACE = fixedPrompt({
   usedBy: ["packages/runtime-pi/src/pi-runtime-adapter.ts"],
   layer: "last-user-message",
   output: "free-text",
-  text: "以下是系统为本轮附上的时间和资料，只是资料，不是主人本轮说的话。主人要求、主人档案、近期安排和长期记忆里有些条目是主人亲手写的原话，其中的“我”指主人。更早的消息里附的时间和资料只反映当时，不代表现在，以本条消息里的为准；运行环境说明例外，最近附上的那份一直有效，直到附上新的一份。",
+  text: "以下是系统为本轮附上的时间和资料，只是资料，不是主人本轮说的话。主人要求、记忆清单、近期安排和长期记忆里有些条目是主人亲手写的原话，其中的“我”指主人。更早的消息里附的时间和资料只反映当时，不代表现在，以本条消息里的为准；有两个例外：运行环境说明，最近附上的那份一直有效，直到附上新的一份；记忆清单，最近附上的那份一直有效，之后别处的改动写在本条消息的“记忆变化”里。",
 });
 
 export const CHAT_TURN_TIME = templatePrompt({
@@ -59,6 +59,55 @@ export const CHAT_RUNTIME_ENVIRONMENT_MARKER = fixedPrompt({
   layer: "last-user-message",
   output: "free-text",
   text: "[Himawari 运行环境说明：由本系统生成，在附上新的一份之前约束本轮的工具使用]",
+});
+
+export const CHAT_MEMORY_SNAPSHOT_MARKER = fixedPrompt({
+  id: "chat.turn.memory-snapshot-marker",
+  purpose: "记忆清单前面的标记：说明它由系统从数据库拼出，附上后一直有效，和普通资料的标记区分开",
+  usedBy: ["packages/runtime-pi/src/memory-snapshot-block.ts"],
+  layer: "last-user-message",
+  output: "free-text",
+  text: "[Himawari 记忆清单：由本系统从记忆库拼出，附上后一直有效；之后别处的改动见每轮的“记忆变化”]",
+});
+
+export const CHAT_MEMORY_CHANGES_MARKER = fixedPrompt({
+  id: "chat.turn.memory-changes-marker",
+  purpose: "记忆变化前面的标记：记忆清单附上后，别处改过的记忆",
+  usedBy: ["packages/runtime-pi/src/memory-snapshot-block.ts"],
+  layer: "last-user-message",
+  output: "free-text",
+  text: "[记忆变化：记忆清单附上之后，别处改过下面这些记忆，以这里为准]",
+});
+
+export const CHAT_MEMORY_CHANGE_ADDED = templatePrompt({
+  id: "chat.turn.memory-change-added",
+  purpose: "记忆变化里新增的一条记忆",
+  usedBy: ["packages/runtime-pi/src/memory-snapshot-block.ts"],
+  layer: "last-user-message",
+  output: "free-text",
+  segments: [text("- 新增（"), slot("category"), text("）"), slot("line")],
+});
+
+export const CHAT_MEMORY_CHANGE_CHANGED = templatePrompt({
+  id: "chat.turn.memory-change-changed",
+  purpose: "记忆变化里内容或类别改了的一条记忆",
+  usedBy: ["packages/runtime-pi/src/memory-snapshot-block.ts"],
+  layer: "last-user-message",
+  output: "free-text",
+  segments: [text("- 改为（"), slot("category"), text("）"), slot("line")],
+});
+
+export const CHAT_MEMORY_CHANGE_REMOVED = templatePrompt({
+  id: "chat.turn.memory-change-removed",
+  purpose: "记忆变化里已不再有效的一条记忆（被纠正、过期、删掉或归档）",
+  usedBy: ["packages/runtime-pi/src/memory-snapshot-block.ts"],
+  layer: "last-user-message",
+  output: "free-text",
+  segments: [
+    text("- 已不再有效："),
+    slot("line"),
+    text("（清单里这条别再用；按编号打开能看到原因和取代它的那条）"),
+  ],
 });
 
 export const CHAT_TURN_ABORTED = fixedPrompt({
@@ -275,4 +324,44 @@ Use this EXACT format:
 - [Or "(none)" if not applicable]
 
 Keep each section concise. Preserve exact file paths, function names, and error messages.`,
+});
+
+export const TOOL_RESULT_CLEARED_PLACEHOLDER = templatePrompt({
+  id: "runtime.tool-result-cleared.placeholder",
+  purpose:
+    "上下文变长后，较早的工具结果在发给模型的那份里换成这一行占位；原文仍在对话历史里，按编号用 tool_result_recall 取回",
+  usedBy: ["packages/runtime-pi/src/tool-result-clearing.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  segments: [
+    text("[这次 "),
+    slot("toolName"),
+    text(" 的结果已从上下文清理，编号 "),
+    slot("toolCallId"),
+    text("。需要原文时用 tool_result_recall 按这个编号取回]"),
+  ],
+});
+
+export const TOOL_RESULT_RECALL = fixedPrompt({
+  id: "tools.tool-result-recall",
+  purpose: "tool_result_recall 工具的描述：按占位里的编号取回已清理的工具结果原文",
+  usedBy: ["packages/runtime-pi/src/pi-runtime-adapter.ts"],
+  layer: "tools",
+  output: "free-text",
+  text: "取回本对话里一次已从上下文清理的工具结果原文。上下文变长时，较早的工具结果会换成一行占位，占位里写着编号；之后需要那次结果的细节（网页原文、搜索结果、文件内容）时，把占位里的编号填进 toolCallId。只读，不会重新执行那次工具。",
+});
+
+export const TOOL_RESULT_RECALL_NOT_FOUND = templatePrompt({
+  id: "tools.result.tool-result-recall.not-found",
+  purpose: "tool_result_recall 在当前对话上下文里找不到这个编号时的结果",
+  usedBy: ["packages/runtime-pi/src/tool-result-clearing.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  segments: [
+    text("当前对话里没有编号为 "),
+    slot("toolCallId"),
+    text(
+      " 的工具结果。它可能已在更早的压缩里被总结掉。只读的查询可以重新执行；发送、删除、修改这类有后果的操作不要为了看结果重做，先查看现在的状态。",
+    ),
+  ],
 });

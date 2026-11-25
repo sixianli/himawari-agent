@@ -5,16 +5,13 @@ import {
   createProactiveSeal,
   defineProactiveSources,
   type FlatMailReader,
+  type MailInboxPort,
   GMAIL_SOURCE,
   limitedSourceReader,
-  type ModelDescriptor,
-  type ModelInvocationEvent,
   mailReader,
   PROACTIVE_SOURCES,
   type ProactiveMail,
-  type ProactiveMailExtra,
   ProactiveMailCheckService,
-  type ProactiveObservation,
   type ProactiveSource,
   type ProactiveSourceDefinition,
   type ProactiveSourceLimitHit,
@@ -35,7 +32,7 @@ import {
   SqliteProductStateRepository,
 } from "@himawari-agent/persistence-sqlite";
 import { createDataExportTextPolicy } from "@himawari-agent/platform-node";
-import { DeterministicIdGenerator, ManualClock, ScriptedModelPort } from "@himawari-agent/testing";
+import { DeterministicIdGenerator, ManualClock } from "@himawari-agent/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import { createProactivePushSource } from "../../apps/agent-service/src/production-proactive.ts";
 import { newProtector, openSide } from "./data-export-fixture.ts";
@@ -46,21 +43,7 @@ const AGENT_ID = createAgentId("agent-proactive-sources");
 const scope = { ownerId: OWNER_ID, agentId: AGENT_ID };
 const TIME_ZONE = "Asia/Tokyo";
 const NOV_4_10AM_JST = "2026-11-04T01:00:00.000Z";
-const MODEL_REF = "proactive-sources-model";
 const PASSPHRASE = "测试口令-correct horse battery staple";
-
-const descriptor: ModelDescriptor = {
-  ref: MODEL_REF,
-  provider: "deterministic",
-  model: MODEL_REF,
-  version: "1.0.0",
-  routingClass: "primary",
-  priority: 10,
-  disclosure: "trusted_remote",
-  capabilities: ["text"],
-  allowedDataClassifications: ["public", "private"],
-  secretRequirement: null,
-};
 
 const NOTES_SOURCE = Object.freeze({ ...GMAIL_SOURCE, name: "test_notes", trust: "owner" });
 const FEED_SOURCE = Object.freeze({
@@ -70,10 +53,6 @@ const FEED_SOURCE = Object.freeze({
   trust: "owner",
   latestDeliveryMs: 86_400_000,
 });
-const mailDefinitions = new Map<string, ProactiveSourceDefinition<string, ProactiveMailExtra>>([
-  [GMAIL_SOURCE.name, GMAIL_SOURCE],
-  [NOTES_SOURCE.name, NOTES_SOURCE],
-]);
 const NOTES = NOTES_SOURCE.name as ProactiveSource;
 const FEED = FEED_SOURCE.name as ProactiveSource;
 const fakeDefinitions = [GMAIL_SOURCE, NOTES_SOURCE, FEED_SOURCE] as unknown as readonly [
@@ -148,24 +127,6 @@ describe("[iOS-7] proactive source registry", () => {
     const protector = newProtector();
     const payloadStore = repository.payloadStore(OWNER_ID, AGENT_ID);
     const seal = createProactiveSeal({ payloads: payloadStore, protector, ids });
-    const writePayload = async (ref: string, content: string) => {
-      await payloadStore.put(
-        await protector.protect({
-          ownerId: OWNER_ID,
-          agentId: AGENT_ID,
-          ref,
-          dataClassification: "private",
-          contentType: "text/plain",
-          plaintext: new TextEncoder().encode(content),
-          createdAt: clock.now(),
-        }),
-      );
-    };
-    const readPayload = async (ref: string) => {
-      const payload = await payloadStore.get(ref);
-      if (!payload) return "";
-      return new TextDecoder().decode(await protector.unprotect({ ...scope, payload }));
-    };
     await store.writeSettings({
       ...scope,
       enabled: true,
@@ -186,76 +147,24 @@ describe("[iOS-7] proactive source registry", () => {
           updatedAt: clock.now(),
         },
       });
-    const prompts: string[] = [];
-    const outputs = new Map<string, string>();
-    const written = new Set<string>();
-    const queued: ScriptedModelPort[] = [];
-    let scripted = new ScriptedModelPort([descriptor], []);
-    const script = (
-      entries: readonly {
-        id: string;
-        result: "act" | "know" | "check" | "ignore";
-        todo?: string;
-      }[],
-    ) => {
-      const ref = `output-${outputs.size + 1}`;
-      outputs.set(
-        ref,
-        JSON.stringify({
-          items: entries.map((entry) => ({
-            confidence: "sure",
-            todo: "",
-            priority: entry.result === "act" ? "high" : null,
-            dueAt: entry.result === "act" ? "2026-11-05T23:59:00+09:00" : null,
-            reason: "",
-            ...entry,
-          })),
-        }),
-      );
-      const events: ModelInvocationEvent[] = [
-        { type: "model.started", invocationId: "scripted", occurredAt: clock.now() },
-        {
-          type: "model.output",
-          invocationId: "scripted",
-          sequence: 1,
-          payloadRef: ref,
-          occurredAt: clock.now(),
-        },
-        {
-          type: "model.completed",
-          invocationId: "scripted",
-          inputTokens: 100,
-          outputTokens: 50,
-          costMicros: 300,
-          latencyMs: 10,
-          occurredAt: clock.now(),
-        },
-      ];
-      scripted = new ScriptedModelPort([descriptor], events);
-      queued.push(scripted);
-    };
     const checker = (
       source: ProactiveSource,
       extra: {
-        observations?: ProactiveObservation[];
         limits?: ProactiveSourceLimitHit[];
-        receive?: () => Promise<void>;
         perCheckMs?: number;
+        accept?: () => boolean;
       } = {},
     ) => {
       const reader: FlatMailReader & { items: ProactiveMail[]; nextCursor: string | null } = {
         source,
         items: [],
         nextCursor: "cursor-2",
-        related: undefined,
         async fetch() {
           return { kind: "items" as const, items: reader.items, cursor: reader.nextCursor };
         },
       };
-      const definition = mailDefinitions.get(source);
-      if (definition === undefined) throw new Error("source is not in the test registry");
-      const observations = extra.observations;
       const limits = extra.limits;
+      const submitted: Parameters<MailInboxPort["submit"]>[0][] = [];
       const service = new ProactiveMailCheckService({
         scope,
         store,
@@ -268,55 +177,18 @@ describe("[iOS-7] proactive source registry", () => {
           timeZone: TIME_ZONE,
           ...(limits ? { onLimit: (hit: ProactiveSourceLimitHit) => limits.push(hit) } : {}),
         }),
-        definition,
-        ...(extra.receive ? { observations: { receive: extra.receive } } : {}),
-        ...(observations
-          ? {
-              observations: {
-                receive: async (received) => {
-                  observations.push(...received);
-                },
-              },
-            }
-          : {}),
-        model: {
-          get model() {
-            return queued.shift() ?? scripted;
-          },
-          modelRef: MODEL_REF,
-          allowedDataClassifications: ["public", "private", "sensitive", "restricted"],
-          async prepare({ invocationId, prompt }) {
-            prompts.push(prompt);
-            const inputRef = `input-${invocationId}`;
-            await writePayload(inputRef, prompt);
-            for (const [ref, content] of outputs)
-              if (!written.has(ref)) {
-                await writePayload(ref, content);
-                written.add(ref);
-              }
-            return {
-              runId: `proactive:${invocationId}` as never,
-              inputRef,
-              allowedDisclosureRef: "proactive-sources",
-              secretHandleRefs: [],
-              release: async () => undefined,
-            };
-          },
-          readOutput: readPayload,
-          release: async (refs) => {
-            for (const ref of refs) await payloadStore.delete(ref);
+        inbox: {
+          submit: async (input) => {
+            const accepted = extra.accept?.() ?? true;
+            if (accepted) submitted.push(input);
+            return { accepted };
           },
         },
-        limits: {
-          perCheckMs: extra.perCheckMs ?? 180_000,
-          dailyCostMicros: 1_000_000,
-          estimateCostMicros: () => 100,
-        },
-        timeZone: TIME_ZONE,
+        perCheckMs: extra.perCheckMs ?? 180_000,
         clock,
         ids,
       });
-      return { reader, service };
+      return { reader, service, submitted };
     };
     const overview = (source: ProactiveSource) =>
       readProactiveOverview({
@@ -375,14 +247,12 @@ describe("[iOS-7] proactive source registry", () => {
       store,
       seal,
       connect,
-      script,
       checker,
       overview,
       query,
       exec,
       entry,
       exported,
-      prompts,
       pushes: createProactivePushSource({ scope, store, seal }),
     };
   }
@@ -436,140 +306,70 @@ describe("[iOS-7] proactive source registry", () => {
     ).toEqual(["safetyLimits.perDay", "evaluation"]);
   });
 
-  it("[iOS-7] a newly registered source goes through the same judging and storage, reminders, delivery and rating", async () => {
+  it("[iOS-7] a newly registered source hands each new item to the inbox and records it, so the next check hands nothing again", async () => {
     const h = await harness();
     await h.connect(NOTES);
-    await h.connect("gmail");
-    const observations: ProactiveObservation[] = [];
-    const notes = h.checker(NOTES, { observations });
+    const notes = h.checker(NOTES);
     notes.reader.items = [mail(NOTES, "note-1", { subject: "牙医", snippet: "明天十点看牙" })];
-    h.script([{ id: "note-1", result: "act", todo: "明天十点看牙" }]);
-    const decision = await notes.service.run();
-    expect(decision).toMatchObject({ scenario: "test_notes", verdict: "pushed" });
+    expect(await notes.service.run()).toMatchObject({
+      scenario: "test_notes",
+      verdict: "silent",
+      reasonCode: "HANDED_TO_INBOX",
+      pushSourceKey: null,
+    });
+    expect(notes.submitted).toEqual([
+      expect.objectContaining({ sourceKind: "mail", sourceRef: "note-1", externalContent: true }),
+    ]);
+    expect(notes.submitted[0]?.summary).toContain("明天十点看牙");
+    expect(await h.pushes.listReady(h.clock.now())).toEqual([]);
+    expect(h.query("SELECT id FROM source_insights")).toEqual([]);
+    expect(h.query("SELECT source, message_id, outcome FROM proactive_processed_messages")).toEqual(
+      [{ source: "test_notes", message_id: "note-1", outcome: "check" }],
+    );
+    await notes.service.run();
+    expect(notes.submitted).toHaveLength(1);
+  });
+
+  it("[iOS-7][reverse] spam and the owner's own mail are recorded as skipped and never reach her", async () => {
+    const h = await harness();
+    await h.connect("gmail");
     const gmail = h.checker("gmail");
+    gmail.reader.items = [
+      mail("gmail", "spam-1", { categories: ["spam"] }),
+      mail("gmail", "mine-1", { sentByOwner: true }),
+      mail("gmail", "mail-1"),
+    ];
+    expect(await gmail.service.run()).toMatchObject({
+      counts: { fetched: 3, skipped: 2, check: 1 },
+    });
+    expect(gmail.submitted.map(({ sourceRef }) => sourceRef)).toEqual(["mail-1"]);
+    expect(
+      h.query(
+        "SELECT message_id, outcome, skip_reason FROM proactive_processed_messages ORDER BY message_id",
+      ),
+    ).toEqual([
+      { message_id: "mail-1", outcome: "check", skip_reason: null },
+      { message_id: "mine-1", outcome: "skipped", skip_reason: "own_mail" },
+      { message_id: "spam-1", outcome: "skipped", skip_reason: "category" },
+    ]);
+  });
+
+  it("[iOS-7][reverse] a mail the inbox refuses is not marked done and is handed again on the next check", async () => {
+    const h = await harness();
+    await h.connect("gmail");
+    let open = false;
+    const gmail = h.checker("gmail", { accept: () => open });
     gmail.reader.items = [mail("gmail", "mail-1")];
-    h.script([{ id: "mail-1", result: "act", todo: "回复周末安排" }]);
-    expect(await gmail.service.run()).toMatchObject({ scenario: "gmail", verdict: "pushed" });
-
-    const overview = await h.overview(NOTES);
-    expect(overview.source).toBe("test_notes");
-    expect(overview.insights.map(({ summary }) => summary)).toContain("明天十点看牙");
-    const ready = await h.pushes.listReady(h.clock.now());
-    expect(ready.length).toBeGreaterThan(0);
-    const contents = await Promise.all(ready.map(({ id }) => h.pushes.content(id)));
-    expect(contents.map((content) => content?.text)).toContain("明天十点看牙");
-
-    const insight = overview.insights.find(({ summary }) => summary === "明天十点看牙");
-    expect(
-      await h.store.updateInsight({
-        ...scope,
-        insightId: insight?.id ?? "",
-        rating: "useful",
-        now: h.clock.now(),
-      }),
-    ).toBe(true);
-    expect(
-      await h.store.rateProcessed({
-        ...scope,
-        source: NOTES,
-        messageId: "note-1",
-        rating: "useful",
-        now: h.clock.now(),
-      }),
-    ).toBe(true);
-
-    expect(observations).toEqual([
-      expect.objectContaining({
-        source: "test_notes",
-        sourceId: "thread-note-1",
-        sourceVersion: "note-1",
-        trust: "owner",
-        provenance: {
-          kind: "mail",
-          author: "friend@gmail.com",
-          occurredAt: "2026-11-04T00:30:00.000Z",
-        },
-        what: "明天十点看牙",
-        decisionId: decision?.id,
-        insightId: insight?.id,
-      }),
-    ]);
-    expect(
-      h.query(
-        "SELECT source, owner_rating FROM source_insights WHERE owner_id = ? ORDER BY source",
-        OWNER_ID,
-      ),
-    ).toEqual([
-      { source: "gmail", owner_rating: null },
-      { source: "test_notes", owner_rating: "useful" },
-    ]);
-    expect(
-      h.query(
-        "SELECT source, message_id, owner_rating FROM proactive_processed_messages ORDER BY source",
-      ),
-    ).toEqual([
-      { source: "gmail", message_id: "mail-1", owner_rating: null },
-      { source: "test_notes", message_id: "note-1", owner_rating: "useful" },
-    ]);
-    expect(
-      h
-        .query(
-          "SELECT scenario, inputs FROM decision_ledger WHERE kind = 'proactive' ORDER BY scenario",
-        )
-        .map((row) => ({
-          scenario: row["scenario"],
-          observations: (JSON.parse(String(row["inputs"])) as Record<string, unknown>)[
-            "observations"
-          ],
-        })),
-    ).toEqual([
-      { scenario: "gmail", observations: { handedOff: 1, sink: "not_connected" } },
-      { scenario: "test_notes", observations: { handedOff: 1, sink: "port" } },
-    ]);
-  });
-
-  it("[iOS-7][reverse] hands nothing to the proposal entry when nothing is worth a reminder", async () => {
-    const h = await harness();
-    await h.connect("gmail");
-    const observations: ProactiveObservation[] = [];
-    const gmail = h.checker("gmail", { observations });
-    gmail.reader.items = [mail("gmail", "mail-1"), mail("gmail", "mail-2")];
-    h.script([
-      { id: "mail-1", result: "ignore" },
-      { id: "mail-2", result: "know", todo: "朋友问周末安排" },
-    ]);
-    await gmail.service.run();
-    expect(observations).toEqual([]);
-    expect(
-      h
-        .query("SELECT inputs FROM decision_ledger WHERE kind = 'proactive'")
-        .map(
-          (row) => (JSON.parse(String(row["inputs"])) as Record<string, unknown>)["observations"],
-        ),
-    ).toEqual([{ handedOff: 0, sink: "port" }]);
-  });
-
-  it("[iOS-7][reverse] a proposal entry that fails or never answers does not hold up the check", async () => {
-    const h = await harness();
-    await h.connect("gmail");
-    for (const [id, receive] of [
-      [
-        "mail-0",
-        () => {
-          throw new Error("RECEIVER_BROKEN");
-        },
-      ],
-      ["mail-1", () => Promise.reject(new Error("RECEIVER_DOWN"))],
-      ["mail-2", () => new Promise<void>(() => undefined)],
-    ] as const) {
-      const gmail = h.checker("gmail", { receive, perCheckMs: 600_000 });
-      gmail.reader.items = [mail("gmail", id)];
-      h.script([{ id, result: "act", todo: "回复周末安排" }]);
-      expect(await gmail.service.run()).toMatchObject({ verdict: "pushed" });
-    }
-    expect(
-      h.query("SELECT message_id FROM proactive_processed_messages ORDER BY message_id"),
-    ).toEqual([{ message_id: "mail-0" }, { message_id: "mail-1" }, { message_id: "mail-2" }]);
+    expect(await gmail.service.run()).toMatchObject({
+      verdict: "failed",
+      reasonCode: "INBOX_SUBMIT_FAILED",
+    });
+    expect(h.query("SELECT message_id FROM proactive_processed_messages")).toEqual([]);
+    expect((await h.store.readConnection({ ...scope, source: "gmail" }))?.cursor).toBe("cursor-1");
+    open = true;
+    expect(await gmail.service.run()).toMatchObject({ reasonCode: "HANDED_TO_INBOX" });
+    expect(gmail.submitted.map(({ sourceRef }) => sourceRef)).toEqual(["mail-1"]);
+    expect((await h.store.readConnection({ ...scope, source: "gmail" }))?.cursor).toBe("cursor-2");
   });
 
   it("[iOS-7][reverse] the database refuses a source name that is not registered", async () => {
@@ -631,19 +431,16 @@ describe("[iOS-7] proactive source registry", () => {
       h
         .query("SELECT message_id FROM proactive_processed_messages ORDER BY message_id")
         .map((row) => row["message_id"]);
-    h.script(["a", "b"].map((id) => ({ id, result: "ignore" as const })));
     await notes.service.run();
     expect(await judged()).toEqual(["a", "b"]);
     expect(limits).toEqual([{ source: "test_notes", kind: "per_check", limit: 2, heldBack: 3 }]);
     expect((await h.store.readConnection({ ...scope, source: NOTES }))?.cursor).toBe("cursor-1");
 
-    h.script([{ id: "c", result: "ignore" }]);
     await notes.service.run();
     expect(await judged()).toEqual(["a", "b", "c"]);
     expect(limits[1]).toEqual({ source: "test_notes", kind: "per_day", limit: 3, heldBack: 2 });
 
     h.clock.set("2026-11-05T01:00:00.000Z");
-    h.script(["d", "e"].map((id) => ({ id, result: "ignore" as const })));
     await notes.service.run();
     expect(await judged()).toEqual(["a", "b", "c", "d", "e"]);
     expect(limits).toHaveLength(2);
@@ -724,7 +521,6 @@ describe("[iOS-7] proactive source registry", () => {
       { thread_id: "feed-later", owner_rating: "unneeded" },
       { thread_id: "feed-now", owner_rating: null },
     ]);
-    expect(h.prompts).toEqual([]);
   });
 
   it("[iOS-7][reverse] a program entry is not recorded twice, past the daily cap, with its source off, or for a source that has a reader", async () => {
@@ -902,8 +698,7 @@ describe("[iOS-7] proactive source registry", () => {
           await h.connect(source);
         const check = h.checker(source);
         check.reader.items = [mail(source, id)];
-        h.script([{ id, result: "act", todo: "回复周末安排" }]);
-        expect(await check.service.run()).toMatchObject({ scenario: source, verdict: "pushed" });
+        expect(await check.service.run()).toMatchObject({ scenario: source, verdict: "silent" });
         h.exec(
           `INSERT OR REPLACE INTO proactive_push_backoff (owner_id, agent_id, source, class_key, stage,
              since_at, ignored_count, updated_at)
@@ -926,22 +721,22 @@ describe("[iOS-7] proactive source registry", () => {
     const both = ["gmail", "test_notes"];
     await seed();
     expect(await everywhere()).toEqual({
-      insights: both,
+      insights: [],
       processed: both,
       backoff: both,
       decisions: both,
       connections: both,
-      pushes: 2,
+      pushes: 0,
     });
 
     await h.store.clearRecords({ ...scope, source: NOTES });
     expect(await everywhere()).toEqual({
-      insights: ["gmail"],
+      insights: [],
       processed: ["gmail"],
       backoff: ["gmail"],
       decisions: ["gmail"],
       connections: both,
-      pushes: 1,
+      pushes: 0,
     });
 
     h.clock.advance(60_000);
@@ -949,7 +744,7 @@ describe("[iOS-7] proactive source registry", () => {
     await h.store.removeSource({ ...scope, source: NOTES });
     const after = await everywhere();
     expect(after).toMatchObject({
-      insights: ["gmail", "gmail"],
+      insights: [],
       processed: ["gmail", "gmail"],
       backoff: ["gmail"],
       connections: ["gmail"],
@@ -965,7 +760,6 @@ describe("[iOS-7] proactive source registry", () => {
     await h.connect(NOTES);
     const notes = h.checker(NOTES);
     notes.reader.items = [mail(NOTES, "note-1")];
-    h.script([{ id: "note-1", result: "act", todo: "明天十点看牙" }]);
     await notes.service.run();
     const base = { source: FEED, reason: "", link: "", result: "act" as const, priority: null };
     await h.entry({
@@ -1008,7 +802,6 @@ describe("[iOS-7] proactive source registry", () => {
     expect(column("SELECT thread_id FROM source_insights ORDER BY thread_id")).toEqual([
       "feed-later",
       "feed-now",
-      "thread-note-1",
     ]);
     expect(column("SELECT source FROM proactive_processed_messages ORDER BY message_id")).toEqual([
       "test_feed",

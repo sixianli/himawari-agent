@@ -9,6 +9,16 @@ import { ProductionMemoryRecall } from "../src/production-memory-recall.js";
 const ownerId = "owner-recall" as RuntimeRequest["ownerId"];
 const agentId = "agent-recall" as RuntimeRequest["agentId"];
 const now = "2026-10-25T03:00:00.000Z";
+const assignedNumbers = new Map<string, number>();
+const numberOf = (memoryId: string): number => {
+  if (!assignedNumbers.has(memoryId)) assignedNumbers.set(memoryId, assignedNumbers.size + 1);
+  return assignedNumbers.get(memoryId) as number;
+};
+const numbered = async ({
+  memoryIds,
+}: {
+  readonly memoryIds: readonly ProductMemoryRecord["id"][];
+}) => memoryIds.map((memoryId) => ({ memoryId, number: numberOf(memoryId) }));
 
 function record(
   id: string,
@@ -60,7 +70,7 @@ function recall() {
     ownerId,
     agentId,
     provider: { search } as never,
-    state: { readMany: async () => records },
+    state: { readMany: async () => records, numbers: numbered },
     episodes: { search: episodes },
     readText: async (memory) => texts[memory.contentRef],
     embedWithin: async (_invocation, slot, operation) => {
@@ -159,7 +169,7 @@ function recallWith(
     ownerId,
     agentId,
     provider: { search } as never,
-    state: { readMany: async () => records },
+    state: { readMany: async () => records, numbers: numbered },
     readText: async (memory) => entries.find(({ id }) => `text-${id}` === memory.contentRef)?.text,
     embedWithin: async (_invocation, _slot, operation) => operation(),
     now: () => now,
@@ -203,6 +213,7 @@ it("[PA-2] REVERSE: with no tentative memory the result is exactly what it was b
     window: null,
     memories: [
       {
+        number: numberOf("a"),
         text: "主人住在杭州",
         current: true,
         recordedAt: "2026-09-01T00:00:00.000Z",
@@ -210,6 +221,7 @@ it("[PA-2] REVERSE: with no tentative memory the result is exactly what it was b
         validTo: null,
       },
       {
+        number: numberOf("b"),
         text: "主人用 Pixel 9",
         current: true,
         recordedAt: "2026-09-01T00:00:00.000Z",
@@ -382,7 +394,7 @@ it("[P5-1] reports a failed confirmed search only after the tentative search has
         return [];
       },
     } as never,
-    state: { readMany: async () => [] },
+    state: { readMany: async () => [], numbers: numbered },
     readText: async () => undefined,
     embedWithin: async (_invocation, _slot, operation) => operation(),
     now: () => now,

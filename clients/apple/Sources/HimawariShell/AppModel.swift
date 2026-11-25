@@ -28,6 +28,12 @@ public enum AppPhase: Equatable {
 @MainActor
 @Observable
 public final class AppModel {
+    #if canImport(UIKit)
+    static let imageFitter: ImageFitting? = UIKitImageFitter()
+    #else
+    static let imageFitter: ImageFitting? = nil
+    #endif
+
     public private(set) var phase: AppPhase = .unpaired(nil)
     public private(set) var chat: ChatStore?
     public private(set) var actions: DeviceActionsModel?
@@ -35,7 +41,6 @@ public final class AppModel {
     public private(set) var senses: SensesModel?
 
     @ObservationIgnored public let api: DeviceAPI
-    @ObservationIgnored public let home: HomeFeedModel
     public var confirmKey: DeviceKeySigner { keys.signer(.confirm) }
     @ObservationIgnored public let vault: SharedVault
     @ObservationIgnored private let keys: SecureEnclaveKeyStore
@@ -97,8 +102,8 @@ public final class AppModel {
         )
         #if os(iOS)
         PushBridge.sync = pushSync
+        NotificationRouter.shared.transport = api
         #endif
-        home = HomeFeedModel(source: DeviceHomeSource(api: api, confirmKey: vault.keys.signer(.confirm)))
         if restoring { restore() }
     }
 
@@ -215,8 +220,14 @@ public final class AppModel {
         let model = AppModel(kind: kind, restoring: false)
         model.phase = phase
         model.demoHost = host
+        model.configuration = demoConfiguration
         return model
     }
+
+    private static let demoConfiguration = try? JSONDecoder().decode(DeviceConfiguration.self, from: Data("""
+    {"heartbeatSeconds":25,"connectionMaxSeconds":3600,"signatureToleranceSeconds":300,"limits":[],"streamConnections":4,
+     "attachments":{"textCharacters":200000,"imageCharacters":4000000,"perMessage":4,"messageCharacters":4000000}}
+    """.utf8))
 
     public func useDemoDeviceStore(_ store: FileLocalStore?) {
         self.store = store
@@ -304,7 +315,6 @@ public final class AppModel {
         senses?.suspend()
         senses = nil
         actions = nil
-        home.reset()
         do {
             try (store ?? FileLocalStore.applicationSupport(named: "himawari-device")).retire()
             return true
@@ -415,7 +425,8 @@ public final class AppModel {
                 store: store,
                 heartbeatSeconds: { heartbeat.seconds },
                 onSessionInvalid: { [weak self] in self?.checkRevoked() },
-                onDeviceActions: { [weak actions] in actions?.deviceActionsChanged() }
+                onDeviceActions: { [weak actions] in actions?.deviceActionsChanged() },
+                images: Self.imageFitter
             )
             chat.onNotification = onDeviceNotification
             self.chat = chat

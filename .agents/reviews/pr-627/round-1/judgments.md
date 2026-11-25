@@ -1,0 +1,5 @@
+# PR 627 第 1 轮判断（deepseek-v4.1-flash）
+
+- 1（deepseek-v4.1-flash）成立，可以更好：### 1 [低] 体检行“已处理”状态没有自动用例，结论只靠选择器推断。覆盖缺口属实（control-center-browser-server.mjs:1425 fixture 的 checkup 都是 action: null），但已处理分支（proactive-reminders.tsx:451-457）只有一个标签加一个撤销按钮，元素比已测的三按钮分支少，同在 flex-wrap 的整行第三行（proactive.css:259-265、552-556），读代码找不到会出错的输入；补场景只是多一层保险
+- 2（deepseek-v4.1-flash）成立，会出错，低：### 2 [低] 设计指南没有记录本次 UI 问题，且自查规模说明已和脚本不一致。web-design-baselines.md:6 原话要求“把每个新的 UI 或 UX 问题加入其中的不良设计”；ui-ux-design-guide.md:227-266 无本次记录，:278 写 18 个画面和两种宽度；已补一行并改正画面数和宽度；触发：读 docs/ui-ux-design-guide.md 的人查不良设计表或自动检查表；后果：不良设计表缺这次体检行标签被挤成竖排的记录，违反 web-design-baselines.md:6 交付时补记的要求；自动检查表写 18 个画面、1280 和 390 两种宽度，脚本实际 19 个场景（SCENES）、1280/654/390 三种宽度（check-layout-audit.mjs:16-19），读者会低估覆盖范围；不影响程序行为
+- 3（deepseek-v4.1-flash）不成立：### 3 [低] 普通复盘行仍把评分按钮放在 auto 栏，同类结构风险未覆盖（推测）。不成立：fixture 里有 22 条普通复盘行（control-center-browser-server.mjs:1436-1442 的 item(...)），check:layout 在 390 和 654 宽度、中英日三语、浅深两色下渲染它们，作者在本提交上跑过 342 个场景全过；模型自己也标为推测、没有给出出错的宽度或文字。390 是自查覆盖的最窄宽度，没有可达的已知出错输入

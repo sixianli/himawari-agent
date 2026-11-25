@@ -1094,7 +1094,13 @@ export class ProductionMemoryCapture {
       threadId,
       messageIds: [source.sourceId as MessageId],
     });
-    if (!owner || owner.role !== "owner" || owner.contentRef !== source.payloadRef) return;
+    if (
+      !owner ||
+      owner.role !== "owner" ||
+      owner.internal === true ||
+      owner.contentRef !== source.payloadRef
+    )
+      return;
     const messages = await this.options.threads.listMessages(
       ownerId,
       agentId,

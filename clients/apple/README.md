@@ -1,7 +1,7 @@
 <a id="apple-clients"></a>
 # Himawari 苹果客户端
 
-这里是 Himawari 的 iPhone App 和 Mac 菜单栏 App（以后还有 Apple Watch）。设计和分批见[详细设计](../../docs/execution/specs/2026-11-11-apple-device-body-design.md)和[实施计划](../../docs/execution/plans/2026-11-11-apple-device-body-plan.md)；界面照 Andy 2026-11-12 批准的原型第 2 版 `docs/assets/apple-clients/2026-11-12-v2/` 做（颜色、尺寸、字号由其中的 `tokens.json` 生成）。现在做到第 2 批（配对、对话列表、聊天）、第 6 批（分享面板、Safari 扩展）和第 10B 批（Mac 菜单栏 App）。
+这里是 Himawari 的 iPhone App 和 Mac 菜单栏 App（以后还有 Apple Watch）。设计和分批见[详细设计](../../docs/execution/specs/2026-11-11-apple-device-body-design.md)和[实施计划](../../docs/execution/plans/2026-11-11-apple-device-body-plan.md)；界面照 2026-11-25 定下的原型第 4 版 `docs/assets/apple-clients/2026-11-25-v4/` 做（颜色、尺寸、字号由其中的 `tokens.json` 生成；Mac 和手表暂停，它们的数值在这份文件里照抄第 2 版）。现在做到第 2 批（配对、主对话）、第 6 批（分享面板、Safari 扩展）和第 10B 批（Mac 菜单栏 App）。
 
 - [代码怎么分](#layout)
 - [在 Mac 上构建、测试、装到 iPhone](#on-the-mac)
@@ -23,11 +23,11 @@
 | --- | --- | --- |
 | `HimawariCore` | 设备签名（按 RFC 9421，一种给 HTTP 请求签名的标准）、密钥（存在手机的安全芯片里）、配对、和服务器通信、事件流、待发消息队列、本地缓存。只用 Foundation，能在 Linux 上编译和测试 | 第 2 批 |
 | `HimawariDesign` | 颜色（浅色深色两套）、Himawari 说的话用的衬线字、卡片、胶囊按钮、玻璃圆钮、页签栏、葵盘标志、图标 | 第 2 批；别的批要加共用组件先找第 2 批线程 |
-| `HimawariChat` | 对话列表和聊天 | 第 2 批 |
+| `HimawariChat` | 主对话的聊天界面 | 第 2 批 |
 | `HimawariManage` | 记忆、设置等管理页面；现在只有两个入口占位，设置页里多了一行“让 Himawari 感知” | 第 11 批 |
 | `HimawariSenses` | 让 Himawari 感知：位置、日程、健康和运动、通讯录、相册、剪贴板六项的采集（只在 iPhone 上编译），以及总览、介绍、系统没允许、开着的一项这几屏。示例场景 `19-senses-1-overview` 到 `19-senses-5-denied`；场景名带 `system-prompt` 的会弹出真的系统询问框，`scripts/ui-review.sh` 拍之前清掉 App 的权限、拍完重启模拟器，免得询问框留在系统上盖住后面的场景；脚本也把模拟器的系统语言设成简体中文并强制 12 小时制，系统询问框才和原型一样是中文，状态栏时间才是原型里的“9:41”而不是“09:41” | 第 6 批 |
 | `HimawariShare` | 把东西“交给 Himawari”：分享面板、Safari 扩展的原生部分、两个入口的设置页 | 第 6 批 |
-| `HimawariShell` | 三页签外壳、“今天”页（`Today/`，按服务器 `home.read` 给的首页条目照原顺序画）、配对页、整个 App 的状态 | 第 2 批；“今天”页由“做 iPhone 今天页”线程做 |
+| `HimawariShell` | App 外壳：配对页、主对话（用 `thread.main` 查到服务器上唯一的主对话，没有底栏和对话列表）、从头像进入的“她的页面”、整个 App 的状态 | 第 2 批 |
 | `HimawariWatchUI` | Apple Watch App 的界面和逻辑（App 目标叫 `HimawariWatch`）：配对、等你定的一件事、抬腕说一句、到点轻敲。只在 watchOS 上编译 | 第 10A 批 |
 | `HimawariMacUI` | Mac 菜单栏 App 的界面和逻辑（App 目标叫 `HimawariMac`）：菜单栏的向日葵和面板、⌥ 空格输入条、拖文件、动文件前的清单、唯一的设置页、配对窗口。只在 macOS 上编译 | 第 10B 批 |
 
@@ -94,14 +94,12 @@ node clients/apple/scripts/make-icons.mjs /tmp/tabler/package clients/apple/Sour
 <a id="wordmark"></a>
 ## himawari 字样
 
-“今天”页左上角的 himawari 字样是一张矢量图（`Sources/HimawariDesign/Resources/Brand.xcassets/wordmark.imageset/wordmark.svg`），字形取自 Cormorant Garamond（一款开源衬线字体，SIL OFL 许可证）600 斜体 32 点，App 里不带字体文件。要重新生成（需要 Python 的 `fonttools` 和 `uharfbuzz` 两个包）：
+“她的页面”顶上的 himawari 字样是一张矢量图（`Sources/HimawariDesign/Resources/Brand.xcassets/wordmark.imageset/wordmark.svg`），字形取自 Cormorant Garamond（一款开源衬线字体，SIL OFL 许可证）600 斜体 32 点，App 里不带字体文件。要重新生成（需要 Python 的 `fonttools` 和 `uharfbuzz` 两个包）：
 
 ```bash
 mkdir -p /tmp/cormorant && cd /tmp/cormorant && npm pack @fontsource/cormorant-garamond@5.2.6 && tar xzf fontsource-cormorant-garamond-5.2.6.tgz && cd -
 python3 clients/apple/scripts/make-wordmark.py /tmp/cormorant/package/files/cormorant-garamond-latin-600-italic.woff clients/apple/Sources/HimawariDesign/Resources/Brand.xcassets/wordmark.imageset/wordmark.svg
 ```
-
-旁边的向日葵不是图片，是照原型的画法（`flower.js`）用代码画的：花瓣、花盘和种子的位置在 `Sources/HimawariCore/CornerFlower.swift`，`Tests/HimawariCoreTests/CornerFlowerTests.swift` 核对每片花瓣的尖和原型算出来的一样。
 
 [返回目录](#apple-clients)
 
@@ -146,7 +144,7 @@ clients/apple/scripts/ui-review.sh --approve
 面板的颜色、尺寸都来自 `tokens.json`：`tokens.css` 由生成脚本产出，`npm run check:apple-design` 检查它是不是最新，并拦下面板代码里直接写的颜色和尺寸。改了 `tokens.json` 后：
 
 ```bash
-node clients/apple/scripts/make-design-tokens.mjs docs/assets/apple-clients/2026-11-12-v2/tokens.json clients/apple/Sources/HimawariDesign/Generated/DesignTokens.swift clients/apple/App/SafariExtension/Resources/tokens.css
+node clients/apple/scripts/make-design-tokens.mjs docs/assets/apple-clients/2026-11-25-v4/tokens.json clients/apple/Sources/HimawariDesign/Generated/DesignTokens.swift clients/apple/App/SafariExtension/Resources/tokens.css
 ```
 
 面板左上角的葵盘和扩展图标从 App 里画葵盘的同一套算法生成（`Sources/HimawariDesign/SunflowerSeeds.swift`）：
@@ -154,7 +152,7 @@ node clients/apple/scripts/make-design-tokens.mjs docs/assets/apple-clients/2026
 ```bash
 cd clients/apple
 swiftc -o /tmp/make-sunflower-svg Sources/HimawariDesign/SunflowerSeeds.swift scripts/make-sunflower-svg/main.swift
-/tmp/make-sunflower-svg full App/SafariExtension/Resources/images/sunflower.svg
+/tmp/make-sunflower-svg App/SafariExtension/Resources/images/sunflower.svg
 node scripts/make-safari-icons.mjs App/SafariExtension/Resources/images/sunflower.svg App/SafariExtension/Resources/images 48 96 128 256 512
 ```
 

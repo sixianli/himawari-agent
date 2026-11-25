@@ -1,7 +1,7 @@
-import type { MemoryDates } from "./memory-dates.js";
 import type { AgentId, OwnerId, RunId, SessionId, ThreadId, TurnId } from "@himawari-agent/domain";
 import type { CorrelationId, DataClassification, JsonObject, PayloadRef } from "./common.js";
 import type { ProductContextBlockKind } from "./context-projection.js";
+import type { MemoryDates } from "./memory-dates.js";
 import type { RunExecutionLeaseClaim } from "./run-dispatch.js";
 
 export type { ProductContextEnvelopeV1 } from "./context-projection.js";
@@ -351,6 +351,7 @@ export interface RuntimeProjectionContext {
     readonly content: string;
     readonly occurredAt: string;
     readonly images?: readonly RuntimeProjectionImage[];
+    readonly from?: "outside";
   };
   readonly contextBlocks: readonly RuntimeProjectionContextBlock[];
   readonly compaction?: RuntimeProjectionCompaction;
@@ -409,7 +410,15 @@ export interface RuntimeProjectionPort {
 export type RuntimeToolDescriptor =
   | RuntimeCustomToolDescriptor
   | RuntimeBuiltinReadDescriptor
-  | RuntimeBuiltinCodingDescriptor;
+  | RuntimeBuiltinCodingDescriptor
+  | RuntimeToolResultRecallDescriptor;
+
+export interface RuntimeToolResultRecallDescriptor {
+  readonly definition: "tool-result-recall";
+  readonly name: "tool_result_recall";
+  readonly capabilityRef: string;
+  readonly capabilityHandleRef: null;
+}
 
 export interface RuntimeBuiltinCodingDescriptor {
   readonly definition: "builtin-coding";
@@ -435,6 +444,7 @@ export interface RuntimeCustomToolDescriptor {
   readonly parameters: JsonObject;
   readonly executionMode?: "parallel";
   readonly handleBound?: true;
+  readonly contextRetention?: "keep";
 }
 
 export interface RuntimeToolInvocation {

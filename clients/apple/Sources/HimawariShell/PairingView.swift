@@ -91,7 +91,7 @@ struct PairingView: View {
                         .hmShadow(DesignTokens.Shadows.lift)
                         .padding(.bottom, -7)
                 }
-                SunflowerMark(detail: .full, growing: model.phase == .submitting)
+                SunflowerMark(growing: model.phase == .submitting)
                     .frame(width: DesignTokens.Size.pairingMark, height: DesignTokens.Size.pairingMark)
                 VStack(spacing: 10) {
                     Text(L.text("pairing.hello"))
@@ -148,7 +148,7 @@ struct PairingView: View {
     private func confirmServer(_ host: String) -> some View {
         VStack(spacing: 0) {
             VStack(spacing: 30) {
-                SunflowerMark(detail: .full)
+                SunflowerMark()
                     .frame(width: DesignTokens.Pairing.waitingMark, height: DesignTokens.Pairing.waitingMark)
                 VStack(spacing: 12) {
                     Text(host)
@@ -181,7 +181,7 @@ struct PairingView: View {
     private func waiting(_ number: String) -> some View {
         VStack(spacing: 0) {
             VStack(spacing: 30) {
-                SunflowerMark(detail: .full, growing: true)
+                SunflowerMark(growing: true)
                     .frame(width: DesignTokens.Pairing.waitingMark, height: DesignTokens.Pairing.waitingMark)
                 VStack(spacing: 15) {
                     Text(number)

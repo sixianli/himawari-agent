@@ -17,8 +17,8 @@ import {
   type IdGeneratorPort,
   type PayloadProtectorPort,
   type PayloadStorePort,
-  PORT_ERROR_CODES,
   type PermissionDecision,
+  PORT_ERROR_CODES,
   type ProductConfiguration,
   RECOVERY_SETTLE_WAIT_MS,
   type RunPayloadArtifactPort,
@@ -50,13 +50,19 @@ import {
   renderPrompt,
   TOOL_AUTHORIZED,
   TOOL_MOVE_DIRECTORY,
+  TOOL_RESULT_CONVERSATION_INPUT_INVALID,
+  TOOL_RESULT_CONVERSATION_UNAVAILABLE,
+  TOOL_RESULT_DEVICE_ACTION_UNAVAILABLE,
+  TOOL_RESULT_MAIL_READ_REJECTED,
+  TOOL_RESULT_MEMORY_OPEN_INPUT_INVALID,
+  TOOL_RESULT_MEMORY_OPEN_UNAVAILABLE,
   TOOL_RESULT_RECALL_INPUT_INVALID,
   TOOL_RESULT_RECALL_UNAVAILABLE,
   TOOL_RESULT_REMINDER_MEMORY_NOT_READY,
   TOOL_RESULT_REMINDER_REJECTED,
-  TOOL_RESULT_DEVICE_ACTION_UNAVAILABLE,
-  TOOL_RESULT_RULE_REJECTED,
   TOOL_RESULT_REMINDER_UNAVAILABLE,
+  TOOL_RESULT_RULE_REJECTED,
+  TOOL_RESULT_TELL_OWNER_REJECTED,
   TOOL_SAVE_COPY,
   TOOL_SAVE_COPY_EXPECTED_HASH,
   TOOL_SAVE_COPY_OPERATION_ID,
@@ -66,6 +72,14 @@ import {
   TOOL_WEB_SEARCH,
 } from "@himawari-agent/prompt-catalog";
 import {
+  type ContextExternalContent,
+  ExternalContentMarkNotWrittenError,
+  originsOf,
+  RECALLED_EXTERNAL_CONVERSATION_ORIGIN,
+  RECALLED_EXTERNAL_RECORD_ORIGIN,
+} from "./context-external-content.js";
+import type { OwnerScopeAuthorization } from "./owner-scope-authorization.js";
+import {
   type BackgroundCommandLimits,
   ProductionBackgroundCommands,
 } from "./production-background-commands.js";
@@ -73,6 +87,15 @@ import {
   executeProductionCodingRequest,
   fileVersionConflictResult,
 } from "./production-coding-workflow.js";
+import {
+  RUNTIME_CONTEXT_EXECUTOR,
+  toolResultRecallDescriptor,
+} from "./production-context-recall.js";
+import {
+  ConversationToolInputError,
+  conversationToolDescriptors,
+  type ProductionConversationTools,
+} from "./production-conversation-tools.js";
 import type { ProductionExecutionAdmissionParentBinding } from "./production-execution-admission-handler.js";
 import {
   type CodingBinding,
@@ -81,28 +104,38 @@ import {
   ProductionFileReadWorkflow,
 } from "./production-file-read-workflow.js";
 import {
+  MailReadInputError,
+  mailReadDescriptor,
+  type ProductionMailRead,
+} from "./production-mail-read.js";
+import {
   MANAGED_TASK_ACTIONS,
   managedTaskDescriptors,
   type ProductionManagedTasks,
 } from "./production-managed-tasks.js";
+import {
+  MemoryOpenInputError,
+  memoryOpenDescriptor,
+  type ProductionMemoryOpen,
+} from "./production-memory-open.js";
 import { memoryRecallDescriptor, type ProductionMemoryRecall } from "./production-memory-recall.js";
-import {
-  type ProductionReminderTools,
-  ReminderInputError,
-  reminderToolDescriptors,
-} from "./production-reminder-writer.js";
-import {
-  PerceptionToolError,
-  type ProductionPerceptionTools,
-  perceptionReadUnavailable,
-  perceptionToolDescriptors,
-  PERCEPTION_READ_CAPABILITY_REF,
-} from "./production-perception-tools.js";
 import {
   OwnerRuleError,
   ownerRuleToolDescriptors,
   type ProductionOwnerRuleTools,
 } from "./production-owner-rules.js";
+import {
+  PERCEPTION_READ_CAPABILITY_REF,
+  PerceptionToolError,
+  type ProductionPerceptionTools,
+  perceptionReadUnavailable,
+  perceptionToolDescriptors,
+} from "./production-perception-tools.js";
+import {
+  type ProductionReminderTools,
+  ReminderInputError,
+  reminderToolDescriptors,
+} from "./production-reminder-writer.js";
 import {
   SANDBOX_TOOL_RESULT_LOST,
   SANDBOX_TOOL_RESULT_LOST_MESSAGE,
@@ -121,12 +154,10 @@ import {
 } from "./production-sandbox-tool-result.js";
 import { type StageTiming, stageTiming } from "./production-stage-timing.js";
 import {
-  type ContextExternalContent,
-  ExternalContentMarkNotWrittenError,
-  originsOf,
-  RECALLED_EXTERNAL_RECORD_ORIGIN,
-} from "./context-external-content.js";
-import type { OwnerScopeAuthorization } from "./owner-scope-authorization.js";
+  type ProductionTellOwner,
+  TellOwnerInputError,
+  tellOwnerDescriptor,
+} from "./production-tell-owner.js";
 import { productionToolActionRegistry } from "./production-tool-actions.js";
 import { beforeDeadline } from "./production-worker-deadline.js";
 import { ProductionWorkerForwardTransport } from "./production-worker-forward-transport.js";
@@ -142,9 +173,14 @@ const BUILTIN_PREFLIGHT: Readonly<
   Record<string, { readonly prefix: string; readonly reasonCode: string }>
 > = Object.freeze({
   "owner-memory": { prefix: "memory-recall", reasonCode: "MEMORY_RECALL_OWNER_SCOPE" },
+  "owner-conversation": { prefix: "conversation", reasonCode: "CONVERSATION_OWNER_SCOPE" },
+  "owner-memory-record": { prefix: "memory-open", reasonCode: "MEMORY_OPEN_OWNER_SCOPE" },
   "owner-reminder": { prefix: "reminder", reasonCode: "REMINDER_OWNER_SCOPE" },
+  "owner-message": { prefix: "tell-owner", reasonCode: "TELL_OWNER_OWNER_SCOPE" },
+  "owner-mail": { prefix: "mail-read", reasonCode: "MAIL_READ_OWNER_SCOPE" },
   "owner-rule": { prefix: "owner-rule", reasonCode: "OWNER_RULE_OWNER_SCOPE" },
   "owner-perception": { prefix: "perception", reasonCode: "PERCEPTION_OWNER_SCOPE" },
+  "conversation-context": { prefix: "context-recall", reasonCode: "CONTEXT_RECALL_RUNTIME" },
 });
 const PERCEPTION_EXTERNAL_ORIGIN = "perception_read";
 class OwnerScopeStop extends Error {
@@ -346,13 +382,17 @@ export interface ProductionRuntimeToolsOptions {
   readonly managedTasks?: ProductionManagedTasks;
   readonly backgroundCommands?: BackgroundCommandLimits;
   readonly memoryRecall?: Pick<ProductionMemoryRecall, "recallWithClassification">;
+  readonly conversations?: Pick<ProductionConversationTools, "run">;
+  readonly memoryOpen?: Pick<ProductionMemoryOpen, "open">;
   readonly reminders?: Pick<ProductionReminderTools, "run">;
+  readonly tellOwner?: Pick<ProductionTellOwner, "run">;
+  readonly mailRead?: Pick<ProductionMailRead, "run">;
   readonly ownerRules?: Pick<ProductionOwnerRuleTools, "run">;
   readonly perception?: Pick<ProductionPerceptionTools, "run">;
   readonly toolActions?: ToolActionRegistry;
   readonly readOnlyRun?: (runId: RuntimeRequest["runId"]) => Promise<boolean>;
   readonly ownerScope?: Pick<OwnerScopeAuthorization, "authorize">;
-  readonly externalContent?: Pick<ContextExternalContent, "mark" | "read">;
+  readonly externalContent?: Pick<ContextExternalContent, "mark" | "read" | "readThread">;
   readonly taskHandle?: (handle: GovernedCapabilityExecutionHandle) => Promise<boolean>;
   readonly fileRead?: ProductionFileReadServices;
   readonly ownerId: RuntimeRequest["ownerId"];
@@ -599,11 +639,22 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     }
     if (this.#options.memoryRecall) descriptors.push(memoryRecallDescriptor());
     if (this.#options.reminders) descriptors.push(...reminderToolDescriptors());
+    if (this.#options.tellOwner) descriptors.push(tellOwnerDescriptor());
+    if (this.#options.mailRead) descriptors.push(mailReadDescriptor());
     if (this.#options.ownerRules) descriptors.push(...ownerRuleToolDescriptors());
     if (this.#options.perception) descriptors.push(...perceptionToolDescriptors());
     this.#exposed.set(runId, new Set(refs));
     const readOnly = (await this.#options.readOnlyRun?.(runId)) === true;
-    return this.#registry.offer(descriptors, { readOnly });
+    const offered = this.#registry.offer(descriptors, { readOnly });
+    const conversations = [
+      ...(this.#options.conversations ? conversationToolDescriptors() : []),
+      ...(this.#options.memoryOpen ? [memoryOpenDescriptor()] : []),
+    ];
+    return offered.length === 0 && conversations.length === 0
+      ? offered
+      : this.#registry.offer([...offered, toolResultRecallDescriptor(), ...conversations], {
+          readOnly,
+        });
   }
 
   async #taskStart(invocation: RuntimeToolInvocation): Promise<RuntimeToolInvocation> {
@@ -673,8 +724,16 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     if (row.executor !== "owner_scoped") return undefined;
     if (row.targetType === "owner-memory" && this.#options.memoryRecall)
       return (invocation, gate) => this.#recall(invocation, gate);
+    if (row.targetType === "owner-conversation" && this.#options.conversations)
+      return (invocation, gate) => this.#conversation(invocation, gate);
+    if (row.targetType === "owner-memory-record" && this.#options.memoryOpen)
+      return (invocation, gate) => this.#memoryOpen(invocation, gate);
     if (row.targetType === "owner-reminder" && this.#options.reminders)
       return (invocation, gate) => this.#reminder(invocation, gate);
+    if (row.targetType === "owner-message" && this.#options.tellOwner)
+      return (invocation, gate) => this.#tellOwner(invocation, gate);
+    if (row.targetType === "owner-mail" && this.#options.mailRead)
+      return (invocation, gate) => this.#mailRead(invocation, gate);
     if (row.targetType === "owner-rule" && this.#options.ownerRules)
       return (invocation, gate) => this.#ownerRule(invocation, gate);
     if (row.targetType === "owner-perception" && this.#options.perception)
@@ -817,6 +876,73 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
           : { errorCode: "MEMORY_RECALL_UNAVAILABLE", note: TOOL_RESULT_RECALL_UNAVAILABLE.text },
     );
   }
+  async #conversation(
+    invocation: RuntimeToolInvocation,
+    gate: OwnerScopeGate,
+  ): Promise<RuntimeToolExecutionResult> {
+    const conversations = this.#options.conversations;
+    return this.#ownerScoped(
+      invocation,
+      "conversation",
+      gate,
+      conversations
+        ? async (call) => {
+            const { output, contentClassification, conversationIds } =
+              await conversations.run(call);
+            const marker = this.#options.externalContent;
+            if (marker)
+              for (const conversationId of conversationIds)
+                if ((await marker.readThread(conversationId)).length > 0) {
+                  await marker.mark(call.runId, RECALLED_EXTERNAL_CONVERSATION_ORIGIN);
+                  break;
+                }
+            return { value: output, contentClassification };
+          }
+        : undefined,
+      (error) =>
+        error instanceof ConversationToolInputError
+          ? {
+              errorCode: "CONVERSATION_INPUT_INVALID",
+              note: TOOL_RESULT_CONVERSATION_INPUT_INVALID.text,
+            }
+          : {
+              errorCode: "CONVERSATION_UNAVAILABLE",
+              note: TOOL_RESULT_CONVERSATION_UNAVAILABLE.text,
+            },
+    );
+  }
+  async #memoryOpen(
+    invocation: RuntimeToolInvocation,
+    gate: OwnerScopeGate,
+  ): Promise<RuntimeToolExecutionResult> {
+    const memoryOpen = this.#options.memoryOpen;
+    return this.#ownerScoped(
+      invocation,
+      "memory",
+      gate,
+      memoryOpen
+        ? async (call) => {
+            const { output, contentClassification, externalContent } = await memoryOpen.open(call);
+            if (externalContent)
+              await this.#options.externalContent?.mark(
+                call.runId,
+                RECALLED_EXTERNAL_RECORD_ORIGIN,
+              );
+            return { value: output, contentClassification };
+          }
+        : undefined,
+      (error) =>
+        error instanceof MemoryOpenInputError
+          ? {
+              errorCode: "MEMORY_OPEN_INPUT_INVALID",
+              note: TOOL_RESULT_MEMORY_OPEN_INPUT_INVALID.text,
+            }
+          : {
+              errorCode: "MEMORY_OPEN_UNAVAILABLE",
+              note: TOOL_RESULT_MEMORY_OPEN_UNAVAILABLE.text,
+            },
+    );
+  }
   async #reminder(
     invocation: RuntimeToolInvocation,
     gate: OwnerScopeGate,
@@ -843,9 +969,51 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       },
     );
   }
+  async #tellOwner(
+    invocation: RuntimeToolInvocation,
+    gate: OwnerScopeGate,
+  ): Promise<RuntimeToolExecutionResult> {
+    const tellOwner = this.#options.tellOwner;
+    return this.#ownerScoped(
+      invocation,
+      "tell",
+      gate,
+      tellOwner ? async (call) => ({ value: await tellOwner.run(call) }) : undefined,
+      (error) => ({
+        errorCode: error instanceof TellOwnerInputError ? error.code : "TELL_OWNER_UNAVAILABLE",
+        note: TOOL_RESULT_TELL_OWNER_REJECTED.text,
+      }),
+    );
+  }
+  async #mailRead(
+    invocation: RuntimeToolInvocation,
+    gate: OwnerScopeGate,
+  ): Promise<RuntimeToolExecutionResult> {
+    const mailRead = this.#options.mailRead;
+    return this.#ownerScoped(
+      invocation,
+      "mail",
+      gate,
+      mailRead
+        ? async (call) => ({ value: await mailRead.run(call), contentClassification: "private" })
+        : undefined,
+      (error) => ({
+        errorCode: error instanceof MailReadInputError ? error.code : "MAIL_READ_UNAVAILABLE",
+        note: TOOL_RESULT_MAIL_READ_REJECTED.text,
+      }),
+    );
+  }
   async #ownerScoped(
     invocation: RuntimeToolInvocation,
-    marker: "recall" | "reminder" | "rule" | "perception",
+    marker:
+      | "recall"
+      | "conversation"
+      | "memory"
+      | "reminder"
+      | "rule"
+      | "perception"
+      | "tell"
+      | "mail",
     gate: OwnerScopeGate,
     run:
       | ((call: RuntimeToolInvocation) => Promise<{
@@ -872,7 +1040,15 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
   }
   async #ownerScopedOnce(
     invocation: RuntimeToolInvocation,
-    marker: "recall" | "reminder" | "rule" | "perception",
+    marker:
+      | "recall"
+      | "conversation"
+      | "memory"
+      | "reminder"
+      | "rule"
+      | "perception"
+      | "tell"
+      | "mail",
     gate: OwnerScopeGate,
     run: (call: RuntimeToolInvocation) => Promise<{
       readonly value: unknown;
@@ -978,7 +1154,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       return {
         allowed:
           this.#exposed.has(invocation.runId) &&
-          this.#builtinExecutor(row) !== undefined &&
+          (row.executor === RUNTIME_CONTEXT_EXECUTOR || this.#builtinExecutor(row) !== undefined) &&
           (row.authorization !== "owner_scope" || this.#options.ownerScope !== undefined),
         permissionDecisionRef: `${legacy.prefix}:${digest([invocation.runId, invocation.toolCallId])}`,
         reasonCode: legacy.reasonCode,

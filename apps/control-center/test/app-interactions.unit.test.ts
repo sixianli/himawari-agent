@@ -207,7 +207,7 @@ describe("control center application bootstrap and interaction", () => {
           }
         : {
             type: "memory.overview.snapshot",
-            payload: { reminders: [], upcoming: [], memories: [], pending: [] },
+            payload: { reminders: [], upcoming: [], cancelled: [], memories: [], pending: [] },
           },
     );
     window.history.replaceState(

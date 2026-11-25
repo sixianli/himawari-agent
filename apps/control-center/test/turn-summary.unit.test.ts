@@ -13,6 +13,8 @@ const record = (overrides: Partial<ThreadExecutionRecord>): ThreadExecutionRecor
   text: "",
   input: "",
   output: "",
+  activity: "",
+  activityIcon: "",
   occurredAt: "2026-10-26T12:00:00.000Z",
   ...overrides,
 });

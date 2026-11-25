@@ -8,6 +8,7 @@ import type {
   MemoryEpisodeSearchResult,
   MemoryEpisodeThreadWatermark,
   MemoryHistoryEvent,
+  MemoryNumber,
   MemoryHistoryNote,
   MemoryIndexCandidate,
   MemoryIndexDocument,
@@ -184,7 +185,7 @@ function normalizedEntity(name: string): string {
   return name.normalize("NFKC").trim().toLowerCase();
 }
 
-function ftsQuery(terms: readonly string[]): string | null {
+export function ftsQuery(terms: readonly string[]): string | null {
   const unique = [...new Set(terms.map((term) => term.trim()).filter((term) => term.length > 0))];
   if (unique.length === 0) return null;
   return unique
@@ -193,7 +194,7 @@ function ftsQuery(terms: readonly string[]): string | null {
     .join(" OR ");
 }
 
-function vectorBlob(embedding: MemoryIndexEmbedding): Buffer {
+export function vectorBlob(embedding: MemoryIndexEmbedding): Buffer {
   return Buffer.from(
     embedding.vector.buffer,
     embedding.vector.byteOffset,
@@ -215,7 +216,7 @@ function cosineSimilarity(values: Float32Array, query: Float32Array): number {
   return norm === 0 || queryNorm === 0 ? 0 : dot / Math.sqrt(norm) / Math.sqrt(queryNorm);
 }
 
-function blobVector(blob: Uint8Array, dimensions: number): Float32Array {
+export function blobVector(blob: Uint8Array, dimensions: number): Float32Array {
   const copy = new Uint8Array(blob.byteLength);
   copy.set(blob);
   return new Float32Array(copy.buffer, 0, dimensions);
@@ -367,6 +368,12 @@ export class SqliteMemoryOperations {
         );
       case "memory.readHistory":
         return this.readHistory(payload as { ownerId: OwnerId; agentId: AgentId; id: number });
+      case "memory.numbers":
+        return this.numbers(
+          payload as { ownerId: OwnerId; agentId: AgentId; memoryIds: readonly MemoryId[] },
+        );
+      case "memory.byNumber":
+        return this.byNumber(payload as { ownerId: OwnerId; agentId: AgentId; number: number });
       case "memory.listInactive":
         return this.listInactive(
           payload as { ownerId: OwnerId; agentId: AgentId; trashedAfter: string; limit: number },
@@ -1001,6 +1008,45 @@ export class SqliteMemoryOperations {
       )
       .all(input.ownerId, input.agentId, ...unique) as MemoryHistoryRow[];
     return rows.map(memoryHistoryEvent);
+  }
+
+  private numbers(input: {
+    ownerId: OwnerId;
+    agentId: AgentId;
+    memoryIds: readonly MemoryId[];
+  }): readonly MemoryNumber[] {
+    if (input.memoryIds.length > 10_000)
+      this.fail("PORT_INVALID_OPERATION", "Memory number lookup is too large");
+    if (input.memoryIds.length === 0) return [];
+    const rows = this.database
+      .prepare(
+        `SELECT memory_id AS memoryId, number FROM memory_numbers
+        WHERE owner_id = ? AND agent_id = ?
+          AND memory_id IN (SELECT value FROM json_each(?))
+        ORDER BY number`,
+      )
+      .all(input.ownerId, input.agentId, JSON.stringify([...new Set(input.memoryIds)])) as {
+      memoryId: string;
+      number: number;
+    }[];
+    return rows.map(({ memoryId, number }) =>
+      Object.freeze({ memoryId: memoryId as MemoryId, number }),
+    );
+  }
+
+  private byNumber(input: {
+    ownerId: OwnerId;
+    agentId: AgentId;
+    number: number;
+  }): MemoryId | undefined {
+    if (!Number.isSafeInteger(input.number) || input.number < 1) return undefined;
+    const found = this.database
+      .prepare(
+        "SELECT memory_id FROM memory_numbers WHERE owner_id = ? AND agent_id = ? AND number = ?",
+      )
+      .pluck()
+      .get(input.ownerId, input.agentId, input.number) as string | undefined;
+    return found === undefined ? undefined : (found as MemoryId);
   }
 
   private readHistory(input: {
@@ -1702,6 +1748,7 @@ export class SqliteMemoryOperations {
         JOIN (SELECT thread_id, max(sequence) AS last_sequence,
             max(committed_at) AS last_committed_at
           FROM thread_messages WHERE owner_id = @ownerId AND agent_id = @agentId
+            AND internal = 0
           GROUP BY thread_id) m ON m.thread_id = t.id
         WHERE t.owner_id = @ownerId AND t.agent_id = @agentId AND t.status = 'open'
           AND t.origin = 'owner'

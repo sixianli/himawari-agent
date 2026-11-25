@@ -21,13 +21,6 @@ public struct ConfirmPrompt: Sendable, Hashable {
 
 public protocol DeviceTransport: Sendable {
     func post(path: String, json: Data, nonce: String?, confirm: ConfirmPrompt?) async throws -> DeviceResponse
-    func download(path: String, query: [URLQueryItem]) async throws -> DeviceResponse
-}
-
-public extension DeviceTransport {
-    func download(path: String, query: [URLQueryItem]) async throws -> DeviceResponse {
-        DeviceResponse(status: 501, body: Data())
-    }
 }
 
 public struct SignedDeviceTransport: DeviceTransport {
@@ -51,18 +44,6 @@ public struct SignedDeviceTransport: DeviceTransport {
                     confirmReason: confirm?.reason
                 )
             )
-            return DeviceResponse(status: 200, body: body)
-        } catch let DeviceAPIError.server(status, code, _, reason) {
-            var detail = ["code": code ?? ""]
-            if let reason { detail["reasonCode"] = reason }
-            let failure = ["error": detail]
-            return DeviceResponse(status: status, body: (try? JSONEncoder().encode(failure)) ?? Data())
-        }
-    }
-
-    public func download(path: String, query: [URLQueryItem]) async throws -> DeviceResponse {
-        do {
-            let body = try await http.send(DeviceRequest(method: "GET", path: path, query: query))
             return DeviceResponse(status: 200, body: body)
         } catch let DeviceAPIError.server(status, code, _, reason) {
             var detail = ["code": code ?? ""]

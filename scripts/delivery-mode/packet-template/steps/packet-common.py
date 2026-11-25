@@ -15,6 +15,7 @@ STAGE = Path('/var/tmp/himawari-__PKT_LABEL__-__PKT_DATE_COMPACT__/packet')
 OPERATIONS = Path('/opt/himawari/operations/__PKT_LABEL__-__PKT_DATE_COMPACT__')
 EVIDENCE = Path('/var/lib/himawari/__PKT_LABEL__-__PKT_DATE_COMPACT__-evidence')
 UPLOAD = Path('/var/tmp/__PKT_LABEL__-packet-upload/__PKT_DATE__-__PKT_LABEL__-change-packet-01')
+MATERIAL_CACHE = Path('/opt/himawari/material-cache')
 
 
 def require(condition, code):

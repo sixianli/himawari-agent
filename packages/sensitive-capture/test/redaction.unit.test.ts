@@ -3,6 +3,7 @@ import {
   findSensitiveValues,
   locateMaskedValues,
   maskSensitiveTexts,
+  namesRememberedValue,
   redactForEgress,
 } from "../src/index.js";
 
@@ -388,5 +389,18 @@ describe("[P5-1] masking several texts that leave together", () => {
       "明天上午十点去牙医复诊",
       "周六去京都",
     ]);
+  });
+});
+
+describe("texts whose masked values later texts rely on", () => {
+  it("says so for a named password or verification code", () => {
+    expect(namesRememberedValue("登录密码：Qz7mWx42Lp")).toBe(true);
+    expect(namesRememberedValue("您的验证码是 482910")).toBe(true);
+  });
+
+  it("REVERSE: says no for plain text, a short password, or a card number that is masked on its own", () => {
+    expect(namesRememberedValue("网页正文：lorem ipsum")).toBe(false);
+    expect(namesRememberedValue("密码：abc12")).toBe(false);
+    expect(namesRememberedValue("卡号 6222 0212 3456 7890 123")).toBe(false);
   });
 });

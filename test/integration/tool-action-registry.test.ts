@@ -31,6 +31,7 @@ import {
   OwnerScopeAuthorization,
   parameterFingerprint,
 } from "../../apps/agent-service/src/owner-scope-authorization.js";
+import { OwnerAllowances } from "../../apps/agent-service/src/owner-allowances.js";
 import { OwnerIntentGate } from "../../apps/agent-service/src/owner-intent-gate.js";
 import { ProductionRuntimeTools } from "../../apps/agent-service/src/production-runtime-tools.js";
 import {
@@ -124,6 +125,13 @@ async function setup(
     memoryIds: ["memory:reminder:x"],
     externalContent: options.recalledExternal === true,
   }));
+  const allowances = new OwnerAllowances({
+    configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
+    state: repository,
+    store,
+    authority: () => SERVICE_AUTHORITY.lease,
+    clock,
+  });
   const markFaults = { read: false, write: false };
   const markState: StateStore = {
     readScopedState: async (...args) => {
@@ -156,6 +164,7 @@ async function setup(
       clock,
       ids,
       intentLifetimeMs: 600_000,
+      allowances,
       ...(options.rules ? { rules: options.rules } : {}),
       ...(options.ownerIntent
         ? {
@@ -224,6 +233,7 @@ async function setup(
       return externalContent;
     },
     restart,
+    allowances,
     markFaults,
     managedTasks,
     store,
@@ -310,6 +320,7 @@ it("[ADR-0257] sets a reminder and a rule through the permission engine, preauth
       threadId: "thread-capability-invocation",
     });
     expect(snapshot.deterministicFacts).toEqual([
+      { code: "himawari_side_only", minimumRisk: "LOW", source: "runtime" },
       { code: "run_source_user_message", minimumRisk: "LOW", source: "runtime" },
     ]);
     expect((await s.store.listGrants(OWNER_ID, AGENT_ID)).map(({ kind }) => kind)).toEqual([
@@ -526,8 +537,8 @@ it("[ADR-0257] refuses a built-in tool whose capability is missing from the buil
   }
 });
 
-it("[ADR-0257] asks the owner before setting a reminder once a task's output is in the conversation, and keeps asking after a restart", async () => {
-  const s = await setup();
+it("[ADR-0257] asks the owner before a write that is not Himawari's own once a task's output is in the conversation, and keeps asking after a restart", async () => {
+  const s = await setup({ registry: notHimawariSideRegistry() });
   try {
     const output = s.call("execution.task.output", "call:output", { taskId: "task:a" });
     expect(await s.tools.execute(output)).toMatchObject({ outcome: "succeeded" });
@@ -584,8 +595,8 @@ it("[ADR-0257] keeps reading the owner's own data without marking the conversati
   }
 });
 
-it("[ADR-0257] refuses a scheduled run's reminder once external content is in context, records what it wanted, and creates no approval", async () => {
-  const s = await setup({ sourceType: "schedule" });
+it("[ADR-0257] when a refusing action rule hits a scheduled run's reminder, records what it wanted and creates no approval", async () => {
+  const s = await setup({ sourceType: "schedule", rules: REFUSING_RULES });
   try {
     await s.tools.execute(s.call("execution.task.output", "call:output", { taskId: "task:a" }));
     const args = { due: "2026-11-13T15:00", text: "付款" };
@@ -630,17 +641,41 @@ it("[ADR-0257] lets a scheduled run set a reminder when nothing external is in c
   }
 });
 
-it("[ADR-0257] treats an external-event run as external content even before any tool reads anything", async () => {
+it("[ADR-0285] treats an external-event run as external content before any tool reads anything: its reminder goes ahead with the event as source, a rule change asks", async () => {
   const s = await setup({ sourceType: "external_event" });
   try {
     const set = s.call("reminder.set", "call:event", { text: "付款", due: "2026-11-13T15:00" });
-    expect(await s.tools.execute(set)).toMatchObject({
-      outcome: "failed",
-      errorCode: "action_rule_refused",
+    expect(await s.tools.execute(set)).toMatchObject({ outcome: "succeeded" });
+    const origins = (await s.externalContent.read(RUN_ID)).map(({ origin }) => origin);
+    expect(origins).toEqual([expect.stringMatching(/^external_event:/u)]);
+    expect(s.reminders).toHaveBeenCalledWith(
+      expect.objectContaining({ toolCallId: "call:event" }),
+      {
+        externalOrigins: origins,
+      },
+    );
+    const [reminderApproval] = await s.approvals();
+    expect(reminderApproval).toMatchObject({
+      status: "approved",
+      policyAuthorization: {
+        key: `action-rule:${ACTION_RULE_IDS.preauthorizeHimawariSideAfterExternalContent}`,
+      },
     });
-    expect(await s.externalContent.read(RUN_ID)).toEqual([
-      expect.objectContaining({ origin: "external_event" }),
-    ]);
+    const rule = s.call("rule.set", "call:event-rule", { text: "以后付款邮件都直接转给会计" });
+    expect(await s.tools.execute(rule)).toMatchObject({ outcome: "awaiting_approval" });
+    expect(s.rules).not.toHaveBeenCalled();
+    expect(await s.approvals()).toHaveLength(2);
+  } finally {
+    await s.close();
+  }
+});
+
+it("[ADR-0285] REVERSE: the same external-event reminder asks when the reminder is not marked as Himawari's own", async () => {
+  const s = await setup({ sourceType: "external_event", registry: notHimawariSideRegistry() });
+  try {
+    const set = s.call("reminder.set", "call:event", { text: "付款", due: "2026-11-13T15:00" });
+    expect(await s.tools.execute(set)).toMatchObject({ outcome: "awaiting_approval" });
+    expect(s.reminders).not.toHaveBeenCalled();
   } finally {
     await s.close();
   }
@@ -662,7 +697,11 @@ it("[ADR-0278] lets a task the owner agreed to set a reminder when nothing exter
 });
 
 it("[ADR-0278] asks the owner, instead of refusing, when a task the owner agreed to writes after reading external content", async () => {
-  const s = await setup({ sourceType: "external_event", ownerApprovedTask: true });
+  const s = await setup({
+    sourceType: "external_event",
+    ownerApprovedTask: true,
+    registry: notHimawariSideRegistry(),
+  });
   try {
     await s.tools.execute(s.call("execution.task.output", "call:output", { taskId: "task:a" }));
     const set = s.call("reminder.set", "call:approved-after", {
@@ -680,19 +719,47 @@ it("[ADR-0278] asks the owner, instead of refusing, when a task the owner agreed
   }
 });
 
-it("[ADR-0278] REVERSE: without the owner-approved mark the same external-event write is still refused", async () => {
-  const s = await setup({ sourceType: "external_event" });
+it("[ADR-0285] an external-event run that read outside content asks the owner too, instead of being refused", async () => {
+  const s = await setup({ sourceType: "external_event", registry: notHimawariSideRegistry() });
   try {
     await s.tools.execute(s.call("execution.task.output", "call:output", { taskId: "task:a" }));
     const set = s.call("reminder.set", "call:plain-event", {
       text: "付款",
       due: "2026-11-13T15:00",
     });
-    expect(await s.tools.execute(set)).toMatchObject({
-      outcome: "failed",
-      errorCode: "action_rule_refused",
+    expect(await s.tools.execute(set)).toMatchObject({ outcome: "awaiting_approval" });
+    expect(s.reminders).not.toHaveBeenCalled();
+    expect(await s.approvals()).toEqual([
+      expect.objectContaining({
+        status: "pending",
+        display: expect.objectContaining({
+          askedBecause: expect.objectContaining({
+            ruleId: ACTION_RULE_IDS.askAfterExternalContent,
+          }),
+        }),
+      }),
+    ]);
+  } finally {
+    await s.close();
+  }
+});
+
+it("[ADR-0285] a scheduled run that read outside content sets its reminder right away and asks before changing a rule", async () => {
+  const s = await setup({ sourceType: "schedule" });
+  try {
+    await s.tools.execute(s.call("execution.task.output", "call:output", { taskId: "task:a" }));
+    const set = s.call("reminder.set", "call:background", {
+      due: "2026-11-13T15:00",
+      text: "付款",
     });
-    expect(await s.approvals()).toEqual([]);
+    expect(await s.tools.execute(set)).toMatchObject({ outcome: "succeeded" });
+    const rule = s.call("rule.set", "call:background-rule", { text: "以后付款提醒都提前一天" });
+    expect(await s.tools.execute(rule)).toMatchObject({ outcome: "awaiting_approval" });
+    expect(s.rules).not.toHaveBeenCalled();
+    const audits = (await s.repository.auditLedger().listByAgent(AGENT_ID, null)).filter(
+      ({ action }) => action === "authorization.action_rule.refused",
+    );
+    expect(audits).toEqual([]);
   } finally {
     await s.close();
   }
@@ -732,8 +799,55 @@ it("[ADR-0257] asks the owner before stopping a task when no built-in rule preau
   }
 });
 
-it("[ADR-0257] hands the conversation's external sources to the reminder it sets after the owner approves", async () => {
+it("[ADR-0285] sets a reminder right away after outside content and hands it the conversation's sources", async () => {
   const s = await setup();
+  try {
+    await s.tools.execute(s.call("execution.task.output", "call:output", { taskId: "task:a" }));
+    const set = s.call("reminder.set", "call:after-output", {
+      text: "改会议",
+      due: "2026-11-13T15:00",
+    });
+    expect(await s.tools.execute(set)).toMatchObject({ outcome: "succeeded" });
+    expect(s.reminders).toHaveBeenCalledWith(
+      expect.objectContaining({ toolCallId: "call:after-output" }),
+      { externalOrigins: ["execution_task_output"] },
+    );
+    const [approval] = await s.approvals();
+    expect(approval).toMatchObject({
+      status: "approved",
+      policyAuthorization: {
+        key: `action-rule:${ACTION_RULE_IDS.preauthorizeHimawariSideAfterExternalContent}`,
+      },
+    });
+    expect(
+      (approval?.intentSnapshot as GovernedActionIntent).deterministicFacts.map(({ code }) => code),
+    ).toEqual(["context_external_content", "himawari_side_only", "run_source_user_message"]);
+  } finally {
+    await s.close();
+  }
+});
+
+it("[ADR-0285] REVERSE: cancelling a reminder cannot be undone, so after outside content it asks instead of going ahead", async () => {
+  const s = await setup();
+  try {
+    await s.tools.execute(s.call("execution.task.output", "call:output", { taskId: "task:a" }));
+    const cancel = s.call("reminder.cancel", "call:cancel-after-output", {
+      reminderId: "reminder:a",
+    });
+    expect(await s.tools.execute(cancel)).toMatchObject({ outcome: "awaiting_approval" });
+    expect(s.reminders).not.toHaveBeenCalled();
+    expect(
+      ((await s.approvals())[0]?.intentSnapshot as GovernedActionIntent).deterministicFacts.map(
+        ({ code }) => code,
+      ),
+    ).toEqual(["context_external_content", "run_source_user_message"]);
+  } finally {
+    await s.close();
+  }
+});
+
+it("[ADR-0257] hands the conversation's external sources to a write it runs after the owner approves", async () => {
+  const s = await setup({ registry: notHimawariSideRegistry() });
   try {
     await s.tools.execute(s.call("execution.task.output", "call:output", { taskId: "task:a" }));
     const set = s.call("reminder.set", "call:approved", {
@@ -769,8 +883,8 @@ it("[ADR-0257] gives the owner's own reminders no external sources when nothing 
   }
 });
 
-it("[ADR-0257] counts a recalled memory written from external content as external, so the next reminder asks", async () => {
-  const s = await setup({ recalledExternal: true });
+it("[ADR-0257] counts a recalled memory written from external content as external, so the next outside write asks", async () => {
+  const s = await setup({ recalledExternal: true, registry: notHimawariSideRegistry() });
   try {
     const recalled = s.call("memory.recall", "call:recall", { query: "会议", limit: 3 });
     expect(await s.tools.execute(recalled)).toMatchObject({ outcome: "succeeded" });
@@ -832,9 +946,9 @@ it("[ADR-0257] lets the owner switch a just-do-it built-in rule to ask every tim
         askFirst: false,
       },
       {
-        ruleId: ACTION_RULE_IDS.refuseBackgroundAfterExternalContent,
-        outcome: "refuse",
-        askFirst: null,
+        ruleId: ACTION_RULE_IDS.preauthorizeHimawariSideAfterExternalContent,
+        outcome: "allow_preauthorized",
+        askFirst: false,
       },
       {
         ruleId: ACTION_RULE_IDS.preauthorizeOwnTaskCancel,
@@ -873,7 +987,7 @@ it("[ADR-0257] lets the owner switch a just-do-it built-in rule to ask every tim
 });
 
 it("[ADR-0257] runs an approved call on the facts frozen when it asked, even if the conversation's marks change before the owner answers", async () => {
-  const s = await setup();
+  const s = await setup({ registry: notHimawariSideRegistry() });
   try {
     await s.tools.execute(s.call("execution.task.output", "call:output", { taskId: "task:a" }));
     const set = s.call("reminder.set", "call:frozen", { text: "改会议", due: "2026-11-13T15:00" });
@@ -952,20 +1066,15 @@ it("[ADR-0257] keeps a conversation's marks for every later run in it, so a new 
   }
 });
 
-it("[ADR-0257] REVERSE: without the background refusal rule the same scheduled call would wait for the owner, so the refusal test depends on that rule", async () => {
-  const s = await setup({
-    sourceType: "schedule",
-    rules: BUILT_IN_ACTION_RULES.filter(
-      ({ id }) => id !== ACTION_RULE_IDS.refuseBackgroundAfterExternalContent,
-    ),
-  });
+it("[ADR-0285] REVERSE: with the retired refusal rule switched back on, the same scheduled rule change would be refused, so the asking test depends on it staying retired", async () => {
+  const s = await setup({ sourceType: "schedule", rules: REFUSING_RULES });
   try {
     await s.tools.execute(s.call("execution.task.output", "call:output", { taskId: "task:a" }));
-    const set = s.call("reminder.set", "call:background", {
-      due: "2026-11-13T15:00",
-      text: "付款",
+    const rule = s.call("rule.set", "call:background-rule", { text: "以后付款提醒都提前一天" });
+    expect(await s.tools.execute(rule)).toMatchObject({
+      outcome: "failed",
+      errorCode: "action_rule_refused",
     });
-    expect(await s.tools.execute(set)).toMatchObject({ outcome: "awaiting_approval" });
   } finally {
     await s.close();
   }
@@ -986,6 +1095,22 @@ it("[ADR-0257] REVERSE: without the mark a task's output leaves the next reminde
   }
 });
 
+function notHimawariSideRegistry() {
+  return new ToolActionRegistry(
+    PRODUCTION_TOOL_ACTION_ROWS.map((row) => {
+      if (!row.himawariSideOnly) return row;
+      const { himawariSideOnly: _ownSide, ...outside } = row;
+      return outside;
+    }),
+  );
+}
+
+const REFUSING_RULES = BUILT_IN_ACTION_RULES.map((rule) =>
+  rule.id === ACTION_RULE_IDS.refuseBackgroundAfterExternalContent
+    ? { ...rule, status: "active" as const }
+    : rule,
+);
+
 function unmarkedTaskOutputRegistry() {
   return new ToolActionRegistry(
     PRODUCTION_TOOL_ACTION_ROWS.map((row) =>
@@ -995,7 +1120,7 @@ function unmarkedTaskOutputRegistry() {
 }
 
 it("[ADR-0257] refuses the same background call again on replay without turning it into an authorization error", async () => {
-  const s = await setup({ sourceType: "schedule" });
+  const s = await setup({ sourceType: "schedule", rules: REFUSING_RULES });
   try {
     await s.tools.execute(s.call("execution.task.output", "call:output", { taskId: "task:a" }));
     const set = s.call("reminder.set", "call:replayed", { due: "2026-11-13T15:00", text: "付款" });
@@ -1072,6 +1197,7 @@ it("[ADR-0257] keeps a background refusal when another writer recorded it first,
     let commits = 0;
     const s = await setup({
       sourceType: "schedule",
+      rules: REFUSING_RULES,
       ownerScopeState: (repository) => ({
         readScopedState: (...args) => repository.readScopedState(...args),
         commitStateAndEvents: async (input) => {
@@ -1156,7 +1282,7 @@ it("[ADR-0257] retries the owner's rule switch after a concurrent change and giv
 });
 
 it("[ADR-0257] keeps the card's reason short when many outside sources were read", async () => {
-  const s = await setup();
+  const s = await setup({ registry: notHimawariSideRegistry() });
   try {
     for (let index = 0; index < 7; index += 1)
       await s.externalContent.mark(RUN_ID, `source_${index}_${"x".repeat(200)}`);
@@ -1187,7 +1313,7 @@ async function readOutputThenSetReminder(s: Awaited<ReturnType<typeof setup>>, i
 
 it("[ADR-0257] sets the reminder without a card after outside content when the owner's own words clearly asked for it, and records what was checked", async () => {
   const check = vi.fn(async (_request: OwnerIntentCheckRequest) => EXPLICIT);
-  const s = await setup({ ownerIntent: { check } });
+  const s = await setup({ registry: notHimawariSideRegistry(), ownerIntent: { check } });
   try {
     expect(await readOutputThenSetReminder(s, "yes")).toMatchObject({ outcome: "succeeded" });
     expect(s.reminders).toHaveBeenCalledTimes(1);
@@ -1223,7 +1349,7 @@ it("[ADR-0257] sets the reminder without a card after outside content when the o
 
 it("[ADR-0257] follows the record that won a race for the same intent, so the action and the record never disagree", async () => {
   const check = vi.fn(async (_request: OwnerIntentCheckRequest) => EXPLICIT);
-  const s = await setup({ ownerIntent: { check } });
+  const s = await setup({ registry: notHimawariSideRegistry(), ownerIntent: { check } });
   try {
     const original = s.repository.commitStateAndEvents.bind(s.repository);
     let raced = false;
@@ -1276,6 +1402,7 @@ it("[ADR-0257] still asks the owner when the check says no, is unsure, is not co
   ];
   for (const [name, check, timeoutMs] of cases) {
     const s = await setup({
+      registry: notHimawariSideRegistry(),
       ownerIntent: { check, ...(timeoutMs === undefined ? {} : { timeoutMs }) },
     });
     try {
@@ -1305,7 +1432,7 @@ it("[ADR-0257] still asks the owner when the check says no, is unsure, is not co
 
 it("[ADR-0257] does not ask the check at all without outside content, for a standing rule, or for a scheduled run, and asks with no owner words as unconfirmed", async () => {
   const check = vi.fn(async (_request: OwnerIntentCheckRequest) => EXPLICIT);
-  const s = await setup({ ownerIntent: { check } });
+  const s = await setup({ registry: notHimawariSideRegistry(), ownerIntent: { check } });
   try {
     expect(
       await s.tools.execute(
@@ -1322,7 +1449,11 @@ it("[ADR-0257] does not ask the check at all without outside content, for a stan
   } finally {
     await s.close();
   }
-  const scheduled = await setup({ sourceType: "schedule", ownerIntent: { check } });
+  const scheduled = await setup({
+    registry: notHimawariSideRegistry(),
+    sourceType: "schedule",
+    ownerIntent: { check },
+  });
   try {
     await scheduled.tools.execute(
       scheduled.call("execution.task.output", "call:output:sch", { taskId: "task:a" }),
@@ -1331,13 +1462,16 @@ it("[ADR-0257] does not ask the check at all without outside content, for a stan
       await scheduled.tools.execute(
         scheduled.call("reminder.set", "call:sch", { text: "改会议", due: "2026-11-13T15:00" }),
       ),
-    ).toMatchObject({ outcome: "failed" });
+    ).toMatchObject({ outcome: "awaiting_approval" });
     expect(scheduled.reminders).not.toHaveBeenCalled();
     expect(check).not.toHaveBeenCalled();
   } finally {
     await scheduled.close();
   }
-  const silent = await setup({ ownerIntent: { check, words: [] } });
+  const silent = await setup({
+    registry: notHimawariSideRegistry(),
+    ownerIntent: { check, words: [] },
+  });
   try {
     expect(await readOutputThenSetReminder(silent, "silent")).toMatchObject({
       outcome: "awaiting_approval",
@@ -1350,7 +1484,7 @@ it("[ADR-0257] does not ask the check at all without outside content, for a stan
 
 it("[ADR-0257] keeps asking when the owner switched the confirmed-intent rule to ask first", async () => {
   const check = vi.fn(async (_request: OwnerIntentCheckRequest) => EXPLICIT);
-  const s = await setup({ ownerIntent: { check } });
+  const s = await setup({ registry: notHimawariSideRegistry(), ownerIntent: { check } });
   try {
     const switches = new BuiltInActionRuleSwitches({
       configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
@@ -1366,4 +1500,317 @@ it("[ADR-0257] keeps asking when the owner switched the confirmed-intent rule to
   } finally {
     await s.close();
   }
+});
+
+it("[ADR-0285] after outside content, a yes for this task stops asking for the same action in this conversation until it is taken back", async () => {
+  const s = await setup();
+  try {
+    const output = s.call("execution.task.output", "call:output", { taskId: "task:a" });
+    expect(await s.tools.execute(output)).toMatchObject({ outcome: "succeeded" });
+    const first = s.call("rule.set", "call:rule-1", { text: "以后账单邮件都提醒我" });
+    expect(await s.tools.execute(first)).toMatchObject({ outcome: "awaiting_approval" });
+    const [pending] = await s.approvals();
+    await approve(s, pending);
+    const allowanceId = await s.allowances.set({
+      approvalRequestId: pending?.id ?? "",
+      allowFor: "this_task",
+      days: null,
+    });
+    expect(await s.tools.execute(first)).toMatchObject({ outcome: "succeeded" });
+
+    const second = s.call("rule.set", "call:rule-2", { text: "以后快递邮件都提醒我" });
+    expect(await s.tools.execute(second)).toMatchObject({ outcome: "succeeded" });
+    expect(s.rules).toHaveBeenCalledTimes(2);
+    expect(
+      (await s.approvals()).filter(
+        ({ policyAuthorization }) => policyAuthorization?.key === `owner-allowance:${allowanceId}`,
+      ),
+    ).toHaveLength(1);
+    const audit = await s.repository.auditLedger().listByAgent(AGENT_ID, null);
+    expect(audit.map(({ action }) => action)).toContain("authorization.owner_allowance.used");
+    expect(await s.allowances.list()).toEqual([
+      expect.objectContaining({
+        allowanceId,
+        allowFor: "this_task",
+        threadId: "thread-capability-invocation",
+        expiresAt: null,
+      }),
+    ]);
+
+    await s.allowances.revoke(allowanceId);
+    expect(await s.allowances.list()).toEqual([]);
+    const third = s.call("rule.set", "call:rule-3", { text: "以后会议邮件都提醒我" });
+    expect(await s.tools.execute(third)).toMatchObject({ outcome: "awaiting_approval" });
+    expect(s.rules).toHaveBeenCalledTimes(2);
+  } finally {
+    await s.close();
+  }
+});
+
+it("[ADR-0285] a yes from now on stops asking for the same action, but no longer counts once outside content was read", async () => {
+  const s = await setup({ rules: [] });
+  try {
+    const first = s.call("reminder.set", "call:a", { text: "交周报", due: "2026-11-13T15:00" });
+    expect(await s.tools.execute(first)).toMatchObject({ outcome: "awaiting_approval" });
+    const [pending] = await s.approvals();
+    await approve(s, pending);
+    await s.allowances.set({
+      approvalRequestId: pending?.id ?? "",
+      allowFor: "always",
+      days: null,
+    });
+    const second = s.call("reminder.set", "call:b", { text: "交月报", due: "2026-11-14T15:00" });
+    expect(await s.tools.execute(second)).toMatchObject({ outcome: "succeeded" });
+
+    const output = s.call("execution.task.output", "call:output", { taskId: "task:a" });
+    expect(await s.tools.execute(output)).toMatchObject({ outcome: "succeeded" });
+    const third = s.call("reminder.set", "call:c", { text: "改会议", due: "2026-11-15T15:00" });
+    expect(await s.tools.execute(third)).toMatchObject({ outcome: "awaiting_approval" });
+    expect(s.reminders).toHaveBeenCalledTimes(1);
+  } finally {
+    await s.close();
+  }
+});
+
+it("[ADR-0285] a yes for some days asks again once the days are over", async () => {
+  const s = await setup({ rules: [] });
+  try {
+    const first = s.call("reminder.set", "call:a", { text: "交周报", due: "2026-11-13T15:00" });
+    expect(await s.tools.execute(first)).toMatchObject({ outcome: "awaiting_approval" });
+    const [pending] = await s.approvals();
+    await approve(s, pending);
+    await s.allowances.set({ approvalRequestId: pending?.id ?? "", allowFor: "days", days: 7 });
+    const later = (call: RuntimeToolInvocation): RuntimeToolInvocation => ({
+      ...call,
+      executionDeadlineAt: new Date(Date.parse(T1) + 30 * 86_400_000).toISOString(),
+    });
+    s.advance(6 * 86_400_000);
+    const inside = later(
+      s.call("reminder.set", "call:b", { text: "交月报", due: "2026-11-20T15:00" }),
+    );
+    expect(await s.tools.execute(inside)).toMatchObject({ outcome: "succeeded" });
+    s.advance(2 * 86_400_000);
+    expect(await s.allowances.list()).toEqual([]);
+    const after = later(
+      s.call("reminder.set", "call:c", { text: "交年报", due: "2026-11-25T15:00" }),
+    );
+    expect(await s.tools.execute(after)).toMatchObject({ outcome: "awaiting_approval" });
+  } finally {
+    await s.close();
+  }
+});
+
+it("[ADR-0285] REVERSE: a yes that covered something else, or came from a rule rather than the owner, gives no standing permission", async () => {
+  const s = await setup();
+  try {
+    const reminder = s.call("reminder.set", "call:a", { text: "交周报", due: "2026-11-13T15:00" });
+    expect(await s.tools.execute(reminder)).toMatchObject({ outcome: "succeeded" });
+    const [preauthorized] = await s.approvals();
+    await expect(
+      s.allowances.set({
+        approvalRequestId: preauthorized?.id ?? "",
+        allowFor: "always",
+        days: null,
+      }),
+    ).rejects.toMatchObject({ message: "ALLOWANCE_APPROVAL_NOT_OWNER_APPROVED" });
+    await expect(
+      s.allowances.set({ approvalRequestId: "approval:missing", allowFor: "always", days: null }),
+    ).rejects.toMatchObject({ message: "ALLOWANCE_APPROVAL_NOT_FOUND" });
+
+    const output = s.call("execution.task.output", "call:output", { taskId: "task:a" });
+    expect(await s.tools.execute(output)).toMatchObject({ outcome: "succeeded" });
+    const rule = s.call("rule.set", "call:rule-1", { text: "以后账单邮件都提醒我" });
+    expect(await s.tools.execute(rule)).toMatchObject({ outcome: "awaiting_approval" });
+    const pending = (await s.approvals()).find(({ status }) => status === "pending");
+    await expect(
+      s.allowances.set({ approvalRequestId: pending?.id ?? "", allowFor: "this_task", days: null }),
+    ).rejects.toMatchObject({ message: "ALLOWANCE_APPROVAL_NOT_OWNER_APPROVED" });
+    await approve(s, pending);
+    await expect(
+      s.allowances.set({ approvalRequestId: pending?.id ?? "", allowFor: "days", days: 0 }),
+    ).rejects.toMatchObject({ message: "ALLOWANCE_DAYS_INVALID" });
+    await s.allowances.set({
+      approvalRequestId: pending?.id ?? "",
+      allowFor: "this_task",
+      days: null,
+    });
+    const reminderAfter = s.call("reminder.cancel", "call:cancel", { reminderId: "reminder:a" });
+    expect(await s.tools.execute(reminderAfter)).toMatchObject({ outcome: "awaiting_approval" });
+  } finally {
+    await s.close();
+  }
+});
+
+it("[ADR-0285] spending money, credential changes and actions that need the owner present only ever get a one-time yes", async () => {
+  const base = {
+    contractVersion: "authorization.v2",
+    id: "owner-scope:x",
+    threadId: "thread-a",
+    estimatedCostMicros: 0,
+    actionKind: "CREATE_OR_UPDATE",
+    credentialOrAccessChange: false,
+    deterministicFacts: [],
+  };
+  const approval = (intent: Record<string, unknown>) => ({
+    id: "approval:x",
+    ownerId: OWNER_ID,
+    agentId: AGENT_ID,
+    status: "approved",
+    intentSnapshot: { ...base, ...intent },
+  });
+  for (const [intent, code] of [
+    [{ estimatedCostMicros: 12_800 }, "ALLOWANCE_SPENDING_ONCE_ONLY"],
+    [{ actionKind: "PURCHASE_OR_FUNDS" }, "ALLOWANCE_SPENDING_ONCE_ONLY"],
+    [{ credentialOrAccessChange: true }, "ALLOWANCE_CREDENTIAL_ONCE_ONLY"],
+    [
+      { deterministicFacts: [{ code: "owner_presence_required" }] },
+      "ALLOWANCE_OWNER_PRESENCE_ONCE_ONLY",
+    ],
+    [{ id: "coding:x" }, "ALLOWANCE_ACTION_ASKS_EVERY_TIME"],
+  ] as const) {
+    const allowances = new OwnerAllowances({
+      configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
+      state: {
+        readScopedState: async () => {
+          throw new Error("unexpected read");
+        },
+        commitStateAndEvents: async () => {
+          throw new Error("unexpected write");
+        },
+      },
+      store: { getApproval: async () => approval(intent) as never },
+      authority: () => SERVICE_AUTHORITY.lease,
+      clock: { now: () => T1 },
+    });
+    await expect(
+      allowances.set({ approvalRequestId: "approval:x", allowFor: "this_task", days: null }),
+    ).rejects.toMatchObject({ message: code });
+  }
+});
+
+it("[ADR-0285] a yes whose settings entry could not be written never takes effect, and saving again lists it", async () => {
+  const intent = {
+    contractVersion: "authorization.v2",
+    id: "owner-scope:x",
+    threadId: "thread-a",
+    capabilityRef: "reminder",
+    operation: "reminder.cancel",
+    actionKind: "CREATE_OR_UPDATE",
+    disclosure: "NONE",
+    sideEffect: "WRITE",
+    recipients: [],
+    targets: [],
+    estimatedCostMicros: 0,
+    credentialOrAccessChange: false,
+    deterministicFacts: [],
+  };
+  const records = new Map<string, { value: Record<string, unknown>; revision: number }>();
+  let indexDown = true;
+  const allowances = new OwnerAllowances({
+    configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
+    state: {
+      readScopedState: async (_owner, _agent, key) => records.get(key) as never,
+      commitStateAndEvents: async (input) => {
+        const { key, expectedRevision, value } = input.state;
+        if (indexDown && key === "owner-allowances:index") throw new Error("STATE_WRITE_DOWN");
+        if ((records.get(key)?.revision ?? null) !== expectedRevision)
+          throw new Error("unexpected revision");
+        records.set(key, {
+          value: value as Record<string, unknown>,
+          revision: (expectedRevision ?? 0) + 1,
+        });
+        return undefined as never;
+      },
+    },
+    store: {
+      getApproval: async () =>
+        ({
+          id: "approval:x",
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          status: "approved",
+          intentSnapshot: intent,
+        }) as never,
+    },
+    authority: () => SERVICE_AUTHORITY.lease,
+    clock: { now: () => T1 },
+  });
+  await expect(
+    allowances.set({ approvalRequestId: "approval:x", allowFor: "always", days: null }),
+  ).rejects.toThrow("STATE_WRITE_DOWN");
+  expect(await allowances.match(intent as never)).toBeUndefined();
+  expect(await allowances.list()).toEqual([]);
+  indexDown = false;
+  const id = await allowances.set({
+    approvalRequestId: "approval:x",
+    allowFor: "always",
+    days: null,
+  });
+  expect(await allowances.match(intent as never)).toBeDefined();
+  expect((await allowances.list()).map(({ allowanceId }) => allowanceId)).toEqual([id]);
+});
+
+it("[ADR-0285] a take-back that lands while the same yes is being saved again leaves nothing in effect that settings cannot show", async () => {
+  const intent = {
+    contractVersion: "authorization.v2",
+    id: "owner-scope:x",
+    threadId: "thread-a",
+    capabilityRef: "reminder",
+    operation: "reminder.cancel",
+    actionKind: "CREATE_OR_UPDATE",
+    disclosure: "NONE",
+    sideEffect: "WRITE",
+    recipients: [],
+    targets: [],
+    estimatedCostMicros: 0,
+    credentialOrAccessChange: false,
+    deterministicFacts: [],
+  };
+  const records = new Map<string, { value: Record<string, unknown>; revision: number }>();
+  let takeBackDuringRead: (() => Promise<void>) | null = null;
+  const allowances: OwnerAllowances = new OwnerAllowances({
+    configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
+    state: {
+      readScopedState: async (_owner, _agent, key) => {
+        const takeBack = takeBackDuringRead;
+        if (takeBack && key !== "owner-allowances:index") {
+          takeBackDuringRead = null;
+          await takeBack();
+        }
+        return records.get(key) as never;
+      },
+      commitStateAndEvents: async (input) => {
+        const { key, expectedRevision, value } = input.state;
+        if ((records.get(key)?.revision ?? null) !== expectedRevision)
+          throw new Error("unexpected revision");
+        records.set(key, {
+          value: value as Record<string, unknown>,
+          revision: (expectedRevision ?? 0) + 1,
+        });
+        return undefined as never;
+      },
+    },
+    store: {
+      getApproval: async () =>
+        ({
+          id: "approval:x",
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          status: "approved",
+          intentSnapshot: intent,
+        }) as never,
+    },
+    authority: () => SERVICE_AUTHORITY.lease,
+    clock: { now: () => T1 },
+  });
+  const id = await allowances.set({
+    approvalRequestId: "approval:x",
+    allowFor: "always",
+    days: null,
+  });
+  takeBackDuringRead = () => allowances.revoke(id);
+  await allowances.set({ approvalRequestId: "approval:x", allowFor: "days", days: 3 });
+  expect(takeBackDuringRead).toBeNull();
+  expect(await allowances.list()).toEqual([]);
+  expect(await allowances.match(intent as never)).toBeUndefined();
 });

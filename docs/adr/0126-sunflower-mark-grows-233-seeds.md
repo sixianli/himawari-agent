@@ -1,9 +1,9 @@
 ---
-status: active
+status: superseded
 document_type: adr
-decision_status: accepted
+decision_status: superseded
 supersedes: ""
-superseded_by: ""
+superseded_by: docs/adr/0283-sunflower-mark-keeps-55-seeds-and-apps-get-icons.md
 date: "2026-10-30"
 ---
 

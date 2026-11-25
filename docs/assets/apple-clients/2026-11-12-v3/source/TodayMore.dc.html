@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8">
+<title>iPhone：审批的全部和详情、提醒记录（“它的提议”列表见上面那块同名画板）</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;600;700&amp;family=Cormorant+Garamond:ital,wght@1,600&amp;display=swap" rel="stylesheet">
+<style>
+@keyframes sway{0%,100%{transform:rotate(-2.2deg)}50%{transform:rotate(2.2deg)}}
+.sway{animation:sway 9s ease-in-out infinite}
+@media (prefers-reduced-motion: reduce){.sway{animation:none}}
+body{margin:0;font-family:-apple-system,"SF Pro Text","PingFang SC","Hiragino Sans GB",system-ui,sans-serif}
+a{color:#9a6200}a:hover{color:#6f4700}
+.hm{--bg:#fcfcfb;--surface:#ffffff;--text:#252921;--muted:#6b7164;--fill:rgba(37,41,33,0.06);--fill2:rgba(37,41,33,0.11);--sun:#9a6200;--sunbright:#c9870a;--danger:#a73c30;--success:#42682a;--glass:rgba(255,255,255,0.74);--glassline:rgba(255,255,255,0.8);--lift:0 2px 10px rgba(0,0,0,0.07);--liftbig:0 8px 28px rgba(0,0,0,0.13);--sep:rgba(37,41,33,0.09);--glow:rgba(232,176,74,0.34);--ontext:#fcfcfb;--scrim:rgba(0,0,0,0.28);--track:#c9cbc2;--speak:#252921;--tile:#f8ebcb;--glyph:#8a5a00;--successring:rgba(66,104,42,0.16)}
+.hm.dk{--bg:#1e1e1e;--surface:#2a2a2a;--text:#e4e4e1;--muted:#a0a09a;--fill:rgba(228,228,225,0.08);--fill2:rgba(228,228,225,0.15);--sun:#f2bb4f;--sunbright:#efb23c;--danger:#efa095;--success:#accd88;--glass:rgba(56,56,56,0.74);--glassline:rgba(255,255,255,0.1);--lift:0 2px 10px rgba(0,0,0,0.35);--liftbig:0 8px 28px rgba(0,0,0,0.5);--sep:rgba(228,228,225,0.1);--glow:rgba(239,178,60,0.18);--ontext:#1e1e1e;--scrim:rgba(0,0,0,0.5);--track:#55554f;--speak:#0c0c0c;--tile:#4b3f25;--glyph:#f2bb4f;--successring:rgba(172,205,136,0.2)}
+.tile{display:flex;align-items:center;justify-content:center;flex-shrink:0;background:var(--tile);color:var(--glyph)}
+.glass{background:var(--glass);backdrop-filter:blur(22px) saturate(180%);-webkit-backdrop-filter:blur(22px) saturate(180%);box-shadow:var(--liftbig),inset 0 0 0 1px var(--glassline)}
+.card{background:var(--surface);border-radius:28px;box-shadow:var(--lift)}
+.serif{font-family:"Songti SC","Noto Serif SC","Source Han Serif SC","Noto Serif CJK SC",serif}
+.round{font-family:ui-rounded,"SF Pro Rounded",-apple-system,"PingFang SC",system-ui,sans-serif}
+.board{box-sizing:border-box;padding:28px 32px 32px;background:#eeeee8;display:flex;gap:36px;align-items:flex-start}
+.col{display:flex;flex-direction:column;gap:14px;width:390px}
+.cap{height:40px;display:flex;flex-direction:column;justify-content:flex-end;font-size:15px;line-height:1.3;color:#4d5247}
+.cap b{font-weight:600;color:#252921}
+.ph{width:390px;height:844px;box-sizing:border-box;position:relative;overflow:hidden;border-radius:44px;background:var(--bg);color:var(--text);box-shadow:0 10px 30px rgba(0,0,0,0.12)}
+.page{position:absolute;left:0;top:0;width:390px;height:844px;box-sizing:border-box;display:flex;flex-direction:column}
+.gbtn{position:absolute;top:54px;width:48px;height:48px;border-radius:24px;color:var(--text);display:flex;align-items:center;justify-content:center}
+.ttl{position:absolute;top:54px;left:76px;width:238px;height:48px;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:600}
+.h1{margin:0;padding:0 4px;font-size:34px;font-weight:700;line-height:44px}
+.lbl{font-size:15px;color:var(--muted);padding:0 4px}
+.grp{display:flex;flex-direction:column;gap:10px}
+.rows{padding:0 20px;display:flex;flex-direction:column}
+.r{min-height:60px;box-sizing:border-box;padding:11px 0;display:flex;align-items:center;gap:14px;border-bottom:1px solid var(--sep)}
+.r.last{border-bottom:0}
+.r2{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.t17{font-size:17px;line-height:1.35}
+.t15{font-size:15px;line-height:1.45}
+.t13{font-size:13px;line-height:1.4;color:var(--muted)}
+.mu{color:var(--muted)}
+.ok{color:var(--success)}
+.bad{color:var(--danger)}
+.sun{color:var(--sun)}
+.pill{height:46px;padding:0 20px;border-radius:23px;background:var(--fill);color:var(--text);font-size:16px;display:flex;align-items:center;justify-content:center}
+.pill.pri{background:var(--text);color:var(--ontext);font-weight:600}
+.pill.big{height:56px;border-radius:28px;font-size:17px}
+.link{font-size:17px;color:var(--sun);min-height:44px;display:flex;align-items:center}
+.bubble{align-self:flex-end;max-width:290px;background:var(--fill);border-radius:26px;padding:14px 18px;font-size:17px;line-height:1.45}
+.sw{display:block;width:52px;height:32px;border-radius:16px;position:relative;flex-shrink:0}
+.sw i{display:block;position:absolute;top:2px;width:28px;height:28px;border-radius:14px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,0.25)}
+.seg{display:flex;background:var(--fill);border-radius:22px;padding:3px;gap:3px}
+.seg div{flex:1;height:38px;border-radius:19px;font-size:15px;display:flex;align-items:center;justify-content:center}
+.seg .on{background:var(--surface);box-shadow:var(--lift);font-weight:600}
+.bar{height:6px;border-radius:3px;background:var(--fill)}
+.bar i{display:block;height:6px;border-radius:3px;background:var(--muted)}
+@keyframes shim{from{background-position:130% 0}to{background-position:-110% 0}}
+.shim{background:linear-gradient(90deg,var(--muted) 0%,var(--muted) 38%,var(--text) 50%,var(--muted) 62%,var(--muted) 100%);background-size:240% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:shim 2.4s linear infinite}
+.dot{display:inline-block;width:8px;height:8px;border-radius:4px;background:var(--muted)}
+</style>
+</helmet>
+<div class="board" style="width: 1732px; height: 958px">
+<div class="col">
+<div class="cap"><div><b>等你点头：全部</b>　从设置进；点卡片看这件事的内容<br>肯定按钮写的是会发生的事</div></div>
+<div class="hm ph">
+<div class="page" style="padding: 122px 16px 40px; gap: 14px"><div class="seg"><div class="on">等你点头 2</div><div class="">处理过的</div></div><div class="card" style="padding: 18px; display: flex; flex-direction: column; gap: 14px"><div style="display: flex; align-items: center; gap: 10px"><div style="flex: 1; display: flex; flex-direction: column; gap: 4px"><div class="t17" style="font-weight: 600">给田中发邮件</div><div class="t15 mu">确认周五 14:00 在新大阪站见面</div></div><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; color: var(--muted)"><path d="M9 6l6 6l-6 6" /></svg></div><div style="display: flex; gap: 8px"><div class="pill" style="flex: 1">不发</div><div class="pill pri" style="flex: 1">发出去</div></div></div><div class="card" style="padding: 18px; display: flex; flex-direction: column; gap: 14px"><div style="display: flex; align-items: center; gap: 10px"><div style="flex: 1; display: flex; flex-direction: column; gap: 4px"><div class="t17" style="font-weight: 600">订周五 9:30 的新干线</div><div class="t15 mu">东京到新大阪，14720 日元</div></div><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; color: var(--muted)"><path d="M9 6l6 6l-6 6" /></svg></div><div style="display: flex; gap: 8px"><div class="pill" style="flex: 1">不订</div><div class="pill" style="flex: 1">订票</div></div></div></div><div style="position: absolute; left: 0; top: 0; width: 390px; height: 134px; background: linear-gradient(to bottom, var(--bg) 102px, transparent); pointer-events: none"></div><div role="img" aria-label="返回" class="glass gbtn" style="left: 16px"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0"><path d="M15 6l-6 6l6 6" /></svg></div><div class="ttl">等你点头</div>
+</div>
+</div>
+<div class="col">
+<div class="cap"><div><b>一件事的详情</b>　点“发出去”直接出面容</div></div>
+<div class="hm ph">
+<div class="page" style="padding: 122px 16px 40px; gap: 20px"><div class="serif" style="font-size: 26px; font-weight: 600; line-height: 1.4; padding: 0 4px">给田中发邮件</div><div class="card" style="padding: 18px 20px; display: flex; flex-direction: column; gap: 10px"><div class="t13">发给 tanaka@example.com</div><div class="t17" style="line-height: 1.6">田中先生：周五 14:00 在新大阪站中央口见，可以吗？报价单我当面带给您。</div></div><div class="card rows"><div class="r"><div class="r2"><div class="t17">为什么问你</div><div class="t13">规则：给没发过邮件的人发信先问</div></div><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; color: var(--muted)"><path d="M9 6l6 6l-6 6" /></svg></div><div class="r last"><div class="r2"><div class="t17">从哪来的</div><div class="t13">对话“周五去大阪”</div></div><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; color: var(--muted)"><path d="M9 6l6 6l-6 6" /></svg></div></div></div><div style="position: absolute; left: 0; top: 0; width: 390px; height: 134px; background: linear-gradient(to bottom, var(--bg) 102px, transparent); pointer-events: none"></div><div role="img" aria-label="返回" class="glass gbtn" style="left: 16px"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0"><path d="M15 6l-6 6l6 6" /></svg></div><div class="ttl"></div><div style="position: absolute; left: 16px; right: 16px; bottom: 40px"><div style="display: flex; gap: 8px"><div class="pill big" style="flex: 1">不发</div><div class="pill big pri" style="flex: 1">发出去</div></div></div>
+</div>
+</div>
+<div class="col">
+<div class="cap"><div><b>处理过的</b>　每件事最后怎样了，都查得到</div></div>
+<div class="hm ph">
+<div class="page" style="padding: 122px 16px 40px; gap: 16px"><div class="seg"><div class="">等你点头 2</div><div class="on">处理过的</div></div><div class="card rows"><div class="r"><div class="r2"><div class="t17">给佐藤发邮件</div><div class="t13">昨天 16:20 · 你点了“发出去”，发了</div></div><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; color: var(--muted)"><path d="M9 6l6 6l-6 6" /></svg></div><div class="r"><div class="r2"><div class="t17">订周四的酒店</div><div class="t13">周一 21:05 · 你点了“不订”</div></div><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; color: var(--muted)"><path d="M9 6l6 6l-6 6" /></svg></div><div class="r last"><div class="r2"><div class="t17">删掉 3 条旧日程</div><div class="t13">周日 · 你一直没定，过期了，没做</div></div><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; color: var(--muted)"><path d="M9 6l6 6l-6 6" /></svg></div></div></div><div style="position: absolute; left: 0; top: 0; width: 390px; height: 134px; background: linear-gradient(to bottom, var(--bg) 102px, transparent); pointer-events: none"></div><div role="img" aria-label="返回" class="glass gbtn" style="left: 16px"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0"><path d="M15 6l-6 6l6 6" /></svg></div><div class="ttl">等你点头</div>
+</div>
+</div>
+<div class="col">
+<div class="cap"><div><b>提醒：全部</b>　从今天页“接下来”那张卡进</div></div>
+<div class="hm ph">
+<div class="page" style="padding: 122px 16px 40px; gap: 16px"><div class="seg"><div class="">接下来</div><div class="on">提醒过的</div></div><div class="card rows"><div class="r"><div class="r2"><div class="t17">该出门去牙医了</div><div class="t13">今天 9:40 · 手表 · 你看了</div></div></div><div class="r"><div class="r2"><div class="t17">给妈妈回电话</div><div class="t13">昨天 21:00 · 手机 · 你点了“晚点”</div></div></div><div class="r"><div class="r2"><div class="t17">报价单今天到期</div><div class="t13">昨天 10:00 · 没送：你在开会，11:05 补送</div></div></div><div class="r last"><div class="r2"><div class="t17">交水费</div><div class="t13">周一 9:00 · 手机 · 没看</div></div></div></div></div><div style="position: absolute; left: 0; top: 0; width: 390px; height: 134px; background: linear-gradient(to bottom, var(--bg) 102px, transparent); pointer-events: none"></div><div role="img" aria-label="返回" class="glass gbtn" style="left: 16px"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0"><path d="M15 6l-6 6l6 6" /></svg></div><div class="ttl">提醒</div>
+</div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1732,"height":958}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

@@ -1,11 +1,10 @@
-import { ProductionProposalControl } from "../../apps/agent-service/src/production-proposal-control.ts";
-import { ProductionProposalBox } from "../../apps/agent-service/src/production-proposals.ts";
 import { createHash } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   DurableMemoryService,
+  enforceableOwnerRule,
   IMPORT_DUPLICATE_DEFAULTS,
   type ImportDuplicateAnswer,
   type MemoryExtractionAuditRecord,
@@ -13,6 +12,7 @@ import {
   OwnerProfileService,
   type ProactiveModelInvoker,
   type ProductMemoryRecord,
+  PushGate,
   RuleReviewService,
   type RunExecutionSourcePort,
   type RuntimeRequest,
@@ -52,13 +52,16 @@ import {
   parseMemoryCandidates,
 } from "../../apps/agent-service/src/production-memory-capture.ts";
 import { ProductionMemoryClassifier } from "../../apps/agent-service/src/production-memory-classification.ts";
-import { ProductionImportDuplicateChecker } from "../../apps/agent-service/src/production-memory-import-duplicates.ts";
 import { ProductionMemoryControl } from "../../apps/agent-service/src/production-memory-control.ts";
+import { ProductionImportDuplicateChecker } from "../../apps/agent-service/src/production-memory-import-duplicates.ts";
 import {
   isStandingQuote,
   ProductionOwnerRuleTools,
   ProductionOwnerRuleWriter,
 } from "../../apps/agent-service/src/production-owner-rules.ts";
+import { ProductionProposalControl } from "../../apps/agent-service/src/production-proposal-control.ts";
+import { ProductionProposalBox } from "../../apps/agent-service/src/production-proposals.ts";
+import { ProductionQuietHoursControl } from "../../apps/agent-service/src/production-quiet-hours-control.ts";
 import {
   ProductionReminderTools,
   ProductionReminderWriter,
@@ -547,6 +550,12 @@ describe("production memory capture", () => {
       request: requestFor("run-memory-capture"),
       requestFor,
       turn,
+      markInternal: (runId: string) => {
+        const index = messages.findIndex((item) => item.runId === runId);
+        const found = messages[index];
+        if (!found) throw new Error("no message for that run");
+        messages[index] = { ...found, internal: true };
+      },
       outputs,
       relevant,
       audits,
@@ -1715,6 +1724,20 @@ describe("production memory capture", () => {
     ).toHaveLength(1);
   });
 
+  it("[PR631-1] does not turn a message hidden from the Owner into a memory", async () => {
+    const context = await setup(
+      "我改主意了，现在最喜欢绿色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是绿色","classification":"private","confidence":900,"quote":"我改主意了，现在最喜欢绿色"}]}',
+    );
+    context.markInternal("run-memory-capture");
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    expect(context.prompts).toHaveLength(0);
+    expect(
+      await context.repository.productMemoryState().listActive(OWNER_ID, AGENT_ID),
+    ).toHaveLength(0);
+  });
+
   it("drops a memory whose quote is not in the Owner's message", async () => {
     const context = await setup(
       "我最喜欢的颜色是蓝色。",
@@ -1885,7 +1908,7 @@ describe("production memory capture", () => {
         sourceThreadId: THREAD_ID,
       },
     ]);
-    const answer = (action: "dismiss" | "snooze") =>
+    const answer = (action: "dismiss" | "snooze" | "restore") =>
       context.control.execute({
         ...envelope,
         kind: "command",
@@ -1916,6 +1939,19 @@ describe("production memory capture", () => {
     for (const action of ["dismiss", "snooze"] as const)
       await expect(answer(action)).rejects.toThrow("MEMORY_REMINDER_CANCELLED");
     expect(await reminders.read(reminderId)).toMatchObject({ status: "cancelled" });
+    expect((await overview(context.control)).reminders).toEqual([]);
+    expect((await overview(context.control)).cancelled).toMatchObject([
+      { reminderId, dueAt: "2026-10-30T07:00:00.000Z" },
+    ]);
+    await answer("restore");
+    expect(await reminders.read(reminderId)).toMatchObject({
+      status: "scheduled",
+      dismissedAt: null,
+      remindAt: "2026-10-30T07:05:00.000Z",
+    });
+    expect((await overview(context.control)).reminders).toHaveLength(1);
+    expect((await overview(context.control)).cancelled).toEqual([]);
+    await expect(answer("restore")).rejects.toThrow("MEMORY_REMINDER_NOT_CANCELLED");
     await expect(
       context.control.execute({
         ...envelope,
@@ -2089,6 +2125,25 @@ describe("production memory capture", () => {
     expect(await upcoming()).toEqual([
       { text: "周五下午三点交周报", dueAt: "2026-10-30T07:00:00.000Z" },
     ]);
+    expect((await overview(context.control)).cancelled).toEqual([
+      {
+        reminderId: target,
+        text: "给妈妈打电话",
+        dueAt: "2026-10-26T01:00:00.000Z",
+        repeat: "none",
+      },
+    ]);
+    await context.control.execute({
+      ...envelope,
+      kind: "command",
+      type: "memory.reminder.respond",
+      payload: { reminderId: target, action: "restore" },
+    } as never);
+    expect(await upcoming()).toEqual([
+      { text: "给妈妈打电话", dueAt: "2026-10-26T01:00:00.000Z" },
+      { text: "周五下午三点交周报", dueAt: "2026-10-30T07:00:00.000Z" },
+    ]);
+    expect((await overview(context.control)).cancelled).toEqual([]);
     expect(await tool("cancel", { reminderId: target }, "call-again")).toMatchObject({
       cancelled: true,
     });
@@ -2234,12 +2289,262 @@ describe("production memory capture", () => {
       ruleId: created["ruleId"] as string,
     } as never);
     expect(stored).toMatchObject({ status: "active" });
+    expect((stored?.parameters as { params: unknown }).params).toEqual(night);
     await expect(
       set({ params: { periods: [{ days: [0], start: "25:00", end: "07:00" }] } }, "call-bad-time"),
     ).rejects.toMatchObject({ code: "RULE_PARAMETERS_INVALID" });
     await expect(set({ params: { periods: [] } }, "call-no-period")).rejects.toMatchObject({
       code: "RULE_PARAMETERS_INVALID",
     });
+  });
+
+  it("[SAID-5] reads and changes the owner's quiet hours from the notifications page as the same rule the conversation sets", async () => {
+    const sentence = "夜里别提醒我";
+    const context = await setup(
+      "请记住，我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    await context.turn("owner", sentence, null);
+    const control = new ProductionQuietHoursControl({
+      configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
+      rules: context.ruleWriter,
+      clock: { now: () => "2026-11-25T00:00:00.000Z" },
+    });
+    const read = async () =>
+      (
+        await control.query({
+          kind: "query",
+          type: "quiet_hours.read",
+          payload: {},
+        } as never)
+      ).payload as unknown as {
+        version: string;
+        editable: boolean;
+        enabled: boolean;
+        start: string | null;
+        end: string | null;
+        classes: string[];
+        rules: { ruleId: string }[];
+      };
+    const set = (payload: Record<string, unknown>) =>
+      control.execute({
+        kind: "command",
+        type: "quiet_hours.set",
+        actor: { actorType: "owner", actorId: "owner" },
+        scope: { ownerId: OWNER_ID, agentId: AGENT_ID },
+        payload,
+      } as never);
+    const empty = await read();
+    expect(empty).toMatchObject({ editable: true, enabled: false, start: null, rules: [] });
+
+    await context.ruleTools.run({
+      runId: createRunId("run-rule-tool"),
+      toolCallId: "call-night",
+      capabilityRef: "rule.set",
+      capabilityHandleRef: null,
+      arguments: {
+        inferred: false,
+        type: "push_quiet_hours",
+        summary: "夜里 23 点到早上 7 点不推",
+        quote: sentence,
+        params: { periods: [{ days: [0, 1, 2, 3, 4, 5, 6], start: "23:00", end: "07:00" }] },
+      },
+      dataClassification: "private",
+      context: { threadId: THREAD_ID },
+    } as never);
+    const fromChat = await read();
+    expect(fromChat).toMatchObject({
+      editable: true,
+      enabled: true,
+      start: "23:00",
+      end: "07:00",
+      classes: ["mail_reminder", "run_result", "her_words"],
+    });
+    await expect(
+      set({ expectedVersion: empty.version, enabled: true, start: "22:00", end: "06:30" }),
+    ).rejects.toMatchObject({ code: "PORT_CONFLICT" });
+
+    const racing = await Promise.allSettled([
+      set({ expectedVersion: fromChat.version, enabled: true, start: "22:00", end: "06:30" }),
+      set({ expectedVersion: fromChat.version, enabled: true, start: "21:00", end: "06:00" }),
+    ]);
+    expect(racing.map(({ status }) => status)).toEqual(["fulfilled", "rejected"]);
+    expect(racing[1]).toMatchObject({ reason: { code: "PORT_CONFLICT" } });
+    const changed = await read();
+    expect(changed).toMatchObject({
+      editable: true,
+      enabled: true,
+      start: "22:00",
+      end: "06:30",
+      classes: ["mail_reminder", "run_result", "her_words"],
+    });
+    expect(changed.rules).toHaveLength(1);
+    expect(changed.rules[0]?.ruleId).not.toBe(fromChat.rules[0]?.ruleId);
+    const enforced = (
+      await context.repository.ownerRules().list({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        includeRetired: false,
+      } as never)
+    ).flatMap((row) => {
+      const rule = enforceableOwnerRule(row);
+      return rule?.gate === "push_delivery" ? [rule] : [];
+    });
+    expect(enforced).toHaveLength(1);
+    const gate = new PushGate();
+    const decide = (pushClass: "her_words" | "approval", now: string) =>
+      gate.decide({ pushClass, now, timeZone: "Asia/Tokyo", rules: enforced }).action;
+    expect(decide("her_words", "2026-11-25T13:30:00.000Z")).toBe("defer");
+    expect(decide("her_words", "2026-11-25T12:30:00.000Z")).toBe("deliver");
+    expect(decide("approval", "2026-11-25T13:30:00.000Z")).toBe("deliver");
+
+    await set({ expectedVersion: changed.version, enabled: false, start: "22:00", end: "06:30" });
+    const off = await read();
+    expect(off).toMatchObject({ enabled: false, rules: [] });
+    await set({ expectedVersion: off.version, enabled: true, start: "23:30", end: "07:00" });
+    expect(await read()).toMatchObject({
+      enabled: true,
+      start: "23:30",
+      classes: ["scheduled_reminder", "run_result", "mail_reminder", "her_words"],
+    });
+    await expect(
+      set({ expectedVersion: (await read()).version, enabled: true, start: "07:00", end: "07:00" }),
+    ).rejects.toMatchObject({ code: "PORT_INVALID_OPERATION" });
+  });
+
+  it("[SAID-5] REVERSE: keeps the kinds a chat rule names when the page only moves its hours, and does not show a suspended rule as on", async () => {
+    const sentence = "以后夜里别推邮件提醒";
+    const context = await setup(
+      "请记住，我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    await context.turn("owner", sentence, null);
+    const created = (await context.ruleTools.run({
+      runId: createRunId("run-rule-tool"),
+      toolCallId: "call-mail",
+      capabilityRef: "rule.set",
+      capabilityHandleRef: null,
+      arguments: {
+        inferred: false,
+        type: "push_quiet_hours",
+        summary: "夜里 23 点到早上 7 点不推邮件提醒",
+        quote: sentence,
+        params: {
+          periods: [{ days: [0, 1, 2, 3, 4, 5, 6], start: "23:00", end: "07:00" }],
+          classes: ["mail_reminder"],
+        },
+      },
+      dataClassification: "private",
+      context: { threadId: THREAD_ID },
+    } as never)) as Record<string, unknown>;
+    const control = new ProductionQuietHoursControl({
+      configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
+      rules: context.ruleWriter,
+      clock: { now: () => "2026-11-25T00:00:00.000Z" },
+    });
+    const read = async () =>
+      (await control.query({ kind: "query", type: "quiet_hours.read", payload: {} } as never))
+        .payload as unknown as {
+        version: string;
+        editable: boolean;
+        enabled: boolean;
+        start: string | null;
+        classes: string[];
+        rules: { ruleId: string; summary: string }[];
+      };
+    expect(created).toMatchObject({ status: "active" });
+    const before = await read();
+    expect(before).toMatchObject({ enabled: true, classes: ["mail_reminder"] });
+    await control.execute({
+      kind: "command",
+      type: "quiet_hours.set",
+      actor: { actorType: "owner", actorId: "owner" },
+      scope: { ownerId: OWNER_ID, agentId: AGENT_ID },
+      payload: { expectedVersion: before.version, enabled: true, start: "22:00", end: "07:00" },
+    } as never);
+    const moved = await read();
+    expect(moved).toMatchObject({ enabled: true, start: "22:00", classes: ["mail_reminder"] });
+    expect(moved.rules[0]?.summary).toBe("每天 22:00 到 07:00 不推送邮件提醒");
+    expect(moved.rules[0]?.ruleId).not.toBe(created["ruleId"]);
+
+    context.sql((database) =>
+      database
+        .prepare(
+          "UPDATE rule_book_rules SET status = 'suspended', suspend_reason = 'source_removed' WHERE rule_id = ?",
+        )
+        .run(moved.rules[0]?.ruleId),
+    );
+    expect(await read()).toMatchObject({
+      enabled: false,
+      editable: true,
+      start: null,
+      rules: [{ ruleId: moved.rules[0]?.ruleId }],
+    });
+  });
+
+  it("[SAID-5] REVERSE: shows quiet hours with more than one period as read-only and refuses to change them from the page", async () => {
+    const sentence = "工作日夜里和周末早上别提醒我";
+    const context = await setup(
+      "请记住，我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    await context.turn("owner", sentence, null);
+    await context.ruleTools.run({
+      runId: createRunId("run-rule-tool"),
+      toolCallId: "call-two",
+      capabilityRef: "rule.set",
+      capabilityHandleRef: null,
+      arguments: {
+        inferred: false,
+        type: "push_quiet_hours",
+        summary: "工作日夜里和周末早上不推",
+        quote: sentence,
+        params: {
+          periods: [
+            { days: [1, 2, 3, 4, 5], start: "23:00", end: "07:00" },
+            { days: [0, 6], start: "07:00", end: "10:00" },
+          ],
+        },
+      },
+      dataClassification: "private",
+      context: { threadId: THREAD_ID },
+    } as never);
+    const control = new ProductionQuietHoursControl({
+      configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
+      rules: context.ruleWriter,
+      clock: { now: () => "2026-11-25T00:00:00.000Z" },
+    });
+    const state = (
+      await control.query({ kind: "query", type: "quiet_hours.read", payload: {} } as never)
+    ).payload as unknown as {
+      version: string;
+      editable: boolean;
+      enabled: boolean;
+      start: string | null;
+    };
+    expect(state).toMatchObject({ editable: false, enabled: true, start: null });
+    await expect(
+      control.execute({
+        kind: "command",
+        type: "quiet_hours.set",
+        actor: { actorType: "owner", actorId: "owner" },
+        scope: { ownerId: OWNER_ID, agentId: AGENT_ID },
+        payload: { expectedVersion: state.version, enabled: false, start: "23:00", end: "07:00" },
+      } as never),
+    ).rejects.toMatchObject({ code: "PORT_INVALID_OPERATION" });
+    expect(
+      await context.repository.ownerRules().list({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        includeRetired: false,
+      } as never),
+    ).toHaveLength(1);
   });
 
   it("[ADR-0257] marks a memory captured from a conversation that read outside content, and leaves it unmarked when only another conversation did", async () => {
@@ -2337,6 +2642,35 @@ describe("production memory capture", () => {
       .productMemoryState()
       .read((plain["reminderId"] as string).replace(/^reminder:/u, "") as never);
     expect(plainMemory?.sourceRefs).toEqual([expect.stringMatching(/^memory-content:reminder:/u)]);
+
+    const longOrigins = [
+      `external_event:${"a".repeat(128)}`,
+      `external_event:${"b".repeat(128)}`,
+      "web_fetch",
+    ];
+    const longRule = (await context.ruleTools.run(
+      invocation("rule.set", "call-long-origins", {
+        quote: sentence,
+        inferred: false,
+        type: "mail_must_notify",
+        summary: "退款邮件一律提醒",
+        params: { phrases: ["退款"] },
+      }),
+      { externalOrigins: longOrigins },
+    )) as Record<string, unknown>;
+    expect(longRule).toMatchObject({ status: "active" });
+    const longSource = (
+      await context.repository.ownerRules().read({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        ruleId: longRule["ruleId"] as string,
+      } as never)
+    )?.source;
+    expect(longSource?.length).toBeLessThanOrEqual(256);
+    expect(longSource).toMatch(
+      /^external-content:external_event:a+,external_event:b+~[0-9a-f]{16}\|/u,
+    );
+    expect(longSource?.endsWith(`|chat:${THREAD_ID}`)).toBe(true);
   });
 
   it("[ADR-0257] shows the built-in action rules on the rule list and switches one through the rule command", async () => {

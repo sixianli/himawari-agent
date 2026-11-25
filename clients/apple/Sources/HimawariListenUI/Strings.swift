@@ -25,8 +25,6 @@ public enum ListenText {
     public static func askExplanation(heard: String, reason: SpokenCommandRefusal) -> String {
         L.format("ask.heard", heard, L.text("ask.reason.\(reason.rawValue)"))
     }
-
-    public static var hearingLabel: String { L.text("sensing.hearing") }
     public static var nowLabel: String { L.text("notice.now") }
     public static var demoRequest: String { L.text("demo.request") }
     public static var demoRequestTail: String { L.text("demo.requestTail") }

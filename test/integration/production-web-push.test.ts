@@ -8,7 +8,7 @@ import type {
   WebPushSendRequest,
   WebPushSendResult,
 } from "@himawari-agent/application";
-import { enforceableOwnerRule } from "@himawari-agent/application";
+import { enforceableOwnerRule, herWordsPushKey } from "@himawari-agent/application";
 import { createAgentId, createOwnerId } from "@himawari-agent/domain";
 import {
   applyMigrations,
@@ -98,7 +98,13 @@ describe("[WP-3] web push dispatch", () => {
       }),
     );
     const store = repository.webPush();
-    const finishRun = (id: string, status: "completed" | "failed" | "cancelled", when: string) => {
+    const protector = createReferenceAdapterSet().payloadProtector;
+    const finishRun = (
+      id: string,
+      status: "completed" | "failed" | "cancelled",
+      when: string,
+      startedBy: "user_message" | "schedule" | "external_event" = "user_message",
+    ) => {
       const seed = openQualifiedDatabase(file);
       try {
         seed
@@ -106,9 +112,9 @@ describe("[WP-3] web push dispatch", () => {
             `INSERT INTO triggers (
               id, owner_id, agent_id, thread_id, idempotency_key, source_type, source_id,
               payload_ref, source_proof_ref, occurred_at
-            ) VALUES (?, ?, ?, 'thread-1', ?, 'user_message', ?, 'payload', 'proof', ?)`,
+            ) VALUES (?, ?, ?, 'thread-1', ?, ?, ?, 'payload', 'proof', ?)`,
           )
-          .run(`trigger-${id}`, OWNER_ID, AGENT_ID, `key-${id}`, id, when);
+          .run(`trigger-${id}`, OWNER_ID, AGENT_ID, `key-${id}`, startedBy, id, when);
         seed
           .prepare(
             `INSERT INTO runs (
@@ -120,6 +126,83 @@ describe("[WP-3] web push dispatch", () => {
       } finally {
         seed.close();
       }
+    };
+    let sequence = 0;
+    const say = async (
+      runId: string,
+      text: string,
+      role: "agent" | "owner" = "agent",
+      messageId = `assistant:${runId}:${role}`,
+      classification: "private" | "sensitive" | "restricted" = "private",
+    ) => {
+      sequence += 1;
+      await repository.payloadStore(OWNER_ID, AGENT_ID).put(
+        await protector.protect({
+          ...scope,
+          ref: `said-${messageId}`,
+          dataClassification: classification,
+          contentType: "text/plain",
+          plaintext: new TextEncoder().encode(text),
+          createdAt: START,
+        }),
+      );
+      const seed = openQualifiedDatabase(file);
+      try {
+        seed
+          .prepare(
+            `INSERT OR IGNORE INTO turns (
+              id, owner_id, agent_id, thread_id, session_id, run_id, turn_index, committed_at
+            ) VALUES (?, ?, ?, 'thread-1', 'session', ?, ?, NULL)`,
+          )
+          .run(`turn-${runId}`, OWNER_ID, AGENT_ID, runId, sequence);
+        seed
+          .prepare(
+            `INSERT INTO thread_messages (
+              id, owner_id, agent_id, thread_id, revision, sequence, role, content_ref,
+              classification, committed_at, turn_id, run_id, message_status
+            ) VALUES (?, ?, ?, 'thread-1', 1, ?, ?, ?, ?, ?, ?, ?, 'committed')`,
+          )
+          .run(
+            messageId,
+            OWNER_ID,
+            AGENT_ID,
+            sequence,
+            role,
+            `said-${messageId}`,
+            classification,
+            START,
+            `turn-${runId}`,
+            runId,
+          );
+      } finally {
+        seed.close();
+      }
+      return messageId;
+    };
+    const unsay = (messageId: string) => {
+      const seed = openQualifiedDatabase(file);
+      try {
+        seed.prepare("DELETE FROM thread_messages WHERE id = ?").run(messageId);
+      } finally {
+        seed.close();
+      }
+    };
+    const readMessage = async (threadId: string, messageId: string) => {
+      const [message] = await repository.threadRepository().readCommittedMessagesByIds({
+        ...scope,
+        threadId: threadId as never,
+        messageIds: [messageId as never],
+      });
+      if (message?.role !== "agent") return undefined;
+      return {
+        dataClassification: message.dataClassification,
+        readText: async () => {
+          const payload = await repository.payloadStore(OWNER_ID, AGENT_ID).get(message.contentRef);
+          return payload
+            ? new TextDecoder().decode(await protector.unprotect({ ...scope, payload }))
+            : undefined;
+        },
+      };
     };
     const reminders: MemoryReminder[] = [];
     const memories: ProductMemoryRecord[] = [];
@@ -150,6 +233,7 @@ describe("[WP-3] web push dispatch", () => {
         runThread: async () => "thread-1",
         threadTitle: async (threadId) =>
           titles.has(threadId) ? { title: titles.get(threadId) ?? null } : null,
+        readMessage,
         publicOrigin: ORIGIN,
         timeZone: "Asia/Shanghai",
         now: () => clock,
@@ -300,6 +384,9 @@ describe("[WP-3] web push dispatch", () => {
       reminder,
       approval,
       finishRun,
+      say,
+      unsay,
+      readMessage,
       setClock: (value: string) => {
         clock = value;
       },
@@ -669,6 +756,292 @@ describe("[WP-3] web push dispatch", () => {
     expect(context.rules.ledger().map(({ subjectRef }) => subjectRef)).toEqual([
       "run:run-held:failed",
     ]);
+  });
+
+  it("[SAID-1] pushes her reply to the owner's message as her own words, once, and never the canned done line", async () => {
+    const context = await setup();
+    await context.subscribe("phone", "zh-CN");
+    const push = context.create();
+    await push.tick();
+    context.setClock(T0);
+    context.finishRun("run-asked", "completed", at(T0, -5));
+    await context.say("run-asked", "明天东京晴，最高 14 度，带件薄外套就行。");
+    await push.tick();
+    await push.tick();
+    expect(context.sender.notifications().map(({ notification }) => notification)).toEqual([
+      expect.objectContaining({
+        title: "Himawari",
+        body: "明天东京晴，最高 14 度，带件薄外套就行。",
+        navigate: `${ORIGIN}/threads/thread-1`,
+      }),
+    ]);
+    const key = await herWordsPushKey({ messageId: "assistant:run-asked:agent" });
+    expect(key.startsWith("said:")).toBe(true);
+    expect(context.rules.outbox("said:")).toBeDefined();
+    expect(
+      await context.store.enqueue({
+        ...scope,
+        items: [
+          {
+            ...scope,
+            sourceKey: key,
+            kind: "reminder",
+            sourceRef: "assistant:run-asked:agent",
+            threadId: "thread-1",
+            createdAt: T0,
+            expiresAt: at(T0, 3_600),
+          },
+        ],
+        cursor: null,
+        now: T0,
+      }),
+    ).toBe(0);
+    context.setClock(at(T0, 30));
+    await push.tick();
+    expect(context.sender.requests).toHaveLength(1);
+    expect(context.failures).toEqual([]);
+  });
+
+  it("[SAID-1] REVERSE: a run started by an outside event pushes nothing, a scheduled run keeps its done line, and a deleted reply is never pushed", async () => {
+    const context = await setup();
+    await context.subscribe("phone", "zh-CN");
+    const push = context.create();
+    await push.tick();
+    context.setClock(T0);
+    context.finishRun("run-mail", "completed", at(T0, -6), "external_event");
+    await context.say("run-mail", "这封邮件不用管。");
+    context.finishRun("run-timer", "completed", at(T0, -5), "schedule");
+    await context.store.enqueue({
+      ...scope,
+      items: [
+        {
+          ...scope,
+          sourceKey: await herWordsPushKey({ messageId: "assistant:deleted" }),
+          kind: "reminder",
+          sourceRef: "assistant:deleted",
+          threadId: "thread-1",
+          createdAt: T0,
+          expiresAt: at(T0, 3_600),
+        },
+      ],
+      cursor: null,
+      now: T0,
+    });
+    await push.tick();
+    await push.tick();
+    expect(context.sender.notifications().map(({ notification }) => notification["title"])).toEqual(
+      ["已完成"],
+    );
+    expect(context.rules.outbox("said:7:message")).toBeDefined();
+  });
+
+  it("[SAID-1] REVERSE: an internal message between the main conversation and a sub-thread is never pushed", async () => {
+    const context = await setup();
+    await context.subscribe("phone", "zh-CN");
+    const push = context.create({
+      readMessage: async (threadId, messageId) =>
+        messageId === "assistant:inner"
+          ? {
+              dataClassification: "private",
+              internal: true,
+              readText: async () => "子线程：邮件已经看完了。",
+            }
+          : context.readMessage(threadId, messageId),
+    });
+    await push.tick();
+    context.setClock(T0);
+    context.finishRun("run-fine", "completed", at(T0, -5));
+    await context.say("run-fine", "这一条照常推。");
+    await context.store.enqueue({
+      ...scope,
+      items: [
+        {
+          ...scope,
+          sourceKey: await herWordsPushKey({ messageId: "assistant:inner" }),
+          kind: "reminder",
+          sourceRef: "assistant:inner",
+          threadId: "thread-1",
+          createdAt: T0,
+          expiresAt: at(T0, 3_600),
+        },
+      ],
+      cursor: null,
+      now: T0,
+    });
+    await push.tick();
+    await push.tick();
+    expect(context.sender.notifications().map(({ notification }) => notification["body"])).toEqual([
+      "这一条照常推。",
+    ]);
+  });
+
+  it("[SAID-1] REVERSE: a sensitive or restricted reply never puts its words on the lock screen", async () => {
+    const context = await setup();
+    await context.subscribe("phone", "zh-CN");
+    const push = context.create();
+    await push.tick();
+    context.setClock(T0);
+    context.finishRun("run-secret", "completed", at(T0, -6));
+    await context.say(
+      "run-secret",
+      "你的护照号是 TK1234567。",
+      "agent",
+      "assistant:run-secret:agent",
+      "sensitive",
+    );
+    context.finishRun("run-locked", "completed", at(T0, -5));
+    await context.say(
+      "run-locked",
+      "银行卡密码已经改好。",
+      "agent",
+      "assistant:run-locked:agent",
+      "restricted",
+    );
+    await push.tick();
+    await push.tick();
+    const bodies = context.sender
+      .notifications()
+      .map(({ notification }) => String(notification["body"]));
+    expect(bodies).toEqual(["你有一条私密消息", "你有一条私密消息"]);
+    expect(bodies.join("\n")).not.toContain("TK1234567");
+    expect(context.failures).toEqual([]);
+  });
+
+  it("[SAID-1] REVERSE: a reply whose words fail to read is retried, does not hold back the pushes behind it, and is given up only after the last retry", async () => {
+    const context = await setup();
+    await context.subscribe("phone", "zh-CN");
+    const unreadable = new Error("payload cannot be decrypted");
+    let flakyReads = 0;
+    const push = context.create({
+      readMessage: async (threadId, messageId) => {
+        if (messageId === "assistant:run-broken:agent")
+          return {
+            dataClassification: "private",
+            readText: async () => {
+              throw unreadable;
+            },
+          };
+        if (messageId === "assistant:run-flaky:agent")
+          return {
+            dataClassification: "private",
+            readText: async () => {
+              flakyReads += 1;
+              if (flakyReads === 1) throw unreadable;
+              return "这一条第二次才读出来。";
+            },
+          };
+        return context.readMessage(threadId, messageId);
+      },
+    });
+    await push.tick();
+    context.setClock(T0);
+    context.finishRun("run-broken", "completed", at(T0, -7));
+    await context.say("run-broken", "这一条一直读不出来。");
+    context.finishRun("run-flaky", "completed", at(T0, -6));
+    await context.say("run-flaky", "这一条第二次才读出来。");
+    context.finishRun("run-fine", "completed", at(T0, -5));
+    await context.say("run-fine", "这一条照常推。");
+    await push.tick();
+    await push.tick();
+    const bodies = () =>
+      context.sender.notifications().map(({ notification }) => notification["body"]);
+    expect(bodies()).toEqual(["这一条照常推。"]);
+    const brokenId = webPushTopic(
+      await herWordsPushKey({ messageId: "assistant:run-broken:agent" }),
+    );
+    expect(await push.settled([brokenId])).toEqual([]);
+    context.setClock(at(T0, 61));
+    await push.tick();
+    expect(bodies()).toEqual(["这一条照常推。", "这一条第二次才读出来。"]);
+    for (const seconds of [61 + 301, 61 + 301 + 901, 61 + 301 + 901 + 3_600]) {
+      context.setClock(at(T0, seconds));
+      await push.tick();
+    }
+    expect(bodies()).toEqual(["这一条照常推。", "这一条第二次才读出来。"]);
+    expect(context.failures).toEqual(Array.from({ length: 6 }, () => unreadable));
+  });
+
+  it("[SAID-2] holds her words through the owner's quiet hours by default and sends them once when the hours end", async () => {
+    const context = await setup();
+    const push = context.create({ timeZone: "Asia/Tokyo", readPushRules: context.rules.read });
+    context.setClock(BEFORE_NIGHT);
+    await context.subscribe("phone", "zh-CN");
+    context.rules.write("owner:night", NIGHT_JST);
+    await push.tick();
+    context.setClock(NIGHT);
+    context.finishRun("run-night-words", "completed", at(NIGHT, -5));
+    await context.say("run-night-words", "机票改好了，明早 9 点那班。");
+    await push.tick();
+    context.setClock(at(NIGHT, 3_000));
+    await push.tick();
+    expect(context.sender.requests).toEqual([]);
+    expect(context.rules.outbox("said:")).toMatchObject({ deferUntil: MORNING });
+    context.setClock(MORNING);
+    await push.tick();
+    await push.tick();
+    expect(context.sender.notifications().map(({ notification }) => notification["body"])).toEqual([
+      "机票改好了，明早 9 点那班。",
+    ]);
+  });
+
+  it("[SAID-2] holds her reply under a quiet-hours rule stored before her words existed, because her reply replaced the task result push", async () => {
+    const context = await setup();
+    const push = context.create({ timeZone: "Asia/Tokyo", readPushRules: context.rules.read });
+    context.setClock(BEFORE_NIGHT);
+    await context.subscribe("phone", "zh-CN");
+    context.rules.write("owner:night-stored", {
+      ...NIGHT_JST,
+      params: { ...NIGHT_JST.params, classes: ["mail_reminder", "run_result"] },
+    });
+    await push.tick();
+    context.setClock(NIGHT);
+    context.finishRun("run-night-stored", "completed", at(NIGHT, -5));
+    await context.say("run-night-stored", "明天的会改到下午了。");
+    await push.tick();
+    expect(context.sender.requests).toEqual([]);
+    expect(context.rules.outbox("said:")).toMatchObject({ deferUntil: MORNING });
+  });
+
+  it("[SAID-2] REVERSE: a quiet-hours rule that leaves out task results lets her words through", async () => {
+    const context = await setup();
+    const push = context.create({ timeZone: "Asia/Tokyo", readPushRules: context.rules.read });
+    context.setClock(BEFORE_NIGHT);
+    await context.subscribe("phone", "zh-CN");
+    context.rules.write("owner:night-old", {
+      ...NIGHT_JST,
+      params: {
+        ...NIGHT_JST.params,
+        classes: ["scheduled_reminder", "mail_reminder"],
+      },
+    });
+    await push.tick();
+    context.setClock(NIGHT);
+    context.finishRun("run-night-open", "completed", at(NIGHT, -5));
+    await context.say("run-night-open", "已经帮你订好了。");
+    await push.tick();
+    expect(context.sender.notifications().map(({ notification }) => notification["body"])).toEqual([
+      "已经帮你订好了。",
+    ]);
+    expect(context.rules.ledger()).toEqual([]);
+  });
+
+  it("[SAID-3] does not push her reply while the owner has the app open, and does not send it later when quiet hours end", async () => {
+    const context = await setup();
+    const push = context.create({ timeZone: "Asia/Tokyo", readPushRules: context.rules.read });
+    context.setClock(BEFORE_NIGHT);
+    await context.subscribe("phone", "zh-CN");
+    context.rules.write("owner:night", NIGHT_JST);
+    await push.tick();
+    context.setClock(NIGHT);
+    context.presence.beat("device:iphone", true, NIGHT);
+    context.finishRun("run-watching", "completed", at(NIGHT, -5));
+    await context.say("run-watching", "好的，记下了。");
+    await push.tick();
+    context.presence.beat("device:iphone", false, at(NIGHT, 10));
+    context.setClock(MORNING);
+    await push.tick();
+    expect(context.sender.requests).toEqual([]);
+    expect(context.rules.ledger()).toEqual([]);
   });
 
   it("[HR-4] REVERSE: a deferral whose decision record cannot be written is rolled back, and the push is sent at once with a failure report", async () => {

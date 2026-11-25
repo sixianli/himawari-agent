@@ -1,0 +1,106 @@
+{
+  "v": 3,
+  "attachments": {},
+  "boards": {
+    "NextChat.dc.html": {
+      "h": 958,
+      "title": "1 主对话：可点的选项、后台在办、子线程、同意卡片、锁屏",
+      "w": 3862,
+      "x": 0,
+      "y": 0
+    },
+    "NextChatMore.dc.html": {
+      "h": 958,
+      "title": "2 主对话的其他状态：没发出去、没连上、她做事时的过程行、回答里的格式、点“+”、按住说话、听写、和她说话",
+      "w": 7696,
+      "x": 0,
+      "y": 1078
+    },
+    "NextLists.dc.html": {
+      "h": 958,
+      "title": "3 她的页面（点主对话顶上她的头像进）：定时、同意过的事、用量和上限",
+      "w": 2158,
+      "x": 0,
+      "y": 2156
+    },
+    "NextMemory.dc.html": {
+      "h": 958,
+      "title": "4 她记得的：记忆、主题页、昨晚整理了什么、回收站、规则",
+      "w": 3862,
+      "x": 0,
+      "y": 3234
+    },
+    "NextVault.dc.html": {
+      "h": 958,
+      "title": "5 保险箱：列表、加一项、从“密码”导入、一项的详情、用到才问、网站对不上、锁屏、批准页、丢手机换钥匙",
+      "w": 3862,
+      "x": 0,
+      "y": 4312
+    },
+    "NextSettings.dc.html": {
+      "h": 958,
+      "title": "6 通知、隐私、删掉感知记录、设备",
+      "w": 1732,
+      "x": 0,
+      "y": 5390
+    },
+    "NextSenses.dc.html": {
+      "h": 958,
+      "title": "7 让她感知：位置、日程、健康、相册、分享过来的",
+      "w": 2584,
+      "x": 0,
+      "y": 6468
+    },
+    "NextEars.dc.html": {
+      "h": 958,
+      "title": "8 收听、随身麦克风、让她看屏幕",
+      "w": 3436,
+      "x": 0,
+      "y": 7546
+    },
+    "NextPairing.dc.html": {
+      "h": 958,
+      "title": "9 第一次打开：配对",
+      "w": 3010,
+      "x": 0,
+      "y": 8624
+    }
+  },
+  "createdOnFiles": {
+    "at": "2026-11-12T01:30:00Z",
+    "v": 1
+  },
+  "designSystems": [],
+  "launch": {
+    "view": "canvas"
+  },
+  "notes": {
+    "title": {
+      "kind": "title1",
+      "maxW": 3200,
+      "text": "Himawari iPhone 下一版（11 月 24 日整理）",
+      "x": 0,
+      "y": -300
+    },
+    "howto": {
+      "fill": "orange",
+      "w": 340,
+      "x": -420,
+      "y": 0,
+      "text": "从上到下就是打开 App 后的顺序。没有底栏：打开就是主对话，点顶上的名字进她的页面，记忆和设置都在那一页。今天页、对话列表、提议、告诉你一声、手表、Mac 等不做的旧画板都拿掉了，存档在项目文件 ios-scope/prototype-archive-2026-11-24。深色版只换颜色，不换版式。内容都是示例数据。"
+    }
+  },
+  "order": [
+    "NextChat.dc.html",
+    "NextChatMore.dc.html",
+    "NextLists.dc.html",
+    "NextMemory.dc.html",
+    "NextVault.dc.html",
+    "NextSettings.dc.html",
+    "NextSenses.dc.html",
+    "NextEars.dc.html",
+    "NextPairing.dc.html"
+  ],
+  "pages": [],
+  "title": "Himawari iPhone 原型"
+}

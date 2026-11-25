@@ -38,6 +38,7 @@ import {
   type RunLifecyclePort,
   readThreadExecutionEnvironment,
   type SessionDeviceStatePort,
+  MAIL_INBOX_SOURCE_KIND,
   ThreadCommandService,
   ThreadDeletionCoordinationService,
   ThreadExecutionProjection,
@@ -114,7 +115,9 @@ import {
 } from "@himawari-agent/platform-node";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { BuiltInActionRuleSwitches } from "./action-rule-switches.js";
+import type { OwnerAllowances } from "./owner-allowances.js";
 import { classifiedThreadTitleReader } from "./classified-thread-title.js";
+import type { ContextExternalContent } from "./context-external-content.js";
 import type { ProductionApplePush } from "./production-apple-push.js";
 import {
   createProductionApprovalGateway,
@@ -131,11 +134,6 @@ import {
   ProductionDataExportControl,
   registerDataExportRoute,
 } from "./production-data-export.js";
-import type { DeliveryTimingHolder } from "./production-delivery-timing.js";
-import {
-  PRODUCTION_DELIVERY_TIMING_OPERATIONS,
-  ProductionDeliveryTimingControl,
-} from "./production-delivery-timing-control.js";
 import {
   PRODUCTION_DEVICE_OPERATIONS,
   ProductionDeviceControl,
@@ -147,10 +145,19 @@ import {
   ProductionHomeControl,
   type ProductionHomeUrgencyOptions,
 } from "./production-home.js";
+import { productionInbox } from "./production-inbox-composition.js";
+import { type InboxRunRegistry, ProductionInboxDelivery } from "./production-inbox-delivery.js";
+import {
+  PRODUCTION_INBOX_OPERATIONS,
+  ProductionInboxControl,
+  ProductionInboxSettings,
+} from "./production-inbox-settings.js";
+import type { InboxDelivery } from "./production-inbox-worker.js";
 import {
   PRODUCTION_LOGIN_DEVICE_OPERATIONS,
   ProductionLoginDevicesControl,
 } from "./production-login-devices-control.js";
+import { ProductionMainThread } from "./production-main-thread.js";
 import {
   McpConnectionAddresses,
   PRODUCTION_MCP_CONNECTION_OPERATIONS,
@@ -195,6 +202,10 @@ import {
   ProductionProposalControl,
 } from "./production-proposal-control.js";
 import { ProductionProposalBox } from "./production-proposals.js";
+import {
+  PRODUCTION_QUIET_HOURS_OPERATIONS,
+  ProductionQuietHoursControl,
+} from "./production-quiet-hours-control.js";
 import { registerReminderProposalHandlers } from "./production-reminder-proposals.js";
 import { ProductionReminderWriter } from "./production-reminder-writer.js";
 import {
@@ -211,13 +222,7 @@ import {
   ProductionServerStatusControl,
 } from "./production-server-status-control.js";
 import { registerTaskProposalHandler } from "./production-task-proposals.js";
-import { productionThinkLoop, type ThinkWorthRoute } from "./production-think-composition.js";
-import { ThinkThreadRetention } from "./production-think-retention.js";
-import {
-  PRODUCTION_THINK_OPERATIONS,
-  ProductionThinkControl,
-  ProductionThinkSettings,
-} from "./production-think-settings.js";
+import { ThreadDeletionRetry } from "./production-thread-deletion-retry.js";
 import { type ProductionWebPush, WebPushPresence } from "./production-web-push.js";
 import {
   PRODUCTION_WEB_PUSH_OPERATIONS,
@@ -323,24 +328,28 @@ export interface ProductionHttpCompositionOptions {
     readonly externalProposals?: ProductionMcpMemoryWriter;
     readonly mcpSync?: McpMemorySyncStorePort;
     readonly actionRules?: Pick<BuiltInActionRuleSwitches, "list" | "setAskFirst">;
+    readonly allowances?: Pick<OwnerAllowances, "list" | "revoke">;
     readonly classifier?: Pick<ProductionMemoryClassifier, "classify">;
     readonly importDuplicates?: NonNullable<
       ConstructorParameters<typeof ProductionMemoryControl>[0]["importDuplicates"]
     >;
     readonly onAudit: (record: MemoryExtractionAuditRecord) => void;
   };
-  readonly deliveryTimingSettings?: Pick<DeliveryTimingHolder, "base" | "apply">;
   readonly webPush?: {
     readonly presence: WebPushPresence;
     readonly push: ProductionWebPush | undefined;
     readonly applePush?: ProductionApplePush;
   };
   readonly proactive?: ProductionProactive;
-  readonly think?: {
-    readonly worth: ThinkWorthRoute;
+  readonly inbox?: {
+    readonly delivery?: InboxDelivery;
+    readonly mainThread?: {
+      readonly registry: InboxRunRegistry;
+      readonly externalContent: Pick<ContextExternalContent, "mark">;
+    };
     readonly onDiagnostic?: (event: Record<string, string>) => void;
   };
-  readonly thinkRetentionDiagnostic?: (event: Record<string, string>) => void;
+  readonly threadDeletionDiagnostic?: (event: Record<string, string>) => void;
   readonly queryPrefetch?: ProductionQueryPrefetch;
   readonly voiceAddressee?: VoiceAddresseeModel;
   readonly museIntake?: ProductionMuseIntake;
@@ -808,7 +817,6 @@ function routeOptions(
   mcpConnectionsAvailable: boolean,
   searchAvailable: boolean,
   capabilityReactivationAvailable: boolean,
-  deliveryTimingAvailable: boolean,
 ): HttpGatewayServerOptions {
   const http = configuration.http;
   if (!http || !configuration.identity) {
@@ -844,7 +852,7 @@ function routeOptions(
         ...(museAvailable ? PRODUCTION_MUSE_OPERATIONS : []),
         ...(observationAvailable ? PRODUCTION_OBSERVATION_OPERATIONS : []),
         ...PRODUCTION_OWNER_PREFERENCE_OPERATIONS,
-        ...(deliveryTimingAvailable ? PRODUCTION_DELIVERY_TIMING_OPERATIONS : []),
+        ...(memoryAvailable ? PRODUCTION_QUIET_HOURS_OPERATIONS : []),
         ...PRODUCTION_PROPOSAL_OPERATIONS,
         ...PRODUCTION_SENSITIVE_INTERCEPTION_OPERATIONS,
         ...PRODUCTION_SERVER_STATUS_OPERATIONS,
@@ -858,7 +866,7 @@ function routeOptions(
         ...PRODUCTION_LOGIN_DEVICE_OPERATIONS,
         ...(mcpConnectionsAvailable ? PRODUCTION_MCP_CONNECTION_OPERATIONS : []),
         ...PRODUCTION_PERCEPTION_OPERATIONS,
-        ...PRODUCTION_THINK_OPERATIONS,
+        ...PRODUCTION_INBOX_OPERATIONS,
       ],
       agentId: configuration.agentId,
       deploymentId: configuration.deploymentId,
@@ -1065,6 +1073,15 @@ export async function createProductionHttpComposition(
     authority: () => authorityForConfiguration(configuration, options.authority()),
     recentAuthentication,
   });
+  const mainThread = new ProductionMainThread({
+    ownerId,
+    agentId,
+    threads,
+    commands: threadCommands,
+    payloads: repository.payloadStore(ownerId, agentId),
+    protector: payloadProtector,
+    clock: { now: clock },
+  });
   const environment = options.executionEnvironment;
   const threadAdapter = new ProductThreadGatewayAdapter({
     validateModelSelection: (selection, classification) => {
@@ -1134,6 +1151,7 @@ export async function createProductionHttpComposition(
       authority: () => authorityForConfiguration(configuration, options.authority()),
     }),
     deletion: threadDeletion,
+    mainThread,
     clock: { now: clock },
   });
   const threadAccess = new ProductionThreadGatewayAccessPolicy({
@@ -1277,11 +1295,12 @@ export async function createProductionHttpComposition(
     clock: { now: clock },
     timeZone: configuration.runPolicy?.timeZone ?? "UTC",
   });
-  const thinkSettings = new ProductionThinkSettings({
+  const inboxSettings = new ProductionInboxSettings({
     scope: { ownerId, agentId },
-    store: repository.thinkInbox(),
-    configuration: configuration.runPolicy?.thinkInbox,
+    store: repository.inbox(),
+    configuration: configuration.runPolicy?.inbox,
     clock: { now: clock },
+    enabled: options.inbox?.delivery !== undefined || options.inbox?.mainThread !== undefined,
   });
   const retentionDeletion = () =>
     new SqliteGovernedDeletionAdapter({
@@ -1291,31 +1310,79 @@ export async function createProductionHttpComposition(
       agentId,
       now: clock,
     });
-  const thinkRetention = new ThinkThreadRetention({
+  const ensureMainThread = () =>
+    mainThread.ensure().then(
+      () => undefined,
+      (error: unknown) =>
+        options.threadDeletionDiagnostic?.({
+          code: "thread.main_ensure_failed",
+          error: error instanceof Error ? error.name : "unknown",
+        }),
+    );
+  const threadDeletionRetry = new ThreadDeletionRetry({
     deletion: {
-      deleteExpiredThinkThreads: (input) => retentionDeletion().deleteExpiredThinkThreads(input),
       retryIncompleteThreadDeletions: (input) =>
         retentionDeletion().retryIncompleteThreadDeletions(input),
+      deleteLegacyThreads: (input) => retentionDeletion().deleteLegacyThreads(input),
     },
-    settings: thinkSettings,
-    clock: { now: clock },
-    ...(options.thinkRetentionDiagnostic ? { onDiagnostic: options.thinkRetentionDiagnostic } : {}),
+    ...(options.threadDeletionDiagnostic ? { onDiagnostic: options.threadDeletionDiagnostic } : {}),
   });
-  const think = options.think
-    ? productionThinkLoop({
-        settings: thinkSettings,
+  const mainThreadInbox = options.inbox?.mainThread;
+  const inboxDelivery =
+    options.inbox?.delivery ??
+    (mainThreadInbox
+      ? new ProductionInboxDelivery({
+          ownerId,
+          agentId,
+          mainThread,
+          threads,
+          commands: threadCommands,
+          runs: repository.runLifecycle(ownerId, agentId, authority),
+          ledger: repository.decisionLedger(),
+          externalContent: mainThreadInbox.externalContent,
+          registry: mainThreadInbox.registry,
+          payloads: repository.payloadStore(ownerId, agentId),
+          protector: payloadProtector,
+          clock: { now: clock },
+          ...(options.cancelRun ? { cancelRun: options.cancelRun } : {}),
+        })
+      : undefined);
+  const inbox = productionInbox({
+    settings: inboxSettings,
+    configuration,
+    repository,
+    payloads: memoryPayloads,
+    protector: payloadProtector,
+    clock,
+    ...(inboxDelivery ? { delivery: inboxDelivery } : {}),
+    ...(options.inbox?.onDiagnostic ? { onDiagnostic: options.inbox.onDiagnostic } : {}),
+  });
+  if (options.proactive) {
+    inbox.inbox.sources.register({
+      kind: MAIL_INBOX_SOURCE_KIND,
+      describe: "新邮件",
+      externalContent: true,
+      fromOwner: false,
+      priority: 5,
+    });
+    options.proactive.attachInbox(inbox.inbox);
+  }
+  const ownerRuleWriter = options.memory
+    ? new ProductionOwnerRuleWriter({
         configuration,
-        repository,
+        rules: repository.ownerRules(),
+        box: proposalBox,
+        reviews: repository.ruleReviews(),
+        memory: options.memory.service,
+        memories: repository.productMemoryState(),
+        book: repository.memoryBook(),
+        threads,
         payloads: memoryPayloads,
         protector: payloadProtector,
-        clock,
-        commands: threadCommands,
-        threads,
-        box: proposalBox,
-        ...(reminderWriter ? { writer: reminderWriter } : {}),
-        worth: options.think.worth,
-        ...(options.cancelRun ? { cancelRun: options.cancelRun } : {}),
-        ...(options.think.onDiagnostic ? { onDiagnostic: options.think.onDiagnostic } : {}),
+        clock: { now: clock },
+        ...(options.proactive
+          ? { replay: (rule) => options.proactive?.replayRule(rule) ?? Promise.reject(rule) }
+          : {}),
       })
     : undefined;
   const memoryControl = options.memory
@@ -1364,26 +1431,12 @@ export async function createProductionHttpComposition(
               : Promise.resolve(),
         },
         reminders: repository.memoryReminders(),
-        ownerRules: new ProductionOwnerRuleWriter({
-          configuration,
-          rules: repository.ownerRules(),
-          box: proposalBox,
-          reviews: repository.ruleReviews(),
-          memory: options.memory.service,
-          memories: repository.productMemoryState(),
-          book: repository.memoryBook(),
-          threads,
-          payloads: memoryPayloads,
-          protector: payloadProtector,
-          clock: { now: clock },
-          ...(options.proactive
-            ? { replay: (rule) => options.proactive?.replayRule(rule) ?? Promise.reject(rule) }
-            : {}),
-        }),
+        ...(ownerRuleWriter ? { ownerRules: ownerRuleWriter } : {}),
         reviews: { memories: repository.memoryReviews(), rules: repository.ruleReviews() },
         book: repository.memoryBook(),
         ledger: repository.decisionLedger(),
         ...(options.memory.actionRules ? { actionRules: options.memory.actionRules } : {}),
+        ...(options.memory.allowances ? { allowances: options.memory.allowances } : {}),
         payloads: memoryPayloads,
         protector: payloadProtector,
         clock: { now: clock },
@@ -1638,14 +1691,12 @@ export async function createProductionHttpComposition(
       recentAuthentication,
       clock: { now: clock },
     }),
-    ...(options.deliveryTimingSettings
+    ...(ownerRuleWriter
       ? {
-          deliveryTimingControl: new ProductionDeliveryTimingControl({
+          quietHoursControl: new ProductionQuietHoursControl({
             configuration,
-            defaults: options.deliveryTimingSettings.base,
-            store: repository.deliveryTimingSettings(),
+            rules: ownerRuleWriter,
             clock: { now: clock },
-            changed: options.deliveryTimingSettings.apply,
           }),
         }
       : {}),
@@ -1667,8 +1718,8 @@ export async function createProductionHttpComposition(
       ...(devicePairingAccess ? { pairingAccess: devicePairingAccess } : {}),
       clock: { now: clock },
     }),
-    thinkControl: new ProductionThinkControl({
-      settings: thinkSettings,
+    inboxControl: new ProductionInboxControl({
+      settings: inboxSettings,
       scope: { ownerId, agentId },
       clock: { now: clock },
     }),
@@ -1753,7 +1804,6 @@ export async function createProductionHttpComposition(
       Boolean(options.mcpRead),
       Boolean(searchControl),
       options.capabilityReactivation !== undefined,
-      options.deliveryTimingSettings !== undefined,
     ),
     gatewayV2,
     threadSearch,
@@ -1878,8 +1928,9 @@ export async function createProductionHttpComposition(
         });
         searchIndexer.start();
         home.startScoring();
-        think?.loop.start();
-        thinkRetention.start();
+        await ensureMainThread();
+        inbox.loop?.start();
+        threadDeletionRetry.start();
         return address;
       }
       await prepareUnixSocketPath(unixSocketPath, { adoptExistingDirectory: false });
@@ -1893,14 +1944,15 @@ export async function createProductionHttpComposition(
       }
       searchIndexer.start();
       home.startScoring();
-      think?.loop.start();
-      thinkRetention.start();
+      await ensureMainThread();
+      inbox.loop?.start();
+      threadDeletionRetry.start();
       return unixSocketPath;
     },
     close: async () => {
       searchIndexer.stop();
-      await think?.loop.stop();
-      await thinkRetention.stop();
+      await inbox.loop?.stop();
+      await threadDeletionRetry.stop();
       await home.stopScoring();
       try {
         await app.close();

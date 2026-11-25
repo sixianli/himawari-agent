@@ -503,7 +503,7 @@ export async function qualifyBrowser({
     await page
       .locator(".thread-search-results")
       .getByRole("link")
-      .filter({ hasText: "主对话" })
+      .filter({ hasText: "计划讨论" })
       .first()
       .click();
     await threadSearch.fill("");
@@ -552,9 +552,7 @@ export async function qualifyBrowser({
     await page.getByRole("dialog", { name: "设置", exact: true }).press("Escape");
     await expect(page.getByRole("button", { name: "移入回收站", exact: true })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "检查删除影响", exact: true })).toHaveCount(0);
-    await page.getByRole("button", { name: "分出新对话", exact: true }).first().click();
-    await page.waitForURL(/\/threads\/thread-fork%3A|\/threads\/thread-fork:/);
-    await expect(page.locator(".thread-message-owner")).not.toHaveCount(0);
+    await expect(page.getByRole("button", { name: "分出新对话", exact: true })).toHaveCount(0);
     await page.goto(`${baseUrl}/threads/thread-main?view=content`);
     await waitForConnected(page);
 
@@ -1057,7 +1055,7 @@ export async function qualifyBrowser({
         "thread-revision-conflict-reapply",
         "thread-archive-restore",
         "thread-deletion-controls-absent",
-        "thread-fork",
+        "thread-fork-absent",
         "thread-multi-tab",
         "approval-approve-deny",
         "approval-recent-authentication-gate",

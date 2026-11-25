@@ -473,24 +473,6 @@ export type ProactiveFetchResult<Extra = Readonly<Record<string, unknown>>> =
   | { readonly kind: "unauthorized" }
   | { readonly kind: "failed"; readonly step: string };
 
-export interface ProactiveRelatedLimits {
-  readonly perMail: number;
-  readonly requestsPerCheck: number;
-  readonly wholeThreadPerMail: number;
-}
-
-export interface ProactiveWholeThread {
-  readonly messageIds: readonly string[];
-  readonly complete: boolean;
-}
-
-export interface ProactiveRelatedFetch {
-  readonly byMail: ReadonlyMap<string, readonly ProactiveMailItem[]>;
-  readonly failed: ReadonlyMap<string, string>;
-  readonly requests: number;
-  readonly wholeThread?: ReadonlyMap<string, ProactiveWholeThread>;
-}
-
 export interface ProactiveSourceReader<Extra = Readonly<Record<string, unknown>>> {
   readonly source: ProactiveSource;
   fetch(input: {
@@ -503,15 +485,12 @@ export interface ProactiveSourceReader<Extra = Readonly<Record<string, unknown>>
 }
 
 export interface ProactiveMailReader extends ProactiveSourceReader<ProactiveMailExtra> {
-  related?:
+  thread?:
     | ((input: {
         readonly token: string;
-        readonly items: readonly ProactiveMailItem[];
-        readonly limits: ProactiveRelatedLimits;
-        readonly wholeThread?: ReadonlySet<string>;
-        readonly references?: ReadonlyMap<string, readonly string[]>;
+        readonly threadId: string;
         readonly signal: AbortSignal;
-      }) => Promise<ProactiveRelatedFetch>)
+      }) => Promise<readonly ProactiveMailItem[] | undefined>)
     | undefined;
 }
 

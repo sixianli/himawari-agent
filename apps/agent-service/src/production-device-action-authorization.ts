@@ -56,8 +56,6 @@ export function productionDeviceActionAuthorization(
     authorize: async (intent) => {
       const direct = await reads.authorize(intent);
       if (direct.decision === "allow") return direct;
-      if (!intent.untrustedOriginAllowed && intent.readUntrustedContent)
-        return { decision: "deny", reasonCode: "authorization_denied" };
       const row = options.registry.forCapability(DEVICE_ACTION_CAPABILITY_REF);
       if (!row) return { decision: "deny", reasonCode: "authorization_denied" };
       const permission = await options.ownerScope.authorize(

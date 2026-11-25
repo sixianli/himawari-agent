@@ -1,0 +1,39 @@
+CLAIM|1|一致|scripts/ci/run-share.mjs:29|`scripts/ci/run-share.mjs` 的 `shareRoot` 要求 `HIMAWARI_CI_SHARE` 指向本机一个已有目录|`  const info = lstatSync(root, { throwIfNoEntry: false });`
+CLAIM|2|一致|scripts/ci/run-share.mjs:28|没设或不是绝对路径以 `CI_SHARE_ROOT_REQUIRED` 失败|`  if (!root || !path.isAbsolute(root)) fail("ROOT_REQUIRED");`
+CLAIM|3|一致|scripts/ci/run-share.mjs:30|目录不存在以 `CI_SHARE_ROOT_INVALID` 失败|`  if (!info?.isDirectory() || info.isSymbolicLink()) fail("ROOT_INVALID");`
+CLAIM|4|一致|.github/workflows/ci.yml:33|`policy`、`tooling`、`security` 跑在 `ubuntu-24.04-arm`|`    runs-on: ubuntu-24.04-arm`
+CLAIM|5|一致|.github/workflows/ci.yml:80|`static`、`build`、`browser`、`tests`、`ci/required`、main 确认、合并队列和“关闭 PR 时取消 CI”跑在 `ubuntu-24.04`|`    runs-on: ubuntu-24.04`
+CLAIM|6|一致|.github/workflows/apple.yml:24|新增 `Apple` 工作流在 `macos-26` 上|`    runs-on: macos-26`
+CLAIM|7|一致|.github/workflows/apple.yml:34|跑 `HimawariCore` 单元测试|`        run: swift test`
+CLAIM|8|一致|.github/workflows/apple.yml:42|并不签名编译 iPhone App|`          CODE_SIGNING_ALLOWED=NO`
+CLAIM|9|一致|ci/policy.json:30@c912aa8cef849140e9fffdd9f028b9899ad852ee|`static` 原来在 Oracle ARM 机器上跑|`          "runner": "ci-arm",`
+CLAIM|10|一致|package.json:27|`npm run check` 里的 `check:delivery-dependencies`|`    "check:steps": "npm run format:check && npm run lint && npm run typecheck && npm run check:boundaries && npm run check:security-invariants && npm run check:secrets && npm run check:gitleaks && npm run check:ci-policy && npm run check:release-walkthrough && npm run check:answer-weight && npm run check:layer0-hooks && npm run check:incident-gates && npm run check:conflict-markers && npm run check:glossary && npm run check:meaning-word-lists && npm run check:apple-design && npm run check:agent-rulebook-inventory && npm run check:operations && npm run check:markdown-tables && npm run check:adr-numbers && npm run check:instruction-links && npm run check:docs-links && npm run check:phone-layout && npm run check:layout && npm run check:brand && npm run check:locale && npm run check:expensive-models && npm run check:platform-assumptions && npm run check:egress-redaction && npm run check:prompt-prefix && npm run check:prompt-catalog && npm run check:rule-registry && npm run check:model-ref-contract && npm run check:product-path-configuration && npm run check:mcp-sync && npm run check:memory-relevance && npm run check:memory-capture-retry && npm run check:data-export && npm run check:chat-export && npm run check:real-admission && npm run check:audit-schema-range && npm run check:migration-conflicts && npm run check:proactive-sources && npm run check:srt-version && npm run check:probe-sources && npm run check:settings-scope && npm run check:source-mode-imports && npm run check:admin-schema-range && npm run check:delivery-packet && npm run check:delivery-deploy && npm run check:heartbeat && npm run check:delivery-rollback && npm run check:delivery-cleanup && npm run check:delivery-dependencies && npm run check:untested-claims && npm run check:security-review && npm run check:check-runner && npm run check:client-parity && npm run check:repo-hygiene && npm run check:disk-hygiene",`
+CLAIM|11|一致|scripts/delivery-mode/test_collect_dependencies.py:62|`check:delivery-dependencies` 会真的运行只认 linux-x64 的依赖收集脚本（`scripts/delivery-mode/packet-template/install/collect-installer-dependencies.mjs`）|`        self.assertEqual((TEMPLATE / 'install/collect-installer-dependencies.mjs').read_bytes(), COLLECTOR.read_bytes())`
+CLAIM|12|一致|scripts/delivery-mode/packet-template/install/collect-installer-dependencies.mjs:15|只认 linux-x64 的依赖收集脚本|`fail(Object.keys(args).length === 4 && process.version === "v22.22.3" && process.platform === "linux" && process.arch === "x64", "P5_ENVIRONMENT_INVALID");`
+CLAIM|13|一致|scripts/delivery-mode/packet-template/install/collect-installer-dependencies.mjs:15|在 ARM 机器上以 `P5_ENVIRONMENT_INVALID` 失败|`fail(Object.keys(args).length === 4 && process.version === "v22.22.3" && process.platform === "linux" && process.arch === "x64", "P5_ENVIRONMENT_INVALID");`
+CLAIM|14|一致|scripts/ci/check-policy.mjs:1710|`npm run check:ci-policy` 读 `.github/workflows/` 下全部工作流|`      readdirSync(workflowDirectory)`
+CLAIM|15|一致|scripts/ci/check-policy.mjs:911|`runs-on` 不是这三种之一（包括 larger runner、`self-hosted`、浮动标签和算出来的表达式）就以 `HOSTED_RUNNER_REQUIRED` 失败|`        \`HOSTED_RUNNER_REQUIRED ${file}/${id}: only ${hostedRunnerLabels.join(", ")} are free on this public repository\`,`
+CLAIM|16|一致|scripts/ci/run-share.mjs:108|`run-share.mjs` 的摘要核对不变|`  if (copied !== digest) {`
+CLAIM|17|一致|.github/workflows/ci.yml:51|共享目录改成每台机器自己的 `$RUNNER_TEMP/ci-share`|`        run: mkdir -p "$RUNNER_TEMP/ci-share" && echo "HIMAWARI_CI_SHARE=$RUNNER_TEMP/ci-share" >> "$GITHUB_ENV"`
+CLAIM|18|一致|.github/workflows/ci.yml:73|每个检查作业把自己那份报告用 `actions/cache/save` 存进本次运行的缓存，键带 `run_id` 和 `run_attempt`|`          key: ci-share-${{ github.run_id }}-${{ github.run_attempt }}-policy-${{ env.CI_MATRIX }}`
+CLAIM|19|一致|.github/workflows/ci.yml:247|`browser`、`tests` 先用 `actions/cache/restore`（取不到就失败）取回本次的 Linux 构建|`          fail-on-cache-miss: true`
+CLAIM|20|一致|.github/workflows/ci.yml:514|汇总作业在收齐前逐个取回各成员的报告|`      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830`
+CLAIM|21|一致|scripts/ci/run-share.mjs:108|取回后仍按作业输出里的摘要逐字节核对|`  if (copied !== digest) {`
+CLAIM|22|一致|scripts/operations/ci-runner/install-runner.sh:14@c912aa8cef849140e9fffdd9f028b9899ad852ee|删除自托管 runner 的安装脚本|`URL=https://github.com/actions/runner/releases/download/v$VERSION/actions-runner-linux-$RUNNER_PACKAGE_ARCH-$VERSION.tar.gz`
+CLAIM|23|一致|scripts/ci/remote-share.mjs:90@c912aa8cef849140e9fffdd9f028b9899ad852ee|ssh 拉报告的 `scripts/ci/remote-share.mjs`|`  command = "ssh",`
+CLAIM|24|一致|scripts/ci/prepare-hosted.sh:11|托管机器上沙箱测试需要的 bubblewrap、socat、ripgrep 由 `scripts/ci/prepare-hosted.sh` 装好|`apt-get install -y -q --no-install-recommends bubblewrap socat ripgrep apparmor-utils`
+CLAIM|25|一致|scripts/ci/prepare-hosted.sh:24|Ubuntu 24.04 的 AppArmor 放宽由 `scripts/ci/prepare-hosted.sh` 装好|`  apparmor_parser -r "$profile"`
+CLAIM|26|一致|.github/workflows/ci.yml:106|由 `scripts/ci/prepare-hosted.sh` 在每次作业开头装好|`        run: sudo bash scripts/ci/prepare-hosted.sh "$PWD/.ci-output/tools/bin/node"`
+CLAIM|27|一致|ci/policy.json:47@c912aa8cef849140e9fffdd9f028b9899ad852ee|main 上已接受的策略文件仍写着 `ci-vps`|`          "runner": "ci-vps",`
+CLAIM|28|一致|ci/policy.json:30@c912aa8cef849140e9fffdd9f028b9899ad852ee|main 上已接受的策略文件仍写着 `ci-arm`|`          "runner": "ci-arm",`
+CLAIM|29|一致|ci/policy.json:173@c912aa8cef849140e9fffdd9f028b9899ad852ee|main 上已接受的策略文件仍写着 `ci-vps-gate`|`          "runner": "ci-vps-gate",`
+CLAIM|30|一致|scripts/ci/check-policy.mjs:389|`resolvePolicySource` 在基准上把它们整体换成对应的托管标签|`      member.runner = hosted[member.runner];`
+CLAIM|31|一致|scripts/ci/check-policy.mjs:1554|摘要仍按原始字节算|`    policySha256: sha256(bytes),`
+CLAIM|32|一致|.github/workflows/ci.yml:21|`ci.yml` 规定所有作业只读|`  contents: read`
+CLAIM|33|一致|docs/adr/0241-draft-prs-skip-ci-and-merge-waits-for-green.md:55|这修订了 ADR 0241 里“结束时删除共享目录”的说法|`上传汇总结论和删除共享目录的步骤也不运行（条件是 \`always() && steps.entry.outcome == 'success'\`）`
+CLAIM|34|一致|docs/adr/0243-ci-uses-no-github-artifacts.md:59|这修订了 ADR 0243 里“完整报告在 CI 服务器的共享目录里”的说法|`\`ci.yml\` 的完整报告仍在 CI 服务器的共享目录里，汇总作业结束时删除（[ADR 0238](0238-ci-job-files-stay-on-the-ci-vps.md)）`
+CLAIM|35|一致|docs/adr/0243-ci-uses-no-github-artifacts.md:12|ADR 0243 的禁令保留|`# ADR 0243：CI 完全不用 GitHub 产物`
+CLAIM|36|一致|docs/adr/0176-ci-on-ovh-vps.md:128|自托管时代的 ADR（0176、0238、0256、0266、0275）里提到的 CI VPS 运行手册已删除|`- CI VPS 上的自托管 runner Runbook（运行手册已随 [ADR 0287](0287-ci-runs-on-github-hosted-runners.md) 删除，最后一版在提交 \`88e17c24\`）`
+CLAIM|37|一致|docs/runbooks/ci-vps-runner-runbook.md:11@88e17c24|最后一版在提交 `88e17c24`|`# CI VPS 上的自托管 runner Runbook`
+
+未核对的部分：前提里涉及 GitHub 计费、缓存额度、artifact 是否免费和自托管 runner 建议的外部网页内容，以及仓库改为公开、OVH 退租、Oracle 机器改作生产、6 台 runner 注销、Andy 的预算设置等仓库外事实；这些不属于仓库代码或文档现状。

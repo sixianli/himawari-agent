@@ -50,6 +50,7 @@ public final class ChatStore {
     @ObservationIgnored private let heartbeatSeconds: @Sendable () -> TimeInterval
     @ObservationIgnored private var watched: (threadId: String, stream: DeviceEventStream, task: Task<Void, Never>)?
     @ObservationIgnored private let answerLocale: AnswerLocale
+    @ObservationIgnored private let images: ImageFitting?
     @ObservationIgnored private var wantedThreadId: String?
     @ObservationIgnored private var streamConnections: Int?
     @ObservationIgnored public var onNotification: (@MainActor (DeviceStreamEvent) -> Void)?
@@ -60,9 +61,11 @@ public final class ChatStore {
         heartbeatSeconds: @escaping @Sendable () -> TimeInterval,
         answerLocale: AnswerLocale = .matching(preferredLanguages: Locale.preferredLanguages),
         onSessionInvalid: @escaping @MainActor () -> Void,
-        onDeviceActions: @escaping @MainActor () -> Void = {}
+        onDeviceActions: @escaping @MainActor () -> Void = {},
+        images: ImageFitting? = nil
     ) {
         self.api = api
+        self.images = images
         self.heartbeatSeconds = heartbeatSeconds
         self.answerLocale = answerLocale
         outbox = Outbox(store: store)
@@ -156,14 +159,16 @@ public final class ChatStore {
         details[threadId]?.messages ?? []
     }
 
-    public func lastMessageText(in threadId: String) -> String? {
-        if let queued = queued.last(where: { $0.message.threadId == threadId }) { return queued.message.text }
-        guard let last = details[threadId]?.messages.last(where: { $0.role != .system }) else { return nil }
-        return texts[last.contentRef]
-    }
-
     public func queuedMessages(in threadId: String) -> [OutboxItem] {
         queued.filter { $0.message.threadId == threadId }
+    }
+
+    public func isBusy(in threadId: String) -> Bool {
+        streaming[threadId] != nil || (details[threadId]?.runs ?? []).contains(where: \.isWorking)
+    }
+
+    public func workingRun(in threadId: String) -> ThreadRunSummary? {
+        details[threadId]?.runs.last(where: \.isWorking)
     }
 
     public func streamingText(in threadId: String) -> String? {
@@ -257,10 +262,6 @@ public final class ChatStore {
         Task { await load(threadId) }
     }
 
-    public static func newRequestId() -> String {
-        OutgoingMessage.newId()
-    }
-
     public func newThread(requestId: String) async throws -> String {
         let created: CreatedThread
         do {
@@ -281,6 +282,20 @@ public final class ChatStore {
         let revision = details[threadId]?.thread.revision ?? threads.first(where: { $0.threadId == threadId })?.revision ?? createdRevisions[threadId] ?? 1
         await outbox.enqueue(OutgoingMessage(threadId: threadId, expectedRevision: revision, text: trimmed, createdAt: Date()))
         await flush()
+    }
+
+    public func send(_ text: String, attachments: [ChatAttachment], requestId: String, in threadId: String) async throws {
+        guard !attachments.isEmpty else {
+            await send(text, in: threadId)
+            return
+        }
+        let composed = try await api.compose(
+            text: text.trimmingCharacters(in: .whitespacesAndNewlines),
+            attachments: attachments,
+            requestId: requestId,
+            images: images
+        )
+        await send(composed, in: threadId)
     }
 
     public func retry(_ messageId: String) async {

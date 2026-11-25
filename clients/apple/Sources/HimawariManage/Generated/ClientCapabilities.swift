@@ -63,11 +63,7 @@ public enum NativePage: String, Sendable, CaseIterable {
     case memory = "memory"
     case memoryReflection = "memory.reflection"
     case settingsAuthorizations = "settings.authorizations"
-    case settingsCapabilities = "settings.capabilities"
     case settingsDevices = "settings.devices"
-    case settingsImprovements = "settings.improvements"
-    case todayApprovals = "today.approvals"
-    case todaySuggestions = "today.suggestions"
 }
 
 public enum ClientCapabilities {
@@ -82,6 +78,7 @@ public enum ClientCapabilities {
         ClientCapability(gateway: .v1, type: "trace.query", kind: .query, tier: .notOnPhone, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "thread.message.submit", kind: .command, tier: .notOnPhone, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "approval.respond", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
+        ClientCapability(gateway: .v2, type: "approval.allowance.set", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "search.authorization.set", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "search.authorization.read", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "push.subscription.set", kind: .command, tier: .notOnPhone, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
@@ -113,8 +110,8 @@ public enum ClientCapabilities {
         ClientCapability(gateway: .v2, type: "proactive.gapcase.mark", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "owner.preferences.read", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "owner.preferences.set", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
-        ClientCapability(gateway: .v2, type: "delivery_timing.settings.read", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
-        ClientCapability(gateway: .v2, type: "delivery_timing.settings.change", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
+        ClientCapability(gateway: .v2, type: "quiet_hours.read", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
+        ClientCapability(gateway: .v2, type: "quiet_hours.set", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "perception.status.read", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "perception.day.read", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "perception.episode.read", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
@@ -226,6 +223,7 @@ public enum ClientCapabilities {
         ClientCapability(gateway: .threadV3, type: "thread.deletion_impact", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .threadV3, type: "thread.list", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .threadV3, type: "thread.detail", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
+        ClientCapability(gateway: .threadV3, type: "thread.main", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .threadV3, type: "thread.execution", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .threadV3, type: "thread.execution_state", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .threadV3, type: "thread.execution_environment", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),

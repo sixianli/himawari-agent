@@ -5,6 +5,7 @@ import type {
 } from "@himawari-agent/platform-node";
 
 export const MAC_PLACEMENT_LIMIT = 100;
+export const MAC_PRESENCE_WINDOW_SECONDS = 300;
 
 export interface NotificationPlacement {
   place(notification: DeviceNotificationDeliver, expiresAtMilliseconds: number): boolean;

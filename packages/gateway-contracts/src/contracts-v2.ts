@@ -24,6 +24,7 @@ export const GATEWAY_V2_SCHEMA_VERSION = "gateway.v2" as const;
 export const GATEWAY_V2_MESSAGE_TYPES = [
   "thread.message.submit",
   "approval.respond",
+  "approval.allowance.set",
   "search.authorization.set",
   "search.authorization.read",
   "search.authorization.snapshot",
@@ -63,9 +64,9 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "owner.preferences.read",
   "owner.preferences.snapshot",
   "owner.preferences.set",
-  "delivery_timing.settings.read",
-  "delivery_timing.settings.snapshot",
-  "delivery_timing.settings.change",
+  "quiet_hours.read",
+  "quiet_hours.snapshot",
+  "quiet_hours.set",
   "proposals.read",
   "proposals.snapshot",
   "proposal.respond",
@@ -254,6 +255,19 @@ export const respondApprovalV2CommandSchema = object({
     semanticSnapshotHash: machineString,
     editedPayloadRef: nullable(machineString),
     recentAuthenticationRef: nullable(machineString),
+  }),
+});
+
+export const APPROVAL_ALLOWANCE_SCOPES = ["this_task", "days", "always"] as const;
+
+export const APPROVAL_ALLOWANCE_INTENT_PREFIX = "owner-scope:";
+
+export const approvalAllowanceSetCommandSchema = object({
+  ...commandEnvelope("approval.allowance.set"),
+  payload: object({
+    approvalRequestId: machineString,
+    allowFor: enumeration(APPROVAL_ALLOWANCE_SCOPES),
+    days: nullable(integer(1, 90)),
   }),
 });
 
@@ -562,40 +576,32 @@ const ownerPreferencesSetCommandSchema = object({
   ...commandEnvelope("owner.preferences.set"),
   payload: object({ ...ownerPreferencesSchema, expectedRevision: integer(0) }),
 });
-const deliveryTimingSettingsQuerySchema = object({
-  ...envelope("query", "delivery_timing.settings.read"),
-  payload: object({ locale: enumeration(["zh-CN", "en", "ja"]) }),
-});
 const settingValueKindSchema = enumeration(["ratio", "duration", "count"]);
 const settingStorageUnitSchema = enumeration(["permille", "ms", "s", "min", "h", "d", "count"]);
-const deliveryTimingSettingsSnapshotSchema = object({
-  ...envelope("snapshot", "delivery_timing.settings.snapshot"),
+const quietClock = proactiveClockSchema;
+const quietHoursQuerySchema = object({
+  ...envelope("query", "quiet_hours.read"),
+  payload: object({}),
+});
+const quietHoursSnapshotSchema = object({
+  ...envelope("snapshot", "quiet_hours.snapshot"),
   payload: object({
-    items: array(
-      object({
-        key: machineString,
-        label: boundedString(80),
-        description: boundedString(240),
-        unit: boundedString(16),
-        kind: settingValueKindSchema,
-        storageUnit: settingStorageUnitSchema,
-        value: integer(0),
-        defaultValue: integer(0),
-        minimum: integer(0),
-        maximum: integer(0),
-        overridden: booleanValue,
-      }),
-    ),
-    revision: integer(0),
-    generatedAt: timestamp,
+    version: boundedString(64),
+    editable: booleanValue,
+    enabled: booleanValue,
+    start: nullable(quietClock),
+    end: nullable(quietClock),
+    classes: array(machineString),
+    rules: array(object({ ruleId: boundedString(64), summary: boundedString(2000) })),
   }),
 });
-const deliveryTimingSettingsChangeCommandSchema = object({
-  ...commandEnvelope("delivery_timing.settings.change"),
+const quietHoursSetCommandSchema = object({
+  ...commandEnvelope("quiet_hours.set"),
   payload: object({
-    expectedRevision: integer(0),
-    key: machineString,
-    value: nullable(integer(0)),
+    expectedVersion: boundedString(64),
+    enabled: booleanValue,
+    start: quietClock,
+    end: quietClock,
   }),
 });
 export const DEVICE_KINDS = ["iphone", "watch", "mac"] as const;
@@ -2400,6 +2406,14 @@ const memoryOverviewSnapshotSchema = object({
         sourceThreadId: nullable(machineString),
       }),
     ),
+    cancelled: array(
+      object({
+        reminderId: machineString,
+        text: boundedString(2000),
+        dueAt: timestamp,
+        repeat: enumeration(["none", "yearly"]),
+      }),
+    ),
     people: array(
       object({
         personId: machineString,
@@ -2534,7 +2548,7 @@ const memoryReminderRespondCommandSchema = object({
   ...commandEnvelope("memory.reminder.respond"),
   payload: object({
     reminderId: machineString,
-    action: enumeration(["dismiss", "snooze", "cancel"]),
+    action: enumeration(["dismiss", "snooze", "cancel", "restore"]),
   }),
 });
 const memoryReminderCreateCommandSchema = object({
@@ -2551,6 +2565,7 @@ export const OWNER_RULE_ACTIONS = [
   "reconfirm",
   "ask_first",
   "allow_directly",
+  "revoke",
 ] as const;
 export const BUILT_IN_ACTION_RULE_OUTCOMES = [
   "allow_preauthorized",
@@ -2596,6 +2611,18 @@ const memoryRulesSnapshotSchema = object({
         examplesHit: integer(0),
         examplesMiss: integer(0),
         askFirst: nullable(booleanValue),
+      }),
+    ),
+    allowances: array(
+      object({
+        allowanceId: machineString,
+        allowFor: enumeration(APPROVAL_ALLOWANCE_SCOPES),
+        title: boundedString(120),
+        operation: machineString,
+        recipients: array(boundedString(512)),
+        threadId: nullable(machineString),
+        expiresAt: nullable(timestamp),
+        createdAt: timestamp,
       }),
     ),
     generatedAt: timestamp,
@@ -3765,6 +3792,7 @@ export const streamEventV2Schema = object({
 const schemasByType = {
   "thread.message.submit": submitThreadMessageCommandSchema,
   "approval.respond": respondApprovalV2CommandSchema,
+  "approval.allowance.set": approvalAllowanceSetCommandSchema,
   "search.authorization.set": searchAuthorizationCommandSchema,
   "search.authorization.read": searchAuthorizationQuerySchema,
   "search.authorization.snapshot": searchAuthorizationSnapshotSchema,
@@ -3804,9 +3832,9 @@ const schemasByType = {
   "owner.preferences.read": ownerPreferencesQuerySchema,
   "owner.preferences.snapshot": ownerPreferencesSnapshotSchema,
   "owner.preferences.set": ownerPreferencesSetCommandSchema,
-  "delivery_timing.settings.read": deliveryTimingSettingsQuerySchema,
-  "delivery_timing.settings.snapshot": deliveryTimingSettingsSnapshotSchema,
-  "delivery_timing.settings.change": deliveryTimingSettingsChangeCommandSchema,
+  "quiet_hours.read": quietHoursQuerySchema,
+  "quiet_hours.snapshot": quietHoursSnapshotSchema,
+  "quiet_hours.set": quietHoursSetCommandSchema,
   "proposals.read": proposalsQuerySchema,
   "proposals.snapshot": proposalsSnapshotSchema,
   "proposal.respond": proposalRespondCommandSchema,

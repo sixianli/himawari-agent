@@ -5,6 +5,7 @@ import { createIntl } from "react-intl";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   BuiltInActionRulesSection,
+  OwnerAllowancesSection,
   OwnerRulesSection,
   RuleReceiptCard,
 } from "../src/components/rule-receipt.tsx";
@@ -13,6 +14,7 @@ import type { MessageId } from "../src/i18n/message-ids.ts";
 import { messages } from "../src/i18n/resources/zh-CN.ts";
 import {
   type BuiltInActionRule,
+  type OwnerAllowance,
   type OwnerRule,
   type PendingProposal,
   type PendingProposals,
@@ -126,6 +128,17 @@ const rule = (change: Partial<OwnerRule> = {}): OwnerRule => ({
   ...change,
 });
 
+const allowance = (change: Partial<OwnerAllowance> = {}): OwnerAllowance => ({
+  allowanceId: "allowance:0123456789abcdef",
+  allowFor: "days",
+  title: "回复 张三：周四下午 3 点可以",
+  operation: "send",
+  recipients: ["zhangsan@example.com"],
+  threadId: null,
+  expiresAt: "2026-11-18T00:00:00.000Z",
+  createdAt: "2026-11-11T00:00:00.000Z",
+  ...change,
+});
 const builtIn = (change: Partial<BuiltInActionRule> = {}): BuiltInActionRule => ({
   ruleId: "action_preauthorize_owner_data",
   revision: 1,
@@ -332,6 +345,7 @@ describe("[P2-3] standing rules on the web page", () => {
             payload: {
               rules: [rule()],
               builtIn: [builtIn()],
+              allowances: [allowance()],
               generatedAt: "2026-11-11T00:00:00.000Z",
             },
           }
@@ -348,6 +362,7 @@ describe("[P2-3] standing rules on the web page", () => {
       "owner:0123456789abcdef01234567",
     ]);
     expect(seen.model?.builtInRules).toEqual([builtIn()]);
+    expect(seen.model?.allowances).toEqual([allowance()]);
     await act(async () => {
       await seen.model?.respondRule("owner:0123456789abcdef01234567", "undo");
     });
@@ -426,6 +441,51 @@ describe("[P2-3] standing rules on the web page", () => {
     await show(
       h(BuiltInActionRulesSection, {
         memory: { builtInRules: [], respondRule, busy: false },
+        message,
+      }),
+    );
+    expect(container.textContent).toBe("");
+  });
+
+  it("[ADR-0285] lists the permissions the owner gave with their scope, and takes one back", async () => {
+    const respondRule = vi.fn(async () => true);
+    await show(
+      h(OwnerAllowancesSection, {
+        memory: {
+          allowances: [
+            allowance(),
+            allowance({
+              allowanceId: "allowance:fedcba9876543210",
+              allowFor: "this_task",
+              title: "改日历",
+              threadId: "thread-1",
+              expiresAt: null,
+            }),
+          ],
+          respondRule,
+          busy: false,
+        },
+        message,
+      }),
+    );
+    const text = container.textContent ?? "";
+    expect(text).toContain("你给过的同意 · 2 条");
+    expect(text).toContain("回复 张三：周四下午 3 点可以");
+    expect(text).toContain("到 ");
+    expect(text).toContain("只在那件事里");
+    const revoke = [...container.querySelectorAll("button")].find(
+      (button) =>
+        button.closest("[data-allowance]")?.getAttribute("data-allowance") ===
+        "allowance:fedcba9876543210",
+    );
+    await act(async () => revoke?.click());
+    expect(respondRule).toHaveBeenCalledWith("allowance:fedcba9876543210", "revoke");
+  });
+
+  it("[ADR-0285] REVERSE: nothing renders when no permission was given", async () => {
+    await show(
+      h(OwnerAllowancesSection, {
+        memory: { allowances: [], respondRule: vi.fn(async () => true), busy: false },
         message,
       }),
     );

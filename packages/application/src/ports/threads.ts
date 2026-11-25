@@ -67,6 +67,7 @@ export interface AdmitOwnerMessageInput {
   readonly occurredAt: string;
   readonly resultRef: PayloadRef;
   readonly authority: ProductAuthorityFence;
+  readonly internal?: true;
 }
 
 export interface CommitAssistantMessageInput {
@@ -277,6 +278,28 @@ export interface ThreadDetailSnapshot {
   readonly runs: readonly ThreadRunSummaryRecord[];
 }
 
+export interface ClaimMainThreadInput {
+  readonly ownerId: OwnerId;
+  readonly agentId: AgentId;
+  readonly threadId: ThreadId;
+  readonly claimedAt: string;
+}
+
+export interface PostAgentMessageInput {
+  readonly ownerId: OwnerId;
+  readonly agentId: AgentId;
+  readonly threadId: ThreadId;
+  readonly runId: RunId;
+  readonly messageId: MessageId;
+  readonly idempotencyKey: IdempotencyKey;
+  readonly semanticFingerprint: string;
+  readonly contentRef: PayloadRef;
+  readonly dataClassification: DataClassification;
+  readonly committedAt: string;
+  readonly resultRef: PayloadRef;
+  readonly authority: ProductAuthorityFence;
+}
+
 export interface ThreadRepositoryPort {
   /** Read metadata, paged messages and run states from one database snapshot. */
   readDetailSnapshot(query: ThreadDetailSnapshotQuery): Promise<ThreadDetailSnapshot | undefined>;
@@ -346,6 +369,19 @@ export interface ThreadRepositoryPort {
   resolveDeletionTask(input: ResolveThreadTaskInput): Promise<{
     impact: ThreadDeletionImpact;
     task: ThreadTaskBinding;
+    receipt: ThreadMutationReceipt;
+  }>;
+  readMain(ownerId: OwnerId, agentId: AgentId): Promise<ThreadId | undefined>;
+  claimMain(input: ClaimMainThreadInput): Promise<ThreadId>;
+  readRunThought(input: {
+    readonly ownerId: OwnerId;
+    readonly agentId: AgentId;
+    readonly threadId: ThreadId;
+    readonly runId: RunId;
+  }): Promise<{ readonly contentRef: PayloadRef } | undefined>;
+  postAgentMessage(input: PostAgentMessageInput): Promise<{
+    thread: ProductThread;
+    message: ProductThreadMessage;
     receipt: ThreadMutationReceipt;
   }>;
   requestDeletion(input: RequestThreadDeletionInput): Promise<{

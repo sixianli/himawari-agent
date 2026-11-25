@@ -130,9 +130,6 @@ export const messages = {
   "answer.copy": "回答をコピー",
   "answer.copied": "コピーしました",
   "answer.copyHint": "上の回答本文だけをコピーします（出典とファイルは含みません）",
-  "answer.fork": "新しい会話に分岐",
-  "answer.forkHint":
-    "このターンまでの内容をすべて引き継いで新しい会話に分岐します。元の会話はそのままです。",
   "fork.banner": "「{title}」の第 {turn} ターンから分岐",
   "fork.bannerMissing": "別の会話から分岐しました。元の会話はもうありません",
   "fork.openSource": "元の会話を開く",
@@ -185,6 +182,11 @@ export const messages = {
   "chat.search.enable": "ウェブ検索を許可",
   "chat.search.revoke": "ウェブ検索の許可を取り消す",
   "chat.allowOnce": "今回のみ許可",
+  "chat.allowance.legend": "この許可の有効範囲",
+  "chat.allowance.option":
+    "{scope, select, once {今回のみ} this_task {この件の中なら} days {{days} 日間} other {今後ずっと}}",
+  "chat.allowance.allow": "許可",
+  "chat.allowance.failed": "今回は許可しましたが、範囲を保存できませんでした。次回も確認します",
   "chat.allowAll": "{count} 件すべて許可",
   "chat.approval.batch":
     "このステップには同じ操作が {count} 件あります。一度の許可ですべて実行します。",
@@ -302,6 +304,7 @@ export const messages = {
   "chat.nextAction.failedBeforeAnyOperation":
     "このターンではツール操作を実行していません。そのまま再送信できます。",
   "appearance.theme": "テーマ",
+  "chat.main": "メインの会話",
   "chat.untitled": "新しい会話",
   "chat.latest": "最新に戻る",
   "chat.placeholder": "続けてどうぞ。ここまでの話はちゃんと覚えてるよ 🌻",
@@ -556,7 +559,6 @@ export const messages = {
   "improvements.title": "採用待ちの改善",
   "threads.draft": "メッセージ下書き",
   "threads.send": "送信",
-  "threads.new": "新しいスレッド",
   "threads.search": "スレッドを検索",
   "threads.messages": "確定済みメッセージ",
   "threads.rename": "名前を変更",
@@ -728,6 +730,11 @@ export const messages = {
   "memory.page.noUpcoming": "今後 60 日間の予定はありません。",
   "memory.page.yearly": "毎年",
   "memory.page.cancelled": "「{text}」の通知を止めました。記憶は残ります",
+  "memory.page.restored": "「{text}」をまた通知します",
+  "memory.page.restoreFailed":
+    "このリマインダーを戻せませんでした。しばらくしてからもう一度お試しください",
+  "memory.reminderRestore": "元に戻す",
+  "reminders.cancelledGroup": "最近取り消したもの",
   "memory.page.notify": "時間になったリマインダーは、通知をオンにしたデバイスに届きます。",
   "memory.page.lines": "{count} 件",
   "memory.page.less": "閉じる",
@@ -934,12 +941,18 @@ export const messages = {
   "rules.reconfirm": "再確認",
   "rules.undo": "取り消す",
   "rules.builtIn.title": "組み込みルール · {count} 件",
+  "rules.allowances.title": "これまでの許可 · {count} 件",
+  "rules.allowances.note":
+    "範囲内の同じ操作は確認しません。メールやウェブページなど外部の内容を読んだ後は、「日数」と「今後ずっと」は使われず、毎回確認します。",
+  "rules.allowances.scope":
+    "{scope, select, this_task {その件の中だけ} days {{until} まで} other {今後ずっと}}",
+  "rules.allowances.revoke": "取り消す",
   "rules.builtIn.note":
     "これらはプログラムに書き込まれたルールで、Himawari が自分で動く前にあなたに確認するかを決めます。それぞれに当てはまる例と当てはまらない例があり、ビルドのたびに全部確認します。「そのまま実行」のルールは毎回確認に切り替えられます。「確認する」「実行しない」のルールは安全の下限なので緩められません。",
   "rules.builtIn.name":
-    "{id, select, action_preauthorize_owner_data {あなた自身のデータの変更：そのまま実行} action_preauthorize_own_task_cancel {自分で始めたタスクの停止：そのまま実行} action_preauthorize_owner_intent_confirmed {外部の内容を読んだ後、あなた自身が明確に求めた操作：そのまま実行} action_ask_after_external_content {外部の内容を読んだ後の操作：先に確認} action_refuse_background_after_external_content {バックグラウンドで外部の内容を読んだ後の操作：実行しない} other {その他の組み込みルール}}",
+    "{id, select, action_preauthorize_owner_data {あなた自身のデータの変更：そのまま実行} action_preauthorize_own_task_cancel {自分で始めたタスクの停止：そのまま実行} action_preauthorize_owner_intent_confirmed {外部の内容を読んだ後、あなた自身が明確に求めた操作：そのまま実行} action_preauthorize_himawari_side_after_external_content {外部の内容を読んだ後、Himawari 自身の記録だけを変える操作：そのまま実行} action_ask_after_external_content {外部の内容を読んだ後の操作：先に確認} action_refuse_background_after_external_content {バックグラウンドで外部の内容を読んだ後の操作：実行しない（廃止）} other {その他の組み込みルール}}",
   "rules.builtIn.when":
-    "{id, select, action_preauthorize_owner_data {例：リマインダーの設定やルールの保存。取り消せて、誰にも送らず、リスクは中程度で、この会話でウェブページやタスク出力などの外部の内容を読んでいない場合。} action_preauthorize_own_task_cancel {例：Himawari が自分で始めたバックグラウンドタスクを止める。それ以外のタスクは対象外です。} action_preauthorize_owner_intent_confirmed {例：ウェブページを読んだ後に、あなた自身の言葉で頼んだリマインダー。意図確認が有効で確信が十分高いときだけそのまま実行し、それ以外はカードで確認します。} action_ask_after_external_content {例：ウェブページやタスク出力を読んだ後にリマインダーを設定したりルールを変えたりするとき、カードで確認します。} action_refuse_background_after_external_content {例：定期実行や外部イベントで始まった処理が外部の内容を読んだ後にルールを変えようとした場合、実行せずカードも出さず、何をしようとしたかだけを記録します。あなたが同意したタスクは例外で、カードで確認します。} other {}}",
+    "{id, select, action_preauthorize_owner_data {例：リマインダーの設定やルールの保存。取り消せて、誰にも送らず、リスクは中程度で、この会話でウェブページやタスク出力などの外部の内容を読んでいない場合。} action_preauthorize_own_task_cancel {例：Himawari が自分で始めたバックグラウンドタスクを止める。それ以外のタスクは対象外です。} action_preauthorize_owner_intent_confirmed {例：ウェブページを読んだ後に、あなた自身の言葉で頼んだリマインダー。意図確認が有効で確信が十分高いときだけそのまま実行し、それ以外はカードで確認します。} action_preauthorize_himawari_side_after_external_content {例：メールを読んだ後にリマインダーを設定したり、何かを記録したりするとき。Himawari 自身の記録だけを変え、取り消せて、誰にも送らないので、そのまま実行し、どのメールやウェブページがきっかけかを記録します。} action_ask_after_external_content {例：メール、ウェブページ、タスク出力を読んだ後に、カレンダーを変えたり、ルールを変えたり、外に送ったりするとき。あなたが始めた処理でもバックグラウンドの処理でも、カードで確認します。} action_refuse_background_after_external_content {廃止：外部の内容を読んだバックグラウンドの処理も、実行しないのではなくカードで確認するようになりました。} other {}}",
   "rules.builtIn.examples": "例：当てはまる {hit} 件、当てはまらない {miss} 件",
   "rules.builtIn.askFirst": "毎回確認する",
   "review.title": "記憶の修正後に再確認 · {count} 件",
