@@ -78,7 +78,7 @@ Andy 当天在审批线程的选择卡上选了"默认打开，从不问"。
 ## 关联文档
 
 - [ADR 0071：联网搜索和读网页改为可替换的供应商链](0071-replaceable-web-search-and-fetch-providers.md)（"供应商列表一变必须重新同意"在本 ADR 中保留）
-- [ADR 0079：并行只读工具和宿主侧网页工具](0079-parallel-read-only-tools-and-host-web-tools.md)
+- [ADR 0079：并行只读工具和宿主侧网页工具](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0079-parallel-read-only-tools-and-host-web-tools.md)
 - [ADR 0117：Magpie 经自有订阅路由模型](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0117-magpie-routes-models-through-owned-subscriptions.md)
 - [事故与门槛清单：I-29、I-34](../incidents-and-gates.md#incidents)
 - [工程案例库：案例 62](../engineering-casebook.md#case-approval-stall)

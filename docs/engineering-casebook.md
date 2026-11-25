@@ -342,7 +342,7 @@ Agent 能执行命令、改文件、联网。模型可能被网页里的恶意�
 
 **相关 ADR/PR**
 
-[ADR 0031](adr/0031-isolated-tool-execution.md)、[ADR 0054](adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md)、[ADR 0069](adr/0069-trust-unprotected-runtime-like-claude-code.md)、[ADR 0053](adr/0053-workspace-auto-approval-like-codex.md)。
+[ADR 0031](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0031-isolated-tool-execution.md)、[ADR 0054](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md)、[ADR 0069](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0069-trust-unprotected-runtime-like-claude-code.md)、[ADR 0053](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0053-workspace-auto-approval-like-codex.md)。
 
 **面试 30 秒版**
 
@@ -518,7 +518,7 @@ Andy 在生产里问“今天有什么新闻”，等了约 49 秒才看到完�
 
 **相关 ADR/PR**
 
-[ADR 0054 的预热补充](adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md#resident-prewarm)；提交 `0da0b59`；[PR #30](https://github.com/sixianli/himawari-agent/pull/30)（方案 B 将加入）。
+[ADR 0054 的预热补充](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md#resident-prewarm)；提交 `0da0b59`；[PR #30](https://github.com/sixianli/himawari-agent/pull/30)（方案 B 将加入）。
 
 **面试 30 秒版**
 
@@ -1221,7 +1221,7 @@ lessons 共 25 条；第十次上线中“复制操作包留旧名”达到第�
 
 **我们的方案**
 
-- 立即止血（第十一次上线）：把已经合并的 PR #30 上线。搜索和读网页改在服务进程里执行，不再进沙箱（[ADR 0079](adr/0079-parallel-read-only-tools-and-host-web-tools.md)），绕开了这次出事的路径。
+- 立即止血（第十一次上线）：把已经合并的 PR #30 上线。搜索和读网页改在服务进程里执行，不再进沙箱（[ADR 0079](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0079-parallel-read-only-tools-and-host-web-tools.md)），绕开了这次出事的路径。
 - 根因修复（单独的 PR）：在 `classify` 里加一条规则：Linux 上、隔离环境已释放、主机状态还是“运行中”且没记下进程退出、主机最近 1.5 秒内还在报告、还没到期限时，判成“清理中”（`exit_cleanup_pending`），继续等主机写结果；过了期限仍按失联处理。
 - 还没做：只读工具的结果变成“未知”时，直接把失败交给模型，而不是让整轮等到期限。
 
@@ -1251,7 +1251,7 @@ lessons 共 25 条；第十次上线中“复制操作包留旧名”达到第�
 
 **相关 ADR/PR**
 
-[ADR 0079](adr/0079-parallel-read-only-tools-and-host-web-tools.md)、[PR #30](https://github.com/sixianli/himawari-agent/pull/30)（搜索移出沙箱）；根因修复的 PR 见本案例所在的提交；相关：[案例 8](#case-search-toggle-spin)（同样是对话空转 5 分钟）、[案例 11](#case-tenth-deploy)。
+[ADR 0079](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0079-parallel-read-only-tools-and-host-web-tools.md)、[PR #30](https://github.com/sixianli/himawari-agent/pull/30)（搜索移出沙箱）；根因修复的 PR 见本案例所在的提交；相关：[案例 8](#case-search-toggle-spin)（同样是对话空转 5 分钟）、[案例 11](#case-tenth-deploy)。
 
 **面试 30 秒版**
 
@@ -1598,7 +1598,7 @@ Andy 决定不用 Bark 过渡，所有推送只走网页推送，并定下生产
 
 **相关 ADR/PR**
 
-[ADR 0085](adr/0085-remove-per-turn-system-gaps.md)；[ADR 0054 的预热补充](adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md#resident-prewarm)；[BL-20261024-006](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/backlog/BL-20261024-006-first-tool-call-cold-start.md)；[BL-20261001-002](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261001-002-回-到-同-步-写-入-快-的.md)；PR #44（已合并，合并提交 `f7b68a2`）；[ADR 0088](adr/0088-process-records-skip-disk-sync.md)（后续）。
+[ADR 0085](adr/0085-remove-per-turn-system-gaps.md)；[ADR 0054 的预热补充](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md#resident-prewarm)；[BL-20261024-006](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/backlog/BL-20261024-006-first-tool-call-cold-start.md)；[BL-20261001-002](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261001-002-回-到-同-步-写-入-快-的.md)；PR #44（已合并，合并提交 `f7b68a2`）；[ADR 0088](adr/0088-process-records-skip-disk-sync.md)（后续）。
 
 **面试 30 秒版**
 
@@ -1935,7 +1935,7 @@ Andy 在卡片上选了“加一个看图模型”。动手前我先查现有的
 
 **我们的方案**
 
-- 调用方收到最终结果后，停止心跳和 1.5 秒租约检查；Job Host 如果迟迟不退出，仍由原有的收尾期限 `cleanupTimeoutMs` 兜底（[ADR 0094](adr/0094-stop-job-host-supervision-after-final-result.md)，[PR #56](https://github.com/sixianli/himawari-agent/pull/56)）。
+- 调用方收到最终结果后，停止心跳和 1.5 秒租约检查；Job Host 如果迟迟不退出，仍由原有的收尾期限 `cleanupTimeoutMs` 兜底（[ADR 0094](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0094-stop-job-host-supervision-after-final-result.md)，[PR #56](https://github.com/sixianli/himawari-agent/pull/56)）。
 - 交回结果之前的规则不变：那时心跳发不出去说明 Job Host 已经不在，立刻清理整组。
 - 不改验收脚本。这次是验收脚本发现了真问题，放宽它只会把问题藏起来。
 - 这件事和 Pi（Himawari 依赖的开源 Agent 框架）无关，全部是 Himawari 自己的沙箱代码。
@@ -1974,7 +1974,7 @@ Andy 在卡片上选了“加一个看图模型”。动手前我先查现有的
 
 **相关 ADR/PR**
 
-[ADR 0094](adr/0094-stop-job-host-supervision-after-final-result.md)、[ADR 0031](adr/0031-isolated-tool-execution.md)、[ADR 0054](adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md)；[PR #56](https://github.com/sixianli/himawari-agent/pull/56)；相关：[案例 19](#case-sandbox-lost-race)（同样是沙箱收尾那几十毫秒里的状态判错）、[案例 25](#case-packet-generator)。
+[ADR 0094](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0094-stop-job-host-supervision-after-final-result.md)、[ADR 0031](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0031-isolated-tool-execution.md)、[ADR 0054](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md)；[PR #56](https://github.com/sixianli/himawari-agent/pull/56)；相关：[案例 19](#case-sandbox-lost-race)（同样是沙箱收尾那几十毫秒里的状态判错）、[案例 25](#case-packet-generator)。
 
 **面试 30 秒版**
 
@@ -2234,7 +2234,7 @@ Andy 在卡片上选了“加一个看图模型”。动手前我先查现有的
 
 **相关 ADR/PR**
 
-[ADR 0098](adr/0098-move-long-bash-commands-to-background.md)；PR #63；[BL-20261027-011](backlog/BL-20261027-011-background-command-live-output.md)、[BL-20261027-012](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261027-012-background-commands-outlive-turn.md)（已完成）；相关：[BL-20261016-003](backlog/BL-20261016-003-后-台-和-服-务-模-式-的.md)、[工具隔离架构](#case-tool-isolation)。
+[ADR 0098](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0098-move-long-bash-commands-to-background.md)；PR #63；[BL-20261027-011](backlog/BL-20261027-011-background-command-live-output.md)、[BL-20261027-012](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261027-012-background-commands-outlive-turn.md)（已完成）；相关：[BL-20261016-003](backlog/BL-20261016-003-后-台-和-服-务-模-式-的.md)、[工具隔离架构](#case-tool-isolation)。
 
 **面试 30 秒版**
 
@@ -2274,7 +2274,7 @@ Andy 定后台命令最长 30 分钟（原话“30 分钟”），随后要求�
 
 **根因**
 
-代码确认：沙箱里工作目录能不能写，取决于部署时封存的能力配置给每个工具开了哪些目录操作。`scripts/delivery-mode/packet-template/signing/cloud-seal.mjs` 给 `bash` 只封了 `["read"]`，沙箱据此把工作目录挂成只读（`packages/runtime-sandbox/src/policy.ts` 里“有任何非 read 操作才可写”）。而 [ADR 0053](adr/0053-workspace-auto-approval-like-codex.md) 当初的决定是参照 Codex `Auto` 模式，工作目录内读写和执行命令都默认允许。也就是说，封存配置比决定更严，两者从一开始就不一致，没有测试发现。
+代码确认：沙箱里工作目录能不能写，取决于部署时封存的能力配置给每个工具开了哪些目录操作。`scripts/delivery-mode/packet-template/signing/cloud-seal.mjs` 给 `bash` 只封了 `["read"]`，沙箱据此把工作目录挂成只读（`packages/runtime-sandbox/src/policy.ts` 里“有任何非 read 操作才可写”）。而 [ADR 0053](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0053-workspace-auto-approval-like-codex.md) 当初的决定是参照 Codex `Auto` 模式，工作目录内读写和执行命令都默认允许。也就是说，封存配置比决定更严，两者从一开始就不一致，没有测试发现。
 
 **我们的方案**
 
@@ -2282,7 +2282,7 @@ Andy 定后台命令最长 30 分钟（原话“30 分钟”），随后要求�
 - 每条直接在工作目录里执行的命令，Himawari 主进程在执行前后各扫一次工作目录（逐级打开目录、不跟随符号链接、不跨设备），对比出新建、修改、删除的文件；新建和修改的文件算 SHA-256 指纹。记录写进这次运行的持久记录，一句中文摘要（“工作目录改动：新建 a；修改 b”）附在命令结果末尾给模型看。
 - 崩溃恢复复用已保存的执行前快照和记录；执行前快照拍不出来就不执行命令；执行后对比失败，命令结果照常返回并写明“这次没能记录”。
 - 给模型的能力说明加一句：命令可以改工作目录、改动会留档、临时文件放 `$TMPDIR`。
-- 这一切都在 Himawari 自己的产品层，没有改 Pi（Himawari 依赖的开源 Agent 框架）。决定记在 [ADR 0097](adr/0097-bash-writes-workspace-with-change-ledger.md)。
+- 这一切都在 Himawari 自己的产品层，没有改 Pi（Himawari 依赖的开源 Agent 框架）。决定记在 [ADR 0097](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0097-bash-writes-workspace-with-change-ledger.md)。
 
 **方案讨论与备选**
 
@@ -2311,7 +2311,7 @@ Andy 定后台命令最长 30 分钟（原话“30 分钟”），随后要求�
 
 **相关 ADR/PR**
 
-[ADR 0097](adr/0097-bash-writes-workspace-with-change-ledger.md)、[ADR 0053](adr/0053-workspace-auto-approval-like-codex.md)；PR 见本分支 `claude/bash-workspace-write`。
+[ADR 0097](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0097-bash-writes-workspace-with-change-ledger.md)、[ADR 0053](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0053-workspace-auto-approval-like-codex.md)；PR 见本分支 `claude/bash-workspace-write`。
 
 **面试 30 秒版**
 
@@ -2425,7 +2425,7 @@ Andy 定后台命令最长 30 分钟（原话“30 分钟”），随后要求�
 
 **相关 ADR/PR**
 
-[ADR 0100](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0100-conversation-more-panel-files-and-background-commands.md)、[控制中心 Spec 的 v8 增补](execution/specs/2026-09-15-control-center-v4-design.md#v8-more-panel)、[实施计划](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-10-28-file-delivery-and-more-panel-plan.md)、[ADR 0091](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0091-chat-ui-v6-file-preview-and-sidebar.md)、[ADR 0097](adr/0097-bash-writes-workspace-with-change-ledger.md)；PR #63（后台命令）、本设计的文档 PR 见分支 `claude/project-thread-3hdzxk`。
+[ADR 0100](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0100-conversation-more-panel-files-and-background-commands.md)、[控制中心 Spec 的 v8 增补](execution/specs/2026-09-15-control-center-v4-design.md#v8-more-panel)、[实施计划](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-10-28-file-delivery-and-more-panel-plan.md)、[ADR 0091](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0091-chat-ui-v6-file-preview-and-sidebar.md)、[ADR 0097](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0097-bash-writes-workspace-with-change-ledger.md)；PR #63（后台命令）、本设计的文档 PR 见分支 `claude/project-thread-3hdzxk`。
 
 **面试 30 秒版**
 
@@ -3888,10 +3888,10 @@ Claude 让用户按主题看、改、删记忆，但没有告诉用户每轮实�
 第二次只读诊断导出了这一轮的 `sandbox.admission.timing` 日志：
 
 1. 11 次沙箱工具调用一共做了 77 次完整核对（`resolve`，确认这次执行仍被允许），合计 27.98 秒。其中宿主核验（核对沙箱程序、工作区和工具链文件没被替换、没被改权限）12.6 秒，每次平均 163 毫秒；授权判断 6.4 秒；读执行范围 2.9 秒；工作区身份 2.0 秒；部署快照 1.2 秒。
-2. 每次调用在 Worker（受限执行进程）启动前做 4 次，运行中再做约 3 次。[ADR 0078](adr/0078-authority-check-once-then-version-compare.md) 只让运行中的执行复用结果，准入和绑定每次完整重做，所以同一批文件在几秒内被查 7 遍。这是代码证据加日志数据确认的。
+2. 每次调用在 Worker（受限执行进程）启动前做 4 次，运行中再做约 3 次。[ADR 0078](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0078-authority-check-once-then-version-compare.md) 只让运行中的执行复用结果，准入和绑定每次完整重做，所以同一批文件在几秒内被查 7 遍。这是代码证据加日志数据确认的。
 3. 还没确认的：模型说完到第一次核对之间 0.5–2.5 秒、Worker 结束到结果交回模型之间约 2.1 秒，这两段没有任何分段日志，只能推断（流式事件逐条写盘、保存续跑点、写结果日志）。
 
-**我们的方案**（[ADR 0116](adr/0116-reuse-host-file-check-by-file-state.md)）
+**我们的方案**（[ADR 0116](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0116-reuse-host-file-check-by-file-state.md)）
 
 1. 服务进程里的宿主核验按“文件状态”复用最长 10 秒：每次先做不碰磁盘的计划核对，再用 `lstat` 并行读所有受检路径的设备号、inode 编号、权限、所有者（普通文件加大小和纳秒级时间），算成摘要；10 秒内同一摘要核验通过过就跳过重的检查。核验前后摘要一致、并且没有文件在 2 秒内刚被改过，才记下结果。
 2. 授权判断、读执行范围、工作区身份每次照常做；Worker 启动时自己的宿主核验也照常完整做。撤销授权的生效时间不变。
@@ -3921,7 +3921,7 @@ Claude 让用户按主题看、改、删记忆，但没有告诉用户每轮实�
 
 **相关 ADR/PR**
 
-[ADR 0116](adr/0116-reuse-host-file-check-by-file-state.md)、[ADR 0078](adr/0078-authority-check-once-then-version-compare.md)、[事故清单 I-25](incidents-and-gates.md#incidents)、[案例 4：授权核对太频繁](#case-authority-checks)、[案例 24：每轮系统空档](#case-run-gaps)；PR 在分支 `claude/project-thread-63bqwj`。
+[ADR 0116](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0116-reuse-host-file-check-by-file-state.md)、[ADR 0078](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0078-authority-check-once-then-version-compare.md)、[事故清单 I-25](incidents-and-gates.md#incidents)、[案例 4：授权核对太频繁](#case-authority-checks)、[案例 24：每轮系统空档](#case-run-gaps)；PR 在分支 `claude/project-thread-63bqwj`。
 
 **面试 30 秒版**
 
@@ -4167,7 +4167,7 @@ Andy 先要一个“隐私最好、价格最低”的方案。调研比较了 12
 
 模型真正“思考”的时间中位数只有 1.5 秒。
 
-**我们的方案**（[ADR 0119](adr/0119-conversation-speed-prewarm-on-tool-call-and-embedding-retry.md)）
+**我们的方案**（[ADR 0119](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0119-conversation-speed-prewarm-on-tool-call-and-embedding-retry.md)）
 
 1. Pi（Himawari 所基于的 Agent 框架）的流式事件里本来就有“工具调用开始”（`toolcall_start`），并带工具名。Himawari 的 Pi 适配层看到它就立即回调，服务对 `bash`、`write`、`edit` 调用 ADR 0054 留下的预热入口，同时启动两个会话，同一轮只一次。真正的调用照旧走完整准入，只复用已经启动的沙箱进程。
 2. 找记忆的向量请求第一次最多等 3 秒；超时记为“结果不确定”，用新的调用序号重新登记再发一次。3 秒取自 10-28 的 40 轮实测（第 90 百分位 2.29 秒）。
@@ -4223,7 +4223,7 @@ OpenAI 的“流式”Himawari 早已做到，但第一个字本身就要 5 秒�
 
 **相关 ADR/PR**
 
-[ADR 0119](adr/0119-conversation-speed-prewarm-on-tool-call-and-embedding-retry.md)、[ADR 0123](adr/0123-cut-off-embedding-attempt-charged-at-its-ceiling.md)、[ADR 0124](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0124-unknown-model-call-blocks-only-its-own-resend.md)、[ADR 0085](adr/0085-remove-per-turn-system-gaps.md)、[ADR 0117](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0117-magpie-routes-models-through-owned-subscriptions.md)、[事故清单 I-25、I-30、I-36、I-37](incidents-and-gates.md#incidents)、[案例 59：工具前后空等](#case-tool-gap-host-check)、[案例 24：每轮系统空档](#case-run-gaps)；PR 在分支 `claude/project-thread-jimoqj`。
+[ADR 0119](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0119-conversation-speed-prewarm-on-tool-call-and-embedding-retry.md)、[ADR 0123](adr/0123-cut-off-embedding-attempt-charged-at-its-ceiling.md)、[ADR 0124](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0124-unknown-model-call-blocks-only-its-own-resend.md)、[ADR 0085](adr/0085-remove-per-turn-system-gaps.md)、[ADR 0117](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0117-magpie-routes-models-through-owned-subscriptions.md)、[事故清单 I-25、I-30、I-36、I-37](incidents-and-gates.md#incidents)、[案例 59：工具前后空等](#case-tool-gap-host-check)、[案例 24：每轮系统空档](#case-run-gaps)；PR 在分支 `claude/project-thread-jimoqj`。
 
 **面试 30 秒版**
 
@@ -4423,7 +4423,7 @@ OpenAI 的“流式”Himawari 早已做到，但第一个字本身就要 5 秒�
 
 **我们的方案**
 
-见 [ADR 0125](adr/0125-streamed-tool-call-recorded-as-progress-not-snapshots.md)。
+见 [ADR 0125](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0125-streamed-tool-call-recorded-as-progress-not-snapshots.md)。
 
 1. 写参数的过程中，只存工具名、文件路径和“已写几行”，完整参数只在消息结束时存一次。
 2. 执行记录在写的过程中就生成“写入文件”这一步，并带上已写行数。
@@ -4457,7 +4457,7 @@ OpenAI 的“流式”Himawari 早已做到，但第一个字本身就要 5 秒�
 
 **相关 ADR/PR**
 
-[ADR 0125](adr/0125-streamed-tool-call-recorded-as-progress-not-snapshots.md)；[事故 I-39](incidents-and-gates.md#incidents)；[案例 63：简单问题也要 10 秒](#case-conversation-speed)；PR 在分支 `claude/project-thread-jimoqj`。
+[ADR 0125](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0125-streamed-tool-call-recorded-as-progress-not-snapshots.md)；[事故 I-39](incidents-and-gates.md#incidents)；[案例 63：简单问题也要 10 秒](#case-conversation-speed)；PR 在分支 `claude/project-thread-jimoqj`。
 
 **面试 30 秒版**
 
@@ -4588,7 +4588,7 @@ OpenAI 的“流式”Himawari 早已做到，但第一个字本身就要 5 秒�
 
 **我们的方案**
 
-见 [ADR 0127](adr/0127-settle-unknown-result-run-once-resources-released.md)。
+见 [ADR 0127](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0127-settle-unknown-result-run-once-resources-released.md)。
 
 1. 命令结果未知且全部沙箱记录都已释放时立刻收尾；仍有未释放资源时照旧等期限。
 2. 页面和推送写明“命令结果没确认，本轮已结束”，失败照常推送。
@@ -4621,7 +4621,7 @@ OpenAI 的“流式”Himawari 早已做到，但第一个字本身就要 5 秒�
 
 **相关 ADR/PR**
 
-[ADR 0127](adr/0127-settle-unknown-result-run-once-resources-released.md)；[事故 I-41](incidents-and-gates.md#incidents)；[案例 67](#case-silent-file-writing)。
+[ADR 0127](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0127-settle-unknown-result-run-once-resources-released.md)；[事故 I-41](incidents-and-gates.md#incidents)；[案例 67](#case-silent-file-writing)。
 
 **面试 30 秒版**
 
@@ -4629,7 +4629,7 @@ OpenAI 的“流式”Himawari 早已做到，但第一个字本身就要 5 秒�
 
 **后续（2026-10-31，日本时间）：“未查清”的原因查清了**
 
-案例里“命令为什么被记成退出未知”当时没有数据。第二十二版上线后同样的错误必现，我们才查到原因（[事故 I-50](incidents-and-gates.md#incidents)，[ADR 0139](adr/0139-prewarmed-environment-outlives-background-commands.md)）：命令根本没启动。预热提前建好的沙箱环境只给 5 分钟寿命，而 bash 命令的期限是 30 分钟，沙箱规定命令期限不能晚于环境期限，于是 bash 一到就被拒绝，被记成“结果不明”，整轮终止。
+案例里“命令为什么被记成退出未知”当时没有数据。第二十二版上线后同样的错误必现，我们才查到原因（[事故 I-50](incidents-and-gates.md#incidents)，[ADR 0139](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0139-prewarmed-environment-outlives-background-commands.md)）：命令根本没启动。预热提前建好的沙箱环境只给 5 分钟寿命，而 bash 命令的期限是 30 分钟，沙箱规定命令期限不能晚于环境期限，于是 bash 一到就被拒绝，被记成“结果不明”，整轮终止。
 
 - 怎么查的：让 Mac 线程分多步只读查询生产库——先看记录里的结果种类（SANDBOX_EXIT_UNKNOWN），再看每个序号的原因码（`SRT_ENVIRONMENT_DEADLINE_EXCEEDED`），最后对比所有环境记录的“创建后多少分钟到期”（预热上线后全是约 4.9 分钟，此前 34.7 或 60 分钟）。中间我读错过一次：以为记录里存的环境截止时间就是被比较的那个，实际它是绑定时从命令计划抄过来的，永远相等；真正比较的是环境自己的期限。数据来源：`prewarm-vs-bash-result.txt`、`observation-reasons-result.txt`。
 - 为什么上一次没查出：I-41 的修复把重心放在“收尾别等 30 分钟”，提交说明里写了“未查清”，但没有把它登记成要继续追的事；而且这个错误路径上所有日志都被吞掉了。这次补了四处日志。
@@ -4911,7 +4911,7 @@ OpenAI 的“流式”Himawari 早已做到，但第一个字本身就要 5 秒�
 
 用二分法确认，不是猜：对 `1704efc^` 和 `1704efc` 各跑 `late` 用例，前者通过，后者失败；交接里“前后都失败”是错的。机制：`1704efc` 让“结果未知”的轮次一旦沙箱释放就立刻收尾，而恢复循环先收尾、后认领“迟到结果恢复”，所以有结果可以恢复的轮次被抢先判了失败。收尾的候选查询只看“是否可收尾”，收尾时的检查又多要求“命令记录的截止时间与轮次一致”，两边不一致，于是抛错。R2-D3 的 4 条是旧断言“截止前保持等待”，`1704efc` 有意改掉了。PG-12 在云端容器里缺浏览器路径，设置环境变量后通过，不是代码问题。
 
-**我们的方案**（[ADR 0140](adr/0140-settle-early-only-without-recoverable-result.md)）
+**我们的方案**（[ADR 0140](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0140-settle-early-only-without-recoverable-result.md)）
 
 提前收尾只用于“没有可恢复结果”的轮次：直接复用恢复自己的判断，另外要求没有未决的模型调用；提前收尾后页面不再显示“重试清理”。R2-D3 的 4 条断言改成新行为。
 
@@ -4941,7 +4941,7 @@ OpenAI 的“流式”Himawari 早已做到，但第一个字本身就要 5 秒�
 
 **相关 ADR/PR**
 
-[ADR 0140](adr/0140-settle-early-only-without-recoverable-result.md)、[ADR 0127](adr/0127-settle-unknown-result-run-once-resources-released.md)、事故清单 I-51、[案例 70](#case-unknown-result-late-settle)。
+[ADR 0140](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0140-settle-early-only-without-recoverable-result.md)、[ADR 0127](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0127-settle-unknown-result-run-once-resources-released.md)、事故清单 I-51、[案例 70](#case-unknown-result-late-settle)。
 
 **面试 30 秒版**
 
@@ -4969,7 +4969,7 @@ OpenAI 的“流式”Himawari 早已做到，但第一个字本身就要 5 秒�
 - 第 2 种在生产出现过（I-39），当时没存“进程退出、管道关闭、退出码”三项事实，原因没查到；现在有日志，之后能查。
 - 各类断联在生产上的占比：未测量。
 
-**我们的方案**（[ADR 0141](adr/0141-tolerate-transient-broker-errors-while-polling-a-running-command.md)）
+**我们的方案**（[ADR 0141](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0141-tolerate-transient-broker-errors-while-polling-a-running-command.md)）
 
 - 保持“最多执行一次”：断联后不自动重跑命令。
 - 修第 3 种：只对明确的传输层错误（连接不可用、请求超时）重试，连续出错超过 10 秒才取消；其他错误（主服务明确拒绝、权限撤销、停止请求）仍立刻取消，不让停止被拖延。重试的只是读记录和写输出，命令本身一直在跑，不会被重新启动。
@@ -5000,7 +5000,7 @@ Temporal 与我们的差别在于：它的服务端检测不到 worker 崩溃，
 
 **相关 ADR/PR**
 
-[ADR 0141](adr/0141-tolerate-transient-broker-errors-while-polling-a-running-command.md)、[ADR 0139](adr/0139-prewarmed-environment-outlives-background-commands.md)、[ADR 0127](adr/0127-settle-unknown-result-run-once-resources-released.md)、[ADR 0098](adr/0098-move-long-bash-commands-to-background.md)、事故 I-39、I-41、I-50。
+[ADR 0141](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0141-tolerate-transient-broker-errors-while-polling-a-running-command.md)、[ADR 0139](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0139-prewarmed-environment-outlives-background-commands.md)、[ADR 0127](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0127-settle-unknown-result-run-once-resources-released.md)、[ADR 0098](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0098-move-long-bash-commands-to-background.md)、事故 I-39、I-41、I-50。
 
 **面试 30 秒版**
 
@@ -5082,7 +5082,7 @@ B 与 Anthropic 的做法同类，省约一半调用费，但这次数据里把�
 - ✅ Temporal（https://docs.temporal.io/encyclopedia/detecting-activity-failures ，2026-10-31 打开）：“The Temporal Server doesn't detect failures when a Worker loses communication with the Server or crashes.”；“For long-running Activities, we recommend using a relatively short Heartbeat Timeout and a frequent Heartbeat.”
 - ✅ Kubernetes 存活探针（https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/ ，2026-10-31 打开）：探针失败时 “the kubelet kills the container and restarts it.”
 
-**我们的方案**（[ADR 0144](adr/0144-log-commands-silent-for-30-seconds-without-stopping-them.md)）
+**我们的方案**（[ADR 0144](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0144-log-commands-silent-for-30-seconds-without-stopping-them.md)）
 
 Andy 看到“崩溃已有处理、生产没有卡住证据”后选了“只记录不杀”：主服务记下每条运行中命令最后一次收到执行进程消息的时间，超过 30 秒只写日志 `sandbox.command.silent`，恢复时写 `sandbox.command.silence_ended`，不停止命令。检查前先确认主服务自己的循环没有滞后（两次检查间隔超过 7 秒就重新计时）。测试：每 250 毫秒轮询、每 20 秒慢轮询、已结束的命令、主服务滞后都不报；停止轮询的运行中命令只报一次。
 
@@ -5098,7 +5098,7 @@ Andy 看到“崩溃已有处理、生产没有卡住证据”后选了“只记
 
 **相关 ADR/PR**
 
-[案例 77](#case-command-disconnect)、[ADR 0144](adr/0144-log-commands-silent-for-30-seconds-without-stopping-them.md)、[ADR 0141](adr/0141-tolerate-transient-broker-errors-while-polling-a-running-command.md)、[ADR 0127](adr/0127-settle-unknown-result-run-once-resources-released.md)、[ADR 0098](adr/0098-move-long-bash-commands-to-background.md)。
+[案例 77](#case-command-disconnect)、[ADR 0144](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0144-log-commands-silent-for-30-seconds-without-stopping-them.md)、[ADR 0141](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0141-tolerate-transient-broker-errors-while-polling-a-running-command.md)、[ADR 0127](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0127-settle-unknown-result-run-once-resources-released.md)、[ADR 0098](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0098-move-long-bash-commands-to-background.md)。
 
 **面试 30 秒版**
 
@@ -5313,7 +5313,7 @@ Himawari 在 Linux 上用 SRT（Anthropic 的沙箱运行库，底层是 bubblew
 
 **相关 ADR/PR**
 
-[ADR 0156](adr/0156-srt-0-0-81-with-a-locked-seccomp-helper.md)。
+[ADR 0156](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0156-srt-0-0-81-with-a-locked-seccomp-helper.md)。
 
 **面试 30 秒版**
 

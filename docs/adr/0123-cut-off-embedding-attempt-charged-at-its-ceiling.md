@@ -4,7 +4,7 @@ document_type: adr
 decision_status: accepted
 supersedes: ""
 superseded_by: ""
-amends: "docs/adr/0119-conversation-speed-prewarm-on-tool-call-and-embedding-retry.md"
+amends: "https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0119-conversation-speed-prewarm-on-tool-call-and-embedding-retry.md"
 date: "2026-10-30"
 covers: "apps/agent-service/src/production-run-memory.ts, packages/runtime-pi/src/pi-runtime-adapter.ts, packages/runtime-pi/test/model-accounting.unit.test.ts, test/integration/sqlite-model-budget-operations.test.ts"
 verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
@@ -32,7 +32,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 根因（真实 SQLite 测试复现，见[事故清单 I-37](../incidents-and-gates.md#incidents)）：
 
-1. [ADR 0119 第 2 条](0119-conversation-speed-prewarm-on-tool-call-and-embedding-retry.md#decision)把被掐断的那次请求记为“结果不确定”（`markUnknown`）。预算记账会因此把这一轮的预算账户（`model_budget_accounts`，按轮记账）标成“待对账”（`reconcile_required`）。
+1. [ADR 0119 第 2 条](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0119-conversation-speed-prewarm-on-tool-call-and-embedding-retry.md#decision)把被掐断的那次请求记为“结果不确定”（`markUnknown`）。预算记账会因此把这一轮的预算账户（`model_budget_accounts`，按轮记账）标成“待对账”（`reconcile_required`）。
 2. 重发用的是同一个调用位置（`logicalSlot`）。调用记录（`model_invocation_identities`）看到同一位置上有一条没结清的记录，就要求先对账（`replay`），重发直接失败（`EMBEDDING_RESULT_REQUIRES_RECONCILIATION`）。所以 #116 的“重发一次”在生产上从未成功过。
 3. 主对话随后申请模型调用，预算账户已是“待对账”，拒绝新的预留（`PORT_CONFLICT`：`Budget account is not available for a new allocation`）。Pi 运行适配器（`packages/runtime-pi/src/pi-runtime-adapter.ts`）把这个异常吞掉，只返回“准入失败”，日志里没有原因。
 
@@ -68,7 +68,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 ## 与 ADR 0119 的关系
 
-本 ADR 修改 [ADR 0119 第 2 条](0119-conversation-speed-prewarm-on-tool-call-and-embedding-retry.md#decision)中“超时就把这次记为‘结果不确定’”和“用新的调用序号（`ordinal` 2）重新登记”：改为按上限结清，并用新的调用位置。3 秒的时限、只重发一次、后台记忆整理不重发，这几点不变。
+本 ADR 修改 [ADR 0119 第 2 条](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0119-conversation-speed-prewarm-on-tool-call-and-embedding-retry.md#decision)中“超时就把这次记为‘结果不确定’”和“用新的调用序号（`ordinal` 2）重新登记”：改为按上限结清，并用新的调用位置。3 秒的时限、只重发一次、后台记忆整理不重发，这几点不变。
 
 [↑ 返回阅读导航](#contents)
 
@@ -97,7 +97,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 ## 关联文档
 
-- [ADR 0119：工具调用时预热沙箱、找记忆 3 秒重发](0119-conversation-speed-prewarm-on-tool-call-and-embedding-retry.md)
+- [ADR 0119：工具调用时预热沙箱、找记忆 3 秒重发](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0119-conversation-speed-prewarm-on-tool-call-and-embedding-retry.md)
 - [事故与门槛清单 I-37](../incidents-and-gates.md)
 - [工程案例库：案例 63](../engineering-casebook.md#case-conversation-speed)
 - PR #128

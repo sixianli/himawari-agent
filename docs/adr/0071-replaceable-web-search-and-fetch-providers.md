@@ -4,7 +4,7 @@ document_type: adr
 decision_status: accepted
 supersedes: ""
 superseded_by: ""
-amended_by: "docs/adr/0079-parallel-read-only-tools-and-host-web-tools.md"
+amended_by: "https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0079-parallel-read-only-tools-and-host-web-tools.md"
 date: "2026-10-24"
 covers: "apps/agent-service/src/web-tool-memory.ts, apps/agent-service/test/production-coding-workflow.unit.test.ts, apps/control-center/test/authorization-interactions.unit.test.ts, apps/execution-worker/test/program-secret-injection.unit.test.ts, packages/application/src/ports/web-providers.ts, packages/platform-node/src/deepseek-web-provider.ts, packages/platform-node/src/web-provider-chain.ts, packages/platform-node/test/web-provider-chain.unit.test.ts, test/integration/public-search-authorization.test.ts"
 verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"

@@ -4,7 +4,7 @@ document_type: adr
 decision_status: accepted
 supersedes: ""
 superseded_by: ""
-amends: "docs/adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md"
+amends: "https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md"
 date: "2026-10-26"
 covers: "apps/agent-service/src/production-titled-runtime.ts"
 verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
@@ -34,13 +34,13 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 从代码和日志查到的原因：
 
-1. **每轮开头都预热沙箱**（沙箱：用操作系统机制限制程序能访问的文件和网络的隔离环境）。日志里预热分别用了 4.9 秒和 7.5 秒，两轮里事件写入变慢、运行完成推迟的时间点，都紧跟在预热结束之后；颜色那轮根本没用工具。每轮结束时还要先停掉这个沙箱（约 1–2 秒），才提交回答。2026-10-26 起联网搜索已经不进沙箱（[ADR 0079](0079-parallel-read-only-tools-and-host-web-tools.md)），平时聊天和搜索基本用不到它。
+1. **每轮开头都预热沙箱**（沙箱：用操作系统机制限制程序能访问的文件和网络的隔离环境）。日志里预热分别用了 4.9 秒和 7.5 秒，两轮里事件写入变慢、运行完成推迟的时间点，都紧跟在预热结束之后；颜色那轮根本没用工具。每轮结束时还要先停掉这个沙箱（约 1–2 秒），才提交回答。2026-10-26 起联网搜索已经不进沙箱（[ADR 0079](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0079-parallel-read-only-tools-and-host-web-tools.md)），平时聊天和搜索基本用不到它。
 2. **调度器（取出待执行对话轮次并开始执行的循环）没人叫醒**。`ProductionRunDispatchLoop` 有 `wakeup()`，但整个产品代码里没有地方调用它，新消息和审批后的续跑都要等每秒一次的兜底扫描，每次白等 0–1 秒。
 3. **后台起标题拖住了整轮**。第一条回答文字出现时，后台会启动起标题、记忆写入、对话片段摘要和记忆整理四个模型调用；这些调用借用本轮的执行租约（证明“这一轮由谁执行”的凭证）登记，所以本轮在暂停或完成之前要等它们都登记好。但记忆写入要等起标题的模型调用**整个做完**才开始登记，新对话第一轮的确认卡片和“已完成”因此要多等一次模型调用。
 4. **找记忆和读档案先后进行**。上下文准备时先拼档案（`OwnerProfileService.compose`），再做记忆检索（含一次向量化网络调用），两者互不依赖。
 5. **每个流式事件都单独写一次进度检查点**。模型每吐一段字，协调器（`RunCoordinator`）要写事件内容、事件记录、进度检查点三次数据库提交，加上运行层自己保存的一次，共四次。生产数据库用 WAL 加 `synchronous = FULL`（每次提交都等数据落盘），而这台机器每次同步写入约 11.5–18.7 毫秒（[BL-20261001-002](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261001-002-回-到-同-步-写-入-快-的.md) 的实测），所以文字写进数据库会落后模型。进度检查点里流式期间变化的只有事件计数和最后事件编号，恢复逻辑并不依赖它们。
 
-Andy 2026-10-26 在沙箱方案文档里同意了“按对话复用沙箱、用到才启动、不再每轮预热”的方案 B（[ADR 0054 的 2026-10-26 补充](0054-readonly-tools-in-host-and-reused-task-sandbox.md#parallel-session-start)记了第一步，并写明“按对话复用和去掉每轮预热另行记录”）。他对过程区的要求（原话）：“每一步的时间一定一定要准确。因为如果不准确的话，就没办法从这个这一每一轮的这个过程里面看到主要的耗时。”
+Andy 2026-10-26 在沙箱方案文档里同意了“按对话复用沙箱、用到才启动、不再每轮预热”的方案 B（[ADR 0054 的 2026-10-26 补充](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md#parallel-session-start)记了第一步，并写明“按对话复用和去掉每轮预热另行记录”）。他对过程区的要求（原话）：“每一步的时间一定一定要准确。因为如果不准确的话，就没办法从这个这一每一轮的这个过程里面看到主要的耗时。”
 
 [↑ 返回阅读导航](#contents)
 
@@ -61,7 +61,7 @@ Andy 2026-10-26 在沙箱方案文档里同意了“按对话复用沙箱、用�
 
 ## 与 ADR 0054 的关系
 
-本 ADR 取代 [ADR 0054 的 2026-10-25 补充](0054-readonly-tools-in-host-and-reused-task-sandbox.md#resident-prewarm)里“Run 开始时预热”这一条；同一段里“同一 Run 重新认领租约不再换环境”的复用规则不变。ADR 0054 的[决定](0054-readonly-tools-in-host-and-reused-task-sandbox.md#decision)本身不变：命令和写入仍在沙箱里执行，同一轮复用一个沙箱。
+本 ADR 取代 [ADR 0054 的 2026-10-25 补充](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md#resident-prewarm)里“Run 开始时预热”这一条；同一段里“同一 Run 重新认领租约不再换环境”的复用规则不变。ADR 0054 的[决定](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md#decision)本身不变：命令和写入仍在沙箱里执行，同一轮复用一个沙箱。
 
 [↑ 返回阅读导航](#contents)
 
@@ -91,9 +91,9 @@ Andy 2026-10-26 在沙箱方案文档里同意了“按对话复用沙箱、用�
 
 ## 关联文档
 
-- [ADR 0054：只读文件工具在主进程执行，命令和写入复用任务沙箱](0054-readonly-tools-in-host-and-reused-task-sandbox.md)
-- [ADR 0079：同一轮的只读工具并行执行，联网搜索和读网页在服务进程执行](0079-parallel-read-only-tools-and-host-web-tools.md)
+- [ADR 0054：只读文件工具在主进程执行，命令和写入复用任务沙箱](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md)
+- [ADR 0079：同一轮的只读工具并行执行，联网搜索和读网页在服务进程执行](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0079-parallel-read-only-tools-and-host-web-tools.md)
 - [BL-20261024-006：每个 Run 第一次用工具要等 9–16 秒](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/backlog/BL-20261024-006-first-tool-call-cold-start.md)
 - [工程案例库：每轮回答里的系统空档](../engineering-casebook.md#case-run-gaps)
-- [ADR 0119：模型开始写工具调用时预热沙箱](0119-conversation-speed-prewarm-on-tool-call-and-embedding-retry.md#amendments)（2026-10-30，修改本 ADR 决定第 1 点的启动时机）
-- [SOURCE: docs/adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md#resident-prewarm]
+- [ADR 0119：模型开始写工具调用时预热沙箱](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0119-conversation-speed-prewarm-on-tool-call-and-embedding-retry.md#amendments)（2026-10-30，修改本 ADR 决定第 1 点的启动时机）
+- [SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md#resident-prewarm]

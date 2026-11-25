@@ -60,7 +60,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 ### 方案 B：每次运行时在沙箱里临时安装
 
-沙箱没有外网，命令用的是主机上的系统工具（[ADR 0055](0055-bash-uses-system-commands-in-sandbox.md)），装不了；即使能联网，每轮也要多等下载时间。不选。
+沙箱没有外网，命令用的是主机上的系统工具（[ADR 0055](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0055-bash-uses-system-commands-in-sandbox.md)），装不了；即使能联网，每轮也要多等下载时间。不选。
 
 ### 方案 C：只在系统提示里写一段长说明
 

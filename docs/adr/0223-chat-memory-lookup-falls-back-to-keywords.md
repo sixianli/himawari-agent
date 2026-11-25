@@ -41,7 +41,7 @@ ChatGPT 和 Claude 的记忆或检索出问题时，对话照常回答，不会�
 2. 生产把 `onVectorFailure` 接到 `retrievalDegradeRecorder`（`apps/agent-service/src/service-main.ts`，`apps/agent-service/src/production-decision-ledger.ts`），写一行 `kind = retrieval_degrade`、`outcome = degraded`、`reason_code = vector_search_unavailable`。
 3. 聊天路径整轮失败的直接原因在 `apps/agent-service/src/production-run-memory.ts`：检索层已经降级、拿到了关键词结果，这一层仍按记下的失败抛出 `CONTEXT_MEMORY_UNAVAILABLE` / `CONTEXT_MEMORY_QUOTA_EXCEEDED`，`run-coordinator.ts` 把它记为整轮失败（提交 e7d735cc 引入）。
 4. 同一文件里，运行内的嵌入请求（聊天每轮找记忆，以及模型调用的回忆工具，两者都在运行的作用域里）开始之后失败，记成“结果未知”（`markUnknown("transport_unresolved")`），整轮的预算账户随之变成 `reconcile_required`（`packages/persistence-sqlite/src/sqlite-model-budget-operations.ts` 的 `markUnknownWithinTransaction`）。提交 030f81f5 的说明说这会让同一次执行里接下来的对话模型调用被拒；实测不是这样：只删掉抛错、保留“结果未知”时，`[P3-2]` 用例里这一轮照样完成。真正受影响的是这次运行之后要重新领取执行权的时候：`sqlite-run-dispatch-operations.ts` 的 `assertRunBudgetDispatchable` 和待领取运行的查询都跳过账户为 `reconcile_required` 的运行，所以这一轮如果之后要等主人批准、或有排队的工具批次、或进程重启后要恢复，就再也领不到执行权，停在半路。
-5. 同一文件里已有按预估上限记账的先例：Gmail 检查路径的 `markUnknown` 把预估费用记进本次检查；嵌入 3 秒没回、重发之前，第一次请求按预估上限结清（[ADR 0119](0119-conversation-speed-prewarm-on-tool-call-and-embedding-retry.md)）。
+5. 同一文件里已有按预估上限记账的先例：Gmail 检查路径的 `markUnknown` 把预估费用记进本次检查；嵌入 3 秒没回、重发之前，第一次请求按预估上限结清（[ADR 0119](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0119-conversation-speed-prewarm-on-tool-call-and-embedding-retry.md)）。
 
 <a id="decision"></a>
 

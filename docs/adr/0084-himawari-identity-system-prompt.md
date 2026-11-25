@@ -71,7 +71,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ## 关联文档
 
 - [2026-09-11-native-runtime-history-design.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-11-native-runtime-history-design.md)
-- [SOURCE: docs/adr/0029-protected-native-runtime-history.md]
+- [SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0029-protected-native-runtime-history.md]
 - [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0081-isolated-instance-per-person.md]
 - [SOURCE: docs/engineering-casebook.md]
 - 案例：[工程案例库：系统提示开头一直是“编程助手”](../engineering-casebook.md#case-identity-prompt)
