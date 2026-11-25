@@ -1,10 +1,19 @@
 import SwiftUI
 
 public struct Wordmark: View {
-    private let height: CGFloat
+    private static let drawnFontSize: CGFloat = 32
+    private static let drawnBoxHeight: CGFloat = 48
 
-    public init(height: CGFloat = DesignTokens.Home.wordmarkHeight) {
-        self.height = height
+    private let size: CGFloat
+    private let lineHeight: CGFloat?
+
+    public init(size: CGFloat, lineHeight: CGFloat? = nil) {
+        self.size = size
+        self.lineHeight = lineHeight
+    }
+
+    public static func lineBox(size: CGFloat, lineHeight: CGFloat?) -> CGFloat {
+        lineHeight.map { size * $0 } ?? size * drawnBoxHeight / drawnFontSize
     }
 
     public var body: some View {
@@ -12,7 +21,8 @@ public struct Wordmark: View {
             .renderingMode(.template)
             .resizable()
             .scaledToFit()
-            .frame(height: height)
+            .frame(height: size * Self.drawnBoxHeight / Self.drawnFontSize)
+            .frame(height: Self.lineBox(size: size, lineHeight: lineHeight))
             .foregroundStyle(Color.hmText)
             .accessibilityLabel(Text(verbatim: "himawari"))
             .accessibilityAddTraits(.isHeader)

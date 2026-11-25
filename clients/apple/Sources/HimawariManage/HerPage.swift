@@ -189,7 +189,7 @@ struct HerHero: View {
                 SunflowerMark()
                     .frame(width: DesignTokens.Her.heroMark, height: DesignTokens.Her.heroMark)
             }
-            Wordmark(height: DesignTokens.Her.heroWordmarkHeight)
+            Wordmark(size: DesignTokens.Her.heroWordmarkSize)
         }
         .frame(maxWidth: .infinity)
         .padding(.top, DesignTokens.Her.heroPaddingTop)

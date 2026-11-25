@@ -101,15 +101,35 @@ it("generates every token and rejects themes that differ", () => {
   expect(() => parseColor("blue")).toThrow("DESIGN_TOKEN_COLOR_INVALID");
 });
 
+it("flattens one nested level and names value ranges by their ends", () => {
+  const swift = generate({
+    ...tokens,
+    avatar: {
+      size: 48,
+      fill: "color.speak",
+      busyGlow: { inset: -14, opacity: [0.45, 0.95], scale: [0.92, 1.14], easing: "ease-in-out" },
+    },
+    her: { pagePadding: [58, 16, 40] },
+  });
+  expect(swift).toContain("public enum Avatar {");
+  expect(swift).toContain("public static let size: CGFloat = 48");
+  expect(swift).toContain("public static let busyGlowInset: CGFloat = -14");
+  expect(swift).toContain("public static let busyGlowOpacityMin: CGFloat = 0.45");
+  expect(swift).toContain("public static let busyGlowScaleMax: CGFloat = 1.14");
+  expect(swift).toContain("public static let pagePaddingBottom: CGFloat = 40");
+  expect(swift).not.toContain("let fill: CGFloat");
+  expect(swift).not.toContain("busyGlowEasing");
+});
+
 it("fails when page code has a literal and when generated tokens are stale", async () => {
   const repo = await mkdtemp(path.join(os.tmpdir(), "himawari-apple-design-"));
   try {
     const apple = path.join(repo, "clients/apple");
     await mkdir(path.join(apple, "Sources/HimawariChat"), { recursive: true });
     await mkdir(path.join(apple, "Sources/HimawariDesign/Generated"), { recursive: true });
-    await mkdir(path.join(repo, "docs/assets/apple-clients/2026-11-12-v2"), { recursive: true });
+    await mkdir(path.join(repo, "docs/assets/apple-clients/2026-11-25-v4"), { recursive: true });
     await writeFile(
-      path.join(repo, "docs/assets/apple-clients/2026-11-12-v2/tokens.json"),
+      path.join(repo, "docs/assets/apple-clients/2026-11-25-v4/tokens.json"),
       JSON.stringify(tokens),
     );
     await writeFile(
@@ -130,7 +150,7 @@ it("fails when page code has a literal and when generated tokens are stale", asy
 
     await rm(path.join(apple, "Sources/HimawariChat/Bad.swift"));
     await writeFile(
-      path.join(repo, "docs/assets/apple-clients/2026-11-12-v2/tokens.json"),
+      path.join(repo, "docs/assets/apple-clients/2026-11-25-v4/tokens.json"),
       JSON.stringify({ ...tokens, radius: { card: 30 } }),
     );
     expect(checkDesign(apple, repo).problems.map((p) => p.code)).toEqual(["tokens-stale"]);
@@ -166,9 +186,9 @@ it("rejects literal colors and sizes in the Safari panel and keeps its token CSS
     const web = path.join(apple, "App/SafariExtension/Resources");
     await mkdir(web, { recursive: true });
     await mkdir(path.join(apple, "Sources/HimawariDesign/Generated"), { recursive: true });
-    await mkdir(path.join(repo, "docs/assets/apple-clients/2026-11-12-v2"), { recursive: true });
+    await mkdir(path.join(repo, "docs/assets/apple-clients/2026-11-25-v4"), { recursive: true });
     await writeFile(
-      path.join(repo, "docs/assets/apple-clients/2026-11-12-v2/tokens.json"),
+      path.join(repo, "docs/assets/apple-clients/2026-11-25-v4/tokens.json"),
       JSON.stringify(tokens),
     );
     await writeFile(

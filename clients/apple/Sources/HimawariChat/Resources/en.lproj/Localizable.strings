@@ -5,7 +5,6 @@
 "chat.queued.failed" = "Not sent";
 "chat.queued.retry" = "Retry";
 "chat.queued.discard" = "Discard";
-"chat.createFailed" = "Couldn't start a new chat. Try again later.";
 "common.ok" = "OK";
 "process.thinking" = "Thinking";
 "process.waiting" = "Waiting for your approval";
@@ -16,7 +15,6 @@
 "process.stopped" = "Stopped";
 "process.sheet.title" = "What it did";
 "process.sheet.close" = "Close";
-"chat.new.prompt" = "Go ahead, I’m listening";
 "chat.offline" = "Not connected. What you write will be sent once connected";
 "chat.queued.offline" = "Not sent. Will resend once connected";
 "chat.queued.retryNow" = "Resend now";

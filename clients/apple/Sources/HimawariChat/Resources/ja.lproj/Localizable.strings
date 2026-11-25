@@ -5,7 +5,6 @@
 "chat.queued.failed" = "送信できませんでした";
 "chat.queued.retry" = "再送";
 "chat.queued.discard" = "送らない";
-"chat.createFailed" = "新しい会話を作れませんでした。あとでもう一度試してください。";
 "common.ok" = "OK";
 "process.thinking" = "考え中";
 "process.waiting" = "承認待ち";
@@ -16,7 +15,6 @@
 "process.stopped" = "止めました";
 "process.sheet.title" = "やったこと";
 "process.sheet.close" = "閉じる";
-"chat.new.prompt" = "どうぞ、聞いています";
 "chat.offline" = "つながっていません。書いた内容はつながったら送ります";
 "chat.queued.offline" = "送れませんでした。つながったら自動で送り直します";
 "chat.queued.retryNow" = "今すぐ送り直す";

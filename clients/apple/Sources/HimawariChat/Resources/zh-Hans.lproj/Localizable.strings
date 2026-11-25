@@ -5,7 +5,6 @@
 "chat.queued.failed" = "没发出去";
 "chat.queued.retry" = "重发";
 "chat.queued.discard" = "不发了";
-"chat.createFailed" = "新对话没建成，稍后再试";
 "common.ok" = "好";
 "process.thinking" = "在想";
 "process.waiting" = "等你点头";
@@ -16,7 +15,6 @@
 "process.stopped" = "停了";
 "process.sheet.title" = "它做了什么";
 "process.sheet.close" = "关闭";
-"chat.new.prompt" = "说吧，我在听";
 "chat.offline" = "没连上，写的话连上后发";
 "chat.queued.offline" = "没发出去，连上后自动重发";
 "chat.queued.retryNow" = "现在重发";

@@ -262,10 +262,6 @@ public final class ChatStore {
         Task { await load(threadId) }
     }
 
-    public static func newRequestId() -> String {
-        OutgoingMessage.newId()
-    }
-
     public func newThread(requestId: String) async throws -> String {
         let created: CreatedThread
         do {

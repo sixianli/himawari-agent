@@ -70,14 +70,33 @@ export function generate(tokens) {
       throw new Error(`DESIGN_TOKEN_SHADOW_GEOMETRY_DIFFERS ${name}`);
   }
   lines.push("    }", "");
-  const scalars = (title, object, type = "CGFloat") => {
+  const flatten = (object) =>
+    Object.fromEntries(
+      Object.entries(object ?? {}).flatMap(([name, value]) =>
+        value && typeof value === "object" && !Array.isArray(value)
+          ? Object.entries(value).map(([inner, v]) => [
+              `${name}${inner[0].toUpperCase()}${inner.slice(1)}`,
+              v,
+            ])
+          : [[name, value]],
+      ),
+    );
+  const listSuffixes = (name, length) => {
+    if (/Padding$/u.test(name))
+      return {
+        2: ["Vertical", "Horizontal"],
+        3: ["Top", "Horizontal", "Bottom"],
+      }[length];
+    if (/(Opacity|Scale)$/u.test(name)) return { 2: ["Min", "Max"] }[length];
+    return { 2: ["Width", "Height"] }[length];
+  };
+  const scalars = (title, nested, type = "CGFloat") => {
+    const object = flatten(nested);
     lines.push(`    public enum ${title} {`);
-    for (const name of Object.keys(object ?? {}).sort()) {
+    for (const name of Object.keys(object).sort()) {
       const value = object[name];
       if (Array.isArray(value)) {
-        const suffixes = name.endsWith("Padding")
-          ? { 2: ["Vertical", "Horizontal"], 3: ["Top", "Horizontal", "Bottom"] }[value.length]
-          : { 2: ["Width", "Height"] }[value.length];
+        const suffixes = listSuffixes(name, value.length);
         if (!suffixes) throw new Error(`DESIGN_TOKEN_LIST_INVALID ${name}`);
         suffixes.forEach((suffix, index) => {
           lines.push(
@@ -105,6 +124,8 @@ export function generate(tokens) {
   scalars("Watch", tokens.watch ?? {});
   scalars("Chat", tokens.chat ?? {});
   scalars("Her", tokens.her ?? {});
+  scalars("Avatar", tokens.avatar ?? {});
+  scalars("Options", tokens.options ?? {});
   lines.push("    public enum TypeScale {");
   for (const name of Object.keys(tokens.type).sort()) {
     const value = tokens.type[name];

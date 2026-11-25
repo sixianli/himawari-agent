@@ -58,7 +58,7 @@ public struct MemoryRootView: View {
                 }
                 .padding(.horizontal, DesignTokens.Size.pagePaddingX)
                 .padding(.top, 14)
-                .padding(.bottom, DesignTokens.Size.fadeTabBar)
+                .padding(.bottom, DesignTokens.Size.sheetPaddingBottom)
             }
             .scrollIndicators(.hidden)
             .refreshable { await store.load() }

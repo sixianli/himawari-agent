@@ -191,7 +191,7 @@ struct MainThreadWaiting: View {
     let retry: () -> Void
 
     var body: some View {
-        VStack(spacing: DesignTokens.Chat.avatarGap) {
+        VStack(spacing: DesignTokens.Avatar.wordmarkGap) {
             HimawariAvatar(busy: !failed)
             if failed {
                 Button(action: retry) {
