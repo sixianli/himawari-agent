@@ -449,6 +449,14 @@ class TemplateTest(RenderedPacket):
             with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_HOST_UNKNOWN'):
                 packet_maker.load_instance('andy-production', 'root@host; rm -rf /')
 
+    def test_fd_pins_follow_the_target_architecture(self):
+        x64, arm = packet_maker.fd_parameters('x64'), packet_maker.fd_parameters('arm64')
+        self.assertEqual(x64, {key: TWELFTH[key] for key in ('FD_TRIPLE', 'FD_ARCHIVE_SHA256', 'FD_BINARY_SHA256')})
+        self.assertEqual(arm['FD_TRIPLE'], 'aarch64-unknown-linux-musl')
+        self.assertNotEqual(arm['FD_ARCHIVE_SHA256'], x64['FD_ARCHIVE_SHA256'])
+        with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_FD_NOT_PINNED'):
+            packet_maker.fd_parameters('riscv64')
+
     def test_a_unit_written_by_first_install_is_recognized(self):
         prefix = '/opt/himawari/releases/2026-11-25-0a1b2c3d'
         facts = production_facts(

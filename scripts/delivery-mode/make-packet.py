@@ -791,11 +791,22 @@ def python_material_sha(commit, arch):
     return artifact['sha256']
 
 
+FD_PINS = HERE / 'fd-pins.json'
+
+
+def fd_parameters(arch):
+    platform = json.loads(FD_PINS.read_text())['platforms'].get(arch)
+    if not isinstance(platform, dict) or not all(re.fullmatch(pattern, str(platform.get(key))) for key, pattern in (('triple', r'[a-z0-9_]+-unknown-linux-musl'), ('archiveSha256', r'[0-9a-f]{64}'), ('binarySha256', r'[0-9a-f]{64}'))):
+        refuse('PACKET_FD_NOT_PINNED', arch)
+    return {'FD_TRIPLE': platform['triple'], 'FD_ARCHIVE_SHA256': platform['archiveSha256'], 'FD_BINARY_SHA256': platform['binarySha256']}
+
+
 def builder_parameters(commit, discovered, settings):
     builder_hostname = settings['hostname']
     separate = builder_hostname != discovered['HOSTNAME']
     return {
         'PYTHON_SHA256': python_material_sha(commit, discovered['NODE_ARCH']),
+        **fd_parameters(discovered['NODE_ARCH']),
         'BUILDER_HOSTNAME': builder_hostname,
         'REHEARSAL_HOSTNAME': builder_hostname if separate else '',
     }
