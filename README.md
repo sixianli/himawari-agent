@@ -44,10 +44,10 @@ Agent Service ── 网关（HTTP 接口、事件流）
 
 几条贯穿全局的决定：
 
-- **产品状态以 SQLite 为准**，Pi 的会话只是运行时的投影（[ADR 0015](docs/adr/0015-product-state-over-pi-runtime-projection.md)、[ADR 0018](docs/adr/0018-sqlite-product-state-authority.md)）。
-- **授权在模型之外判断**，模型只能提出要做什么（[ADR 0004](docs/adr/0004-deterministic-authorization.md)、[ADR 0257](docs/adr/0257-consequential-tool-calls-go-through-one-authorization-exit.md)）。
-- **会执行代码的工具不在主进程里跑**，由 Worker 起沙箱执行（[ADR 0031](docs/adr/0031-isolated-tool-execution.md)、[ADR 0033](docs/adr/0033-process-sandbox-default-and-optional-containers.md)）。
-- **发给模型的内容只追加**，固定内容在前、每轮会变的在最后，让 KV 缓存命中（[ADR 0149](docs/adr/0149-append-only-model-requests.md)、[KV 缓存规范](docs/kv-cache-guide.md)）。
+- **产品状态以 SQLite 为准**，Pi 的会话只是运行时的投影（[ADR 0296](docs/adr/0296-foundational-architecture-principles.md)、[ADR 0296](docs/adr/0296-foundational-architecture-principles.md)）。
+- **授权在模型之外判断**，模型只能提出要做什么（[ADR 0296](docs/adr/0296-foundational-architecture-principles.md)、[ADR 0257](docs/adr/0257-consequential-tool-calls-go-through-one-authorization-exit.md)）。
+- **会执行代码的工具不在主进程里跑**，由 Worker 起沙箱执行（[ADR 0298](docs/adr/0298-where-tools-run.md)、[ADR 0298](docs/adr/0298-where-tools-run.md)）。
+- **发给模型的内容只追加**，固定内容在前、每轮会变的在最后，让 KV 缓存命中（[ADR 0303](docs/adr/0303-what-the-model-is-sent.md)、[KV 缓存规范](docs/kv-cache-guide.md)）。
 - **需要理解意思的判断交给模型**，程序只做格式、出处、额度这类固定校验，不用关键词表猜意思（[ADR 0249](docs/adr/0249-the-model-judges-meaning-where-word-lists-guessed-it.md)）。
 
 正在按新设计改的两块：一个主对话加后台子线程、所有新事情走同一个收件箱（[ADR 0285](docs/adr/0285-one-main-thread-subthreads-and-one-inbox.md)）；主模型自己读写记忆（[ADR 0286](docs/adr/0286-the-main-model-reads-and-writes-memory-itself.md)）。
@@ -98,12 +98,12 @@ npm run test:tooling   # 脚本和 CI 工具的测试
 
 iPhone App 在 Mac 上用 Xcode 构建；`HimawariCore` 的单元测试在 Linux 上也能跑（见 [clients/apple/README.md](clients/apple/README.md)）。
 
-CI 跑在 GitHub 的标准托管机器上（[ADR 0287](docs/adr/0287-ci-runs-on-github-hosted-runners.md)），检查清单在 `ci/policy.json`。
+CI 跑在 GitHub 的标准托管机器上（[ADR 0292](docs/adr/0292-how-ci-runs-now.md)），检查清单在 `ci/policy.json`。
 
 <a id="deploy"></a>
 ## 上线
 
-生产是一台 Linux 服务器。`scripts/delivery-mode/make-packet.py` 按参数生成上线包，`deploy.sh` 先做预检再上线，失败自动回滚（[ADR 0074](docs/adr/0074-claude-runs-production-deployments.md)、[ADR 0086](docs/adr/0086-generate-release-packets-from-parameters.md)）。
+生产是一台 Linux 服务器。`scripts/delivery-mode/make-packet.py` 按参数生成上线包，`deploy.sh` 先做预检再上线，失败时按上线包的设置保留现场或回滚（[交付模式](.agents/instructions/delivery-mode.md#fast-mode)、[ADR 0293](docs/adr/0293-how-production-deploys-work.md)）。
 
 <a id="docs"></a>
 ## 文档在哪

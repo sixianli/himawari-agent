@@ -5,6 +5,9 @@ import type {
   OwnerRuleScope,
   PayloadProtectorPort,
   PayloadStorePort,
+  ResultEntryRecord,
+  ResultGoneReason,
+  ResultNoticeRecord,
   RuntimeCustomToolDescriptor,
   RuntimeToolDescriptor,
   RuntimeToolInvocation,
@@ -15,16 +18,25 @@ import type {
 } from "@himawari-agent/application";
 import { highestClassification } from "@himawari-agent/application";
 import {
+  RESULT_BOARD_CHANGED,
+  RESULT_BOARD_GONE,
+  RESULT_BOARD_GONE_RETURNED,
+  RESULT_BOARD_GONE_STOPPED,
+  RESULT_BOARD_GONE_STUCK,
+  RESULT_BOARD_READY,
   renderPrompt,
   SUBTHREAD_BRIEF,
   SUBTHREAD_EVENT,
   SUBTHREAD_MESSAGES_PREFACE,
   TOOL_OPEN_SUBTHREAD,
+  TOOL_RECORD_RESULT,
   TOOL_RETURN_RESULT,
   TOOL_SEND_TO_SUBTHREAD,
   TOOL_STOP_SUBTHREAD,
   TOOL_TELL_MAIN,
+  TOOL_VIEW_RESULTS,
   TOOL_VIEW_SUBTHREAD,
+  TOOL_WAIT_RESULT,
 } from "@himawari-agent/prompt-catalog";
 import { classificationWithIdentifiers } from "@himawari-agent/sensitive-capture";
 import type { ContextExternalContent } from "./context-external-content.js";
@@ -46,9 +58,16 @@ export const MAIN_SUBTHREAD_TOOLS = [
   "stop_subthread",
   "view_subthread",
 ] as const;
-export const SUBTHREAD_SIDE_TOOLS = ["tell_main", "return_result"] as const;
+export const SUBTHREAD_SIDE_TOOLS = [
+  "tell_main",
+  "return_result",
+  "record_result",
+  "wait_result",
+] as const;
+export const SHARED_SUBTHREAD_TOOLS = ["view_results"] as const;
 export const SUBTHREAD_EVENT_KIND = "subthread";
 export const MAIN_NOTE_EVENT_KIND = "main_note";
+export const RESULT_BOARD_EVENT_KIND = "result_board";
 
 const FIELD_LIMIT = 4000;
 const RESULT_LIMIT = 8000;
@@ -58,6 +77,24 @@ const LIST_LIMIT = 30;
 const ITEMS_LIMIT = 30;
 const HISTORY_LIMIT = 100;
 const TELL_KINDS = ["progress", "question", "stuck"] as const;
+const RESULT_NAME_LIMIT = 64;
+const RESULT_SUMMARY_LIMIT = 300;
+const RESULT_BODY_LIMIT = 20_000;
+const RESULT_NAMES_PER_MATTER = 100;
+const RESULT_VERSIONS_PER_NAME = 20;
+const CATALOG_LIMIT = 50;
+const NOTICE_BATCH = 100;
+const LAYOUT_CHARACTERS = /[\p{Cc}\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/gu;
+
+export function oneLine(value: string): string {
+  return value.replace(LAYOUT_CHARACTERS, " ").replace(/\s+/gu, " ").trim();
+}
+
+const GONE_REASONS: Record<ResultGoneReason, string> = {
+  stopped: RESULT_BOARD_GONE_STOPPED.text,
+  returned: RESULT_BOARD_GONE_RETURNED.text,
+  stuck: RESULT_BOARD_GONE_STUCK.text,
+};
 
 const digest = (value: unknown, length = 32) =>
   createHash("sha256").update(JSON.stringify(value)).digest("hex").slice(0, length);
@@ -133,7 +170,21 @@ export function mainSubthreadDescriptors(): readonly RuntimeToolDescriptor[] {
       },
       true,
     ),
+    viewResultsDescriptor(true),
   ];
+}
+
+function viewResultsDescriptor(needsMatter: boolean): RuntimeToolDescriptor {
+  return descriptor("view_results", TOOL_VIEW_RESULTS.text, {
+    type: "object",
+    properties: {
+      matter: field(MATTER_LIMIT),
+      subthread: subthreadId,
+      name: field(RESULT_NAME_LIMIT * 4),
+    },
+    ...(needsMatter ? { required: ["matter"] } : {}),
+    additionalProperties: false,
+  });
 }
 
 export function subthreadSideDescriptors(): readonly RuntimeToolDescriptor[] {
@@ -159,12 +210,34 @@ export function subthreadSideDescriptors(): readonly RuntimeToolDescriptor[] {
           criteria: { ...items, minItems: 1 },
           outputs: items,
           open_issues: items,
+          results: {
+            type: "array",
+            items: field(RESULT_NAME_LIMIT * 4),
+            maxItems: ITEMS_LIMIT,
+          },
         },
         required: ["conclusion", "criteria"],
         additionalProperties: false,
       },
       true,
     ),
+    descriptor("record_result", TOOL_RECORD_RESULT.text, {
+      type: "object",
+      properties: {
+        name: field(RESULT_NAME_LIMIT * 4),
+        summary: field(RESULT_SUMMARY_LIMIT * 4),
+        body: field(RESULT_BODY_LIMIT),
+      },
+      required: ["name", "summary", "body"],
+      additionalProperties: false,
+    }),
+    viewResultsDescriptor(false),
+    descriptor("wait_result", TOOL_WAIT_RESULT.text, {
+      type: "object",
+      properties: { subthread: subthreadId, name: field(RESULT_NAME_LIMIT * 4) },
+      required: ["subthread", "name"],
+      additionalProperties: false,
+    }),
   ];
 }
 
@@ -196,6 +269,14 @@ export interface SubthreadInboxAttachment {
   readonly cancelThreadRuns?: (threadId: string) => Promise<void>;
 }
 
+function nameArgument(value: unknown): string {
+  if (typeof value !== "string") throw new SubthreadToolError("INPUT_INVALID");
+  const name = oneLine(value);
+  if (name.length === 0 || [...name].length > RESULT_NAME_LIMIT)
+    throw new SubthreadToolError("INPUT_INVALID");
+  return name;
+}
+
 export interface ProductionSubthreadsOptions {
   readonly ownerId: OwnerRuleScope["ownerId"];
   readonly agentId: OwnerRuleScope["agentId"];
@@ -216,6 +297,7 @@ type Result = { readonly value: unknown; readonly contentClassification?: DataCl
 export class ProductionSubthreads {
   readonly #options: ProductionSubthreadsOptions;
   #attached: SubthreadInboxAttachment | undefined;
+  #draining: Promise<void> = Promise.resolve();
 
   constructor(options: ProductionSubthreadsOptions) {
     this.#options = options;
@@ -227,6 +309,7 @@ export class ProductionSubthreads {
 
   attach(attachment: SubthreadInboxAttachment): void {
     this.#attached = attachment;
+    void this.drainNotices().catch(() => undefined);
   }
 
   registerSources(registry: InboxSourceRegistry): void {
@@ -241,6 +324,14 @@ export class ProductionSubthreads {
     registry.register({
       kind: MAIN_NOTE_EVENT_KIND,
       describe: "主对话",
+      externalContent: false,
+      fromOwner: false,
+      priority: 3,
+      verbatim: true,
+    });
+    registry.register({
+      kind: RESULT_BOARD_EVENT_KIND,
+      describe: "结果板",
       externalContent: false,
       fromOwner: false,
       priority: 3,
@@ -266,13 +357,72 @@ export class ProductionSubthreads {
     return subthread?.status === "open" ? subthread : undefined;
   }
 
-  subthreadMessage(events: readonly { readonly sourceRef: string; readonly text: string }[]) {
-    const notes = events.filter((event) => !event.sourceRef.startsWith("brief:"));
+  subthreadMessage(
+    events: readonly {
+      readonly sourceKind: string;
+      readonly sourceRef: string;
+      readonly text: string;
+    }[],
+  ) {
+    const board = events.filter((event) => event.sourceKind === RESULT_BOARD_EVENT_KIND);
+    const notes = events.filter(
+      (event) =>
+        event.sourceKind !== RESULT_BOARD_EVENT_KIND && !event.sourceRef.startsWith("brief:"),
+    );
     return [
       ...events.filter((event) => event.sourceRef.startsWith("brief:")).map((event) => event.text),
+      ...board.map((event) => event.text),
       ...(notes.length > 0 ? [SUBTHREAD_MESSAGES_PREFACE.text] : []),
       ...notes.map((event) => event.text),
     ].join("\n\n");
+  }
+
+  async drainNotices(): Promise<void> {
+    const inbox = this.#attached?.inbox;
+    if (!inbox) return;
+    const previous = this.#draining;
+    const turn = previous.then(() => this.#drain(inbox));
+    this.#draining = turn.catch(() => undefined);
+    await turn;
+  }
+
+  async #drain(inbox: Pick<ProductionInbox, "submit">): Promise<void> {
+    const main = await this.#options.mainThread.read();
+    for (;;) {
+      const notices = await this.#options.store.listResultNotices({
+        ...this.#scope,
+        limit: NOTICE_BATCH,
+      });
+      if (notices.length === 0) return;
+      for (const notice of notices) {
+        const submitted = await inbox.submit({
+          sourceKind: RESULT_BOARD_EVENT_KIND,
+          sourceRef: notice.id,
+          sourceVersion: "1",
+          summary: this.#noticeText(notice),
+          externalContent: notice.externalContent,
+          threadId: notice.receiverThreadId === main ? null : notice.receiverThreadId,
+        });
+        if (!submitted.accepted) throw new Error(`RESULT_NOTICE_REJECTED:${submitted.reason}`);
+        await this.#options.store.deleteResultNotice({ ...this.#scope, id: notice.id });
+      }
+      if (notices.length < NOTICE_BATCH) return;
+    }
+  }
+
+  #noticeText(notice: ResultNoticeRecord): string {
+    const values = {
+      subthread: notice.writerThreadId,
+      name: notice.name,
+      version: String(notice.version ?? ""),
+    };
+    if (notice.kind === "ready") return renderPrompt(RESULT_BOARD_READY, values);
+    if (notice.kind === "changed") return renderPrompt(RESULT_BOARD_CHANGED, values);
+    return renderPrompt(RESULT_BOARD_GONE, {
+      subthread: notice.writerThreadId,
+      name: notice.name,
+      reason: GONE_REASONS[notice.reason ?? "stopped"],
+    });
   }
 
   async run(invocation: RuntimeToolInvocation): Promise<Result> {
@@ -283,6 +433,7 @@ export class ProductionSubthreads {
     if (!conversation || (main && conversation.kind !== "main"))
       throw new SubthreadToolError("NOT_HERE");
     if (side && conversation.kind !== "subthread") throw new SubthreadToolError("NOT_HERE");
+    if (!main && !side && conversation.kind === "other") throw new SubthreadToolError("NOT_HERE");
     const args = invocation.arguments;
     switch (tool) {
       case "open_subthread":
@@ -297,6 +448,12 @@ export class ProductionSubthreads {
         return this.#tellMain(invocation, conversation.threadId, args);
       case "return_result":
         return this.#return(invocation, conversation.threadId, args);
+      case "record_result":
+        return this.#record(invocation, conversation.threadId, args);
+      case "view_results":
+        return this.#viewResults(invocation, conversation, args);
+      case "wait_result":
+        return this.#wait(invocation, conversation.threadId, args);
       default:
         throw new SubthreadToolError("INPUT_INVALID");
     }
@@ -457,6 +614,13 @@ export class ProductionSubthreads {
     const subthread = await this.#child(main, args["subthread"]);
     const text = textArgument(args["text"], FIELD_LIMIT);
     if (subthread.status !== "open") throw new SubthreadToolError("SUBTHREAD_CLOSED");
+    if (subthread.stuckAt !== null)
+      await this.#options.store.markStuck({
+        ...this.#scope,
+        threadId: subthread.threadId,
+        stuck: false,
+        now: this.#options.clock.now(),
+      });
     await this.#submit({
       kind: MAIN_NOTE_EVENT_KIND,
       sourceRef: `relay:${digest([invocation.runId, invocation.toolCallId])}`,
@@ -479,6 +643,7 @@ export class ProductionSubthreads {
         resultRef: null,
         now: this.#options.clock.now(),
       });
+    await this.drainNotices();
     await this.#attached?.cancelThreadRuns?.(subthread.threadId);
     return { value: { stopped: true, subthread: subthread.threadId } };
   }
@@ -581,6 +746,15 @@ export class ProductionSubthreads {
     const subthread = await this.open(threadId);
     if (!subthread) throw new SubthreadToolError("SUBTHREAD_CLOSED");
     const wake = kind !== "progress" || args["wake"] === true;
+    if (kind === "stuck") {
+      await this.#options.store.markStuck({
+        ...this.#scope,
+        threadId,
+        stuck: true,
+        now: this.#options.clock.now(),
+      });
+      await this.drainNotices();
+    }
     if (wake)
       await this.#submit({
         kind: SUBTHREAD_EVENT_KIND,
@@ -597,13 +771,30 @@ export class ProductionSubthreads {
     threadId: string,
     args: Readonly<Record<string, unknown>>,
   ): Promise<Result> {
-    onlyArguments(args, ["conclusion", "criteria", "outputs", "open_issues"]);
+    onlyArguments(args, ["conclusion", "criteria", "outputs", "open_issues", "results"]);
     const conclusion = textArgument(args["conclusion"], RESULT_LIMIT);
     const criteria = listArgument(args["criteria"], true);
     const outputs = listArgument(args["outputs"], false);
     const issues = listArgument(args["open_issues"], false);
+    if (args["results"] !== undefined && !Array.isArray(args["results"]))
+      throw new SubthreadToolError("INPUT_INVALID");
+    const results = [
+      ...new Set(((args["results"] as unknown[] | undefined) ?? []).map(nameArgument)),
+    ];
+    if (results.length > ITEMS_LIMIT) throw new SubthreadToolError("INPUT_INVALID");
     const subthread = await this.open(threadId);
     if (!subthread) throw new SubthreadToolError("SUBTHREAD_CLOSED");
+    const own = new Set(
+      (
+        await this.#options.store.listResults({
+          ...this.#scope,
+          parentThreadId: subthread.parentThreadId,
+          matter: subthread.matter,
+          writerThreadId: threadId,
+        })
+      ).map((entry) => entry.name),
+    );
+    if (results.some((name) => !own.has(name))) throw new SubthreadToolError("UNKNOWN_RESULT");
     const tasks = await this.#options.tasks.tasks(threadId);
     if (tasks.some((task) => task.status !== "completed" && task.status !== "deleted"))
       throw new SubthreadToolError("TASKS_OPEN");
@@ -613,6 +804,7 @@ export class ProductionSubthreads {
         criteria,
         ...(outputs.length > 0 ? { outputs } : {}),
         ...(issues.length > 0 ? { open_issues: issues } : {}),
+        ...(results.length > 0 ? { results } : {}),
       },
       null,
       2,
@@ -633,6 +825,172 @@ export class ProductionSubthreads {
       resultRef,
       now: this.#options.clock.now(),
     });
+    await this.drainNotices();
     return { value: { returned: true } };
+  }
+
+  async #record(
+    invocation: RuntimeToolInvocation,
+    threadId: string,
+    args: Readonly<Record<string, unknown>>,
+  ): Promise<Result> {
+    onlyArguments(args, ["name", "summary", "body"]);
+    const name = nameArgument(args["name"]);
+    if (typeof args["summary"] !== "string") throw new SubthreadToolError("INPUT_INVALID");
+    const summary = oneLine(args["summary"]);
+    if (summary.length === 0 || [...summary].length > RESULT_SUMMARY_LIMIT)
+      throw new SubthreadToolError("INPUT_INVALID");
+    const body = textArgument(args["body"], RESULT_BODY_LIMIT);
+    if (!(await this.open(threadId))) throw new SubthreadToolError("SUBTHREAD_CLOSED");
+    const key = digest([invocation.runId, invocation.toolCallId]);
+    const summaryRef = `result-summary:${key}`;
+    const bodyRef = `result-body:${key}`;
+    const classification = highestClassification("private", [
+      await this.#put(summaryRef, summary),
+      await this.#put(bodyRef, body),
+    ]);
+    const outcome = await this.#options.store.recordResult({
+      ...this.#scope,
+      writerThreadId: threadId,
+      name,
+      summaryRef,
+      bodyRef,
+      classification,
+      externalContent: await this.#marked(threadId),
+      maxNames: RESULT_NAMES_PER_MATTER,
+      maxVersions: RESULT_VERSIONS_PER_NAME,
+      now: this.#options.clock.now(),
+    });
+    if (outcome.outcome === "closed") throw new SubthreadToolError("SUBTHREAD_CLOSED");
+    if (outcome.outcome !== "recorded") throw new SubthreadToolError("RESULT_LIMIT");
+    await this.drainNotices();
+    return { value: { recorded: true, name, version: outcome.entry.version } };
+  }
+
+  async #board(
+    conversation: { readonly threadId: string; readonly kind: ConversationKind },
+    args: Readonly<Record<string, unknown>>,
+  ): Promise<{ readonly parentThreadId: string; readonly matter: string }> {
+    if (conversation.kind === "main") {
+      if (args["matter"] === undefined) throw new SubthreadToolError("INPUT_INVALID");
+      return {
+        parentThreadId: conversation.threadId,
+        matter: textArgument(args["matter"], MATTER_LIMIT).replace(/\s+/gu, " "),
+      };
+    }
+    const own = await this.#options.store.read({ ...this.#scope, threadId: conversation.threadId });
+    if (!own) throw new SubthreadToolError("NOT_HERE");
+    if (args["matter"] !== undefined && textArgument(args["matter"], MATTER_LIMIT) !== own.matter)
+      throw new SubthreadToolError("OTHER_MATTER");
+    return { parentThreadId: own.parentThreadId, matter: own.matter };
+  }
+
+  async #markFrom(readerThreadId: string, runId: string, entries: readonly ResultEntryRecord[]) {
+    for (const writer of new Set(
+      entries.filter((entry) => entry.externalContent).map((entry) => entry.writerThreadId),
+    ))
+      for (const { origin } of await this.#options.externalContent.readThread(writer))
+        await this.#options.externalContent.markThread(readerThreadId, runId as never, origin);
+  }
+
+  async #viewResults(
+    invocation: RuntimeToolInvocation,
+    conversation: { readonly threadId: string; readonly kind: ConversationKind },
+    args: Readonly<Record<string, unknown>>,
+  ): Promise<Result> {
+    onlyArguments(args, ["matter", "subthread", "name"]);
+    const board = await this.#board(conversation, args);
+    if (args["name"] !== undefined && args["subthread"] === undefined)
+      throw new SubthreadToolError("INPUT_INVALID");
+    let writer: string | null = null;
+    if (args["subthread"] !== undefined) {
+      if (typeof args["subthread"] !== "string") throw new SubthreadToolError("INPUT_INVALID");
+      const found = await this.#options.store.read({ ...this.#scope, threadId: args["subthread"] });
+      if (!found || found.parentThreadId !== board.parentThreadId || found.matter !== board.matter)
+        throw new SubthreadToolError("OTHER_MATTER");
+      writer = found.threadId;
+    }
+    if (writer !== null && args["name"] !== undefined) {
+      const name = nameArgument(args["name"]);
+      const found = await this.#options.store.readResult({
+        ...this.#scope,
+        readerThreadId: conversation.threadId,
+        writerThreadId: writer,
+        name,
+        now: this.#options.clock.now(),
+      });
+      if (!found) throw new SubthreadToolError("UNKNOWN_RESULT");
+      await this.#markFrom(conversation.threadId, invocation.runId, [found]);
+      return {
+        value: {
+          subthread: found.writerThreadId,
+          name: found.name,
+          version: found.version,
+          recorded_at: found.createdAt,
+          summary: (await this.#text(found.summaryRef)) ?? null,
+          body: (await this.#text(found.bodyRef)) ?? null,
+        },
+        contentClassification: found.classification as DataClassification,
+      };
+    }
+    const entries = await this.#options.store.listResults({
+      ...this.#scope,
+      ...board,
+      writerThreadId: writer,
+    });
+    const listed = entries.slice(0, CATALOG_LIMIT);
+    await this.#markFrom(conversation.threadId, invocation.runId, listed);
+    const rows = [];
+    for (const entry of listed)
+      rows.push({
+        subthread: entry.writerThreadId,
+        name: entry.name,
+        summary: (await this.#text(entry.summaryRef)) ?? null,
+        version: entry.version,
+        recorded_at: entry.createdAt,
+      });
+    return {
+      value: {
+        matter: board.matter,
+        results: rows,
+        ...(entries.length > listed.length ? { not_listed: entries.length - listed.length } : {}),
+      },
+      contentClassification: highestClassification(
+        "private",
+        listed.map((entry) => entry.classification as DataClassification),
+      ),
+    };
+  }
+
+  async #wait(
+    invocation: RuntimeToolInvocation,
+    threadId: string,
+    args: Readonly<Record<string, unknown>>,
+  ): Promise<Result> {
+    onlyArguments(args, ["subthread", "name"]);
+    if (typeof args["subthread"] !== "string" || args["subthread"].length === 0)
+      throw new SubthreadToolError("INPUT_INVALID");
+    const name = nameArgument(args["name"]);
+    if (!(await this.open(threadId))) throw new SubthreadToolError("SUBTHREAD_CLOSED");
+    const outcome = await this.#options.store.waitResult({
+      ...this.#scope,
+      waitId: `wait:${digest([invocation.runId, invocation.toolCallId])}`,
+      waiterThreadId: threadId,
+      writerThreadId: args["subthread"],
+      name,
+      now: this.#options.clock.now(),
+    });
+    switch (outcome.outcome) {
+      case "available":
+        return { value: { available: true, version: outcome.version } };
+      case "gone":
+        return { value: { unavailable: GONE_REASONS[outcome.reason] } };
+      case "waiting":
+        return { value: { waiting: true } };
+      case "cycle":
+        throw new SubthreadToolError("WAIT_CYCLE");
+      default:
+        throw new SubthreadToolError("OTHER_MATTER");
+    }
   }
 }

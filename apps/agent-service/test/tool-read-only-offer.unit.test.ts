@@ -42,6 +42,7 @@ describe("read-only tool offer", () => {
       "task_list",
       "tool_result_recall",
       "vault_list",
+      "view_results",
       "view_subthread",
       "web_fetch",
       "web_search",

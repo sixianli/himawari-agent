@@ -304,13 +304,47 @@ describe("subthreads opened by the main conversation", () => {
       } as never;
       return tool.startsWith("task_") ? tasks.run(invocation) : subthreads.run(invocation);
     };
-    const open = async (key = "dentist", words = "帮我比较三家东京的牙科诊所") => {
+    const open = async (
+      key = "dentist",
+      words = "帮我比较三家东京的牙科诊所",
+      matter = BRIEF.matter,
+    ) => {
       const said = await ownerSays(key, words);
       const opened = (await call(said.runId, "open_subthread", {
         ...BRIEF,
+        matter,
         owner_messages: [said.messageId],
       })) as { value: { subthread: string } };
       return { ...said, subthread: opened.value.subthread };
+    };
+    const started = async (threadId: string) => {
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        const delivered = await deliverOne().catch((error: unknown) => {
+          if (error instanceof Error && error.message.startsWith("delivery ended early"))
+            return undefined;
+          throw error;
+        });
+        if (!delivered) continue;
+        if (delivered.threadId === threadId) return delivered;
+        await finish(delivered.threadId, delivered.runId);
+        await delivered.handled;
+      }
+      throw new Error(`nothing delivered to ${threadId}`);
+    };
+    const settle = async (delivered: {
+      threadId: string;
+      runId: string;
+      handled: Promise<unknown>;
+    }) => {
+      await finish(delivered.threadId, delivered.runId);
+      await delivered.handled;
+    };
+    const lastMessage = async (runId: string) => {
+      const row = query<{ content_ref: string }>(
+        "SELECT content_ref FROM thread_messages WHERE run_id = ? ORDER BY sequence LIMIT 1",
+        runId,
+      )[0];
+      return (await text(row?.content_ref ?? "")) ?? "";
     };
     return {
       repository,
@@ -328,6 +362,9 @@ describe("subthreads opened by the main conversation", () => {
       ownerSays,
       call,
       open,
+      started,
+      settle,
+      lastMessage,
       cancelled,
     };
   }
@@ -559,5 +596,276 @@ describe("subthreads opened by the main conversation", () => {
     expect(f.query("SELECT external_content FROM inbox_events")).toEqual([{ external_content: 1 }]);
     expect(await f.subthreads.kindOfThread(main)).toBe("main");
     expect(await f.subthreads.kindOfThread(opened.value.subthread)).toBe("subthread");
+  });
+
+  it("shares a result through the board: the waiter wakes, reads it, and readers hear about a new version", async () => {
+    const f = await fixture();
+    const main = await f.mainThread.ensure();
+    const flight = await f.open("flight", "帮我订 12 月 3 日去大阪的机票", "大阪出差");
+    const dinner = await f.open("dinner", "再帮我订个餐馆", "大阪出差");
+    await f.finish(main, flight.runId);
+    await f.finish(main, dinner.runId);
+    const flightRun = await f.started(flight.subthread);
+    await f.settle(flightRun);
+    const dinnerRun = await f.started(dinner.subthread);
+    expect(
+      (await f.call(dinnerRun.runId, "view_results", {})) as { value: { results: unknown[] } },
+    ).toMatchObject({ value: { matter: "大阪出差", results: [] } });
+    expect(
+      await f.call(dinnerRun.runId, "wait_result", {
+        subthread: flight.subthread,
+        name: "落地时间",
+      }),
+    ).toEqual({ value: { waiting: true } });
+    expect(f.query("SELECT COUNT(*) AS n FROM result_board_waits")).toEqual([{ n: 1 }]);
+    await f.settle(dinnerRun);
+    expect(
+      await f.call(flightRun.runId, "record_result", {
+        name: "落地时间",
+        summary: "12 月 3 日 9:05 到关西机场",
+        body: "NH 99 羽田 7:30 起飞，关西 9:05 落地，确认号 ABC123",
+      }),
+    ).toEqual({ value: { recorded: true, name: "落地时间", version: 1 } });
+    expect(f.query("SELECT COUNT(*) AS n FROM result_board_waits")).toEqual([{ n: 0 }]);
+    expect(f.query("SELECT COUNT(*) AS n FROM result_board_notices")).toEqual([{ n: 0 }]);
+    const stored = f.query<Record<string, unknown>>("SELECT * FROM result_board_entries");
+    expect(JSON.stringify(stored)).not.toContain("关西");
+    const woke = await f.started(dinner.subthread);
+    const wakeText = await f.lastMessage(woke.runId);
+    expect(wakeText).toContain("你在等的结果到了");
+    expect(wakeText).toContain("落地时间");
+    expect(wakeText).not.toContain("关西");
+    expect(wakeText).not.toContain("以下是主对话发来的话");
+    const read = (await f.call(woke.runId, "view_results", {
+      subthread: flight.subthread,
+      name: "落地时间",
+    })) as { value: { body: string; version: number } };
+    expect(read.value).toMatchObject({ version: 1, body: expect.stringContaining("ABC123") });
+    await f.settle(woke);
+    await expect(f.call(flight.runId, "view_results", {})).rejects.toMatchObject({
+      code: "INPUT_INVALID",
+    });
+    const catalog = (await f.call(flight.runId, "view_results", { matter: "大阪出差" })) as {
+      value: { results: { subthread: string; name: string; summary: string; version: number }[] };
+    };
+    expect(catalog.value.results).toEqual([
+      {
+        subthread: flight.subthread,
+        name: "落地时间",
+        summary: "12 月 3 日 9:05 到关西机场",
+        version: 1,
+        recorded_at: "2026-11-25T00:00:00.000Z",
+      },
+    ]);
+    expect(JSON.stringify(catalog)).not.toContain("ABC123");
+    await f.call(flight.runId, "view_results", {
+      matter: "大阪出差",
+      subthread: flight.subthread,
+      name: "落地时间",
+    });
+    await f.call(flightRun.runId, "record_result", {
+      name: "落地时间",
+      summary: "改签：12 月 3 日 10:20 到关西机场",
+      body: "NH 101，关西 10:20 落地",
+    });
+    const changed = f.query<{ thread_id: string | null; source_kind: string }>(
+      "SELECT thread_id, source_kind FROM inbox_events WHERE outcome IS NULL AND source_kind = 'result_board' ORDER BY thread_id",
+    );
+    expect(changed).toEqual([
+      { thread_id: null, source_kind: "result_board" },
+      { thread_id: dinner.subthread, source_kind: "result_board" },
+    ]);
+    const nextForDinner = await f.started(dinner.subthread);
+    expect(await f.lastMessage(nextForDinner.runId)).toContain("现在是第 2 版");
+    await f.settle(nextForDinner);
+  });
+
+  it("REVERSE: refuses waits across matters and in a circle, and tells a waiter when the result can no longer come", async () => {
+    const f = await fixture();
+    const main = await f.mainThread.ensure();
+    const flight = await f.open("flight", "帮我订机票", "大阪出差");
+    const dinner = await f.open("dinner", "再订个餐馆", "大阪出差");
+    const hotel = await f.open("hotel", "再订个酒店", "大阪出差");
+    const other = await f.open("other", "顺便查牙医", "找牙医");
+    for (const said of [flight, dinner, hotel, other]) await f.finish(main, said.runId);
+    const runs = new Map<string, string>();
+    for (const opened of [flight, dinner, hotel, other]) {
+      const delivered = await f.started(opened.subthread);
+      runs.set(opened.subthread, delivered.runId);
+      await f.settle(delivered);
+    }
+    const run = (thread: string) => runs.get(thread) as string;
+    await expect(
+      f.call(run(dinner.subthread), "wait_result", { subthread: other.subthread, name: "x" }),
+    ).rejects.toMatchObject({ code: "OTHER_MATTER" });
+    await expect(
+      f.call(run(dinner.subthread), "wait_result", { subthread: dinner.subthread, name: "x" }),
+    ).rejects.toMatchObject({ code: "OTHER_MATTER" });
+    await expect(
+      f.call(run(dinner.subthread), "view_results", { subthread: other.subthread }),
+    ).rejects.toMatchObject({ code: "OTHER_MATTER" });
+    await f.call(run(dinner.subthread), "wait_result", {
+      subthread: flight.subthread,
+      name: "落地",
+    });
+    await f.call(run(flight.subthread), "wait_result", {
+      subthread: hotel.subthread,
+      name: "地址",
+    });
+    await expect(
+      f.call(run(hotel.subthread), "wait_result", { subthread: dinner.subthread, name: "店名" }),
+    ).rejects.toMatchObject({ code: "WAIT_CYCLE" });
+    await f.call(run(hotel.subthread), "tell_main", { kind: "stuck", text: "大阪那周全满了" });
+    const gone = await f.started(flight.subthread);
+    expect(await f.lastMessage(gone.runId)).toContain("那个子线程说做不下去了");
+    await f.settle(gone);
+    expect(
+      await f.call(run(flight.subthread), "wait_result", {
+        subthread: hotel.subthread,
+        name: "地址",
+      }),
+    ).toEqual({ value: { unavailable: "那个子线程说做不下去了" } });
+    await expect(
+      f.call(run(flight.subthread), "return_result", {
+        conclusion: "订好了",
+        criteria: ["有确认号"],
+        results: ["没记过的名字"],
+      }),
+    ).rejects.toMatchObject({ code: "UNKNOWN_RESULT" });
+    await f.call(run(flight.subthread), "return_result", {
+      conclusion: "订好了",
+      criteria: ["有确认号"],
+    });
+    const returned = await f.started(dinner.subthread);
+    expect(await f.lastMessage(returned.runId)).toContain("已经交回结果，没有记这一条");
+    await f.settle(returned);
+    expect(f.query("SELECT COUNT(*) AS n FROM result_board_waits")).toEqual([{ n: 0 }]);
+    expect(
+      await f.call(run(dinner.subthread), "wait_result", {
+        subthread: hotel.subthread,
+        name: "地址",
+      }),
+    ).toEqual({ value: { unavailable: "那个子线程说做不下去了" } });
+    await f.call(flight.runId, "send_to_subthread", {
+      subthread: hotel.subthread,
+      text: "换个区找",
+    });
+    expect(
+      await f.call(run(dinner.subthread), "wait_result", {
+        subthread: hotel.subthread,
+        name: "地址",
+      }),
+    ).toEqual({ value: { waiting: true } });
+    expect(
+      await f.call(run(dinner.subthread), "wait_result", {
+        subthread: flight.subthread,
+        name: "落地",
+      }),
+    ).toEqual({ value: { unavailable: "那个子线程已经交回结果，没有记这一条" } });
+    await f.call(flight.runId, "stop_subthread", {
+      subthread: hotel.subthread,
+      reason: "不住了",
+    });
+    const stopped = await f.started(dinner.subthread);
+    expect(await f.lastMessage(stopped.runId)).toContain("那个子线程被叫停了");
+    await f.settle(stopped);
+    await expect(
+      f.call(run(flight.subthread), "record_result", { name: "迟到", summary: "x", body: "x" }),
+    ).rejects.toMatchObject({ code: "SUBTHREAD_CLOSED" });
+  });
+
+  it("REVERSE: folds odd characters out of names, caps versions, and never stores result text in the clear", async () => {
+    const f = await fixture();
+    const main = await f.mainThread.ensure();
+    const flight = await f.open("flight", "帮我订机票", "大阪出差");
+    await f.finish(main, flight.runId);
+    const delivered = await f.started(flight.subthread);
+    await f.settle(delivered);
+    const odd = "落地\n时间\u202E\u0007 ";
+    const first = (await f.call(delivered.runId, "record_result", {
+      name: odd,
+      summary: "第一行\n第二行",
+      body: "正文",
+    })) as { value: { name: string } };
+    expect(first.value.name).toBe("落地 时间");
+    const catalog = (await f.call(delivered.runId, "view_results", {})) as {
+      value: { results: { name: string; summary: string }[] };
+    };
+    expect(catalog.value.results).toMatchObject([{ name: "落地 时间", summary: "第一行 第二行" }]);
+    const read = (await f.call(delivered.runId, "view_results", {
+      subthread: flight.subthread,
+      name: odd,
+    })) as { value: { body: string } };
+    expect(read.value.body).toBe("正文");
+    for (let version = 2; version <= 20; version += 1)
+      await f.call(delivered.runId, "record_result", {
+        name: "落地 时间",
+        summary: `第 ${version} 版`,
+        body: "正文",
+      });
+    await expect(
+      f.call(delivered.runId, "record_result", { name: "落地 时间", summary: "多一版", body: "x" }),
+    ).rejects.toMatchObject({ code: "RESULT_LIMIT" });
+    expect(f.query("SELECT COUNT(*) AS n FROM result_board_entries")).toEqual([{ n: 20 }]);
+    const refs = f.query<{ summary_ref: string; body_ref: string }>(
+      "SELECT summary_ref, body_ref FROM result_board_entries",
+    );
+    expect(JSON.stringify(f.query("SELECT * FROM result_board_entries"))).not.toContain("正文");
+    expect(await f.text(refs[0]?.body_ref ?? "")).toBe("正文");
+  });
+
+  it("carries the writer's outside-content mark to whoever reads its result, and not otherwise", async () => {
+    const f = await fixture();
+    const main = await f.mainThread.ensure();
+    const mail = await f.open("mail", "看邮件里说的航班", "大阪出差");
+    const plain = await f.open("plain", "查天气", "大阪出差");
+    const reader = await f.open("reader", "订餐馆", "大阪出差");
+    for (const said of [mail, plain, reader]) await f.finish(main, said.runId);
+    const runs = new Map<string, string>();
+    for (const opened of [mail, plain, reader]) {
+      const delivered = await f.started(opened.subthread);
+      runs.set(opened.subthread, delivered.runId);
+      await f.settle(delivered);
+    }
+    const run = (thread: string) => runs.get(thread) as string;
+    await f.externalContent.markThread(
+      mail.subthread,
+      createRunId(run(mail.subthread)),
+      "external_event:mail",
+    );
+    await f.call(run(reader.subthread), "wait_result", {
+      subthread: plain.subthread,
+      name: "天气",
+    });
+    await f.call(run(plain.subthread), "record_result", {
+      name: "天气",
+      summary: "晴",
+      body: "晴，最高 15 度",
+    });
+    expect(
+      f.query<{ external_content: number }>(
+        "SELECT external_content FROM inbox_events WHERE source_kind = 'result_board'",
+      ),
+    ).toEqual([{ external_content: 0 }]);
+    const woke = await f.started(reader.subthread);
+    await f.settle(woke);
+    expect(await f.externalContent.readThread(reader.subthread)).toEqual([]);
+    await f.call(run(mail.subthread), "record_result", {
+      name: "航班",
+      summary: "邮件说改乘 NH 101",
+      body: "邮件正文摘录",
+    });
+    expect(
+      (
+        (await f.call(run(reader.subthread), "view_results", { subthread: plain.subthread })) as {
+          value: { results: unknown[] };
+        }
+      ).value.results,
+    ).toHaveLength(1);
+    expect(await f.externalContent.readThread(reader.subthread)).toEqual([]);
+    await f.call(run(reader.subthread), "view_results", {});
+    expect(
+      (await f.externalContent.readThread(reader.subthread)).map(({ origin }) => origin),
+    ).toEqual(["external_event:mail"]);
   });
 });

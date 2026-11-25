@@ -2330,6 +2330,7 @@ it("[ADR-0257] only the listing, recall, conversation, mail, perception and vaul
     "memory_open",
     "mail_read",
     "view_subthread",
+    "view_results",
     "task_list",
     "task_get",
     "reminder_list",
@@ -2347,6 +2348,7 @@ it("[ADR-0257] only the listing, recall, conversation, mail, perception and vaul
     "device_action",
     "offer_options",
     "open_subthread",
+    "record_result",
     "reminder_cancel",
     "reminder_set",
     "return_result",
@@ -2358,8 +2360,9 @@ it("[ADR-0257] only the listing, recall, conversation, mail, perception and vaul
     "task_update",
     "tell_main",
     "tell_owner",
+    "wait_result",
   ]);
-  expect(builtin).toHaveLength(27);
+  expect(builtin).toHaveLength(30);
 });
 
 it("[ADR-0285] gives the main conversation the subthread tools and a subthread its own, without tell_owner", async () => {
@@ -2396,15 +2399,26 @@ it("[ADR-0285] gives the main conversation the subthread tools and a subthread i
       "send_to_subthread",
       "stop_subthread",
       "view_subthread",
+      "view_results",
       ...plan,
     ]),
   );
-  expect(main).not.toContain("tell_main");
-  expect(main).not.toContain("return_result");
-  expect(sub).toEqual(expect.arrayContaining(["tell_main", "return_result", ...plan]));
+  for (const name of ["tell_main", "return_result", "record_result", "wait_result"])
+    expect(main).not.toContain(name);
+  expect(sub).toEqual(
+    expect.arrayContaining([
+      "tell_main",
+      "return_result",
+      "record_result",
+      "view_results",
+      "wait_result",
+      ...plan,
+    ]),
+  );
   for (const name of ["tell_owner", "offer_options", "open_subthread", "send_to_subthread"])
     expect(sub).not.toContain(name);
-  for (const name of ["open_subthread", "tell_main", ...plan]) expect(other).not.toContain(name);
+  for (const name of ["open_subthread", "tell_main", "view_results", ...plan])
+    expect(other).not.toContain(name);
   expect(other).toContain("tell_owner");
   expect(await names("run:main")).toEqual(main);
 });

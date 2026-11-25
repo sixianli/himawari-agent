@@ -87,7 +87,8 @@ grant_validator = importlib.util.module_from_spec(grant_spec)
 grant_spec.loader.exec_module(grant_validator)
 grant_binding = grant_validator.bind_existing_grant(frozen, s0)
 authorization = {'directoryGrants': grant_binding['authorizedDirectoryGrants'], 'capabilities': grant_binding['capabilities']}
-if len(authorization['directoryGrants']) != 1 or len(authorization['capabilities']) != 3 or {entry['capabilityRef'] for entry in authorization['capabilities']} != {'himawari.pi-coding', 'himawari.public-search', 'himawari.public-fetch'}:
+new_capability_refs = __PKT_NEW_CAPABILITY_REFS_JSON__
+if len(authorization['directoryGrants']) != 1 or len(authorization['capabilities']) != 3 - len(new_capability_refs) or {entry['capabilityRef'] for entry in authorization['capabilities']} != {'himawari.pi-coding', 'himawari.public-search', 'himawari.public-fetch'} - set(new_capability_refs):
     raise RuntimeError('FROZEN_COMPLETE_AUTHORIZATION_REQUIRED')
 authorized_roots = {}
 for grant in authorization['directoryGrants']:
@@ -101,6 +102,14 @@ for observed in authorization['capabilities']:
     if observed['hostId'] != host_id or observed['runtimeRoot'] != frozen['paths']['oldPrefix'] + '/lib/himawari-agent' or not observed['workerInstanceId']:
         raise RuntimeError('OLD_APPROVED_RUNTIME_IDENTITY_CHANGED')
 worker_ids = {entry['workerInstanceId'] for entry in authorization['capabilities']}
+if not authorization['capabilities']:
+    configuration_bytes = read(Path('/etc/himawari/config.json'), 0)
+    if sha(configuration_bytes) != grant_binding['originalConfigurationSha256']:
+        raise RuntimeError('ORIGINAL_CONFIGURATION_CHANGED')
+    route_worker = (json.loads(configuration_bytes).get('runPolicy', {}).get('coding') or {}).get('workerInstanceId')
+    if not isinstance(route_worker, str) or not route_worker:
+        raise RuntimeError('FIRST_TOOLS_WORKER_IDENTITY_REQUIRED')
+    worker_ids = {route_worker}
 if len(worker_ids) != 1:
     raise RuntimeError('OLD_APPROVED_WORKER_IDENTITY_AMBIGUOUS')
 worker_instance_id = worker_ids.pop()

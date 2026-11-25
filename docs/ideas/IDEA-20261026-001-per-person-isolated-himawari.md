@@ -16,7 +16,7 @@ superseded_by: ""
 
 ## Core Ideas
 
-> 2026-11-11 更新：这份记录写于 ADR 0081/0083 时代，下面的“每人一个独立实例”已被 [SOURCE: docs/adr/0234-one-program-per-person-database-file.md] 取代，现行做法是一个程序、每人一个数据库文件，跟踪在 [SOURCE: docs/backlog/BL-20261026-003-isolated-instance-per-person.md]。
+> 2026-11-11 更新：这份记录写于 ADR 0081/0083 时代，下面的“每人一个独立实例”已被 [SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0234-one-program-per-person-database-file.md] 取代，现行做法是一个程序、每人一个数据库文件，跟踪在 [SOURCE: docs/backlog/BL-20261026-003-isolated-instance-per-person.md]。
 
 Andy 想把 Himawari 分享给老婆、朋友，最终可能是任何人使用，每个人的对话、记忆和个人数据彼此完全隔离（常说的多租户，即一套系统服务多个互相隔离的用户）。评估结论（2026-10-26）：做成“每人一个只属于自己的 Himawari”，而不是多人共用一份记忆；与 PRD v0.1 的“如果未来提供多用户托管服务，每位用户拥有彼此隔离的私人 Agent”一致。建议分步：先为老婆和 1-2 位朋友各开一个独立实例（每人独立的 stateRoot、数据库文件、密钥目录、服务进程和登录账号，业界称 silo 模型）；用户超过约 5 人或分别上线成为负担时，再把单实例改为按 owner_id 隔离（pool 模型）；对陌生人开放注册的 SaaS 暂不做。评估文档：https://claude.ai/artifact/77cUajUv5MWWHHMH8m2g1N
 
