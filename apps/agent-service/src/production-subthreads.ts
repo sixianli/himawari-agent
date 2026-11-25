@@ -16,7 +16,8 @@ import type {
   ThreadCommandService,
   ThreadRepositoryPort,
 } from "@himawari-agent/application";
-import { highestClassification } from "@himawari-agent/application";
+import { classificationRank, highestClassification } from "@himawari-agent/application";
+import type { ThreadBackgroundWork } from "@himawari-agent/gateway-contracts";
 import {
   RESULT_BOARD_CHANGED,
   RESULT_BOARD_GONE,
@@ -26,8 +27,13 @@ import {
   RESULT_BOARD_READY,
   renderPrompt,
   SUBTHREAD_BRIEF,
+  SUBTHREAD_BUDGET_REACHED,
+  SUBTHREAD_CONTINUE,
+  SUBTHREAD_CONTINUE_CUT_OFF,
+  SUBTHREAD_CONTINUE_PLAN_OPEN,
   SUBTHREAD_EVENT,
   SUBTHREAD_MESSAGES_PREFACE,
+  SUBTHREAD_STATUS_BOARD_HEADER,
   TOOL_OPEN_SUBTHREAD,
   TOOL_RECORD_RESULT,
   TOOL_RETURN_RESULT,
@@ -68,6 +74,8 @@ export const SHARED_SUBTHREAD_TOOLS = ["view_results"] as const;
 export const SUBTHREAD_EVENT_KIND = "subthread";
 export const MAIN_NOTE_EVENT_KIND = "main_note";
 export const RESULT_BOARD_EVENT_KIND = "result_board";
+export const SUBTHREAD_CONTINUE_EVENT_KIND = "subthread_continue";
+export const DEFAULT_SUBTHREAD_BUDGET_MICROS = 500_000;
 
 const FIELD_LIMIT = 4000;
 const RESULT_LIMIT = 8000;
@@ -84,6 +92,39 @@ const RESULT_NAMES_PER_MATTER = 100;
 const RESULT_VERSIONS_PER_NAME = 20;
 const CATALOG_LIMIT = 50;
 const NOTICE_BATCH = 100;
+const BOARD_SUBTHREADS = 20;
+const BOARD_TASKS = 30;
+const BOARD_PROGRESS = 300;
+const FINISHED_RUNS = new Set(["completed", "failed", "cancelled"]);
+const BACKGROUND_SUBTHREADS = 50;
+const BACKGROUND_RUNS = 20;
+const BACKGROUND_EXCHANGES = 50;
+const BACKGROUND_EXCHANGE_TEXT = 2000;
+const EXCHANGE_DIRECTIONS = ["to_subthread", "to_main"] as const;
+const EXCHANGE_KINDS = [
+  "brief",
+  "message",
+  "result_board",
+  "progress",
+  "question",
+  "stuck",
+  "result",
+  "budget",
+] as const;
+type ExchangeDirection = (typeof EXCHANGE_DIRECTIONS)[number];
+type ExchangeKind = (typeof EXCHANGE_KINDS)[number];
+const SUBTHREAD_TITLE_LIMIT = 20;
+const MAX_BUDGET_DOLLARS = 1000;
+const MICROS = 1_000_000;
+
+type BackgroundActivity =
+  | "queued"
+  | "running"
+  | "waiting_answer"
+  | "waiting_result"
+  | "idle"
+  | "over_budget"
+  | "finished";
 const LAYOUT_CHARACTERS = /[\p{Cc}\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/gu;
 
 export function oneLine(value: string): string {
@@ -101,6 +142,23 @@ const digest = (value: unknown, length = 32) =>
 
 const field = (maxLength: number) => ({ type: "string", minLength: 1, maxLength }) as const;
 const subthreadId = { type: "string", minLength: 1, maxLength: 256 } as const;
+const budgetField = { type: "number", exclusiveMinimum: 0, maximum: 1000 } as const;
+
+function budgetArgument(value: unknown): number | undefined {
+  if (value === undefined) return undefined;
+  if (
+    typeof value !== "number" ||
+    !Number.isFinite(value) ||
+    value <= 0 ||
+    value > MAX_BUDGET_DOLLARS
+  )
+    throw new SubthreadToolError("INPUT_INVALID");
+  return Math.max(1, Math.round(value * MICROS));
+}
+
+function dollars(micros: number): string {
+  return (micros / MICROS).toFixed(2);
+}
 
 function descriptor(
   name: string,
@@ -136,6 +194,8 @@ export function mainSubthreadDescriptors(): readonly RuntimeToolDescriptor[] {
           uniqueItems: true,
         },
         matter: field(MATTER_LIMIT),
+        title: field(SUBTHREAD_TITLE_LIMIT),
+        budget: budgetField,
       },
       required: [
         "objective",
@@ -145,12 +205,13 @@ export function mainSubthreadDescriptors(): readonly RuntimeToolDescriptor[] {
         "deliver",
         "owner_messages",
         "matter",
+        "title",
       ],
       additionalProperties: false,
     }),
     descriptor("send_to_subthread", TOOL_SEND_TO_SUBTHREAD.text, {
       type: "object",
-      properties: { subthread: subthreadId, text: field(FIELD_LIMIT) },
+      properties: { subthread: subthreadId, text: field(FIELD_LIMIT), budget: budgetField },
       required: ["subthread", "text"],
       additionalProperties: false,
     }),
@@ -281,7 +342,7 @@ export interface ProductionSubthreadsOptions {
   readonly ownerId: OwnerRuleScope["ownerId"];
   readonly agentId: OwnerRuleScope["agentId"];
   readonly mainThread: Pick<ProductionMainThread, "read">;
-  readonly threads: Pick<ThreadRepositoryPort, "readCommittedMessagesByIds">;
+  readonly threads: Pick<ThreadRepositoryPort, "readCommittedMessagesByIds" | "listRuns">;
   readonly commands: Pick<ThreadCommandService, "create">;
   readonly store: SubthreadStorePort;
   readonly tasks: Pick<ProductionThreadTasks, "tasks" | "content">;
@@ -290,7 +351,10 @@ export interface ProductionSubthreadsOptions {
   readonly payloads: PayloadStorePort;
   readonly protector: PayloadProtectorPort;
   readonly clock: ClockPort;
+  readonly defaultBudgetMicros?: number;
 }
+
+export type SubthreadRunEnding = "continued" | "over_budget" | "settled";
 
 type Result = { readonly value: unknown; readonly contentClassification?: DataClassification };
 
@@ -330,6 +394,14 @@ export class ProductionSubthreads {
       verbatim: true,
     });
     registry.register({
+      kind: SUBTHREAD_CONTINUE_EVENT_KIND,
+      describe: "接着做",
+      externalContent: false,
+      fromOwner: false,
+      priority: 2,
+      verbatim: true,
+    });
+    registry.register({
       kind: RESULT_BOARD_EVENT_KIND,
       describe: "结果板",
       externalContent: false,
@@ -365,13 +437,17 @@ export class ProductionSubthreads {
     }[],
   ) {
     const board = events.filter((event) => event.sourceKind === RESULT_BOARD_EVENT_KIND);
+    const continuing = events.filter((event) => event.sourceKind === SUBTHREAD_CONTINUE_EVENT_KIND);
     const notes = events.filter(
       (event) =>
-        event.sourceKind !== RESULT_BOARD_EVENT_KIND && !event.sourceRef.startsWith("brief:"),
+        event.sourceKind !== RESULT_BOARD_EVENT_KIND &&
+        event.sourceKind !== SUBTHREAD_CONTINUE_EVENT_KIND &&
+        !event.sourceRef.startsWith("brief:"),
     );
     return [
       ...events.filter((event) => event.sourceRef.startsWith("brief:")).map((event) => event.text),
       ...board.map((event) => event.text),
+      ...continuing.slice(-1).map((event) => event.text),
       ...(notes.length > 0 ? [SUBTHREAD_MESSAGES_PREFACE.text] : []),
       ...notes.map((event) => event.text),
     ].join("\n\n");
@@ -404,6 +480,14 @@ export class ProductionSubthreads {
           threadId: notice.receiverThreadId === main ? null : notice.receiverThreadId,
         });
         if (!submitted.accepted) throw new Error(`RESULT_NOTICE_REJECTED:${submitted.reason}`);
+        if (notice.receiverThreadId !== main && (await this.open(notice.receiverThreadId)))
+          await this.#exchange({
+            threadId: notice.receiverThreadId,
+            direction: "to_subthread",
+            kind: "result_board",
+            text: this.#noticeText(notice),
+            key: notice.id,
+          });
         await this.#options.store.deleteResultNotice({ ...this.#scope, id: notice.id });
       }
       if (notices.length < NOTICE_BATCH) return;
@@ -459,6 +543,269 @@ export class ProductionSubthreads {
     }
   }
 
+  #budget(subthread: SubthreadRecord): number {
+    return (
+      subthread.budgetMicros ?? this.#options.defaultBudgetMicros ?? DEFAULT_SUBTHREAD_BUDGET_MICROS
+    );
+  }
+
+  #spent(subthread: SubthreadRecord): Promise<number> {
+    return this.#options.store.spentMicros({ ...this.#scope, threadId: subthread.threadId });
+  }
+
+  async overBudget(threadId: string): Promise<boolean> {
+    const subthread = await this.open(threadId);
+    if (!subthread) return false;
+    const spent = await this.#spent(subthread);
+    const budget = this.#budget(subthread);
+    if (spent < budget) return false;
+    if (subthread.budgetHitAt === null) {
+      await this.#options.store.noteActivity({
+        ...this.#scope,
+        threadId,
+        budgetHit: true,
+        now: this.#options.clock.now(),
+      });
+      const tasks = (await this.#options.tasks.tasks(threadId)).filter(
+        (task) => task.status !== "deleted",
+      );
+      const reached = renderPrompt(SUBTHREAD_BUDGET_REACHED, {
+        spent: dollars(spent),
+        budget: dollars(budget),
+        total: String(tasks.length),
+        done: String(tasks.filter((task) => task.status === "completed").length),
+      });
+      await this.#exchange({
+        threadId,
+        direction: "to_main",
+        kind: "budget",
+        text: reached,
+        key: budget,
+      });
+      await this.#submit({
+        kind: SUBTHREAD_EVENT_KIND,
+        sourceRef: `budget:${threadId}:${digest([threadId, budget])}`,
+        text: this.#event(subthread, "budget", reached),
+        threadId: null,
+        externalContent: await this.#marked(threadId),
+      });
+    }
+    return true;
+  }
+
+  async afterRun(input: {
+    readonly threadId: string;
+    readonly runId: string;
+    readonly cutOff: boolean;
+  }): Promise<SubthreadRunEnding> {
+    const subthread = await this.open(input.threadId);
+    if (!subthread) return "settled";
+    if (await this.overBudget(input.threadId)) return "over_budget";
+    if (subthread.askedAt !== null || subthread.stuckAt !== null) return "settled";
+    const waiting = await this.#options.store.listWaiting({
+      ...this.#scope,
+      parentThreadId: subthread.parentThreadId,
+    });
+    if (waiting.includes(subthread.threadId)) return "settled";
+    const open = (await this.#options.tasks.tasks(input.threadId)).some(
+      (task) => task.status === "pending" || task.status === "in_progress",
+    );
+    if (!input.cutOff && !open) return "settled";
+    await this.#submit({
+      kind: SUBTHREAD_CONTINUE_EVENT_KIND,
+      sourceRef: `continue:${input.threadId}`,
+      version: input.runId,
+      text: renderPrompt(SUBTHREAD_CONTINUE, {
+        reason: input.cutOff ? SUBTHREAD_CONTINUE_CUT_OFF.text : SUBTHREAD_CONTINUE_PLAN_OPEN.text,
+      }),
+      threadId: input.threadId,
+      externalContent: false,
+    });
+    return "continued";
+  }
+
+  async statusBoard(threadId: string, ceiling: DataClassification): Promise<string | undefined> {
+    if ((await this.#options.mainThread.read()) !== threadId) return undefined;
+    const open = (await this.#options.store.list({ ...this.#scope, parentThreadId: threadId }))
+      .filter((subthread) => subthread.status === "open")
+      .slice(-BOARD_SUBTHREADS);
+    if (open.length === 0) return undefined;
+    const queues = await this.#queues(threadId);
+    const visible = (classification: string) =>
+      classificationRank(classification as DataClassification) <= classificationRank(ceiling);
+    const lines = [SUBTHREAD_STATUS_BOARD_HEADER.text];
+    for (const subthread of open) {
+      const { activity: status } = await this.#activity(subthread, queues);
+      const spending =
+        status === "over_budget"
+          ? ` spent=${dollars(await this.#spent(subthread))}/${dollars(this.#budget(subthread))} USD`
+          : "";
+      lines.push(
+        `- subthread ${subthread.threadId} (${oneLine(subthread.matter)}) status=${status}${spending}`,
+      );
+      if (subthread.progressRef !== null) {
+        const payload = await this.#options.payloads.get(subthread.progressRef as never);
+        const progress =
+          payload && visible(payload.dataClassification)
+            ? await this.#text(subthread.progressRef)
+            : undefined;
+        if (progress !== undefined)
+          lines.push(`  progress: ${[...oneLine(progress)].slice(0, BOARD_PROGRESS).join("")}`);
+      }
+      const tasks = (await this.#options.tasks.tasks(subthread.threadId))
+        .filter((task) => task.status !== "deleted")
+        .slice(0, BOARD_TASKS);
+      for (const task of tasks) {
+        const content = visible(task.classification)
+          ? await this.#options.tasks.content(task)
+          : undefined;
+        const wording = task.status === "in_progress" ? content?.activeForm : content?.subject;
+        lines.push(
+          `  task ${task.number} [${task.status}]${wording ? ` ${oneLine(wording)}` : ""}`,
+        );
+      }
+    }
+    return lines.join("\n");
+  }
+
+  async #queues(parentThreadId: string) {
+    const scope = { ...this.#scope, parentThreadId };
+    return {
+      waiting: new Set(await this.#options.store.listWaiting(scope)),
+      queued: new Set(await this.#options.store.listQueued(scope)),
+    };
+  }
+
+  async #activity(
+    subthread: SubthreadRecord,
+    queues: { readonly waiting: ReadonlySet<string>; readonly queued: ReadonlySet<string> },
+  ): Promise<{
+    readonly activity: BackgroundActivity;
+    readonly runCount: number;
+    readonly runs: Awaited<ReturnType<ThreadRepositoryPort["listRuns"]>>;
+  }> {
+    const runs = await this.#options.threads.listRuns(
+      this.#options.ownerId as never,
+      this.#options.agentId as never,
+      subthread.threadId as never,
+    );
+    const active = runs.filter((run) => !FINISHED_RUNS.has(run.status));
+    const activity: BackgroundActivity =
+      subthread.status !== "open"
+        ? "finished"
+        : subthread.budgetHitAt !== null
+          ? "over_budget"
+          : subthread.askedAt !== null
+            ? "waiting_answer"
+            : queues.waiting.has(subthread.threadId)
+              ? "waiting_result"
+              : active.some((run) => run.status !== "accepted")
+                ? "running"
+                : active.length > 0 || queues.queued.has(subthread.threadId)
+                  ? "queued"
+                  : "idle";
+    return { activity, runCount: runs.length, runs };
+  }
+
+  async backgroundWork(): Promise<ThreadBackgroundWork> {
+    const main = await this.#options.mainThread.read();
+    if (!main) return { matters: [] };
+    const all = (await this.#options.store.list({ ...this.#scope, parentThreadId: main })).slice(
+      -BACKGROUND_SUBTHREADS,
+    );
+    const queues = await this.#queues(main);
+    const matters = new Map<
+      string,
+      ThreadBackgroundWork["matters"][number]["subthreads"][number][]
+    >();
+    for (const subthread of all) {
+      const { activity, runCount, runs } = await this.#activity(subthread, queues);
+      const tasks = [];
+      for (const task of await this.#options.tasks.tasks(subthread.threadId)) {
+        if (task.status === "deleted") continue;
+        const content = await this.#options.tasks.content(task);
+        tasks.push({
+          number: task.number,
+          status: task.status,
+          subject: content?.subject ?? null,
+          activeForm: content?.activeForm ?? null,
+        });
+      }
+      const progress =
+        subthread.progressRef === null ? undefined : await this.#text(subthread.progressRef);
+      const row = {
+        subthreadId: subthread.threadId,
+        status: subthread.status,
+        activity,
+        openedAt: subthread.createdAt,
+        updatedAt: subthread.updatedAt,
+        progress: progress === undefined ? null : [...progress].slice(0, 2000).join(""),
+        progressAt: subthread.progressAt,
+        runCount,
+        spentMicros: await this.#spent(subthread),
+        budgetMicros: this.#budget(subthread),
+        title: subthread.title,
+        runs: runs.slice(-BACKGROUND_RUNS).map((run) => ({
+          runId: run.runId,
+          status: run.status,
+          startedAt: run.createdAt,
+          updatedAt: run.updatedAt,
+        })),
+        exchanges: await this.#exchanges(subthread.threadId),
+        tasks,
+      };
+      matters.set(subthread.matter, [...(matters.get(subthread.matter) ?? []), row]);
+    }
+    return {
+      matters: [...matters].map(([matter, subthreads]) => ({ matter, subthreads })),
+    };
+  }
+
+  async #exchange(input: {
+    readonly threadId: string;
+    readonly direction: ExchangeDirection;
+    readonly kind: ExchangeKind;
+    readonly text: string;
+    readonly key: unknown;
+  }): Promise<void> {
+    const id = `exchange:${digest([input.threadId, input.direction, input.kind, input.key], 48)}`;
+    const textRef = `subthread-${id}`;
+    await this.#put(textRef, input.text);
+    await this.#options.store.recordExchange({
+      ...this.#scope,
+      id,
+      threadId: input.threadId,
+      direction: input.direction,
+      kind: input.kind,
+      textRef,
+      now: this.#options.clock.now(),
+    });
+  }
+
+  async #exchanges(threadId: string) {
+    const rows = [];
+    for (const exchange of await this.#options.store.listExchanges({
+      ...this.#scope,
+      threadId,
+      limit: BACKGROUND_EXCHANGES,
+    })) {
+      const text = await this.#text(exchange.textRef);
+      if (
+        text === undefined ||
+        !(EXCHANGE_DIRECTIONS as readonly string[]).includes(exchange.direction) ||
+        !(EXCHANGE_KINDS as readonly string[]).includes(exchange.kind)
+      )
+        continue;
+      rows.push({
+        direction: exchange.direction as ExchangeDirection,
+        kind: exchange.kind as ExchangeKind,
+        text: [...text].slice(0, BACKGROUND_EXCHANGE_TEXT).join(""),
+        at: exchange.createdAt,
+      });
+    }
+    return rows;
+  }
+
   async #text(ref: string): Promise<string | undefined> {
     const payload = await this.#options.payloads.get(ref as never);
     if (!payload) return undefined;
@@ -491,13 +838,14 @@ export class ProductionSubthreads {
     readonly text: string;
     readonly threadId: string | null;
     readonly externalContent: boolean;
+    readonly version?: string;
   }): Promise<void> {
     const inbox = this.#attached?.inbox;
     if (!inbox) throw new SubthreadToolError("NOT_HERE");
     const submitted = await inbox.submit({
       sourceKind: input.kind,
       sourceRef: input.sourceRef,
-      sourceVersion: "1",
+      sourceVersion: input.version ?? "1",
       summary: input.text,
       externalContent: input.externalContent,
       threadId: input.threadId,
@@ -548,7 +896,13 @@ export class ProductionSubthreads {
       "deliver",
       "owner_messages",
       "matter",
+      "budget",
+      "title",
     ]);
+    const budgetMicros = budgetArgument(args["budget"]);
+    const title = oneLine(textArgument(args["title"], SUBTHREAD_TITLE_LIMIT * 4));
+    if (title.length === 0 || [...title].length > SUBTHREAD_TITLE_LIMIT)
+      throw new SubthreadToolError("INPUT_INVALID");
     const brief = {
       objective: textArgument(args["objective"], FIELD_LIMIT),
       background: textArgument(args["background"], FIELD_LIMIT),
@@ -589,11 +943,26 @@ export class ProductionSubthreads {
       threadId,
       parentThreadId: main,
       matter,
+      title,
       openKey,
       openedByRunId: invocation.runId,
       briefRef,
       classification,
       now: this.#options.clock.now(),
+    });
+    if (budgetMicros !== undefined && subthread.budgetMicros === null)
+      await this.#options.store.noteActivity({
+        ...this.#scope,
+        threadId,
+        budgetMicros,
+        now: this.#options.clock.now(),
+      });
+    await this.#exchange({
+      threadId,
+      direction: "to_subthread",
+      kind: "brief",
+      text: briefText,
+      key: "brief",
     });
     await this.#submit({
       kind: MAIN_NOTE_EVENT_KIND,
@@ -610,10 +979,28 @@ export class ProductionSubthreads {
     main: string,
     args: Readonly<Record<string, unknown>>,
   ): Promise<Result> {
-    onlyArguments(args, ["subthread", "text"]);
+    onlyArguments(args, ["subthread", "text", "budget"]);
     const subthread = await this.#child(main, args["subthread"]);
     const text = textArgument(args["text"], FIELD_LIMIT);
+    const budgetMicros = budgetArgument(args["budget"]);
     if (subthread.status !== "open") throw new SubthreadToolError("SUBTHREAD_CLOSED");
+    const spent = await this.#spent(subthread);
+    if (budgetMicros !== undefined) {
+      if (budgetMicros <= spent) throw new SubthreadToolError("BUDGET_TOO_LOW");
+      await this.#options.store.noteActivity({
+        ...this.#scope,
+        threadId: subthread.threadId,
+        budgetMicros,
+        now: this.#options.clock.now(),
+      });
+    } else if (spent >= this.#budget(subthread)) throw new SubthreadToolError("OVER_BUDGET");
+    if (subthread.askedAt !== null)
+      await this.#options.store.noteActivity({
+        ...this.#scope,
+        threadId: subthread.threadId,
+        asked: false,
+        now: this.#options.clock.now(),
+      });
     if (subthread.stuckAt !== null)
       await this.#options.store.markStuck({
         ...this.#scope,
@@ -621,6 +1008,13 @@ export class ProductionSubthreads {
         stuck: false,
         now: this.#options.clock.now(),
       });
+    await this.#exchange({
+      threadId: subthread.threadId,
+      direction: "to_subthread",
+      kind: "message",
+      text,
+      key: [invocation.runId, invocation.toolCallId],
+    });
     await this.#submit({
       kind: MAIN_NOTE_EVENT_KIND,
       sourceRef: `relay:${digest([invocation.runId, invocation.toolCallId])}`,
@@ -746,6 +1140,23 @@ export class ProductionSubthreads {
     const subthread = await this.open(threadId);
     if (!subthread) throw new SubthreadToolError("SUBTHREAD_CLOSED");
     const wake = kind !== "progress" || args["wake"] === true;
+    if (kind === "progress") {
+      const progressRef = `subthread-progress:${digest([invocation.runId, invocation.toolCallId])}`;
+      await this.#put(progressRef, text);
+      await this.#options.store.noteActivity({
+        ...this.#scope,
+        threadId,
+        progressRef,
+        now: this.#options.clock.now(),
+      });
+    }
+    if (kind === "question")
+      await this.#options.store.noteActivity({
+        ...this.#scope,
+        threadId,
+        asked: true,
+        now: this.#options.clock.now(),
+      });
     if (kind === "stuck") {
       await this.#options.store.markStuck({
         ...this.#scope,
@@ -755,10 +1166,17 @@ export class ProductionSubthreads {
       });
       await this.drainNotices();
     }
+    await this.#exchange({
+      threadId,
+      direction: "to_main",
+      kind: kind as ExchangeKind,
+      text,
+      key: [invocation.runId, invocation.toolCallId],
+    });
     if (wake)
       await this.#submit({
         kind: SUBTHREAD_EVENT_KIND,
-        sourceRef: `${kind as string}:${digest([invocation.runId, invocation.toolCallId])}`,
+        sourceRef: `${kind as string}:${threadId}:${digest([invocation.runId, invocation.toolCallId])}`,
         text: this.#event(subthread, kind as string, text),
         threadId: null,
         externalContent: await this.#marked(threadId),
@@ -811,9 +1229,16 @@ export class ProductionSubthreads {
     );
     const resultRef = `subthread-result:${digest([invocation.runId, invocation.toolCallId])}`;
     await this.#put(resultRef, body);
+    await this.#exchange({
+      threadId,
+      direction: "to_main",
+      kind: "result",
+      text: conclusion,
+      key: "result",
+    });
     await this.#submit({
       kind: SUBTHREAD_EVENT_KIND,
-      sourceRef: `result:${threadId}`,
+      sourceRef: `result:${threadId}:`,
       text: this.#event(subthread, "result", body),
       threadId: null,
       externalContent: await this.#marked(threadId),

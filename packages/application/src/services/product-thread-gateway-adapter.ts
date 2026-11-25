@@ -11,13 +11,13 @@ import {
   type ProductThreadMessage,
 } from "@himawari-agent/domain";
 import {
+  type MessageOptionsV3,
   type ThreadExecutionEventsSubscription,
   type ThreadExecutionStreamEvent,
   type ThreadGatewayCommand,
   type ThreadGatewayEvent,
   type ThreadGatewayQuery,
   type ThreadGatewayRequestResult,
-  type MessageOptionsV3,
   type ThreadGatewaySubscription,
   threadGatewayMessageSchema,
 } from "@himawari-agent/gateway-contracts";
@@ -33,10 +33,10 @@ import {
 } from "../ports/index.js";
 import type { ClockPort } from "../ports/system.js";
 import type { ExecutionLiveFeed } from "./execution-live-feed.js";
-import type { ThreadExecutionObservation } from "./thread-execution-projection.js";
-import { type ThreadCommandService, threadCommandFingerprint } from "./thread-command-service.js";
 import type { CancelCoordinatedRunInput } from "./run-coordinator.js";
+import { type ThreadCommandService, threadCommandFingerprint } from "./thread-command-service.js";
 import type { ThreadDeletionCoordinationService } from "./thread-deletion-coordination-service.js";
+import type { ThreadExecutionObservation } from "./thread-execution-projection.js";
 import type { ThreadForkService } from "./thread-fork-service.js";
 import type { ThreadQueryService } from "./thread-query-service.js";
 
@@ -99,6 +99,9 @@ export interface ProductThreadGatewayAdapterDependencies {
         readonly resourcesPending: boolean;
       } | null;
     }): Promise<ThreadExecutionObservation>;
+  };
+  readonly backgroundWork?: {
+    read(): Promise<import("@himawari-agent/gateway-contracts").ThreadBackgroundWork>;
   };
   readonly executionEnvironment?: {
     read(input: {
@@ -363,6 +366,18 @@ export class ProductThreadGatewayAdapter
         return parseResult({
           ...responseEnvelope(query, "snapshot", "thread.execution_state_snapshot"),
           payload: { ...query.payload, state, generatedAt },
+        });
+      }
+      case "thread.background_work": {
+        if (!this.#dependencies.backgroundWork)
+          throw new ApplicationPortError(
+            PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+            "THREAD_BACKGROUND_WORK_NOT_INSTALLED",
+          );
+        const work = await this.#dependencies.backgroundWork.read();
+        return parseResult({
+          ...responseEnvelope(query, "snapshot", "thread.background_work_snapshot"),
+          payload: { work, generatedAt },
         });
       }
       case "thread.execution_environment": {

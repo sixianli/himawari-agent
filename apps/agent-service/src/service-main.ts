@@ -3485,6 +3485,8 @@ export async function startTenantRuntime(
           ids,
           workspaceRoot: configuredWorkspaceRoot(configuration, repository, clock),
           sandboxCommands: sandboxCommandInventory,
+          statusBoard: ({ threadId, dataClassification }) =>
+            subthreads.statusBoard(threadId, dataClassification),
         }),
         clock,
         ids,

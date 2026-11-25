@@ -1506,14 +1506,14 @@
     "reason": "Always On 第 3 步：主对话开子线程在后台办事，子线程照 Claude Code 的待办工具列计划，做完交回结果、主对话验收"
   },
   "tools.open-subthread": {
-    "sha256": "265508781e30071361d67ec09fdfa508c42901b74ac5aab8c5d316b42139cfcf",
+    "sha256": "f158e658507266c58f612a62c8ecd0bddf31616f2c8f0f876bb986a0cf030c58",
     "changedIn": "ADR 0285",
-    "reason": "Always On 第 3 步：主对话开子线程在后台办事，子线程照 Claude Code 的待办工具列计划，做完交回结果、主对话验收"
+    "reason": "Always On 第 3 步：开子线程时可给一笔预算（美元），并给子线程起一个 20 字以内的短名字，主人在“后台在办”里看到的就是它"
   },
   "tools.result.subthread.rejected": {
-    "sha256": "287fbd602fddfff4ad8a725d06ebb1df8c468f65fa7c2bfed840f4f5d770b047",
+    "sha256": "d5f4faec0854387c47bf21103455845ab763c923275e5dc68a759cd81a476817",
     "changedIn": "ADR 0285",
-    "reason": "Always On 第 3 步：同一件大事的子线程用结果板共用结果，先看目录、要细节再取正文，等的结果到了或改版时叫醒"
+    "reason": "Always On 第 3 步：子线程工具新增两种拒绝：OVER_BUDGET（花到预算）和 BUDGET_TOO_LOW（新预算不比已花的多）"
   },
   "tools.return-result": {
     "sha256": "62c781b357344ad44510dc1ab773f58a58abcf0af07dd4efe74ef2007c99f2d1",
@@ -1521,9 +1521,9 @@
     "reason": "Always On 第 3 步：同一件大事的子线程用结果板共用结果，先看目录、要细节再取正文，等的结果到了或改版时叫醒"
   },
   "tools.send-to-subthread": {
-    "sha256": "eb6e9d7109ac959e77438d421f48ccf7f4f5459d4be6edb87b6231bfe2a07b90",
+    "sha256": "b1f5ad63cbd23dec3ce89e9b5e646831c17c6758de83b1385361d8d9ce6067fd",
     "changedIn": "ADR 0285",
-    "reason": "Always On 第 3 步：主对话开子线程在后台办事，子线程照 Claude Code 的待办工具列计划，做完交回结果、主对话验收"
+    "reason": "Always On 第 3 步：子线程花到预算停下后，主对话发话时填更高的总预算才能让它接着做"
   },
   "tools.stop-subthread": {
     "sha256": "d56c3adec94ff2c6af6f8fca11e8722346edb8a03d9c7155ab6b1b8e25fe7578",
@@ -1604,5 +1604,30 @@
     "sha256": "19ee4720d1b151b29ddc434f3829534c41c015f9dbabe9e7127b2666e97f6875",
     "changedIn": "ADR 0285",
     "reason": "Always On 第 3 步：同一件大事的子线程用结果板共用结果，先看目录、要细节再取正文，等的结果到了或改版时叫醒"
+  },
+  "subthreads.status-board.header": {
+    "sha256": "83728f61c2762ce4647972e548d70ec84cc6088213b0b9963bbb90e80d1b3118",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 3 步：状态板多一种 over_budget，花到预算停下、等主对话决定"
+  },
+  "subthreads.budget-reached": {
+    "sha256": "bc8f2a2bb12a6ecd2948c33ad1a2efd91690a69e9ddc4ad7dbf075c865fb559f",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 3 步：子线程花到预算停下时告诉主对话花了多少、预算多少、计划做到哪，由主对话决定加预算、改方向或叫停"
+  },
+  "subthreads.continue": {
+    "sha256": "b4280ed0d7c94fb809c2d0a8b7b0bca425c48b67f39964987356a937a1b246c1",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 3 步：子线程一次运行结束后还有事没做完（被时限截停或计划没做完），程序叫它看计划接着做，不重做有后果的动作"
+  },
+  "subthreads.continue.cut-off": {
+    "sha256": "cfba5e6c9b9e09603bfa0faa416772f5576c74d40b461938916257f170e2923d",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 3 步：接着做的原因之一，上一次运行到时限被截停"
+  },
+  "subthreads.continue.plan-open": {
+    "sha256": "5ca05852512a3c73b2bc1791cf184bd987665849dcc4e0fc6a6f886bde66f15a",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 3 步：接着做的原因之一，上一次运行结束时计划里还有没做完的待办"
   }
 }

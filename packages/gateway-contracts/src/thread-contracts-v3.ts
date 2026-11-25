@@ -8,12 +8,12 @@ import {
   integer,
   literal,
   machineString,
+  modelRefString,
   nullable,
   object,
   parseJson,
   type Schema,
   timestamp,
-  modelRefString,
 } from "./validation.js";
 
 export const THREAD_GATEWAY_SCHEMA_VERSION = "gateway.thread.v3" as const;
@@ -45,6 +45,8 @@ export const THREAD_GATEWAY_MESSAGE_TYPES = [
   "thread.execution_state_snapshot",
   "thread.execution_environment",
   "thread.execution_environment_snapshot",
+  "thread.background_work",
+  "thread.background_work_snapshot",
   "thread.search",
   "thread.lineage",
   "thread.checkpoint",
@@ -761,7 +763,91 @@ const threadExecutionEnvironmentSnapshotSchema = object({
   payload: object({ environment: threadExecutionEnvironmentSchema, generatedAt: timestamp }),
 });
 
+export const threadBackgroundWorkSchema = object({
+  matters: array(
+    object({
+      matter: boundedString(128),
+      subthreads: array(
+        object({
+          subthreadId: machineString,
+          status: enumeration(["open", "returned", "stopped"]),
+          activity: enumeration([
+            "queued",
+            "running",
+            "waiting_answer",
+            "waiting_result",
+            "idle",
+            "over_budget",
+            "finished",
+          ]),
+          openedAt: timestamp,
+          updatedAt: timestamp,
+          progress: nullable(boundedString(2000)),
+          progressAt: nullable(timestamp),
+          runCount: integer(0),
+          spentMicros: integer(0),
+          budgetMicros: integer(1),
+          title: nullable(boundedString(20)),
+          runs: array(
+            object({
+              runId: machineString,
+              status: enumeration([
+                "accepted",
+                "building_context",
+                "running",
+                "awaiting_approval",
+                "reconciling_external_result",
+                "completed",
+                "failed",
+                "cancelled",
+              ]),
+              startedAt: timestamp,
+              updatedAt: timestamp,
+            }),
+          ),
+          exchanges: array(
+            object({
+              direction: enumeration(["to_subthread", "to_main"]),
+              kind: enumeration([
+                "brief",
+                "message",
+                "result_board",
+                "progress",
+                "question",
+                "stuck",
+                "result",
+                "budget",
+              ]),
+              text: boundedString(2000),
+              at: timestamp,
+            }),
+          ),
+          tasks: array(
+            object({
+              number: integer(1),
+              status: enumeration(["pending", "in_progress", "completed"]),
+              subject: nullable(boundedString(400)),
+              activeForm: nullable(boundedString(400)),
+            }),
+          ),
+        }),
+      ),
+    }),
+  ),
+});
+export type ThreadBackgroundWork = InferSchema<typeof threadBackgroundWorkSchema>;
+const threadBackgroundWorkQuerySchema = object({
+  ...envelope("query", "thread.background_work"),
+  payload: object({}),
+});
+const threadBackgroundWorkSnapshotSchema = object({
+  ...envelope("snapshot", "thread.background_work_snapshot"),
+  payload: object({ work: threadBackgroundWorkSchema, generatedAt: timestamp }),
+});
+
 const schemasByType = {
+  "thread.background_work": threadBackgroundWorkQuerySchema,
+  "thread.background_work_snapshot": threadBackgroundWorkSnapshotSchema,
   "thread.message.submit_configured": submitConfiguredThreadMessageSchema,
   "thread.run.cancel": cancelThreadRunSchema,
   "thread.execution": threadExecutionQuerySchema,

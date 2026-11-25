@@ -4,6 +4,7 @@ import {
   ApplicationPortError,
   type CapabilityExecutionHandleStorePort,
   type ClockPort,
+  type DataClassification,
   type HostDirectoryGrant,
   hostDirectoryGrantStateKey,
   type IdGeneratorPort,
@@ -53,6 +54,10 @@ export function createProductionRunPolicy(options: {
   readonly ids: IdGeneratorPort;
   readonly workspaceRoot?: () => Promise<string | null>;
   readonly sandboxCommands?: () => Promise<SandboxCommandInventory>;
+  readonly statusBoard?: (input: {
+    readonly threadId: string;
+    readonly dataClassification: DataClassification;
+  }) => Promise<string | undefined>;
 }): (source: RunExecutionSource) => Promise<RunExecutionPolicy> {
   const { configuration } = options;
   const policy = configuration.runPolicy;
@@ -80,7 +85,14 @@ export function createProductionRunPolicy(options: {
         "RUN_POLICY_MODEL_DISCLOSURE_DENIED",
       );
     const capabilities = runCapabilityNotice({ coding: policy.coding !== undefined });
-    const environment = runtimeEnvironmentNotice({
+    const board =
+      source.threadId && options.statusBoard
+        ? await options.statusBoard({
+            threadId: source.threadId,
+            dataClassification: source.dataClassification,
+          })
+        : undefined;
+    const notice = runtimeEnvironmentNotice({
       coding: policy.coding !== undefined,
       workspaceRoot: policy.coding && options.workspaceRoot ? await options.workspaceRoot() : null,
       documentSkillDirectory: DOCUMENT_SKILL_DIRECTORY,
@@ -99,6 +111,7 @@ export function createProductionRunPolicy(options: {
           }
         : {}),
     });
+    const environment = board ? `${notice}\n\n${board}` : notice;
     const identity = {
       runId: source.runId,
       purpose: "context" as const,
