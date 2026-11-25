@@ -20,10 +20,13 @@ type Input<TName extends keyof SubthreadStorePort> = Parameters<SubthreadStorePo
 const MAX_TASKS = 200;
 const TASK_STATUSES: readonly string[] = ["pending", "in_progress", "completed", "deleted"];
 const MAX_CHANGES = 500;
+const MAX_BUDGET_MICROS = 1_000_000_000;
 
 const subthreadColumns = `thread_id AS threadId, parent_thread_id AS parentThreadId, matter,
   open_key AS openKey, opened_by_run_id AS openedByRunId, brief_ref AS briefRef,
   result_ref AS resultRef, classification, status, stuck_at AS stuckAt,
+  progress_ref AS progressRef, progress_at AS progressAt, asked_at AS askedAt,
+  budget_micros AS budgetMicros, budget_hit_at AS budgetHitAt,
   created_at AS createdAt, updated_at AS updatedAt`;
 
 const entryColumns = `e.writer_thread_id AS writerThreadId, e.name, e.version,
@@ -114,6 +117,14 @@ export class SqliteSubthreadOperations {
         return this.listTasks(payload as Input<"listTasks">);
       case "subthread.listTaskChanges":
         return this.listTaskChanges(payload as Input<"listTaskChanges">);
+      case "subthread.noteActivity":
+        return this.noteActivity(payload as Input<"noteActivity">);
+      case "subthread.listWaiting":
+        return this.listWaiting(payload as Input<"listWaiting">);
+      case "subthread.listQueued":
+        return this.listQueued(payload as Input<"listQueued">);
+      case "subthread.spentMicros":
+        return this.spentMicros(payload as Input<"spentMicros">);
       case "subthread.markStuck":
         return this.markStuck(payload as Input<"markStuck">);
       case "subthread.recordResult":
@@ -308,6 +319,119 @@ export class SqliteSubthreadOperations {
         notice.externalContent ? 1 : 0,
         notice.now,
       );
+  }
+
+  private noteActivity(input: Input<"noteActivity">): SubthreadRecord | undefined {
+    if (
+      !text(input.threadId, 256) ||
+      (input.progressRef !== undefined && !text(input.progressRef, 256)) ||
+      (input.asked !== undefined && typeof input.asked !== "boolean") ||
+      (input.budgetMicros !== undefined &&
+        (!Number.isSafeInteger(input.budgetMicros) ||
+          input.budgetMicros < 1 ||
+          input.budgetMicros > MAX_BUDGET_MICROS)) ||
+      (input.budgetHit !== undefined && typeof input.budgetHit !== "boolean") ||
+      !validTime(input.now)
+    )
+      this.invalid("Subthread activity is invalid");
+    return this.database.transaction(() => {
+      if (input.progressRef !== undefined)
+        this.database
+          .prepare(
+            `UPDATE subthreads SET progress_ref = ?, progress_at = ?, updated_at = ?
+             WHERE owner_id = ? AND agent_id = ? AND thread_id = ?`,
+          )
+          .run(
+            input.progressRef,
+            input.now,
+            input.now,
+            input.ownerId,
+            input.agentId,
+            input.threadId,
+          );
+      if (input.asked !== undefined)
+        this.database
+          .prepare(
+            `UPDATE subthreads SET asked_at = ?, updated_at = ?
+             WHERE owner_id = ? AND agent_id = ? AND thread_id = ?`,
+          )
+          .run(
+            input.asked ? input.now : null,
+            input.now,
+            input.ownerId,
+            input.agentId,
+            input.threadId,
+          );
+      if (input.budgetMicros !== undefined)
+        this.database
+          .prepare(
+            `UPDATE subthreads SET budget_micros = ?, budget_hit_at = NULL, updated_at = ?
+             WHERE owner_id = ? AND agent_id = ? AND thread_id = ?`,
+          )
+          .run(input.budgetMicros, input.now, input.ownerId, input.agentId, input.threadId);
+      if (input.budgetHit !== undefined)
+        this.database
+          .prepare(
+            `UPDATE subthreads SET budget_hit_at = ?, updated_at = ?
+             WHERE owner_id = ? AND agent_id = ? AND thread_id = ?`,
+          )
+          .run(
+            input.budgetHit ? input.now : null,
+            input.now,
+            input.ownerId,
+            input.agentId,
+            input.threadId,
+          );
+      return this.read(input);
+    })();
+  }
+
+  private listWaiting(input: Input<"listWaiting">): readonly string[] {
+    if (!text(input.parentThreadId, 256)) this.invalid("Subthread wait query is invalid");
+    return Object.freeze(
+      (
+        this.database
+          .prepare(
+            `SELECT DISTINCT w.waiter_thread_id AS threadId FROM result_board_waits w
+             JOIN subthreads s ON s.thread_id = w.waiter_thread_id
+             WHERE s.owner_id = ? AND s.agent_id = ? AND s.parent_thread_id = ?
+             ORDER BY w.waiter_thread_id`,
+          )
+          .all(input.ownerId, input.agentId, input.parentThreadId) as { threadId: string }[]
+      ).map(({ threadId }) => threadId),
+    );
+  }
+
+  private listQueued(input: Input<"listQueued">): readonly string[] {
+    if (!text(input.parentThreadId, 256)) this.invalid("Subthread queue query is invalid");
+    return Object.freeze(
+      (
+        this.database
+          .prepare(
+            `SELECT DISTINCT e.thread_id AS threadId FROM inbox_events e
+             JOIN subthreads s ON s.thread_id = e.thread_id
+             WHERE s.owner_id = ? AND s.agent_id = ? AND s.parent_thread_id = ?
+               AND e.status = 'queued'
+             ORDER BY e.thread_id`,
+          )
+          .all(input.ownerId, input.agentId, input.parentThreadId) as { threadId: string }[]
+      ).map(({ threadId }) => threadId),
+    );
+  }
+
+  private spentMicros(input: Input<"spentMicros">): number {
+    if (!text(input.threadId, 256)) this.invalid("Subthread spending query is invalid");
+    const row = this.database
+      .prepare(
+        `SELECT coalesce(sum(a.spent_cost_micros + a.reserved_cost_micros), 0) AS spent
+         FROM model_budget_accounts a
+         JOIN runs r ON r.owner_id = a.owner_id AND r.agent_id = a.agent_id
+           AND r.id = coalesce(a.run_id, a.title_run_id)
+         WHERE a.owner_id = ? AND a.agent_id = ? AND r.thread_id = ?
+           AND a.parent_kind IN ('run', 'thread-title')`,
+      )
+      .get(input.ownerId, input.agentId, input.threadId) as { spent: number };
+    return row.spent;
   }
 
   private markStuck(input: Input<"markStuck">): SubthreadRecord | undefined {

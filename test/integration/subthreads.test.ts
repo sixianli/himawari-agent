@@ -167,6 +167,7 @@ describe("subthreads opened by the main conversation", () => {
       clock: { now },
       pollMs: 5,
       subthreads,
+      checkpoints: repository.runCheckpointStore(OWNER_ID, AGENT_ID, authority),
     });
     const inboxStore = repository.inbox();
     const inbox = new ProductionInbox({
@@ -348,6 +349,7 @@ describe("subthreads opened by the main conversation", () => {
     };
     return {
       repository,
+      file,
       threads,
       mainThread,
       externalContent,
@@ -867,5 +869,346 @@ describe("subthreads opened by the main conversation", () => {
     expect(
       (await f.externalContent.readThread(reader.subthread)).map(({ origin }) => origin),
     ).toEqual(["external_event:mail"]);
+  });
+
+  it("shows the main conversation a status board of unfinished subthreads and the owner a background-work view", async () => {
+    const f = await fixture();
+    const main = await f.mainThread.ensure();
+    expect(await f.subthreads.statusBoard(main, "private")).toBeUndefined();
+    const dinner = await f.open("dinner", "订个餐馆", "大阪出差");
+    const dentist = await f.open("dentist", "顺便找牙医", "找牙医");
+    const flight = await f.open("flight", "再帮我订机票", "大阪出差");
+    for (const said of [dinner, dentist, flight]) await f.finish(main, said.runId);
+    const runs = new Map<string, string>();
+    for (const opened of [dinner, dentist, flight]) {
+      const delivered = await f.started(opened.subthread);
+      runs.set(opened.subthread, delivered.runId);
+      if (opened !== flight) await f.settle(delivered);
+      else {
+        await f.call(delivered.runId, "task_create", {
+          subject: "查 12 月 3 日的航班",
+          description: "列出上午到关西的直飞",
+          active_form: "正在查航班",
+        });
+        await f.call(delivered.runId, "task_update", { task: 1, status: "in_progress" });
+        await f.call(delivered.runId, "task_create", {
+          subject: "订票",
+          description: "按主人选的订",
+          active_form: "正在订票",
+        });
+        await f.call(delivered.runId, "tell_main", {
+          kind: "progress",
+          text: "查到三个选项，正在比价",
+        });
+        const board = (await f.subthreads.statusBoard(main, "private")) ?? "";
+        const lines = board.split("\n").slice(1);
+        const flightLine = `- subthread ${flight.subthread} (大阪出差) status=queued`;
+        expect(lines).toHaveLength(6);
+        expect(lines.slice(lines.indexOf(flightLine), lines.indexOf(flightLine) + 4)).toEqual([
+          flightLine,
+          "  progress: 查到三个选项，正在比价",
+          "  task 1 [in_progress] 正在查航班",
+          "  task 2 [pending] 订票",
+        ]);
+        expect(lines).toContain(`- subthread ${dinner.subthread} (大阪出差) status=idle`);
+        expect(lines).toContain(`- subthread ${dentist.subthread} (找牙医) status=idle`);
+        expect(board).toContain("【后台在办】");
+        await f.settle(delivered);
+      }
+    }
+    const run = (thread: string) => runs.get(thread) as string;
+    await f.call(run(dinner.subthread), "wait_result", {
+      subthread: flight.subthread,
+      name: "落地",
+    });
+    await f.call(run(dentist.subthread), "tell_main", { kind: "question", text: "要周日开门的吗" });
+    const board = (await f.subthreads.statusBoard(main, "private")) ?? "";
+    expect(board).toContain(`${flight.subthread} (大阪出差) status=queued`);
+    expect(board).toContain(`${dinner.subthread} (大阪出差) status=waiting_result`);
+    expect(board).toContain(`${dentist.subthread} (找牙医) status=waiting_answer`);
+    expect(await f.subthreads.statusBoard(main, "private")).toBe(board);
+    expect(await f.subthreads.statusBoard(flight.subthread, "private")).toBeUndefined();
+    await f.call(flight.runId, "send_to_subthread", { subthread: dentist.subthread, text: "要" });
+    expect(await f.subthreads.statusBoard(main, "private")).toContain(
+      `${dentist.subthread} (找牙医) status=queued`,
+    );
+    await f.call(flight.runId, "stop_subthread", {
+      subthread: dentist.subthread,
+      reason: "不要了",
+    });
+    expect(await f.subthreads.statusBoard(main, "private")).not.toContain(dentist.subthread);
+    const work = await f.subthreads.backgroundWork();
+    expect(work.matters.map(({ matter }) => matter)).toEqual(["大阪出差", "找牙医"]);
+    expect(
+      work.matters[0]?.subthreads.find(({ subthreadId }) => subthreadId === flight.subthread),
+    ).toMatchObject({
+      subthreadId: flight.subthread,
+      status: "open",
+      activity: "queued",
+      progress: "查到三个选项，正在比价",
+      runCount: 1,
+      spentMicros: 0,
+      budgetMicros: 500_000,
+      tasks: [
+        {
+          number: 1,
+          status: "in_progress",
+          subject: "查 12 月 3 日的航班",
+          activeForm: "正在查航班",
+        },
+        { number: 2, status: "pending", subject: "订票", activeForm: "正在订票" },
+      ],
+    });
+    expect(work.matters[1]?.subthreads[0]).toMatchObject({
+      subthreadId: dentist.subthread,
+      status: "stopped",
+      activity: "finished",
+    });
+  });
+
+  it("REVERSE: leaves out of the status board what the run may not show its model", async () => {
+    const f = await fixture();
+    const main = await f.mainThread.ensure();
+    const flight = await f.open("flight", "帮我订机票", "大阪出差");
+    await f.finish(main, flight.runId);
+    const delivered = await f.started(flight.subthread);
+    await f.call(delivered.runId, "task_create", {
+      subject: "护照号 TK1234567 填进订票单",
+      description: "按护照填",
+      active_form: "正在填护照",
+    });
+    await f.call(delivered.runId, "tell_main", {
+      kind: "progress",
+      text: "公开信息：查到三个航班",
+    });
+    const tasks = f.query<{ classification: string }>("SELECT classification FROM thread_tasks");
+    const board = (await f.subthreads.statusBoard(main, "public")) ?? "";
+    if (tasks[0]?.classification !== "public") expect(board).not.toContain("TK1234567");
+    expect(board).toContain("task 1 [pending]");
+    await f.settle(delivered);
+  });
+  it("[ADR-0285] has a subthread carry on by itself when a run ends with its plan unfinished, once per run, and stop when the plan is done", async () => {
+    const f = await fixture();
+    const opened = await f.open();
+    await f.finish(await f.mainThread.ensure(), opened.runId);
+    const first = await f.started(opened.subthread);
+    await f.call(first.runId, "task_create", {
+      subject: "查评价",
+      description: "看三家的评分",
+      active_form: "正在查评价",
+    });
+    await f.settle(first);
+    const continues = () =>
+      f.query<{ source_version: string; thread_id: string; status: string }>(
+        "SELECT source_version, thread_id, status FROM inbox_events WHERE source_kind = 'subthread_continue' ORDER BY created_at, source_version",
+      );
+    expect(continues()).toEqual([
+      { source_version: first.runId, thread_id: opened.subthread, status: "queued" },
+    ]);
+    expect(
+      await f.subthreads.afterRun({
+        threadId: opened.subthread,
+        runId: first.runId,
+        cutOff: false,
+      }),
+    ).toBe("continued");
+    expect(continues()).toHaveLength(1);
+    const second = await f.started(opened.subthread);
+    const message = await f.lastMessage(second.runId);
+    expect(message).toContain("接着做。上一次运行结束时，计划里还有没做完的待办。");
+    expect(message).not.toContain("以下是主对话发来的话");
+    await f.call(second.runId, "task_update", { task: 1, status: "completed" });
+    await f.settle(second);
+    expect(continues().map(({ status }) => status)).toEqual(["done"]);
+    expect(await f.worker.claim()).toBeUndefined();
+  });
+
+  it("REVERSE: does not carry a subthread on while it waits for an answer, a sibling's result or after it said it is stuck", async () => {
+    const f = await fixture();
+    const asking = await f.open("asking", "帮我订餐馆", "大阪出差");
+    const sibling = await f.open("sibling", "再订机票", "大阪出差");
+    const main = await f.mainThread.ensure();
+    for (const said of [asking, sibling]) await f.finish(main, said.runId);
+    const runs = new Map<string, string>();
+    for (const opened of [asking, sibling]) {
+      const delivered = await f.started(opened.subthread);
+      runs.set(opened.subthread, delivered.runId);
+      await f.call(delivered.runId, "task_create", {
+        subject: "等",
+        description: "等",
+        active_form: "在等",
+      });
+      if (opened === asking)
+        await f.call(delivered.runId, "tell_main", { kind: "question", text: "几个人？" });
+      else
+        await f.call(delivered.runId, "wait_result", { subthread: asking.subthread, name: "餐馆" });
+      await f.settle(delivered);
+    }
+    expect(
+      f.query("SELECT COUNT(*) AS n FROM inbox_events WHERE source_kind = 'subthread_continue'"),
+    ).toEqual([{ n: 0 }]);
+    await f.call(runs.get(asking.subthread) as string, "tell_main", {
+      kind: "stuck",
+      text: "订不到",
+    });
+    expect(
+      await f.subthreads.afterRun({
+        threadId: asking.subthread,
+        runId: runs.get(asking.subthread) as string,
+        cutOff: true,
+      }),
+    ).toBe("settled");
+  });
+
+  it("[ADR-0285] carries on a subthread cut off at the run time limit even without a plan, and retries a run that failed for another reason", async () => {
+    const f = await fixture();
+    const opened = await f.open();
+    await f.finish(await f.mainThread.ensure(), opened.runId);
+    const fail = (runId: string, diagnosticCode: string) => {
+      const handle = openQualifiedDatabase(f.file);
+      try {
+        handle
+          .prepare(
+            `INSERT INTO run_coordination_checkpoints (run_id, owner_id, agent_id, revision, phase,
+              runtime_event_count, terminal_status, diagnostic_code, updated_at)
+             VALUES (?, ?, ?, 1, 'failed', 0, 'failed', ?, ?)`,
+          )
+          .run(runId, OWNER_ID, AGENT_ID, diagnosticCode, START);
+        handle.prepare("UPDATE runs SET status = 'failed' WHERE id = ?").run(runId);
+      } finally {
+        handle.close();
+      }
+    };
+    const first = await f.started(opened.subthread);
+    fail(first.runId, "RUNTIME_MODEL_UNAVAILABLE");
+    expect(await first.handled).toMatchObject({ status: "done", result: "retry" });
+    expect(
+      f.query("SELECT COUNT(*) AS n FROM inbox_events WHERE source_kind = 'subthread_continue'"),
+    ).toEqual([{ n: 0 }]);
+    const retried = await f.started(opened.subthread);
+    fail(retried.runId, "RUN_EXECUTION_DEADLINE_EXCEEDED");
+    expect(await retried.handled).toMatchObject({ status: "done", result: "handled" });
+    expect(
+      f.query<{ outcome: string; reason_code: string }>(
+        "SELECT outcome, reason_code FROM inbox_events WHERE run_id = ?",
+        retried.runId,
+      ),
+    ).toEqual([{ outcome: "continued", reason_code: "subthread_cut_off" }]);
+    const resumed = await f.started(opened.subthread);
+    expect(await f.lastMessage(resumed.runId)).toContain(
+      "接着做。上一次运行到了时限被截停，最后一步可能没做完。",
+    );
+    await f.settle(resumed);
+    expect(await f.worker.claim()).toBeUndefined();
+  });
+
+  it("[ADR-0285] stops a subthread at its budget, tells the main conversation once, and lets it carry on only when the main conversation raises the budget", async () => {
+    const f = await fixture();
+    const said = await f.ownerSays("budget", "帮我比较三家东京的牙科诊所");
+    const main = await f.mainThread.ensure();
+    const opened = (await f.call(said.runId, "open_subthread", {
+      ...BRIEF,
+      owner_messages: [said.messageId],
+      budget: 0.01,
+    })) as { value: { subthread: string } };
+    const subthread = opened.value.subthread;
+    await f.finish(main, said.runId);
+    const first = await f.started(subthread);
+    await f.call(first.runId, "task_create", {
+      subject: "查评价",
+      description: "看三家的评分",
+      active_form: "正在查评价",
+    });
+    const spend = (runId: string, micros: number) => {
+      const handle = openQualifiedDatabase(f.file);
+      try {
+        handle
+          .prepare(
+            `INSERT INTO model_budget_accounts (owner_id, agent_id, account_id, parent_kind, run_id,
+              data_classification, reserved_cost_micros, spent_cost_micros, status, revision)
+             VALUES (?, ?, ?, 'run', ?, 'private', 0, ?, 'active', 0)`,
+          )
+          .run(OWNER_ID, AGENT_ID, `run:${runId}`, runId, micros);
+      } finally {
+        handle.close();
+      }
+    };
+    spend(first.runId, 12_000);
+    await f.settle(first);
+    const budgetEvents = () =>
+      f.query<{ summary_ref: string }>(
+        "SELECT summary_ref FROM inbox_events WHERE source_kind = 'subthread' AND source_ref LIKE 'budget:%'",
+      );
+    expect(budgetEvents()).toHaveLength(1);
+    expect(
+      f.query("SELECT COUNT(*) AS n FROM inbox_events WHERE source_kind = 'subthread_continue'"),
+    ).toEqual([{ n: 0 }]);
+    const told = (await f.text(budgetEvents()[0]?.summary_ref ?? "")) ?? "";
+    expect(told).toContain(`子线程 ${subthread}（找牙医）budget：`);
+    expect(told).toContain("已经花了 0.01 美元，预算 0.01 美元；计划里 1 条待办做完了 0 条");
+    expect(await f.subthreads.overBudget(subthread)).toBe(true);
+    expect(budgetEvents()).toHaveLength(1);
+    const board = (await f.subthreads.statusBoard(main, "private")) ?? "";
+    expect(board).toContain(`${subthread} (找牙医) status=over_budget spent=0.01/0.01 USD`);
+    const work = await f.subthreads.backgroundWork();
+    expect(work.matters[0]?.subthreads[0]).toMatchObject({
+      activity: "over_budget",
+      spentMicros: 12_000,
+      budgetMicros: 10_000,
+    });
+    await expect(
+      f.call(said.runId, "send_to_subthread", { subthread, text: "接着查" }),
+    ).rejects.toMatchObject({ code: "OVER_BUDGET" });
+    await expect(
+      f.call(said.runId, "send_to_subthread", { subthread, text: "接着查", budget: 0.012 }),
+    ).rejects.toMatchObject({ code: "BUDGET_TOO_LOW" });
+    await f.call(said.runId, "send_to_subthread", { subthread, text: "接着查", budget: 0.05 });
+    expect(await f.subthreads.statusBoard(main, "private")).toContain(
+      `${subthread} (找牙医) status=queued`,
+    );
+    const second = await f.started(subthread);
+    expect(await f.lastMessage(second.runId)).toContain("接着查");
+    await f.call(second.runId, "task_update", { task: 1, status: "completed" });
+    await f.settle(second);
+    expect(budgetEvents()).toHaveLength(1);
+  });
+
+  it("REVERSE: does not start a run for a subthread already over its budget", async () => {
+    const f = await fixture();
+    const opened = await f.open();
+    await f.finish(await f.mainThread.ensure(), opened.runId);
+    const first = await f.started(opened.subthread);
+    await f.call(first.runId, "task_create", {
+      subject: "查评价",
+      description: "看三家的评分",
+      active_form: "正在查评价",
+    });
+    await f.settle(first);
+    const handle = openQualifiedDatabase(f.file);
+    try {
+      handle
+        .prepare(
+          `INSERT INTO model_budget_accounts (owner_id, agent_id, account_id, parent_kind, run_id,
+            data_classification, reserved_cost_micros, spent_cost_micros, status, revision)
+           VALUES (?, ?, ?, 'run', ?, 'private', 100000, 400000, 'active', 0)`,
+        )
+        .run(OWNER_ID, AGENT_ID, `run:${first.runId}`, first.runId);
+    } finally {
+      handle.close();
+    }
+    const claim = await f.worker.claim();
+    expect(claim?.threadId).toBe(opened.subthread);
+    expect(await f.worker.handle(claim as never)).toMatchObject({ result: "handled" });
+    expect(
+      f.query<{ outcome: string }>(
+        "SELECT outcome FROM inbox_events WHERE source_kind = 'subthread_continue'",
+      ),
+    ).toEqual([{ outcome: "over_budget" }]);
+    expect(f.query("SELECT COUNT(*) AS n FROM runs WHERE thread_id = ?", opened.subthread)).toEqual(
+      [{ n: 1 }],
+    );
+    expect(
+      f.query("SELECT COUNT(*) AS n FROM inbox_events WHERE source_ref LIKE 'budget:%'"),
+    ).toEqual([{ n: 1 }]);
   });
 });

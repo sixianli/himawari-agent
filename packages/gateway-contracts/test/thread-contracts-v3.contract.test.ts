@@ -2,22 +2,23 @@ import {
   archiveThreadV3CommandSchema,
   ContractValidationError,
   chooseThreadOptionV3CommandSchema,
-  messageOptionsV3Schema,
   deleteThreadPermanentlyV3CommandSchema,
   forkThreadV3CommandSchema,
+  messageOptionsV3Schema,
   resolveThreadTaskV3CommandSchema,
   searchThreadsV3QuerySchema,
   setThreadAnswerLocaleV3CommandSchema,
   submitThreadMessageV3CommandSchema,
   THREAD_GATEWAY_SCHEMA_VERSION,
+  threadBackgroundWorkSchema,
   threadCollectionSnapshotV3Schema,
   threadConflictV3Schema,
   threadDetailSnapshotV3Schema,
   threadEventsV3SubscriptionSchema,
-  threadExecutionRecordSchema,
-  threadGatewayMessageSchema,
   threadExecutionEnvironmentSchema,
+  threadExecutionRecordSchema,
   threadExecutionStateSchema,
+  threadGatewayMessageSchema,
 } from "@himawari-agent/gateway-contracts";
 import { describe, expect, it } from "vitest";
 
@@ -117,6 +118,50 @@ describe("Thread Gateway v3 contracts", () => {
       { unavailableTools: [{ toolName: "bash", reasonCode: "SANDBOX_STRICT_MODE_UNAVAILABLE" }] },
     ])
       expect(() => threadExecutionEnvironmentSchema.parse({ ...environment, ...patch })).toThrow();
+  });
+
+  it("[ADR-0285] describes background work by matter with each subthread's activity and visible to-dos", () => {
+    const query = { ...envelope, kind: "query", type: "thread.background_work", payload: {} };
+    expect(threadGatewayMessageSchema.parse(query)).toEqual(query);
+    expect(() =>
+      threadGatewayMessageSchema.parse({ ...query, payload: { threadId: "thread-s2" } }),
+    ).toThrow();
+    const subthread = {
+      subthreadId: "thread:subthread:abc",
+      status: "open",
+      activity: "running",
+      openedAt: "2026-11-25T00:00:00.000Z",
+      updatedAt: "2026-11-25T00:01:00.000Z",
+      progress: "查到三个选项，正在比价",
+      progressAt: "2026-11-25T00:01:00.000Z",
+      runCount: 2,
+      spentMicros: 120_000,
+      budgetMicros: 500_000,
+      tasks: [{ number: 1, status: "in_progress", subject: "查航班", activeForm: "正在查航班" }],
+    };
+    const work = { matters: [{ matter: "大阪出差", subthreads: [subthread] }] };
+    expect(threadBackgroundWorkSchema.parse(work)).toEqual(work);
+    const snapshot = {
+      ...envelope,
+      kind: "snapshot",
+      type: "thread.background_work_snapshot",
+      payload: { work, generatedAt: "2026-11-25T00:02:00.000Z" },
+    };
+    expect(threadGatewayMessageSchema.parse(snapshot)).toEqual(snapshot);
+    for (const patch of [
+      { activity: "thinking" },
+      { status: "failed" },
+      { tasks: [{ ...subthread.tasks[0], status: "deleted" }] },
+      { runCount: -1 },
+      { spentMicros: -1 },
+      { budgetMicros: 0 },
+      { brief: "任务说明原文" },
+    ])
+      expect(() =>
+        threadBackgroundWorkSchema.parse({
+          matters: [{ matter: "大阪出差", subthreads: [{ ...subthread, ...patch }] }],
+        }),
+      ).toThrow();
   });
 
   it("rejects invented phases, timing and unknown action commands in execution state", () => {

@@ -22,6 +22,11 @@ export interface SubthreadRecord {
   readonly classification: string;
   readonly status: SubthreadStatus;
   readonly stuckAt: string | null;
+  readonly progressRef: string | null;
+  readonly progressAt: string | null;
+  readonly askedAt: string | null;
+  readonly budgetMicros: number | null;
+  readonly budgetHitAt: string | null;
   readonly createdAt: string;
   readonly updatedAt: string;
 }
@@ -155,6 +160,23 @@ export interface SubthreadStorePort {
   listTaskChanges(
     input: OwnerRuleScope & { readonly threadId: string; readonly limit: number },
   ): Promise<readonly ThreadTaskChangeRecord[]>;
+  noteActivity(
+    input: OwnerRuleScope & {
+      readonly threadId: string;
+      readonly progressRef?: string;
+      readonly asked?: boolean;
+      readonly budgetMicros?: number;
+      readonly budgetHit?: boolean;
+      readonly now: string;
+    },
+  ): Promise<SubthreadRecord | undefined>;
+  listWaiting(
+    input: OwnerRuleScope & { readonly parentThreadId: string },
+  ): Promise<readonly string[]>;
+  listQueued(
+    input: OwnerRuleScope & { readonly parentThreadId: string },
+  ): Promise<readonly string[]>;
+  spentMicros(input: OwnerRuleScope & { readonly threadId: string }): Promise<number>;
   markStuck(
     input: OwnerRuleScope & {
       readonly threadId: string;

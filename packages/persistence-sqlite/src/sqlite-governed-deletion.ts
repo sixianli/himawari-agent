@@ -1164,6 +1164,11 @@ export class SqliteGovernedDeletionAdapter {
         "SELECT result_ref FROM subthreads WHERE thread_id = ? AND result_ref IS NOT NULL",
         [threadId],
       ),
+      ...this.#values(
+        database,
+        "SELECT progress_ref FROM subthreads WHERE thread_id = ? AND progress_ref IS NOT NULL",
+        [threadId],
+      ),
       ...this.#values(database, "SELECT content_ref FROM thread_task_changes WHERE thread_id = ?", [
         threadId,
       ]),

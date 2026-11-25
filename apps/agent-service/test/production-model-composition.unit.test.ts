@@ -739,6 +739,65 @@ it("selects trusted Run policy and binds instruction content across configuratio
   );
 });
 
+it("[ADR-0285] puts the subthread status board only in the main conversation's runtime environment, never in the system prompt", async () => {
+  const adapters = createReferenceAdapterSet();
+  const configuration = {
+    ...selectedEmbeddingConfiguration(temporaryDirectory),
+    runPolicy: {
+      version: "policy-v1",
+      timeZone: "Asia/Tokyo",
+      systemInstruction: "可信系统指令",
+      memoryLimit: 10,
+      maxSelectedMemories: 5,
+    },
+  };
+  const source: RunExecutionSource = {
+    ownerId: configuration.ownerId,
+    agentId: configuration.agentId,
+    runId: "board-run" as RunExecutionSource["runId"],
+    sessionId: "board-session" as RunExecutionSource["sessionId"],
+    threadId: "thread:main" as NonNullable<RunExecutionSource["threadId"]>,
+    triggerId: "board-trigger" as RunExecutionSource["triggerId"],
+    sourceType: "schedule",
+    sourceId: "inbox-message",
+    payloadRef: "inbox-content",
+    dataClassification: "private",
+    occurredAt: "2026-11-25T00:00:00.000Z",
+  };
+  const asked: unknown[] = [];
+  const policy = createProductionRunPolicy({
+    configuration,
+    artifacts: adapters.runPayloadArtifacts,
+    protector: adapters.payloadProtector,
+    handles: { listRunExecutionHandles: async () => [] },
+    clock: adapters.clock,
+    ids: adapters.ids,
+    statusBoard: async (input) => {
+      asked.push(input);
+      return input.threadId === "thread:main"
+        ? "【后台在办】\n- subthread s1 status=running"
+        : undefined;
+    },
+  });
+  const protect = vi.spyOn(adapters.payloadProtector, "protect");
+  await policy(source);
+  const [instruction, environment] = protect.mock.calls.map(([call]) =>
+    new TextDecoder().decode(call.plaintext),
+  );
+  expect(instruction).not.toContain("后台在办");
+  expect(environment).toContain("联网搜索：本轮没有。");
+  expect(environment?.endsWith("【后台在办】\n- subthread s1 status=running")).toBe(true);
+  expect(asked).toEqual([{ threadId: "thread:main", dataClassification: "private" }]);
+  protect.mockClear();
+  await policy({
+    ...source,
+    runId: "board-other" as RunExecutionSource["runId"],
+    threadId: "thread:other" as NonNullable<RunExecutionSource["threadId"]>,
+  });
+  const other = protect.mock.calls.map(([call]) => new TextDecoder().decode(call.plaintext));
+  expect(other.join("\n")).not.toContain("后台在办");
+});
+
 describe("Run capability notice", () => {
   it("keeps only rules in the system prompt and moves every changing value to the runtime environment", () => {
     const notice = runCapabilityNotice({ coding: true });
