@@ -1662,21 +1662,36 @@ it("[R2-L5] executes authenticated HTTP requests and persists gateway costs afte
     await expect
       .poll(() => turnIndexEmbeddings("run:installed-main"), { timeout: 30_000 })
       .toEqual([{ logicalSlot: "conversation-turn-1:run:installed-main", status: "settled" }]);
-    await expect
-      .poll(
-        () => {
-          const database = openQualifiedDatabase(databasePath);
-          try {
-            return readRunBilling(database, "run:installed-main").identities.filter(
-              ({ status }) => status === "settled",
-            ).length;
-          } finally {
-            database.close();
-          }
-        },
-        { timeout: 30_000 },
-      )
-      .toBe(6);
+    try {
+      await expect
+        .poll(
+          () => {
+            const database = openQualifiedDatabase(databasePath);
+            try {
+              return readRunBilling(database, "run:installed-main").identities.filter(
+                ({ status }) => status === "settled",
+              ).length;
+            } finally {
+              database.close();
+            }
+          },
+          { timeout: 30_000 },
+        )
+        .toBe(6);
+    } catch (error) {
+      const database = openQualifiedDatabase(databasePath);
+      try {
+        const identities = readRunBilling(database, "run:installed-main").identities.map(
+          ({ source, status, operationKey }) => `${source}:${status}:${operationKey}`,
+        );
+        const routes = providerRequests.map(({ path: route }) => route);
+        throw new Error(
+          `${error instanceof Error ? error.message : String(error)} identities=${JSON.stringify(identities)} providerRoutes=${JSON.stringify(routes)}`,
+        );
+      } finally {
+        database.close();
+      }
+    }
     const modelCalls = providerRequests.filter(({ path: route }) => route.startsWith("/v1/"));
     for (const call of modelCalls) {
       expect(call.body?.["model"]).toBe(
