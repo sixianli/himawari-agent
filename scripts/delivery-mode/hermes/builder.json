@@ -1,4 +1,6 @@
 {
+  "arch": "x64",
+  "transport": "wrapper",
   "hostname": "hermes-home",
   "workRoot": "/data/hermes/himawari/tool-audit-round2/packet-builder",
   "scriptRoot": "/home/andy/himawari-tests/packet-builder/scripts",

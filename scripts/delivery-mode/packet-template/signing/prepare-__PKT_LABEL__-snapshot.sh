@@ -2,7 +2,7 @@ set -euo pipefail
 umask 022
 [[ ${1:-} == --approved-__PKT_LABEL__-snapshot && $# == 1 ]]
 [[ $(hostname) == __PKT_HOSTNAME__ && $(id -u) == 0 ]]
-[[ $(id -u himawari-prod) == 999 && $(id -g himawari-prod) == 988 ]]
+[[ $(id -u himawari-prod) == __PKT_SERVICE_UID__ && $(id -g himawari-prod) == __PKT_SERVICE_GID__ ]]
 [[ $(/usr/bin/systemctl show --property=ActiveState --value himawari-prod.service) == inactive ]]
 state=/var/lib/himawari/state
 deployment=$state/deployment
@@ -12,9 +12,9 @@ packet=/var/tmp/himawari-__PKT_LABEL__-__PKT_DATE_COMPACT__/packet
 node=/opt/himawari/node/bin/node
 config=/etc/himawari/config.json
 [[ -d $state && ! -L $state && $(realpath "$state") == "$state" ]]
-[[ $(stat -c %u "$state") == 999 && $(stat -c %a "$state") == 700 ]]
+[[ $(stat -c %u "$state") == __PKT_SERVICE_UID__ && $(stat -c %a "$state") == 700 ]]
 [[ -d $deployment && ! -L $deployment && $(realpath "$deployment") == "$deployment" ]]
-[[ $(stat -c %u "$deployment") == 999 && $(stat -c %a "$deployment") == 700 ]]
+[[ $(stat -c %u "$deployment") == __PKT_SERVICE_UID__ && $(stat -c %a "$deployment") == 700 ]]
 [[ -f $operations/runtime-protection.json && ! -L $operations/runtime-protection.json ]]
 [[ -x /usr/bin/setpriv && ! -e $config.next && ! -L $config.next ]]
 [[ ! -e $deployment/capability-deployment.json.next && ! -L $deployment/capability-deployment.json.next ]]
@@ -62,14 +62,14 @@ if 'inputs/bindings.json' not in seen or 'inputs/s0-db-readback.json' not in see
     raise RuntimeError('FROZEN___PKT_LABEL_UPPER___PACKET_OBSERVATIONS_REQUIRED')
 PYTHON
 set -C
-/usr/bin/setpriv --reuid=999 --regid=988 --init-groups --no-new-privs --bounding-set=-all --inh-caps=-all --ambient-caps=-all /usr/bin/env -i PATH=/opt/himawari/node/bin:/usr/bin:/bin HOME="$state" LANG=C.UTF-8 HIMAWARI_RUNTIME_PROTECTION_FILE="$operations/runtime-protection.json" "$node" --no-global-search-paths "$operations/cloud-protected-prepare.mjs" --prepare "$config" > "$qualification/__PKT_LABEL__-prepare.json"
+/usr/bin/setpriv --reuid=__PKT_SERVICE_UID__ --regid=__PKT_SERVICE_GID__ --init-groups --no-new-privs --bounding-set=-all --inh-caps=-all --ambient-caps=-all /usr/bin/env -i PATH=/opt/himawari/node/bin:/usr/bin:/bin HOME="$state" LANG=C.UTF-8 HIMAWARI_RUNTIME_PROTECTION_FILE="$operations/runtime-protection.json" "$node" --no-global-search-paths "$operations/cloud-protected-prepare.mjs" --prepare "$config" > "$qualification/__PKT_LABEL__-prepare.json"
 chmod 0640 "$qualification/__PKT_LABEL__-prepare.json"
 chown root:himawari-prod "$qualification/__PKT_LABEL__-prepare.json"
-[[ $(stat -c %u "$qualification/__PKT_LABEL__-prepare.json") == 0 && $(stat -c %g "$qualification/__PKT_LABEL__-prepare.json") == 988 && $(stat -c %a "$qualification/__PKT_LABEL__-prepare.json") == 640 ]]
-[[ $(stat -c %u "$config") == 999 && $(stat -c %a "$config") == 600 ]]
-[[ $(stat -c %u "$deployment/capability-deployment.json") == 999 && $(stat -c %a "$deployment/capability-deployment.json") == 600 ]]
+[[ $(stat -c %u "$qualification/__PKT_LABEL__-prepare.json") == 0 && $(stat -c %g "$qualification/__PKT_LABEL__-prepare.json") == __PKT_SERVICE_GID__ && $(stat -c %a "$qualification/__PKT_LABEL__-prepare.json") == 640 ]]
+[[ $(stat -c %u "$config") == __PKT_SERVICE_UID__ && $(stat -c %a "$config") == 600 ]]
+[[ $(stat -c %u "$deployment/capability-deployment.json") == __PKT_SERVICE_UID__ && $(stat -c %a "$deployment/capability-deployment.json") == 600 ]]
 [[ ! -e $config.next && ! -L $config.next && ! -e $deployment/capability-deployment.json.next && ! -L $deployment/capability-deployment.json.next ]]
-/usr/bin/setpriv --reuid=999 --regid=988 --init-groups --no-new-privs --bounding-set=-all --inh-caps=-all --ambient-caps=-all /usr/bin/env -i PATH=/opt/himawari/node/bin:/usr/bin:/bin HOME="$state" LANG=C.UTF-8 HIMAWARI_RUNTIME_PROTECTION_FILE="$operations/runtime-protection.json" "$node" --no-global-search-paths --input-type=module - <<'NODE'
+/usr/bin/setpriv --reuid=__PKT_SERVICE_UID__ --regid=__PKT_SERVICE_GID__ --init-groups --no-new-privs --bounding-set=-all --inh-caps=-all --ambient-caps=-all /usr/bin/env -i PATH=/opt/himawari/node/bin:/usr/bin:/bin HOME="$state" LANG=C.UTF-8 HIMAWARI_RUNTIME_PROTECTION_FILE="$operations/runtime-protection.json" "$node" --no-global-search-paths --input-type=module - <<'NODE'
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";

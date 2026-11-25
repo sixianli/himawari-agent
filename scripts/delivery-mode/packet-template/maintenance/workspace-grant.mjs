@@ -29,7 +29,7 @@ export function verifyWorkspaceIdentity(live, frozen, plan) {
   validateWorkspacePlan(plan);
   assert(frozen && typeof frozen === "object" && frozen.path === plan.canonicalPath, "__PKT_LABEL_UPPER___MAINTENANCE_WORKSPACE_IDENTITY_REQUIRED");
   assert.deepEqual(frozen.subdirectories.map((child) => child.name), plan.subdirectories, "__PKT_LABEL_UPPER___MAINTENANCE_WORKSPACE_SUBDIRECTORIES_CHANGED");
-  assert(frozen.uid === 999 && frozen.gid === 988 && frozen.mode === "0700", "__PKT_LABEL_UPPER___MAINTENANCE_WORKSPACE_OWNER_OR_MODE_CHANGED");
+  assert(frozen.uid === __PKT_SERVICE_UID__ && frozen.gid === __PKT_SERVICE_GID__ && frozen.mode === "0700", "__PKT_LABEL_UPPER___MAINTENANCE_WORKSPACE_OWNER_OR_MODE_CHANGED");
   assert.deepEqual(live, frozen, "__PKT_LABEL_UPPER___MAINTENANCE_WORKSPACE_IDENTITY_CHANGED");
   return live;
 }

@@ -8,7 +8,7 @@
   "changes": [
     "fixed first-to-second paths and profile",
     "candidate real SHA/bytes/context/revision",
-    "production account UID 999",
+    "production account UID __PKT_SERVICE_UID__",
     "same original limits/assertions/adapters",
     "failed acceptance preserves scratch instead of deleting scene",
     "cleanup/R2L6 helpers placed in independent acceptance/helpers",

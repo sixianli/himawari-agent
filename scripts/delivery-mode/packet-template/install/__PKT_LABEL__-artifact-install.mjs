@@ -11,12 +11,12 @@ const expected = { "__PKT_BUNDLE_NAME__": "__PKT_BUNDLE_SHA256__", "candidate.ta
 const fail = (condition, message) => { if (!condition) throw new Error(message); };
 const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const [input, work, prefix, evidence] = process.argv.slice(2);
-fail(process.argv.length === 6 && process.platform === "linux" && process.arch === "x64" && process.version === "v22.22.3", "P5_ENVIRONMENT_INVALID");
+fail(process.argv.length === 6 && process.platform === "linux" && process.arch === "__PKT_NODE_ARCH__" && process.version === "v22.22.3", "P5_ENVIRONMENT_INVALID");
 for (const value of [input, work, prefix, evidence]) fail(typeof value === "string" && path.isAbsolute(value) && path.normalize(value) === value, "P5_ARGUMENT_INVALID");
 fail(realpathSync(input) === input && realpathSync(evidence) === evidence && !existsSync(work) && !existsSync(prefix), "P5_TARGET_NOT_FRESH");
 fail(!evidence.startsWith(work + path.sep) && !input.startsWith(work + path.sep) && !work.startsWith(prefix + path.sep) && !prefix.startsWith(work + path.sep), "P5_PATH_OVERLAP");
 const materials = JSON.parse(readFileSync(path.join(input, "p5-materials.json")));
-const rehearsal = hostname() === "hermes-home";
+const rehearsal = hostname() === "__PKT_REHEARSAL_HOSTNAME__";
 fail((rehearsal && materials.purpose === "hermes-rehearsal" && materials.nonProduction === true && materials.nodeAlreadyInstalled === true) || (!rehearsal && hostname() === "__PKT_HOSTNAME__" && materials.purpose === "cloud-__PKT_LABEL__-install" && materials.nonProduction === false && materials.nodeAlreadyInstalled === true), "P5_MATERIAL_PURPOSE_INVALID");
 fail(materials.schemaVersion === 2 && materials.sourceHead === head && materials.files.length === 7, "P5_MATERIALS_INVALID");
 for (const item of materials.files) {
