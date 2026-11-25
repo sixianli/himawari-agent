@@ -359,9 +359,16 @@ public enum DesignTokens {
     }
 
     public enum Options {
+        public static let afterMessage: CGFloat = 14
         public static let gap: CGFloat = 8
         public static let height: CGFloat = 44
+        public static let icon: CGFloat = 16
+        public static let iconGap: CGFloat = 8
+        public static let maxWidth: CGFloat = 330
+        public static let paddingVertical: CGFloat = 10
+        public static let paddingHorizontal: CGFloat = 16
         public static let radius: CGFloat = 22
+        public static let staleOpacity: CGFloat = 0.42
     }
 
     public enum TypeScale {
@@ -390,6 +397,7 @@ public enum DesignTokens {
         public static let macSmall = TypeToken(size: 12.5, weight: 400, lineHeight: nil, face: .system, tracking: 0)
         public static let navTitle = TypeToken(size: 17, weight: 600, lineHeight: nil, face: .system, tracking: 0)
         public static let offlineBanner = TypeToken(size: 14, weight: 400, lineHeight: nil, face: .system, tracking: 0)
+        public static let option = TypeToken(size: 16, weight: 400, lineHeight: 16 * 1.35, face: .system, tracking: 0)
         public static let pairingNumber = TypeToken(size: 54, weight: 700, lineHeight: nil, face: .rounded, tracking: 2)
         public static let rowAction = TypeToken(size: 15, weight: 600, lineHeight: nil, face: .system, tracking: 0)
         public static let secondary = TypeToken(size: 15, weight: 400, lineHeight: 15 * 1.45, face: .system, tracking: 0)

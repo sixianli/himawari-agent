@@ -171,6 +171,9 @@
   --type-offline-banner-size: 14px;
   --type-offline-banner-weight: 400;
   --type-offline-banner-line-height: normal;
+  --type-option-size: 16px;
+  --type-option-weight: 400;
+  --type-option-line-height: 1.35;
   --type-pairing-number-size: 54px;
   --type-pairing-number-weight: 700;
   --type-pairing-number-line-height: normal;

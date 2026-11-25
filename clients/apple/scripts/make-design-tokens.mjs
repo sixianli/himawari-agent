@@ -82,7 +82,7 @@ export function generate(tokens) {
       ),
     );
   const listSuffixes = (name, length) => {
-    if (/Padding$/u.test(name))
+    if (/(^p|P)adding$/u.test(name))
       return {
         2: ["Vertical", "Horizontal"],
         3: ["Top", "Horizontal", "Bottom"],

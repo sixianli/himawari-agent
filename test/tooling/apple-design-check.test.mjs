@@ -110,6 +110,7 @@ it("flattens one nested level and names value ranges by their ends", () => {
       busyGlow: { inset: -14, opacity: [0.45, 0.95], scale: [0.92, 1.14], easing: "ease-in-out" },
     },
     her: { pagePadding: [58, 16, 40] },
+    options: { padding: [10, 16] },
   });
   expect(swift).toContain("public enum Avatar {");
   expect(swift).toContain("public static let size: CGFloat = 48");
@@ -117,6 +118,8 @@ it("flattens one nested level and names value ranges by their ends", () => {
   expect(swift).toContain("public static let busyGlowOpacityMin: CGFloat = 0.45");
   expect(swift).toContain("public static let busyGlowScaleMax: CGFloat = 1.14");
   expect(swift).toContain("public static let pagePaddingBottom: CGFloat = 40");
+  expect(swift).toContain("public static let paddingVertical: CGFloat = 10");
+  expect(swift).toContain("public static let paddingHorizontal: CGFloat = 16");
   expect(swift).not.toContain("let fill: CGFloat");
   expect(swift).not.toContain("busyGlowEasing");
 });

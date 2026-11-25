@@ -62,13 +62,26 @@ public enum DemoChatFixtures {
         ]
     }
 
-    private static func message(_ id: String, _ sequence: Int, role: String, runId: String? = nil, at date: Date) -> [String: Any] {
+    private static func message(_ id: String, _ sequence: Int, role: String, runId: String? = nil, at date: Date, options: [String: Any]? = nil) -> [String: Any] {
         var object: [String: Any] = [
             "messageId": id, "sequence": sequence, "role": role, "contentRef": "text:\(id)",
             "status": "committed", "committedAt": iso(date),
         ]
         if let runId { object["runId"] = runId }
+        if let options { object["options"] = options }
         return object
+    }
+
+    private static func options(_ setId: String, state: String, _ items: [(id: String, label: String, action: String?)]) -> [String: Any] {
+        [
+            "setId": setId,
+            "items": items.map { item -> [String: Any] in
+                [
+                    "optionId": item.id, "label": item.label, "reason": NSNull(), "state": state,
+                    "action": item.action.map { ["tool": "mail.reply", "summary": $0] as [String: Any] } ?? NSNull(),
+                ]
+            },
+        ]
     }
 
     private static func detail(_ thread: [String: Any], messages: [[String: Any]], runs: [(String, String)]) -> ThreadDetail {
@@ -155,6 +168,45 @@ public enum DemoChatFixtures {
     }
 
     public static let talkHeard = "那天大阪会下雨吗"
+
+    static let releaseQuestion = "新 iPhone 什么时候发售？"
+    static let releaseAnswer = "苹果还没公布日期。往年都在 9 月第二周发布、隔一周的周五开卖，照这个算大概是 9 月 18 日。"
+    static let tanakaNote = "田中来信问周四下午能不能见面。你周四 15:00 以后空着。"
+    static let tanakaReply = "回复 田中：周四 15:00 可以"
+    static let tanakaDone = "发出去了。周四 15:00 也记进了日历。"
+
+    public static func withOptions() -> DemoChatState {
+        let start = todayAt(14, 48)
+        return osaka(
+            messages: [
+                message("m1", 1, role: "owner", at: start),
+                message("m2", 2, role: "agent", at: start.addingTimeInterval(9), options: options("set-1", state: "open", [
+                    ("o1", "查哪家最便宜", nil),
+                    ("o2", "发售前一天提醒我", nil),
+                    (MessageOptions.dismissId, "不用了", nil),
+                ])),
+            ],
+            runs: [],
+            texts: ["text:m1": releaseQuestion, "text:m2": releaseAnswer]
+        )
+    }
+
+    public static func optionChosen() -> DemoChatState {
+        let start = todayAt(14, 30)
+        return osaka(
+            messages: [
+                message("m1", 1, role: "agent", at: start, options: options("set-2", state: "stale", [
+                    ("o1", tanakaReply, "给田中回邮件：周四 15:00 可以"),
+                    ("o2", "回复 田中：改到周五", "给田中回邮件：改到周五"),
+                    ("o3", "先记进日历", nil),
+                ])),
+                message("m2", 2, role: "owner", at: start.addingTimeInterval(40)),
+                message("m3", 3, role: "agent", at: start.addingTimeInterval(52)),
+            ],
+            runs: [],
+            texts: ["text:m1": tanakaNote, "text:m2": tanakaReply, "text:m3": tanakaDone]
+        )
+    }
 
     public static func formattedStreaming() -> DemoChatState {
         var state = answering()

@@ -16,6 +16,7 @@ public struct ChatView: View {
     @Environment(\.chatOpensAttachSheet) private var opensAttachSheet
     @Environment(\.chatCanAttach) private var canAttach
     @Environment(\.chatStopRun) private var stopRun
+    @Environment(\.chatChooseOption) private var chooseOption
     @Environment(\.chatTalk) private var talk
     @Environment(\.chatOwnerAwaited) private var ownerAwaited
     @Environment(\.chatOpensTalk) private var opensTalk
@@ -262,7 +263,14 @@ public struct ChatView: View {
                 ForEach(store.transcript(in: threadId)) { item in
                     switch item {
                     case let .message(message):
-                        MessageRow(role: message.role, text: store.texts[message.contentRef], failed: message.status == .failed)
+                        if message.role == .agent, let options = message.options {
+                            VStack(alignment: .leading, spacing: DesignTokens.Options.afterMessage) {
+                                MessageRow(role: message.role, text: store.texts[message.contentRef], failed: message.status == .failed)
+                                MessageOptionsView(options: options, choose: choose(for: message))
+                            }
+                        } else {
+                            MessageRow(role: message.role, text: store.texts[message.contentRef], failed: message.status == .failed)
+                        }
                     case let .process(runId):
                         if let line = store.processLine(for: runId, in: threadId) {
                             ProcessRowView(line: line, failed: store.run(runId, in: threadId)?.status == "failed")
@@ -294,6 +302,12 @@ public struct ChatView: View {
         .defaultScrollAnchor(.bottom, for: .sizeChanges)
         .scrollDismissesKeyboard(.interactively)
         .scrollIndicators(.hidden)
+    }
+
+    private func choose(for message: ThreadMessage) -> (@MainActor (MessageOptions.Item) async throws -> Void)? {
+        guard let chooseOption else { return nil }
+        let threadId = threadId
+        return { item in try await chooseOption(threadId, message, item) }
     }
 
     private var stopAction: (() -> Void)? {

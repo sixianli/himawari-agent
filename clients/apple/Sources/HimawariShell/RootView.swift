@@ -108,6 +108,7 @@ struct MainShell: View {
                 ChatView(store: chat, threadId: threadId, draft: draft.text, openHerPage: { herOpen = true })
                     .id(draft.nonce)
                     .environment(\.chatStopRun, stopRun)
+                    .environment(\.chatChooseOption, chooseOption)
                     .environment(\.chatOwnerAwaited, (actions?.waitingCount ?? 0) > 0)
                     .environment(\.chatCanAttach, model.configuration?.acceptsChatAttachments == true)
                     #if os(iOS)
@@ -164,6 +165,14 @@ struct MainShell: View {
     private var stopRun: @MainActor @Sendable (String, ThreadRunSummary) async throws -> Void {
         let stopper = ThreadRunStopper(api: model.api, confirmKey: model.confirmKey)
         return { threadId, run in try await stopper.stop(threadId: threadId, run: run) }
+    }
+
+    private var chooseOption: @MainActor @Sendable (String, ThreadMessage, MessageOptions.Item) async throws -> Void {
+        let chooser = ThreadOptionChooser(api: model.api, confirmKey: model.confirmKey)
+        return { threadId, message, item in
+            guard let options = message.options else { return }
+            try await chooser.choose(threadId: threadId, messageId: message.messageId, setId: options.setId, optionId: item.optionId)
+        }
     }
 
     private var herPage: some View {

@@ -146,7 +146,42 @@ public struct ThreadMessage: Codable, Sendable, Equatable, Identifiable {
     public let turnId: String?
     public let runId: String?
     public let committedAt: String
+    public var options: MessageOptions? = nil
     public var id: String { messageId }
+}
+
+public struct MessageOptions: Codable, Sendable, Equatable {
+    public static let dismissId = "dismiss"
+
+    public enum State: String, Codable, Sendable {
+        case open
+        case chosen
+        case stale
+
+        public init(from decoder: any Decoder) throws {
+            self = State(rawValue: try decoder.singleValueContainer().decode(String.self)) ?? .stale
+        }
+    }
+
+    public struct Action: Codable, Sendable, Equatable {
+        public let tool: String
+        public let summary: String
+    }
+
+    public struct Item: Codable, Sendable, Equatable, Identifiable {
+        public let optionId: String
+        public let label: String
+        public let reason: String?
+        public let action: Action?
+        public let state: State
+        public var id: String { optionId }
+        public var isDismiss: Bool { optionId == MessageOptions.dismissId }
+    }
+
+    public let setId: String
+    public let items: [Item]
+
+    public var isOpen: Bool { items.allSatisfy { $0.state == .open } }
 }
 
 public struct ThreadRunSummary: Codable, Sendable, Equatable {

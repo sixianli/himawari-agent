@@ -80,6 +80,7 @@ public enum IconName: String, CaseIterable, Sendable {
     case qrcodeOff = "qrcode-off"
     case scan
     case search
+    case send
     case server
     case serverLarge = "server-large"
     case share2 = "share-2"
