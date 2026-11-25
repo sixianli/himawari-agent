@@ -28,6 +28,7 @@ UNITS = ['first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eig
 TEENS = ['tenth', 'eleventh', 'twelfth', 'thirteenth', 'fourteenth', 'fifteenth', 'sixteenth', 'seventeenth', 'eighteenth', 'nineteenth']
 TENS = [('twenty', 'twentieth'), ('thirty', 'thirtieth'), ('forty', 'fortieth'), ('fifty', 'fiftieth'), ('sixty', 'sixtieth'), ('seventy', 'seventieth'), ('eighty', 'eightieth'), ('ninety', 'ninetieth')]
 FIRST_INSTALL_LABEL = 'firstinstall'
+FIRST_TOOLS_CAPABILITY_REFS = ('himawari.pi-coding', 'himawari.public-search', 'himawari.public-fetch')
 ORDINALS = UNITS + TEENS + [word for base, ordinal in TENS for word in [ordinal] + [base + unit for unit in UNITS]]
 MIGRATIONS = 'packages/persistence-sqlite/src/migrations'
 MIGRATION_ENGINE = 'packages/persistence-sqlite/src/migration-engine.ts'
@@ -306,6 +307,7 @@ def discovery_script():
         "    'model': {key: models[0].get(key) for key in ('contextWindow', 'maxTokens')} if len(models) == 1 else None,",
         "    'publicFetchMaximumBytes': fetch.get('maximumBytes') if isinstance(fetch, dict) else None,",
         "    'budgetsPresent': 'budgets' in config,",
+        "    'capabilityDeploymentPresent': isinstance(config.get('capabilityDeployment'), dict),",
         "    'configSha256': hashlib.sha256(config_bytes).hexdigest(),",
         "    'unitSha256': hashlib.sha256(unit).hexdigest(),",
         "    'newPathsExist': [path for path in (prefix_new, operations_new) if os.path.lexists(path)],",
@@ -393,6 +395,8 @@ def interpret_discovery(facts, instance, label=None):
         'ORIGINAL_CONTEXT_WINDOW': model['contextWindow'],
         'ORIGINAL_MAX_TOKENS': model['maxTokens'],
         'ORIGINAL_PUBLIC_FETCH_BYTES': fetch_bytes,
+        'FIRST_TOOLS': '0' if facts.get('capabilityDeploymentPresent', True) else '1',
+        'NEW_CAPABILITY_REFS_JSON': json.dumps([] if facts.get('capabilityDeploymentPresent', True) else list(FIRST_TOOLS_CAPABILITY_REFS), separators=(',', ':')),
         'DISCOVERED_CONFIG_SHA256': facts.get('configSha256'),
         'DISCOVERED_UNIT_SHA256': facts.get('unitSha256'),
         'SOURCE_CACHE_COMMITS': sorted(commit for commit in facts.get('sourceCacheCommits', []) if re.fullmatch(r'[0-9a-f]{40}', commit)),
@@ -520,7 +524,41 @@ def schema_parameters(parameters, s0):
     return {'CURRENT_SCHEMA': current, 'PREVIOUS_SCHEMA': current - 1, 'MIGRATION_LEDGER': json.dumps(ledger, separators=(',', ':'))}
 
 
+CONDITION_LINE = re.compile(r'^__PKT_(WHEN_[A-Z0-9_]+|OTHERWISE|END_WHEN)__[ \t]*$')
+
+
+def select_conditional_blocks(text, parameters, where):
+    kept, state = [], None
+    for line in text.splitlines(keepends=True):
+        match = CONDITION_LINE.match(line.rstrip('\r\n'))
+        if match is None:
+            if state is None or state['active']:
+                kept.append(line)
+            continue
+        word = match.group(1)
+        if word.startswith('WHEN_'):
+            if state is not None:
+                refuse('PACKET_CONDITION_NESTED', where)
+            key = word[5:]
+            if key not in parameters:
+                refuse('PACKET_PARAMETER_MISSING', key + ' in ' + where)
+            state = {'condition': str(parameters[key]) == '1', 'active': str(parameters[key]) == '1', 'otherwise': False}
+        elif word == 'OTHERWISE':
+            if state is None or state['otherwise']:
+                refuse('PACKET_CONDITION_UNBALANCED', where)
+            state['otherwise'] = True
+            state['active'] = not state['condition']
+        else:
+            if state is None:
+                refuse('PACKET_CONDITION_UNBALANCED', where)
+            state = None
+    if state is not None:
+        refuse('PACKET_CONDITION_UNBALANCED', where)
+    return ''.join(kept)
+
+
 def substitute(text, parameters, where):
+    text = select_conditional_blocks(text, parameters, where)
     def value(match):
         key = match.group(0)[6:-2]
         if key not in parameters:
@@ -791,11 +829,22 @@ def python_material_sha(commit, arch):
     return artifact['sha256']
 
 
+FD_PINS = HERE / 'fd-pins.json'
+
+
+def fd_parameters(arch):
+    platform = json.loads(FD_PINS.read_text())['platforms'].get(arch)
+    if not isinstance(platform, dict) or not all(re.fullmatch(pattern, str(platform.get(key))) for key, pattern in (('triple', r'[a-z0-9_]+-unknown-linux-musl'), ('archiveSha256', r'[0-9a-f]{64}'), ('binarySha256', r'[0-9a-f]{64}'))):
+        refuse('PACKET_FD_NOT_PINNED', arch)
+    return {'FD_TRIPLE': platform['triple'], 'FD_ARCHIVE_SHA256': platform['archiveSha256'], 'FD_BINARY_SHA256': platform['binarySha256']}
+
+
 def builder_parameters(commit, discovered, settings):
     builder_hostname = settings['hostname']
     separate = builder_hostname != discovered['HOSTNAME']
     return {
         'PYTHON_SHA256': python_material_sha(commit, discovered['NODE_ARCH']),
+        **fd_parameters(discovered['NODE_ARCH']),
         'BUILDER_HOSTNAME': builder_hostname,
         'REHEARSAL_HOSTNAME': builder_hostname if separate else '',
     }

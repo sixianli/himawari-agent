@@ -11,7 +11,7 @@
 - 第 3 层，构建加完整的 `npm test`：每批交付（一组一起交去审查或验收的改动，通常不超过三个独立缺陷）运行一次，在开 PR 或合并之前，以及在一轮工作结束时运行。当改动涉及 SQLite 数据库结构或迁移、Agent-Worker 协议、身份认证或握手、构建或打包配置、依赖清单或锁文件，或测试运行器本身（`vitest.workspace.ts`、`ci/policy.json`，以及 `scripts/ci/` 中决定测试如何收集、启动、并行运行或判定的文件：`local.mjs`、`run.mjs`、`test.mjs`、`execute.mjs`、`test-concurrency.mjs`、`test-scope.mjs`、`build.mjs`、`install-tools.mjs`、`install-dependencies.mjs`、`install-gate-dependencies.mjs`、`context.mjs`、`contracts.mjs`）时，改为针对这一个改动单独运行；拿不准一个脚本归哪类时按这一类办，判断依据只有一个：它是否参与决定测试怎样被收集、启动、并发或判定，把判断写进提交说明。只在某个检查步骤中运行的 `scripts/ci/` 脚本（例如 `check-policy.mjs`），改为运行 `local.mjs --check <that check>` 加上整个 `tooling` 项目，完整的第 3 层等到这批交付时再跑。
 - 在开始第 3 层之前，先完成第 0-2 层和一次自我审查。如果第 3 层失败，回到第 0 层，修复，通过第 0-2 层，然后在这批交付的最终版本上重新运行一次第 3 层。
 - 第 4 层，真实产品路径（在 Hermes 上的 Linux，安装在测试账号自己的目录下；Mac 只按 [测试主机与生产主机](test-and-production-hosts.md) 中的批准规则运行）：当改动影响安装、升级、进程管理或沙箱运行时行为时，只运行受影响的场景；不加筛选的完整资格验证只在一轮工作结束时或发布之前运行。
-- 第 5 层，生产上线到生产机（Oracle 东京的 ARM 机，地址在上线时用 `--host` 或 `HIMAWARI_PACKET_HOST` 指定；旧的 x86 云服务器 2026-11-25 已退租）：只有在用户对每一次上线明确授权后才进行；快速模式下，用户在 Mac 线程或项目聊天里说“上线”即为授权（见[交付模式](delivery-mode.md#fast-mode)）。
+- 第 5 层，生产上线到生产机（Oracle 东京的 ARM 机，地址在上线时用 `--host` 或 `HIMAWARI_PACKET_HOST` 指定；旧的 x86 云服务器 2026-11-25 已退租）：由 Claude 在满足上线条件后自己执行，不需要用户对每一次上线授权（Andy 2026-11-26 取消了这个限制，见[交付模式](delivery-mode.md#fast-mode)）。
 - 只改文档的改动，只运行文档校验和 Runbook（操作手册）检查。
 - 只要代码、依赖、测试配置和相关环境没有变化，就复用已通过的结果。提交说明和交付报告必须说明实际运行了哪些层，以及完整测试覆盖的是哪个版本；中间提交没有经过完整测试时，绝不能说它经过了完整测试。
 - 这些规则只管开发测试。`ci/policy.json` 中要求的 GitHub CI（持续集成）检查不变，它们跑在 GitHub 的免费标准托管机器上（见 [ADR 0292](../../docs/adr/0292-how-ci-runs-now.md)）。

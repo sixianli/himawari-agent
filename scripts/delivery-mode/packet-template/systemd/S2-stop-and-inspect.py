@@ -118,7 +118,11 @@ def preserve_qualification():
                 shutil.copyfileobj(input_file, output_file)
             require(digest(source) == digest(copied), '__PKT_LABEL_UPPER___S2_QUALIFICATION_COPY_CHANGED')
             records.append({'source': str(source), 'path': str(copied), 'sha256': digest(copied), 'bytes': copied.stat().st_size})
+__PKT_WHEN_FIRST_TOOLS__
+    require(records and not any(pathlib.Path(record['path']).name == 'installation-receipt.json' for record in records), '__PKT_LABEL_UPPER___S2_FIRST_TOOLS_QUALIFICATION_UNEXPECTED')
+__PKT_OTHERWISE__
     require(any(pathlib.Path(record['path']).name == 'installation-receipt.json' for record in records), '__PKT_LABEL_UPPER___S2_OLD_QUALIFICATION_RECEIPT_MISSING')
+__PKT_END_WHEN__
     return records
 
 
@@ -238,7 +242,12 @@ def main():
                 if SERVICE_UID in process['uids']:
                     require(process['noNewPrivileges'] == '1' and int(process['capabilityEffective'] or '1', 16) == 0 and int(process['capabilityBoundingSet'] or '1', 16) == 0 and int(process['capabilityAmbient'] or '1', 16) == 0, '__PKT_LABEL_UPPER___S2_ORIGINAL_PROCESS_BOUNDARY_UNVERIFIED')
             report['initialProcessSurvey'] = initial_processes
+__PKT_WHEN_FIRST_TOOLS__
+            report['preserved'] = [preserve_file(UNIT, 'original-unit.service'), preserve_file(CONFIG, 'original-config.json', SERVICE_UID), preserve_file('__PKT_OLD_OPERATIONS__/pair-supervisor.mjs', 'original-pair-supervisor.mjs')]
+            require(not os.path.lexists('/var/lib/himawari/state/deployment/capability-deployment.json') and not os.path.lexists('/var/lib/himawari/state/deployment/startup-attestation.json') and 'capabilityDeployment' not in load(CONFIG), '__PKT_LABEL_UPPER___S2_FIRST_TOOLS_HOST_ALREADY_HAS_TOOLS')
+__PKT_OTHERWISE__
             report['preserved'] = [preserve_file(UNIT, 'original-unit.service'), preserve_file(CONFIG, 'original-config.json', SERVICE_UID), preserve_file('/var/lib/himawari/state/deployment/capability-deployment.json', 'original-capability-deployment.json', SERVICE_UID), preserve_file('/var/lib/himawari/state/deployment/startup-attestation.json', 'original-startup-attestation.json', SERVICE_UID), preserve_file(OLD_PROTECTION, 'original-runtime-protection.json'), preserve_file('__PKT_OLD_OPERATIONS__/cloud-protected-prepare.mjs', 'original-prepare-helper.mjs'), preserve_file('__PKT_OLD_OPERATIONS__/pair-supervisor.mjs', 'original-pair-supervisor.mjs')]
+__PKT_END_WHEN__
             report['preservedQualification'] = preserve_qualification()
             report['journalBefore'] = retained_journal_metadata(initial_service['InvocationID'], suffix + '-before')
             report['originalControlGroup'] = initial_service['ControlGroup']
