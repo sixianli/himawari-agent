@@ -4,7 +4,7 @@ document_type: adr
 decision_status: accepted
 supersedes: ""
 superseded_by: ""
-amends: "docs/adr/0230-perception-records-and-memories-inferred-from-perception.md, docs/adr/0244-hard-rules-step4-unified-push-gate.md, docs/adr/0257-consequential-tool-calls-go-through-one-authorization-exit.md"
+amends: "docs/adr/0230-perception-records-and-memories-inferred-from-perception.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0244-hard-rules-step4-unified-push-gate.md, docs/adr/0257-consequential-tool-calls-go-through-one-authorization-exit.md"
 date: "2026-11-24"
 covers: ""
 verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"

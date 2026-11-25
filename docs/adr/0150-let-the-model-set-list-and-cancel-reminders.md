@@ -34,7 +34,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 ## 决定
 
-1. 新增三个模型工具，追加在工具定义列表的最末尾：`reminder_set`（事项、主人当地时间、是否每年）、`reminder_list`（列出还没到点的提醒）、`reminder_cancel`。工具描述里不放任何随轮变化的值；当前时间和时区继续只出现在最后一条消息里（[ADR 0149](0149-append-only-model-requests.md)）。
+1. 新增三个模型工具，追加在工具定义列表的最末尾：`reminder_set`（事项、主人当地时间、是否每年）、`reminder_list`（列出还没到点的提醒）、`reminder_cancel`。工具描述里不放任何随轮变化的值；当前时间和时区继续只出现在最后一条消息里（[ADR 0149](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0149-append-only-model-requests.md)）。
 2. 一个共用的写入类 `ProductionReminderWriter`（`apps/agent-service/src/production-reminder-writer.ts`）：一条 commitment 记忆加一条提醒，沿用「一条记忆至多一条提醒」，不新增表。时间解析复用自动记忆提取已有的 `reminderSchedule`，按主人配置的时区解释；已过去、超过两年的时间，以及含机密或证件号的文字，都拒绝，并把原因返回给模型，要求它如实告诉主人。
 3. 提醒页的「新建提醒」走新命令 `memory.reminder.create`，同一个写入类。设提醒只有对话和提醒页这两个入口，记忆页的「手动添加一条」不加时间字段。
 4. 权限：只写主人自己的提醒，随时可取消，不弹批准卡（依据：用户主权、边界与可逆性）。

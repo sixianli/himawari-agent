@@ -25,7 +25,7 @@ superseded_by: ""
 
 - 2026-08-26 由所有者直接提出：Agent 应能异步、并行处理多个任务，不再强制不同任务依次串行执行。
 - 产品已有的后台任务与并发原则：[SOURCE: docs/prd-v0.2.md#后台任务计划与恢复]
-- Agent、Thread 与 Run 的隔离决策：[SOURCE: docs/adr/0013-agent-thread-run-memory-model.md]
+- Agent、Thread 与 Run 的隔离决策：[SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0013-agent-thread-run-memory-model.md]
 
 ## Notes
 

@@ -57,6 +57,6 @@ Payload 数据密钥不能以源主机明文 master key 形式迁移。导出流
 ## 关联文档
 
 - [SOURCE: docs/prd-v0.2.md#mac-hermes-与权威迁移]
-- [SOURCE: docs/adr/0003-single-logical-agent-authority.md]
+- [SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0003-single-logical-agent-authority.md]
 - [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0012-portable-local-first-deployment.md]
-- [SOURCE: docs/adr/0018-sqlite-product-state-authority.md]
+- [SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0018-sqlite-product-state-authority.md]

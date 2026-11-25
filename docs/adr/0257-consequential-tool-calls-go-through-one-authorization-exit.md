@@ -72,11 +72,11 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 | 12 | 工具结果已经能带一个标记并抬高这一轮的状态（数据分级） | `packages/runtime-pi/src/pi-runtime-adapter.ts:2235`：`if (result.contentClassification)` |
 | 13 | 已有自动复核端口，但它只看动作摘要，不看对话 | `apps/agent-service/src/production-automatic-review.ts:71`：`// Only the host's frozen summary reaches the reviewer: identity, versions,` |
 | 14 | 这次改动之前规则手册只有邮件的两道闸门（`mail_item`、`mail_delivery`）；这次加了第三道 `action` | `packages/application/src/rules/field-catalog.ts:9`：`export const RULE_GATES = ["mail_item", "mail_delivery", "action"] as const;` |
-| 15 | 动作闸门是规则手册计划中的第 3 步 | `docs/adr/0209-rule-book-with-cel-expressions-and-judge.md:104`：`第 3 步动作闸门` |
+| 15 | 动作闸门是规则手册计划中的第 3 步 | [ADR 0209 第 104 行](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0209-rule-book-with-cel-expressions-and-judge.md?plain=1#L104)：`第 3 步动作闸门` |
 | 16 | 愿景要求常规判断预先授权，不逐次确认 | `docs/product-vision.md:58`：`常规判断应由规则手册预先授权，不逐次确认` |
 | 17 | 苹果端设计要求读过不可信内容后中风险动作等确认，后台一律不做 | `docs/execution/specs/2026-11-11-apple-device-body-design.md:364-369`：`本来按规则手册预先授权、不用问的中风险动作，这一轮改成要主人点一下确认`；`一律不做，改存“建议”` |
-| 18 | 主人明说“以后一律”的规则直接生效 | `docs/adr/0209-rule-book-with-cel-expressions-and-judge.md:58`：`主人明确说“以后 / 一律……”的，规则直接生效，同时给一张回执卡` |
-| 19 | 审批写在工具执行里、主人点头后回放，是已批准的做法 | `docs/adr/0204-handle-pi-deviations-d2-d3-d5.md:47`：`D2、D3 批准保留。` |
+| 18 | 主人明说“以后一律”的规则直接生效 | [ADR 0209 第 58 行](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0209-rule-book-with-cel-expressions-and-judge.md?plain=1#L58)：`主人明确说“以后 / 一律……”的，规则直接生效，同时给一张回执卡` |
+| 19 | 审批写在工具执行里、主人点头后回放，是已批准的做法 | [ADR 0204 第 47 行](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0204-handle-pi-deviations-d2-d3-d5.md?plain=1#L47)：`D2、D3 批准保留。` |
 | 20 | Claude Code 自动模式的做法 | <https://www.anthropic.com/engineering/claude-code-auto-mode>：“The classifier sees only user messages and the agent's tool calls”；“When the classifier blocks an action, Claude shouldn't halt and wait for input” |
 | 21 | Meta 的两条规则 | <https://ai.meta.com/blog/practical-ai-agent-security/>：“agents must satisfy no more than two of the following three properties within a session” |
 | 22 | Claude Code 的分类器自己也会错，并且分不清参数是用户说的还是模型从别处抄来的 | 同前提 20 的网页：“The 17% false-negative rate on real overeager actions is the honest number.” |
@@ -309,8 +309,8 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ## 关联文档
 
 - [整合方案](../../.agents/plans/owner-scope-approval.md)：三方比较和讨论记录。
-- [ADR 0209](0209-rule-book-with-cel-expressions-and-judge.md)：规则手册；本 ADR 做它计划里的动作闸门，只做内置规则。
-- [ADR 0204](0204-handle-pi-deviations-d2-d3-d5.md)：审批写在工具执行里、主人点头后回放。
+- [ADR 0209](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0209-rule-book-with-cel-expressions-and-judge.md)：规则手册；本 ADR 做它计划里的动作闸门，只做内置规则。
+- [ADR 0204](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0204-handle-pi-deviations-d2-d3-d5.md)：审批写在工具执行里、主人点头后回放。
 - [苹果端详细设计](../execution/specs/2026-11-11-apple-device-body-design.md)：“指令和数据的界线”“设备工具和动作”“新值清单”。
 - [.agents/instructions/prompt-prefix.md](../../.agents/instructions/prompt-prefix.md)：发给模型的内容只追加。
 

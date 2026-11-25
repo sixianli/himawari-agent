@@ -93,6 +93,6 @@ Andy 2026-10-31 在生产第二十二版上发现，回答是写完后一整块�
 
 - [事故与门槛清单 I-49](../incidents-and-gates.md#incidents)
 - [工程案例库 案例 75](../engineering-casebook.md)
-- [ADR 0131：读请求走独立只读连接](0131-read-lane-separate-readonly-connection.md)
+- [ADR 0131：读请求走独立只读连接](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0131-read-lane-separate-readonly-connection.md)
 
 [↑ 返回阅读导航](#contents)

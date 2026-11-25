@@ -39,7 +39,7 @@
 2. `S7_DB_STATUS` 读到的状态 `s7-preswitch-state.json` 等于 `s3-copy-after56.json`。
 3. `S7_CONFIG_APPLY` 改配置前再读一次，等于 `s7-preswitch-state.json`；它另外保存两份证据：`s7-config-apply.json`（配置改动前后的 SHA-256 和字节数）和 `s7-web-config-authorization.json`（新配置下的授权和能力登记读回）。
 4. `S7_CATALOG_UPGRADE` 升级前等于 `s7-preswitch-state.json`，升级后读回 `s7-catalog-after56.json` 等于升级前。
-5. `S8_READBACK` 只核对保存的 `s3-copy-after56.json` 和 `s7-catalog-after56.json` 两份读回相同（两份都是服务启动前读的）。它**不**拿启动后的生产库和 S3 的数据库副本逐行比较：新服务启动后会合法地改老行（例如结算模型预算、完成对话、清理到期的“想一想”对话），这些写入分不清是正常运行还是损坏。历史的保护全部放在服务停着的这几步：上面第 1 到 4 条，加上 S7 切换脚本在换服务定义、启动新版本之前比较 S7 升级前后两份已保存的停服读回（比的是已保存的证据，不重新读库；此时服务已停，只有 root 能写）（`SWITCH_HISTORY_CHANGED`），以及出包时对迁移改历史表的拒绝（`PACKET_MIGRATION_TOUCHES_PRESERVED_TABLES`）。S9 恢复后和 S3 读回的历史比较照常进行。决定见 [ADR 0279](../../../../docs/adr/0279-history-is-compared-only-while-the-service-is-stopped.md)。
+5. `S8_READBACK` 只核对保存的 `s3-copy-after56.json` 和 `s7-catalog-after56.json` 两份读回相同（两份都是服务启动前读的）。它**不**拿启动后的生产库和 S3 的数据库副本逐行比较：新服务启动后会合法地改老行（例如结算模型预算、完成对话、清理到期的“想一想”对话），这些写入分不清是正常运行还是损坏。历史的保护全部放在服务停着的这几步：上面第 1 到 4 条，加上 S7 切换脚本在换服务定义、启动新版本之前比较 S7 升级前后两份已保存的停服读回（比的是已保存的证据，不重新读库；此时服务已停，只有 root 能写）（`SWITCH_HISTORY_CHANGED`），以及出包时对迁移改历史表的拒绝（`PACKET_MIGRATION_TOUCHES_PRESERVED_TABLES`）。S9 恢复后和 S3 读回的历史比较照常进行。决定见 [ADR 0293](../../../../docs/adr/0293-how-production-deploys-work.md)。
 
 能力登记和升级审计不在这 12 张表里，所以升级不影响历史比较；它们另有各自的前后检查（见上表“能力登记”一行）。
 
