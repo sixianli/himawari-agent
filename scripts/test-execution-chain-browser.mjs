@@ -53,6 +53,8 @@ export async function qualifyExecutionChain(browser, baseUrl, output) {
         text: "",
         input: "",
         output: "",
+        activity: "",
+        activityIcon: "",
         occurredAt: new Date(Date.UTC(2026, 8, 14, 5, 0, sequence)).toISOString(),
         ...values,
       };
