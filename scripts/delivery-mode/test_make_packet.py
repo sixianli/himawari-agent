@@ -1,4 +1,5 @@
 import argparse
+import threading
 import ast
 import copy
 import hashlib
@@ -736,6 +737,20 @@ class HermesCommandTest(unittest.TestCase):
         self.hermes.start('broken', 'echo BUILD_LOG_LINE; exit 7')
         with self.assertRaisesRegex(packet_maker.PacketError, '(?s)PACKET_HERMES_STEP_FAILED broken exit=7.*BUILD_LOG_LINE'):
             self.hermes.wait('broken')
+
+    def test_wait_keeps_polling_while_the_exit_file_is_still_empty(self):
+        self.hermes.install_scripts()
+        log_root = Path(self.hermes.work + '-inputs')
+        log_root.mkdir(parents=True, exist_ok=True)
+        exit_file = log_root / 'late.exit'
+        exit_file.write_text('')
+        (log_root / 'late.log').write_text('')
+        writer = threading.Timer(0.3, lambda: exit_file.write_text('0\n'))
+        writer.start()
+        try:
+            self.hermes.wait('late')
+        finally:
+            writer.join()
 
     def test_a_walkthrough_preflight_failure_refuses_the_packet(self):
         self.hermes.install_scripts()

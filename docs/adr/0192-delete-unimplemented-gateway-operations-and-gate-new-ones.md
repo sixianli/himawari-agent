@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-11-09"
+covers: "ci/operations-pending.json, ci/operations-removed.json, packages/gateway-contracts/src/contracts-v2.ts, packages/persistence-sqlite/test/memory-reminder-cancelled-migration.contract.test.ts, packages/persistence-sqlite/test/migration-engine.contract.test.ts, scripts/check-operations.mjs, test/integration/production-memory-capture.test.ts, test/tooling/operations-check.test.mjs"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0192：删除没人实现、没人调用的网关操作，并加检查拦住新的空壳
@@ -69,7 +71,7 @@ date: "2026-11-09"
 | `memory.search`、`memory.detail` | 记忆页走 `memory.overview.read` |
 | 回执 `task.snapshot`、`inbox.snapshot`、`digest.snapshot`、`memory.snapshot`、`trace.snapshot`、`settings.snapshot`、`session.snapshot`、`health.snapshot` | 只服务上面被删的查询，没有别的操作返回它们 |
 
-同时删除只服务它们的辅助定义（`attentionLevelSchema`、`integrationHealthSchema`），以及 e2e 夹具服务器和契约夹具里对应的假数据。
+同时删除只服务它们的辅助定义（[attentionLevelSchema](https://github.com/sixianli/himawari-agent/blob/fd283e437a172cfbe807dddaae5da674cc814c18/packages/gateway-contracts/src/contracts-v2.ts)、[integrationHealthSchema](https://github.com/sixianli/himawari-agent/blob/fd283e437a172cfbe807dddaae5da674cc814c18/packages/gateway-contracts/src/contracts-v2.ts)），以及 e2e 夹具服务器和契约夹具里对应的假数据。
 
 <a id="options"></a>
 

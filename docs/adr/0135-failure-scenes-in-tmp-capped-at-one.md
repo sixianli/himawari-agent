@@ -6,6 +6,8 @@ supersedes: ""
 superseded_by: ""
 amends: "docs/adr/0120-release-cleanup-on-every-deploy-and-space-preflight.md"
 date: "2026-10-31"
+covers: "scripts/delivery-mode/packet-template/acceptance/helpers/check-p5-scratch-cleanup.py, scripts/delivery-mode/release-cleanup.py, scripts/delivery-mode/test_release_cleanup.py"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0135：生产机 /tmp 里的验收失败现场最多留一份，上线成功后一份不留
@@ -35,7 +37,7 @@ date: "2026-10-31"
 
 ## 业界做法
 
-- systemd 的 `tmpfiles.d` 手册（https://www.freedesktop.org/software/systemd/man/latest/tmpfiles.d.html ，2026-10-31 打开）：清理按时间做，“If a file or directory is older than the current time minus the age field, it is deleted.”，时间取修改时间、访问时间和状态变更时间中最新的。这是按年龄清 `/tmp` 的通用办法，它不知道一个目录是不是最近一次失败的现场，也不知道上线结果。
+- systemd 的 tmpfiles.d 手册（https://www.freedesktop.org/software/systemd/man/latest/tmpfiles.d.html ，2026-10-31 打开）：清理按时间做，“If a file or directory is older than the current time minus the age field, it is deleted.”，时间取修改时间、访问时间和状态变更时间中最新的。这是按年龄清 `/tmp` 的通用办法，它不知道一个目录是不是最近一次失败的现场，也不知道上线结果。
 
 [↑ 返回阅读导航](#contents)
 

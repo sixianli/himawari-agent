@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-11-10"
+covers: ".agents/instructions/model-review.md, apps/admin-cli/src/data-command.ts, apps/admin-cli/src/stopped-target-lock.ts, packages/persistence-sqlite/src/data-export/snapshot.ts, packages/platform-node/src/export-text-policy.ts, scripts/boundary-policy.mjs, scripts/check-egress-redaction.mjs, test/integration/data-cli.test.ts, test/integration/data-export-retrieval.test.ts, test/integration/data-export.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0200：长期记忆与决定记录可以导出，也可以再导入

@@ -6,6 +6,8 @@ supersedes: ""
 superseded_by: ""
 amended_by: "docs/adr/0242-external-agents-join-the-memory-hub-through-one-entry.md"
 date: "2026-11-11"
+covers: "apps/agent-service/src/production-mcp-read.ts, apps/agent-service/test/production-http-composition.unit.test.ts, packages/platform-node/src/identity-gateway.ts, packages/platform-node/src/strict-configuration.ts, packages/platform-node/test/identity-gateway.unit.test.ts, packages/platform-node/test/startup-configuration.unit.test.ts, test/integration/mcp-read.test.ts, test/integration/mcp-write.test.ts, test/integration/production-http-composition-process.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0227：对外 MCP 入口改为校验 Cloudflare Access 登录凭证，去掉固定令牌（部分取代 ADR 0219 决定 1、ADR 0225 决定 1）
@@ -44,7 +46,7 @@ Andy 2026-11-11 在任务 P5-3 的线程里同意的做法是：三个客户端�
 ## 前提
 
 1. Cloudflare Access 的 Managed OAuth 能让 Access 充当一个标准的 OAuth 2.0 授权服务器，支持动态客户端登记（DCR，客户端第一次连接时自己向服务器登记，人不用手工填客户端编号）。源站收到的是 Access 签名的凭证，必须自己校验。来源 <https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/managed-oauth/>：要求 “An OAuth client that supports RFC 8707”；对 MCP 服务器要求 “validate the Access JWT sent in the `Cf-Access-Jwt-Assertion` header”。
-2. Claude 应用的自定义连接器只支持 OAuth 或无认证，固定令牌请求头还在内测。来源 <https://claude.com/docs/connectors/building/authentication.md>：`static_headers` 一行写着 “Beta, for a limited set of organizations”。
+2. Claude 应用的自定义连接器只支持 OAuth 或无认证，固定令牌请求头还在内测。来源 <https://claude.com/docs/connectors/building/authentication.md>：static_headers 一行写着 “Beta, for a limited set of organizations”。
 3. Muse 的连接支持 OAuth，在授权、换令牌、刷新三步都带 RFC 8707 的 `resource` 参数，首选动态登记，定时任务里令牌过期会自己续期；一个连接只能放一个凭据。来源是 Andy 2026-11-11 在 P5-3 线程转来的 Muse 原话：“resource 参数：带，而且三处都带”“DCR：支持，而且明确是首选路径”“access token 过期时自己刷新”“一个连接只存一个凭据”。
 4. Himawari 已经有一个 Cloudflare Access 凭证校验器，网页登录在用。它校验签名（RS256）、issuer、audience、`sub` 和过期时间，不校验邮箱。来源 `packages/platform-node/src/identity-gateway.ts` 的 `CloudflareAccessJwtVerifier`，`jwtVerify(token, createLocalJWKSet(jwks), { algorithms: ["RS256"], issuer: this.options.issuer, audience: this.options.audience, … })`。
 5. 生产入口已经只有一道 Cloudflare Access 门（2026-10-26 Andy 定），网页登录用 `configuration.identity` 里的 Cloudflare Access 配置。来源 `packages/platform-node/src/strict-configuration.ts` 的 `parseIdentityConfiguration`：issuer、audience、jwksUrl 都在 `configuration.identity` 里。
@@ -93,7 +95,7 @@ Andy 2026-11-11 在任务 P5-3 的线程里同意的做法是：三个客户端�
 ## 放弃的做法
 
 - **保留固定令牌，同时也接受 Access 凭证。** 两套认证并存，令牌泄露时的影响面不变，而且 401 的挑战头没法同时满足两边。Andy 2026-11-11 选了只留一套。
-- **Muse 用 Cloudflare 单请求头服务令牌（`read_service_tokens_from_header`）。** 这个头的值要同时放客户端编号和密钥，Muse 会把它当成两个密钥拒绝（前提 3）。
+- **Muse 用 Cloudflare 单请求头服务令牌（read_service_tokens_from_header）。** 这个头的值要同时放客户端编号和密钥，Muse 会把它当成两个密钥拒绝（前提 3）。
 - **这条路径不经过 Cloudflare 认证，只靠 Himawari 自己的令牌。** 少了一层门，而且仍然接不上 Claude 应用。
 - **Himawari 自己实现 OAuth 授权服务器。** 工作量大，安全面也大；Cloudflare 已经能做。
 

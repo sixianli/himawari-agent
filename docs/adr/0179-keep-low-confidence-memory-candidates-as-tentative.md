@@ -6,9 +6,13 @@ supersedes: ""
 superseded_by: ""
 amends: "docs/adr/0143-decision-ledger-for-model-gate-decisions.md"
 date: "2026-11-08"
+covers: "packages/application/src/services/automatic-memory-service.ts, packages/application/src/services/proactive-mail-check-service.ts, packages/application/test/tentative-memory-capture.unit.test.ts, packages/calibration/src/thresholds.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0179：分数不够自动存入门槛的记忆候选，存成「待确认」记忆，只给主动检查当线索
+
+> 2026-11-25 补：Gmail 检查不再调用模型逐封判断，新邮件改为进收件箱、由主对话里的她自己决定要不要告诉主人（[ADR 0285](0285-one-main-thread-subthreads-and-one-inbox.md) 第 1 步，PR 648）。本文里关于邮件判断提示词、判断结果和判断前带给模型的内容的部分已不再执行；规则手册、决策记录等其余部分照旧。
 
 <a id="contents"></a>
 
@@ -53,7 +57,7 @@ date: "2026-11-08"
 
 1. **低分候选改存为待确认记忆。** 同时满足这些条件才存：①候选是新建（`create`）；②抽取时在主人原话里核对到了引用（`quote` 非空，即 `evidenceVerified`）；③不带提醒、不带人物（待确认记忆不登记提醒和人物，而主人之后点「确认」也不会补登记，所以这类候选继续丢弃，行为与以前相同）；④不是密钥、不是受限，不是暂时性内容，不是敏感类（敏感类仍走审批）。存下来的记忆带 `tentative: true`、`inference`、置信度、来源线程和原话引用；决策账本记 `kept`，原因码 `kept_tentative`，抽取审计记 `tentative_kept`。自动存入门槛 850 不变。
 2. **其余低分候选照旧丢弃。** 对已有记忆的更新、合并、不变类，低分猜测不得覆盖正式记忆，也不得因「不变」而把已有待确认记忆转正；没有原话引用的说不清来自哪句话，不存。待确认记忆不顶替正式记忆（候选带的 `supersedes` 去掉）；不登记提醒和人物（跳过提交后的副作用）。
-3. **向量检索加一个默认关闭的开关 `includeTentative`。** 主动检查的记忆召回（`production-proactive-memory.ts`）和聊天里的记忆检索工具（`production-memory-recall.ts`）打开；档案块、提醒、记忆整理都不变。聊天检索返回的待确认记忆多一个 `tentative: true` 字段，结果里再附一句固定说明（提示词 `tool-result.recall-tentative`）：这是系统推测、主人没确认过，只能当线索，不能当事实说出口。做法是两次检索：一次和原来完全一样（不含待确认），一次带 `includeTentative` 加 `tentativeOnly`，在索引层只取待确认的；结果里正式记忆在前、待确认在后，待确认最多占请求条数的一半（正式记忆因此最多少返回这么多条，请求 1 条时不检索待确认）。待确认记忆不会改变正式记忆的名次，没有待确认记忆时与原来逐字节相同；代价是每次聊天检索多一次对同一问题的向量化。这些字段和说明只出现在工具返回值里，不改工具定义和系统提示；没有待确认记忆时，返回值与原来逐字节相同（Andy 2026-11-08 重发 PA-2 任务块，要求聊天检索返回时标「待确认」，回「同意」）。
+3. **向量检索加一个默认关闭的开关 `includeTentative`。** 主动检查的记忆召回（[production-proactive-memory.ts](https://github.com/sixianli/himawari-agent/blob/9a395ec730b7c96519309bf1199355a04d8199aa/apps/agent-service/src/production-proactive-memory.ts)）和聊天里的记忆检索工具（`production-memory-recall.ts`）打开；档案块、提醒、记忆整理都不变。聊天检索返回的待确认记忆多一个 `tentative: true` 字段，结果里再附一句固定说明（提示词 `tool-result.recall-tentative`）：这是系统推测、主人没确认过，只能当线索，不能当事实说出口。做法是两次检索：一次和原来完全一样（不含待确认），一次带 `includeTentative` 加 `tentativeOnly`，在索引层只取待确认的；结果里正式记忆在前、待确认在后，待确认最多占请求条数的一半（正式记忆因此最多少返回这么多条，请求 1 条时不检索待确认）。待确认记忆不会改变正式记忆的名次，没有待确认记忆时与原来逐字节相同；代价是每次聊天检索多一次对同一问题的向量化。这些字段和说明只出现在工具返回值里，不改工具定义和系统提示；没有待确认记忆时，返回值与原来逐字节相同（Andy 2026-11-08 重发 PA-2 任务块，要求聊天检索返回时标「待确认」，回「同意」）。
 4. **主动检查的提示里，待确认记忆单独标出。** 该条目多一个 `"tentative":true` 字段，并在记忆段后追加一句固定说明（提示词 `mail.judgment.tentative-note`）：这是系统推测、主人没确认过，只能当线索，不能单凭它判 `act`。这条约束只在提示词里，代码不强制（没有「只凭待确认记忆就降级」的兜底）；误判的成本由账本的 `tentativeMemoryIds`（本次送给模型的待确认记忆；真正用上的是它与 `usedMemoryIds` 的交集） 加主人评价来观察。没有待确认记忆时，提示与原来逐字节相同；确认过的记忆条目的字节也不变。
 5. **账本记引用。** 主动检查的账本输入沿用 `memoryIds`、`usedMemoryIds`、`memoryByMail`（用了哪几条），另加 `tentativeMemoryIds`（本次送给模型的待确认记忆），使以后能单独统计「待确认记忆有没有帮上忙」，记忆转正后这条历史也不丢。
 6. **转正必须有主人自己的原话（Andy 2026-11-08 选定）。** 抽取时，模型对一条待确认记忆输出 `unchanged`、`update` 或 `merge`，必须带在主人本次消息里逐字核对到的原话引用，没有就丢弃（记为原话未核实，同「原话校验不过」），不转正；有原话还要和那条记忆相关：原话与那条待确认记忆自己的文字（不用模型这次输出的候选文字，它可以被抄进去绕过）去掉「主人」「喜欢」「的」这类到处都有的词后，至少共享一个连续两个字（中文）或一个单词，否则同样丢弃、不转正（Andy 2026-11-08 听过「拿无关的话当证据」的例子后说“肯定不行”）。字面判断对不上同义词（「牛奶」对「乳制品」），误拦的代价只是少转正一次。通过这两关才走现有的转正逻辑。主人在记忆页手动点「确认」不受影响。自动存入门槛 850 和其他转正逻辑不动。（2026-11-11 起，P4-7：通过这两关后，候选还要过「待确认记忆转正」门槛（`memory_candidate.confirm_tentative`，登记在 `packages/calibration/src/thresholds.ts`，默认 850、可按分类覆盖），不再用自动存入门槛；`unchanged` 按那条记忆原有的分类查门槛，`update`、`merge` 按候选给出的新分类查。账本原因码为 `tentative_confirmed` 和 `confirm_below_threshold`。默认值与原来相同，转正与否不变。）
@@ -85,7 +89,7 @@ date: "2026-11-08"
 
 ## 关联文档
 
-- [ADR 0158](0158-bring-related-memories-into-gmail-checks.md)：主动检查带相关记忆
+- [ADR 0158](https://github.com/sixianli/himawari-agent/blob/9a395ec730b7c96519309bf1199355a04d8199aa/docs/adr/0158-bring-related-memories-into-gmail-checks.md)：主动检查带相关记忆
 - [产品愿景](../product-vision.md)
-- 代码：`packages/application/src/services/automatic-memory-service.ts`、`apps/agent-service/src/production-proactive-memory.ts`、`packages/application/src/services/proactive-mail-check-service.ts`
-- 测试：`packages/application/test/tentative-memory-capture.unit.test.ts`、`test/integration/proactive-mail-check.test.ts` 里的 `[PA-2]` 用例
+- 代码：`packages/application/src/services/automatic-memory-service.ts`、[apps/agent-service/src/production-proactive-memory.ts](https://github.com/sixianli/himawari-agent/blob/9a395ec730b7c96519309bf1199355a04d8199aa/apps/agent-service/src/production-proactive-memory.ts)、`packages/application/src/services/proactive-mail-check-service.ts`
+- 测试：`packages/application/test/tentative-memory-capture.unit.test.ts`、[test/integration/proactive-mail-check.test.ts](https://github.com/sixianli/himawari-agent/blob/9a395ec730b7c96519309bf1199355a04d8199aa/test/integration/proactive-mail-check.test.ts) 里的 `[PA-2]` 用例

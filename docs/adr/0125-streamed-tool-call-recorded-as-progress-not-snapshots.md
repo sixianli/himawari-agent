@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-10-30"
+covers: "apps/control-center/src/components/execution-process.tsx, apps/control-center/src/execution-timeline.ts, apps/control-center/test/execution-timeline.unit.test.ts, packages/application/src/services/thread-execution-projection.ts, packages/application/src/services/thread-execution-state.ts, packages/application/test/thread-execution-state.unit.test.ts, packages/runtime-pi/src/pi-runtime-adapter.ts, packages/runtime-pi/test/pi-runtime-adapter.compat.test.ts, scripts/delivery-mode/browser-acceptance-gate.py, test/integration/product-path-browser.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0125：模型写工具参数时只记“写到哪个文件、写了几行”，页面实时显示，不再每段都存整条消息

@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-11-03"
+covers: "apps/agent-service/src/production-observation.ts, apps/control-center/build-info.mjs, packages/application/src/services/ledger-observation.ts, packages/application/test/ledger-observation.unit.test.ts, packages/persistence-sqlite/src/migrations/0074_ledger_observation.sql, packages/persistence-sqlite/src/sqlite-proactive-operations.ts, test/integration/calibration-report.test.ts, test/integration/ledger-observation-service.test.ts, test/integration/ledger-observation-store.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0155：决策记录观察期与校准周报网页

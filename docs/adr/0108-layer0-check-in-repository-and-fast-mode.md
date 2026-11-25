@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-10-29"
+covers: "scripts/check-layer0-hooks.mjs, scripts/layer0-tests/check-layer0-tests.py, test/integration/sqlite-sandbox-execution-v2.test.ts, test/tooling/layer0-hooks.test.mjs"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0108：第 0 层相关测试检查放进仓库，快速模式下也检查

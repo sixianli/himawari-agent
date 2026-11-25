@@ -6,6 +6,8 @@ supersedes: ""
 superseded_by: ""
 amended_by: "docs/adr/0079-parallel-read-only-tools-and-host-web-tools.md"
 date: "2026-10-24"
+covers: "apps/agent-service/src/web-tool-memory.ts, apps/agent-service/test/production-coding-workflow.unit.test.ts, apps/control-center/test/authorization-interactions.unit.test.ts, apps/execution-worker/test/program-secret-injection.unit.test.ts, packages/application/src/ports/web-providers.ts, packages/platform-node/src/deepseek-web-provider.ts, packages/platform-node/src/web-provider-chain.ts, packages/platform-node/test/web-provider-chain.unit.test.ts, test/integration/public-search-authorization.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0071：联网搜索和读网页改为可替换的供应商链
@@ -60,7 +62,7 @@ Andy 的要求：
 
 ## 比较过的方案
 
-- **每个供应商一个独立工具**（例如 `exa_search`、`deepseek_search`）：模型要自己选供应商，换供应商要改工具描述和授权，失败时模型也不会自动换家。放弃。
+- **每个供应商一个独立工具**（例如 exa_search、deepseek_search）：模型要自己选供应商，换供应商要改工具描述和授权，失败时模型也不会自动换家。放弃。
 - **沙箱直接访问网页**：要给沙箱放开任意主机出口，和精确 `主机:端口` 的出口授权冲突，内网访问风险也要另外处理。Andy 决定以后再说。
 - **每个供应商单独同意**：用户要连续确认多次，回退时还可能卡在未同意的那一家。改为一次同意覆盖整条链，链一变就重新同意。
 - **缓存放在沙箱程序里**：程序每次调用都是新进程，存不住；放在主机侧还能在授权之后、派发之前直接返回。

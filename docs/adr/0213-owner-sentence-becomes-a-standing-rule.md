@@ -5,9 +5,13 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-11-11"
+covers: "evals/owner-rule/result.json, packages/application/src/rules/rule-book.ts, packages/application/src/rules/rule-types.ts, scripts/evals/owner-rule-live.eval.ts, test/tooling/rule-type-tests.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0213：主人的一句话变成长期规则，由测过的规则类型执行
+
+> 2026-11-25 补：Gmail 检查不再调用模型逐封判断，新邮件改为进收件箱、由主对话里的她自己决定要不要告诉主人（[ADR 0285](0285-one-main-thread-subthreads-and-one-inbox.md) 第 1 步，PR 648）。本文里关于邮件判断提示词、判断结果和判断前带给模型的内容的部分已不再执行；规则手册、决策记录等其余部分照旧。
 
 <a id="contents"></a>
 
@@ -42,7 +46,7 @@ Andy 在 2026-11-11 定了两点：明说“以后/一律/必须”的直接生�
 3. 待重审的规则照常执行：[ADR 0211](0211-hard-rule-points-back-to-its-rule-memory.md) 写“待重审的规则照常执行”，并把“重新确认”按钮留给后续。
 4. 工具集合变了，老对话换新一次是允许的：`.agents/instructions/prompt-prefix.md` 第 6 条，“工具集合变了（工具名，或者去掉说明文字后的参数结构）……才换新一次，并且每次都留记录”。
 5. 邮件检查原来只把主题和摘要交给规则：`packages/application/src/rules/rule-book.ts` 原 `mailItemFacts` 里 `const text = \`${item.subject}\n${item.snippet}\``。
-6. 原来的“抬升”不推送：`proactive-rules.ts` 的 `applyFloor` 把“不用管”改成“值得知道”，推送条件是 `dueSoon || (final.result === "check" && floor)`。
+6. 原来的“抬升”不推送：`proactive-rules.ts` 的 [applyFloor](https://github.com/sixianli/himawari-agent/blob/9a395ec730b7c96519309bf1199355a04d8199aa/packages/application/src/services/proactive-rules.ts) 把“不用管”改成“值得知道”，推送条件是 `dueSoon || (final.result === "check" && floor)`。
 
 [返回阅读导航](#contents)
 
@@ -111,7 +115,7 @@ Andy 在 2026-11-11 定了两点：明说“以后/一律/必须”的直接生�
 
 - [ADR 0209](0209-rule-book-with-cel-expressions-and-judge.md)：规则手册、裁判。
 - [ADR 0211](0211-hard-rule-points-back-to-its-rule-memory.md)：规则记着来源记忆，待重审。
-- [ADR 0180](0180-gmail-check-reads-earlier-mail-about-the-same-matter.md)：邮件检查读以前的往来邮件。
+- [ADR 0180](https://github.com/sixianli/himawari-agent/blob/9a395ec730b7c96519309bf1199355a04d8199aa/docs/adr/0180-gmail-check-reads-earlier-mail-about-the-same-matter.md)：邮件检查读以前的往来邮件。
 - [ADR 0165](0165-freeze-the-request-head-per-conversation.md)：系统提示和工具按对话冻结。
 - [Agent 规则清单](../agent-rulebook-inventory.md)：H-15（读以前的往来邮件）、H-17、H-18（本 ADR 新增的两种规则）。
 - [ADR 0233](0233-rule-book-joins-the-data-export.md)：规则手册进入数据导出（后续）。

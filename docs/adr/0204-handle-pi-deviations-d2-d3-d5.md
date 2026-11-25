@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-11-10"
+covers: "AGENTS.md, packages/runtime-pi/src/pi-runtime-adapter.ts, packages/runtime-pi/test/pi-runtime-adapter.compat.test.ts, packages/runtime-pi/test/pi-tool-batch-continuation.compat.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0204：Pi 偏离 D2、D3 保留，D5 读历史改照官方
@@ -33,7 +35,7 @@ date: "2026-11-10"
 
 ## 前提
 
-1. Andy 的决定：2026-11-10 在项目聊天回“按建议”（协调者转来的原话，消息 `cmsg_01EE1hey9cboYNfwFnBv5dgrC4TWZsm9XuDW8zjstfcGon`）；建议原文见上一节。
+1. Andy 的决定：2026-11-10 在项目聊天回“按建议”（协调者转来的原话，消息 cmsg_01EE1hey9cboYNfwFnBv5dgrC4TWZsm9XuDW8zjstfcGon）；建议原文见上一节。
 2. 官方的会话接口里，`session.messages` 就是底层 Agent 的消息列表：`@earendil-works/pi-coding-agent@1.5.0` 的 `dist/core/agent-session.js` 第 1248–1250 行 `get messages() { return this.agent.state.messages; }`。
 3. 官方的会话接口能列出活动工具、按名字取工具定义：同一文件第 1100–1101 行 `getActiveToolNames() { return this.agent.state.tools.map((t) => t.name); }`，第 1123–1125 行 `getToolDefinition(name) { return this._toolDefinitions.get(name)?.definition; }`（注册表，含没激活的工具）；交给底层 Agent 的工具沿用定义里的执行方式：`dist/core/tools/tool-definition-wrapper.js` 第 11 行 `executionMode: definition.executionMode`。
 4. Himawari 建会话时把全部工具名交给 Pi，没有中途关掉某个工具：`packages/runtime-pi/src/pi-runtime-adapter.ts` 里 `createAgentSession` 的 `tools: descriptors.map(({ name }) => name)`，仓库里没有调用 `setActiveToolsByName`。即使这样，代码仍先查工具在不在 `getActiveToolNames()` 里再取定义，和原来只在活动工具里找完全一致。

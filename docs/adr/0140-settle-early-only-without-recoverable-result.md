@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-10-31"
+covers: "test/integration/sqlite-sandbox-execution-v2.test.ts, test/integration/thread-run-lifecycle.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0140：提前收尾只用于没有可恢复结果的“结果未知”轮次

@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-10-18"
+covers: ""
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0057：一批独立缺陷合并跑一次第 1–2 层
@@ -27,7 +29,7 @@ date: "2026-10-18"
 
 开发时的测试分层（第 0 层定向测试、第 1 层 `npm run check` 静态检查、第 2 层受影响模块测试、第 3 层构建加完整 `npm test`、第 4 层真实产品路径）和各层的运行时机，写在 [ADR 0052 的测试层级](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0052-third-production-host-acceptance-exception.md#layers)里，由 [ADR 0056](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0056-cloud-server-also-test-host.md#unchanged) 原样沿用。其中第 1 层是“每次提交之前”，第 2 层是“一个缺陷或功能修稳定、准备提交时”，所以一批里的每个独立缺陷都要在提交前各跑一次第 1–2 层。
 
-2026-10-18，R2-P2（同一轮的 `bash` 和写文件工具复用常驻沙箱）的第 4 层发现 4 个产品缺陷，按缺陷分别提交。缺陷 1 提交前的第 1–2 层在 Hermes（局域网里的 Linux 测试服务器）上用了 56 分钟，缺陷 4 用了 20 分钟；这期间 Hermes 上唯一的测试检出目录被占着，opencode（负责写代码和跑测试的编程代理）的下一个缺陷的修前修后运行只能排队。Claude 分析这次进度慢的原因后，建议一批缺陷叠好后只跑一次第 1–2 层，用户在 G146 同意（原话记在长任务目标文件 `.agents/tasks/round2-tool-execution/goal.md`）。
+2026-10-18，R2-P2（同一轮的 `bash` 和写文件工具复用常驻沙箱）的第 4 层发现 4 个产品缺陷，按缺陷分别提交。缺陷 1 提交前的第 1–2 层在 Hermes（局域网里的 Linux 测试服务器）上用了 56 分钟，缺陷 4 用了 20 分钟；这期间 Hermes 上唯一的测试检出目录被占着，opencode（负责写代码和跑测试的编程代理）的下一个缺陷的修前修后运行只能排队。Claude 分析这次进度慢的原因后，建议一批缺陷叠好后只跑一次第 1–2 层，用户在 G146 同意（原话记在长任务目标文件 .agents/tasks/round2-tool-execution/goal.md）。
 
 [↑ 返回阅读导航](#contents)
 

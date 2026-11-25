@@ -6,6 +6,8 @@ contract_sha256: "sha256:864e3522a25e08609e9620ae89f1690072349512795f8c1ae9a0915
 supersedes: ""
 superseded_by: ""
 date: "2026-11-03"
+covers: ".agents/instructions/delivery-mode.md, apps/agent-service/src/production-observation.ts, packages/application/src/services/ledger-observation.ts, packages/persistence-sqlite/src/migrations/0074_ledger_observation.sql, scripts/delivery-mode/deploy.sh, scripts/delivery-mode/packet-template/s0-db/read-s0-db.mjs"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # 决策记录观察期 Runbook

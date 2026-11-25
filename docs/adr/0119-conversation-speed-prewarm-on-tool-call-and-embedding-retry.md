@@ -6,6 +6,8 @@ supersedes: ""
 superseded_by: ""
 amends: "docs/adr/0085-remove-per-turn-system-gaps.md"
 date: "2026-10-30"
+covers: "apps/agent-service/src/production-tool-call-prewarm.ts, packages/runtime-pi/src/pi-runtime-adapter.ts, scripts/delivery-mode/browser-acceptance-gate.py, test/integration/product-path-browser.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0119：模型一开始写工具调用就预热沙箱，找记忆的向量请求 3 秒没回就重发一次，Magpie 路由组把 CodeBuddy 排第一
@@ -81,7 +83,7 @@ date: "2026-10-30"
 - 预计每轮第一次用到 `bash`、`write`、`edit` 时省 3–5 秒，同一轮第一次用另一类会话时再省 3–5 秒（预热同时启动两个会话）。找记忆的最长等待从 9 秒降到约 3 + 1.5 秒。CodeBuddy 排第一后，按短请求的实测，每次模型请求再省约 1.4 秒（真实大小的请求还没测）。实际效果以上线后真实网页的前后对比为准（测法：同样三句话，同一时段各发 5 次，比首字和整轮时长的中位数，见[后果](#measure)），写进[案例 63](../engineering-casebook.md#case-conversation-speed)。
 - 预热会提前占用工作区租约：同一目录上另一轮的工具调用要等这一轮结束（ADR 0054 补充里已有的代价，只是开始时间从"第一次调用"提前到"开始写调用"）。
 - 更多私人对话经 CodeBuddy 新加坡（数据留存 14 天，经社区登录插件），额度上限未核实；额度用完时 Magpie 按顺序退回 Go。
-- <a id="measure"></a>前后对比的测法：上线前（第十九版）和上线后（第二十版）在同一时段（日本时间晚上）各发 5 次同样的三句话：“你是谁”“东京现在几点”（简单问题）和一个让它写一个小文件的任务。每次新开对话，跑 `conversation-speed/speed-profile.mjs` 读这些轮次的时间（不读内容），比较两组的首字时间中位数和整轮时长中位数；反向检查：不用工具的轮次日志里不能出现 `sandbox.srt_prewarm`。
+- <a id="measure"></a>前后对比的测法：上线前（第十九版）和上线后（第二十版）在同一时段（日本时间晚上）各发 5 次同样的三句话：“你是谁”“东京现在几点”（简单问题）和一个让它写一个小文件的任务。每次新开对话，跑 conversation-speed/speed-profile.mjs 读这些轮次的时间（不读内容），比较两组的首字时间中位数和整轮时长中位数；反向检查：不用工具的轮次日志里不能出现 `sandbox.srt_prewarm`。
 - 后续：工具准入一次调用跑 6 遍完整核对（`sandbox.admission.timing`），派发段 2.4–6.7 秒，仍是[事故 I-25](../incidents-and-gates.md#incidents) 的主要剩余；按对话常驻沙箱见上表。
 
 [↑ 返回阅读导航](#contents)

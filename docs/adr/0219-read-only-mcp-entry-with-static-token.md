@@ -6,6 +6,8 @@ supersedes: ""
 superseded_by: ""
 amended_by: "docs/adr/0242-external-agents-join-the-memory-hub-through-one-entry.md, docs/adr/0232-memory-corrections-flag-derived-memories-and-recheck-rules.md"
 date: "2026-11-11"
+covers: "apps/agent-service/src/bearer-admission.ts, apps/agent-service/src/production-gap-export.ts, apps/agent-service/test/production-http-composition.unit.test.ts, apps/agent-service/test/production-mail-embedding.unit.test.ts, apps/agent-service/test/production-mcp-read.unit.test.ts, packages/application/src/ports/decision-ledger.ts, packages/platform-node/package.json, packages/platform-node/test/startup-configuration.unit.test.ts, packages/sensitive-capture/test/redaction.unit.test.ts, test/integration/mcp-read.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0219：对外只读 MCP 入口，静态令牌鉴权，按 2026-07-28 版规范
@@ -38,7 +40,7 @@ Andy 要把自己的记忆、规则和今天的情况集中放在 Himawari 一�
 
 1. MCP 的鉴权不是必选项：<https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization> 原话 “Authorization is **OPTIONAL** for MCP implementations. When supported: Implementations using an HTTP-based transport **SHOULD** conform to this specification.”
 2. Claude Code 可以带固定的请求头连接远程 MCP 服务：<https://code.claude.com/docs/en/mcp> 原话 `claude mcp add --transport http secure-api https://api.example.com/mcp --header "Authorization: Bearer your-token"`。
-3. Codex 也可以：<https://learn.chatgpt.com/docs/extend/mcp?surface=cli> 原话 “`bearer_token_env_var` (optional): Environment variable name for a bearer token to send in `Authorization`.”
+3. Codex 也可以：<https://learn.chatgpt.com/docs/extend/mcp?surface=cli> 原话 “bearer_token_env_var (optional): Environment variable name for a bearer token to send in `Authorization`.”
 4. 2026-07-28 版把协议改成无状态，并用「多轮请求」代替服务端主动向客户端提问：<https://modelcontextprotocol.io/specification/2026-07-28/changelog> 原话 “Make MCP stateless: remove the `initialize`/`notifications/initialized` handshake.”
 5. 仓库已经依赖官方 SDK `@modelcontextprotocol/server` 2.0.0（`packages/platform-node/package.json`）。它的 `createMcpHandler` 原话 “Creates an HTTP handler that serves the 2026-07-28 protocol revision from a per-request server factory and, by default, falls back to old-school stateless serving for 2025-era traffic.”
 6. 现有的外部推送入口已经有一套鉴权：[ADR 0162](0162-receive-muse-data-through-a-service-token-and-an-app-secret.md) 原话 “边缘层用 Cloudflare Access 的服务令牌……应用层再要求 `Authorization: Bearer <应用密钥>`”。应用层的实现是 `apps/agent-service/src/bearer-admission.ts` 的 `BearerGate`。
@@ -85,7 +87,7 @@ Andy 要把自己的记忆、规则和今天的情况集中放在 Himawari 一�
    - 2026-11-12 起：[ADR 0242](0242-external-agents-join-the-memory-hub-through-one-entry.md) 决定 1 把来源从 `mcp-client:<客户端名>` 改成服务端生成的接入编号；决定 13 让钩子每句话自动搜的读取里空手而归的只在按天的统计表里计数、不写决策记录，交出了内容的仍然每次一条。对应的编码任务合并之前，代码仍按本条。本条原文保留不改。
 6. **工具说明文字登记进提示词目录**，编号是 `mcp.find-memories`、`mcp.today-context`、`mcp.rule-book`、`mcp.tool-result-failed`。Himawari 自己发给模型的请求一个字节都不变。
 7. **（2026-11-11 补，P3-6 合并后）`today_context` 带上今天和昨天的对话摘要。**
-   - 用 [ADR 0216](0216-gmail-check-reads-recent-day-summaries.md) 新加的 `MemoryEpisodeService.recent`，按主人时区取今天和昨天的日摘要，最多 8 段，只取模型可见的分级。只读已经生成的摘要，不补生成，所以外部读取不花模型的钱。
+   - 用 [ADR 0216](https://github.com/sixianli/himawari-agent/blob/9a395ec730b7c96519309bf1199355a04d8199aa/docs/adr/0216-gmail-check-reads-recent-day-summaries.md) 新加的 `MemoryEpisodeService.recent`，按主人时区取今天和昨天的日摘要，最多 8 段，只取模型可见的分级。只读已经生成的摘要，不补生成，所以外部读取不花模型的钱。
    - 返回字段是 `recentDays`（每段的日期和正文）；有摘要没读到时多一个 `recentDaysComplete: false`。摘要正文和其他文字一起遮盖。
    - 摘要读取失败不挡提醒：照常返回日期和提醒，`recentDays` 为空并标 `recentDaysComplete: false`。服务日志写 `mcp-read.summaries-failed`，不写整次失败的 `mcp-read.failed`；摘要不完整（部分正文读不到，或候选太多被截断）时也写这条，错误码是 `MCP_READ_SUMMARIES_INCOMPLETE`。决策记录里这六项只在输入字段里，「依据」抽屉不显示。没接上摘要读取（对话摘要没启用）时不返回 `recentDays`。
    - 决策记录按 ADR 0216 决定 6 写 `summary` 六项：`summaryIds`、`summaryDays`、`summaryCharacters`、`summaryRead`（`ok`、`partial`、`failed`；提醒先读失败、摘要还没读时记 `off`）、`summaryInjected`（是否真的交给了对方）、`summaryGenerated` 固定为 0。通用的决策记录写入（`insertLedgerRow`）原来只落四个键，这次让它在 `external_read` 记录上也落这六项，校验和 Gmail 检查共用同一个函数 `summaryInputsValid`；别的类别带这六项、或只带其中一部分，一律拒绝，`insertLedgerRow` 自己也拒绝（记忆整理直接调用它）。

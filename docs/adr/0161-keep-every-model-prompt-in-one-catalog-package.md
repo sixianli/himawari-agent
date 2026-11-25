@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-11-04"
+covers: "apps/agent-service/src/production-run-policy.ts, packages/prompt-catalog/prompt-manifest.json, scripts/boundary-policy.mjs, scripts/check-boundaries.mjs, scripts/package-node-runtime.mjs"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0161：发给模型的提示词都放进一个提示词目录包，原样搬入并用检查锁住
@@ -71,7 +73,7 @@ date: "2026-11-04"
 ## 业界做法
 
 - OpenAI：“Store production prompts in your application code instead of creating reusable prompt objects.”；“Add representative fixtures, tests, and evaluation checks before changing production prompts.”（<https://developers.openai.com/api/docs/guides/prompt-engineering>）
-- Gemini CLI 把提示词集中放在 `packages/core/src/prompts/`（其中有 `prompt-registry.ts`），用 `toMatchSnapshot()` 锁住（github.com/google-gemini/gemini-cli，提交 `89e9d25`）。
+- Gemini CLI 把提示词集中放在 packages/core/src/prompts/（其中有 prompt-registry.ts），用 toMatchSnapshot() 锁住（github.com/google-gemini/gemini-cli，提交 `89e9d25`）。
 - Cline 的评测第 1 层是 "Contract Tests … No LLM calls"（<https://github.com/cline/cline/blob/main/evals/ARCHITECTURE.md>）。
 
 [返回阅读导航](#contents)

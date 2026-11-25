@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-10-29"
+covers: "apps/agent-service/src/production-memory-composition.ts, apps/agent-service/src/production-run-memory.ts, evals/memory-retrieval/dataset.json, evals/memory-retrieval/history.jsonl, packages/memory-engine/src/hybrid-memory-provider.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0115：记忆搜索设相关度门槛，没有相关记忆就一条不带也不显示；用固定评测集记录检索基线
@@ -39,7 +41,7 @@ date: "2026-10-29"
 
 ## 决定
 
-1. **记忆搜索必须有相关度门槛。** 向量这一路只留相似度不低于门槛的记忆。`alibaba/qwen3-embedding-8b` 的门槛是 0.6（常量 `QWEN3_MEMORY_MINIMUM_SIMILARITY`），配置里可以用 `memory.minimumSimilarity`（大于 0、小于 1）改。换成其他向量模型又没配门槛时，服务拒绝启动（`MEMORY_MINIMUM_SIMILARITY_REQUIRED`），因为不同模型的相似度分布不同，不能沿用 0.6。（关键词和实体两路的截断已由 [ADR 0221](0221-memory-retrieval-relevance-cutoff-and-same-source-dedupe.md) 补上：融合后按相关分截断，向量门槛不变。）
+1. **记忆搜索必须有相关度门槛。** 向量这一路只留相似度不低于门槛的记忆。`alibaba/qwen3-embedding-8b` 的门槛是 0.6（常量 [QWEN3_MEMORY_MINIMUM_SIMILARITY](https://github.com/sixianli/himawari-agent/blob/54e1bec4fb4df525ecf3f87143e917a748d2b0fa/apps/agent-service/src/production-memory-composition.ts)），配置里可以用 `memory.minimumSimilarity`（大于 0、小于 1）改。换成其他向量模型又没配门槛时，服务拒绝启动（[MEMORY_MINIMUM_SIMILARITY_REQUIRED](https://github.com/sixianli/himawari-agent/blob/54e1bec4fb4df525ecf3f87143e917a748d2b0fa/apps/agent-service/src/production-memory-composition.ts)），因为不同模型的相似度分布不同，不能沿用 0.6。（关键词和实体两路的截断已由 [ADR 0221](0221-memory-retrieval-relevance-cutoff-and-same-source-dedupe.md) 补上：融合后按相关分截断，向量门槛不变。）
 2. **关键词这一路不再用单个汉字。** “用”“叫”“吃”这类单字几乎每条记忆都有，评测里“git rebase 怎么用”会因为“用”带出“主人用的电脑是 MacBook Air”。人名、地名这类实体匹配不变。
 3. **没有相关记忆就一条不带，过程区也不出现这一步。** 带给模型的记忆和过程区显示的是同一份结果（`memory.selection` 记录）。0 条时不显示“找到 0 条”，整步隐藏（Andy 2026-10-29 15:51：“没有记忆的话就不要在过程中显示！否则就是此地无银三百两！”）。档案为 0 条时同样隐藏。
 4. **档案步骤改名。** 主人档案（重要度不低于 0.6 的身份类记忆，每轮都带，上限 2000 字）是常驻资料，不是按这句话找出来的。步骤名从“带上档案里的 N 条记忆”改为“常驻档案 N 条（每轮都带）”，三语同步。

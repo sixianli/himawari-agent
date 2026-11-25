@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-11-11"
+covers: ".agents/instructions/prompt-prefix.md, apps/agent-service/src/production-memory-capture.ts, apps/agent-service/src/production-model-composition.ts, apps/agent-service/src/production-run-composition.ts, packages/application/src/services/model-invocation-admission-service.ts, packages/persistence-sqlite/src/migrations/0069_decision_ledger.sql, packages/persistence-sqlite/test/memory-capture-backlog-migration.contract.test.ts, test/integration/production-memory-capture.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0222：记忆捕获失败时同轮重试一次，再失败放进待补队列，每次失败留一条决策记录
@@ -70,7 +72,7 @@ Andy 在 2026-11-11 同意了变更清单（`/mnt/project-files/p3-5-capture-ret
 ## 业界怎么做
 
 - 对模型调用的偶发错误，官方 SDK 的做法是对超时、限流和 5xx 自动重试有限次数，对 4xx 类不重试：Anthropic SDK 默认重试 2 次（<https://github.com/anthropics/anthropic-sdk-typescript/blob/main/README.md#retries>），OpenAI SDK 同样默认 2 次（<https://github.com/openai/openai-node/blob/main/README.md#retries>）。本 ADR 同轮只多试一次，因为捕获是后台调用，失败的轮次还有队列兜底。
-- 后台任务失败后放进持久队列、限次补做、超过次数转为“放弃”并留记录，是常见的死信队列做法（例如 AWS SQS 的 `maxReceiveCount`：<https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-dead-letter-queues.html>）。
+- 后台任务失败后放进持久队列、限次补做、超过次数转为“放弃”并留记录，是常见的死信队列做法（例如 AWS SQS 的 maxReceiveCount：<https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-dead-letter-queues.html>）。
 - 改检查约束的迁移做法依据 SQLite 官方文档（前提 4）。
 
 [返回阅读导航](#contents)

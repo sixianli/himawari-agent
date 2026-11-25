@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-10-26"
+covers: "apps/agent-service/test/production-coding-workflow.unit.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0077：工作目录操作按实际作用定风险，不再一律标高风险

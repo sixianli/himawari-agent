@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-11-11"
+covers: ""
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0234：一个程序，每人一个数据库文件；模型用 Andy 已有的套餐、不用 Vercel 按量付费，每人上限由 Andy 配置

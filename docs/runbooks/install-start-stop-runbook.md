@@ -6,6 +6,8 @@ contract_sha256: "sha256:7e5bbea067de326bd3907536ae68c3dbd1fdd1f494673ef4475a673
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
+covers: "apps/agent-service/src/production-record-failure.ts, apps/agent-service/src/service-main.ts, apps/execution-worker/src/service-main.ts, ci/toolchain-lock.json, packages/persistence-sqlite/src/product-state-repository.ts, packages/platform-node/src/authenticated-uds-transport.ts, packages/platform-node/src/execution-uds-transport.ts, packages/platform-node/src/state-root-layout.ts, packages/runtime-pi/src/pi-file-preparation-pool.ts, packages/runtime-sandbox/src/job-host-main.ts, packages/runtime-sandbox/src/policy.ts, packages/runtime-sandbox/src/sandbox-sdk-worker.ts, packages/runtime-sandbox/src/sandbox-sdk.ts, packages/runtime-sandbox/test/job-host-main.unit.test.ts, packages/runtime-sandbox/test/sandbox-sdk.unit.test.ts, scripts/ci/artifact-files.mjs, scripts/ci/context.mjs, scripts/ci/install-dependencies.mjs, scripts/ci/install-tools.mjs, scripts/ci/redact-text.mjs, scripts/ci/resources.mjs, scripts/ci/verify-artifact.mjs, scripts/install-node-runtime.mjs, scripts/package-node-runtime.mjs, test/integration/admin-diagnose-run.test.ts, test/integration/sandbox-preparation-control.test.ts, test/integration/sandbox-unconfirmed-purge.test.ts, test/qualification/evidence/workspace-authorization-lifecycle/p1-recovery-scheduling-01/README.md, test/qualification/evidence/workspace-authorization-lifecycle/p1-recovery-startup-01/README.md"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # 本地 Node runtime 安装、启停与诊断 Runbook
@@ -855,7 +857,7 @@ Unix socket 路径以 UTF-8 字节计数，macOS 最多 103 字节、Linux 最�
 | `STATE_ROOT_PATH_UNSAFE` 或权限错误 | 回读规范绝对路径、owner/mode、authority file 和 runtime 目录 | 停止；人工修复已授权目录权限后重新 preflight，不递归清理未知目录 |
 | `SQLITE_STATE_ROOT_LOCKED` | 只读检查 lock owner、PID、token、socket 和进程存活 | 保留活锁；确认 owner 已死亡且符合回收规则后再从完整 preflight 重试 |
 | Worker UDS handshake/authentication failure | 核对 Worker/Agent 配置、boot token reference、deployment epoch/fence 和 socket owner | 停止 Agent；先修复同一运行 Worker，再重新启动，不降级为进程内执行 |
-| `SERVICE_AUTHORITY_MISMATCH` 或 schema error | 对比 authority.json、SQLite deployment、config 和 bundled migration ledger | 停止；选择匹配的 prefix/state root 或走独立迁移/恢复决策，不手工改 authority |
+| SERVICE_AUTHORITY_MISMATCH 或 schema error | 对比 authority.json、SQLite deployment、config 和 bundled migration ledger | 停止；选择匹配的 prefix/state root 或走独立迁移/恢复决策，不手工改 authority |
 | forced stop 后无法恢复 | 保留 lock/socket/SQLite 现场，运行只读 doctor、db status 和进程检查 | 若正式 recovery 未证明安全则停止，转入 backup/restore 或 incident diagnosis 的独立 Runbook |
 | 需要 systemd/launchd 或 Hermes 操作 | 仅确认当前 Runbook scope 不包含服务管理器和远端部署 | 停止；选择经过验证且已授权的对应 Runbook，不猜测命令 |
 
@@ -924,7 +926,7 @@ Run 正常完成前停止其后台资源；SQLite 完成事务拒绝仍有未释
 此流程属于已配置活动主机上的停机管理操作，不建立新的 deployment authority，不自动启用公网入口，不向模型发送数据。账号与配置合同见 [2026-09-10-built-in-account-authentication-design.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/specs/2026-09-10-built-in-account-authentication-design.md)、[SOURCE: docs/adr/0027-built-in-owner-authentication.md]。
 
 1. 使用已安装构建并完成本 Runbook 的 Live-State Preflight。核对 `identity.kind` 为 `built-in`、配置中的唯一 Owner/Agent/deployment 与 `authority.json` 及数据库活动权威一致，服务已停止，数据库已按正常迁移流程升级到当前 schema。确认保存密码输入与验证器设置资料的目录归当前用户所有、权限为 0700；所有操作只针对选定 state root。
-2. 在该受保护目录准备 `account-input.json`（0600），只包含 `username` 与 `password`。用户名为 3–64 位字母、数字、点、下划线或连字符，首位为字母或数字；会统一为小写。密码为 12–128 个字符，不作为命令行参数、环境变量或诊断输出。目标设置文件必须尚不存在。
+2. 在该受保护目录准备 account-input.json（0600），只包含 `username` 与 `password`。用户名为 3–64 位字母、数字、点、下划线或连字符，首位为字母或数字；会统一为小写。密码为 12–128 个字符，不作为命令行参数、环境变量或诊断输出。目标设置文件必须尚不存在。
 3. 首次创建命令为 `himawari account create --config <绝对配置路径> --input <绝对输入文件路径> --output <新的绝对设置文件路径>`。macOS 默认从与服务相同的钥匙串 Payload source 解析配置的加密密钥；其他平台或文件 source 使用 `--secret-dir <受保护密钥目录>`。命令使用 state-root 独占锁并验证活动权威，不通过公网提供初始化入口。
 4. 输出的设置文件为 0600，包含用户名、验证器 `otpUri` 与 10 条一次性恢复码。验证器按 `otpUri` 中的 secret 设置 TOTP（SHA1、6 位、30 秒）；妥善保存恢复码。终端结果只报告设置文件路径和是否撤销旧会话。输入/设置资料按 Owner 的秘密保存策略保管，不进入 Git、普通备份日志、浏览器 localStorage 或模型上下文。
 5. 启动 Worker 与 Agent 后，从配置的同源地址打开控制中心。输入用户名/密码，再输入验证码或恢复码；只有第二步成功才建立产品会话。HTTPS Cookie 使用 Secure；明确配置的 loopback HTTP 仍执行同样的认证。跨设备通过 HTTPS 反向代理访问，listener 仍绑定 loopback，不用放宽 Host/Origin 来解决代理配置错误。
@@ -1062,7 +1064,7 @@ Schema 39 新增 `automatic_action_reviews`，在模型调用前保留唯一请�
 
 模型结果使用以下说明原文：
 
-> 仍有后台程序占用这次命令的输出，它之后的输出不会显示在这次结果里；如果它继续往这里写输出，会被系统结束。需要长期运行的程序，请把输出重定向到文件，例如 `npm run dev > dev.log 2>&1 &`。
+> 仍有后台程序占用这次命令的输出，它之后的输出不会显示在这次结果里；如果它继续往这里写输出，会被系统结束。需要长期运行的程序，请把输出重定向到文件，例如 [npm run dev > dev.log 2>&1 &](https://github.com/sixianli/himawari-agent/blob/1570949fbf3d02a7f1fed352cae27fdc63479f0c/package-lock.json)。
 
 说明不计入命令自身的输出上限，但计入整份工具结果 JSON 的上限；超过时沿用 `PI_RESULT_OUTPUT_LIMIT`。不另设额度或放宽任何上限，原期限、取消、资源与输出检查保持。目录释放仍按平台清理证明核验；Linux 同次开机还须 [Host 自身组为空](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#linux-host-group)。`process_group_gone` 不证明主动离组的后代全部停止。现有页面后台列表不能列出前台 Bash 自行脱离进程组的后代，这是已知限制，不能用列表为空证明没有后台进程。此改动不增加安装、迁移或恢复步骤，不改变本手册的操作授权要求。
 

@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-11-01"
+covers: "apps/agent-service/src/command-silence-watch.ts, apps/agent-service/test/command-silence-watch.unit.test.ts, apps/agent-service/test/production-payload-broker-handler.unit.test.ts, apps/execution-worker/src/production-sandbox-execution-v2.ts, scripts/delivery-mode/packet-template/systemd/pair-supervisor.mjs"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0144：命令超过 30 秒没有执行进程的消息时只写日志，不停止命令

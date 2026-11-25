@@ -6,6 +6,8 @@ supersedes: ""
 superseded_by: ""
 date: "2026-11-12"
 amended_by: ""
+covers: "ci/policy.json, ci/toolchain-lock.json, packages/execution-contracts/src/sandbox-qualification-v1.ts, packages/platform-node/src/capabilities/isolation.ts, packages/runtime-sandbox/scripts/check-srt-boundary.mjs, packages/runtime-sandbox/src/policy.ts, packages/runtime-sandbox/src/srt-runtime-identity.ts, packages/testing/src/read-only-toolchain.mjs, scripts/ci/aggregate.mjs, scripts/ci/build.mjs, scripts/ci/check-policy.mjs, scripts/ci/context.mjs, scripts/ci/install-tools.mjs, scripts/ci/local.mjs, scripts/ci/run.mjs, scripts/ci/verify-artifact.mjs, scripts/delivery-mode/make-packet.py, scripts/delivery-mode/packet-template/acceptance/cloud/download-question-12.py, scripts/delivery-mode/packet-template/install/__PKT_LABEL__-artifact-install.mjs, scripts/delivery-mode/packet-template/signing/cloud-protected-prepare.mjs, scripts/delivery-mode/packet-template/signing/cloud-seal.mjs, scripts/delivery-mode/probe-sources.json, scripts/delivery-mode/run-packet-checks.py, scripts/package-node-runtime.mjs, scripts/platform-assumptions.json, test/fixtures/mac-sandbox-deployment.ts, test/fixtures/product-path-harness.ts, test/integration/prepared-file-runner.test.ts, test/integration/sandbox-preparation-control.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0253：让 Himawari 能在 linux-arm64 上跑检查、跑沙箱、出包和做资格验证（测试用途）

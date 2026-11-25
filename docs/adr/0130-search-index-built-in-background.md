@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-10-30"
+covers: "apps/agent-service/src/production-http-composition.ts, packages/platform-node/src/browser-thread-search.ts, packages/platform-node/src/thread-search-projector.ts, test/integration/thread-lifecycle.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0130：搜索对话的索引在后台建好，搜索请求不再等它

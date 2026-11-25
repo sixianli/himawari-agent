@@ -781,14 +781,15 @@ class Hermes:
 
     def start(self, name, command):
         log_root = self.work + '-inputs'
-        wrapped = '(' + command + '); echo $? > ' + shlex.quote(log_root + '/' + name + '.exit')
+        exit_file = shlex.quote(log_root + '/' + name + '.exit')
+        wrapped = '(' + command + '); echo $? > ' + exit_file + '.tmp && mv ' + exit_file + '.tmp ' + exit_file
         self.ssh('nohup bash -c ' + shlex.quote(wrapped) + ' > ' + shlex.quote(log_root + '/' + name + '.log') + ' 2>&1 < /dev/null & echo started')
 
     def wait(self, name):
         log_root = self.work + '-inputs'
         while True:
             state = self.ssh('cat ' + shlex.quote(log_root + '/' + name + '.exit') + ' 2>/dev/null || echo running').decode().strip()
-            if state != 'running':
+            if state not in ('running', ''):
                 break
             time.sleep(self.poll_seconds)
         if state != '0':

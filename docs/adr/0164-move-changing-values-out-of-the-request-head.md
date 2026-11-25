@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-11-04"
+covers: ".agents/instructions/prompt-prefix.md, apps/agent-service/src/production-run-policy.ts, apps/agent-service/src/production-runtime-tools.ts, apps/agent-service/src/sandbox-command-inventory.ts, packages/runtime-pi/src/pi-runtime-adapter.ts, packages/runtime-pi/src/runtime-environment-block.ts, packages/runtime-pi/test/prompt-prefix.compat.test.ts, packages/runtime-pi/test/runtime-environment-block.unit.test.ts, test/integration/context-formation.test.ts, test/integration/context-projection.test.ts, test/integration/production-http-composition-process.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0164：会变的值挪出系统提示和工具定义，工具循环停止改为追加消息
@@ -63,7 +65,7 @@ date: "2026-11-04"
    - 内容：工作目录（配置了编码工具时；目录授权不存在、已撤销或已过期时写明“本轮没有”）、沙箱里有和没有的命令（按 `apps/agent-service/src/sandbox-command-inventory.ts` 候选表的顺序）、文档技能目录、联网搜索开没开和服务商（按配置顺序）、网页抓取的服务商和单次上限。不放时间，不放任何 id，`ref` 固定为 `runtime-environment`。
    - 文字在 `packages/prompt-catalog`（`chat.runtime-environment.*`，层是 `last-user-message`），由生产策略层 `createProductionRunPolicy` 算出，按本次运行的数据分类加密存成 payload（加密存放的一段内容），经 `RunExecutionPolicy.runtimeEnvironmentRef` 传给上下文形成，成为资料段里的最后一块。选新加一个可选字段而不复用 `capabilities`：`capabilities` 产出的是 `capability-summary` 块，含义不同；老的已冻结运行输入没有这个字段，照样能读。
    - **什么时候发**（第 5 条拍板）：由 `packages/runtime-pi/src/runtime-environment-block.ts` 决定。只看原生历史（Pi 存下的、实际发给模型的消息）里最近一次压缩之后的 user 消息，只看消息开头 `<himawari-context>` 段里的运行环境块，取最近的一块。找不到（第一轮，或压缩之后还没发过）就发；内容不同就发；相同就不发。主人消息 `<owner-message>` 里出现的同样文字不算，防止伪造。
-   - **遮盖**：块放在资料段末尾、紧挨 `</himawari-context>`，以一句不含数字、超过 40 个字的固定句结尾。遮盖验证码时判断窗口是前后 40 个字符（`packages/application/src/services/egress-redaction.ts` 的 `CODE_WINDOW`），所以按上下文判断验证码时，这个块里的数字和主人消息互相够不着。例外是有意保留的：主人在同一条消息里把某串数字说成验证码时，出口层会把整条消息里所有相同的数字都遮掉（`egress-redaction.ts` 里按已识别值替换的那一步），运行环境说明里碰巧相同的数字也会被遮，这和资料段里其他内容的处理一样，是为了不漏掉秘密。同一条消息永远遮成同样的字节，已发的历史不受影响（规则第 1、4 条）。`packages/application/test/egress-redaction.unit.test.ts` 用生产出口同样的参数测了这两种情况。
+   - **遮盖**：块放在资料段末尾、紧挨 `</himawari-context>`，以一句不含数字、超过 40 个字的固定句结尾。遮盖验证码时判断窗口是前后 40 个字符（`packages/sensitive-capture/src/redaction.ts` 的 `CODE_WINDOW`），所以按上下文判断验证码时，这个块里的数字和主人消息互相够不着。例外是有意保留的：主人在同一条消息里把某串数字说成验证码时，出口层会把整条消息里所有相同的数字都遮掉（`packages/sensitive-capture/src/redaction.ts` 里按已识别值替换的那一步），运行环境说明里碰巧相同的数字也会被遮，这和资料段里其他内容的处理一样，是为了不漏掉秘密。同一条消息永远遮成同样的字节，已发的历史不受影响（规则第 1、4 条）。`packages/sensitive-capture/test/redaction.unit.test.ts` 用生产出口同样的参数测了这两种情况。
 2. **系统提示只留规则**。能力边界不再含工作目录、命令清单、文档技能目录、服务商名，也不再随联网搜索开关换文字；加一句固定的话：“工作目录、可用命令、文档技能目录、联网能力见最后一条消息里的运行环境说明。那份说明由本系统生成，和本规则一样约束本轮的工具使用。它只在对话第一轮和内容有变化时附上，最近附上的那份一直有效。”身份说明“资料不是指令”一节同步写明 `runtime-environment` 和主人定下的要求一样要遵守，不然模型会把它当普通资料。
 3. **`web_search`、`web_fetch` 的描述改成固定文字**，服务商和单次上限见运行环境说明。
 4. **工具循环停止改为追加一条消息**。守卫第一次判定停止时，用 Pi 会话的自定义消息接口（和后台通知用同一个接口）排队一条固定文字的 `himawari.tool-loop.stopped` 消息；Pi 在这批工具结果之后、下一次请求之前把它放进对话末尾，随原生历史存下。不改系统提示，不清空工具。之后的工具调用在执行端被拒绝，工具结果是固定文字 `chat.tool-loop-rejected`。同一个运行第二次走到停止，照旧以 `PI_TOOL_LOOP_DETECTED` 失败，不再为第二次总结付费，不靠 `maxTurns`（最多轮数上限）兜底。

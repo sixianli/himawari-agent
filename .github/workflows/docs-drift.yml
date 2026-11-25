@@ -1,0 +1,51 @@
+name: Docs drift reminder
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+permissions:
+  contents: read
+  pull-requests: write
+concurrency:
+  group: docs-drift-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+defaults:
+  run:
+    shell: bash
+jobs:
+  remind:
+    name: docs-drift
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.22.3
+      - name: 找出这个 PR 改了哪些文档覆盖的代码、文档却没改
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: node scripts/docs-drift.mjs --base "$BASE_SHA" > "$RUNNER_TEMP/docs-drift.md"
+      - name: 在 PR 上新建、更新或删掉那条提醒
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          existing=$(gh api "repos/$REPO/issues/$PR/comments" --paginate --jq '.[] | select(.body | startswith("<!-- docs-drift -->")) | .id' | head -n 1)
+          if [ -s "$RUNNER_TEMP/docs-drift.md" ]; then
+            if [ -n "$existing" ]; then
+              gh api -X PATCH "repos/$REPO/issues/comments/$existing" -F "body=@$RUNNER_TEMP/docs-drift.md" > /dev/null
+            else
+              gh api -X POST "repos/$REPO/issues/$PR/comments" -F "body=@$RUNNER_TEMP/docs-drift.md" > /dev/null
+            fi
+          elif [ -n "$existing" ]; then
+            gh api -X DELETE "repos/$REPO/issues/comments/$existing"
+          fi

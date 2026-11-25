@@ -6,6 +6,8 @@ supersedes: "https://github.com/sixianli/himawari-agent/blob/193794f098a53fdd0ee
 superseded_by: ""
 amends: "docs/adr/0246-external-proposals-join-the-data-export-and-web.md"
 date: "2026-11-25"
+covers: ""
+verified_at: "bac37972f7ca3e74cb3eee53ce278a6e595a7705"
 ---
 
 # ADR 0289：提议箱删除后，数据导出去掉提议一项，格式升到 v5
@@ -39,8 +41,8 @@ date: "2026-11-25"
 ## 决定
 
 1. **删表。**迁移 `20261125090938_drop_owner_proposals` 删掉 `owner_proposals`，同时删掉推送队列里还没发出的提议通知（`web_push_outbox` 里 `source_key` 以 `proposal:` 开头的行）。表里已有的提议不搬到别处。
-2. **数据导出格式升到 `himawari.data-export.v5`。**去掉导出里提议那一份数据文件和它的结构文件、清单里的 `ownerProposals` 条数和导入报告里的 `ownerProposalsWithoutOriginal`。v4 及更早的文件导入时整份拒绝（`DATA_IMPORT_FORMAT_UNSUPPORTED`），要用新版重新导出。
-3. **去掉“主人同意过的任务”标记。**运行来源不再带 `ownerApprovedTask`，授权层不再有事实 `run_source_owner_approved_task`；这类运行已经没有来源能开出来（[被取代的 ADR 0278](https://github.com/sixianli/himawari-agent/blob/193794f098a53fdd0ee93f37d1f1de630ff6c7c1/docs/adr/0278-tasks-the-owner-agreed-to-ask-before-writing-after-external-content.md)）。读过外来内容后的写操作照 ADR 0285 决定 7 一律先问主人，不受影响。
+2. **数据导出格式升到 `himawari.data-export.v5`。**去掉导出里提议那一份数据文件和它的结构文件、清单里的 `ownerProposals` 条数和导入报告里的 [ownerProposalsWithoutOriginal](https://github.com/sixianli/himawari-agent/blob/8eeeb3c1f8c8e6255d8efe52005e37a7935902f2/packages/persistence-sqlite/src/data-export/import.ts)。v4 及更早的文件导入时整份拒绝（`DATA_IMPORT_FORMAT_UNSUPPORTED`），要用新版重新导出。
+3. **去掉“主人同意过的任务”标记。**运行来源不再带 [ownerApprovedTask](https://github.com/sixianli/himawari-agent/blob/3552abb31c99cafe806656a7ffd7de603ba86e5e/packages/application/src/ports/run-execution-source.ts)，授权层不再有事实 `run_source_owner_approved_task`；这类运行已经没有来源能开出来（[被取代的 ADR 0278](https://github.com/sixianli/himawari-agent/blob/193794f098a53fdd0ee93f37d1f1de630ff6c7c1/docs/adr/0278-tasks-the-owner-agreed-to-ask-before-writing-after-external-content.md)）。读过外来内容后的写操作照 ADR 0285 决定 7 一律先问主人，不受影响。
 4. **去掉配置项 `runPolicy.ownerProposals`。**配置里还写着它的，启动时按未知键拒绝。
 
 <a id="options"></a>

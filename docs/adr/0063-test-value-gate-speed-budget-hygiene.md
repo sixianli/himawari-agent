@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-10-21"
+covers: "ci/coverage-policy.json, ci/policy.json, ci/test-hygiene-baseline.json, scripts/ci/check-policy.mjs, scripts/ci/run.mjs"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0063：新增测试先过价值门槛，测试有速度与隔离预算，测试卫生由门禁守住
@@ -39,7 +41,7 @@ date: "2026-10-21"
 6. **界面改动看截图、报未覆盖。** 控制中心改动要在浅色和深色两种主题下实际渲染并看截图；没被任何检查加载的改动文件写“未验证”；不能用自己生成的截图批准自己的视觉改动，视觉改动仍按 AGENTS.md 的设计基线由用户确认（[BL-20261021-006](../backlog/BL-20261021-006-控-制-中-心-界-面-截-图.md)）。
 7. **派活简报与停止文件。** 给 opencode 的简报要求每个新测试附六项问答，停止文件按三态写结果、修 bug 附红绿记录；模板在 `opencode-orchestration` skill。
 8. **速度预算在测试主机上量。** 单测文件单独运行 5 秒内、超过 10 秒写原因，这个数在 Hermes 或云测试账号上测，不在 Mac 上测（Mac 不跑测试）。
-9. **不采纳的部分。** Cindy 把守则用 `@docs/ai/AI_TESTING_RULES.md` 挂进 CLAUDE.md，本项目不这样做，因为用户要求系统级指令精简、不重复；Cindy 的 8 层按文件名后缀分层，本项目保留现有 6 个项目；Cindy 的“完整结果以 CI 为准”在本项目对应第 3 层加 GitHub 必过检查，不变。
+9. **不采纳的部分。** Cindy 把守则用 @docs/ai/AI_TESTING_RULES.md 挂进 CLAUDE.md，本项目不这样做，因为用户要求系统级指令精简、不重复；Cindy 的 8 层按文件名后缀分层，本项目保留现有 6 个项目；Cindy 的“完整结果以 CI 为准”在本项目对应第 3 层加 GitHub 必过检查，不变。
 
 [↑ 返回阅读导航](#contents)
 

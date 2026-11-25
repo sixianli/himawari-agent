@@ -6,6 +6,8 @@ supersedes: ""
 superseded_by: ""
 amends: ""
 date: "2026-11-14"
+covers: "scripts/ci/check-policy.mjs, scripts/ci/install-dependencies.mjs, scripts/ci/install-gate-dependencies.mjs, scripts/ci/run.mjs, test/tooling/policy.test.mjs, test/tooling/runner-orchestration.test.mjs"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0267：PR 上照跑全部测试但不量覆盖率，覆盖率改到夜里在 main 上量

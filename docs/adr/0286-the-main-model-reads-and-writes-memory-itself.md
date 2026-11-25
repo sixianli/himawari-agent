@@ -6,6 +6,8 @@ supersedes: ""
 superseded_by: ""
 amends: "docs/adr/0193-memory-is-visible-to-the-model.md, docs/adr/0196-index-sensitive-memory-after-masking-and-stop-idle-archiving.md"
 date: "2026-11-24"
+covers: "apps/agent-service/src/production-memory-recall.ts, packages/application/src/services/owner-profile-service.ts, packages/prompt-catalog/src/chat.ts, scripts/delivery-mode/packet-template/maintenance/production-shape-config-template.json"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0286：主模型自己翻旧对话原话、知道自己记着什么、聊天时自己存记忆

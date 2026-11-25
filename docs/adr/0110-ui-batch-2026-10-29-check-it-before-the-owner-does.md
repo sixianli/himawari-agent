@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-10-29"
+covers: "AGENTS.md, scripts/check-layout-audit.mjs, test/e2e/fixtures/control-center-browser-server.mjs"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0110：10-29 界面第二批：低级错误由检查来找，设置跨设备一致，分出的对话看得见来源

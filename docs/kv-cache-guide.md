@@ -3,6 +3,8 @@ status: active
 supersedes: ""
 superseded_by: ""
 date: "2026-11-05"
+covers: ".agents/instructions/prompt-prefix.md, apps/agent-service/src/cache-hit-monitor.ts, apps/agent-service/test/__prompt_golden__/memory.conversation-review.txt, packages/application/src/ports/model-usage.ts, packages/application/src/services/model-egress.ts, packages/application/src/services/perception-extraction.ts, packages/prompt-catalog/src/trusted.ts, packages/runtime-pi/src/configured-model-binding.ts, packages/runtime-pi/src/egress-context.ts, packages/runtime-pi/test/pi-runtime-adapter.compat.test.ts, packages/runtime-pi/test/prompt-prefix.compat.test.ts, packages/runtime-pi/test/runtime-environment-block.unit.test.ts, packages/sensitive-capture/src/redaction.ts, test/integration/production-http-composition-process.test.ts, test/integration/thread-prompt-bundles.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # 模型请求的 KV 缓存规范

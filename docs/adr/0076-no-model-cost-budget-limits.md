@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-10-25"
+covers: ""
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0076：模型调用不设费用上限，预算账本只记账
@@ -37,7 +39,7 @@ date: "2026-10-25"
 ## 决定
 
 1. **删除配置里的整个 `budgets` 段。** `ProductConfiguration` 不再有 `budgets`，严格配置校验把它当未知字段拒绝启动（`UNKNOWN_FIELD`，字段 `configuration.budgets`），不留不起作用的摆设字段。
-2. **准入不再按费用拒绝任何调用。** 前台 Run、会话标题、记忆嵌入和后台 occurrence 的预留都不再比较全局、数据等级、单 Run 或单次估算上限；后台 occurrence 的子调用超出预留时把账户预留扩大到实际需要的数额；实际花费超过预估不再把账户置为 `over_budget`，也不再把后台任务判为 `RUN_BUDGET_EXCEEDED`。
+2. **准入不再按费用拒绝任何调用。** 前台 Run、会话标题、记忆嵌入和后台 occurrence 的预留都不再比较全局、数据等级、单 Run 或单次估算上限；后台 occurrence 的子调用超出预留时把账户预留扩大到实际需要的数额；实际花费超过预估不再把账户置为 `over_budget`，也不再把后台任务判为 [RUN_BUDGET_EXCEEDED](https://github.com/sixianli/himawari-agent/blob/d7b90f79ece72e74564edb7c4ad3d3b607daa28f/packages/application/src/ports/durability.ts)。
 3. **保留预算账本作为用量统计和恢复门禁。** `model_budget_accounts`、`model_budget_allocations` 和模型调用身份照旧记录每次调用的预估、实际花费和 `reserved → started → settled | unknown | released` 状态。结果未知时账户仍置为 `reconcile_required`，阻止同一调用被重复发出；这是防止重复外部副作用的门禁，不是费用限制。
 4. **不改数据库结构。** 旧数据里的 `over_budget` 账户和 `budget_blocked` occurrence 仍然合法：前者可以继续分配、下一次结算后回到 `active`，后者可以被重新接纳。
 
@@ -61,7 +63,7 @@ date: "2026-10-25"
 
 - 模型调用和嵌入调用的花费不再有任何产品内的上限，花费只受 Vercel AI Gateway 等供应商账户本身的额度限制。账本照常记录每次调用的花费，可以随时查。
 - 带本次改动的版本启动时，配置里不能有 `budgets`。生产机、Hermes 和测试账号的配置都要在同一次上线时删掉这一段。
-- 后台任务的 `budget_blocked` 状态和 `GLOBAL_BUDGET_EXHAUSTED`、`CLASSIFICATION_BUDGET_EXHAUSTED`、`RUN_BUDGET_EXCEEDED` 原因码不会再产生。
+- 后台任务的 `budget_blocked` 状态和 [GLOBAL_BUDGET_EXHAUSTED](https://github.com/sixianli/himawari-agent/blob/d7b90f79ece72e74564edb7c4ad3d3b607daa28f/packages/application/src/ports/durability.ts)、[CLASSIFICATION_BUDGET_EXHAUSTED](https://github.com/sixianli/himawari-agent/blob/d7b90f79ece72e74564edb7c4ad3d3b607daa28f/packages/application/src/ports/durability.ts)、[RUN_BUDGET_EXCEEDED](https://github.com/sixianli/himawari-agent/blob/d7b90f79ece72e74564edb7c4ad3d3b607daa28f/packages/application/src/ports/durability.ts) 原因码不会再产生。
 
 [↑ 返回阅读导航](#contents)
 

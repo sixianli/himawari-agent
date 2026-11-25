@@ -6,6 +6,8 @@ supersedes: ""
 superseded_by: ""
 amends: "0242"
 date: "2026-11-15"
+covers: "apps/agent-service/src/production-mcp-memory-writer.ts, test/integration/mcp-write.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0281：外部 agent 推来的记忆，主人给这个接入设了“直接存”就马上存下
@@ -27,7 +29,7 @@ date: "2026-11-15"
 
 外部 agent（例如 Muse、Claude）经 MCP（让 agent 调用外部工具的协议）的写工具 `propose_memory`、`propose_memories` 推来记忆，在接入设为“先问我”时一律先存进“待确认”，主人在 Himawari 里点过才保存。Andy 2026-11-15 在项目聊天里回答“MCP 写操作要不要改成直接写”：“直接写就行了”。对同一问题的另一个提问，他在决定卡上选了“记忆直接存，规则仍要你点头”。
 
-ADR 0242 决定 9 早已设计了每个接入一个“先问我 / 直接存，可整批撤销”的开关，默认先问，只有主人能改；接入记录里也已经有 `push_policy` 一列，但网关一直拒绝把它设成“直接存”（`MCP_CONNECTION_PUSH_POLICY_NOT_AVAILABLE`），写工具也不看这一列。本 ADR 把这条路接通。
+ADR 0242 决定 9 早已设计了每个接入一个“先问我 / 直接存，可整批撤销”的开关，默认先问，只有主人能改；接入记录里也已经有 `push_policy` 一列，但网关一直拒绝把它设成“直接存”（[MCP_CONNECTION_PUSH_POLICY_NOT_AVAILABLE](https://github.com/sixianli/himawari-agent/blob/5834935d102709955c38e76220c6ed8a6df5cc51/apps/agent-service/src/production-mcp-connections-control.ts)），写工具也不看这一列。本 ADR 把这条路接通。
 
 <a id="premises"></a>
 

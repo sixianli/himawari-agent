@@ -6,6 +6,8 @@ supersedes: ""
 superseded_by: ""
 amended_by: "docs/adr/0033-process-sandbox-default-and-optional-containers.md"
 date: "2026-09-16"
+covers: ""
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0030：工作区释放事实独立于授权有效期和结果交接

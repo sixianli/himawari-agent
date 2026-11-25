@@ -6,6 +6,8 @@ supersedes: ""
 superseded_by: ""
 amends: "docs/adr/0263-cheaper-claude-side-of-code-review.md"
 date: "2026-11-14"
+covers: ".agents/instructions/model-review-card.md, .agents/instructions/model-review.md, AGENTS.md, test/tooling/opencode-review-merge-gate.test.mjs, test/tooling/opencode-review.test.mjs, test/tooling/plan-claims-gate.test.mjs"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0270：让复核每一轮更快、更少无谓重跑
@@ -42,8 +44,8 @@ date: "2026-11-14"
 
 ## Andy 的原话
 
-- 2026-11-14 Andy 对复核太慢的问题：“第二条这一块复核速度太慢的问题，要认真地去分析分析根因在哪里，然后找到最佳的一个方案出来。”（`cmsg_01EE1hey9cboYNfwFnBv5dgrEFRa3dour9zqQMp4nfprTb`）
-- 2026-11-14 Andy 看过方案后：“同意”（经协调者转来，`cmsg_01EE1hey9cboYNfwFnBv5dgrTQQWJm2aLWNVphiYhWeEoZ`）。按方案做 A 到 D 四项，刻意构造的怪输入引出的问题不降级（E1 不做）。
+- 2026-11-14 Andy 对复核太慢的问题：“第二条这一块复核速度太慢的问题，要认真地去分析分析根因在哪里，然后找到最佳的一个方案出来。”（cmsg_01EE1hey9cboYNfwFnBv5dgrEFRa3dour9zqQMp4nfprTb）
+- 2026-11-14 Andy 看过方案后：“同意”（经协调者转来，cmsg_01EE1hey9cboYNfwFnBv5dgrTQQWJm2aLWNVphiYhWeEoZ）。按方案做 A 到 D 四项，刻意构造的怪输入引出的问题不降级（E1 不做）。
 
 [↑ 返回阅读导航](#contents)
 

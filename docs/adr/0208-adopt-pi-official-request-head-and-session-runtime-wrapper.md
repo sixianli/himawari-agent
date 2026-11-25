@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-11-10"
+covers: ".agents/instructions/prompt-prefix.md, packages/runtime-pi/test/fixtures/d4-golden-requests.json"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0208：模型请求改靠近 Pi 官方写法（D1、D6）
@@ -40,7 +42,7 @@ date: "2026-11-10"
 3. `before_agent_start` 强制的系统提示在钩子之后还会再投影一次：`docs/extensions.md` 第 844 行“a `systemPrompt` forced from `before_agent_start` is still projected onto the request afterwards.”
 4. 压缩和分支摘要用 `this.agent.streamFunction` 发请求，摘要的系统提示是 Pi 自带的 `SUMMARIZATION_SYSTEM_PROMPT`：`dist/core/agent-session.js`、`dist/core/compaction/compaction.js`。所以压缩的系统提示与 `before_agent_start` 无关。
 5. Pi 默认的请求函数先整理请求选项、会话请求前启动缓存预热，再调 `modelRuntime.streamSimple`：`dist/core/sdk.js` 261–272 行。缓存预热也直接用 `streamSimple(...).result()`（`dist/core/cache-warmer.js`），所以对 `streamSimple` 的包装必须同步返回流。
-6. 官方注册服务方是进程级共享的，`streamSimple(model, context, options)` 里没有本次运行的 owner、runId、预算许可、暂停状态：`docs/custom-provider.md`。Himawari 本来有每次运行一个的 `sessionModelRuntime` 代理，D4（[ADR 0205](0205-pi-native-provider-auth.md)）合并后它已被删除，现在适配器直接用共享的 `binding.modelRuntime`，所以第 2 步要自己重建每次运行专属的模型代理。
+6. 官方注册服务方是进程级共享的，`streamSimple(model, context, options)` 里没有本次运行的 owner、runId、预算许可、暂停状态：`docs/custom-provider.md`。Himawari 本来有每次运行一个的 [sessionModelRuntime](https://github.com/sixianli/himawari-agent/blob/e934cd2f4a7544467e83988796d3938d1cef36b6/packages/runtime-pi/src/pi-runtime-adapter.ts) 代理，D4（[ADR 0205](0205-pi-native-provider-auth.md)）合并后它已被删除，现在适配器直接用共享的 `binding.modelRuntime`，所以第 2 步要自己重建每次运行专属的模型代理。
 7. 官方没有“不调模型、直接回放已存回答”的写法（D3，见 [ADR 0204](0204-handle-pi-deviations-d2-d3-d5.md)）。
 8. 发给模型的内容只追加、系统提示和工具按对话冻结：[prompt-prefix 规则](../../.agents/instructions/prompt-prefix.md)第 4、6 条。
 
@@ -76,7 +78,7 @@ Pi 官方对“委托内置实现”的写法是在自己的 `streamSimple` 里�
 
 - 不改变模型已经见过的请求开头：第 1 步有一次性的逐字节对比证据（上面两次），第 2、3 步合并前同样要做新旧对比，并跑 `npm run check:prompt-prefix`。
 - 第 2 步要先核对：`streamSimple` 同步返回在预热和摘要路径下可用；`model !== binding.model` 的对象身份检查在新接缝下仍成立；摘要的凭据解析路径变化后行为不变；代理不被 Pi 做 `instanceof` 检查。
-- D4 已由 [ADR 0205](0205-pi-native-provider-auth.md) 合并并删掉了 `sessionModelRuntime` 那个 Proxy；第 2 步要自己重建每次运行专属的模型代理，重建后用 D4 留下的 `packages/runtime-pi/test/fixtures/d4-golden-requests.json` 再逐字节对比一次请求。
+- D4 已由 [ADR 0205](0205-pi-native-provider-auth.md) 合并并删掉了 [sessionModelRuntime](https://github.com/sixianli/himawari-agent/blob/e934cd2f4a7544467e83988796d3938d1cef36b6/packages/runtime-pi/src/pi-runtime-adapter.ts) 那个 Proxy；第 2 步要自己重建每次运行专属的模型代理，重建后用 D4 留下的 `packages/runtime-pi/test/fixtures/d4-golden-requests.json` 再逐字节对比一次请求。
 - 打开缓存预热（D7）时，预热请求会进包装层，要有标记区分。
 
 <a id="step-2-record"></a>
@@ -97,7 +99,7 @@ Pi 官方对“委托内置实现”的写法是在自己的 `streamSimple` 里�
 
 ## 第 3 步实施记录（2026-11-10）
 
-- 请求开头改由隐藏扩展 `himawari-request-head` 的 `context_with_system` 钩子生成：返回 `[createInitialSystemMessage(冻结系统提示, 冻结工具), ...去掉 system 消息的历史]`。Pi 的 `streamAssistantResponse`（`pi-agent-core/dist/agent-loop.js`）先跑这个钩子再 `normalizeContext`，所以请求函数、预热器拿到的都是冻结开头。工具名和 Pi 能执行的工具名不一致时，钩子不替换开头。
+- 请求开头改由隐藏扩展 `himawari-request-head` 的 `context_with_system` 钩子生成：返回 `[createInitialSystemMessage(冻结系统提示, 冻结工具), ...去掉 system 消息的历史]`。Pi 的 `streamAssistantResponse`（pi-agent-core/dist/agent-loop.js）先跑这个钩子再 `normalizeContext`，所以请求函数、预热器拿到的都是冻结开头。工具名和 Pi 能执行的工具名不一致时，钩子不替换开头。
 - 代理在每次请求里核对：第 0 条是 system 消息，并且和 `createInitialSystemMessage(冻结系统提示, 冻结工具)` 逐字段深比较相等，其后没有 system 消息；不满足就一次请求都不发，失败消息是 `PI_REQUEST_HEAD_DIVERGED`（原 `PI_REQUEST_TOOLS_DIVERGED`；写进日志和历史的是这条消息，`runtime.failed` 的 `errorCode` 仍是 `PI_MODEL_ERROR`）。现在比的是整条开头，包括工具说明和参数，不只是名字；有冻结包时工具取冻结的，没有冻结包时工具取开头自带的，所以此时只核对系统提示。消息列表为空也不再发空请求，一并拒发。钩子出错、没注册或被改，Pi 会放行（出错只记录），所以拒发由代理这一侧保证。
 - 反向用例：`pi-runtime-adapter.compat.test.ts` 里开头提示被改、缺开头、开头之后又出现 system 消息，三种都零请求；`prompt-prefix.compat.test.ts` 的 `[D1]` 用例用旧版工具说明的冻结包，要求请求里是冻结的说明；另有 `[D1] sends nothing when Pi never runs the request-head hook`：用例里把钩子从已加载的扩展里摘掉，冻结包用旧版工具说明，要求零请求；手动把钩子改成什么都不返回，`packages/runtime-pi` 的 pi-compat 有 74 条失败。
 - 字节：`d4-golden-requests.json` 黄金请求（真实 Pi 会话）通过，`check:prompt-prefix` 28 条通过。

@@ -6,6 +6,8 @@ supersedes: ""
 superseded_by: ""
 amends: "docs/adr/0177-gitleaks-exact-value-allowlist.md"
 date: "2026-11-09"
+covers: ".agents/instructions/model-review.md, AGENTS.md, ci/rules/gitleaks.toml, scripts/model-review/opencode-review.mjs, test/tooling/opencode-review.test.mjs"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0190：复核脚本写记录时，把已登记的测试假值遮掉

@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-10-26"
+covers: "apps/agent-service/src/production-run-policy.ts, packages/runtime-pi/src/pi-runtime-adapter.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0084：系统提示以 Himawari 自己的身份说明开头，不再用 Pi 默认的编程助手开头

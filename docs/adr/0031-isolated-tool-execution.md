@@ -7,6 +7,8 @@ superseded_by: ""
 amends: "docs/adr/0025-pi-tools-and-managed-execution-lifecycles.md, docs/adr/0026-job-scoped-network-egress.md"
 amended_by: "docs/adr/0032-original-directory-disk-and-sensitive-file-limits.md, docs/adr/0033-process-sandbox-default-and-optional-containers.md, docs/adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md, docs/adr/0079-parallel-read-only-tools-and-host-web-tools.md"
 date: "2026-09-24"
+covers: ""
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0031：分离控制平面与任务级隔离工具执行环境
@@ -136,7 +138,7 @@ flowchart TD
 
 ## 与既有 ADR 的关系
 
-本 ADR **部分修正（amend）0025 和 0026，不整份 supersede**。仓库现有 `supersedes` / `superseded_by` 表示整份替代，因此这里保留其原值，采用双向 `amends` / `amended_by` 元数据及正文范围链接；旧正文保留历史，不将两份决定同时解释为同一路径的现行许可。仅下表所列冲突范围以 0031 为准，其余继续有效。
+本 ADR **部分修正（amend）0025 和 0026，不整份 supersede**。仓库现有 `supersedes` / `superseded_by` 表示整份替代，因此这里保留其原值，采用双向 `amends` / amended_by 元数据及正文范围链接；旧正文保留历史，不将两份决定同时解释为同一路径的现行许可。仅下表所列冲突范围以 0031 为准，其余继续有效。
 
 | 原决定 | 继续有效 | 由本决定修正的范围 |
 | --- | --- | --- |

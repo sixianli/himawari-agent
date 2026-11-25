@@ -7,6 +7,8 @@ superseded_by: ""
 amended_by: "docs/adr/0285-one-main-thread-subthreads-and-one-inbox.md"
 amends: "docs/adr/0179-keep-low-confidence-memory-candidates-as-tentative.md, docs/adr/0106-proactive-loop-v1-gmail-read-only.md"
 date: "2026-11-11"
+covers: "apps/agent-service/src/production-memory-capture.ts, packages/application/src/ports/proactive-checks.ts, packages/gateway-contracts/src/contracts.ts, packages/persistence-sqlite/src/data-export/schemas.ts, packages/persistence-sqlite/src/migrations/0062_proactive_checks.sql, packages/persistence-sqlite/src/sqlite-governed-deletion.ts, packages/persistence-sqlite/src/sqlite-proactive-operations.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0230：设备感知到的东西存成感知记录，不拼进对话；主人亲口说的才能直接成为记忆和提醒
@@ -72,7 +74,7 @@ date: "2026-11-11"
 13. 界面上每个数字要有可验证的定义。来源 `.claude/rules/owner-standing-rules.md` 原话：“界面上给 Andy 看的每个数字和判断词……都要有可以验证的定义和门槛，没有就不显示”。
 14. 现行决定是界面不显示费用。来源 `docs/adr/0106-proactive-loop-v1-gmail-read-only.md:47` 原话：“每天累计默认 1 美元，在生产配置里改，界面不显示费用（ADR 0105）。”
 15. 禁止按量付费调用贵模型。来源 `.claude/rules/owner-standing-rules.md` 原话：“任何场景……都不得通过按 token 付费的渠道……调用 Claude、OpenAI 或同价位的模型”。
-16. 所有发给模型的内容走统一出口并遮盖敏感信息。来源 [`0146-redact-sensitive-text-before-it-leaves-for-any-model.md`](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0146-redact-sensitive-text-before-it-leaves-for-any-model.md)（标题即决定）；检查是 `npm run check:egress-redaction`。
+16. 所有发给模型的内容走统一出口并遮盖敏感信息。来源 [0146-redact-sensitive-text-before-it-leaves-for-any-model.md](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0146-redact-sensitive-text-before-it-leaves-for-any-model.md)（标题即决定）；检查是 `npm run check:egress-redaction`。
 
 未核实、所以本 ADR 不依赖的：日本和中国关于录到旁人的法律规定，线程只有二手来源（`/mnt/project-files/ios-app-eval/report.md` 的 P8 到 P10）。本 ADR 的做法（旁人的话只当线索、每种感官可关、都能删）不以某条法律结论为前提；Andy 把包发给别人之前要单独核实。
 

@@ -6,6 +6,8 @@ supersedes: ""
 superseded_by: ""
 amends: "docs/adr/0018-sqlite-product-state-authority.md"
 date: "2026-10-26"
+covers: "packages/persistence-sqlite/src/sqlite-durable-operations.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0088：过程记录写进数据库时不再等硬盘确认

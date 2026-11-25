@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-11-11"
+covers: "apps/admin-cli/src/data-command.ts, apps/agent-service/src/production-chat-export.ts, packages/persistence-sqlite/src/data-export/chats.ts, packages/persistence-sqlite/src/migrations/0001_initial_product_schema.sql"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0235：聊天记录可以导出（独立的包，只导出不导入）

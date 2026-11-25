@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-10-25"
+covers: ".agents/instructions/delivery-mode.md"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0074：快速模式下由 Claude 直接执行生产上线、回滚和诊断

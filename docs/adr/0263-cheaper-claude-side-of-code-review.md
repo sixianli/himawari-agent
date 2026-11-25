@@ -6,6 +6,8 @@ supersedes: ""
 superseded_by: ""
 amends: "docs/adr/0175-cheaper-code-review-rounds.md"
 date: "2026-11-13"
+covers: ".agents/instructions/model-review-card.md, .agents/instructions/model-review.md, AGENTS.md, scripts/model-review/opencode-review.mjs, scripts/model-review/review-models.json"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0263：代码复核交给子代理，机械步骤交给脚本，第 3 轮起低意见只列不修
@@ -81,7 +83,7 @@ date: "2026-11-13"
 - 主线程照旧复核，只靠脚本减少调用：每次调用仍要重读 15 万以上 token 的上下文，省得少，放弃。
 - 新开一个线程做复核：要经协调者，交接慢，和子代理效果相同，放弃。
 - 一个子代理跑完所有轮次（第一版方案）：DeepSeek 审方案时指出子代理里会重新攒出长上下文，改成每轮一个。
-- 子代理不加载项目指令（`omitClaudeMd`）：能少加载项目指令，但子代理改代码也要守项目规则（例如不写注释），放弃。
+- 子代理不加载项目指令（omitClaudeMd）：能少加载项目指令，但子代理改代码也要守项目规则（例如不写注释），放弃。
 - 主线程每轮读判断文件抽查：正是要省掉的开销，改为收尾时自己跑合并检查。
 - 第 3 轮起连低意见也不判断：会漏掉被判错的中高意见，放弃；仍逐条判断，只是低的不修。
 - 增量轮完全禁止读增量以外的代码：会漏掉增量影响到的调用方，放弃；改成只读增量直接影响的代码。

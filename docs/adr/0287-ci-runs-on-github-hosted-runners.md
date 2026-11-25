@@ -6,6 +6,8 @@ supersedes: ""
 superseded_by: ""
 amends: "docs/adr/0241-draft-prs-skip-ci-and-merge-waits-for-green.md, docs/adr/0243-ci-uses-no-github-artifacts.md, docs/adr/0275-tests-job-runs-on-three-runners.md"
 date: "2026-11-25"
+covers: "scripts/ci/prepare-hosted.sh, scripts/ci/run-share.mjs, scripts/delivery-mode/packet-template/install/collect-installer-dependencies.mjs"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0287：仓库公开后，CI 全部跑在 GitHub 的免费标准机器上
@@ -45,7 +47,7 @@ CI（持续集成，每次提交自动跑的检查和测试）原先跑在自托
 1. 机器：`policy`、`tooling`、`security` 跑在 `ubuntu-24.04-arm`；`static`、`build`、`browser`、`tests`、`ci/required`、main 确认、合并队列和“关闭 PR 时取消 CI”跑在 `ubuntu-24.04`；新增 `Apple` 工作流在 `macos-26` 上跑 `HimawariCore` 单元测试，并不签名编译 iPhone App。`static` 原来在 Oracle ARM 机器上跑，这次改回 x64：`npm run check` 里的 `check:delivery-dependencies` 会真的运行只认 linux-x64 的依赖收集脚本（`scripts/delivery-mode/packet-template/install/collect-installer-dependencies.mjs`），在 ARM 机器上以 `P5_ENVIRONMENT_INVALID` 失败；两种机器都免费，所以不在测试里跳过，而是换机器。
 2. 只准用这三种标签：`npm run check:ci-policy` 读 `.github/workflows/` 下全部工作流，`runs-on` 不是这三种之一（包括 larger runner、`self-hosted`、浮动标签和算出来的表达式）就以 `HOSTED_RUNNER_REQUIRED` 失败。
 3. 作业之间传文件：`run-share.mjs` 的摘要核对不变，只是共享目录改成每台机器自己的 `$RUNNER_TEMP/ci-share`；每个检查作业把自己那份报告用 `actions/cache/save` 存进本次运行的缓存，键带 `run_id` 和 `run_attempt`；`browser`、`tests` 先用 `actions/cache/restore`（取不到就失败）取回本次的 Linux 构建，汇总作业在收齐前逐个取回各成员的报告。取回后仍按作业输出里的摘要逐字节核对。这是对 [ADR 0174](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0174-no-github-cache-and-one-day-artifacts.md)“不用 GitHub 缓存”的修订：只放开本次运行内部的传递，依赖和工具仍不缓存。
-4. 删除自托管 runner 的安装脚本、ssh 拉报告的 `scripts/ci/remote-share.mjs` 和 CI VPS 的运行手册。
+4. 删除自托管 runner 的安装脚本、ssh 拉报告的 [scripts/ci/remote-share.mjs](https://github.com/sixianli/himawari-agent/blob/88e17c2430041266de223e41c4163c45d1a02369/scripts/ci/remote-share.mjs) 和 CI VPS 的运行手册。
 5. 托管机器上沙箱测试需要的 bubblewrap、socat、ripgrep 和 Ubuntu 24.04 的 AppArmor 放宽，由 `scripts/ci/prepare-hosted.sh` 在每次作业开头装好。
 6. main 上已接受的策略文件仍写着 `ci-vps`、`ci-arm`、`ci-vps-gate`：`resolvePolicySource` 在基准上把它们整体换成对应的托管标签，摘要仍按原始字节算。
 

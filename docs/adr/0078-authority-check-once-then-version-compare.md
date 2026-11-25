@@ -6,6 +6,8 @@ supersedes: ""
 superseded_by: ""
 amends: "docs/adr/0069-trust-unprotected-runtime-like-claude-code.md"
 date: "2026-10-26"
+covers: "apps/agent-service/test/production-payload-broker-handler.unit.test.ts, packages/persistence-sqlite/test/sqlite-worker-protocol.unit.test.ts, packages/platform-node/test/sandbox-host-verifier.unit.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0078：沙箱运行中的授权核对先完整做一次，之后按版本号比对，最长 60 秒重新完整核对

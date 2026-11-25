@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-11-11"
+covers: "apps/agent-service/test/production-memory-recall.unit.test.ts, evals/memory-retrieval/candidates-qwen3-embedding-8b.json, evals/memory-retrieval/dataset.json, evals/memory-retrieval/history.jsonl, packages/application/test/same-source-dedupe.unit.test.ts, packages/memory-engine/src/fusion.ts, packages/memory-engine/src/relevance.ts, packages/platform-node/test/startup-configuration.unit.test.ts, test/integration/durable-memory-projection.test.ts, test/integration/memory-engine-index.test.ts, test/integration/memory-retrieval-eval/fixture.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0221：记忆检索三路融合后按相关分截断，同源且几乎相同的记忆只留一条
@@ -26,7 +28,7 @@ date: "2026-11-11"
 
 每轮找相关记忆走三路：向量（按意思找，比的是余弦相似度，0 到 1，越大越像）、关键词（SQLite 全文检索的 bm25 打分）、实体（记忆里记下的人名、地名等名字出现在这句话里）。三路结果用 RRF（倒数排名融合：每路按名次给分 `1/(60+名次)`，再相加）合并，乘上重要度、新近程度等加成后排序，取前 N 条（`packages/memory-engine/src/fusion.ts`）。
 
-[ADR 0115](0115-memory-search-relevance-threshold-and-retrieval-eval.md) 只给向量路设了最低相似度（聊天 0.6；Gmail 检查按 [ADR 0158](0158-bring-related-memories-into-gmail-checks.md) 用 0.45）。关键词路和实体路没有任何门槛：一个关键词撞上，再不相关的记忆也会带出来。2026-11-11 在 `evals/memory-retrieval/dataset.json` 上实跑（24 条合成记忆、40 句相关、48 句无关），生产门槛下准确率（带上的记忆里该带的比例）85.4%，错带的 7 条全部只被关键词找到，与问题的相似度只有 0.28 到 0.59，例如“我住在哪里”带出“主人的母亲住在成都”。
+[ADR 0115](0115-memory-search-relevance-threshold-and-retrieval-eval.md) 只给向量路设了最低相似度（聊天 0.6；Gmail 检查按 [ADR 0158](https://github.com/sixianli/himawari-agent/blob/9a395ec730b7c96519309bf1199355a04d8199aa/docs/adr/0158-bring-related-memories-into-gmail-checks.md) 用 0.45）。关键词路和实体路没有任何门槛：一个关键词撞上，再不相关的记忆也会带出来。2026-11-11 在 `evals/memory-retrieval/dataset.json` 上实跑（24 条合成记忆、40 句相关、48 句无关），生产门槛下准确率（带上的记忆里该带的比例）85.4%，错带的 7 条全部只被关键词找到，与问题的相似度只有 0.28 到 0.59，例如“我住在哪里”带出“主人的母亲住在成都”。
 
 另一件事是“同源重复”：同一句原话可能派生出几条几乎一样的记忆，检索时会一起被带出来。Andy 2026-11-11 选定的定义是：来源（`sourceRefs`）有交集**且**内容几乎相同才算重复；同一句话拆出的不同事实都保留。
 
@@ -134,6 +136,6 @@ date: "2026-11-11"
 ## 关联文档
 
 - [ADR 0115：记忆搜索设相关度门槛](0115-memory-search-relevance-threshold-and-retrieval-eval.md)
-- [ADR 0158：Gmail 检查带上相关记忆](0158-bring-related-memories-into-gmail-checks.md)
+- [ADR 0158：Gmail 检查带上相关记忆](https://github.com/sixianli/himawari-agent/blob/9a395ec730b7c96519309bf1199355a04d8199aa/docs/adr/0158-bring-related-memories-into-gmail-checks.md)
 - [界面设计指南](../ui-ux-design-guide.md)
 - 方案讨论记录：`.agents/reviews/topic-p3-3-fusion-cutoff/`

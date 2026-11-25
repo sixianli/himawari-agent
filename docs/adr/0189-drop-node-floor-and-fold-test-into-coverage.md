@@ -6,6 +6,8 @@ supersedes: ""
 superseded_by: ""
 amends: ""
 date: "2026-11-08"
+covers: "ci/coverage-policy.json, ci/evidence.schema.json, ci/policy.json, ci/policy.schema.json, ci/toolchain-lock.json, scripts/ci/check-coverage.mjs, scripts/ci/check-policy.mjs, scripts/ci/install-dependencies.mjs, scripts/ci/local.mjs, scripts/ci/run.mjs, scripts/ci/test.mjs, scripts/delivery-mode/packet-template/acceptance/cloud/prepare-runtime-tools.py, test/tooling/evidence.test.mjs"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0189：去掉 node-floor 作业，把 test 作业并进 coverage 作业

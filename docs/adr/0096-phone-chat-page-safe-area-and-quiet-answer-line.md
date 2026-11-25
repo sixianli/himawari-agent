@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-10-27"
+covers: "apps/control-center/index.html, apps/control-center/src/chat-layout.css, apps/control-center/src/components/answer-footer.tsx, apps/control-center/src/components/chat-composer.tsx, apps/control-center/src/components/memory-page.tsx, apps/control-center/src/components/memory-panel.tsx, apps/control-center/src/review-v4.css"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0096：手机对话页：避开 iPhone 底部横条、去掉灰色横条、回答下方一行只留必要信息
@@ -67,8 +69,8 @@ date: "2026-10-27"
 
 - WebKit 官方博客《Designing Websites for iPhone X》：`viewport-fit` 默认是 `auto`，“Content is automatically inset within the display's safe area”（内容自动缩进到安全区里）；要铺满整屏需要设 `viewport-fit=cover`，再用安全区变量给内容留边。<https://webkit.org/blog/7929/designing-websites-for-iphone-x/>
 - MDN 的 `overflow` 页：“`overflow-x`: as specified, except with `visible`/`clip` computing to `auto`/`hidden` respectively if one of `overflow-x` or `overflow-y` is neither `visible` nor clip”。<https://developer.mozilla.org/en-US/docs/Web/CSS/overflow>
-- Open WebUI（开源的 AI 对话网页）`src/app.html` 的 `viewport`：`width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, interactive-widget=resizes-content`。<https://github.com/open-webui/open-webui/blob/main/src/app.html>
-- LibreChat（另一个开源 AI 对话网页）`client/index.html` 同样用 `apple-mobile-web-app-status-bar-style` 为 `black-translucent`。<https://github.com/danny-avila/LibreChat/blob/main/client/index.html>
+- Open WebUI（开源的 AI 对话网页）src/app.html 的 `viewport`：`width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, interactive-widget=resizes-content`。<https://github.com/open-webui/open-webui/blob/main/src/app.html>
+- LibreChat（另一个开源 AI 对话网页）client/index.html 同样用 `apple-mobile-web-app-status-bar-style` 为 `black-translucent`。<https://github.com/danny-avila/LibreChat/blob/main/client/index.html>
 
 [↑ 返回阅读导航](#contents)
 
@@ -89,7 +91,7 @@ date: "2026-10-27"
 - 好处：手机上输入框离开底部横条；不再出现横向滚动条；回答下面一行一眼能看完；记忆提示不抢注意力，点一下就能看到、改、删刚记下的那条。
 - 代价：模型名不再出现在回答下方。想知道某一轮实际用了哪个模型，要展开过程区看。
 - 灰色横条的原因是推断，见[灰色横条和贴底的原因](#root-causes)；第十五版上线后在 iPhone 上确认。
-- 测试：`test/answer-footer.unit.test.ts` 改为检查回答下方没有模型名、复制按钮的读屏名称；`test/memory-interactions.unit.test.ts` 检查记忆提示文字、点“查看”带上那条记忆的编号、记忆页把它放在最上面并能删除。
+- 测试：`apps/control-center/test/answer-footer.unit.test.ts` 改为检查回答下方没有模型名、复制按钮的读屏名称；`test/memory-interactions.unit.test.ts` 检查记忆提示文字、点“查看”带上那条记忆的编号、记忆页把它放在最上面并能删除。
 
 [↑ 返回阅读导航](#contents)
 

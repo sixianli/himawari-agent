@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-10-29"
+covers: "apps/control-center/src/spreadsheet-model.ts, apps/control-center/test/file-preview-info.unit.test.ts, apps/control-center/test/spreadsheet-model.unit.test.ts, packages/platform-node/src/http-gateway-server.ts, scripts/test-file-preview-browser.mjs"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0114：右侧文件预览在浏览器里直接显示 PDF、Word 和 Excel（pdf.js、docx-preview、ExcelJS），不在服务器上装 LibreOffice

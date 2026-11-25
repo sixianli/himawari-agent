@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-10-28"
+covers: "evals/jarvis-test/history.jsonl, test/fixtures/jarvis-test/models.json"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0103：Jarvis Test 前三条用两层评测：确定性层拦退步，真模型层每条跑 3 次、两层裁判记分

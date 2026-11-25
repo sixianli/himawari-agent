@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-11-11"
+covers: "packages/application/src/rules/rule-book.ts, packages/application/src/services/automatic-memory-service.ts, packages/application/test/rule-version.unit.test.ts, packages/persistence-sqlite/src/migrations/0087_rule_book_memory_link.sql, test/integration/decision-chain.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0215：决策记录指向真正执行了的那一版规则

@@ -7,6 +7,8 @@ amends: ""
 superseded_by: ""
 amended_by: "docs/adr/0285-one-main-thread-subthreads-and-one-inbox.md"
 date: "2026-11-12"
+covers: "apps/agent-service/src/production-web-push.ts, packages/application/src/rules/field-catalog.ts, packages/application/test/rule-type-push-quiet-hours.unit.test.ts, packages/persistence-sqlite/test/web-push-gate-migration.contract.test.ts, test/integration/data-export-rules.test.ts, test/integration/production-memory-capture.test.ts, test/integration/production-web-push.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0244：硬规则第 4 步，所有推送走统一闸门，主人一句话就能立“夜里别提醒我”

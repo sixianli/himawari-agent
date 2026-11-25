@@ -6,6 +6,8 @@ supersedes: ""
 superseded_by: ""
 amends: "docs/adr/0078-authority-check-once-then-version-compare.md"
 date: "2026-10-29"
+covers: "apps/agent-service/src/production-sandbox-services.ts, apps/agent-service/test/production-stage-timing.unit.test.ts, packages/platform-node/src/capabilities/sandbox-host-verifier.ts, packages/platform-node/test/sandbox-host-reuse.unit.test.ts, packages/runtime-pi/test/pi-runtime-adapter.compat.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0116：服务进程里的宿主文件核验按文件状态复用 10 秒，授权每次照常重判；工具调用前后各段加计时

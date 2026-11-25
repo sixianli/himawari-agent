@@ -6,6 +6,8 @@ supersedes: ""
 superseded_by: ""
 amends: "docs/adr/0018-sqlite-product-state-authority.md"
 date: "2026-11-14"
+covers: ".claude/rules/incident-gates.md, .claude/rules/owner-standing-rules.md, packages/persistence-sqlite/src/migration-engine.ts, packages/persistence-sqlite/src/migrations/0095_correction_propagation.sql, packages/persistence-sqlite/src/sqlite-decision-ledger-operations.ts, packages/persistence-sqlite/src/sqlite-recovery-point.ts, scripts/check-audit-schema-range.mjs, scripts/delivery-mode/make-packet.py, scripts/delivery-mode/packet-template/s0-db/read-s0-db.mjs, scripts/operations/workspace-lifecycle-audit.mjs, scripts/run-all-checks.mjs"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0265：数据库迁移改用不撞号的编号，任意先后合并，真冲突在合并前自动拦下
@@ -88,7 +90,7 @@ date: "2026-11-14"
 | 做法 | 编号 | 记录哪些跑过 | 晚合的小号能不能跑 | 冲突怎么发现 | 来源 |
 |---|---|---|---|---|---|
 | Rails | 文件名前缀是 UTC 时间戳 `YYYYMMDDHHMMSS` | `schema_migrations` 表存跑过的版本集合 | 能：`db:migrate` “runs … all the migrations that have not yet been run” | `schema.rb` 合并冲突，“run bin/rails db:migrate to regenerate the schema file” | [Rails 指南](https://guides.rubyonrails.org/active_record_migrations.html) |
-| GitLab | 同 Rails，14 位时间戳，“hand-typed versions often collide”所以用生成器 | 同 Rails；另外每个迁移在 `db/schema_migrations/` 下有一个单独文件，避免大家改同一个文件 | 能 | `structure.sql` 冲突 + CI 检查 | [GitLab 迁移规范](https://docs.gitlab.com/development/migration_style_guide/) |
+| GitLab | 同 Rails，14 位时间戳，“hand-typed versions often collide”所以用生成器 | 同 Rails；另外每个迁移在 `db/schema_migrations/` 下有一个单独文件，避免大家改同一个文件 | 能 | structure.sql 冲突 + CI 检查 | [GitLab 迁移规范](https://docs.gitlab.com/development/migration_style_guide/) |
 | Django | 名字唯一即可，“the numbers are just there for developers' reference” | 按名字 | 每个迁移写明依赖谁，形成依赖图 | 同一个应用出现两个末端就要求人线性化或生成合并迁移 | [Django 迁移](https://docs.djangoproject.com/en/5.2/topics/migrations/) |
 | Flyway | 版本号 | 历史表 | 默认不能；`outOfOrder=true` 时能 | 无自动语义检查 | [Flyway outOfOrder](https://documentation.red-gate.com/fd/out-of-order-224919730.html) |
 | goose | 时间戳或序号 | 版本表 | 默认不能；`-allow-missing` 能。维护者原先推荐“开发用时间戳、合并后由 CI 改成序号”，后来因为社区反馈放宽 | 无 | [goose 博客](https://pressly.github.io/goose/blog/2021/out-of-order-migrations) |
@@ -109,7 +111,7 @@ date: "2026-11-14"
 
 ### 一、编号：UTC 时间戳加名字，由脚本生成
 
-- 新迁移的文件名是 `<14 位 UTC 时间戳>_<名字>.sql`，例如 `20261114013000_device_actions.sql`。时间戳只负责“彼此不同”和大致先后，不代表“排第几”。
+- 新迁移的文件名是 `<14 位 UTC 时间戳>_<名字>.sql`，例如 20261114013000_device_actions.sql。时间戳只负责“彼此不同”和大致先后，不代表“排第几”。
 - 用 `npm run migration:new -- <名字>` 生成：取当前 UTC 时间；名字只许 `^[a-z][a-z0-9_]*$`；生成前对照本地目录和 `origin/main` 的迁移目录，同一秒已有就顺延一秒；以“文件不存在才创建”的方式写入。时间戳不能百分之百保证唯一（两个分支同一秒生成仍会相同），撞了的后果是后合的那个 PR 的检查报“编号重复”，换个号即可，不会进 main。
 - 默认 `phase` 是 `expand`、`changeSet` 是名字换连字符（0052 以后的 44 个迁移全是这样）。现在没有需要别的阶段的迁移，所以 `.meta.json` 只认 `alters`（改了已有结构的表）和 `removes`（去掉的取值）两个字段；真需要别的阶段时再加。
 
@@ -195,7 +197,7 @@ date: "2026-11-14"
 
 引擎 PR 合并后，每个排队的 PR 做一次（各自线程做，互不等待）：
 
-1. 把自己的 `00NN_x.sql` 用 `npm run migration:new` 换成新编号文件，内容不变；删掉自己在 `bundledMigrationFiles`、`SUPPORTED_SCHEMA_MAX`、测试里加的那几行。
+1. 把自己的 00NN_x.sql 用 `npm run migration:new` 换成新编号文件，内容不变；删掉自己在 `bundledMigrationFiles`、`SUPPORTED_SCHEMA_MAX`、测试里加的那几行。
 2. 重建 `decision_ledger` 只为加种类的（web_push_gate、perception_records、proactive_source_registry、device_actions），等参照表 PR 合并后，把 600 多行的重建换成几行 `INSERT`。
 3. 跑 `npm run check:migration-conflicts`。通过就按平常流程合并，不用再找协调者要号；失败就按提示处理，这时只有真正碰同一处的 PR 需要先后处理。
 

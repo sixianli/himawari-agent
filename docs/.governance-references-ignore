@@ -1,0 +1,42 @@
+# 文档里允许出现、但不在本仓库代码里的名字：上游项目、平台接口、导出包内部结构、只在本机存在的目录。
+# 每行一个，原样或 fnmatch 通配；document-governance 技能的 validate_docs.py 和 npm run check:docs-code-refs 都读这个文件。
+
+# Pi（@earendil-works/pi-*）仓库里的文档、示例和内部名字
+docs/sdk.md
+docs/extensions.md
+docs/custom-provider.md
+docs/models.md
+docs/settings.md
+docs/compaction.md
+examples/sdk/*
+examples/extensions/*
+CHANGELOG/*.md
+packages/ai/src/ui/chat.ts
+_emitAgentSettled
+_handlePostAgentRun
+_runBeforeSettleBoundary
+_runAutoCompaction
+_omitRecoveryAttempt
+session.pendingMessageCount
+cacheWarmer.start
+SUMMARIZATION_SYSTEM_PROMPT
+
+# 其他上游项目和平台接口
+codex-rs/memories/README.md
+BASH_DEFAULT_TIMEOUT_MS
+SRT_DEBUG
+toLocaleString
+toLocaleDateString
+toMatchSnapshot
+
+# 数据导出包里的文件布局
+data/*.jsonl
+schema/*.schema.json
+
+# GitHub 上的检查名
+ci/required
+
+# 只在开发机本地存在、不入库的目录和文件
+.claude/settings.local.json
+.claude/worktrees
+.claude/.cc-writes

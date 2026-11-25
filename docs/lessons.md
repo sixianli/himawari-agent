@@ -4,6 +4,8 @@ document_type: lessons
 supersedes: ""
 superseded_by: ""
 date: "2026-10-13"
+covers: ""
+verified_at: ""
 ---
 
 # 编码代理反复犯的错误
@@ -53,46 +55,46 @@ date: "2026-10-13"
 - 再次发生的证据：
   - 2026-10-13 第三次部署 S5 第一次失败：形状链把新旧两个运行时映射成同一个，没发现同一进程加载两份 `better-sqlite3` 时第二份不认 URI 文件名（见 `.ci-output/handoff/2026-10-12-third-packet-progress.md`）。
   - 同日 S5 第二次失败：形状链里 S3 和 S5 一直用同一份 `bindings.json`，没发现修订版换了 `bindings.json` 后 S5 拒绝 S3 的报告。
-  - 同日审核修订版 03 时发现：发布夹具用发布脚本自己的 `FAILED_CONDITION` 造“生产失败报告”，常量多写了 `DEPLOY_` 仍然通过。
-  - 2026-10-16 第四次变更生产 S6_SIGN 以 `NEW_RUNNER_INCOMPATIBLE` 失败：候选 `4c705133` 有意改了 Pi 和搜索两个 runner（沙箱里执行工具的程序），生产上新 runner 与数据库登记的旧 runner 不同；生产形状演练却写死 `const oldRuntime = runtime, newRuntime = runtime`，新旧 runner 一字节不差，签署和 S8 的“runner 必须等于登记值”从没遇到过不同的情况。
-  - 同日修复后的第一次演练里，S7_DB_STATUS 以 `FOURTH_MAINTENANCE_ORIGINAL_AUTHORIZATION_CHANGED` 失败：生产上 S0 读回和 S5 报告由旧包的读取器写出，演练却用新读取器写，两份记录的字段不同。演练这次在上生产前拦住了它。
+  - 同日审核修订版 03 时发现：发布夹具用发布脚本自己的 FAILED_CONDITION 造“生产失败报告”，常量多写了 `DEPLOY_` 仍然通过。
+  - 2026-10-16 第四次变更生产 S6_SIGN 以 NEW_RUNNER_INCOMPATIBLE 失败：候选 `4c705133` 有意改了 Pi 和搜索两个 runner（沙箱里执行工具的程序），生产上新 runner 与数据库登记的旧 runner 不同；生产形状演练却写死 `const oldRuntime = runtime, newRuntime = runtime`，新旧 runner 一字节不差，签署和 S8 的“runner 必须等于登记值”从没遇到过不同的情况。
+  - 同日修复后的第一次演练里，S7_DB_STATUS 以 FOURTH_MAINTENANCE_ORIGINAL_AUTHORIZATION_CHANGED 失败：生产上 S0 读回和 S5 报告由旧包的读取器写出，演练却用新读取器写，两份记录的字段不同。演练这次在上生产前拦住了它。
 - 第四次的根因：前三次之后的预防只是“写演练时先列出生产上不同的实体”这条要靠人想起来的规则，演练脚本里没有任何检查会在两样东西被合成一样时报错，于是新旧 runner、新旧读取器写的记录又被合成了一个。
 - 硬约束（2026-10-16，G107）：
-  - 生产形状演练 `maintenance/verify-production-shape-chain.mjs`（安装演练 `run-fourth-rehearsal.sh` 的 shape 阶段，冻结前必须通过）在 S7_DB_STATUS 之后、生成新快照之前改动演练运行时里 Pi runner 的字节，S8 之后再改回，用时间先后模拟生产上新旧两个运行时；新快照绑定的 runner 摘要等于登记摘要时打印 `PRODUCTION_SHAPE_RUNNERS_MERGED` 并失败。
-  - 同一演练写出 S0 读回后，要求它的授权、能力、目录授权三层字段名与操作包里真实的生产 S0 读回 `inputs/s0-db-readback.json` 完全相同，否则打印 `PRODUCTION_SHAPE_S0_SHAPE_NOT_PRODUCTION` 并失败。期望值取自真实生产记录，不由演练自己另写。
-  - 验证（Hermes `rehearsal-4c705133/hard-constraint-01/`，运行脚本 `.ci-output/production/2026-10-16-fourth-revision-01/run-shape-variant.sh`）：去掉改动 runner 的那一行重现第一种错误，以 `PRODUCTION_SHAPE_RUNNERS_MERGED` 失败；按新读取器的形状写 S0 重现第二种错误，以 `PRODUCTION_SHAPE_S0_SHAPE_NOT_PRODUCTION` 失败；正式版本通过，报告记下登记摘要 `b5f2d140…` 与新摘要 `39bb15a0…` 不同，S8 第一次在 runner 不同的情况下通过。
+  - 生产形状演练 maintenance/verify-production-shape-chain.mjs（安装演练 run-fourth-rehearsal.sh 的 shape 阶段，冻结前必须通过）在 S7_DB_STATUS 之后、生成新快照之前改动演练运行时里 Pi runner 的字节，S8 之后再改回，用时间先后模拟生产上新旧两个运行时；新快照绑定的 runner 摘要等于登记摘要时打印 PRODUCTION_SHAPE_RUNNERS_MERGED 并失败。
+  - 同一演练写出 S0 读回后，要求它的授权、能力、目录授权三层字段名与操作包里真实的生产 S0 读回 inputs/s0-db-readback.json 完全相同，否则打印 PRODUCTION_SHAPE_S0_SHAPE_NOT_PRODUCTION 并失败。期望值取自真实生产记录，不由演练自己另写。
+  - 验证（Hermes `rehearsal-4c705133/hard-constraint-01/`，运行脚本 `.ci-output/production/2026-10-16-fourth-revision-01/run-shape-variant.sh`）：去掉改动 runner 的那一行重现第一种错误，以 PRODUCTION_SHAPE_RUNNERS_MERGED 失败；按新读取器的形状写 S0 重现第二种错误，以 PRODUCTION_SHAPE_S0_SHAPE_NOT_PRODUCTION 失败；正式版本通过，报告记下登记摘要 `b5f2d140…` 与新摘要 `39bb15a0…` 不同，S8 第一次在 runner 不同的情况下通过。
   - 限制：只覆盖 Pi runner 和 S0 读回这两样；搜索 runner、签署链（`cloud-seal.mjs`）、S7_SWITCH_START 仍不在形状演练里，签署链的新旧 runner 不同由夹具 `signing/verify-capability-manifest.mjs` 覆盖。下一次起草操作包时这两个检查随演练脚本复制过去；如果以后有别的“生产上不同、演练里相同”的实体，按同样方式加一个在合并时失败的检查。
 - 第五次变更又发生两次（2026-10-17），都在生产 S7_CATALOG_UPGRADE：
   - 第一次停在准备脚本：生产用 `runuser` 启动真实的 `cloud-protected-prepare.mjs`，进程的 NoNewPrivs（禁止再提权的进程标志）为 0，产品的运行时保护拒绝；演练用的准备脚本替身不检查这个标志，生产和演练的进程状态被合成了一样。
   - 第二次停在升级后的核对：生产数据库里有 24 个已结束对话留下的 Pi 句柄（`status` 为 `revoked` 或 `consumed`，`revoked_at` 为空），演练数据库里一个这样的句柄也没有，维护脚本按 `revoked_at IS NULL` 计数的错误测不出来。设计修法时还发现第三样：演练几十秒跑完，生产步骤之间隔几十分钟，`capabilities` 命令“资格检查须在 5 分钟内”的限制在演练里从没触发过。
 - 这两次的根因：第四次加的硬约束只检查当时列出的两样实体（Pi runner、S0 读回的字段），列清单这一步仍要靠人想到；进程标志、数据库里的历史数据和步骤间隔都不在清单上。
-- 新增硬约束（同在 `maintenance/verify-production-shape-chain.mjs`，冻结前必须通过）：
-  - 准备脚本替身开头要求 `/proc/self/status` 的四项能力集为 0、`NoNewPrivs: 1`，否则以 `PREPARE_STAND_IN_NO_NEW_PRIVS_REQUIRED` 失败。验证：用修订一之前的 `maintenance-common.mjs` 跑形状演练以这个错误码失败，换新文件后通过（`.ci-output/handoff/prod-fifth-evidence-c53bca70/revision-01-nnp/before/`、`after/`）。
-  - 升级前数据库里必须同时有可用的、对话已结束的、已用完的 Pi 句柄，且后两种的 `revoked_at` 为空，否则以 `PRODUCTION_SHAPE_HANDLES_NOT_PRODUCTION` 失败；报告里记下生产的参照数（Pi 24、搜索 0）。验证：只放一个可用句柄（相当于之前的演练）时在升级前以这个错误码失败，正式版本通过（Hermes `rehearsal-c53bca70/revision-02-code/handles-variant/` 与 `shape-full/`）。
+- 新增硬约束（同在 maintenance/verify-production-shape-chain.mjs，冻结前必须通过）：
+  - 准备脚本替身开头要求 `/proc/self/status` 的四项能力集为 0、`NoNewPrivs: 1`，否则以 PREPARE_STAND_IN_NO_NEW_PRIVS_REQUIRED 失败。验证：用修订一之前的 `maintenance-common.mjs` 跑形状演练以这个错误码失败，换新文件后通过（`.ci-output/handoff/prod-fifth-evidence-c53bca70/revision-01-nnp/before/`、`after/`）。
+  - 升级前数据库里必须同时有可用的、对话已结束的、已用完的 Pi 句柄，且后两种的 `revoked_at` 为空，否则以 PRODUCTION_SHAPE_HANDLES_NOT_PRODUCTION 失败；报告里记下生产的参照数（Pi 24、搜索 0）。验证：只放一个可用句柄（相当于之前的演练）时在升级前以这个错误码失败，正式版本通过（Hermes `rehearsal-c53bca70/revision-02-code/handles-variant/` 与 `shape-full/`）。
   - 续做模式在 S7_CATALOG_UPGRADE 失败后等到准备的资格检查超过 5 分钟，要求 `capabilities upgrade-plan` 报 `CAPABILITY_DEPLOYMENT_QUALIFICATION_STALE`，把“生产上步骤之间时间更长”变成演练里的一步（Hermes `revision-02-code/shape-resume/`）。
   - 限制：仍是逐项列出的检查，只覆盖这三样；生产里还可能有别的历史数据或进程状态与演练不同。下一次起草操作包时，先把生产只读诊断里看到的每类历史数据（句柄、对话、审计记录的状态分布）写进形状演练的种子数据。
 - 第六次变更的包外修订工具（`.ci-output/sixth-packet-work/revision-01/`，就地替换已部分运行过的操作包的脚本）又发生三次（2026-10-22），每次都是演练现场里少了生产上第一次运行真实留下的东西：
   - G162：前提检查以 `TREE_EXTRA:acceptance/cloud/cloud-inputs.json` 拒绝，第一次 S6 往旧包里写了这个文件，手写的演练现场里没有。
-  - opencode 审修复时发现：`s3_copy50-result.json` 在生产上属主是 999（服务账号），工具按 0 检查；演练在 `unshare -r -u`（普通账号模拟 root）下所有属主都显示为 0，测不出来。
-  - G163：安装新候选失败 `REVISION_INSTALL_FAILED:EXIT:1`。安装程序用“文件已存在就报错”的方式写 `python-extract.stdout`，第一次安装留下的这个文件没被归档：工具的 `INSTALL_FILES` 是照安装程序手抄的，九个命名输出漏了一个；演练现场 `build-rehearsal-stage.py` 也是手写的文件清单，同样漏了它，所以演练通过。
+  - opencode 审修复时发现：s3_copy50-result.json 在生产上属主是 999（服务账号），工具按 0 检查；演练在 `unshare -r -u`（普通账号模拟 root）下所有属主都显示为 0，测不出来。
+  - G163：安装新候选失败 `REVISION_INSTALL_FAILED:EXIT:1`。安装程序用“文件已存在就报错”的方式写 `python-extract.stdout`，第一次安装留下的这个文件没被归档：工具的 INSTALL_FILES 是照安装程序手抄的，九个命名输出漏了一个；演练现场 build-rehearsal-stage.py 也是手写的文件清单，同样漏了它，所以演练通过。
 - 这三次的根因：演练现场和工具里的文件清单都由人照着记忆或代码手写，没有任何检查把它们和生产上真实存在的文件或安装程序真实会写的文件对照。
 - 硬约束（2026-10-22，G165）：
-  - 生成修订工具和补装工具时（`revision-tool/make-revision.py`、`install-resume/make-resume.py`，每次生成都运行），`revision-tool/install_outputs.py` 从安装程序 `install/sixth-artifact-install.mjs` 的源码提取所有 `run(..., "<名字>")` 和直接写进证据根的文件名，要求 `INSTALL_FILES` 恰好等于每个 `<名字>.stdout`、直接写的文件和工具自己写的三个文件（`s1-install.stdout/.stderr`、`s1-result.json`），`INSTALL_OPTIONAL` 恰好等于每个 `<名字>.stderr`；缺一个以 `TEMPLATE_INSTALL_OUTPUTS_MISSING:<缺的文件>` 拒绝，多一个以 `TEMPLATE_INSTALL_OUTPUTS_EXTRA:<多的文件>` 拒绝（多列的名字会在安装成功之后才因找不到文件而失败）。源码里出现认不出的调用形式时以 `INSTALLER_RUN_CALL_UNRECOGNIZED` 等错误码拒绝；`evidence` 变量在写文件之外的用法数一旦变化（例如改用 `` `${evidence}/x.json` `` 拼路径），以 `INSTALLER_EVIDENCE_USES_UNRECOGNIZED` 拒绝，不会默默漏掉新写的文件。
-  - 演练现场从生产只读诊断推导：`rehearsal/production-shape.py` 读诊断 03 的输出，按修订开始时间把证据根里的文件分成“修订前就有”和“修订新建”，再加上归档清单里从证据根移走的文件，得到“首次修订前的证据根”；`build-rehearsal-stage.py` 按这份清单搭建，`rehearsal/check-stage.py` 在演练开始前和复现失败后各比对一次（名字、类型、权限），不一致就以 `STAGE_DIFFERS_FROM_PRODUCTION:<差异>` 失败。期望值取自生产诊断，不由演练自己另写。
-  - 验证（Hermes `/data/hermes/himawari/tool-audit-round2/r2-l13/install-resume-rehearsal-01/work-02/`，脚本 `rehearsal/rehearse-install-resume.sh`）：G163 版模板以 `TEMPLATE_INSTALL_OUTPUTS_MISSING:python-extract.stdout,python-extract.stderr` 被拒，多列一个名字的模板以 `TEMPLATE_INSTALL_OUTPUTS_EXTRA` 被拒，用 `` `${evidence}/...` `` 写文件的安装程序以 `INSTALLER_EVIDENCE_USES_UNRECOGNIZED` 被拒，补好的模板通过；去掉 `python-extract.stdout` 的现场以 `STAGE_DIFFERS_FROM_PRODUCTION:EVIDENCE:MISSING:python-extract.stdout` 被拒，按生产清单搭的现场通过；用去掉这两项的工具在按生产清单搭的现场上运行，复现了生产的 `REVISION_INSTALL_FAILED:EXIT:1`，失败后的现场与诊断 03 一致；只补做安装的工具 `install-resume/resume-install.py` 在这个现场上退出 0（9 次移动，安装检查通过），服务运行中、多一个残留文件、失败原因不是 `python-extract.stdout` 的 EEXIST、重复运行四种情况都被拒绝，现场不变。工具的审核由 CodeBuddy 逐行做（opencode 免费模型当时都返回 429），采纳了其中三条（名单改为恰好相等、`evidence` 用法计数、补装核对失败原因）后重跑演练。
+  - 生成修订工具和补装工具时（revision-tool/make-revision.py、install-resume/make-resume.py，每次生成都运行），revision-tool/install_outputs.py 从安装程序 install/sixth-artifact-install.mjs 的源码提取所有 `run(..., "<名字>")` 和直接写进证据根的文件名，要求 INSTALL_FILES 恰好等于每个 `<名字>.stdout`、直接写的文件和工具自己写的三个文件（`s1-install.stdout/.stderr`、`s1-result.json`），INSTALL_OPTIONAL 恰好等于每个 `<名字>.stderr`；缺一个以 `TEMPLATE_INSTALL_OUTPUTS_MISSING:<缺的文件>` 拒绝，多一个以 `TEMPLATE_INSTALL_OUTPUTS_EXTRA:<多的文件>` 拒绝（多列的名字会在安装成功之后才因找不到文件而失败）。源码里出现认不出的调用形式时以 INSTALLER_RUN_CALL_UNRECOGNIZED 等错误码拒绝；`evidence` 变量在写文件之外的用法数一旦变化（例如改用 `` `${evidence}/x.json` `` 拼路径），以 INSTALLER_EVIDENCE_USES_UNRECOGNIZED 拒绝，不会默默漏掉新写的文件。
+  - 演练现场从生产只读诊断推导：rehearsal/production-shape.py 读诊断 03 的输出，按修订开始时间把证据根里的文件分成“修订前就有”和“修订新建”，再加上归档清单里从证据根移走的文件，得到“首次修订前的证据根”；build-rehearsal-stage.py 按这份清单搭建，rehearsal/check-stage.py 在演练开始前和复现失败后各比对一次（名字、类型、权限），不一致就以 `STAGE_DIFFERS_FROM_PRODUCTION:<差异>` 失败。期望值取自生产诊断，不由演练自己另写。
+  - 验证（Hermes `/data/hermes/himawari/tool-audit-round2/r2-l13/install-resume-rehearsal-01/work-02/`，脚本 rehearsal/rehearse-install-resume.sh）：G163 版模板以 `TEMPLATE_INSTALL_OUTPUTS_MISSING:python-extract.stdout,python-extract.stderr` 被拒，多列一个名字的模板以 TEMPLATE_INSTALL_OUTPUTS_EXTRA 被拒，用 `` `${evidence}/...` `` 写文件的安装程序以 INSTALLER_EVIDENCE_USES_UNRECOGNIZED 被拒，补好的模板通过；去掉 `python-extract.stdout` 的现场以 `STAGE_DIFFERS_FROM_PRODUCTION:EVIDENCE:MISSING:python-extract.stdout` 被拒，按生产清单搭的现场通过；用去掉这两项的工具在按生产清单搭的现场上运行，复现了生产的 `REVISION_INSTALL_FAILED:EXIT:1`，失败后的现场与诊断 03 一致；只补做安装的工具 install-resume/resume-install.py 在这个现场上退出 0（9 次移动，安装检查通过），服务运行中、多一个残留文件、失败原因不是 `python-extract.stdout` 的 EEXIST、重复运行四种情况都被拒绝，现场不变。工具的审核由 CodeBuddy 逐行做（opencode 免费模型当时都返回 429），采纳了其中三条（名单改为恰好相等、`evidence` 用法计数、补装核对失败原因）后重跑演练。
   - 限制：比对只看名字、类型和权限，不看属主（演练里都是 0）和内容；属主仍要在审核时对照诊断逐个核对。以后再写包外工具时，把生产只读诊断的列表作为演练现场的唯一来源。
 - 第六次变更第五次 S6 又发生两次（2026-10-24，R2-D29）：
-  - `S6_FINALIZE_BINDINGS` 失败：`signing/finalize-binding-inputs.py` 第 99 行要求旧能力的两个摘要比较结果为 `False`，真实 S0 读回里都是 `true`。夹具用的是手写的 S0，期望值跟着写反的条件走，没有用操作包里真实的 `inputs/s0-db-readback.json`。
+  - `S6_FINALIZE_BINDINGS` 失败：`signing/finalize-binding-inputs.py` 第 99 行要求旧能力的两个摘要比较结果为 `False`，真实 S0 读回里都是 `true`。夹具用的是手写的 S0，期望值跟着写反的条件走，没有用操作包里真实的 inputs/s0-db-readback.json。
   - 只读核对后面各步时发现 `S7_CATALOG_UPGRADE` 必然失败：生产上公开搜索的运行程序摘要在新构件里没变，Pi 的变了；维护脚本要求每个能力的运行程序都变。形状演练只登记 Pi 一个能力，而 Pi 每次都变，生产上“有的变、有的不变”被合成了“全部都变”。包里的说明文件原本就写着“exa 的升级由生产 S7 逐项检查”，这个缺口是明知的。
 - 这两次的根因：前面几次的硬约束都是逐项列出的实体，“同一步里不同能力的运行程序有的变有的不变”不在清单上；签署夹具也没用真实 S0。
-- 新增硬约束（2026-10-24，G176，在 `maintenance/verify-production-shape-chain.mjs`，演练入口 `run-sixth-rehearsal.sh` 的形状阶段冻结前必须通过）：
-  - 形状演练开头读真实 S0，把每个能力按“新构件运行程序摘要是否等于 S0 记录”分成“变”和“不变”；生产里出现演练不认识的能力时以 `PRODUCTION_SHAPE_PRODUCTION_CAPABILITY_UNKNOWN` 失败，本次演练的类别生产里没有时以 `PRODUCTION_SHAPE_RUNNER_CLASS_NOT_IN_PRODUCTION` 失败。演练入口按 `--runner-class changed` 和 `--runner-class unchanged` 各跑一遍整条 S7–S8，两遍都通过才算通过。
-  - 验证（Hermes `rehearsal-87c2e3ec-r05/shape-proof/`，输出存于 `.ci-output/handoff/rev05/shape-proof-output.txt`）：用 revision-04 的维护脚本跑 `unchanged` 一遍，以 `SIXTH_MAINTENANCE_PREPARED_RUNNER_UNCHANGED`、`SIXTH_MAINTENANCE_UPGRADE_PLAN_RUNNER_UNCHANGED` 在 `S7_CATALOG_UPGRADE` 失败，与生产会遇到的错误相同；换 revision-05 的脚本后通过，报告里的生产分类是 Pi 变、公开搜索不变。
-  - 生产分类还必须正好是“Pi 变、公开搜索不变”，否则以 `PRODUCTION_SHAPE_PRODUCTION_RUNNER_CLASSES_CHANGED` 失败。
+- 新增硬约束（2026-10-24，G176，在 maintenance/verify-production-shape-chain.mjs，演练入口 run-sixth-rehearsal.sh 的形状阶段冻结前必须通过）：
+  - 形状演练开头读真实 S0，把每个能力按“新构件运行程序摘要是否等于 S0 记录”分成“变”和“不变”；生产里出现演练不认识的能力时以 PRODUCTION_SHAPE_PRODUCTION_CAPABILITY_UNKNOWN 失败，本次演练的类别生产里没有时以 PRODUCTION_SHAPE_RUNNER_CLASS_NOT_IN_PRODUCTION 失败。演练入口按 `--runner-class changed` 和 `--runner-class unchanged` 各跑一遍整条 S7–S8，两遍都通过才算通过。
+  - 验证（Hermes `rehearsal-87c2e3ec-r05/shape-proof/`，输出存于 `.ci-output/handoff/rev05/shape-proof-output.txt`）：用 revision-04 的维护脚本跑 `unchanged` 一遍，以 SIXTH_MAINTENANCE_PREPARED_RUNNER_UNCHANGED、SIXTH_MAINTENANCE_UPGRADE_PLAN_RUNNER_UNCHANGED 在 `S7_CATALOG_UPGRADE` 失败，与生产会遇到的错误相同；换 revision-05 的脚本后通过，报告里的生产分类是 Pi 变、公开搜索不变。
+  - 生产分类还必须正好是“Pi 变、公开搜索不变”，否则以 PRODUCTION_SHAPE_PRODUCTION_RUNNER_CLASSES_CHANGED 失败。
   - 签署链第 99 行的修正在生产上做了只读预演（诊断 14，写出位置换成临时目录），发布、签署、签署读回、运行时保护都退出 0。
-  - 新夹具 `signing/verify-finalize-capability-check.py`（演练入口 fixtures 阶段运行）：从 `signing/finalize-binding-inputs.py` 截出逐个能力检查的源码原样执行，输入是真实 S0；真实 S0 必须通过，标记改 `false` 或删除、运行程序摘要或运行目录不同都必须被拒绝。验证（Hermes `rehearsal-87c2e3ec-r05c/`，输出存于 `.ci-output/handoff/rev05/r05c-rehearsal-output.txt`）：新代码 17 个用例全过；revision-04 的旧代码在 `production-s0-accepted` 失败，退出码 1。审核后补了“标记为空”和“删除标记必须是具体的 `KeyError`”两类用例，最终演练（Hermes `rehearsal-87c2e3ec-r05d/`，输出存于 `.ci-output/handoff/rev05/r05d-rehearsal-output.txt`）新代码 23 个用例全过，旧代码仍在 `production-s0-accepted` 失败；演练脚本最后的 `REHEARSAL_VERDICT` 把“旧代码必须失败”也写成了硬判断，结果是 `PASS`。
-  - 限制：分类只看运行程序摘要；夹具只截取逐个能力检查的一段，脚本其余部分仍要求 root 和生产主机名，不在演练里运行。以后起草操作包时，签署和维护的夹具一律从 `inputs/s0-db-readback.json` 派生期望值。
-- 补充（2026-10-24，revision-06）：包外修订工具每多一次 S6，模板里就多一批要和生产现场对上的名单（S6 写进包里的文件、S6 证据文件、验收目录、资格目录、运行时保护文件、辅助脚本、临时读服务状态），以前除第一组外都靠人照诊断手抄。`revision-tool/make-revision.py` 现在每次生成工具时读 `rehearsal/production-shape.json`（`rehearsal/production-shape.py` 由修订前的只读诊断 20 生成），把模板里这 7 组常量逐一与它比较，任何一组不等就以 `TEMPLATE_<名单>_DIFFER(S)_FROM_PRODUCTION` 拒绝生成。验证（Hermes `revision-rehearsal-06/work/`，日志存于 `.ci-output/handoff/rev06/revision-rehearsal-06-work/`）：修订演练 `rehearse-revision.sh` 对新加的 6 组各删改一项，6 个反例都以对应错误码被拒，未改的模板通过，随后的修订演练 `PASS`。限制：只比较这 7 组；诊断里没列出的现场仍要在审核时对照。
+  - 新夹具 `signing/verify-finalize-capability-check.py`（演练入口 fixtures 阶段运行）：从 `signing/finalize-binding-inputs.py` 截出逐个能力检查的源码原样执行，输入是真实 S0；真实 S0 必须通过，标记改 `false` 或删除、运行程序摘要或运行目录不同都必须被拒绝。验证（Hermes `rehearsal-87c2e3ec-r05c/`，输出存于 `.ci-output/handoff/rev05/r05c-rehearsal-output.txt`）：新代码 17 个用例全过；revision-04 的旧代码在 `production-s0-accepted` 失败，退出码 1。审核后补了“标记为空”和“删除标记必须是具体的 `KeyError`”两类用例，最终演练（Hermes `rehearsal-87c2e3ec-r05d/`，输出存于 `.ci-output/handoff/rev05/r05d-rehearsal-output.txt`）新代码 23 个用例全过，旧代码仍在 `production-s0-accepted` 失败；演练脚本最后的 REHEARSAL_VERDICT 把“旧代码必须失败”也写成了硬判断，结果是 `PASS`。
+  - 限制：分类只看运行程序摘要；夹具只截取逐个能力检查的一段，脚本其余部分仍要求 root 和生产主机名，不在演练里运行。以后起草操作包时，签署和维护的夹具一律从 inputs/s0-db-readback.json 派生期望值。
+- 补充（2026-10-24，revision-06）：包外修订工具每多一次 S6，模板里就多一批要和生产现场对上的名单（S6 写进包里的文件、S6 证据文件、验收目录、资格目录、运行时保护文件、辅助脚本、临时读服务状态），以前除第一组外都靠人照诊断手抄。revision-tool/make-revision.py 现在每次生成工具时读 rehearsal/production-shape.json（rehearsal/production-shape.py 由修订前的只读诊断 20 生成），把模板里这 7 组常量逐一与它比较，任何一组不等就以 `TEMPLATE_<名单>_DIFFER(S)_FROM_PRODUCTION` 拒绝生成。验证（Hermes `revision-rehearsal-06/work/`，日志存于 `.ci-output/handoff/rev06/revision-rehearsal-06-work/`）：修订演练 rehearse-revision.sh 对新加的 6 组各删改一项，6 个反例都以对应错误码被拒，未改的模板通过，随后的修订演练 `PASS`。限制：只比较这 7 组；诊断里没列出的现场仍要在审核时对照。
 
 [回到目录](#编码代理反复犯的错误)
 
@@ -104,11 +106,11 @@ date: "2026-10-13"
 - 为什么要紧：前面的步骤往往已经改过生产数据，不能重跑，只能再出一个修订版；而再出修订版又会换一次 `bindings.json`，可能让已经通过的步骤的报告也对不上。
 - 预防规则：
   - 设计修订版之前，用 `grep` 列出包里所有比较 `bindingSha256`、`bindingsSha256`、`freezeSha256` 的地方，逐一写明比较的报告是在哪个冻结下生成的、修订后是否还成立。
-  - 修订记录要写明每份旧报告对应的 `bindings` 摘要（例如 `s3BindingsSha256`），检查代码按修订记录比较。
+  - 修订记录要写明每份旧报告对应的 `bindings` 摘要（例如 s3BindingsSha256），检查代码按修订记录比较。
   - 已有步骤在当前冻结下改过生产数据之后，优先用不改冻结包的包外工具处理后续问题，再出修订版前先确认不会让这些步骤的报告失效。
   - 演练要真实模拟“前面的步骤在旧冻结下完成 → 换成新冻结 → 后面的步骤继续”。
 - 再次发生的证据：
-  - 2026-10-13 修订版 02 上线后 S5 以 `THIRD_MAINTENANCE_RECOVERY_BINDING_CHANGED` 失败。
+  - 2026-10-13 修订版 02 上线后 S5 以 THIRD_MAINTENANCE_RECOVERY_BINDING_CHANGED 失败。
   - 同日 S6 失败后，第一版修复方案又是出修订版 04；核对后发现 `systemd/S7-switch-start-readback.py` 会因 S5 报告的摘要不符而失败，改成了包外工具。
 
 [回到目录](#编码代理反复犯的错误)
@@ -120,14 +122,14 @@ date: "2026-10-13"
 - 反复出现的情况：Hermes 登录账号默认的 umask（新建文件时默认去掉哪些权限位）是 `0002`，在这个设置下新建的文件和目录是同组可写；忘了先设 `umask 022`，后面要求“不可组写”的检查就会拒绝它们。
 - 为什么要紧：权限会被记录进源码树摘要和材料文件，等到生产上才被拒绝时，只能另写工具在生产上收紧权限。
 - 预防规则：
-  - 在 Hermes 上跑测试、构建候选包、生成或采集材料（例如 `materials/source-build-inputs.json`）之前，一律先 `umask 022`，并在脚本里检查 `umask` 的值。
+  - 在 Hermes 上跑测试、构建候选包、生成或采集材料（例如 materials/source-build-inputs.json）之前，一律先 `umask 022`，并在脚本里检查 `umask` 的值。
   - 冻结前检查材料里记录的文件权限，不能有同组或其他人可写的位。
 - 再次发生的证据：
   - 2026-10-01 约 100 个测试因 `SANDBOX_HOST_PATH_UNSAFE` 失败，原因是测试目录同组可写（AGENTS.md 已写入 `umask 022` 规则）。
   - 2026-10-13 第三次部署 S6 以 `PUBLIC_FILE_UNSAFE` 失败：第三次候选包的构建源码记录 619 个文件全是 `664`。
   - 2026-10-15 第 29 批两次：在 Hermes 检出上用 `git apply` 重写文件后，权限变成 `664`，而源码树摘要包含权限位，安装候选包时以 `ARTIFACT_BUILD_INPUT_MISMATCH` 失败（停止文件 29a 第 5 节、29d 第 5 节；证据 `/data/hermes/himawari/tool-audit-round2/r2fix29/evidence/run-20-layer2-product-path`）。
 - 第三次以后的根因：`umask 022` 只管新建的文件；SSH 会话里改写已有文件、或忘了在交互命令里设 umask，权限照样漂移，靠记住设置拦不住。
-- 硬约束（2026-10-15）：`.ci-output/handoff/scripts/require-git-modes.sh <检出>` 把 git 登记的文件权限恢复成 644/755 并复查，仍不一致就以退出码 3 结束。第 3 层脚本 `run-l3.sh`（完整测试，同时构建候选包）和不过滤第 4 层脚本 `run-l4f2.sh`（安装候选包）开跑前都调用它，失败就不运行（Hermes 上的副本在 `~/himawari-tests/r2-u1/`）。验证：临时仓库里把两个文件改成 `664`/`775`，脚本输出 `GIT_MODES_OK fixed=2`，权限回到 `644`/`755`，再跑一次输出 `fixed=0`；未加约束时的失败见上面的 run-20。
+- 硬约束（2026-10-15）：`.ci-output/handoff/scripts/require-git-modes.sh <检出>` 把 git 登记的文件权限恢复成 644/755 并复查，仍不一致就以退出码 3 结束。第 3 层脚本 run-l3.sh（完整测试，同时构建候选包）和不过滤第 4 层脚本 run-l4f2.sh（安装候选包）开跑前都调用它，失败就不运行（Hermes 上的副本在 `~/himawari-tests/r2-u1/`）。验证：临时仓库里把两个文件改成 `664`/`775`，脚本输出 `GIT_MODES_OK fixed=2`，权限回到 `644`/`755`，再跑一次输出 `fixed=0`；未加约束时的失败见上面的 run-20。
 
 [回到目录](#编码代理反复犯的错误)
 
@@ -216,7 +218,7 @@ date: "2026-10-13"
   - 同一目录的 `baselines/packet-02-before-oc-11/materials/` 和 `packet-03-before-oc-13/materials/` 各 352 MB，与 `.ci-output/production/2026-10-12-third-deploy-packet-0*/materials/` 里的同名文件 SHA-256 完全相同。
   - `prod-sandbox-evidence-01a` 里十几个约 14 MB 的 JSON，是同一个安装诊断在每种权限组合下各列一遍 3.3–3.7 万个文件的权限，内容大部分相同。
   - 2026-10-14 Claude 自己的第 3 层脚本把约 66 MB、能按提交重建的构建产物包复制进了 Hermes 的 `run-44` 证据目录；同日门禁在云服务器测试账号的 `r2e4/run-01-calibration` 里查出同样的产物包，在 Hermes 的 `third-materials-01` 里查出展开的 `node_modules`。
-- 硬约束（G107，2026-10-14）：`opencode-orchestration` skill 的 `scripts/evidence-gate.sh`。`oc-wait.sh`（opencode 批次）和 `grok-wait.sh`（Grok 批次）每次被叫醒都会运行它，检查本轮新增的证据，范围是交接目录，加上 `.ci-output/handoff/evidence-roots.txt` 列出的 Hermes 和云服务器证据目录。出现以下任一情况，等待脚本以退出码 3 结束，这一批不被接受：
+- 硬约束（G107，2026-10-14）：`opencode-orchestration` skill 的 scripts/evidence-gate.sh。[oc-wait.sh](https://github.com/sixianli/himawari-agent/blob/a56903d808de68423561a52d5e4db4b0b622191b/.claude/skills/opencode-orchestration/scripts/oc-wait.sh)（opencode 批次）和 [grok-wait.sh](https://github.com/sixianli/himawari-agent/blob/a56903d808de68423561a52d5e4db4b0b622191b/.claude/skills/opencode-orchestration/scripts/grok-wait.sh)（Grok 批次）每次被叫醒都会运行它，检查本轮新增的证据，范围是交接目录，加上 `.ci-output/handoff/evidence-roots.txt` 列出的 Hermes 和云服务器证据目录。出现以下任一情况，等待脚本以退出码 3 结束，这一批不被接受：
   - 新增 `node_modules` 或 `.git` 目录；
   - 新增含它们的压缩包；
   - 新增超过 50 MB 的文件，而同目录 `EVIDENCE-REASONS.txt` 里没有“`文件名: 理由`”；
@@ -256,19 +258,19 @@ date: "2026-10-13"
   - 同日：`run-49-r7-after` 的测量期间，`run-46` 的 `integration` 项目仍在运行，同一台机器上同时跑两个 3 进程项目。
   - 2026-10-14 第 22 批第三次：`run-66-d15-idle` 记作“空闲”对照，开跑时 `run-65` 的 `integration` 项目还在跑（脚本记下 `pgrep-before 4`、loadavg 8.4–10.8），结论作废。
 - 第三次的根因：前两次之后只写了“开跑前先查残留进程”的规则，每个批次的测量脚本由代理各自现写，查不查、查到了停不停都靠记忆；第三次的脚本查到了 4 个残留进程，却照样跑完，事后才把结果作废。
-- 硬约束（2026-10-15）：`.ci-output/handoff/scripts/require-quiet-host.sh hermes|cloud`。它列出测试账号下仍在运行的 `vitest`、`local.mjs`、解包、安装和 `bwrap` 进程，并记录 loadavg；只要有一个，就打印 `QUIET_HOST_BUSY` 并以退出码 1 结束，没有才打印 `QUIET_HOST_OK`。每个对照测量脚本的第一步必须调用它，退出码不是 0 就不开跑。Claude 审核时，测量证据里没有 `QUIET_HOST_OK` 的对照结果一律退回。验证：2026-10-15 两台主机各有测试在跑时，它对两台都以退出码 1 拒绝。
+- 硬约束（2026-10-15）：`.ci-output/handoff/scripts/require-quiet-host.sh hermes|cloud`。它列出测试账号下仍在运行的 `vitest`、`local.mjs`、解包、安装和 `bwrap` 进程，并记录 loadavg；只要有一个，就打印 QUIET_HOST_BUSY 并以退出码 1 结束，没有才打印 QUIET_HOST_OK。每个对照测量脚本的第一步必须调用它，退出码不是 0 就不开跑。Claude 审核时，测量证据里没有 QUIET_HOST_OK 的对照结果一律退回。验证：2026-10-15 两台主机各有测试在跑时，它对两台都以退出码 1 拒绝。
 - 第四次（2026-10-15，方向反过来）：最终候选版本 `04660f2b` 的第 3 层（完整 `npm test`）运行期间，Claude 为了腾空间，在同一块固态盘上对两个旧测试副本算摘要、`du`，并删除 1.7 GB 的 `r2-l3`（11:36:19 结束）。同一时段运行的 `node-runtime-installation-permissions.test.ts` 第一个“安装完整产物”用例跑满 30 秒时限失败；它在此前 5 次第 3 层里用时 21.5–24 秒，同文件第二个同类用例这次也慢到 26.9 秒。根据时间重合推断是这次干扰造成的，没有单独复现。5772 个用例里只有这一个失败，整轮第 3 层作废重跑，损失约 30 分钟。
 - 第四次的根因：上面的检查只在开跑前看一次，管不到“跑的过程中自己又在同一台机器上做重活”；什么时候能动测试主机，仍然靠记忆。
-- 新增硬约束（2026-10-15）：Hermes 上的第 3 层用 `.ci-output/handoff/scripts/start-hermes-run.sh run-l3w.sh <标签>` 启动（第 4 层用 `run-l4w.sh`），它在 Hermes 上以 `setsid -f` 运行包装脚本，确认摘要出现后才返回。包装脚本同时启动 `.ci-output/handoff/scripts/foreign-watch.sh`：每 2 秒检查一次，找出本次运行开始后新出现的 `rm`、`du`、`find`、`sha256sum`、`tar`、`git`、`cp`、`dd`、`node`、`python3` 等进程，条件是它们既不在本次运行所在的 cgroup（Linux 内核给每次 SSH 登录分配的进程组，测试用 `setsid` 开的子进程仍留在里面），又在某个登录会话（`session-*.scope`）里。用户自己的定时服务（例如每小时运行的 `trendradar`）在 `user@1000.service` 下，不算外来进程，只记在负载日志里；负载日志另外每 10 秒记录 `/proc/pressure/io`（进程因等待磁盘而停住的时间比例）。只要发现外来进程，摘要写 `foreign-check=DISTURBED`，脚本以退出码 75 结束；没有才写 `foreign-check=clean`。归档脚本 `post-l3.sh` 看不到 `foreign-check=clean` 就以退出码 3 拒绝，这次运行的产物和结果不能当作候选包或证据。
-- 硬约束的验证（Hermes，2026-10-15）：第一版按“进程会话号”区分，模拟运行里两种情况都判对了，但真实的第 3 层把测试框架用 `setsid` 开的 `vitest`、`tsc` 误报成外来进程（`cc-layer3-04660f2b-r2`，2868 行），因为模拟运行没有这种子进程。改成按 cgroup 判断后，模拟运行加入了测试自己用 `setsid` 开的读盘子进程：旁边不做事时判为 CLEAN；另一个 SSH 登录同时运行 5 秒的 `dd` 时判为 DISTURBED，并记下了 `dd` 和它的 `session-3599.scope`。`post-l3.sh` 对没有这一行的 `cc-layer3-04660f2b` 以退出码 3 拒绝。限制：2 秒以内结束的短命令可能漏掉，这类命令对测试计时的影响也小。
-- 第五次（2026-10-16）：`d2f90d2e` 不过滤的第 4 层 `cc-layer4-35d6800f-full-r2` 运行期间，Claude 等 opencode 复审会话结束时用的 `oc-wait.sh` 自动调用证据检查脚本 `evidence-gate.sh`，它登录 Hermes 运行 `python3 - --since … /data/hermes/himawari/tool-audit-round2/r2-u1/evidence`（05:10:05–05:10:17，`session-4552.scope`）。干扰检查如实记下并判为 `DISTURBED`，约 95 分钟的运行不能用于冻结。
+- 新增硬约束（2026-10-15）：Hermes 上的第 3 层用 `.ci-output/handoff/scripts/start-hermes-run.sh run-l3w.sh <标签>` 启动（第 4 层用 run-l4w.sh），它在 Hermes 上以 `setsid -f` 运行包装脚本，确认摘要出现后才返回。包装脚本同时启动 `.ci-output/handoff/scripts/foreign-watch.sh`：每 2 秒检查一次，找出本次运行开始后新出现的 `rm`、`du`、`find`、`sha256sum`、`tar`、`git`、`cp`、`dd`、`node`、`python3` 等进程，条件是它们既不在本次运行所在的 cgroup（Linux 内核给每次 SSH 登录分配的进程组，测试用 `setsid` 开的子进程仍留在里面），又在某个登录会话（`session-*.scope`）里。用户自己的定时服务（例如每小时运行的 `trendradar`）在 `user@1000.service` 下，不算外来进程，只记在负载日志里；负载日志另外每 10 秒记录 `/proc/pressure/io`（进程因等待磁盘而停住的时间比例）。只要发现外来进程，摘要写 `foreign-check=DISTURBED`，脚本以退出码 75 结束；没有才写 `foreign-check=clean`。归档脚本 post-l3.sh 看不到 `foreign-check=clean` 就以退出码 3 拒绝，这次运行的产物和结果不能当作候选包或证据。
+- 硬约束的验证（Hermes，2026-10-15）：第一版按“进程会话号”区分，模拟运行里两种情况都判对了，但真实的第 3 层把测试框架用 `setsid` 开的 `vitest`、`tsc` 误报成外来进程（`cc-layer3-04660f2b-r2`，2868 行），因为模拟运行没有这种子进程。改成按 cgroup 判断后，模拟运行加入了测试自己用 `setsid` 开的读盘子进程：旁边不做事时判为 CLEAN；另一个 SSH 登录同时运行 5 秒的 `dd` 时判为 DISTURBED，并记下了 `dd` 和它的 `session-3599.scope`。post-l3.sh 对没有这一行的 `cc-layer3-04660f2b` 以退出码 3 拒绝。限制：2 秒以内结束的短命令可能漏掉，这类命令对测试计时的影响也小。
+- 第五次（2026-10-16）：`d2f90d2e` 不过滤的第 4 层 `cc-layer4-35d6800f-full-r2` 运行期间，Claude 等 opencode 复审会话结束时用的 [oc-wait.sh](https://github.com/sixianli/himawari-agent/blob/a56903d808de68423561a52d5e4db4b0b622191b/.claude/skills/opencode-orchestration/scripts/oc-wait.sh) 自动调用证据检查脚本 [evidence-gate.sh](https://github.com/sixianli/himawari-agent/blob/a56903d808de68423561a52d5e4db4b0b622191b/.claude/skills/opencode-orchestration/scripts/evidence-gate.sh)，它登录 Hermes 运行 `python3 - --since … /data/hermes/himawari/tool-audit-round2/r2-u1/evidence`（05:10:05–05:10:17，`session-4552.scope`）。干扰检查如实记下并判为 `DISTURBED`，约 95 分钟的运行不能用于冻结。
 - 第五次的根因：第四次的约束只“事后发现”干扰，不“事前阻止”；工具链里会自动登录测试主机的脚本（证据检查、上传时的摘要校验、包装脚本里的任意命令）不知道主机上正有受保护的运行，什么时候不能动主机仍然靠人记得。
-- 新增硬约束（2026-10-16）：`run-l3w.sh` 和 `run-l4w.sh` 开跑时在 Hermes 上写 `~/.agent-quiet-run`（内容是包装脚本的进程号和运行标签），退出时删除；进程号仍存活时，另一次受保护运行以 `QUIET_RUN_ALREADY_ACTIVE` 拒绝启动。看到这个标记且进程仍在时：`.ci-output/handoff/scripts/hermes-ssh.sh` 只放行由 `cat`、`grep`、`ls`、`tail`、`head`、`wc`、`test`、`stat`、`date`、`echo` 组成且不含重定向和命令替换的命令，其余以退出码 68 和 `HERMES_QUIET_RUN_ACTIVE` 拒绝；`hermes-upload.sh` 同样拒绝（它的摘要校验会在 Hermes 上运行 `sha256sum`）；`opencode-orchestration` skill 的 `evidence-gate.sh` 对远端证据目录打印 `EVIDENCE_REMOTE_DEFERRED` 并判为失败，不启动 `python3`。只读命令的分类由 `.ci-output/handoff/scripts/test-ssh-wrappers.sh` 每次检查，证据检查的延后由 skill 的 `tests/test_evidence_check.py` 检查。
-- 新约束的验证（Hermes，2026-10-16）：用复制的 `run-l4w.sh`（只把测试换成 40 秒等待）做模拟受保护运行。改前版本的证据检查在运行期间启动了 `python3`，干扰检查记下 3 行并判为 `DISTURBED`；改后版本打印 `EVIDENCE_REMOTE_DEFERRED` 并以退出码 3 结束，`hermes-ssh.sh` 以退出码 68 拒绝 `du`、放行 `cat`，运行判为 `clean`，结束后标记已删除；运行期间 `hermes-upload.sh` 以退出码 68 拒绝，第二次受保护运行以 `QUIET_RUN_ALREADY_ACTIVE` 拒绝启动。`test-ssh-wrappers.sh` 对改前的 `hermes-ssh.sh` 有 7 个用例失败，对改后的全部通过。记录在 `.ci-output/handoff/quiet-run-evidence-2026-10-16/`（本地，不进 git）。skill 改动是 agent-skills 仓库的 `8214761`。
-- 第六次（2026-10-23）：候选 `d2accc2e` 的第 3 层 `cc-layer3-d2accc2e-r1` 运行期间，Claude 为了提前演练第六次的归档工具，直接用 `ssh … hermes` 在 Hermes 上运行 `build-rehearsal-stage.py`，它用 `cp -a` 复制了整个第六版安装目录（09:08:24–09:08:46，`session-12943.scope`）。干扰检查判为 `DISTURBED`，6139 项全部通过的结果作废，重跑 `cc-layer3-d2accc2e-r2`，损失约 30 分钟。
+- 新增硬约束（2026-10-16）：run-l3w.sh 和 run-l4w.sh 开跑时在 Hermes 上写 `~/.agent-quiet-run`（内容是包装脚本的进程号和运行标签），退出时删除；进程号仍存活时，另一次受保护运行以 QUIET_RUN_ALREADY_ACTIVE 拒绝启动。看到这个标记且进程仍在时：`.ci-output/handoff/scripts/hermes-ssh.sh` 只放行由 `cat`、`grep`、`ls`、`tail`、`head`、`wc`、`test`、`stat`、`date`、`echo` 组成且不含重定向和命令替换的命令，其余以退出码 68 和 HERMES_QUIET_RUN_ACTIVE 拒绝；`hermes-upload.sh` 同样拒绝（它的摘要校验会在 Hermes 上运行 `sha256sum`）；`opencode-orchestration` skill 的 [evidence-gate.sh](https://github.com/sixianli/himawari-agent/blob/a56903d808de68423561a52d5e4db4b0b622191b/.claude/skills/opencode-orchestration/scripts/evidence-gate.sh) 对远端证据目录打印 [EVIDENCE_REMOTE_DEFERRED](https://github.com/sixianli/himawari-agent/blob/a56903d808de68423561a52d5e4db4b0b622191b/.claude/skills/opencode-orchestration/scripts/evidence-gate.sh) 并判为失败，不启动 `python3`。只读命令的分类由 `.ci-output/handoff/scripts/test-ssh-wrappers.sh` 每次检查，证据检查的延后由 skill 的 tests/test_evidence_check.py 检查。
+- 新约束的验证（Hermes，2026-10-16）：用复制的 run-l4w.sh（只把测试换成 40 秒等待）做模拟受保护运行。改前版本的证据检查在运行期间启动了 `python3`，干扰检查记下 3 行并判为 `DISTURBED`；改后版本打印 [EVIDENCE_REMOTE_DEFERRED](https://github.com/sixianli/himawari-agent/blob/a56903d808de68423561a52d5e4db4b0b622191b/.claude/skills/opencode-orchestration/scripts/evidence-gate.sh) 并以退出码 3 结束，`hermes-ssh.sh` 以退出码 68 拒绝 `du`、放行 `cat`，运行判为 `clean`，结束后标记已删除；运行期间 `hermes-upload.sh` 以退出码 68 拒绝，第二次受保护运行以 QUIET_RUN_ALREADY_ACTIVE 拒绝启动。test-ssh-wrappers.sh 对改前的 `hermes-ssh.sh` 有 7 个用例失败，对改后的全部通过。记录在 `.ci-output/handoff/quiet-run-evidence-2026-10-16/`（本地，不进 git）。skill 改动是 agent-skills 仓库的 `8214761`。
+- 第六次（2026-10-23）：候选 `d2accc2e` 的第 3 层 `cc-layer3-d2accc2e-r1` 运行期间，Claude 为了提前演练第六次的归档工具，直接用 `ssh … hermes` 在 Hermes 上运行 build-rehearsal-stage.py，它用 `cp -a` 复制了整个第六版安装目录（09:08:24–09:08:46，`session-12943.scope`）。干扰检查判为 `DISTURBED`，6139 项全部通过的结果作废，重跑 `cc-layer3-d2accc2e-r2`，损失约 30 分钟。
 - 第六次的根因：第五次的约束放在包装脚本 `hermes-ssh.sh`、`hermes-upload.sh` 里，但直接 `ssh` 不经过它们；项目说明 `AGENTS.md` 的 Hermes 连接一节写的正是直接 `ssh` 的命令，所以绕过包装脚本不需要任何额外动作。
-- 新增硬约束（2026-10-23）：Claude Code 的命令执行前检查钩子 `hermes_direct_ssh_guard.py`（源文件 `.ci-output/handoff/hermes-direct-ssh-guard/`，本地，不进 git；装在 `~/.claude/hooks/`，在 `~/.claude/settings.json` 的 `PreToolUse` 里对 `Bash` 注册）。命令里某一段以 `ssh`、`scp`、`sftp`、`rsync` 开头（允许前面有 `until`、`if`、`do`、`timeout <秒数>`、变量赋值等前缀），且同一段出现 `hermes`、`hermes-home` 或 `100.64.53.104` 时，拒绝执行并打印 `HERMES_DIRECT_SSH_REFUSED`；引号里提到这些字不算。`AGENTS.md` 改为只准用两个包装脚本。限制：只管 Claude Code 的 Bash 工具；opencode 等代理在 Hermes 上的操作仍靠包装脚本和 `.agent-quiet-run` 标记。
-- 新约束的验证（Mac，2026-10-23）：`test-guard.sh` 的 19 项全部通过。把 09:08 造成干扰的那条命令原样交给钩子，被拒绝；同一操作改用包装脚本的写法被放行；`grep "ssh hermes"`、连别的主机的 `ssh` 被放行。钩子由用户安装后，再在 Claude Code 里实际执行一条直接 `ssh` 确认被拒绝。
+- 新增硬约束（2026-10-23）：Claude Code 的命令执行前检查钩子 hermes_direct_ssh_guard.py（源文件 `.ci-output/handoff/hermes-direct-ssh-guard/`，本地，不进 git；装在 `~/.claude/hooks/`，在 `~/.claude/settings.json` 的 [PreToolUse](https://github.com/sixianli/himawari-agent/blob/a56903d808de68423561a52d5e4db4b0b622191b/.claude/skills/readable-output/hooks/hooks.json) 里对 `Bash` 注册）。命令里某一段以 `ssh`、`scp`、`sftp`、`rsync` 开头（允许前面有 `until`、`if`、`do`、`timeout <秒数>`、变量赋值等前缀），且同一段出现 `hermes`、`hermes-home` 或 `100.64.53.104` 时，拒绝执行并打印 HERMES_DIRECT_SSH_REFUSED；引号里提到这些字不算。`AGENTS.md` 改为只准用两个包装脚本。限制：只管 Claude Code 的 Bash 工具；opencode 等代理在 Hermes 上的操作仍靠包装脚本和 `.agent-quiet-run` 标记。
+- 新约束的验证（Mac，2026-10-23）：test-guard.sh 的 19 项全部通过。把 09:08 造成干扰的那条命令原样交给钩子，被拒绝；同一操作改用包装脚本的写法被放行；`grep "ssh hermes"`、连别的主机的 `ssh` 被放行。钩子由用户安装后，再在 Claude Code 里实际执行一条直接 `ssh` 确认被拒绝。
 
 [回到目录](#编码代理反复犯的错误)
 
@@ -278,12 +280,12 @@ date: "2026-10-13"
 
 - 反复出现的情况：在同一批并行执行的命令里，一边写或改本地脚本，一边用 `cat <文件> | ci-ssh.sh 'cat > <远端路径>'` 上传它。上传时本地文件还不存在或还是旧内容；`cat` 报错，但管道整体仍返回 0，测试主机上留下一个空文件或旧文件，随后跑的就是错的脚本。
 - 为什么要紧：测试结果来自一个不是本次写的脚本，结论不可信，还要花一轮去查为什么“改了没生效”。
-- 再次发生的证据：2026-10-14 第 24 批（R2-P1）先后三次：`run-step.sh`、`install-dep2.sh`、`run-unit.sh`（见停止文件 24k、24p）。
+- 再次发生的证据：2026-10-14 第 24 批（R2-P1）先后三次：run-step.sh、install-dep2.sh、run-unit.sh（见停止文件 24k、24p）。
 - 第三次的根因：前两次只在停止文件里写了提醒；上传的写法本身允许“本地文件不存在却成功”，所以提醒拦不住。
 - 硬约束（2026-10-15）：
   - `.ci-output/cloud-test-host-2026-10-14/ci-ssh.sh` 拒绝把标准输入写进远端文件的命令（`cat >`、`tee`、`dd ... of=`），退出码 65，提示改用上传脚本。Claude、opencode、Grok 都必须经过这个包装脚本连云端测试主机，所以对所有人生效。
   - `.ci-output/cloud-test-host-2026-10-14/ci-upload.sh <本地文件> <远端路径>`：本地文件不存在就以退出码 2 结束；上传后比较两边的 SHA-256，不一致以退出码 3 结束；只允许写到 `/srv/himawari-ci/` 和 `/tmp/` 下。
-  - 验证：旧包装脚本对一个尚未写出的文件执行 `cat 不存在的文件 | ci-ssh.sh 'cat > /tmp/g107-old.sh'`，退出码 0，远端留下 0 字节文件；新包装脚本对同一命令以 65 拒绝；`ci-upload.sh` 对不存在的文件以 2 拒绝，对真实文件输出 `UPLOAD_OK` 和一致的摘要。
+  - 验证：旧包装脚本对一个尚未写出的文件执行 `cat 不存在的文件 | ci-ssh.sh 'cat > /tmp/g107-old.sh'`，退出码 0，远端留下 0 字节文件；新包装脚本对同一命令以 65 拒绝；ci-upload.sh 对不存在的文件以 2 拒绝，对真实文件输出 UPLOAD_OK 和一致的摘要。
 
 [回到目录](#编码代理反复犯的错误)
 
@@ -299,7 +301,7 @@ date: "2026-10-13"
   - 2026-10-15 第 22 批（R2-T8）：代理自己提交并推送的 `a8fc08a2` 新增 42 行注释。
 - 第三次的根因：前两次只在答复里写“删掉注释”，这是写给某一批的提醒，下一批代理写代码时不会再看；检查靠 Claude 审核时用眼睛找，第二次就漏了 3 处；而这一批由代理自己提交推送，审核发生在推送之后，提醒和审核都来不及拦住。
 - 硬约束（2026-10-15）：
-  - 本地提交钩子 `.git/hooks/pre-commit` 调用 `.git/hooks/check-new-comments.py`。它读取暂存区里新增的行，用解析器找出 TypeScript/JavaScript、Python 和 shell 文件里的注释（字符串、模板字符串和正则表达式里的 `//` 不算），只要新增行里有注释就打印 `NEW_CODE_COMMENTS_REJECTED` 和位置，并以退出码 1 拒绝提交。工具指令（例如 `biome-ignore`、`@ts-expect-error`、文件首行的 `#!`）和只是挪了位置的原有注释不算新增。
+  - 本地提交钩子 `.git/hooks/pre-commit` 调用 `.git/hooks/check-new-comments.py`。它读取暂存区里新增的行，用解析器找出 TypeScript/JavaScript、Python 和 shell 文件里的注释（字符串、模板字符串和正则表达式里的 `//` 不算），只要新增行里有注释就打印 NEW_CODE_COMMENTS_REJECTED 和位置，并以退出码 1 拒绝提交。工具指令（例如 `biome-ignore`、`@ts-expect-error`、文件首行的 `#!`）和只是挪了位置的原有注释不算新增。
   - 钩子放在仓库共用的 `.git` 目录里，主目录和 `.ci-output/worktrees/` 下的工作副本提交时都会运行，对 Claude、opencode、Grok 都生效。两个代理的本地拒绝规则禁止 `--no-verify`、`git commit -n`、改 `core.hooksPath` 和直接改 `.git/hooks`，防止绕过。
   - 也可以检查一段已有提交：`python3 .git/hooks/check-new-comments.py --range <起点>..<终点>`。
   - 验证：对 `fc05624b..a8fc08a2` 以退出码 1 拒绝并列出全部 42 行；对 `566a6b6b` 找出漏掉的 3 行；最近 80 个提交里只有这两个被标记，被标记的全是真注释。暂存一个只含 `// probe comment` 的探测文件后执行 `git commit`，钩子以退出码 1 拒绝，HEAD 不变；删掉这些注释后检查通过。
@@ -321,19 +323,19 @@ date: "2026-10-13"
 - 第三次的根因：前两次之后的预防都是“换候选包时记得核对”，由起草的人逐项想起来；操作包从上一次复制而来，旧值看起来和新值一样合理，没有任何东西在冻结或执行前机械地比较“清单写的”和“包里实际的”。
 - 硬约束（2026-10-15）：
   - 操作包里的 `inputs/check-packet-consistency.py <操作包目录>`：核对验收输入清单和四份 `OWNED-SHA256SUMS` 的每一条摘要；对每个没登记的文件，只要有已登记的文件按路径或文件名引用它，就判为漏登记；从操作包材料里的候选安装包读出 `runtime-sandbox/dist/` 下的三个文件，核对 `bootstrap.mjs` 写死的摘要，并要求每个替换锚点在对应文件里恰好出现一次。任何一项不符就打印问题清单，以退出码 1 结束。
-  - 生产入口 `.ci-output/production/run-fourth-step.sh` 在执行每个生产步骤（包括第一步上传）前先运行它，不通过就打印 `FOURTH_PACKET_INCONSISTENT`，以退出码 3 结束，不连接生产服务器。安装演练脚本 `run-fourth-rehearsal.sh` 的第一阶段也先运行它。下一次起草操作包时，入口脚本和检查脚本随包一起复制，检查跟着生效。
+  - 生产入口 `.ci-output/production/run-fourth-step.sh` 在执行每个生产步骤（包括第一步上传）前先运行它，不通过就打印 FOURTH_PACKET_INCONSISTENT，以退出码 3 结束，不连接生产服务器。安装演练脚本 run-fourth-rehearsal.sh 的第一阶段也先运行它。下一次起草操作包时，入口脚本和检查脚本随包一起复制，检查跟着生效。
   - 验证：直接对第三次的操作包 `2026-10-12-third-deploy-packet-03` 运行，检查指出了当年导致 S6 失败的三个过期摘要和三处锚点不符，以及 `raw-copy-recovery.mjs` 漏登记；修正后的第四次操作包通过。夹具 `inputs/verify-packet-consistency.py` 在副本上重现过期探针摘要、漏登记的载入文件、过期的目录摘要、漏登记的被载入模块和改过的已登记脚本五种情况，都以退出码 1 拒绝，未改动的副本通过。在临时副本上弄坏一条摘要后运行入口脚本，以退出码 3 停下，放在 `PATH` 里的假 `ssh` 一次也没被调用。
-  - 补充（2026-10-16）：`run-cand.sh` 生成记录工具后，先确认工具里不再残留 `fourth-source-inputs-01`，并且工具里写死的位置正好是它实际存放的位置，否则打印 `CAPTURE_PATH_LEFT` 或 `CAPTURE_TOOL_PATH_MISMATCH` 并以退出码 2 结束，不再运行记录步骤。验证：按 `run-cand.sh` 的方式只替换版本号、不替换目录名时，检查打印 `CAPTURE_PATH_LEFT` 并以退出码 2 结束；两处都替换后通过。
+  - 补充（2026-10-16）：run-cand.sh 生成记录工具后，先确认工具里不再残留 `fourth-source-inputs-01`，并且工具里写死的位置正好是它实际存放的位置，否则打印 CAPTURE_PATH_LEFT 或 `CAPTURE_TOOL_PATH_MISMATCH` 并以退出码 2 结束，不再运行记录步骤。验证：按 run-cand.sh 的方式只替换版本号、不替换目录名时，检查打印 CAPTURE_PATH_LEFT 并以退出码 2 结束；两处都替换后通过。
   - 补充（2026-10-16，第五次之后）：前面的检查只核对“清单记的摘要”和“文件实际内容”，没核对清单自己的身份字段是不是这一次的。`check-packet-consistency.py` 现在从验收输入清单的真实使用者 `finalize-cloud-inputs.py` 读出这一次的工作目录、发布目录、`schema` 和 `profile`，要求清单的 `schema`、`profile`、`runtime`、`sourceRoot`、`evidenceRoot` 与之相等，并且清单里其余以 `/var/tmp/` 或 `/opt/himawari/releases/` 开头的路径都在这一次的目录下，否则打印 `CLOUD_INPUT_IDENTITY_STALE` 并以退出码 1 结束；读不到这些值时打印 `CLOUD_INPUT_CONSUMER_IDENTITY_NOT_FOUND`。期望值取自使用者脚本，不由检查自己另写一份。验证：夹具 `verify-packet-consistency.py` 新增旧 `schema`、旧 `profile`、旧工作目录下的路径、旧发布目录下的 `runtime` 四种情况，加检查前四种都以退出码 0 漏过，加检查后都以退出码 1 拒绝，10 个夹具全部通过；对修正前的操作包，旧检查判通过，新检查报 11 处。
   - 限制：只能发现“被已登记文件按名字引用”的漏登记；按拼接出来的路径载入的文件发现不了。身份字段只检查验收输入清单，期望值只取 `finalize-cloud-inputs.py` 一处，`run-cloud-acceptance.sh`、`run-network-preparation.py` 等其他使用者里写死的同一组值不比对；路径只看 `/var/tmp/` 和 `/opt/himawari/releases/` 两个前缀。其他清单里的格式名（例如 `composition-source-contract.json` 的 `schema`）没有脚本校验，仍可能留着上一次的名字。
 - 第六次变更第六次 S6 在 `S6_READ` 失败（2026-10-24，R2-D30），同样出在 `bootstrap.mjs`，但不是摘要过期：
   - `bootstrap.mjs` 用两处正则在作业宿主 `job-host-main.js` 的 `phase = "x";` 后面插入 `__probeStage("x");`（记录探针阶段的调用）。候选从 `5bab4de1`（2026-10-18）起有一处不带花括号的 `if (...) phase = "ready"; else stop("host_failure");`，插入后 `else` 前多了一句，改写出来的模块有语法错误，宿主一加载就以退出码 1 结束，生产报 `SERVICE_ENVIRONMENT_REAL_READ_FAILED`，临时读服务留在 failed 状态。
-  - 上面的一致性检查只要求每个锚点恰好出现一次，这次全部通过；没有任何检查加载改写后的模块。最终演练 `final-rehearsal.sh` 也从没跑过 S6_READ 的探针。
+  - 上面的一致性检查只要求每个锚点恰好出现一次，这次全部通过；没有任何检查加载改写后的模块。最终演练 final-rehearsal.sh 也从没跑过 S6_READ 的探针。
 - 这一次的根因：探针对候选源码做文本改写，检查只核对改写前的锚点，不核对改写后的结果能不能运行；演练覆盖的阶段里又没有 S6_READ。
 - 硬约束（2026-10-24，G176，revision-06）：
   - 修法：两处插入改成逗号表达式 `phase = "x", __probeStage("x");`，在不带花括号的分支里仍是一句。
-  - 演练入口 `run-sixth-rehearsal.sh` 加 `probe` 阶段，用真实的 `measurement/probe/run-service-probe.py --hermes-rehearsal` 在装好的候选上跑一次 S6_READ 的探针。最终演练 `final-rehearsal.sh` 要求它退出 0、`probe-run.json` 和 `read-report.json` 都通过、宿主 12 项和沙箱线程 6 项计时齐全（打印 `PROBE_NEW_PASSED`），否则判定 `FAIL`。
-  - 同一次最终演练再用 revision-05 的旧 `bootstrap.mjs`（摘要 `418b9592…`，开头核对摘要，不符时以 `OLD_BOOTSTRAP_PROOF_CHANGED` 停下）跑一遍，必须以生产上的同样特征失败：`REAL_SANDBOX_READ_FAILED`、`host_failure`、`taskStarted: false`、宿主只记下载入事件、宿主退出码 1（打印 `PROBE_OLD_FAILED_AS_PRODUCTION`），否则也判定 `FAIL`。这证明新阶段确实跑到了宿主加载这一步，不是在更早的地方通过或失败。
+  - 演练入口 run-sixth-rehearsal.sh 加 `probe` 阶段，用真实的 `measurement/probe/run-service-probe.py --hermes-rehearsal` 在装好的候选上跑一次 S6_READ 的探针。最终演练 final-rehearsal.sh 要求它退出 0、`probe-run.json` 和 `read-report.json` 都通过、宿主 12 项和沙箱线程 6 项计时齐全（打印 PROBE_NEW_PASSED），否则判定 `FAIL`。
+  - 同一次最终演练再用 revision-05 的旧 `bootstrap.mjs`（摘要 `418b9592…`，开头核对摘要，不符时以 OLD_BOOTSTRAP_PROOF_CHANGED 停下）跑一遍，必须以生产上的同样特征失败：`REAL_SANDBOX_READ_FAILED`、`host_failure`、`taskStarted: false`、宿主只记下载入事件、宿主退出码 1（打印 PROBE_OLD_FAILED_AS_PRODUCTION），否则也判定 `FAIL`。这证明新阶段确实跑到了宿主加载这一步，不是在更早的地方通过或失败。
   - 验证（Hermes `rehearsal-87c2e3ec-r06/`，输出存于 `.ci-output/handoff/rev05/r06-rehearsal-output.txt`）：新 `bootstrap.mjs` 通过，旧的按生产上的方式失败，`REHEARSAL_VERDICT=PASS`。
   - 限制：演练用 `--hermes-rehearsal` 在普通账号下运行，不经过生产的 `systemd-run` 和服务账号，只证明改写结果能加载并完成一次读取。以后再对候选源码做文本改写时，检查要加载改写后的结果，不能只数锚点。
 
@@ -348,8 +350,8 @@ date: "2026-10-13"
 - 再次发生的证据：2026-10-13 两次（一次等待重试循环，一次连续两轮完整测试，见 `opencode-orchestration` skill）；2026-10-15 第 30 批（R2-T11）后台启动 `run-09-full` 后又用 400 × 10 秒的循环等待，工具超时设为 70 分钟，17:37 被中断。
 - 第三次的根因：前两次之后规则写进了简报模板（“超过 40 分钟的命令后台启动，不要在一次调用里等超过 40 分钟”），第 30 批简报也照写了；代理确实后台启动了测试，却又写了一个长等待循环，文字规则拦不住。
 - 硬约束（2026-10-15）：
-  - 连测试主机的唯一入口都限时：`.ci-output/cloud-test-host-2026-10-14/ci-ssh.sh`（云测试账号）和新的 `.ci-output/handoff/scripts/hermes-ssh.sh`（Hermes，经 Tailscale，并核对主机名是 `hermes-home`）把每条远程命令放在 `timeout 300` 里执行，超时以退出码 124 结束并打印 `CI_SSH_TIME_LIMIT` 或 `HERMES_SSH_TIME_LIMIT`，说明改为后台启动、再用短命令查询。上限没有可调的参数。
-  - 往 Hermes 传文件用 `.ci-output/handoff/scripts/hermes-upload.sh <本地文件> <远端路径>`（与 `ci-upload.sh` 相同：本地文件必须存在、两边 SHA-256 一致、只能写到测试目录）。
+  - 连测试主机的唯一入口都限时：`.ci-output/cloud-test-host-2026-10-14/ci-ssh.sh`（云测试账号）和新的 `.ci-output/handoff/scripts/hermes-ssh.sh`（Hermes，经 Tailscale，并核对主机名是 `hermes-home`）把每条远程命令放在 `timeout 300` 里执行，超时以退出码 124 结束并打印 CI_SSH_TIME_LIMIT 或 HERMES_SSH_TIME_LIMIT，说明改为后台启动、再用短命令查询。上限没有可调的参数。
+  - 往 Hermes 传文件用 `.ci-output/handoff/scripts/hermes-upload.sh <本地文件> <远端路径>`（与 ci-upload.sh 相同：本地文件必须存在、两边 SHA-256 一致、只能写到测试目录）。
   - 本地、不提交的 `.opencode/opencode.json` 和 `.grok/config.toml` 禁止命令里出现 Hermes 的 Tailscale 地址 `100.64.53.104`、`ssh … hermes`、`scp … hermes`、`rsync … hermes`，所以 opencode 和 Grok 只能经过上面的限时入口。
   - 验证：在 opencode 里直接执行 `ssh … hermes hostname` 被拒（`permission.rejected`），执行 `hermes-ssh.sh 'hostname'` 返回 `hermes-home`；两个入口各执行一个 400 × 10 秒的循环，都在约 300 秒时以 124 结束并打印时限说明；同一入口里用 `setsid nohup` 后台启动 330 秒的任务立即返回，任务照常跑完。
 - 同类再次发生（2026-10-18 23:41）：三个 opencode 会话（D-49、D-51、第 4 层 D、E 组）在测试主机上后台启动测试后，在本机一条命令里先 `sleep 100`、`sleep 240`、`sleep 260` 等，再经限时入口查结果，合计七次以上。会话没有被中断，但每次都要等到 opencode 命令时限才被切断，白等约两分钟后重来。
@@ -366,13 +368,13 @@ date: "2026-10-13"
   - 另外，代理会自己设 shell 工具的时限参数（见过 1800000 毫秒），所以 opencode 默认的命令时限也靠不住。
 - 这次约束为什么没拦住：拒绝规则只能按命令文字的固定写法匹配（只认 `*` 和 `?`），只能拦“`sleep` 后跟三个字符”这一种写法；同样的等待换成远程命令、脚本文件、循环或两位数 `sleep`，规则就看不到。
 - 硬约束（2026-10-19）：
-  - 本地、不提交的 opencode 插件 `.opencode/plugins/wait-guard/index.ts`（插件：opencode 启动会话时自动加载的一段程序，它在 `tool.execute.before` 钩子里能在工具执行前拒绝这次调用）。拒绝时的信息以 `WAIT_GUARD_REFUSED:` 开头，并写明正确做法。它拒绝：shell 工具时限设为 0 或超过 300000 毫秒；一条命令前台部分里所有 `sleep` 加起来超过 30 秒（包括 `ci-ssh.sh`、`hermes-ssh.sh` 引号里的远程命令，以及 `bash -c`、`python3 -c` 的内容）；`sleep(` 后跟超过 30 的数字（例如 Python 的 `time.sleep(600)`）；含 `sleep` 的 `for`/`while`/`until` 循环；用 `bash`、`sh`、`zsh` 或路径直接运行的本机脚本中含上述写法（只放行仓库里那一份 `hermes-wait.sh`，按真实路径判断，别处的同名脚本照样检查）；以及每一次 `execute` 工具调用（opencode 的代码执行工具，能写忙循环长时间卡住，本项目用不到它）。用 `setsid -f` 或后台方式启动的部分不检查，因为它们不会让这次调用等待。
-  - 两个连测试主机的入口 `ci-ssh.sh`、`hermes-ssh.sh` 在连接之前，按同样的规则检查远程命令（`sleep` 合计超过 30 秒，或含 `sleep` 的循环），命中就以退出码 71 拒绝，打印 `CI_SSH_LONG_WAIT_REFUSED` 或 `HERMES_SSH_LONG_WAIT_REFUSED`。
-  - 本地、不提交的 `.opencode/required-plugins.txt` 记下插件的 SHA-256。主检出目录和 `.ci-output/worktrees/` 下每个有 `.opencode/` 的工作副本都放一份插件和清单。启动脚本 `oc-launch.sh`（agent-skills `03d01a8`）在启动目录有这份清单时逐行核对：缺插件、摘要不符、格式错误或清单为空都以退出码 2 拒绝启动，所以缺了插件的工作副本开不出会话。改插件后要同步更新每一份副本和清单。
+  - 本地、不提交的 opencode 插件 `.opencode/plugins/wait-guard/index.ts`（插件：opencode 启动会话时自动加载的一段程序，它在 `tool.execute.before` 钩子里能在工具执行前拒绝这次调用）。拒绝时的信息以 `WAIT_GUARD_REFUSED:` 开头，并写明正确做法。它拒绝：shell 工具时限设为 0 或超过 300000 毫秒；一条命令前台部分里所有 `sleep` 加起来超过 30 秒（包括 [ci-ssh.sh](https://github.com/sixianli/himawari-agent/blob/a56903d808de68423561a52d5e4db4b0b622191b/.claude/skills/opencode-orchestration/tests/test_oc_server_steer_watch.py)、`hermes-ssh.sh` 引号里的远程命令，以及 `bash -c`、`python3 -c` 的内容）；`sleep(` 后跟超过 30 的数字（例如 Python 的 `time.sleep(600)`）；含 `sleep` 的 `for`/`while`/`until` 循环；用 `bash`、`sh`、`zsh` 或路径直接运行的本机脚本中含上述写法（只放行仓库里那一份 hermes-wait.sh，按真实路径判断，别处的同名脚本照样检查）；以及每一次 `execute` 工具调用（opencode 的代码执行工具，能写忙循环长时间卡住，本项目用不到它）。用 `setsid -f` 或后台方式启动的部分不检查，因为它们不会让这次调用等待。
+  - 两个连测试主机的入口 [ci-ssh.sh](https://github.com/sixianli/himawari-agent/blob/a56903d808de68423561a52d5e4db4b0b622191b/.claude/skills/opencode-orchestration/tests/test_oc_server_steer_watch.py)、`hermes-ssh.sh` 在连接之前，按同样的规则检查远程命令（`sleep` 合计超过 30 秒，或含 `sleep` 的循环），命中就以退出码 71 拒绝，打印 CI_SSH_LONG_WAIT_REFUSED 或 HERMES_SSH_LONG_WAIT_REFUSED。
+  - 本地、不提交的 `.opencode/required-plugins.txt` 记下插件的 SHA-256。主检出目录和 `.ci-output/worktrees/` 下每个有 `.opencode/` 的工作副本都放一份插件和清单。启动脚本 [oc-launch.sh](https://github.com/sixianli/himawari-agent/blob/a56903d808de68423561a52d5e4db4b0b622191b/.claude/skills/opencode-orchestration/scripts/grok-launch.sh)（agent-skills `03d01a8`）在启动目录有这份清单时逐行核对：缺插件、摘要不符、格式错误或清单为空都以退出码 2 拒绝启动，所以缺了插件的工作副本开不出会话。改插件后要同步更新每一份副本和清单。
   - 验证（证据在 `.ci-output/handoff/wait-guard/`，汇总见 `.ci-output/handoff/2026-10-19-wait-guard-stop.md`）：
     - 用嵌套的 opencode 会话逐条实跑：没有插件的目录里 15 条全部照常执行；最终插件拒绝全部应拒绝的写法，放行 `sleep 3`、`grep -n "sleep\|while"`、`while read` 逐行处理、带 `for` 的 `shasum`/`wc`、`setsid -f` 后台启动和白名单脚本；新加的规则对上一版插件逐条对照，上一版放行、新版拒绝。
-    - `test-ssh-wrappers.sh` 的新用例对改动前的入口全部失败，改动后全部通过，原有用例仍通过。
-    - `oc-launch.sh` 的 9 条新单元测试改动前 6 条失败，改动后全部通过。
+    - test-ssh-wrappers.sh 的新用例对改动前的入口全部失败，改动后全部通过，原有用例仍通过。
+    - [oc-launch.sh](https://github.com/sixianli/himawari-agent/blob/a56903d808de68423561a52d5e4db4b0b622191b/.claude/skills/opencode-orchestration/scripts/grok-launch.sh) 的 9 条新单元测试改动前 6 条失败，改动后全部通过。
   - 插件写出来时就在写它的会话里生效，第一版当场误拦了一条只算摘要的命令：它把 `shasum` 的路径参数当成要运行的脚本去读内容。误拦会逼代理想办法绕开约束，所以“该放行的”和“该拒绝的”两组用例同样要有，每次误拦的原命令都存成证据文件（`false-positive-01.cmd.txt`），加进放行用例。
 
 [回到目录](#编码代理反复犯的错误)
@@ -389,19 +391,19 @@ date: "2026-10-13"
   - 用下面的检查脚本回查本项目全部会话记录里发给用户的正文：2026-09-24 以来几乎每个会话都有英文句子，共 1701 行；上一个会话（2026-10-14 到 10-16）有 314 行。实际次数远多于被指出的三次。
 - 第三次的根因：之前的预防只有全局说明、用户设置里的 `language: chinese` 和一条记忆，都要靠 Claude 在写每一句话时想起来；长时间读写英文后这些提醒不起作用，英文发出后也没有任何东西报错，所以被发现的只是用户恰好指出的几次。
 - 硬约束（2026-10-16）：
-  - 检查脚本 `check_chinese_reply.py` 在公开仓库 agent-skills 的 `readable-output` skill 里（提交 `f2db76e`，本机路径 `~/.claude/skills/readable-output/scripts/`）。它去掉代码块、行内代码、以 `>` 开头的引用行、引号里的原文、Markdown 链接和含 `/` 的路径之后，把一段不含汉字的文字判为英文句子的条件是：至少 4 个英文词、其中至少 2 个是 `the`、`to` 这类常用虚词；或者是至少 3 个词、带 1 个虚词、以句号等结尾的句子。也可以用 `python3 <脚本> check <文件>` 检查一份草稿。
+  - 检查脚本 [check_chinese_reply.py](https://github.com/sixianli/himawari-agent/blob/a56903d808de68423561a52d5e4db4b0b622191b/.claude/skills/readable-output/hooks/hooks.json) 在公开仓库 agent-skills 的 `readable-output` skill 里（提交 `f2db76e`，本机路径 `~/.claude/skills/readable-output/scripts/`）。它去掉代码块、行内代码、以 `>` 开头的引用行、引号里的原文、Markdown 链接和含 `/` 的路径之后，把一段不含汉字的文字判为英文句子的条件是：至少 4 个英文词、其中至少 2 个是 `the`、`to` 这类常用虚词；或者是至少 3 个词、带 1 个虚词、以句号等结尾的句子。也可以用 `python3 <脚本> check <文件>` 检查一份草稿。
   - 用户级设置 `~/.claude/settings.json` 里挂了四个钩子（Claude Code 在固定时刻自动运行的命令），对本机所有项目的 Claude 会话生效：
-    - `MessageDisplay`（正文显示给用户时）运行 `record`，把显示的正文存到 `~/.claude/reply-language/<会话编号>.txt`；
-    - `PostToolBatch`（一批工具调用结束、下一次请求模型之前）运行 `batch`，发现英文就把原句和“先用中文重说”的要求交给 Claude，并在界面上提示用户；
+    - [MessageDisplay](https://github.com/sixianli/himawari-agent/blob/a56903d808de68423561a52d5e4db4b0b622191b/.claude/skills/readable-output/hooks/hooks.json)（正文显示给用户时）运行 `record`，把显示的正文存到 `~/.claude/reply-language/<会话编号>.txt`；
+    - [PostToolBatch](https://github.com/sixianli/himawari-agent/blob/a56903d808de68423561a52d5e4db4b0b622191b/.claude/skills/readable-output/hooks/hooks.json)（一批工具调用结束、下一次请求模型之前）运行 `batch`，发现英文就把原句和“先用中文重说”的要求交给 Claude，并在界面上提示用户；
     - `Stop`（Claude 准备结束这一轮时）运行 `stop`，同时检查最后一条回复，发现英文就不让这一轮结束，直到用中文重说；
-    - `PreToolUse` 匹配 `AskUserQuestion`（向用户提问之前）运行 `ask`，问题或选项是英文就拒绝这次提问。
+    - [PreToolUse](https://github.com/sixianli/himawari-agent/blob/a56903d808de68423561a52d5e4db4b0b622191b/.claude/skills/readable-output/hooks/hooks.json) 匹配 `AskUserQuestion`（向用户提问之前）运行 `ask`，问题或选项是英文就拒绝这次提问。
   - 验证：
     - 先写 21 个单元测试并看它们失败，再实现脚本后全部通过；测试包括本次的复现句会被报出，以及中文里夹着标识符、代码块、引用行、链接时不误报。
     - 用本项目全部历史正文试跑，被报出的行几乎都是真正的英文句子；唯一一类误报是把英文文档标题当链接文字，已改为跳过链接，并补了测试。
-    - 现场：设置生效后，`MessageDisplay` 在工具运行前就把显示的中文正文写进了记录文件；把复现句追加进记录文件后，那一批工具调用一结束，`PostToolBatch` 就把它报给了 Claude 并要求中文重说；记录里只有中文时不报。`Stop` 和 `AskUserQuestion` 两个钩子只用合成的钩子输入验证过。
+    - 现场：设置生效后，[MessageDisplay](https://github.com/sixianli/himawari-agent/blob/a56903d808de68423561a52d5e4db4b0b622191b/.claude/skills/readable-output/hooks/hooks.json) 在工具运行前就把显示的中文正文写进了记录文件；把复现句追加进记录文件后，那一批工具调用一结束，[PostToolBatch](https://github.com/sixianli/himawari-agent/blob/a56903d808de68423561a52d5e4db4b0b622191b/.claude/skills/readable-output/hooks/hooks.json) 就把它报给了 Claude 并要求中文重说；记录里只有中文时不报。`Stop` 和 `AskUserQuestion` 两个钩子只用合成的钩子输入验证过。
   - 限制：
     - 文字显示出来就收不回；钩子保证的是每次发出英文后立刻被发现并重说，而不是事先拦住。
-    - 只检查真正显示为正文的文字。Claude 写的一部分文字被记成“思考摘要”（系统自动生成的中文概括），不经过 `MessageDisplay`，所以不检查。
+    - 只检查真正显示为正文的文字。Claude 写的一部分文字被记成“思考摘要”（系统自动生成的中文概括），不经过 [MessageDisplay](https://github.com/sixianli/himawari-agent/blob/a56903d808de68423561a52d5e4db4b0b622191b/.claude/skills/readable-output/hooks/hooks.json)，所以不检查。
     - 子代理（Claude 派出去做辅助工作的代理）的文字用户看不到，钩子在子代理里不检查。
     - 只对本机的 Claude Code 生效；opencode 和 Grok 不直接对用户说话，不在范围内。
     - 少于 3 个词的英文（例如单独一个 `Done.`）不报。
@@ -422,7 +424,7 @@ date: "2026-10-13"
 - 第三次的根因：之前的预防只有 2026-10-13 写的一条记忆（`zsh-pitfalls-in-bash-tool.md`），要靠 Claude 写每条命令时想起来；而出错时工具常常不报失败，错误信息也没有直接说是引号问题，所以每次只是绕开，没有东西拦住下一次。
 - 硬约束（2026-10-16）：
   - 检查脚本 `~/.claude/hooks/zsh_word_guard.py`（本机文件，不在任何仓库里；SHA-256 为 `dba3d7cefc3af32dd457f2576441a75c1af22420ea4c857457e2d6628eec7c97`）。它按外壳的规则切分命令，跳过单引号、双引号、反斜杠转义的部分和 here-document（`<<'EOF'` 到 `EOF` 之间原样传给程序的文字），只在两种情况下报出：一个没加引号的、以 `-` 开头的选项词在 `=` 之后有 `*`、`?` 或 `[`；或者一个词以没加引号的 `=` 开头且不止一个字符（`[[ ]]` 里的 `==`、`=~` 除外）。
-  - 用户级设置 `~/.claude/settings.json` 的 `PreToolUse` 钩子（Claude Code 在每次运行工具之前自动执行的命令）匹配 `Bash`，运行这个脚本；发现上述词就拒绝这次命令，并把要加引号的词和改法告诉 Claude。它对本机所有项目的 Claude 会话生效。
+  - 用户级设置 `~/.claude/settings.json` 的 [PreToolUse](https://github.com/sixianli/himawari-agent/blob/a56903d808de68423561a52d5e4db4b0b622191b/.claude/skills/readable-output/hooks/hooks.json) 钩子（Claude Code 在每次运行工具之前自动执行的命令）匹配 `Bash`，运行这个脚本；发现上述词就拒绝这次命令，并把要加引号的词和改法告诉 Claude。它对本机所有项目的 Claude 会话生效。
   - 验证：
     - `python3 ~/.claude/hooks/zsh_word_guard.py selftest` 跑 22 个例子全部通过，包括本次的复现命令被拒，以及 `--include='*.ts'`、`ssh 主机 '…'` 里的远程命令、here-document 和 `git commit -m "$(cat <<'EOF' … EOF)"` 里的文字、`[[ $a == b ]]`、`ls *.md` 都放行。
     - 回放上面 15837 条历史命令：288 条真实出错的命令全部被拦，没有一条正常命令被误拦。
@@ -440,7 +442,7 @@ date: "2026-10-13"
 ## 记录里写了还没到的时间
 
 - 反复出现的情况：Claude 在计划、交接、方案文件或提交前的记录里写“现在”的时间时，没有先查当前时间，而是估一个整数分钟，结果往后凑成了还没到的时刻。第二轮里被发现并记下的三次：
-  - 2026-10-17 约 00:20 写进 `.agents/tasks/round2-tool-execution/plan.md` 的两条，标为 00:40（同一内容的提交 `6587e8f` 在 00:24），更正见 plan.md 里 00:45 一条；
+  - 2026-10-17 约 00:20 写进 .agents/tasks/round2-tool-execution/plan.md 的两条，标为 00:40（同一内容的提交 `6587e8f` 在 00:24），更正见 plan.md 里 00:45 一条；
   - 同日约 10:21 写进 plan.md 的一条，标为 10:25，更正见 10:23 一条；
   - 同日 12:46 写下的方案草稿，标题误写成 13:00（东京时间），后来当场改回 12:46。
 - 加约束时用回放又找到同日两次没人发现的：00:30 写的 `.ci-output/handoff/2026-10-17-fifth-catalog-comparison.md` 标题标为 00:40（之后已改成 00:30）；10:22 写的 `.ci-output/handoff/2026-10-17-truncated-key-claude-proposal.md` 标题标为 10:40，这个标题用来说明“Claude 的方案先于 DeepSeek 写下”，已加更正（文件修改时间 10:22:53 早于咨询说明的 10:23:16，先后关系不变）。
@@ -448,7 +450,7 @@ date: "2026-10-13"
 - 第三次的根因：前两次之后的预防只是交接说明里的一句“写时间前先运行 `TZ=Asia/Tokyo date`”，要靠 Claude 每次想起来；写记录时注意力在内容上，没有任何东西在写入那一刻检查时间。用下面的回放脚本检查本项目 9 个会话记录里的约 2 万次写入，同样的“往后凑整”在 2026-09-27 到 2026-10-17 之间约有 90 次，几乎每个会话都有，只是大多没人发现。
 - 硬约束（2026-10-17）：
   - 检查脚本 `~/.claude/hooks/tokyo_timestamp_guard.py`（本机文件，不在任何仓库里；SHA-256 为 `89c762c9eb22071ce0e3102081da8ddfada1be213da7079d603a836f3084b04e`）。它在 Claude 写文件（Write、Edit、MultiEdit、NotebookEdit）或运行命令（Bash）之前，找出这次新加的时间：带今天或明天日期的 `YYYY-MM-DD HH:MM`，以及后面跟“东京”或前面有“东京时间”的 `HH:MM`。原文里已有的时间、时间段（`10:00-12:59`）、带时区的时间（`Z`、`UTC`、`+00:00`）、同一行写着别的日期的时间、同一行有“预计”“计划”“截止”“到期”“定时”“会在”等字样的计划时间、同一行有“更正”“标为”“写成”“实际写于”等字样的更正，以及代码文件（`.py`、`.ts`、`.json` 等）里的时间都不查。只要有一个时间比现在的东京时间晚 1 分钟以上，就拒绝这次写入，并告诉 Claude 先运行 `TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M'` 再写。
-  - 用户级设置 `~/.claude/settings.json` 的 `PreToolUse` 钩子（Claude Code 在每次运行工具之前自动执行的命令）以 `Write|Edit|MultiEdit|NotebookEdit|Bash` 匹配，运行这个脚本；它对本机所有项目的 Claude 会话生效。
+  - 用户级设置 `~/.claude/settings.json` 的 [PreToolUse](https://github.com/sixianli/himawari-agent/blob/a56903d808de68423561a52d5e4db4b0b622191b/.claude/skills/readable-output/hooks/hooks.json) 钩子（Claude Code 在每次运行工具之前自动执行的命令）以 `Write|Edit|MultiEdit|NotebookEdit|Bash` 匹配，运行这个脚本；它对本机所有项目的 Claude 会话生效。
   - 验证：
     - `python3 ~/.claude/hooks/tokyo_timestamp_guard.py selftest` 跑 27 个例子全部通过，包括上面三次错误的复现被拒、改成真实时间后放行，以及历史时间、时间段、计划时间、更正里引用的错误时间、带时区的测试数据、代码文件、前一天深夜的时间都放行。
     - 回放：`python3 ~/.claude/hooks/tokyo_timestamp_replay.py ~/.claude/hooks/tokyo_timestamp_guard.py <本项目会话记录目录>`（SHA-256 `e250e20641d7540664b07eebb642faa3a6540b5db37f2a69408e6dea32b40c4f`）按每次写入的实际时刻重放，三次已知错误和上面另找到的两次都被拦下；其余被拦的逐条看过，都是同一种“往后凑整”，例如 22:24 把“更新：22:40”写进状态文件。仍会误拦的是同一天写的格式说明和测试样例（例如 Markdown 里举例的“2026-10-02 10:00 建立任务”），每个会话至多一两次，按提示换个写法即可。
@@ -465,7 +467,7 @@ date: "2026-10-13"
 - 为什么要紧：上线前的演练和测试链都要几分钟到一个多小时，等错了就会在错误的时刻往下走（例如以为演练还在跑而停下准备工作，或者任务早已失败却一直等），也可能在清理时误杀自己的连接，留下一半没清理的现场。
 - 再次发生的证据（都在 2026-10-17，东京时间）：
   - 13:50 清理一次中止的测试链时，`pkill -f "inputs/r2t14-wf-green-chain.sh"` 把这条 SSH 调用自己也杀掉了。原因是 `hermes-ssh.sh` 在远端用 `bash -c '<整条命令>'` 和 `timeout … bash -c …` 执行命令，这两个进程的命令行里就含有同样的文字。当时在本文里没查到先例，按第一次处理。
-  - 16:07 前后等第五次候选测试链时：条件先用了带 `|` 的正则，`hermes-ssh.sh` 把含 `|` 的命令当成会改东西的命令，在安静运行（整次测试期间只许只读命令的保护）期间以退出码 68 拒绝，等待根本没开始；改成 `grep -q -e 'DONE$'` 后，又被前面的 `CAND_DONE` 行提前满足。会话交接把它记为第二次，预防写成一句提醒：“装上等待条件前先试跑一次，确认它在未完成时返回 1”。
+  - 16:07 前后等第五次候选测试链时：条件先用了带 `|` 的正则，`hermes-ssh.sh` 把含 `|` 的命令当成会改东西的命令，在安静运行（整次测试期间只许只读命令的保护）期间以退出码 68 拒绝，等待根本没开始；改成 `grep -q -e 'DONE$'` 后，又被前面的 CAND_DONE 行提前满足。会话交接把它记为第二次，预防写成一句提醒：“装上等待条件前先试跑一次，确认它在未完成时返回 1”。
   - 18:23 第二次演练的等待命令里，“进程已经不在”的分支用 `pgrep -f run-fifth-rehearsal.sh` 判断。因为同样的自我匹配，它永远显示“还在”，这条分支不可能触发；那次只是因为演练正常写出了结束行，等待才结束。
   - 18:39 准备第三次演练时，开头的保护 `pgrep -f run-fifth-rehearsal.sh && exit 3` 匹配到自己，误报“演练还在跑”并退出。这一步之前 Hermes 上没有任何改动。
 - 第三次的根因：
@@ -474,20 +476,20 @@ date: "2026-10-13"
   - 包装脚本多包的那一层 `bash -c` 让远端的 `pgrep -f` 和 `pkill -f` 必然匹配到自己。这一点从来没有任何检查指出来。
 - 硬约束（2026-10-17）：
   - `.ci-output/handoff/scripts/hermes-ssh.sh` 和 `.ci-output/cloud-test-host-2026-10-14/ci-ssh.sh` 在连接之前检查远程命令，拒绝 `pgrep -f`、`pkill -f`，包括 `-af`、`-fl`、`--full`，以及中间夹着别的选项的写法（例如 `pgrep -u andy -f …`）。
-    - 被拒时退出码 69，打印 `HERMES_SSH_SELF_MATCH_REFUSED` 或 `CI_SSH_SELF_MATCH_REFUSED`，并给出正确写法：启动时用 `setsid -f bash -c 'echo $$ > <进程号文件>; exec bash <脚本>'` 记下进程号，再用 `test -d /proc/<进程号>` 判断进程在不在。
+    - 被拒时退出码 69，打印 HERMES_SSH_SELF_MATCH_REFUSED 或 CI_SSH_SELF_MATCH_REFUSED，并给出正确写法：启动时用 `setsid -f bash -c 'echo $$ > <进程号文件>; exec bash <脚本>'` 记下进程号，再用 `test -d /proc/<进程号>` 判断进程在不在。
     - Claude、opencode、Grok 连 Hermes 和云测试账号都只能经过这两个脚本，所以对三者都生效。
   - 新的等待脚本 `.ci-output/handoff/scripts/hermes-wait.sh <远端日志> '<结束行文字>' <远端进程号文件>`：
     - 用进程号判断存活；用固定字符串（`grep -F`，不是正则）判断完成。它发出的远程命令都是安静运行允许的只读命令。
     - 开始等待前先自检。日志不存在、或结束行已经出现时，退出 2；进程已经不在、日志里也没有结束行时，退出 3。
-    - 之后每隔 `HERMES_WAIT_INTERVAL` 秒（默认 60）查一次。出现结束行时打印该行并退出 0；进程没了却没有结束行时退出 3；连续 5 次查不到时退出 4。
+    - 之后每隔 HERMES_WAIT_INTERVAL 秒（默认 60）查一次。出现结束行时打印该行并退出 0；进程没了却没有结束行时退出 3；连续 5 次查不到时退出 4。
   - `.ci-output/handoff/scripts/test-ssh-wrappers.sh` 给每个包装脚本新增 10 条用例：5 条自我匹配写法必须被拒，5 条正常写法必须放行（例如 `pgrep -x node`、`test -d /proc/1234`）。原来那条“`pgrep -f vitest` 放行”的用例改成必须被拒。
 - 验证（证据在 `.ci-output/handoff/2026-10-17-waiter-constraint/`）：
-  - 本地：先用去掉新检查的两个包装脚本副本跑 `test-ssh-wrappers.sh`，12 条自我匹配用例（两个脚本各 6 条）全部失败，命令被原样发出，其余 35 条通过；换成新包装脚本后 47 条全部通过（`test-ssh-wrappers.before.out`、`test-ssh-wrappers.after.out`）。
+  - 本地：先用去掉新检查的两个包装脚本副本跑 test-ssh-wrappers.sh，12 条自我匹配用例（两个脚本各 6 条）全部失败，命令被原样发出，其余 35 条通过；换成新包装脚本后 47 条全部通过（`test-ssh-wrappers.before.out`、`test-ssh-wrappers.after.out`）。
   - Hermes 现场重现（`selfmatch-reproduction.out`）：用一个已经结束的假任务对比三种写法。
     - `test -d /proc/<进程号>` 显示它已经不在。
     - 旧包装脚本里的 `pgrep -f hw-job.sh` 却显示“还在”，`pgrep -af` 列出的正是包装脚本自己的 `bash -c` 和 `timeout` 进程。
     - 新包装脚本以退出码 69 拒绝同一条命令。
-  - `hermes-wait.sh` 在 Hermes 上实测四种情况（`wait-*.out`）：
+  - hermes-wait.sh 在 Hermes 上实测四种情况（`wait-*.out`）：
     - 日志里先有一行 `stage=inputs done rc=0`、20 秒后才写出 `stage=all done rc=0` 的假任务：没有被前一行提前满足，结束行出现后退出 0。
     - 不写结束行就结束的假任务：退出 3。
     - 结束行在开始等待前就已存在：退出 2。
@@ -507,11 +509,11 @@ date: "2026-10-13"
 - 硬约束（2026-10-18，去掉根因）：
   - 两个包装脚本先把远程命令做 base64 编码（把任意文字变成只含字母、数字和 `+/=` 的文字），远端执行 `bash -c 'eval "$(printf %s <编码> | base64 -d)"'`，在同一个 shell 里解码执行。远端 `bash -c`、`timeout` 和外层登录 shell 的命令行里只有编码后的文字，扫描 `/proc`、`ps … > 文件; grep`、`pgrep -f` 都不会再匹配到这次调用自己，也不会匹配到别的代理同时发出的调用。
   - 原来对 `pgrep -f`、`pkill -f` 的拒绝保留，理由改为：按命令行文字匹配会碰到提到同样文字的无关进程（看日志的 `tail`、编辑器、同一脚本的另一次运行），判断存活仍用进程号。
-  - `test-ssh-wrappers.sh` 新增 8 条用例（每个包装脚本 4 条）：发给 ssh 的远程命令串里不能出现原命令文字；用本机替身 ssh 真正执行远程命令串，含单引号、双引号、`$HOME` 原样输出和退出码 3 的命令结果必须与直接执行相同；执行命令的 shell 用 `ps -p $$ -o args=` 看自己的命令行，里面不能有原命令文字。
+  - test-ssh-wrappers.sh 新增 8 条用例（每个包装脚本 4 条）：发给 ssh 的远程命令串里不能出现原命令文字；用本机替身 ssh 真正执行远程命令串，含单引号、双引号、`$HOME` 原样输出和退出码 3 的命令结果必须与直接执行相同；执行命令的 shell 用 `ps -p $$ -o args=` 看自己的命令行，里面不能有原命令文字。
 - 验证（证据在 `.ci-output/handoff/2026-10-18-selfmatch-constraint/`）：
   - 本地：旧包装脚本副本（`hermes-ssh.before.sh`、`ci-ssh.before.sh`）上，新用例里“原文字不进远端命令行”和“自己的命令行里没有原文字”两类共 4 条失败，其余 63 条通过（`test-ssh-wrappers.before.out`）；新包装脚本上 67 条全部通过（`test-ssh-wrappers.after.out`）。
-  - Hermes 现场（`selfmatch-reproduction.out`）：找一个不存在的进程名，旧包装脚本扫描 `/proc` 报 `running=1`、`ps` 加 `grep` 匹配 3 行；新包装脚本两种都是 0，退出码 5 原样传回。`hermes-wait.sh` 经新包装脚本自检正常（`wait-done-before-start.out`）。
-  - 云测试账号上没有现场运行：本次会话不连接 `84.247.157.41`，`ci-ssh.sh` 只用替身 ssh 验证过。
+  - Hermes 现场（`selfmatch-reproduction.out`）：找一个不存在的进程名，旧包装脚本扫描 `/proc` 报 `running=1`、`ps` 加 `grep` 匹配 3 行；新包装脚本两种都是 0，退出码 5 原样传回。hermes-wait.sh 经新包装脚本自检正常（`wait-done-before-start.out`）。
+  - 云测试账号上没有现场运行：本次会话不连接 `84.247.157.41`，[ci-ssh.sh](https://github.com/sixianli/himawari-agent/blob/a56903d808de68423561a52d5e4db4b0b622191b/.claude/skills/opencode-orchestration/tests/test_oc_server_steer_watch.py) 只用替身 ssh 验证过。
   - 按 G142 由 opencode 逐行审核（`opencode-go/deepseek-v4.1-flash#high`，两个免费模型隔 30 秒各两次限流后改用；`.ci-output/handoff/2026-10-18-selfmatch-review-stop.md`），没有阻断问题。退出码、输出、引号、`$`、多行、空命令、读标准输入和 `$0`、`$$` 在本地逐项对照与改前相同；本地检查仍对原命令文字生效。不改的发现：`tr -d '\n'` 多余但无害；命令超过约 98 KB 时 base64 后会超过 Linux 单个参数 128 KiB 的上限（改前约 128 KB），实际命令只有几 KB；替身 `timeout` 和 `hostname` 不校验参数，`timeout` 那一行这次没有改。
 - 仍有的限制：`ps … | grep <文字>` 这种管道写法里，`grep` 和 `ps` 同时运行，`grep` 自己的参数带着这段文字，仍可能匹配到自己；要么先写到文件再 `grep`，要么用方括号写法，判断存活仍用进程号。
 
@@ -521,25 +523,25 @@ date: "2026-10-13"
 
 ## 演练脚本在每个读取位置手选数据库读法，和附属文件的实际情况对不上
 
-- 反复出现的情况：第五次变更的形状演练脚本 `maintenance/verify-production-shape-chain.mjs`（在 Hermes 上照生产步骤顺序跑一遍维护程序的演练）要多次只读查看 SQLite 数据库。它有两种只读打开方式：
-  - 严格读法 `openRecoveryReadonly`：带 `immutable=1`，不建任何文件；数据库旁已有 `-wal`、`-shm` 两个附属文件（SQLite 写前日志模式下的日志和共享内存文件）时直接以 `FIFTH_RAW_COPY_DATABASE_SIDECAR_PRESENT` 拒绝。
-  - 宽松读法 `s0Reader.openReadonly`：普通只读连接，附属文件已在时照常读；附属文件不在时会自己建出来，关闭时因为只读、不能做检查点（把日志写回数据库），也删不掉它们。
+- 反复出现的情况：第五次变更的形状演练脚本 maintenance/verify-production-shape-chain.mjs（在 Hermes 上照生产步骤顺序跑一遍维护程序的演练）要多次只读查看 SQLite 数据库。它有两种只读打开方式：
+  - 严格读法 `openRecoveryReadonly`：带 `immutable=1`，不建任何文件；数据库旁已有 `-wal`、`-shm` 两个附属文件（SQLite 写前日志模式下的日志和共享内存文件）时直接以 FIFTH_RAW_COPY_DATABASE_SIDECAR_PRESENT 拒绝。
+  - 宽松读法 s0Reader.openReadonly：普通只读连接，附属文件已在时照常读；附属文件不在时会自己建出来，关闭时因为只读、不能做检查点（把日志写回数据库），也删不掉它们。
   - 每个读取位置由写代码的人凭当时的理解挑一种。挑严格读法而附属文件已在，这次读取失败；挑宽松读法而附属文件不在，读取本身成功，却留下附属文件，让后面的严格读取失败。
 - 为什么要紧：生产维护程序在服务停止期间全部用严格读法，演练要证明它们在生产现场能通过；演练自己留下或误判附属文件，会让演练在与生产无关的地方失败，几分钟的运行白跑，上线一再推迟；反过来也可能掩盖生产上真的会遇到的附属文件。
 - 三次经过（都在 2026-10-17，东京时间）：
   - 18:50 那次演练：`doctor` 在 S7_DB_STATUS 和 S7_CATALOG_UPGRADE 之间运行、留下附属文件，S7_CATALOG_UPGRADE 之后的回读又用了严格读法。修法写在提交 80dd13c9 的说明里，其中已经写明“宽松读法也会留下附属文件”。
   - 21:14 第二次运行：新加的“升级后句柄回读”放在了换成宽松读法之前，用了严格读法，完整模式和续做模式都在这里失败。
-  - 21:24 第三次运行：修第二次时把续做模式里“失败后句柄回读”也换成了宽松读法，它在数据库旁建出附属文件，随后续做的 S7_CATALOG_UPGRADE 在严格读法处以 `FIFTH_RAW_COPY_DATABASE_SIDECAR_PRESENT` 失败。第二次运行同一位置用严格读法时续做是通过的，两次之间这一段只改了这一行，据此认定原因。生产不受影响：20:36 的只读诊断显示生产数据库目录只有 `product.sqlite`，之后服务一直停着，没有程序再打开数据库。
+  - 21:24 第三次运行：修第二次时把续做模式里“失败后句柄回读”也换成了宽松读法，它在数据库旁建出附属文件，随后续做的 S7_CATALOG_UPGRADE 在严格读法处以 FIFTH_RAW_COPY_DATABASE_SIDECAR_PRESENT 失败。第二次运行同一位置用严格读法时续做是通过的，两次之间这一段只改了这一行，据此认定原因。生产不受影响：20:36 的只读诊断显示生产数据库目录只有 `product.sqlite`，之后服务一直停着，没有程序再打开数据库。
 - 第三次的根因：
   - 选哪种读法取决于数据库此刻有没有附属文件，而这个状态会被别的步骤（`doctor`、`db status`、宽松读取本身）悄悄改变；脚本却让每个读取位置自己挑。
   - 前两次的预防只是提交说明里的文字，没有任何检查在读错的那一刻报错，错误要等到后面另一个步骤才暴露。
-- 硬约束（2026-10-17，在 `verify-production-shape-chain.mjs` 里，每次运行都执行）：
-  - 删掉可以随时改写的读法变量和按调用点切换读法的辅助函数。所有读取只经过 `readDatabase`，它在读之前查看附属文件：没有就用严格读法，已经有了才用宽松读法；读完再核对附属文件名单和读之前完全相同，不同就以 `PRODUCTION_SHAPE_READBACK_CHANGED_SIDECARS` 当场失败。
-  - 脚本启动时检查自己的源码：直接调用只读打开函数的地方只许出现在定义两种读法的那一行，否则以 `PRODUCTION_SHAPE_DATABASE_READER_OUTSIDE_READBACK_READERS` 失败，防止以后又绕过统一入口自己挑读法。这一条由 DeepSeek 在独立方案里提出（它答题前读到了 Claude 先写的方案文件，所以这次的方案不算完全独立）。
+- 硬约束（2026-10-17，在 verify-production-shape-chain.mjs 里，每次运行都执行）：
+  - 删掉可以随时改写的读法变量和按调用点切换读法的辅助函数。所有读取只经过 readDatabase，它在读之前查看附属文件：没有就用严格读法，已经有了才用宽松读法；读完再核对附属文件名单和读之前完全相同，不同就以 PRODUCTION_SHAPE_READBACK_CHANGED_SIDECARS 当场失败。
+  - 脚本启动时检查自己的源码：直接调用只读打开函数的地方只许出现在定义两种读法的那一行，否则以 PRODUCTION_SHAPE_DATABASE_READER_OUTSIDE_READBACK_READERS 失败，防止以后又绕过统一入口自己挑读法。这一条由 DeepSeek 在独立方案里提出（它答题前读到了 Claude 先写的方案文件，所以这次的方案不算完全独立）。
   - 生产维护代码不改：它每一步的读法是固定的，服务停止期间都用严格读法，遇到附属文件直接报错，正是生产要的保证。
 - 验证（Hermes `/data/hermes/himawari/tool-audit-round2/r2-l12/rehearsal-c53bca70/revision-02-code/`，变体脚本 `.ci-output/handoff/scripts/fifth-revision-02-readers-variant.sh`；已结束运行的日志和报告复制在 `.ci-output/handoff/prod-fifth-evidence-c53bca70/revision-02-handles/hermes/`）：
-  - `runtime`：把选择强制成宽松读法，重现第三次的错误。第一次读数据库（S0 回读，此时没有附属文件）就以 `PRODUCTION_SHAPE_READBACK_CHANGED_SIDECARS` 失败，报错显示读前没有附属文件、读后多了 `-wal`、`-shm`，在运行中证实了“宽松只读连接会自己建附属文件”（`readers-variant-runtime/`；加静态检查前的版本上同样结果，`readers-variant-runtime-before-static-check/`）。
-  - `static`：照第三次出错时的写法，在“失败后句柄回读”处直接调用 `s0Reader.openReadonly`。脚本一加载就以 `PRODUCTION_SHAPE_DATABASE_READER_OUTSIDE_READBACK_READERS` 失败（`readers-variant-static/`）。
+  - `runtime`：把选择强制成宽松读法，重现第三次的错误。第一次读数据库（S0 回读，此时没有附属文件）就以 PRODUCTION_SHAPE_READBACK_CHANGED_SIDECARS 失败，报错显示读前没有附属文件、读后多了 `-wal`、`-shm`，在运行中证实了“宽松只读连接会自己建附属文件”（`readers-variant-runtime/`；加静态检查前的版本上同样结果，`readers-variant-runtime-before-static-check/`）。
+  - `static`：照第三次出错时的写法，在“失败后句柄回读”处直接调用 s0Reader.openReadonly。脚本一加载就以 PRODUCTION_SHAPE_DATABASE_READER_OUTSIDE_READBACK_READERS 失败（`readers-variant-static/`）。
   - 不改的版本：完整模式和续做模式都走到 S8_READBACK 和 S9 回滚并通过（加静态检查前的版本 `attempt-04-before-static-check/`：完整 16 条、续做 19 条检查）。
 - 限制：静态检查只认点号调用 `.openReadonly(`、`.openRecoveryReadonly(`；用别名、解构或下标调用，以及经产品函数 `common.readMaintenanceState(..., true)` 用宽松读法，它都看不出来，只能靠读后核对附属文件名单兜底（DeepSeek 审核指出）。生产维护程序本身的读法不在这两道检查内，仍靠每一步固定的严格读法。
 
@@ -561,9 +563,9 @@ date: "2026-10-13"
   - 用下面的检查回放本项目 12 个会话记录里去重后的 18918 条命令：381 条有这种写法（过滤管道后接 `&&` 330 处、接 `||` 29 处、之后读 `$?` 68 处），其中 106 条后面接着提交、推送、删除等有后果的命令。读 `$?` 的一类里，有 2026-10-17 的严格文档校验 `validate_docs.py . --strict 2>&1 | tail -8; echo rc=$?` 和第五次操作包一致性检查 `check-packet-consistency.py … | tail -5; echo "exit=$?"`，打印出来的都是 `tail` 的退出码；2026-09-25 还有一份验收证据这样把 `exit_code=$?` 写进了文件。
 - 第三次以后的根因：之前的预防是两条记忆（一条只管“私人信息检查”，一条只管 skill 测试），要靠写命令时想起来；管道这种形式没有任何东西拦。Claude 为了少看输出，习惯在命令后面接 `| tail`，而失败时截下来的几行输出里不一定看得出失败。
 - 硬约束（2026-10-17）：
-  - 检查脚本 `~/.claude/hooks/zsh_word_guard.py`（本机文件，不在任何仓库里；这一版的 SHA-256 为 `be6f223771620319bd2c02f0ec0327ffd5d3138ae0f83cedc7101972b4fff0e8`）新增 `masked_gates`。它按外壳规则切分命令，跳过引号、here-document（`<<'EOF'` 到 `EOF` 之间原样交给程序的文字）和 `"$(…)"` 里的内容，找出最后一段是过滤输出的命令的管道，例如 `tail`、`head`、`grep`（带 `-q` 的除外）、`sed`、`awk`、`cut`、`tee`、`cat`、`sort`、`uniq`、`wc`、`tr`。这样的管道后面接 `&&`、`||`（`|| true`、`|| :` 除外），或下一条命令读 `$?`，就报出。命令前面已经用 `set -o pipefail` 或 `setopt pipefail` 打开 pipefail（管道里任一段失败、整条管道就算失败的外壳选项）时不报。
-  - Claude：用户级设置里已注册的 `PreToolUse` 钩子（Claude Code 每次运行 Bash 工具之前自动执行的检查）同时运行这项检查，发现就拒绝这条命令，并给出改法：先把输出写进文件、单独记下退出码再看尾部；打开 pipefail；用 `${pipestatus[1]}` 取第一段的退出码；后面的命令本来不依赖前一步时改用 `;` 连接。
-  - 所有代理：Claude、opencode、Grok 连 Hermes 和云测试账号只能经过 `.ci-output/handoff/scripts/hermes-ssh.sh` 和 `.ci-output/cloud-test-host-2026-10-14/ci-ssh.sh`。两个包装脚本连接之前运行 `zsh_word_guard.py gates '<远程命令>'`，有问题就打印 `MASKED_STATUS_REFUSED` 并以退出码 70 结束，不连接；检查脚本不存在或自己出错时同样拒绝。
+  - 检查脚本 `~/.claude/hooks/zsh_word_guard.py`（本机文件，不在任何仓库里；这一版的 SHA-256 为 `be6f223771620319bd2c02f0ec0327ffd5d3138ae0f83cedc7101972b4fff0e8`）新增 masked_gates。它按外壳规则切分命令，跳过引号、here-document（`<<'EOF'` 到 `EOF` 之间原样交给程序的文字）和 `"$(…)"` 里的内容，找出最后一段是过滤输出的命令的管道，例如 `tail`、`head`、`grep`（带 `-q` 的除外）、`sed`、`awk`、`cut`、`tee`、`cat`、`sort`、`uniq`、`wc`、`tr`。这样的管道后面接 `&&`、`||`（`|| true`、`|| :` 除外），或下一条命令读 `$?`，就报出。命令前面已经用 `set -o pipefail` 或 `setopt pipefail` 打开 pipefail（管道里任一段失败、整条管道就算失败的外壳选项）时不报。
+  - Claude：用户级设置里已注册的 [PreToolUse](https://github.com/sixianli/himawari-agent/blob/a56903d808de68423561a52d5e4db4b0b622191b/.claude/skills/readable-output/hooks/hooks.json) 钩子（Claude Code 每次运行 Bash 工具之前自动执行的检查）同时运行这项检查，发现就拒绝这条命令，并给出改法：先把输出写进文件、单独记下退出码再看尾部；打开 pipefail；用 `${pipestatus[1]}` 取第一段的退出码；后面的命令本来不依赖前一步时改用 `;` 连接。
+  - 所有代理：Claude、opencode、Grok 连 Hermes 和云测试账号只能经过 `.ci-output/handoff/scripts/hermes-ssh.sh` 和 `.ci-output/cloud-test-host-2026-10-14/ci-ssh.sh`。两个包装脚本连接之前运行 `zsh_word_guard.py gates '<远程命令>'`，有问题就打印 MASKED_STATUS_REFUSED 并以退出码 70 结束，不连接；检查脚本不存在或自己出错时同样拒绝。
   - 验证：
     - `python3 ~/.claude/hooks/zsh_word_guard.py selftest` 的 42 个例子全部通过。新增的 20 个里，本次的合并命令、`| tail -3; echo "rc=$?"`、换行后读 `$?` 等 6 种必须被拒；打开 pipefail、`grep -q`、`|| true`、`${pipestatus[1]}`、引号和 here-document 里的文字、循环里的管道等 14 种必须放行。加检查之前这些例子无法通过（检查函数还不存在）。
     - 按钩子的输入格式送入本次的合并命令，被拒绝；改成先写文件、单独记退出码的写法后放行。
@@ -583,7 +585,7 @@ date: "2026-10-13"
 - 为什么要紧：opencode 每次要先被拒绝 4 到 6 次，才自己换成读文件工具，或要 Claude 发纠正消息，白白耗掉时间和额度。
 - 发生记录（都在 2026-10-17）：第五次操作包的两次审核，以及第六次操作包（R2-L13）的方案会话，三次都是这样。opencode-orchestration skill 里早就写着这条提醒，第三次仍然漏了。
 - 第三次的根因：写简报时要靠 Claude 自己想到“简报里的路径会不会被禁止规则拦”；skill 里的文字提醒没有在漏写的那一刻报错。
-- 硬约束（2026-10-17，opencode-orchestration skill，agent-skills 仓库提交 `74d1760`）：`oc-launch.sh` 启动新会话（检查简报）和续用会话（检查回复）之前，运行 `scripts/brief-denied-text.py`。它读出 `.opencode/opencode.json` 里形如 `*文字*`（不含空格和其他通配符，例如路径、文件名、地址）的 bash 禁止条目，只要简报或回复里出现这段文字，就必须有一行以 `本地禁止规则：` 开头的提示点名它；缺了就打印 `BRIEF_NAMES_DENIED_TEXT` 和每段文字第一次出现的行，以退出码 2 结束，什么都不启动。配置读不懂时以 `OPENCODE_CONFIG_UNREADABLE` 拒绝。简报模板里已带这一行。
+- 硬约束（2026-10-17，opencode-orchestration skill，agent-skills 仓库提交 `74d1760`）：[oc-launch.sh](https://github.com/sixianli/himawari-agent/blob/a56903d808de68423561a52d5e4db4b0b622191b/.claude/skills/opencode-orchestration/scripts/grok-launch.sh) 启动新会话（检查简报）和续用会话（检查回复）之前，运行 scripts/brief-denied-text.py。它读出 `.opencode/opencode.json` 里形如 `*文字*`（不含空格和其他通配符，例如路径、文件名、地址）的 bash 禁止条目，只要简报或回复里出现这段文字，就必须有一行以 `本地禁止规则：` 开头的提示点名它；缺了就打印 [BRIEF_NAMES_DENIED_TEXT](https://github.com/sixianli/himawari-agent/blob/a56903d808de68423561a52d5e4db4b0b622191b/.claude/skills/opencode-orchestration/scripts/brief-denied-text.py) 和每段文字第一次出现的行，以退出码 2 结束，什么都不启动。配置读不懂时以 [OPENCODE_CONFIG_UNREADABLE](https://github.com/sixianli/himawari-agent/blob/a56903d808de68423561a52d5e4db4b0b622191b/.claude/skills/opencode-orchestration/scripts/brief-denied-text.py) 拒绝。简报模板里已带这一行。
 - 验证：skill 的 10 个新测试里，5 个应拒的情况在改动之前都没被拒（失败），改动之后全部通过；整套 91 个测试和全仓校验通过。三份真实简报（两次审核和方案会话）上重现：去掉提示行时都被拒绝。
 - 限制：只认 `*文字*` 这一种形状的禁止条目；带空格或别的通配符的条目（例如 `node *`）不检查，它们在简报里出现时仍靠 skill 的文字提醒。
 
@@ -599,10 +601,10 @@ date: "2026-10-13"
   - 01:42，第六次操作包乙部分（`2026-10-18-r2l13-packet-b-oc-1`），最后一句是 b-02 还在跑、跑完自动继续；
   - 02:29，R2-P2 接线（`2026-10-18-r2p2-wiring-oc-1`），停止文件第 97 行和第 176 行仍是“本节……填写”的占位；
   - 03:27，R2-P2 入口集成测试（`2026-10-18-r2p2-entry-tests-oc-4`），最后一句是 et-02 跑完再继续，Hermes 上 et-02 才刚开始。
-- 第三次的根因：前两次之后，Claude 在回复里写了“等待不能靠结束本轮，用 `hermes-wait.sh` 等”，opencode-orchestration skill 里也早有“轮询而不要结束本轮”的文字；但 opencode 正常退出（退出码 0）时，启动脚本只记录退出码，不看这一批到底做没做完。所以文字提醒没在出错的那一刻生效。
+- 第三次的根因：前两次之后，Claude 在回复里写了“等待不能靠结束本轮，用 hermes-wait.sh 等”，opencode-orchestration skill 里也早有“轮询而不要结束本轮”的文字；但 opencode 正常退出（退出码 0）时，启动脚本只记录退出码，不看这一批到底做没做完。所以文字提醒没在出错的那一刻生效。
 - 硬约束（2026-10-18，opencode-orchestration skill，agent-skills 仓库提交 `63ff027`）：
-  - `oc-launch.sh` 启动新会话前运行 `scripts/stop-file.py pick <简报>`：简报必须写明恰好一个还不存在的停止文件路径（以 `stop.md` 或 `stop-数字.md` 结尾），否则打印 `STOP_FILE_UNCLEAR`、退出码 2，什么都不启动；续跑时停止文件已经存在则打印 `STOP_FILE_EXISTS` 拒绝。
-  - opencode 改由 `scripts/oc-run.sh` 运行：退出码为 0 而停止文件不存在、为空或含占位（`待填写`、`待补充`、`TBD`、“本节……填写”）时，自动用同一会话续跑，告诉代理先等完自己的任务再写停止文件，并在 `<前缀>.err` 里记 `AUTO_RESUME <次数>`；续跑次数用完（`OC_AUTO_RESUMES`，默认 2）仍没写完，就留下 `<前缀>.unfinished`，`oc-watch.py` 报 `EXITED ... UNFINISHED`。
+  - [oc-launch.sh](https://github.com/sixianli/himawari-agent/blob/a56903d808de68423561a52d5e4db4b0b622191b/.claude/skills/opencode-orchestration/scripts/grok-launch.sh) 启动新会话前运行 `scripts/stop-file.py pick <简报>`：简报必须写明恰好一个还不存在的停止文件路径（以 `stop.md` 或 `stop-数字.md` 结尾），否则打印 [STOP_FILE_UNCLEAR](https://github.com/sixianli/himawari-agent/blob/a56903d808de68423561a52d5e4db4b0b622191b/.claude/skills/opencode-orchestration/scripts/oc-launch.sh)、退出码 2，什么都不启动；续跑时停止文件已经存在则打印 [STOP_FILE_EXISTS](https://github.com/sixianli/himawari-agent/blob/a56903d808de68423561a52d5e4db4b0b622191b/.claude/skills/opencode-orchestration/scripts/oc-launch.sh) 拒绝。
+  - opencode 改由 scripts/oc-run.sh 运行：退出码为 0 而停止文件不存在、为空或含占位（`待填写`、`待补充`、`TBD`、“本节……填写”）时，自动用同一会话续跑，告诉代理先等完自己的任务再写停止文件，并在 `<前缀>.err` 里记 `AUTO_RESUME <次数>`；续跑次数用完（[OC_AUTO_RESUMES](https://github.com/sixianli/himawari-agent/blob/a56903d808de68423561a52d5e4db4b0b622191b/.claude/skills/opencode-orchestration/scripts/oc-launch.sh)，默认 2）仍没写完，就留下 `<前缀>.unfinished`，[oc-watch.py](https://github.com/sixianli/himawari-agent/blob/a56903d808de68423561a52d5e4db4b0b622191b/.claude/skills/opencode-orchestration/tests/test_oc_server_steer_watch.py) 报 `EXITED ... UNFINISHED`。
   - 验证：skill 新增 9 个测试，改动前 7 个失败；改动后整套 100 个测试通过。用真实材料重现：第二次那份留着占位的停止文件被判为没写完（`finished` 退出码 1，会触发自动续跑）；本批两份新简报都只选出各自的停止文件；接线简报的停止文件已存在，按新会话启动时被拒绝。
 - 限制：只能发现“停止文件没写完”这一种没做完；停止文件写完了但内容不实，仍要靠 Claude 审核（见[审核时直接采信代理自报的检查结果](#trust-reported-checks)）。
 
@@ -615,7 +617,7 @@ date: "2026-10-13"
 - 反复出现的情况：R2-P2 给前台工具加了常驻 SRT 任务环境（`backendRef` 为 `srt-task-environment`，一轮对话里的工具复用同一个已启动的沙箱）。原来只有一次性 SRT（`srt`，每次调用单独起一个沙箱）。几段对所有后端都该生效的共用逻辑——判断“工具从未启动”、到期结果恢复、运行中资源显示、工作区冲突排队——只认一次性路径的证据或只接在一次性路径的入口上，常驻路径走到时要么卡住，要么抛错让 Agent 服务退出。
 - 为什么要紧：Linux 上前台工具一律走常驻路径（`apps/agent-service/src/production-sandbox-services.ts:186-195`），所以这类遗漏在生产上一定会被走到；D-49 会让 Agent 服务每次重启后就绪即崩溃。
 - 再次发生的证据：
-  - 2026-10-18 20:05 D-43：已保留、从未绑定的常驻调用在 Run 运行期间既不释放也不交付结果，“从未启动”判定只认一次性路径的三种依据（`.agents/tasks/round2-tool-execution/plan.md` 当天 20:05 一条）。
+  - 2026-10-18 20:05 D-43：已保留、从未绑定的常驻调用在 Run 运行期间既不释放也不交付结果，“从未启动”判定只认一次性路径的三种依据（.agents/tasks/round2-tool-execution/plan.md 当天 20:05 一条）。
   - 2026-10-18 21:14 D-48：运行中资源投影没读任务环境调用登记，常驻调用一直显示“正在准备”。
   - 2026-10-18 22:09 D-49：到期结果恢复无条件读一次性控制工件 `sandbox-control:`，常驻记录没有这个工件，抛错经调度循环让服务退出；存储层 `assertDeadlineArtifacts` 也对所有后端要求该工件。
   - 2026-10-18 22:50 D-51：工作区被另一个 Run 未确认占用时，一次性路径排队等待，常驻路径直接拒绝（第四次）。
@@ -639,19 +641,19 @@ date: "2026-10-13"
 - 发生记录：
   - 2026-10-18 19:55：第六次“第 3 层加候选包”链的第一版写成 `[ "$RC3" = 0 ] || stop "LAYER3_RC $RC3"`，把预期的 1 当失败停下（`.ci-output/handoff/2026-10-18-r2p2-chain-rereview-stop.md`）。
   - 2026-10-18：交接文件 `.ci-output/handoff/2026-10-18-claude-session-handoff.md` 第 7 节把它记为第二次；之前的预防只是交接文件和简报里的一句提醒。
-  - 2026-10-19：云测试账号的 `ci-lane.sh` 新加 `l3` 模式，用通用的 `step` 函数运行 `local.mjs`，`step` 把原始退出码写成 `layer3=1 seconds=…`，结尾的判定只要看到非零就报 `FAILED`。
+  - 2026-10-19：云测试账号的 ci-lane.sh 新加 `l3` 模式，用通用的 `step` 函数运行 `local.mjs`，`step` 把原始退出码写成 `layer3=1 seconds=…`，结尾的判定只要看到非零就报 `FAILED`。
 - 第三次的根因：判定规则只写在提醒里，每个新脚本都要重新想起“不能看退出码”；而按退出码判定是写脚本时最顺手的写法，复用通用的 `step` 函数时尤其看不出来。没有任何东西在脚本到达测试主机之前检查它怎么判定第 3 层。
 - 硬约束（2026-10-19 写好，2026-10-21 审核通过并启用）：
   - 判定脚本 `.ci-output/handoff/scripts/layer3-verdict.py <local-summary.json> <被测提交> <要求的检查>`：读 `local.mjs` 写出的 `local-summary.json`，要求 `context.testedSha` 等于被测提交、`checks` 恰好是要求的几项（同一项出现两次判 `DUPLICATE_CHECK`）且都是 `passed`、`publicationFailures` 里只有 `SECURITY_REVIEW_HTTP_NOT_FOUND`；全部满足打印 `LAYER3_VERDICT_PASSED` 并以 0 退出，否则打印 `LAYER3_VERDICT_FAILED <原因>` 并以 1 退出。文件缺失、不是 JSON、字段缺失都判失败。
-  - 云测试账号的 `ci-lane.sh` `l3` 分支：`local.mjs` 的退出码只接受 0 和 1，其他值写 `layer3_abnormal_exit=<退出码>` 并判失败；是 0 或 1 时用锁定的 Python（`$HIMAWARI_CI_PYTHON -I`）运行判定脚本，`layer3=` 一行记判定结果，`seconds=` 从 `local.mjs` 启动时算起。两份脚本已放到 `/srv/himawari-ci/lane/`。
-  - 所有代理：往测试主机传文件只能经过 `hermes-upload.sh` 和 `ci-upload.sh`。两个入口在连接之前检查要上传的文件：出现 `local.mjs` 而没有出现 `layer3-verdict.py` 时打印 `*_LAYER3_VERDICT_MISSING` 并以退出码 72 结束，不连接（[代理工具 Runbook 的排障表](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/runbooks/agent-tooling-runbook.md#troubleshooting)）。
+  - 云测试账号的 ci-lane.sh `l3` 分支：`local.mjs` 的退出码只接受 0 和 1，其他值写 `layer3_abnormal_exit=<退出码>` 并判失败；是 0 或 1 时用锁定的 Python（`$HIMAWARI_CI_PYTHON -I`）运行判定脚本，`layer3=` 一行记判定结果，`seconds=` 从 `local.mjs` 启动时算起。两份脚本已放到 `/srv/himawari-ci/lane/`。
+  - 所有代理：往测试主机传文件只能经过 `hermes-upload.sh` 和 ci-upload.sh。两个入口在连接之前检查要上传的文件：出现 `local.mjs` 而没有出现 `layer3-verdict.py` 时打印 `*_LAYER3_VERDICT_MISSING` 并以退出码 72 结束，不连接（[代理工具 Runbook 的排障表](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/runbooks/agent-tooling-runbook.md#troubleshooting)）。
   - 验证：
     - `.ci-output/handoff/scripts/test-layer3-verdict.sh` 的 11 个样例全部通过（通过、`test` 失败、多一项、少一项、重复项、别的发布失败、被测提交不同、缺字段、缺文件、坏 JSON、期望提交不同）。
-    - `.ci-output/handoff/scripts/test-ssh-wrappers.sh` 115 个用例全部通过；其中每个入口有 2 拒 2 放的上传用例。改动前的入口把按退出码判定的旧版 `ci-lane.sh` 直接发出（替身 `ssh` 被调用）；第一轮只匹配 `scripts/ci/local.mjs` 的入口把“先 `cd scripts/ci` 再 `node local.mjs`”的文件直接发出；现在的入口对两者都以 72 拒绝。
+    - `.ci-output/handoff/scripts/test-ssh-wrappers.sh` 115 个用例全部通过；其中每个入口有 2 拒 2 放的上传用例。改动前的入口把按退出码判定的旧版 ci-lane.sh 直接发出（替身 `ssh` 被调用）；第一轮只匹配 `scripts/ci/local.mjs` 的入口把“先 `cd scripts/ci` 再 `node local.mjs`”的文件直接发出；现在的入口对两者都以 72 拒绝。
     - 真实报告：Hermes 第 3 层 `cc-layer3-882cc959-r1` 的 `local-summary.json`（`local.mjs` 退出码 1，构建和测试都通过）判为通过；云测试账号 `r2p2-l3-01` 的报告（`test` 为 `infrastructure_failed`）在本机和云上用锁定的 Python 都判为失败。证据在本地 `.ci-output/handoff/layer3-verdict/` 的 `before/`、`after/`、`before-2/`、`after-2/`、`claude-review-2/`。
   - 限制：
     - 入口检查只看文字：只在说明文字里提到 `local.mjs` 的脚本也会被拦（改文字即可）；文件里提到 `layer3-verdict.py` 却不真正用它判定时拦不住，仍靠审核。
-    - 已经在测试主机上的旧脚本（例如 Hermes 上的 `run-l3w.sh` 和另外 7 个调用 `local.mjs` 的脚本）不受影响，下次上传时会被拦下，届时改成用判定脚本。
+    - 已经在测试主机上的旧脚本（例如 Hermes 上的 run-l3w.sh 和另外 7 个调用 `local.mjs` 的脚本）不受影响，下次上传时会被拦下，届时改成用判定脚本。
 
 [回到目录](#编码代理反复犯的错误)
 
@@ -661,7 +663,7 @@ date: "2026-10-13"
 
 - 反复出现的情况：第 0 层（改产品代码前后跑的定向测试）的文件清单由写方案的人凭印象挑，漏掉了直接引用被改文件的测试，要等第 2 层（整个受影响的 Vitest 项目）才暴露，每次多花一整轮测试。
 - 发生记录：
-  - 2026-10-19 D-52（提交 `882cc959`）：改了 `apps/execution-worker/src/production-sandbox-execution-v2.ts`，漏了直接引用它的 `test/integration/sandbox-v2-container-route.test.ts`，记在 `.agents/tasks/round2-tool-execution/plan.md`。
+  - 2026-10-19 D-52（提交 `882cc959`）：改了 `apps/execution-worker/src/production-sandbox-execution-v2.ts`，漏了直接引用它的 `test/integration/sandbox-v2-container-route.test.ts`，记在 .agents/tasks/round2-tool-execution/plan.md。
   - 2026-10-22 D-54（提交 `9969a646`）：同样改了那个文件，第 0 层只跑 3 个文件；第 2 层发现 `sandbox-v2-container-route.test.ts` 整体替换 `@himawari-agent/runtime-sandbox` 的替身缺新导出的错误类，5 个用例超时（`plan.md`）。
   - 2026-10-22 D-55（提交 `51f8b927`）：改了 `packages/runtime-sandbox/src/job-host-main.ts`，第 0 层只跑了集成文件，漏了 `packages/runtime-sandbox/test/job-host-main.unit.test.ts`；第 2 层 `d55-l12-01` 发现一个旧用例在新行为下失败（`.ci-output/handoff/2026-10-22-d55-decision.md`）。
 - 为什么要紧：第 2 层要构建并跑整个项目，在 Hermes 上一轮二三十分钟；漏掉的文件本来几秒就能在第 0 层发现。三次里有一次还白跑了一整轮第 1、2 层。
@@ -669,11 +671,11 @@ date: "2026-10-13"
 - 第三次的根因：前两次之后的预防只有 `plan.md` 里的记录和交接文件里的计数，选第 0 层清单那一刻没有任何东西检查；而“哪些测试直接引用了被改文件”可以从代码机械算出。三次的提交说明正文其实都写到了漏掉的文件（第 2 层发现后补写的），所以只在说明全文里找文件名的检查三次都会放行。
 - 硬约束（2026-10-22，[ADR 0066](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0066-layer0-related-tests-declared.md)）：
   - 检查脚本 `check-layer0-tests.py`，装在仓库共享 git 目录（`git rev-parse --git-common-dir`）的 `hooks/` 下，是本机文件，不进仓库；SHA-256 为 `0b66a9ec3683226a6e5776307163815338c7cbdb2bcfbc2c7786ac0de35680e1`，来源副本在 `.ci-output/handoff/l0-guard/`。`derive` 按 ADR 0066 的规则推导直接相关的测试：相对路径引用被改文件、同包同名、被改文件的导出有增删时整体替换它所在包的测试；测试文件按 `ci/policy.json` 的测试项目判定。
-  - 同目录的 `commit-msg`（SHA-256 `9613e6e6eb6098f2ba1c9222194c9c0f526d4da09ac8d06da3aab02babb8aa01`）和 `pre-push`（SHA-256 `e6f64f47d03d225185c90f1d5ca0cee3b2c44e41cdb574848d65878993264334`；2026-10-25 起仓库根目录 `DELIVERY_MODE` 为 `fast` 时两个钩子打印 `DELIVERY_MODE_FAST_SKIP_LAYER0` 直接放行，见 [ADR 0073](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0073-fast-delivery-mode.md)）钩子运行它：改了 `apps/*/src/`、`packages/*/src/` 的提交，说明里必须逐行写 `Layer-0-tests: <路径>` 包含每个推导出的文件（推导为空时写 `Layer-0-tests: none`），否则拒绝提交；推送前对每个待推送提交按“父提交到该提交”再查一遍，覆盖 `--amend` 和跳过 `commit-msg` 的提交。合并提交打印 `L0_RELATED_TESTS_SKIPPED_MERGE` 后放行。所有工作树、所有代理的提交和推送都经过这两个钩子；opencode 和 Grok 的禁止规则已拒绝 `--no-verify`、改 `hooksPath` 和直接操作 `.git/hooks`。
+  - 同目录的 `commit-msg`（SHA-256 `9613e6e6eb6098f2ba1c9222194c9c0f526d4da09ac8d06da3aab02babb8aa01`）和 `pre-push`（SHA-256 `e6f64f47d03d225185c90f1d5ca0cee3b2c44e41cdb574848d65878993264334`；2026-10-25 起仓库根目录 `DELIVERY_MODE` 为 `fast` 时两个钩子打印 DELIVERY_MODE_FAST_SKIP_LAYER0 直接放行，见 [ADR 0073](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0073-fast-delivery-mode.md)）钩子运行它：改了 `apps/*/src/`、`packages/*/src/` 的提交，说明里必须逐行写 `Layer-0-tests: <路径>` 包含每个推导出的文件（推导为空时写 `Layer-0-tests: none`），否则拒绝提交；推送前对每个待推送提交按“父提交到该提交”再查一遍，覆盖 `--amend` 和跳过 `commit-msg` 的提交。合并提交打印 `L0_RELATED_TESTS_SKIPPED_MERGE` 后放行。所有工作树、所有代理的提交和推送都经过这两个钩子；opencode 和 Grok 的禁止规则已拒绝 `--no-verify`、改 `hooksPath` 和直接操作 `.git/hooks`。
   - 验证：自测 `.ci-output/handoff/l0-guard/selftest.sh <仓库>`（SHA-256 `d131d0db36da7539a5f7f5c968150f821bf4d704053128a27367cba2deb2151c`）78 项全部通过（2026-10-22，`selftest-04.log`），结果在 `.ci-output/handoff/l0-guard/` 下。其中：用三次当时第 0 层实际跑过的文件写成声明行，检查都拒绝并点名漏掉的文件，补上后放行；三次的真实提交说明（文件名只在正文里）都被拒；临时仓库里用真实的 `git commit` 和 `git push` 验证只改文档或测试不需要声明，缺声明、漏文件、写了不是测试的路径被拒，同一提交里改 `ci/policy.json` 排除必需测试仍被拒，`--no-verify` 跳过的提交和 `--amend` 去掉声明的提交被 `pre-push` 拦下，合并提交打印跳过。审核：opencode（DeepSeek V4.1 Flash）四轮逐行审核，记录在 `.ci-output/handoff/2026-10-22-l0-omission-oc-stop-2.md` 到 `-stop-4.md`。
 - 2026-10-29 更新（[ADR 0108](adr/0108-layer0-check-in-repository-and-fast-mode.md)，Andy 同意）：快速模式下钩子直接放行、云端会话根本没有检查脚本，是这几次又漏掉的原因。检查脚本原样（SHA-256 `0b66a9ec…`）放进仓库 `scripts/layer0-tests/check-layer0-tests.py`，钩子放在 `scripts/git-hooks/`，`npm run check` 把 `core.hooksPath` 指过去；快速模式下也检查。复现：对快速模式下漏跑的提交 `bfa6162` 运行 `check-commit`，以 `L0_RELATED_TESTS_UNDECLARED` 拒绝并点名当时漏掉的 `test/integration/sqlite-sandbox-execution-v2.test.ts`，用时约 1.2 秒；`test/tooling/layer0-hooks.test.mjs` 用旧的“快速模式放行”钩子会失败，换新钩子通过。
   - 限制：只证明声明里包含推导出的文件，不证明它们真的跑过并通过；经包名引用又不整体替换的测试、经上层调用者到达的场景测试、按构建产物路径引用的产品路径测试找不到，仍靠写方案的人判断和第 2 层；改 `test/fixtures/` 下的辅助文件不要求引用者；钩子只在本机生效，新克隆要按[代理工具 Runbook](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/runbooks/agent-tooling-runbook.md#procedure) 安装。
-- 2026-11-08 又一次（PR #282，I-84）：改了 `apps/agent-service/src/production-sandbox-tool-result.ts` 里给模型看的上限说明，第 0 层只跑了直接引用它的那几个文件，没跑 `apps/agent-service/test/prompt-catalog.unit.test.ts`。那条门槛扫 `apps/*/src`、`packages/*/src` 下所有字符串字面量，发现提示词标记词（`你是`、`只返回`、`只输出`、`不要编造` 等）出现在提示词目录之外就失败；新写的那句「请改成只输出需要的部分」带了 `只输出`，以 `PROMPT_OUTSIDE_CATALOG apps/agent-service/src/production-sandbox-tool-result.ts:162 只输出` 失败。它按路径扫源码、不 import 被改的文件，所以 `check-layer0-tests.py derive` 推不出它，三轮模型复核读的是改动差异也没有发现，直到合并前跑整个 `apps/agent-service/test` 才暴露。处理：那句改成「请缩小输出范围后重试」，门槛恢复通过。教训：凡是改了会发给模型或显示给用户的固定文字，第 0 层清单里必须手工加上按路径扫源码的门槛（`apps/agent-service/test/prompt-catalog.unit.test.ts`、`npm run check:glossary`），`derive` 永远找不到这一类，因为它们按路径扫源码、不 import 被改的文件。（原来这里还列了 `test/tooling/safe-tool-reason-codes.test.mjs`，它比对界面原因码白名单的两份拷贝；PR #312 把白名单合成一处导出之后这个文件已删除。）
+- 2026-11-08 又一次（PR #282，I-84）：改了 `apps/agent-service/src/production-sandbox-tool-result.ts` 里给模型看的上限说明，第 0 层只跑了直接引用它的那几个文件，没跑 `apps/agent-service/test/prompt-catalog.unit.test.ts`。那条门槛扫 `apps/*/src`、`packages/*/src` 下所有字符串字面量，发现提示词标记词（`你是`、`只返回`、`只输出`、`不要编造` 等）出现在提示词目录之外就失败；新写的那句「请改成只输出需要的部分」带了 `只输出`，以 `PROMPT_OUTSIDE_CATALOG apps/agent-service/src/production-sandbox-tool-result.ts:162 只输出` 失败。它按路径扫源码、不 import 被改的文件，所以 `check-layer0-tests.py derive` 推不出它，三轮模型复核读的是改动差异也没有发现，直到合并前跑整个 `apps/agent-service/test` 才暴露。处理：那句改成「请缩小输出范围后重试」，门槛恢复通过。教训：凡是改了会发给模型或显示给用户的固定文字，第 0 层清单里必须手工加上按路径扫源码的门槛（`apps/agent-service/test/prompt-catalog.unit.test.ts`、`npm run check:glossary`），`derive` 永远找不到这一类，因为它们按路径扫源码、不 import 被改的文件。（原来这里还列了 test/tooling/safe-tool-reason-codes.test.mjs，它比对界面原因码白名单的两份拷贝；PR #312 把白名单合成一处导出之后这个文件已删除。）
 
 [回到目录](#编码代理反复犯的错误)
 
@@ -685,7 +687,7 @@ date: "2026-10-13"
 - 发生记录：
   - 2026-10-26 第一次尝试：`acceptance/cloud/probe-source` 里有 3 个探针源文件（上线前在生产机上试运行沙箱工具的测试程序）还是第九次的版本，S6 验收失败后自动回退。
   - 2026-10-26 冻结前复查：`systemd/S7-startup-readback.mjs` 里的 `memoryPath` 还是第九次的值，上线前发现并改成 `memory-engine-production`。
-  - 2026-10-26 第四次尝试：`systemd/S7-switch-start-readback.py` 读取数据库升级后的记录时仍用第九次的文件名 `s7-catalog-after51.json`；第十次把数据库升到第 55 版，写出的文件叫 `s7-catalog-after55.json`。S7 切换启动时报 `TENTH_SWITCH_MAINTENANCE_EVIDENCE_CHANGED:s7-catalog-after51.json`，自动回退，服务停了约 17 分钟。
+  - 2026-10-26 第四次尝试：`systemd/S7-switch-start-readback.py` 读取数据库升级后的记录时仍用第九次的文件名 s7-catalog-after51.json；第十次把数据库升到第 55 版，写出的文件叫 s7-catalog-after55.json。S7 切换启动时报 `TENTH_SWITCH_MAINTENANCE_EVIDENCE_CHANGED:s7-catalog-after51.json`，自动回退，服务停了约 17 分钟。
 - 第三次的根因：前两次之后只是逐个改掉发现的文件，没有检查“后面的步骤要读的文件，前面的步骤到底会不会写出来”。`check-packet-consistency.py`（`deploy.sh` 上线前必跑的操作包自检）只核对文件哈希和引用，不核对步骤之间交接的文件名。
 - 硬约束（2026-10-26）：
   - `check-packet-consistency.py` 新增 `EVIDENCE_NAME_WITHOUT_PRODUCER`：对 `systemd/S7-switch-start-readback.py` 和 `systemd/S7-startup-readback.mjs`，找出它们读取的每个 `s<数字>…json` 文件名，要求这个名字由脚本自己写出（`retain_json`），或出现在操作包里另一个脚本（`.py`、`.mjs`、`.sh`、`.sql`，不含 `fixtures`），或是 `run-maintenance.mjs` 按步骤名拼出的 `<步骤名小写>-result.json`。找不到就报错，`deploy.sh` 拒绝上线（退出码 3），`rollback.sh` 也拒绝运行。
@@ -694,11 +696,11 @@ date: "2026-10-13"
   - 限制：只覆盖这两个读取脚本；从第九次复制来、名字仍然合法但内容已过时的文件（例如第一次尝试的探针源文件）这项检查发现不了，那一类靠 `check-packet-consistency.py` 已有的哈希核对和 Hermes 上的 16 项操作包检查。
 - 再次发生（2026-10-26，第十二次上线第一次尝试）：
   - `systemd/S7-switch-start-readback.py` 核对原配置时还按第十一次的前提，要求原配置里读网页上限（`runPolicy.publicFetch.maximumBytes`）仍是 32768，再由它改成 102400；第十一次早已改成 102400。停服之后 S7 报 `TWELFTH_SWITCH_ORIGINAL_PUBLIC_FETCH_CHANGED`，新版本没有启动。同一份“新配置应该长什么样”的预期写了两遍：`maintenance/maintenance-common.mjs` 里的那份改了并且有测试，S7 的 Python 那份没改、也没有任何测试运行它。
-  - 自动回退随后失败：`scripts/delivery-mode/rollback.py` 按数据库版本拼步骤名和恢复点报告名（`S9_RAW_RESTORE56`、`s3_copy56-result.json`），而操作包里这些步骤一直叫 `S3_COPY51`、`S9_RAW_RESTORE51`、`S9_RAW_CONTROL51`。回退脚本的测试只拿第六次（数据库第 51 版）的操作包跑过，名字恰好对上。服务停了约 15 分钟，改正回退脚本后手动回退恢复。
+  - 自动回退随后失败：`scripts/delivery-mode/rollback.py` 按数据库版本拼步骤名和恢复点报告名（S9_RAW_RESTORE56、s3_copy56-result.json），而操作包里这些步骤一直叫 `S3_COPY51`、`S9_RAW_RESTORE51`、`S9_RAW_CONTROL51`。回退脚本的测试只拿第六次（数据库第 51 版）的操作包跑过，名字恰好对上。服务停了约 15 分钟，改正回退脚本后手动回退恢复。
 - 硬约束（2026-10-26，第二次）：
-  - `scripts/delivery-mode/test_rollback.py` 的 `PlanTest` 要求回退计划要跑的步骤都在操作包 `steps/run-step.py` 的步骤表里，恢复点报告名等于 `deploy.sh` 实际运行的那个 S3 步骤名加 `-result.json`。拿第十二次的操作包跑，旧的 `rollback.py` 让这项测试失败（`S9_RAW_RESTORE56` 不在步骤表里），改成固定的包内步骤名后通过（Hermes `himawari-tests/twelfth/rbt-new.log`）。
-  - 操作包新增 `systemd/verify-switch-config-fixtures.py`，`twelfth-freeze-tools/run-packet-checks.sh` 每次出包都跑：它从 S7 脚本里取出核对原配置的函数，用和 `maintenance/verify-fixtures.mjs` 同样形状的配置运行，要求算出的新配置与 `maintenance-common.mjs` 算出的逐字节相同，并要求 7 种旧值或缺项都被拒绝。对第一次尝试的 S7 脚本它报 `TWELFTH_SWITCH_ORIGINAL_PUBLIC_FETCH_CHANGED` 并以 1 退出，对改好的通过 9 项（Hermes `himawari-tests/twelfth/repro-old-s7.log`、`repro-new-s7.log`）。改好的函数还在生产机上只读核对过：对生产机的原配置，它算出的结果和维护脚本写出的 `s7-config-apply.json` 一致。
-  - 限制：这项出包检查和 `run-packet-checks.sh` 都在 `.ci-output/`（不进仓库），靠复制操作包带到下一次；`deploy.sh` 不会因为没跑出包检查而拒绝上线。
+  - `scripts/delivery-mode/test_rollback.py` 的 `PlanTest` 要求回退计划要跑的步骤都在操作包 `steps/run-step.py` 的步骤表里，恢复点报告名等于 `deploy.sh` 实际运行的那个 S3 步骤名加 `-result.json`。拿第十二次的操作包跑，旧的 `rollback.py` 让这项测试失败（S9_RAW_RESTORE56 不在步骤表里），改成固定的包内步骤名后通过（Hermes `himawari-tests/twelfth/rbt-new.log`）。
+  - 操作包新增 `systemd/verify-switch-config-fixtures.py`，twelfth-freeze-tools/run-packet-checks.sh 每次出包都跑：它从 S7 脚本里取出核对原配置的函数，用和 `maintenance/verify-fixtures.mjs` 同样形状的配置运行，要求算出的新配置与 `maintenance-common.mjs` 算出的逐字节相同，并要求 7 种旧值或缺项都被拒绝。对第一次尝试的 S7 脚本它报 `TWELFTH_SWITCH_ORIGINAL_PUBLIC_FETCH_CHANGED` 并以 1 退出，对改好的通过 9 项（Hermes `himawari-tests/twelfth/repro-old-s7.log`、`repro-new-s7.log`）。改好的函数还在生产机上只读核对过：对生产机的原配置，它算出的结果和维护脚本写出的 `s7-config-apply.json` 一致。
+  - 限制：这项出包检查和 run-packet-checks.sh 都在 `.ci-output/`（不进仓库），靠复制操作包带到下一次；`deploy.sh` 不会因为没跑出包检查而拒绝上线。
 - 为什么前两道硬约束还不够（2026-10-26）：两道都是“复制之后再查”，只能查出已经想到的那类旧值；它们本身也在 `.ci-output/`，靠复制带到下一次。把操作包搬进仓库时又发现一处没被任何检查发现的旧副本：包里带的 `scripts/operations/workspace-lifecycle-audit.mjs` 只认到数据库第 56 版，`main` 上的同名文件已改成认 57 版（提交 `bfa6162`），第十三次升库到 57 版时会在停服后失败。
 - 硬约束（2026-10-26，第三次，[ADR 0086](adr/0086-generate-release-packets-from-parameters.md)）：
   - 操作包不再复制：仓库里的 `scripts/delivery-mode/make-packet.py` 用模板 `scripts/delivery-mode/packet-template/` 按参数生成。“第几次”、旧版本目录、原配置的模型上限和读网页上限从生产机只读读出，数据库版本和要补的迁移从生产 S0 读回和这个提交的代码推出，包里带的仓库文件副本按这个提交刷新。没填的占位、改写了要保留的表的迁移，都在出包时拒绝。
@@ -721,7 +723,7 @@ date: "2026-10-13"
 - 为什么要紧：每一次都是生产上的新版本对 Andy 完全或部分不能用，Andy 要自己当测试员，然后再等一次修复和上线。
 - 第三次的根因：前几次之后只修了各自的那个问题（更新前端目录、改上下文窗口），并在上线脚本里多读回几项服务端的值；从来没有一步要求“在浏览器里打开这个版本，按用户的用法走一遍”。`deploy.sh`（上线脚本）对这件事没有任何条件，代理只读回服务端状态就能上线。
 - 硬约束（2026-10-26）：
-  - `scripts/delivery-mode/deploy.sh` 在上线前检查之前先运行 `scripts/delivery-mode/browser-acceptance-gate.py`。操作包里必须有 `browser-acceptance/walkthrough.json`，其中的 `artifactSha256` 必须等于操作包 `inputs/bindings.json` 里候选安装包的 `candidate.archiveSha256`，并且 7 项检查都记为通过：首页打开并登录（`accept-homepage`）、设置里“允许联网搜索”能勾上（`accept-search-toggle`）、搜新闻有带网址的结果且过程里有“搜索网页”这一步（`accept-news-search`）、长回答从第 1 段到最后一段都显示（`accept-long-answer`）、模型跑一条统计行数的命令并在回答里看到命令真实算出的结果（`accept-run-command`，2026-10-29 因 I-10 加入）、记忆页能打开且没有报错（`accept-memory-page`）、服务重启后已经打开的页面仍能用开关和搜索（`accept-after-restart`）。缺文件、安装包对不上、任何一项没通过，`deploy.sh` 以退出码 5 停下，结果为 `no-browser-acceptance`，生产机上什么都不动。
+  - `scripts/delivery-mode/deploy.sh` 在上线前检查之前先运行 `scripts/delivery-mode/browser-acceptance-gate.py`。操作包里必须有 browser-acceptance/walkthrough.json，其中的 `artifactSha256` 必须等于操作包 inputs/bindings.json 里候选安装包的 `candidate.archiveSha256`，并且 7 项检查都记为通过：首页打开并登录（`accept-homepage`）、设置里“允许联网搜索”能勾上（`accept-search-toggle`）、搜新闻有带网址的结果且过程里有“搜索网页”这一步（`accept-news-search`）、长回答从第 1 段到最后一段都显示（`accept-long-answer`）、模型跑一条统计行数的命令并在回答里看到命令真实算出的结果（`accept-run-command`，2026-10-29 因 I-10 加入）、记忆页能打开且没有报错（`accept-memory-page`）、服务重启后已经打开的页面仍能用开关和搜索（`accept-after-restart`）。缺文件、安装包对不上、任何一项没通过，`deploy.sh` 以退出码 5 停下，结果为 `no-browser-acceptance`，生产机上什么都不动。
   - 这个文件只能由产品路径测试 `test/integration/product-path-browser.test.ts` 里的“release acceptance in a real browser”写出：它在 Hermes 上把这个安装包装好，用 Chromium 打开真实页面，联网搜索走真实的 Exa 服务，测试结束时写出 `browser-acceptance.json`，再原样复制到操作包里。
   - 验证：`scripts/delivery-mode/test_deploy.py` 新增三项，缺文件、换了安装包、一项失败或缺一项时 `deploy.sh` 都以 5 退出且一个上线步骤都没跑（Hermes `news-latency/evidence/ck13/` 与 `ck16/`，`test-deploy-rc=0`）。第十一次的操作包没有这份文件，检查报 `BROWSER_ACCEPTANCE_MISSING` 并拒绝（`ck13/`，`gate-eleventh-rc=1`）。同一个网页验收对第十一次的安装包 `aa563155` 重现了 Andy 遇到的问题：前五项通过，“服务重启后已经打开的页面”这一项在设置里等了 60 秒开关仍勾不上，测试失败（`pp15-old-accept/`）；对修好的 `470b6d30` 六项全部通过（`pp15-new-accept/`，2026-10-26T10:41:56Z），第十二次操作包带着这份结果通过了检查。
   - 限制：网页验收用的是按脚本回答的模拟模型，证明不了生产上真实模型的配置和生产机的网络；生产上的读回和 Andy 的试用仍然要做。验收每次从新装的数据开始，测不出“上线前已经给过的搜索许可在新版本里失效”这类和旧数据有关的问题，这一类靠 `test/integration/public-search-authorization.test.ts` 覆盖。检查只看文件内容，手写一份同样内容的文件也能通过，所以只能复制测试写出的那份。
@@ -738,7 +740,7 @@ date: "2026-10-13"
   - 2026-11-04：还没合并的 PR #229 新建 `0156-self-hosted-runner-on-hermes.md`，PR #234 新建 `0156-srt-0-0-81-with-a-locked-seccomp-helper.md`，又撞在 0156。
 - 为什么要紧：ADR 编号是全项目引用决定的唯一名字；撞号之后，引用会指错文档，按错的决定去改代码。
 - 硬约束（2026-11-04）：
-  - `npm run check:adr-numbers`（`scripts/check-adr-numbers.mjs`，`npm run check` 的一步）检查 `docs/adr/` 下每个 `.md` 文件的名字都是“四位编号-小写短名.md”（其他扩展名的文件不检查），并且没有两份 ADR 共用一个编号；有就报 `ADR_NUMBER_DUPLICATE` 并以 1 退出。2026-11-09 起还检查标题里的 ADR 编号等于文件名编号（`ADR_NUMBER_TITLE`），以及 `docs/`（不含 `docs/archive`）里指向 ADR 文件的行内链接，文件和锚点都存在（`ADR_LINK_MISSING`、`ADR_LINK_ANCHOR_MISSING`），以及写出的 `docs/adr/…md` 路径（含 `superseded_by` 字段、`[SOURCE: …]` 标记，只认带 `docs/adr/` 前缀的写法，网址里的不算）文件都存在（`ADR_PATH_MISSING`），防改号后漏改。测试在 `test/tooling/adr-numbers.test.mjs`。
+  - `npm run check:adr-numbers`（`scripts/check-adr-numbers.mjs`，`npm run check` 的一步）检查 `docs/adr/` 下每个 `.md` 文件的名字都是“四位编号-小写短名.md”（其他扩展名的文件不检查），并且没有两份 ADR 共用一个编号；有就报 `ADR_NUMBER_DUPLICATE` 并以 1 退出。2026-11-09 起还检查标题里的 ADR 编号等于文件名编号（`ADR_NUMBER_TITLE`），以及 `docs/`（不含 [docs/archive](https://github.com/sixianli/himawari-agent/tree/3b9da266dc1f00e4778e80597a2d524144f8fe2d/docs/archive)）里指向 ADR 文件的行内链接，文件和锚点都存在（`ADR_LINK_MISSING`、`ADR_LINK_ANCHOR_MISSING`），以及写出的 `docs/adr/…md` 路径（含 `superseded_by` 字段、`[SOURCE: …]` 标记，只认带 `docs/adr/` 前缀的写法，网址里的不算）文件都存在（`ADR_PATH_MISSING`），防改号后漏改。测试在 `test/tooling/adr-numbers.test.mjs`。
   - 验证：在改名之前的 main（`f91950b`）上，检查报 `ADR_NUMBER_DUPLICATE 0148` 并以 1 退出；把 Gmail 那份改成 `0158-bring-related-memories-into-gmail-checks.md` 后通过。两份各有 3 处入链。改 Gmail 那份而不改出口那份，是因为出口那份被 ADR 0146 文件开头的 `superseded_by` 字段引用，改它的编号要动 ADR 的生命周期字段；Gmail 那份只有正文里的普通链接。
   - 新建 ADR 前，除了看 main，还要看还没合并的 PR 新加的 `docs/adr/` 文件，取所有这些编号里最大的加一。
   - 限制：检查只能在两个撞号的 PR 先后进了同一棵树时才失败，例如后合并的那个 PR 先把 main 合并进来再跑 `npm run check`；两个 PR 各自单独跑都会通过。

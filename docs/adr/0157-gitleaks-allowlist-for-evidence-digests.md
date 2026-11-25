@@ -6,6 +6,8 @@ supersedes: ""
 superseded_by: ""
 amended_by: "docs/adr/0177-gitleaks-exact-value-allowlist.md"
 date: "2026-11-04"
+covers: "ci/rules/gitleaks.toml, ci/security-exceptions.json, ci/toolchain-lock.json, test/tooling/gitleaks-config.test.mjs"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0157：资格证据里的文件摘要用限定范围的 Gitleaks 白名单放行
@@ -54,7 +56,7 @@ CI（每次推送后 GitHub Actions 自动跑的检查）的安全检查用 Gitl
 
 1. 文件摘要这类“规则把非密钥误认成密钥、而且形状固定”的误报，用 `ci/rules/gitleaks.toml` 里的白名单处理；个别具体的值（合成 token、示例密码等）仍按规范走逐条例外。
 2. 白名单必须同时满足四个限定，缺一个都不行：
-   - `targetRules = ["generic-api-key"]`：只对这一条规则生效。不写这一项的白名单是全局的，Gitleaks 扫当前文件时只要路径对上就跳过整个文件，`condition = "AND"` 不起作用（Gitleaks 8.30.0 源码 `sources/common.go` 的 `shouldSkipPath`）。
+   - `targetRules = ["generic-api-key"]`：只对这一条规则生效。不写这一项的白名单是全局的，Gitleaks 扫当前文件时只要路径对上就跳过整个文件，`condition = "AND"` 不起作用（Gitleaks 8.30.0 源码 `sources/common.go` 的 shouldSkipPath）。
    - `condition = "AND"`：路径和内容两个条件都满足才放行。
    - `paths` 只写出问题的那一个目录，并用 `(?:^|/)` 开头，同时兼容扫当前文件时的绝对路径和扫历史时的仓库相对路径。
    - `regexTarget = "line"`，正则锚定整行，只认 `"带目录和扩展名的路径": "64 位小写十六进制"` 这一种形状。不写 `regexTarget` 时正则只和被认定为密钥的那串值比，永远对不上整行形状。

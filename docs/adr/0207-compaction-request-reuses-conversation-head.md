@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-11-10"
+covers: ".agents/instructions/prompt-prefix.md, packages/runtime-pi/src/pi-runtime-adapter.ts, packages/runtime-pi/test/prompt-prefix.compat.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0207：压缩摘要请求沿用原对话的开头，吃到缓存
@@ -27,14 +29,14 @@ date: "2026-11-10"
 
 Pi（Himawari 用的模型运行库）的自动压缩会另外发一次模型请求，把较早的历史总结成一段摘要。这个请求原来把历史序列化成一条新的用户消息，系统提示换成 Pi 自己的一份，也不带工具，所以请求开头和原对话完全对不上，整段历史按未命中价计算；规则文件 `.agents/instructions/prompt-prefix.md` 第 13 条要求压缩请求沿用原对话的系统提示和工具，一直是“已知差距”。
 
-第一步（PR 346，[事故 I-92](../incidents-and-gates.md#incidents)）先修了更严重的问题：按对话冻结工具时，这个不带工具的摘要请求被我们自己的流函数包装拦下，压缩一次都发不出去。这份 ADR 是第二步：让摘要请求和原对话共用开头。来源：Andy 的待办 BL-20261109-8w6ct3，方案由两个模型各自出方案、再互审（记录在 `.agents/reviews/topic-compaction-cache/`）。
+第一步（PR 346，[事故 I-92](../incidents-and-gates.md#incidents)）先修了更严重的问题：按对话冻结工具时，这个不带工具的摘要请求被我们自己的流函数包装拦下，压缩一次都发不出去。这份 ADR 是第二步：让摘要请求和原对话共用开头。来源：Andy 的待办 BL-20261109-8w6ct3，方案由两个模型各自出方案、再互审（记录在 .agents/reviews/topic-compaction-cache/）。
 
 <a id="premises"></a>
 
 ## 前提
 
 1. Pi 1.5.0 的压缩请求固定 `cacheRetention: "none"`，并把历史序列化成一条用户消息：`node_modules/@earendil-works/pi-coding-agent/dist/core/compaction/compaction.js` 的 `completeSummarization`（“Avoid cache writes for one-off summaries”）和 `generateSummaryWithUsage`（“Serialize conversation to text so model doesn't try to continue it”）。
-2. `session_before_compact` 钩子的事件带 `preparation`（含 `isSplitTurn`、`firstKeptEntryId`）、`branchEntries` 和 `reason`：同一包 `dist/core/extensions/types.d.ts` 的 `SessionBeforeCompactEvent`；返回空则走默认压缩（`agent-session.js` 的 `_runAutoCompaction`，`extensionResult?.compaction` 为空就继续默认流程）。
+2. `session_before_compact` 钩子的事件带 `preparation`（含 `isSplitTurn`、`firstKeptEntryId`）、`branchEntries` 和 `reason`：同一包 `dist/core/extensions/types.d.ts` 的 `SessionBeforeCompactEvent`；返回空则走默认压缩（`agent-session.js` 的 _runAutoCompaction，`extensionResult?.compaction` 为空就继续默认流程）。
 3. `buildSessionProjection(branchEntries)` 返回按顺序排列的投影条目，`prepareCompaction` 就是用它算出要总结的消息：`compaction.js` 的 `prepareCompaction`（“const projection = buildSessionProjection(pathEntries)”），`buildSessionProjection` 和 `convertToLlm` 都从包入口导出（`dist/index.d.ts`）。
 4. Himawari 的所有 Pi 模型请求都经 `packages/runtime-pi/src/pi-runtime-adapter.ts` 的 `governedModelRuntime` 包装，进入 `admitPiStream`（预算准入、出口遮盖、用量记录）。
 5. Claude Code 压缩时“exact same system prompt, user context, system context, and tool definitions as the parent conversation. We prepend the parent's conversation messages, then append the compaction prompt as a new user message at the end”（https://claude.dev/blog/lessons-from-building-claude-code-prompt-caching-is-everything/）；Anthropic API 文档“Send the same `system` prompt and `tools` that you use for the rest of the conversation.”，并说摘要调用“reads the tool definitions but never runs a tool”（https://platform.claude.com/docs/en/build-with-claude/compaction-on-demand）；OpenAI Codex 把总结指令作为最后一个输入项记到历史克隆后面（https://raw.githubusercontent.com/openai/codex/main/codex-rs/core/src/compact.rs）。
@@ -49,7 +51,7 @@ Pi（Himawari 用的模型运行库）的自动压缩会另外发一次模型请
 3. **请求参数和主对话一致。**会话编号沿用上一次普通请求的（Magpie 会话亲和）；不传 Pi 固定的 `cacheRetention: "none"`，改沿用上一次普通请求的设置；模型、推理强度、输出上限仍是 Pi 给的。仍走同一个 `admitPiStream`，预算准入、出口遮盖、窗口检查都照旧。
 4. **摘要请求的用量记为 `other`，不是 `chat`，**不混进对话缓存命中率告警；命中的缓存 token 记在用量表里，可以单独看压缩请求的命中情况。
 5. **测试：**`packages/runtime-pi/test/prompt-prefix.compat.test.ts`（属于 `npm run check:prompt-prefix`）里 `[COMPACT-2]` 两组：端到端一条（摘要请求的工具定义、系统提示和切点前的历史与上一次普通请求相同，包含第一轮、不含切点后的第二轮，末尾是指令，用量记 `other`；撤掉改写，这条失败）；`sharedSummaryContext`、`sharedSummaryOptions` 的单元用例（历史对不上、没有上一次请求、窗口放不下各一条反向用例；会话编号和缓存设置取自上一次普通请求）。`[COMPACT-1]` 只断言摘要请求里至少有一条没有共享开头（走了 Pi 默认请求），证明摘要请求在冻结工具下发得出去；它不证明同一轮里还有改写的请求，也不证明退回的原因；`[COMPACT-3]`：改写后的摘要请求若返回工具调用，不执行任何工具，并写 `PI_COMPACTION_FAILED`。拆分轮、溢出、钩子里切点找不到这几种退回，没有单独的用例，留作后续补测。
-6. **压缩期间一律拒绝工具执行。**摘要请求带着完整工具，模型若回工具调用，产品侧的工具入口（`assertKnown`）在 `compaction_start` 到 `compaction_end` 之间直接抛 `RUNTIME_TOOL_EXECUTION_STOPPED`，不依赖 Pi 的摘要路径恰好不执行工具。`runtime-event-contract.unit.test.ts` 的 `[COMPACT-3]` 用例直接验证：压缩开始后执行工具被拒，压缩结束后恢复；撤掉这个判断，该用例失败。`prompt-prefix.compat.test.ts` 的 `[COMPACT-3]` 只证明端到端下没有产品工具被执行并写 `PI_COMPACTION_FAILED`，不区分是 Pi 没执行还是这道防线拦住。防线不会卡住后面的工具，已在 Pi 1.5.0 源码核实（`@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-44DLKSKE.js`，压缩过的单行文件，搜 `compaction_start`）：手动压缩 `compact()` 在发出 `compaction_start` 之后，成功路径发 `compaction_end`，`catch` 里（失败、被中止、被扩展取消）也发 `compaction_end`，`finally` 清理状态；自动压缩 `_runAutoCompaction()` 先置 `started=true` 再发 `compaction_start`，之后任何抛错都进 `catch`，`started` 为真就发 `compaction_end`（带 `aborted` 和 `errorMessage`）。`compacting` 变量属于单次运行，不跨运行。
+6. **压缩期间一律拒绝工具执行。**摘要请求带着完整工具，模型若回工具调用，产品侧的工具入口（`assertKnown`）在 `compaction_start` 到 `compaction_end` 之间直接抛 `RUNTIME_TOOL_EXECUTION_STOPPED`，不依赖 Pi 的摘要路径恰好不执行工具。`runtime-event-contract.unit.test.ts` 的 `[COMPACT-3]` 用例直接验证：压缩开始后执行工具被拒，压缩结束后恢复；撤掉这个判断，该用例失败。`prompt-prefix.compat.test.ts` 的 `[COMPACT-3]` 只证明端到端下没有产品工具被执行并写 `PI_COMPACTION_FAILED`，不区分是 Pi 没执行还是这道防线拦住。防线不会卡住后面的工具，已在 Pi 1.5.0 源码核实（`@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-44DLKSKE.js`，压缩过的单行文件，搜 `compaction_start`）：手动压缩 `compact()` 在发出 `compaction_start` 之后，成功路径发 `compaction_end`，`catch` 里（失败、被中止、被扩展取消）也发 `compaction_end`，`finally` 清理状态；自动压缩 _runAutoCompaction() 先置 `started=true` 再发 `compaction_start`，之后任何抛错都进 `catch`，`started` 为真就发 `compaction_end`（带 `aborted` 和 `errorMessage`）。`compacting` 变量属于单次运行，不跨运行。
 7. **日志：**每次摘要请求写一条服务日志 `compaction.summary_request`，带 `sharedHead`（是否用了共享开头），生产里可以直接统计命中改写的比例。
 
 <a id="industry"></a>
@@ -63,7 +65,7 @@ Claude Code、Anthropic API 的服务端压缩、OpenAI Codex 都是同一个做
 ## 放弃的做法
 
 - **自己在 `session_before_compact` 里发请求并返回摘要。**要自己重做 `compact()` 里的文件操作列表、拆分轮、重试，而且返回的压缩会被 Pi 标成 `fromHook`，文件操作列表不再带到下一次压缩。改写 Pi 自己发出的请求更小，Pi 的压缩流程原样保留。
-- **等 Pi 上游的 `cacheFriendly` 选项。**上游提交 cff1cf5 有类似的基础函数，但不在锁定的 1.5.0 里，也没有接上。以后 Pi 提供了，这个改写就可以去掉。
+- **等 Pi 上游的 cacheFriendly 选项。**上游提交 cff1cf5 有类似的基础函数，但不在锁定的 1.5.0 里，也没有接上。以后 Pi 提供了，这个改写就可以去掉。
 - **为了命中缓存改回不压缩或改压缩阈值。**阈值是第三步（按模型配置触发点）的事，和这件事无关。
 
 <a id="consequences"></a>

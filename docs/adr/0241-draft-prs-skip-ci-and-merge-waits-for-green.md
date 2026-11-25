@@ -7,6 +7,8 @@ superseded_by: ""
 amends: "docs/adr/0133-docs-check-removed-from-npm-run-check.md"
 amended_by: "docs/adr/0287-ci-runs-on-github-hosted-runners.md"
 date: "2026-11-11"
+covers: ".agents/instructions/delivery-mode.md, scripts/ci/check-policy.mjs, scripts/ci/main-evidence.mjs, scripts/delivery-mode/github-ruleset.sh, test/tooling/ci-optimization.test.mjs, test/tooling/policy.test.mjs"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0241：草稿 PR 不跑 CI，合并前等 CI 变绿，runner 保留 npm 缓存

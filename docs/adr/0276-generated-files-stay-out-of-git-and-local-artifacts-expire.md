@@ -6,6 +6,8 @@ supersedes: ""
 superseded_by: ""
 amends: ""
 date: "2026-11-15"
+covers: "clients/apple/README.md, clients/apple/scripts/mac-ui-review.sh, clients/apple/scripts/ui-review.sh, clients/apple/ui-review/.gitignore, scripts/delivery-mode/make-packet.py, scripts/disk-hygiene/install-schedule.sh, scripts/disk-hygiene/prune-rebuildable.py, scripts/disk-hygiene/retention.json"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0276：截图等生成文件不进 main，开发机上的产物按可改的期限自动回收
@@ -143,7 +145,7 @@ Mac 克隆里的本机产物：
 
 ## 验证
 
-- `check:repo-hygiene`：在临时仓库里加一个超过上限的文件必须失败、删掉后通过；跟踪 `ui-review/latest/a.png` 必须失败；`.claude/worktrees/` 没被忽略必须失败。
+- `check:repo-hygiene`：在临时仓库里加一个超过上限的文件必须失败、删掉后通过；跟踪 ui-review/latest/a.png 必须失败；`.claude/worktrees/` 没被忽略必须失败。
 - `check:repo-hygiene` 还要：一次改动总量超限失败；白名单写整目录通配失败；拿不到比较基准失败。
 - 工作副本回收：有改动、有未合并提交、加了锁、有进程在里面、有 `node_modules` 以外的被忽略文件、在保留清单里的各一个必须留下；已合并、干净、过期的必须删掉；去掉任一保护条件，对应用例必须失败。
 - 定时任务：`install-schedule.sh` 装好后副本里有新脚本和配置；配置缺失时拒绝安装。

@@ -6,6 +6,8 @@ supersedes: ""
 superseded_by: ""
 amended_by: "docs/adr/0242-external-agents-join-the-memory-hub-through-one-entry.md"
 date: "2026-11-11"
+covers: "apps/control-center/test/memory-source.unit.test.ts, packages/application/src/ports/decision-ledger.ts, packages/application/src/services/durable-memory-service.ts, packages/platform-node/test/startup-configuration.unit.test.ts, scripts/operations/memory-source-report.mjs, test/integration/mcp-write.test.ts, test/integration/memory-source-report.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0225：外部 agent 提议新记忆，主人在客户端确认后才保存

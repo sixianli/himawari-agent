@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-11-11"
+covers: ".agents/instructions/prompt-prefix.md, apps/admin-cli/test/memory-reindex-cli.unit.test.ts, apps/agent-service/src/production-memory-composition.ts, apps/agent-service/test/local-embedding-composition.unit.test.ts, apps/agent-service/test/production-model-composition.unit.test.ts, packages/application/src/embedding-profiles.ts, packages/memory-engine/src/embedding.ts, packages/memory-engine/test/episode-backfill.unit.test.ts, packages/persistence-sqlite/src/data-export/snapshot.ts, packages/persistence-sqlite/src/migrations/0052_memory_engine.sql, packages/persistence-sqlite/src/sqlite-recovery-point.ts, packages/platform-node/test/local-onnx-embedding.unit.test.ts, packages/platform-node/test/startup-configuration.unit.test.ts, scripts/delivery-mode/test_make_packet.py, scripts/embedding-models/build-artifact.py, scripts/embedding-models/make-test-fixture.py, test/tooling/artifact.test.mjs"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0224：记忆向量改在本机算，外网服务保留为可选
@@ -36,7 +38,7 @@ date: "2026-11-11"
 ## 前提
 
 1. 嵌入原来只支持网关一家：改动前 `apps/agent-service/src/production-memory-composition.ts` 在 `embedding.provider !== "vercel-ai-gateway"` 时抛出 `MEMORY_EMBEDDING_PROVIDER_UNSUPPORTED`（main 上 cb9c281 版本）。
-2. 门槛和模型绑在代码常量上：改动前 `packages/memory-engine/src/embedding.ts` 有 `QWEN3_MEMORY_MINIMUM_SIMILARITY` 和 `QWEN3_MEMORY_QUERY_INSTRUCTION`，换模型时门槛不会跟着换。
+2. 门槛和模型绑在代码常量上：改动前 `packages/memory-engine/src/embedding.ts` 有 [QWEN3_MEMORY_MINIMUM_SIMILARITY](https://github.com/sixianli/himawari-agent/blob/54e1bec4fb4df525ecf3f87143e917a748d2b0fa/apps/agent-service/src/production-memory-composition.ts) 和 [QWEN3_MEMORY_QUERY_INSTRUCTION](https://github.com/sixianli/himawari-agent/blob/54e1bec4fb4df525ecf3f87143e917a748d2b0fa/apps/agent-service/src/production-memory-composition.ts)，换模型时门槛不会跟着换。
 3. 嵌入经统一出口：`packages/memory-engine/src/embedding.ts:259` 用 `exchange.wrapFetch(...)` 包住发送函数，遮盖和记账都在这层里。
 4. 索引存什么：`packages/persistence-sqlite/src/migrations/0052_memory_engine.sql` 的 `memory_search_index` 存 `embedding BLOB`（向量原样，不加密），`memory_search_terms` 是关键词全文索引；`schema-catalog.ts:541` 原话“derived from the active Memory revision and rebuilt from encrypted content”，加密方式写的是 `metadata_only`。记忆正文在 `payloads` 里加密保存。
 5. 备份怎么做：`packages/persistence-sqlite/src/sqlite-recovery-point.ts:618` 先把整库拷成 `product.sqlite.plaintext.tmp`，`:642` 再用备份密钥逐个加密成 `objects/`，然后删掉明文临时文件；`:677` 的排除清单是 `runtime`、`cache`、`locks`、`sockets`、`logs`、`secrets`。
@@ -49,7 +51,7 @@ date: "2026-11-11"
 
 ## 决定
 
-1. **嵌入模型按“档案”登记。**新增 `packages/application/src/embedding-profiles.ts`，每个可用的嵌入模型一份档案：服务方（`local-onnx` 或 `vercel-ai-gateway`）、模型名、支持的维度、取向量的方式、查询和文档前缀（登记在 `packages/prompt-catalog`）、聊天和主动检查各自校准过的门槛、许可、上游仓库和固定的版本号。现在登记四份：网关上的 Qwen3-Embedding-8B（原来的，门槛 0.6 / 0.45）、本机 jina v5 small int8（0.30 / 0.20）、本机 Qwen3-Embedding-0.6B int8（0.52 / 0.47）、本机 EmbeddingGemma 2（0.78 / 0.74）。配置写的服务方加模型名找不到档案，或维度不在档案里，启动就拒绝（`EMBEDDING_PROFILE_UNKNOWN`、`EMBEDDING_PROFILE_DIMENSIONS_UNSUPPORTED`）。切换模型只改配置里那一条嵌入模型描述，门槛自动跟着换；配置里显式写的门槛仍然优先。这取代 [ADR 0115](0115-memory-search-relevance-threshold-and-retrieval-eval.md) 第 1 条里“换成其他向量模型又没配门槛时拒绝启动（`MEMORY_MINIMUM_SIMILARITY_REQUIRED`）”这一半：门槛改由档案提供，那个错误码已删除；Qwen3-8B 的 0.6 门槛不变。
+1. **嵌入模型按“档案”登记。**新增 `packages/application/src/embedding-profiles.ts`，每个可用的嵌入模型一份档案：服务方（`local-onnx` 或 `vercel-ai-gateway`）、模型名、支持的维度、取向量的方式、查询和文档前缀（登记在 `packages/prompt-catalog`）、聊天和主动检查各自校准过的门槛、许可、上游仓库和固定的版本号。现在登记四份：网关上的 Qwen3-Embedding-8B（原来的，门槛 0.6 / 0.45）、本机 jina v5 small int8（0.30 / 0.20）、本机 Qwen3-Embedding-0.6B int8（0.52 / 0.47）、本机 EmbeddingGemma 2（0.78 / 0.74）。配置写的服务方加模型名找不到档案，或维度不在档案里，启动就拒绝（`EMBEDDING_PROFILE_UNKNOWN`、`EMBEDDING_PROFILE_DIMENSIONS_UNSUPPORTED`）。切换模型只改配置里那一条嵌入模型描述，门槛自动跟着换；配置里显式写的门槛仍然优先。这取代 [ADR 0115](0115-memory-search-relevance-threshold-and-retrieval-eval.md) 第 1 条里“换成其他向量模型又没配门槛时拒绝启动（[MEMORY_MINIMUM_SIMILARITY_REQUIRED](https://github.com/sixianli/himawari-agent/blob/54e1bec4fb4df525ecf3f87143e917a748d2b0fa/apps/agent-service/src/production-memory-composition.ts)）”这一半：门槛改由档案提供，那个错误码已删除；Qwen3-8B 的 0.6 门槛不变。
 2. **生产默认用本机 jina int8，外网 Qwen3-8B 保留为可选。**本机模型在服务进程里用 `onnxruntime-node` 1.30.0 加 `@huggingface/tokenizers` 0.2.0 计算，不另开进程或端口，不需要显卡。本机配置必须是 `disclosure: local_only`、`secretRef: null`、费用全为 0，并带 `artifactSha256`。
 3. **本机模型照样走统一出口。**本机运行时对外是一个 `fetch` 函数，地址是 `http://local-onnx.invalid/v1/embeddings`，由 `EgressEmbedder` 用同一个 `wrapFetch` 包住；遮盖、记账和网关请求是同一段代码。本机请求按 0 成本记账，回应里必须带 `providerMetadata.local.runtime = "onnxruntime-node"`。
 4. **模型文件固定版本、带校验。**模型文件放在 `<stateRoot>/models/<模型名>/<artifactSha256>/`，里面有 `manifest.json`（列出每个文件的 sha256）和模型、分词器文件；`artifactSha256` 是 `manifest.json` 的 sha256，写在配置里。加载前逐个核对哈希、拒绝符号链接。文件由 `scripts/embedding-models/build-artifact.py` 从固定版本号的上游下载、按通道做 int8 量化后生成，jina 这份的 `artifactSha256` 是 `dcf55698530d735cf4ab00ddd4406e88ff74b09de204a6a4c1e2c7078e753366`。往测试机或生产机放模型文件之前先问 Andy。

@@ -6,6 +6,8 @@ supersedes: ""
 superseded_by: ""
 amends: "docs/adr/0179-keep-low-confidence-memory-candidates-as-tentative.md"
 date: "2026-11-11"
+covers: "packages/calibration/src/thresholds.ts, packages/memory-engine/src/consolidation.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0220：整理记忆判到冲突时，默认让新条进「待确认」，只有明确取代且新条置信度够高才自动作废旧条

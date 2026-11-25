@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-11-08"
+covers: "packages/application/test/model-egress.unit.test.ts, packages/runtime-pi/test/prompt-prefix.compat.test.ts, packages/sensitive-capture/src/redaction.ts, test/integration/thread-prompt-bundles.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0188：密码识别补上英文 “is”、没有分隔符的写法和其他语言

@@ -6,6 +6,8 @@ supersedes: ""
 amends: "docs/adr/0109-paid-eval-runs-need-cost-cap-and-preflight.md"
 superseded_by: ""
 date: "2026-11-11"
+covers: "apps/agent-service/src/production-decision-ledger.ts, apps/agent-service/src/production-run-memory.ts, apps/agent-service/src/service-main.ts, apps/agent-service/test/production-model-composition.unit.test.ts, packages/memory-engine/src/hybrid-memory-provider.ts, packages/persistence-sqlite/src/sqlite-model-budget-operations.ts, test/integration/decision-ledger.test.ts, test/integration/production-http-composition-process.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0223：聊天找记忆时嵌入失败，退回关键词和实体，不让整轮失败

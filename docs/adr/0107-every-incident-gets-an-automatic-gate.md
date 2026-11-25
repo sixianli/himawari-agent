@@ -6,6 +6,8 @@ supersedes: ""
 superseded_by: ""
 amended_by: "docs/adr/0269-load-instructions-on-demand-at-thread-start.md"
 date: "2026-10-29"
+covers: "apps/control-center/test/release-walkthrough-ui.ts, apps/control-center/test/release-walkthrough.unit.test.ts, scripts/check-incident-gates.mjs, scripts/delivery-mode/instances/andy-production.json, scripts/delivery-mode/make-packet.py, scripts/delivery-mode/packet-template/systemd/S7-startup-readback.mjs"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0107：每个事故落一道自动检查，同一错误第三次必须有硬门槛
@@ -83,7 +85,7 @@ date: "2026-10-29"
 
 ## 后果
 
-- 正面：用 #80 之前的旧定位重现，契约测试三处都失败（开关找成复选框、不先展开折叠的过程、去设置里找记忆）；去掉旧定位后通过。启动读回对 29.35 秒、35 秒、55 秒的启动都报 `STARTUP_READY_TOO_SLOW`，9 秒的启动通过。
+- 正面：用 #80 之前的旧定位重现，契约测试三处都失败（开关找成复选框、不先展开折叠的过程、去设置里找记忆）；去掉旧定位后通过。启动读回对 29.35 秒、35 秒、55 秒的启动都报 [STARTUP_READY_TOO_SLOW](https://github.com/sixianli/himawari-agent/blob/4c01b5c60a69cfaabd1a56dc000524e2a6eb9dbb/scripts/delivery-mode/packet-template/systemd/S7-startup-readback.mjs)，9 秒的启动通过。
 - 负面：worker 等待还是 30 秒的提交出包会被拒绝（30 + 15 > 30），这是有意的；出包线程的修复 PR #89 已把等待改为 45 秒并先合进 main（提交 `d8b893a`）。启动上限 30 秒是按出包线程在生产数据副本上的实测定的，上线后按日志里的真实启动时间再调。
 - 后续：
   - `AGENTS.md` 的 “Repeated Mistakes” 一节改为 “Incidents and Repeated Mistakes”，引用本 ADR；新增 `.claude/rules/incident-gates.md` 让每个云端线程读到。

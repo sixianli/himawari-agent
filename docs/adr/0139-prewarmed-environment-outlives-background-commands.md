@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-10-31"
+covers: "apps/agent-service/src/production-sandbox-services.ts, apps/agent-service/src/production-task-environments.ts, apps/agent-service/test/production-sandbox-startup.unit.test.ts, apps/agent-service/test/production-task-environments.unit.test.ts, apps/execution-worker/src/production-srt-task-environment-backend.ts, packages/runtime-sandbox/src/job-host-protocol.ts, test/integration/production-srt-task-environment.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0139：预热出来的沙箱环境要活得比后台命令久；命令确定没启动时告诉模型，本轮继续

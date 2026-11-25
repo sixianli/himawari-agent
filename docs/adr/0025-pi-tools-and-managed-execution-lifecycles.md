@@ -6,6 +6,8 @@ supersedes: ""
 superseded_by: ""
 amended_by: "docs/adr/0031-isolated-tool-execution.md"
 date: "2026-09-09"
+covers: ""
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0025：复用 Pi 并分离工具、任务与执行环境生命周期

@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-09-29"
+covers: ""
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0040：Bash 调用结束后关闭输出通道，后台程序再写这次的输出会被系统结束
@@ -32,7 +34,7 @@ date: "2026-09-29"
 
 测试没有给被测程序装任何特殊处理，退出发生在测试清理之前。证据见 `.ci-output/tool-execution-audit/2026-09-28/round2/b3-r26-verification.md`。这是真实 Mac 子进程和管道上的测试，没有在完整安装后的产品路径上运行。
 
-结果是：模型用 `npm run dev &` 启动本地网页开发服务器、又没有重定向输出时，服务器下一次打印日志就会退出。
+结果是：模型用 [npm run dev &](https://github.com/sixianli/himawari-agent/blob/1570949fbf3d02a7f1fed352cae27fdc63479f0c/package-lock.json) 启动本地网页开发服务器、又没有重定向输出时，服务器下一次打印日志就会退出。
 
 另一种做法是让 Worker（执行工具的后台服务）在调用结束后继续读取并丢弃这条通道的内容。这需要一个比单次工具调用活得更久的读取者，要另行设计它的寿命、资源额度和停止责任；而且 Worker 重启时读取者照样会断，后台程序仍会被结束。
 
@@ -46,7 +48,7 @@ date: "2026-09-29"
 2. 取代 ADR 0039 决定第 2 条：调用结束时关闭读取这次输出的一端，和 Pi 一致。Himawari 不主动结束后台程序，但它之后如果还往这次命令的输出里写，会被操作系统结束。这是已接受的行为，不算缺陷。
 3. 取代 ADR 0039 决定第 3 条：返回给模型的说明必须如实写明，并告诉模型怎么让程序长期运行。说明原文：
 
-   > 仍有后台程序占用这次命令的输出，它之后的输出不会显示在这次结果里；如果它继续往这里写输出，会被系统结束。需要长期运行的程序，请把输出重定向到文件，例如 `npm run dev > dev.log 2>&1 &`。
+   > 仍有后台程序占用这次命令的输出，它之后的输出不会显示在这次结果里；如果它继续往这里写输出，会被系统结束。需要长期运行的程序，请把输出重定向到文件，例如 [npm run dev > dev.log 2>&1 &](https://github.com/sixianli/himawari-agent/blob/1570949fbf3d02a7f1fed352cae27fdc63479f0c/package-lock.json)。
 
 4. ADR 0039 决定第 4 条不变：界面按 [ADR 0033 决定](0033-process-sandbox-default-and-optional-containers.md#decision)第 5 条，让用户看清还有哪些后台程序在运行。目前控制中心还列不出前台 Bash 自行脱离进程组的后台程序，这一项作为已知限制记录，不在本决定里实现。
 
@@ -75,7 +77,7 @@ date: "2026-09-29"
 
 ## 后果
 
-- 不带重定向、之后还会输出的后台用法（例如 `npm run dev &`）会让程序很快退出；模型需要按说明改成重定向到文件。
+- 不带重定向、之后还会输出的后台用法（例如 [npm run dev &](https://github.com/sixianli/himawari-agent/blob/1570949fbf3d02a7f1fed352cae27fdc63479f0c/package-lock.json)）会让程序很快退出；模型需要按说明改成重定向到文件。
 - 已经重定向输出、或之后不再输出的后台程序，照常运行。
 - 引用 ADR 0039 作为当前规则的文档，要改为引用本 ADR。
 

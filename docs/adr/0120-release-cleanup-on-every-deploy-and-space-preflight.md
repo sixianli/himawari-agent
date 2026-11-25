@@ -6,6 +6,8 @@ supersedes: ""
 superseded_by: ""
 amends: "docs/adr/0074-claude-runs-production-deployments.md"
 date: "2026-10-30"
+covers: "apps/admin-cli/src/index.ts, scripts/delivery-mode/deploy-preflight.py, scripts/delivery-mode/deploy.sh, scripts/delivery-mode/release-cleanup-remote.py, scripts/delivery-mode/release-cleanup.py, scripts/delivery-mode/test_deploy.py, scripts/delivery-mode/test_release_cleanup.py, scripts/disk-hygiene/install-schedule.sh"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0120：每次上线前后自动清理生产机上的上线临时产物，上线前检查按上次实际安装占用算“装完还剩多少”
@@ -52,7 +54,7 @@ date: "2026-10-30"
 ## 决定
 
 1. **`deploy.sh` 在三个时点调用 `scripts/delivery-mode/release-cleanup.py <操作包> apply`：** 上线前检查之前（清掉以前失败或中断留下的东西）；上线成功之后；上线失败但旧版本仍在服务之后（停服前就失败，或停服后失败并已自动回退）。自动回退也失败时不清理，现场全部留给诊断。操作包没通过生成检查或网页走查时，生产机一点不碰，也不清理。清理失败不改变上线结果，只打印 `DEPLOY_CLEANUP_FAILED`。
-2. **清理规则只由生产机当时的状态决定，而不是由调用时点决定。** 远端脚本 `release-cleanup-remote.py` 从 systemd 单元文件的 `ExecStart` 读出正在服务的版本目录和它的操作目录，再从该操作目录的 `inputs/bindings.json` 读出它的回退目标版本（`oldPrefix`）。然后：
+2. **清理规则只由生产机当时的状态决定，而不是由调用时点决定。** 远端脚本 `release-cleanup-remote.py` 从 systemd 单元文件的 `ExecStart` 读出正在服务的版本目录和它的操作目录，再从该操作目录的 inputs/bindings.json 读出它的回退目标版本（`oldPrefix`）。然后：
    - `/opt/himawari/releases/` 只留正在服务的版本和回退目标版本，其余删除；
    - `/var/tmp/` 里名字是 `himawari-<第几版>-<日期>[...]` 或 `<第几版>-packet-upload[...]` 的目录全部删除，只有正在服务那一版的 `packet/` 留着（`rollback.sh` 回退时要用它校验操作包）；
    - 本次操作包失败时新建的操作目录删除；各版证据目录里超过 10 MiB 的文件（数据库恢复点）删除，正在服务那一版的证据目录整个保留（回退要用它的恢复点）；本次失败的证据目录改名为 `.attempt-failed-<时间>` 让重试能用原路径，里面只剩小文件；
@@ -78,7 +80,7 @@ date: "2026-10-30"
 | 只把空间门槛调高 | 改一行 | 不解决累积，只是更早报错 | 不选 |
 | 本方案：上线前后各清一次 + 按上次实测预估 | 成功、失败、中断三种情况都清；只留回退要用的；预估随实际变化 | 远端脚本要扫一遍进程和数据库（数据库约 0.3 GB，顺序读不到 1 秒） | 采用 |
 
-业界做法（一手来源）：Capistrano（Ruby 社区常用的部署工具）的配置项 `:keep_releases` 默认 5，说明是 “The last `n` releases are kept for possible rollbacks.”（[Capistrano 配置文档](https://capistranorb.com/documentation/getting-started/configuration/)）；Kubernetes 的 kubelet（每台机器上管理容器的程序）按磁盘占用自动删镜像：“Disk usage above the configured `HighThresholdPercent` value triggers garbage collection”，并且 “The kubelet deletes images until disk usage reaches the `LowThresholdPercent` value.”（[Kubernetes 垃圾回收文档](https://kubernetes.io/docs/concepts/architecture/garbage-collection/)）。两者都是“由工具自动删，只留回退需要的”，不靠人记得删。本项目只留 2 版，因为 Andy 的指令是“只留用于回退的最近一版”，而回退流程只会回到上一版。
+业界做法（一手来源）：Capistrano（Ruby 社区常用的部署工具）的配置项 `:keep_releases` 默认 5，说明是 “The last `n` releases are kept for possible rollbacks.”（[Capistrano 配置文档](https://capistranorb.com/documentation/getting-started/configuration/)）；Kubernetes 的 kubelet（每台机器上管理容器的程序）按磁盘占用自动删镜像：“Disk usage above the configured HighThresholdPercent value triggers garbage collection”，并且 “The kubelet deletes images until disk usage reaches the LowThresholdPercent value.”（[Kubernetes 垃圾回收文档](https://kubernetes.io/docs/concepts/architecture/garbage-collection/)）。两者都是“由工具自动删，只留回退需要的”，不靠人记得删。本项目只留 2 版，因为 Andy 的指令是“只留用于回退的最近一版”，而回退流程只会回到上一版。
 
 <a id="consequences"></a>
 

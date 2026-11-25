@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-10-26"
+covers: "apps/control-center/src/execution-timeline.ts, assets/brand/himawari/README.md, scripts/check-control-center-build.mjs"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0087：对话界面 v6 第一期：过程区改成时间条、标志换成葵盘、去掉前端体积上限、界面三语

@@ -6,6 +6,8 @@ supersedes: ""
 superseded_by: ""
 amended_by: "docs/adr/0088-process-records-skip-disk-sync.md"
 date: "2026-08-26"
+covers: ""
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0018: 以 SQLite 作为单权威部署的产品状态库

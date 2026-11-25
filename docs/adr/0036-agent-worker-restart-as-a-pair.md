@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-09-29"
+covers: "scripts/operations/hermes-ui-session-start.mjs"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0036：Agent Service 与 Execution Worker 必须成对重启

@@ -6,6 +6,8 @@ supersedes: ""
 amends: "docs/adr/0219-read-only-mcp-entry-with-static-token.md, docs/adr/0225-external-agents-propose-memory-with-in-client-confirmation.md, docs/adr/0226-external-agents-propose-rules-through-the-rule-proposal-flow.md, docs/adr/0227-mcp-entry-checks-cloudflare-access-sign-in.md"
 superseded_by: ""
 date: "2026-11-12"
+covers: "apps/agent-service/src/bearer-admission.ts, apps/agent-service/src/production-mcp-memory-writer.ts, apps/agent-service/src/production-mcp-read.ts, apps/agent-service/src/production-mcp-rule-writer.ts, apps/agent-service/src/production-memory-recall.ts, apps/agent-service/src/production-owner-rules.ts, apps/agent-service/src/production-reminder-writer.ts, apps/agent-service/src/service-main.ts, packages/application/src/ports/decision-ledger.ts, packages/application/src/ports/memory-projection.ts, packages/application/src/rules/rule-book.ts, packages/application/src/rules/rule-types.ts, packages/application/src/services/model-visibility.ts, packages/application/src/services/owner-profile-service.ts, packages/calibration/src/mcp-connections.ts, packages/gateway-contracts/src/contracts-v2.ts, packages/gateway-contracts/src/validation.ts, packages/persistence-sqlite/src/data-export/schemas.ts, packages/persistence-sqlite/src/external-proposal-text.ts, packages/persistence-sqlite/src/sqlite-decision-ledger-operations.ts, packages/persistence-sqlite/src/sqlite-external-memory-proposal-operations.ts, packages/persistence-sqlite/src/sqlite-memory-operations.ts, packages/sensitive-capture/test/redaction.unit.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0242：外部 agent 经一个入口接入记忆中心：专属网址定身份，`start_here` 读，`sync_memories` 推，按能力分档触发
@@ -56,9 +58,9 @@ P5 系列已经做了入口：[ADR 0219](0219-read-only-mcp-entry-with-static-to
 10. **记忆编号有格式限制，文件路径过不了。** 来源：`packages/gateway-contracts/src/validation.ts` 的 `machineString`：`input.length > 128 || !/^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(input)`；`apps/agent-service/src/production-mcp-memory-writer.ts`：`` return `${EXTERNAL_PROPOSAL_MEMORY_PREFIX}${proposalId}` ``。
 11. **入口有请求体上限和频率上限。** 来源：`production-mcp-read.ts`：`MCP_READ_BODY_LIMIT = 65_536`；`apps/agent-service/src/bearer-admission.ts`：`AUTHORIZED_PER_MINUTE = 30`；`production-mcp-memory-writer.ts`：`EXTERNAL_PROPOSAL_TEXT_MAXIMUM = 2000`。
 12. **外部 agent 能提的规则只有两种邮件规则；转述的偏好按记忆提。** 来源：`apps/agent-service/src/production-mcp-rule-writer.ts`：`EXTERNAL_RULE_TYPES = ["mail_must_notify", "mail_read_whole_thread"]`；[ADR 0226 放弃的做法](0226-external-agents-propose-rules-through-the-rule-proposal-flow.md#options)：“外部 agent 的转述不是原话，提议偏好用 `propose_memory`。”（2026-11-12 补：以后能提哪些，以各规则类型自己的声明为准，见决定 7 下面的补注。）
-13. **Claude Code 的钩子（agent 在固定时刻自动执行的一条命令）。** 来源 <https://code.claude.com/docs/en/hooks>：命令钩子从标准输入拿到完整事件；`mcp_tool` 钩子“call a tool on a configured MCP server”，参数只能做 `${path}` 替换，不能读文件；“The hook never starts an OAuth flow”；UserPromptSubmit 上默认超时 30 秒；“Claude Code adds plain-text stdout as context that Claude can see and act on”。
-14. **Codex 有同名钩子，输出同样进上下文。** 来源 <https://learn.chatgpt.com/docs/hooks.md>：它列出的事件里有 `SessionStart`、`UserPromptSubmit`、`Stop`，和 Claude Code 的事件同名；“Plain text on `stdout` is added as extra developer context.”“Hooks are enabled by default”。Codex 的钩子里跑命令行程序有什么限制没有核实，列在[后果](#consequences)的实测项里。
-15. **两家自己记的笔记都是磁盘上的文件。** 来源 <https://code.claude.com/docs/en/memory>：“Each project gets its own memory directory at `~/.claude/projects/<project>/memory/`”，目录可用 `autoMemoryDirectory` 改；<https://developers.openai.com/codex/memories>：`~/.codex/memories/`，新安装用 `memories_v2`，“Memories may not update right away when a chat ends”。
+13. **Claude Code 的钩子（agent 在固定时刻自动执行的一条命令）。** 来源 <https://code.claude.com/docs/en/hooks>：命令钩子从标准输入拿到完整事件；mcp_tool 钩子“call a tool on a configured MCP server”，参数只能做 `${path}` 替换，不能读文件；“The hook never starts an OAuth flow”；UserPromptSubmit 上默认超时 30 秒；“Claude Code adds plain-text stdout as context that Claude can see and act on”。
+14. **Codex 有同名钩子，输出同样进上下文。** 来源 <https://learn.chatgpt.com/docs/hooks.md>：它列出的事件里有 `SessionStart`、UserPromptSubmit、`Stop`，和 Claude Code 的事件同名；“Plain text on `stdout` is added as extra developer context.”“Hooks are enabled by default”。Codex 的钩子里跑命令行程序有什么限制没有核实，列在[后果](#consequences)的实测项里。
+15. **两家自己记的笔记都是磁盘上的文件。** 来源 <https://code.claude.com/docs/en/memory>：“Each project gets its own memory directory at `~/.claude/projects/<project>/memory/`”，目录可用 autoMemoryDirectory 改；<https://developers.openai.com/codex/memories>：`~/.codex/memories/`，新安装用 memories_v2，“Memories may not update right away when a chat ends”。
 16. **已有“主人概况”的生成代码，MCP 入口没用。** 来源：`packages/application/src/services/owner-profile-service.ts`：`OWNER_PROFILE_CHARACTER_BUDGET = 2000`，`compose` 接受 `maxClassification`。（2026-11-12 补：这是写本 ADR 时 main 上的样子；PR 413 合并后 `start_here` 已经用上它，见[后果](#consequences)。）
 17. **不经浏览器登录的程序入口已有先例。** 来源：[ADR 0162](0162-receive-muse-data-through-a-service-token-and-an-app-secret.md) 决定第 1 条：“边缘层用 Cloudflare Access 的服务令牌（Service Auth 策略，请求头 `CF-Access-Client-Id` 与 `CF-Access-Client-Secret`）”“应用层再要求 `Authorization: Bearer <应用密钥>`”。
 18. **多人时是一个网址。** 来源：[ADR 0234](0234-one-program-per-person-database-file.md) 决定第 5 条：“一个网址、一个 Cloudflare Access 应用，名单里放所有受邀邮箱。”
@@ -74,7 +76,7 @@ P5 系列已经做了入口：[ADR 0219](0219-read-only-mcp-entry-with-static-to
 
 1. **每个接入由主人在网页上建，得到一个带随机密钥的专属网址。**
    - 主人起名字、勾选对方有哪些能力。服务端只存密钥的摘要，按密钥认出是哪个接入，生成自己的接入编号。接入编号以字母或数字开头，之后只含字母、数字和 `._:-`，长度 1 到 128 个字符，能通过网关契约的 `machineString` 校验（`packages/gateway-contracts/src/validation.ts`）。日志、错误信息和决策记录只写接入编号，不写密钥，也不写带密钥的路径。
-   - 密钥放在网址路径里，因为“填一个网址”是各家客户端都有的接法，自定义请求头不是每家都能填（[ADR 0227](0227-mcp-entry-checks-cloudflare-access-sign-in.md) 前提 2：Claude 应用的自定义连接器里，固定请求头 `static_headers` 还在内测，官方文档对它的说明是 “Beta, for a limited set of organizations”）。不放查询参数：它和路径一样会被沿途的日志记下，没有好处，只多一种要测的写法。
+   - 密钥放在网址路径里，因为“填一个网址”是各家客户端都有的接法，自定义请求头不是每家都能填（[ADR 0227](0227-mcp-entry-checks-cloudflare-access-sign-in.md) 前提 2：Claude 应用的自定义连接器里，固定请求头 static_headers 还在内测，官方文档对它的说明是 “Beta, for a limited set of organizations”）。不放查询参数：它和路径一样会被沿途的日志记下，没有好处，只多一种要测的写法。
    - Cloudflare 的登录对带密钥的子路径不能照常工作时，能填请求头的客户端改放请求头；填不了请求头的客户端那时没有现成的接法，编码任务先停下报告，另出方案，不自行换做法。
    - 残余风险：密钥在路径里，会留在对方客户端的配置文件里，也可能被 Cloudflare 这类沿途设施的访问日志记下（没有核实 Cloudflare 记不记完整路径，按会记处理）。应对有三条：只有这把密钥进不了门，还要过 Cloudflare 登录或服务令牌；密钥可以在页面上随时撤销、换新；Himawari 自己的日志、错误信息、决策记录、指标和错误上报里不得出现密钥或带密钥的路径，这要补一条自动检查来守（列在[后果](#consequences)里，现在还没有）。
    - 权限和统计都挂在接入编号上：暂停、撤销（网址立刻失效）、换密钥（同一个接入换一把新的，旧的立刻失效，接入编号、设置和统计不变）、能读到哪一级、推来的要不要先问。
@@ -162,7 +164,7 @@ P5 系列已经做了入口：[ADR 0219](0219-read-only-mcp-entry-with-static-to
     - 每次调用限时很短，超时就放行，不拖慢主人打字；失败记在本地日志和 Himawari 的统计里。
     - Claude Code 做成一个插件，一次安装带上 MCP 连接、钩子和助手程序。
     - Himawari 的 Mac 客户端（[ADR 0229](0229-native-apple-clients-and-device-api.md)）做出来之后，助手程序的活并进去，凭据换成设备密钥。
-    - 不用 `mcp_tool` 钩子做推送，因为它读不了文件（前提 13）。Andy 2026-11-12 同意在他的 Mac 上放这个程序。
+    - 不用 mcp_tool 钩子做推送，因为它读不了文件（前提 13）。Andy 2026-11-12 同意在他的 Mac 上放这个程序。
 12. **存量搬家。** 第一档的 agent 第一次同步就是全量，不需要单独搬家。其他的在向导里：给一段提示词让对方列出记住的内容，主人贴回 Himawari，用低价模型解析，开始前显示预计费用，结果进同一个待确认页面。不能挂 MCP 的 agent，网页生成一段“关于我”文本，主人勾选包含哪几类、预览后贴进对方的自定义指令。
     - 2026-11-12 补（[设计时不考虑花费](#design-ignores-spend)）：贴回之后直接解析，不先显示预计费用、不等主人再点一次。贴回的文本是别的 agent 写的，解析时只当资料、不当指令，长度有上限。
 13. **“接入的 agent”页面和周报显示每个接入的用量。**
@@ -235,7 +237,7 @@ Andy 2026-11-12 定的规矩，原话：“贵不是问题，我要的是极致�
 - **只挂 MCP，靠使用说明让对方模型自觉。** 不可靠（前提 7 和业界做法）；它只作为第二、三档的做法，并如实标为尽力而为。
 - **每家 agent 写一个专用对接。** 等于写死名单，新 agent 出来就要改代码（前提 3）。
 - **用对方自报的名字建记录、当权限。** 换个名字就能绕过暂停和撤销（前提 8）；自动建记录还会被随机名字刷出无数条。
-- **用 `mcp_tool` 钩子做推送。** 它不能读文件，只能拿到一次写入的片段，对话结束时的全量同步做不了（前提 13）。它只适合“把这句话交给检索”这类不读文件的事。
+- **用 mcp_tool 钩子做推送。** 它不能读文件，只能拿到一次写入的片段，对话结束时的全量同步做不了（前提 13）。它只适合“把这句话交给检索”这类不读文件的事。
 - **项目笔记和关于主人的记忆一样逐条确认。** 一个仓库就有几十个笔记文件，每次改动都要主人点，超出确认预算（前提 5）。
 - **项目笔记不经任何批准直接存、直接给别的 agent。** 对方把敏感内容标成项目笔记就能绕过确认，还会传到别的 agent（前提 6）。所以写入时同步判敏感，并要主人按“接入 + 项目”批准一次。
 - **像规则的内容转进 `propose_rule`。** 外部只能提两种邮件规则，行为偏好放不下（前提 12）。
@@ -314,7 +316,7 @@ Andy 2026-11-12 定的规矩，原话：“贵不是问题，我要的是极致�
   - Cloudflare 的 OAuth 登录对带密钥的子路径是否照常工作；不行时按决定 1 处理（能填请求头的换请求头，其余先停下报告）。
   - Cloudflare 的访问日志记不记完整路径；记的话在页面上提示主人定期换密钥。
   - Claude 桌面 App 里的 Claude Code 是否执行用户级钩子和插件；它的笔记是否都落在记忆目录。
-  - Codex 的钩子里跑命令行程序有什么限制；`memories.disable_on_external_context` 会不会让用过 MCP 工具的对话不产生记忆，会的话 Codex 这一档要重想。
+  - Codex 的钩子里跑命令行程序有什么限制；memories.disable_on_external_context 会不会让用过 MCP 工具的对话不产生记忆，会的话 Codex 这一档要重想。
   - 云端会话（在 claude.ai 云端跑的 Claude Code）的笔记不在主人电脑上，先按第三档接。
 - **要 Andy 亲手做的：** 在 Cloudflare 后台建一个服务令牌；在 Mac 上装插件。
 - **安全上多出来的东西：** 一个不经浏览器登录的程序入口（服务令牌加接入密钥），和主人电脑上的一份凭据。凭据可以在页面上随时撤销；助手程序只能调用 MCP 入口上这个接入被允许的工具。

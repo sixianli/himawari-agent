@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-11-09"
+covers: "apps/control-center/test/proactive-interactions.unit.test.ts, test/integration/decision-chain-browser.test.ts, test/integration/decision-chain.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0195：给一条决策记录读出完整的依据链，并在控制中心用抽屉显示
@@ -55,7 +57,7 @@ date: "2026-11-09"
 
 - 门槛：
   - `test/integration/decision-chain.test.ts`：Gmail 记录的完整链、缺项显示无记录、受限记忆隐藏、他人记录和不存在的记录被拒、截断上限。
-  - `packages/application/test/decision-rule-catalog.unit.test.ts`：规则登记表。
+  - packages/application/test/decision-rule-catalog.unit.test.ts：规则登记表。
   - `apps/control-center/test/proactive-interactions.unit.test.ts` 的 `[P1-3]` 用例和 `test/integration/decision-chain-browser.test.ts`（真实浏览器，含正向、缺项、记录已清除、手机宽度）。
   - `npm run check:operations`：新操作有后端实现、前端调用和测试。
 - 老记录缺的字段显示“无记录”，不回填。

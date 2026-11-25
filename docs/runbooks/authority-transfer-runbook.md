@@ -6,6 +6,8 @@ contract_sha256: "sha256:e05fafe6d7173c09a28536a22795aee0fc0b350149a2ab86083c8e6
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
+covers: "packages/runtime-pi/src/pi-file-preparation-pool.ts, packages/runtime-sandbox/src/job-host-main.ts, packages/runtime-sandbox/src/policy.ts, packages/runtime-sandbox/src/sandbox-sdk-worker.ts, packages/runtime-sandbox/src/sandbox-sdk.ts, test/qualification/evidence/workspace-authorization-lifecycle/p1-recovery-scheduling-01/README.md, test/qualification/evidence/workspace-authorization-lifecycle/p1-recovery-startup-01/README.md"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # 停机加密 Authority Transfer Runbook
@@ -619,7 +621,7 @@ Schema 39 新增 `automatic_action_reviews`，在模型调用前保留唯一请�
 
 模型结果使用以下说明原文：
 
-> 仍有后台程序占用这次命令的输出，它之后的输出不会显示在这次结果里；如果它继续往这里写输出，会被系统结束。需要长期运行的程序，请把输出重定向到文件，例如 `npm run dev > dev.log 2>&1 &`。
+> 仍有后台程序占用这次命令的输出，它之后的输出不会显示在这次结果里；如果它继续往这里写输出，会被系统结束。需要长期运行的程序，请把输出重定向到文件，例如 [npm run dev > dev.log 2>&1 &](https://github.com/sixianli/himawari-agent/blob/1570949fbf3d02a7f1fed352cae27fdc63479f0c/package-lock.json)。
 
 说明不计入命令自身的输出上限，但计入整份工具结果 JSON 的上限；超过上限时不再整次失败，而是复用 Pi 的截断函数把交给模型的正文截断到上限内并加说明（`read` 保留 `Use offset=...` 续读；条目 R2-T9，见 [隔离工具执行设计](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#baseline)），只有正文清空仍装不下才沿用 `PI_RESULT_OUTPUT_LIMIT`。不另设额度或放宽任何上限，原期限、取消、资源与输出检查保持。目录释放仍按平台清理证明核验；Linux 同次开机还须 [Host 自身组为空](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#linux-host-group)。`process_group_gone` 不证明主动离组的后代全部停止。现有页面后台列表不能列出前台 Bash 自行脱离进程组的后代，这是已知限制，不能用列表为空证明没有后台进程。此改动不增加安装、迁移或恢复步骤，不改变本手册的操作授权要求。
 

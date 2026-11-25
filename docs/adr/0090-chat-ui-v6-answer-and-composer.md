@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-10-26"
+covers: ""
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0090：对话界面 v6 第二期：回答下方一行、紧凑来源、消息状态、模型选择、提示语、滚动条和附件
