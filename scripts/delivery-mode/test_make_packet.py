@@ -432,10 +432,33 @@ class TemplateTest(RenderedPacket):
     def test_machine_facts_come_from_the_target_not_the_instance_file(self):
         for key in ('serviceUid', 'serviceGid'):
             self.assertNotIn(key, INSTANCE['fixedByTemplate'])
-        self.assertEqual(set(INSTANCE['host']), {'address'})
+        self.assertNotIn('address', INSTANCE['host'])
         arm = production_facts(hostname='tokyo-a1', machine='aarch64', serviceUid=1001, serviceGid=1002, nodeSha256='a' * 64, signerKeys=['/var/lib/himawari/qualification/zeroth-20261101/host-qualification-public-key.pem'])
         derived = packet_maker.interpret_discovery(arm, INSTANCE)
         self.assertEqual({key: derived[key] for key in ('HOSTNAME', 'NODE_ARCH', 'SERVICE_UID', 'SERVICE_GID', 'NODE_SHA256', 'FIRST_SIGNER_KEY_PATH')}, {'HOSTNAME': 'tokyo-a1', 'NODE_ARCH': 'arm64', 'SERVICE_UID': 1001, 'SERVICE_GID': 1002, 'NODE_SHA256': 'a' * 64, 'FIRST_SIGNER_KEY_PATH': '/var/lib/himawari/qualification/zeroth-20261101/host-qualification-public-key.pem'})
+
+    def test_the_target_address_comes_from_the_command_line_or_the_environment(self):
+        with unittest.mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop('HIMAWARI_PACKET_HOST', None)
+            with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_HOST_UNKNOWN'):
+                packet_maker.load_instance('andy-production')
+            self.assertEqual(packet_maker.load_instance('andy-production', '203.0.113.7')['host']['address'], '203.0.113.7')
+            os.environ['HIMAWARI_PACKET_HOST'] = '198.51.100.9'
+            self.assertEqual(packet_maker.load_instance('andy-production')['host']['address'], '198.51.100.9')
+            self.assertEqual(packet_maker.load_instance('andy-production', '203.0.113.7')['host']['address'], '203.0.113.7')
+            with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_HOST_UNKNOWN'):
+                packet_maker.load_instance('andy-production', 'root@host; rm -rf /')
+
+    def test_a_unit_written_by_first_install_is_recognized(self):
+        prefix = '/opt/himawari/releases/2026-11-25-0a1b2c3d'
+        facts = production_facts(
+            execStart=['ExecStart=/opt/himawari/node/bin/node --no-global-search-paths /opt/himawari/operations/first-install/pair-supervisor.mjs --prefix ' + prefix + ' --config /etc/himawari/config.json --worker-token-file /var/lib/himawari/state/secrets/worker-token.json'],
+            staticRoot=prefix + '/share/control-center',
+        )
+        derived = packet_maker.interpret_discovery(facts, INSTANCE, 'twelfth')
+        self.assertEqual((derived['OLD_LABEL'], derived['OLD_PREFIX'], derived['OLD_OPERATIONS']), ('firstinstall', prefix, '/opt/himawari/operations/first-install'))
+        with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_LABEL_NOT_DERIVABLE'):
+            packet_maker.interpret_discovery(facts, INSTANCE)
 
     def test_an_expected_hostname_pinned_in_the_instance_is_still_enforced(self):
         pinned = {**INSTANCE, 'host': {**INSTANCE['host'], 'expectedHostname': 'hermes-home'}}

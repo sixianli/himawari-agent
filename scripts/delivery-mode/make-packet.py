@@ -27,6 +27,7 @@ SSH_OPTIONS = ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15', '-o', 'ServerAl
 UNITS = ['first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'ninth']
 TEENS = ['tenth', 'eleventh', 'twelfth', 'thirteenth', 'fourteenth', 'fifteenth', 'sixteenth', 'seventeenth', 'eighteenth', 'nineteenth']
 TENS = [('twenty', 'twentieth'), ('thirty', 'thirtieth'), ('forty', 'fortieth'), ('fifty', 'fiftieth'), ('sixty', 'sixtieth'), ('seventy', 'seventieth'), ('eighty', 'eightieth'), ('ninety', 'ninetieth')]
+FIRST_INSTALL_LABEL = 'firstinstall'
 ORDINALS = UNITS + TEENS + [word for base, ordinal in TENS for word in [ordinal] + [base + unit for unit in UNITS]]
 MIGRATIONS = 'packages/persistence-sqlite/src/migrations'
 MIGRATION_ENGINE = 'packages/persistence-sqlite/src/migration-engine.ts'
@@ -93,11 +94,16 @@ def git(*arguments, binary=False):
     return child.stdout if binary else child.stdout.decode().strip()
 
 
-def load_instance(name):
+def load_instance(name, host=None):
     path = INSTANCES / (name + '.json')
     if not re.fullmatch(r'[a-z0-9-]+', name) or not path.is_file():
         refuse('PACKET_INSTANCE_UNKNOWN', name)
-    return json.loads(path.read_text())
+    instance = json.loads(path.read_text())
+    address = host or os.environ.get('HIMAWARI_PACKET_HOST') or instance.get('host', {}).get('address')
+    if not isinstance(address, str) or re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9.:-]*', address) is None:
+        refuse('PACKET_HOST_UNKNOWN', 'give the target with --host <address> or HIMAWARI_PACKET_HOST')
+    instance['host'] = {**instance.get('host', {}), 'address': address}
+    return instance
 
 
 def next_label(running):
@@ -352,11 +358,11 @@ def interpret_discovery(facts, instance, label=None):
         refuse('PACKET_FIRST_SIGNER_KEY_NOT_FOUND', signer_keys)
     if facts.get('active') != 'active':
         refuse('PACKET_SERVICE_NOT_ACTIVE', facts.get('active'))
-    pattern = r'ExecStart=\S+ --no-global-search-paths (' + re.escape(fixed['operationsRoot']) + r'/([a-z]+)-([0-9]{8}))/pair-supervisor\.mjs --prefix (' + re.escape(fixed['releasesRoot']) + r'/[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z]+) --config ' + re.escape(fixed['config']) + r' '
+    pattern = r'ExecStart=\S+ --no-global-search-paths (?P<operations>' + re.escape(fixed['operationsRoot']) + r'/(?:(?P<label>[a-z]+)-[0-9]{8}|(?P<first>first-install)))/pair-supervisor\.mjs --prefix (?P<prefix>' + re.escape(fixed['releasesRoot']) + r'/[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z0-9]+) --config ' + re.escape(fixed['config']) + r' '
     starts = [re.match(pattern, line) for line in facts.get('execStart', [])]
     if len(starts) != 1 or starts[0] is None:
         refuse('PACKET_RUNNING_UNIT_NOT_RECOGNIZED', facts.get('execStart'))
-    operations, running_label, prefix = starts[0].group(1), starts[0].group(2), starts[0].group(4)
+    operations, running_label, prefix = starts[0].group('operations'), starts[0].group('label') or FIRST_INSTALL_LABEL, starts[0].group('prefix')
     if facts.get('staticRoot') != prefix + '/share/control-center':
         refuse('PACKET_STATIC_ROOT_NOT_RUNNING_RELEASE', facts.get('staticRoot'))
     if facts.get('budgetsPresent') is not False:
@@ -1124,7 +1130,7 @@ def prepare(arguments):
     started = time.monotonic()
     if getattr(arguments, 'full_source', False) and arguments.reuse_materials:
         refuse('PACKET_FULL_SOURCE_WITH_REUSE', '--reuse-materials copies the earlier packet\'s source bundle, so --full-source cannot take effect; drop --reuse-materials')
-    instance = load_instance(arguments.instance)
+    instance = load_instance(arguments.instance, getattr(arguments, 'host', None))
     commit = resolve_commit(arguments.commit)
     require_current_scripts(commit)
     require_claims_proven(commit, arguments.since, Path(arguments.output_root).resolve())
@@ -1201,6 +1207,7 @@ def main(argv=None):
     commands = parser.add_subparsers(dest='command', required=True)
     prepare_parser = commands.add_parser('prepare')
     prepare_parser.add_argument('--instance', default='andy-production')
+    prepare_parser.add_argument('--host')
     prepare_parser.add_argument('--commit', default='origin/main')
     prepare_parser.add_argument('--label')
     prepare_parser.add_argument('--date')
@@ -1211,13 +1218,14 @@ def main(argv=None):
     freeze_parser = commands.add_parser('freeze')
     freeze_parser.add_argument('packet')
     freeze_parser.add_argument('--instance', default='andy-production')
+    freeze_parser.add_argument('--host')
     arguments = parser.parse_args(argv)
     try:
         if arguments.command == 'prepare':
             prepare(arguments)
         else:
             started = time.monotonic()
-            configuration = freeze(Path(arguments.packet).resolve(), load_instance(arguments.instance))
+            configuration = freeze(Path(arguments.packet).resolve(), load_instance(arguments.instance, getattr(arguments, 'host', None)))
             print('PACKET_FROZEN ' + json.dumps({'packet': str(Path(arguments.packet).resolve()), 'oldConfigSha256': configuration, 'seconds': round(time.monotonic() - started, 1)}))
     except PacketError as error:
         print('PACKET_REFUSED ' + str(error), file=sys.stderr)
