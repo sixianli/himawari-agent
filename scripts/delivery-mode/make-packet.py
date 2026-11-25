@@ -524,7 +524,41 @@ def schema_parameters(parameters, s0):
     return {'CURRENT_SCHEMA': current, 'PREVIOUS_SCHEMA': current - 1, 'MIGRATION_LEDGER': json.dumps(ledger, separators=(',', ':'))}
 
 
+CONDITION_LINE = re.compile(r'^__PKT_(WHEN_[A-Z0-9_]+|OTHERWISE|END_WHEN)__[ \t]*$')
+
+
+def select_conditional_blocks(text, parameters, where):
+    kept, state = [], None
+    for line in text.splitlines(keepends=True):
+        match = CONDITION_LINE.match(line.rstrip('\r\n'))
+        if match is None:
+            if state is None or state['active']:
+                kept.append(line)
+            continue
+        word = match.group(1)
+        if word.startswith('WHEN_'):
+            if state is not None:
+                refuse('PACKET_CONDITION_NESTED', where)
+            key = word[5:]
+            if key not in parameters:
+                refuse('PACKET_PARAMETER_MISSING', key + ' in ' + where)
+            state = {'condition': str(parameters[key]) == '1', 'active': str(parameters[key]) == '1', 'otherwise': False}
+        elif word == 'OTHERWISE':
+            if state is None or state['otherwise']:
+                refuse('PACKET_CONDITION_UNBALANCED', where)
+            state['otherwise'] = True
+            state['active'] = not state['condition']
+        else:
+            if state is None:
+                refuse('PACKET_CONDITION_UNBALANCED', where)
+            state = None
+    if state is not None:
+        refuse('PACKET_CONDITION_UNBALANCED', where)
+    return ''.join(kept)
+
+
 def substitute(text, parameters, where):
+    text = select_conditional_blocks(text, parameters, where)
     def value(match):
         key = match.group(0)[6:-2]
         if key not in parameters:

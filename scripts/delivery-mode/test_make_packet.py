@@ -464,6 +464,54 @@ class TemplateTest(RenderedPacket):
         self.assertEqual(fresh['FIRST_TOOLS'], '1')
         self.assertEqual(json.loads(fresh['NEW_CAPABILITY_REFS_JSON']), ['himawari.pi-coding', 'himawari.public-search', 'himawari.public-fetch'])
 
+    FIRST_TOOLS_REFS = ['himawari.pi-coding', 'himawari.public-fetch', 'himawari.public-search']
+    SWITCH_FILES = ('systemd/S2-stop-and-inspect.py', 'systemd/S7-startup-readback.mjs', 'systemd/S7-switch-start-readback.py', 'install/S9-clean-transport.py')
+    UPGRADE_SWITCH_SHA256 = {
+    'systemd/S2-stop-and-inspect.py': 'c466dde3068064600fb817631b3fa282eac1cc47539a11635953f0518b5e4fee',
+    'systemd/S7-startup-readback.mjs': '0d258810e6a4809a742b2bca8a9734353cce0114fbee4de8f2a554c78bb022fc',
+    'systemd/S7-switch-start-readback.py': 'cca47a75b61ae53e229c79689fa89483ca0704784febd46ebe24493afb52d8e9',
+    'install/S9-clean-transport.py': '235a7d2882edaa304097746315a4be7f5c5f467fea83cd1522a43a1e3b223533',    }
+
+    def render_first_tools(self):
+        return self.render(FIRST_TOOLS='1', NEW_CAPABILITY_REFS_JSON=json.dumps(self.FIRST_TOOLS_REFS, separators=(',', ':')))
+
+    def test_upgrade_switch_and_readback_scripts_render_unchanged(self):
+        packet = self.render()
+        for name, expected in self.UPGRADE_SWITCH_SHA256.items():
+            self.assertEqual(hashlib.sha256((packet / name).read_bytes()).hexdigest(), expected, name)
+            self.assertNotIn('__PKT_WHEN', (packet / name).read_text())
+
+    def test_first_tools_switch_and_readback_scripts_handle_a_host_with_no_tools(self):
+        packet = self.render_first_tools()
+        stop = (packet / 'systemd/S2-stop-and-inspect.py').read_text()
+        self.assertIn('S2_FIRST_TOOLS_HOST_ALREADY_HAS_TOOLS', stop)
+        self.assertNotIn("original-capability-deployment.json", stop)
+        self.assertNotIn("original-startup-attestation.json", stop)
+        self.assertNotIn("original-prepare-helper.mjs", stop)
+        self.assertNotIn('S2_OLD_QUALIFICATION_RECEIPT_MISSING', stop)
+        switch = (packet / 'systemd/S7-switch-start-readback.py').read_text()
+        self.assertIn("new_refs = sorted(" + json.dumps(self.FIRST_TOOLS_REFS, separators=(',', ':')) + ")", switch)
+        self.assertNotIn("original_configuration['capabilityDeployment']", switch)
+        self.assertIn('STARTUP_FIRST_TOOLS_SET_CHANGED', (packet / 'systemd/S7-startup-readback.mjs').read_text())
+        self.assertIn('TRANSPORT_FIRST_TOOLS_SET_CHANGED', (packet / 'install/S9-clean-transport.py').read_text())
+        for name in self.SWITCH_FILES:
+            self.assertNotEqual(hashlib.sha256((packet / name).read_bytes()).hexdigest(), self.UPGRADE_SWITCH_SHA256[name], name)
+            self.assertNotIn('__PKT_', (packet / name).read_text())
+        for name in ('systemd/S2-stop-and-inspect.py', 'systemd/S7-switch-start-readback.py', 'install/S9-clean-transport.py'):
+            compile((packet / name).read_text(), name, 'exec')
+        node = subprocess.run(['node', '--check', str(packet / 'systemd/S7-startup-readback.mjs')], capture_output=True, text=True, check=False)
+        self.assertEqual(node.returncode, 0, node.stderr)
+
+    def test_condition_blocks_are_balanced_and_not_nested(self):
+        parameters = {'FIRST_TOOLS': '1'}
+        self.assertEqual(packet_maker.select_conditional_blocks('a\n__PKT_WHEN_FIRST_TOOLS__\nb\n__PKT_OTHERWISE__\nc\n__PKT_END_WHEN__\nd\n', parameters, 'x'), 'a\nb\nd\n')
+        self.assertEqual(packet_maker.select_conditional_blocks('a\n__PKT_WHEN_FIRST_TOOLS__\nb\n__PKT_OTHERWISE__\nc\n__PKT_END_WHEN__\nd\n', {'FIRST_TOOLS': '0'}, 'x'), 'a\nc\nd\n')
+        for broken in ('__PKT_WHEN_FIRST_TOOLS__\nb\n', '__PKT_END_WHEN__\n', '__PKT_WHEN_FIRST_TOOLS__\n__PKT_WHEN_FIRST_TOOLS__\n__PKT_END_WHEN__\n__PKT_END_WHEN__\n'):
+            with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_CONDITION'):
+                packet_maker.select_conditional_blocks(broken, parameters, 'x')
+        with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_PARAMETER_MISSING'):
+            packet_maker.select_conditional_blocks('__PKT_WHEN_NOPE__\n__PKT_END_WHEN__\n', parameters, 'x')
+
     def test_a_unit_written_by_first_install_is_recognized(self):
         prefix = '/opt/himawari/releases/2026-11-25-0a1b2c3d'
         facts = production_facts(
@@ -1685,7 +1733,7 @@ PACKET_TEMPLATE = HERE / 'packet-template'
 
 
 def template_definitions(relative, names=None, assignments=()):
-    tree = ast.parse((PACKET_TEMPLATE / relative).read_text())
+    tree = ast.parse(packet_maker.select_conditional_blocks((PACKET_TEMPLATE / relative).read_text(), {'FIRST_TOOLS': '0'}, relative))
     nodes = []
     for node in tree.body:
         if isinstance(node, (ast.FunctionDef, ast.ClassDef)) and (names is None or node.name in names):
