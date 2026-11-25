@@ -25,11 +25,11 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 ## 背景
 
-任务块 P1-3（Andy 2026-10-31 写，2026-11-09 同意整合后的方案）。Andy 要求：给定一条决策记录（表 `decision_ledger` 的一行），能返回并显示完整的链：判断结果、命中的规则和规则出处、用到的记忆（原话、来源、现状、被谁取代）、推断记忆是从哪几条记忆推出来的（复用 [ADR 0194](0194-record-the-whole-basis-chain-of-a-memory-tidy-up.md) 的 `readBasisChain`）、Andy 的评价。链上任何一环没有记录，界面显示“无记录”，不留空白。
+任务块 P1-3（Andy 2026-10-31 写，2026-11-09 同意整合后的方案）。Andy 要求：给定一条决策记录（表 `decision_ledger` 的一行），能返回并显示完整的链：判断结果、命中的规则和规则出处、用到的记忆（原话、来源、现状、被谁取代）、推断记忆是从哪几条记忆推出来的（复用 [ADR 0194](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0194-record-the-whole-basis-chain-of-a-memory-tidy-up.md) 的 `readBasisChain`）、Andy 的评价。链上任何一环没有记录，界面显示“无记录”，不留空白。
 
 动手前核对的现状：决策记录已经保存了规则编号、命中记忆、记忆召回状态、关联邮件读取状态等输入（`DecisionInputs`），记忆、变更记录和依据行也已存在，所以不需要新增表或迁移，也不重新计算任何东西。
 
-产品愿景的取舍依据：用户主权优先于其他原则：Andy 必须能看到每个判断的依据；记忆可靠性次之：模型也看不到的那档记忆（数据分级里的受限档，`reviewMemoryVisible` 判为不可见）的内容仍然隐藏；敏感档随 [ADR 0193](0193-memory-is-visible-to-the-model.md) 已对模型可见，这里照常显示。
+产品愿景的取舍依据：用户主权优先于其他原则：Andy 必须能看到每个判断的依据；记忆可靠性次之：模型也看不到的那档记忆（数据分级里的受限档，`reviewMemoryVisible` 判为不可见）的内容仍然隐藏；敏感档随 [ADR 0193](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0193-memory-is-visible-to-the-model.md) 已对模型可见，这里照常显示。
 
 <a id="decision"></a>
 
@@ -67,5 +67,5 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ## 关联文档
 
 - [决策记录写入约定](../execution/specs/2026-11-09-decision-record-write-convention.md)
-- [ADR 0194](0194-record-the-whole-basis-chain-of-a-memory-tidy-up.md)
+- [ADR 0194](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0194-record-the-whole-basis-chain-of-a-memory-tidy-up.md)
 - [产品愿景](../product-vision.md)

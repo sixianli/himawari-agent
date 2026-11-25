@@ -45,7 +45,7 @@ verified_at: "7d0ffcd52cbb69d4941871cf9bf08d93f3843da8"
 - 配置仍允许 `provider: "vercel-ai-gateway"`，但模型只能是 `deepseek/deepseek-v4.1-flash`，并且必须写密钥引用和 `providerRouting`（服务方顺序和按费用兜底）。
 - 请求一律由 Pi 的 `openai-completions` 接口发出，只换地址和密钥，不另写协议。Magpie 路线打开 Pi 的 `sendSessionAffinityHeaders`：主对话带 Pi 的会话编号，单次调用带本次运行的编号，Magpie 据此把同一段对话固定在同一个账号上，保住服务方的缓存。
 - Magpie 只接 API Key 和 Andy 明确同意的订阅登录；条款不允许第三方转发的订阅（例如 Claude Max）不接。
-- 记忆向量的算法见 [ADR 0224](0224-memory-embedding-runs-on-the-host.md)。
+- 记忆向量的算法见 [ADR 0224](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0224-memory-embedding-runs-on-the-host.md)。
 
 <a id="models"></a>
 

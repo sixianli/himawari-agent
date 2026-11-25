@@ -40,7 +40,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 3. 只有登记过的文件可以调用整段拦下的敏感检查：`scripts/check-egress-redaction.mjs` 的 `SENSITIVE_GATE_CALLS`，本决定为 `export-text-policy.ts` 新增一行。
 4. 管理命令行只能依赖应用、持久化和 Node 平台三个包：`scripts/boundary-policy.mjs:122-128`。
 5. 已有的服务停机锁：`apps/admin-cli/src/stopped-target-lock.ts`（`lockStoppedTarget`），记忆整理命令也用它。
-6. [ADR 0193](0193-memory-is-visible-to-the-model.md)：存入记忆的内容必须能被模型看到；本决定不改变这一点，导出只是副本。
+6. [ADR 0193](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0193-memory-is-visible-to-the-model.md)：存入记忆的内容必须能被模型看到；本决定不改变这一点，导出只是副本。
 
 <a id="decision"></a>
 
@@ -101,7 +101,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ## 关联文档
 
 - [PRD v0.2](../prd-v0.2.md)
-- [ADR 0193：存入记忆的内容必须能被模型看到](0193-memory-is-visible-to-the-model.md)
+- [ADR 0193：存入记忆的内容必须能被模型看到](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0193-memory-is-visible-to-the-model.md)
 - [ADR 0183：只在数据离开时遮盖](0183-mask-only-when-data-leaves-and-keep-the-original-inside.md)
 - 代码：`packages/persistence-sqlite/src/data-export/`、`packages/platform-node/src/export-text-policy.ts`、`apps/admin-cli/src/data-command.ts`
 - [ADR 0233：规则手册进入数据导出，格式升到 v2](0233-rule-book-joins-the-data-export.md)（后续）

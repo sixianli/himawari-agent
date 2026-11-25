@@ -47,7 +47,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 ## 决定
 
-1. **置顶的先占字数，永不因字数被挤掉。**这里的“置顶”指档案块本来就会带上的分类（规则、身份、偏好、人际、长期目标、进行中的事）里打开了开关的记忆。打开开关后被改成事件、健康、财务、其他等分类的记忆，开关会保留，但按 [ADR 0112](0112-memory-page-carried-memories-and-topic-browsing.md) 不进档案块，也不算进 `pinned`；改回原来的分类后又会带上。这是原有的设计，本 ADR 不改。`#select` 先读出全部候选条目（规则类，以及置顶或重要度够高的档案条目），把置顶条目的字数全部算进去，剩下的字数再按原来的顺序（规则在前，同组按重要度）分给没置顶的条目，放不下的才挤掉。置顶的条目本身就超过上限时，照样全部放进去，允许超出上限，这时没置顶的条目全部挤掉。
+1. **置顶的先占字数，永不因字数被挤掉。**这里的“置顶”指档案块本来就会带上的分类（规则、身份、偏好、人际、长期目标、进行中的事）里打开了开关的记忆。打开开关后被改成事件、健康、财务、其他等分类的记忆，开关会保留，但按 [ADR 0112](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0112-memory-page-carried-memories-and-topic-browsing.md) 不进档案块，也不算进 `pinned`；改回原来的分类后又会带上。这是原有的设计，本 ADR 不改。`#select` 先读出全部候选条目（规则类，以及置顶或重要度够高的档案条目），把置顶条目的字数全部算进去，剩下的字数再按原来的顺序（规则在前，同组按重要度）分给没置顶的条目，放不下的才挤掉。置顶的条目本身就超过上限时，照样全部放进去，允许超出上限，这时没置顶的条目全部挤掉。
 2. **`compose()` 带回用量。**`OwnerProfile.usage` 有四项：`limit`（上限）、`used`（实际用掉的字数，可能大于上限）、`pinned`（置顶条目占的字数）、`queued`（被挤掉的记忆编号）。网关里的 `profileUsage` 也加上 `pinned`。
 3. **写决策记录。**对话流程（`ContextFormationService`）拿到用量后，只要有条目被挤掉，或者置顶条目超出了上限，就写一条 `context_truncation` / `truncated` 记录：
    - 原因码：置顶条目超出上限时用 `profile_pinned_over_budget`，其他情况用 `profile_budget_exceeded`，和“相关记忆选太多”用的 `selection_limit_reached` 分开。
@@ -60,7 +60,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
    - 不写新记录时，旧记录里的字数也不更新，保留第一次写入时的值。
    - 被挤掉的超过 200 条时，只记排序后的前 200 条，去重也只比较这 200 条。
    - 数据导出后再导入时，记录按导出的顺序重新写入，`rowid` 不一定还是原来的写入顺序；最坏情况是导入后第一次比较拿错一条，多记一条重复记录，不会丢记录。
-5. **记忆页提示。**记忆页的用量和对话流程用同一个分级上限（`modelVisibleCeiling()`，见 [ADR 0193](0193-memory-is-visible-to-the-model.md)），以前记忆页按 `private` 算，置顶的敏感人际记忆进了档案块却不算进记忆页的用量。`pinned > limit` 时，“每次对话都会带上的记忆”卡片顶部（不用展开就能看到）显示：置顶的记忆共多少字、上限多少字、超出多少字，并提示关掉几条就能回到上限以内。三种语言都有这条文案。
+5. **记忆页提示。**记忆页的用量和对话流程用同一个分级上限（`modelVisibleCeiling()`，见 [ADR 0193](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0193-memory-is-visible-to-the-model.md)），以前记忆页按 `private` 算，置顶的敏感人际记忆进了档案块却不算进记忆页的用量。`pinned > limit` 时，“每次对话都会带上的记忆”卡片顶部（不用展开就能看到）显示：置顶的记忆共多少字、上限多少字、超出多少字，并提示关掉几条就能回到上限以内。三种语言都有这条文案。
 6. **门槛：**
    - `test/integration/decision-ledger.test.ts` 里的 `[P2-5]` 用例，跑真实的 `ContextFormationService`、`OwnerProfileService` 和 SQLite 决策记录，worker 和直连两种执行方式都跑：
      - 档案超长时写一条记录，列出被挤掉的编号，不含正文；
@@ -101,7 +101,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 - 置顶条目超出上限时，档案块会超过 2000 字，每轮发给模型的内容会变长。主人在记忆页能看到这件事，并自己决定关掉哪几条。
 - 档案块选中的条目有可能和以前不同。但档案块在最后一条用户消息里，已经发给模型的历史不受影响，请求开头也不变。
 - 置顶的字数没有硬上限：主人置顶得越多，每轮发给模型的内容就越长。记忆页的提示是唯一的约束，要不要加硬上限，以后由主人决定。
-- [ADR 0112](0112-memory-page-carried-memories-and-topic-browsing.md) 里“总长 2000 字、超出按重要度截断”的说法，从本 ADR 起改为：先给置顶的留字数，置顶的永不截断；其余的仍按重要度截断。
+- [ADR 0112](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0112-memory-page-carried-memories-and-topic-browsing.md) 里“总长 2000 字、超出按重要度截断”的说法，从本 ADR 起改为：先给置顶的留字数，置顶的永不截断；其余的仍按重要度截断。
 - 写入失败（例如磁盘满）时不写记录，所以“被挤掉就有记录”在这种情况下不成立；这一轮对话不受影响。
 - 不改表结构，不加迁移。
 
@@ -111,7 +111,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 ## 关联文档
 
-- [ADR 0112](0112-memory-page-carried-memories-and-topic-browsing.md)：记忆页“每次对话都带上”开关。
+- [ADR 0112](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0112-memory-page-carried-memories-and-topic-browsing.md)：记忆页“每次对话都带上”开关。
 - [ADR 0143](0143-decision-ledger-for-model-gate-decisions.md)：决策记录。
 - [ADR 0211](0211-hard-rule-points-back-to-its-rule-memory.md)：硬规则记着来源记忆。
 - [Agent 规则手册清单](../agent-rulebook-inventory.md) 的 M-3。

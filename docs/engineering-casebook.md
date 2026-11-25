@@ -181,7 +181,7 @@ verified_at: ""
    - 三路结果用 RRF（倒数排名融合，按每路里的名次合并，不需要把不同分数换算到同一尺度）合并，再按重要度、可信度和“90 天减半”的新鲜度调整。过了有效期的事实不再召回。
 2. **防止模型编造记忆：** 提炼记忆时要求模型给出 Andy 原话里的一段引文，主机程序在原消息里逐字找到这段话才保存，找不到就丢弃并记审计。
 3. **历史和时间（阶段二）：** 新事实“取代”旧事实而不是删掉旧的，能回答“我以前住哪”；加了按天的对话摘要和一个“回忆过去对话”的工具。
-4. **整理记忆，可撤销（阶段三）：** 每个 Agent 每天整理一次，只看上次整理之后变动过的记忆，没有新内容就不调模型。合并重复、新事实取代旧事实、最多推测 3 条习惯（标为“待确认”，确认前不进主人档案块和聊天检索；2026-11-08 起（[ADR 0179](adr/0179-keep-low-confidence-memory-candidates-as-tentative.md)）系统主动提醒的邮件判断会把待确认记忆当线索召回）。很久没用的琐事只归档、不删除（2026-11-09 起停掉闲置归档，见 [ADR 0196](adr/0196-index-sensitive-memory-after-masking-and-stop-idle-archiving.md)）。每一处改动都记下改动前的样子，可以逐条撤销；Andy 中途手改过的记忆会被跳过。规则类记忆“第一次看到先观察，再次出现或确认后才生效”。
+4. **整理记忆，可撤销（阶段三）：** 每个 Agent 每天整理一次，只看上次整理之后变动过的记忆，没有新内容就不调模型。合并重复、新事实取代旧事实、最多推测 3 条习惯（标为“待确认”，确认前不进主人档案块和聊天检索；2026-11-08 起（[ADR 0179](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0179-keep-low-confidence-memory-candidates-as-tentative.md)）系统主动提醒的邮件判断会把待确认记忆当线索召回）。很久没用的琐事只归档、不删除（2026-11-09 起停掉闲置归档，见 [ADR 0196](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0196-index-sensitive-memory-after-masking-and-stop-idle-archiving.md)）。每一处改动都记下改动前的样子，可以逐条撤销；Andy 中途手改过的记忆会被跳过。规则类记忆“第一次看到先观察，再次出现或确认后才生效”。
 5. **承诺提醒（阶段四）：** Agent 答应过的事到时间会提醒。
 
 **方案讨论与备选**
@@ -223,7 +223,7 @@ verified_at: ""
 
 **相关 ADR/PR**
 
-[ADR 0075](adr/0075-self-built-memory-engine.md)；[PR #21](https://github.com/sixianli/himawari-agent/pull/21)、[PR #24](https://github.com/sixianli/himawari-agent/pull/24)、[PR #25](https://github.com/sixianli/himawari-agent/pull/25)；提交 `2215bcd`（阶段一）、`68ff784`（阶段二评测）、`a211b17`（阶段三）。
+[ADR 0075](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0075-self-built-memory-engine.md)；[PR #21](https://github.com/sixianli/himawari-agent/pull/21)、[PR #24](https://github.com/sixianli/himawari-agent/pull/24)、[PR #25](https://github.com/sixianli/himawari-agent/pull/25)；提交 `2215bcd`（阶段一）、`68ff784`（阶段二评测）、`a211b17`（阶段三）。
 
 **面试 30 秒版**
 
@@ -280,7 +280,7 @@ verified_at: ""
 **后续（2026-11-11，P3-5）：写入失败不再无声无息**
 
 - 现象：写入路径有了，但提炼这次后台模型调用一失败，就只写一条审计，什么都没记，也不再试（[I-63](incidents-and-gates.md#incidents)：模型说“记住了”，库里却没有）。原来的出口层重试只认 `AI_GATEWAY_TOOL_CALL_UNSUPPORTED` 一个错误码。
-- 做法（[ADR 0222](adr/0222-retry-and-queue-failed-memory-capture.md)）：可能是偶发的错误（超时、限流、上游不可用、JSON 不合法、登记生成时的写冲突等）同轮用同一份提示词字节重试一次；第一次失败就先把这一轮写进持久的待补队列（防止重试途中进程重启丢失），再失败就留给下一轮补做，补 3 次仍失败才放弃。补做沿用原来的生成编号，记忆 id 不变。模型已经给出结果、开始写记忆之后失败的，不重试也不补做，只写一条“放弃”记录：存是逐条写的，第一次可能已经写进一部分，换一份结果再存会重复写，用同一份结果再存又会把“取代旧记忆没做完”当成成功（复核第 2、3 轮先后指出）。每次失败都写一条决策记录，主人能在每日评价和周报里看到并评价“漏没漏”。
+- 做法（[ADR 0222](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0222-retry-and-queue-failed-memory-capture.md)）：可能是偶发的错误（超时、限流、上游不可用、JSON 不合法、登记生成时的写冲突等）同轮用同一份提示词字节重试一次；第一次失败就先把这一轮写进持久的待补队列（防止重试途中进程重启丢失），再失败就留给下一轮补做，补 3 次仍失败才放弃。补做沿用原来的生成编号，记忆 id 不变。模型已经给出结果、开始写记忆之后失败的，不重试也不补做，只写一条“放弃”记录：存是逐条写的，第一次可能已经写进一部分，换一份结果再存会重复写，用同一份结果再存又会把“取代旧记忆没做完”当成成功（复核第 2、3 轮先后指出）。每次失败都写一条决策记录，主人能在每日评价和周报里看到并评价“漏没漏”。
 - 业界做法：✅ Anthropic 和 OpenAI 的官方 SDK 对超时、限流和 5xx 默认重试 2 次（两份 README 的 “Retries” 一节，原话“Certain errors will be automatically retried 2 times by default”）；本项目同轮只多试一次，因为后面还有队列兜底。
 - 取舍：同一轮运行已经结束时重试拿不到模型准入，这一轮直接排队，不拖住回答结束。
 - 结果数据：`npm run check:memory-capture-retry` 的 19 条 `[P3-5]` 测试通过；去掉重试、入队、补做、放弃或决策记录中任何一段，都有测试失败（实施时逐一试过）。生产效果未测量。
@@ -1111,9 +1111,9 @@ lessons 共 25 条；第十次上线中“复制操作包留旧名”达到第�
 
 **相关 ADR/PR**
 
-[ADR 0075](adr/0075-self-built-memory-engine.md)（自研记忆）；原型 <https://claude.ai/artifact/SJkcL4hNPHeM2V6Nk3V4jL>；设计说明 <https://claude.ai/artifact/CykKuRNV26pNSBcfvNsDNR>；数据库迁移 `0057_memory_page.sql`；[PR #34](https://github.com/sixianli/himawari-agent/pull/34)（提交 bfa6162）。
+[ADR 0075](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0075-self-built-memory-engine.md)（自研记忆）；原型 <https://claude.ai/artifact/SJkcL4hNPHeM2V6Nk3V4jL>；设计说明 <https://claude.ai/artifact/CykKuRNV26pNSBcfvNsDNR>；数据库迁移 `0057_memory_page.sql`；[PR #34](https://github.com/sixianli/himawari-agent/pull/34)（提交 bfa6162）。
 
-**后续（2026-10-29）**：四个页签又被 Andy 问出了问题：“档案”看起来像一份能单独编辑的资料，其实是每轮从记忆里现挑的；“新”标签没有信息量；三行筛选难懂。页面改成“记忆”“变化记录”两个标签和按主题浏览，档案改成每条记忆上的“每次对话都带上”开关，见[案例 54](#case-carried-memories) 和 [ADR 0112](adr/0112-memory-page-carried-memories-and-topic-browsing.md)。
+**后续（2026-10-29）**：四个页签又被 Andy 问出了问题：“档案”看起来像一份能单独编辑的资料，其实是每轮从记忆里现挑的；“新”标签没有信息量；三行筛选难懂。页面改成“记忆”“变化记录”两个标签和按主题浏览，档案改成每条记忆上的“每次对话都带上”开关，见[案例 54](#case-carried-memories) 和 [ADR 0112](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0112-memory-page-carried-memories-and-topic-browsing.md)。
 
 **面试 30 秒版**
 
@@ -1529,7 +1529,7 @@ Andy 决定不用 Bark 过渡，所有推送只走网页推送，并定下生产
 
 **相关 ADR/PR**
 
-[ADR 0075](adr/0075-self-built-memory-engine.md)（自研记忆，档案常驻上下文）；[PR #39](https://github.com/sixianli/himawari-agent/pull/39)（提交 f298254）；[案例 16](#case-narration-status)（同一块步骤列表的上一次修复）；[案例 17](#case-memory-page)（记忆管理页）；[案例 22](#case-identity-prompt)（这次排查顺带发现的系统提示问题）。
+[ADR 0075](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0075-self-built-memory-engine.md)（自研记忆，档案常驻上下文）；[PR #39](https://github.com/sixianli/himawari-agent/pull/39)（提交 f298254）；[案例 16](#case-narration-status)（同一块步骤列表的上一次修复）；[案例 17](#case-memory-page)（记忆管理页）；[案例 22](#case-identity-prompt)（这次排查顺带发现的系统提示问题）。
 
 **面试 30 秒版**
 
@@ -2840,7 +2840,7 @@ PR #82（2026-10-28 合并）。只改了返回格式、没改模型和数据，
 
 **后续（2026-11-11）：改在本机算向量（P3-1）**
 
-候选报告比较了三个能在生产机 CPU 上跑的模型，Andy 选了 jina-embeddings-v5-text-small-retrieval 的 int8 量化版。按 [ADR 0224](adr/0224-memory-embedding-runs-on-the-host.md)，向量在服务进程里用 ONNX Runtime 计算，外网 Qwen3-8B 保留为可选；每个嵌入模型登记成一份档案，门槛跟着模型走，换模型只改配置。本机请求仍走统一出口，遮盖和记账不漏。合成评测集真实代码路径实测（门槛 0.30，数字出自 ADR 0224）：主评测集命中 90%（网关 8B 在 0.6 门槛下 80%），留出集 70%；查询中位数约 35 毫秒，加载约 3.7 秒，进程多占约 1.35 GB。生产上线后的中位数未测量。代价是许可为 CC BY-NC 4.0，对外收费前要换成 Apache 2.0 的 Qwen3-0.6B（已登记好档案）。检索索引的威胁模型另写在 [记忆检索索引的威胁模型](memory-index-threat-model.md)。
+候选报告比较了三个能在生产机 CPU 上跑的模型，Andy 选了 jina-embeddings-v5-text-small-retrieval 的 int8 量化版。按 [ADR 0224](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0224-memory-embedding-runs-on-the-host.md)，向量在服务进程里用 ONNX Runtime 计算，外网 Qwen3-8B 保留为可选；每个嵌入模型登记成一份档案，门槛跟着模型走，换模型只改配置。本机请求仍走统一出口，遮盖和记账不漏。合成评测集真实代码路径实测（门槛 0.30，数字出自 ADR 0224）：主评测集命中 90%（网关 8B 在 0.6 门槛下 80%），留出集 70%；查询中位数约 35 毫秒，加载约 3.7 秒，进程多占约 1.35 GB。生产上线后的中位数未测量。代价是许可为 CC BY-NC 4.0，对外收费前要换成 Apache 2.0 的 Qwen3-0.6B（已登记好档案）。检索索引的威胁模型另写在 [记忆检索索引的威胁模型](memory-index-threat-model.md)。
 
 [返回目录](#contents)
 
@@ -3220,7 +3220,7 @@ Andy 2026-10-29 00:56 定了规则，记在 [ADR 0107](https://github.com/sixian
 - `npm run eval:jarvis:live` 不带 `--confirm-cost=<美元>` 就拒跑，并打印上一轮完整跑的实际花费，方便先报预计费用、等 Andy 同意。跑的过程中，花费到上限就停。
 - 开跑前先发 1 个 token 的请求试探网关，被拒就不跑，并贴出网关原文。
 - 请 Andy 删掉按人的用户预算，改成按 key 设：评测 key 单独封顶，生产 key 放宽（[ADR 0109](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0109-paid-eval-runs-need-cost-cap-and-preflight.md)）。
-- 生产这次只记下 `transport_unresolved`，看不出是额度被拒。现在嵌入失败会写一行带 HTTP 状态和网关原文的 `memory.embedding_failed` 日志；402 单独记成 `CONTEXT_MEMORY_QUOTA_EXCEEDED` 或 `PI_MODEL_QUOTA_EXCEEDED`，网页用三语告诉主人是额度用完了，不是网络不通。后续（2026-11-11，[ADR 0223](adr/0223-chat-memory-lookup-falls-back-to-keywords.md)）：聊天时嵌入失败不再让整轮失败，改为按关键词和实体继续找记忆，`CONTEXT_MEMORY_QUOTA_EXCEEDED` 和对应网页说明已删，嵌入的 402 只在 `memory.embedding_failed` 日志里记下。
+- 生产这次只记下 `transport_unresolved`，看不出是额度被拒。现在嵌入失败会写一行带 HTTP 状态和网关原文的 `memory.embedding_failed` 日志；402 单独记成 `CONTEXT_MEMORY_QUOTA_EXCEEDED` 或 `PI_MODEL_QUOTA_EXCEEDED`，网页用三语告诉主人是额度用完了，不是网络不通。后续（2026-11-11，[ADR 0223](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0223-chat-memory-lookup-falls-back-to-keywords.md)）：聊天时嵌入失败不再让整轮失败，改为按关键词和实体继续找记忆，`CONTEXT_MEMORY_QUOTA_EXCEEDED` 和对应网页说明已删，嵌入的 402 只在 `memory.embedding_failed` 日志里记下。
 - 给 Andy 的对比结论改为不再花钱：用官方价目表和已经跑完的第 1 组数据给推荐。Andy 决定先不换。
 - 换被测模型的开关已删掉：Andy 在 13:31 定下任何场景都不调用 Claude、OpenAI 等贵模型，评测只测生产用的 DeepSeek V4.1 Flash。
 
@@ -3574,7 +3574,7 @@ Andy 看了 Qwen3.8 Flash 和 GLM 5.3 Flash 的对比（价格几乎相同：0.1
 
 **我们的方案**
 
-先调研，再按[产品愿景](product-vision.md)核对，然后发可切换的原型（方案 A/B/C、电脑和手机、13 条和 1 万条、三语）。Andy 选了方案 A（[ADR 0112](adr/0112-memory-page-carried-memories-and-topic-browsing.md)）：
+先调研，再按[产品愿景](product-vision.md)核对，然后发可切换的原型（方案 A/B/C、电脑和手机、13 条和 1 万条、三语）。Andy 选了方案 A（[ADR 0112](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0112-memory-page-carried-memories-and-topic-browsing.md)）：
 
 - **档案改成记忆身上的一个标记。** 界面上叫“每次对话都会带上的记忆”。每条记忆有开关“每次对话都带上”，用户的选择优先于自动挑选：打开的排在最前，关掉的不再自动带上。用户没碰过的仍按原规则挑。选择存在新表 `memory_profile_pins`。敏感记忆和事件、健康、财务、其他类不能打开，服务端也会拒绝。
 - **把预算摆出来。** 顶部卡片写明带上几条、已用多少字（满 2000 字）、几条放不下，展开后能看到放不下的和自己关掉的。
@@ -3604,7 +3604,7 @@ Andy 看了 Qwen3.8 Flash 和 GLM 5.3 Flash 的对比（价格几乎相同：0.1
 
 **对比与取舍**
 
-Claude 让用户按主题看、改、删记忆，但没有告诉用户每轮实际带上了哪些。Himawari 的底层是一条条带来源和更正历史的事实（[ADR 0075](adr/0075-self-built-memory-engine.md)），所以我们没有合成主题段落，而是在每条事实上加一个“每次都带上”的开关，并把 2000 字的预算和放不下的条目明着给用户看。代价是多一张表和一层“用户选择优先”的排序；好处是用户能解释、也能纠正“模型为什么总记得这件事”。
+Claude 让用户按主题看、改、删记忆，但没有告诉用户每轮实际带上了哪些。Himawari 的底层是一条条带来源和更正历史的事实（[ADR 0075](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0075-self-built-memory-engine.md)），所以我们没有合成主题段落，而是在每条事实上加一个“每次都带上”的开关，并把 2000 字的预算和放不下的条目明着给用户看。代价是多一张表和一层“用户选择优先”的排序；好处是用户能解释、也能纠正“模型为什么总记得这件事”。
 
 **结果数据**
 
@@ -3617,7 +3617,7 @@ Claude 让用户按主题看、改、删记忆，但没有告诉用户每轮实�
 
 **相关 ADR/PR**
 
-[ADR 0112](adr/0112-memory-page-carried-memories-and-topic-browsing.md)、[ADR 0075](adr/0075-self-built-memory-engine.md)、[事故清单 I-21](incidents-and-gates.md#incidents)；原型 <https://claude.ai/artifact/EY7f1dkgB7zypskUoQ1dzo>；迁移 `0066_memory_profile_pins.sql`；本案例的 PR 在分支 `claude/project-thread-44hlmo`；前情见[案例 17](#case-memory-page)。
+[ADR 0112](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0112-memory-page-carried-memories-and-topic-browsing.md)、[ADR 0075](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0075-self-built-memory-engine.md)、[事故清单 I-21](incidents-and-gates.md#incidents)；原型 <https://claude.ai/artifact/EY7f1dkgB7zypskUoQ1dzo>；迁移 `0066_memory_profile_pins.sql`；本案例的 PR 在分支 `claude/project-thread-44hlmo`；前情见[案例 17](#case-memory-page)。
 
 **面试 30 秒版**
 
@@ -3676,7 +3676,7 @@ Claude 让用户按主题看、改、删记忆，但没有告诉用户每轮实�
 
 **相关 ADR/PR**
 
-[ADR 0113：每条记忆的每次变化都留一条历史记录](adr/0113-memory-history-events-and-stance.md)；[事故与门槛清单 I-20](incidents-and-gates.md#incidents)；PR 在分支 `claude/project-thread-6k48tu`。
+[ADR 0113：每条记忆的每次变化都留一条历史记录](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0113-memory-history-events-and-stance.md)；[事故与门槛清单 I-20](incidents-and-gates.md#incidents)；PR 在分支 `claude/project-thread-6k48tu`。
 
 **面试 30 秒版**
 
@@ -3796,7 +3796,7 @@ Claude 让用户按主题看、改、删记忆，但没有告诉用户每轮实�
 
 **相关 ADR/PR**
 
-[ADR 0115](adr/0115-memory-search-relevance-threshold-and-retrieval-eval.md)；[事故 I-23、I-13](incidents-and-gates.md#incidents)；[界面与交互设计指南的“不良设计”](ui-ux-design-guide.md#bad)；[案例 1](#case-memory-engine)、[案例 23](#case-memory-steps)；本案例的 PR 在分支 `claude/project-thread-tk7qne`。
+[ADR 0115](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0115-memory-search-relevance-threshold-and-retrieval-eval.md)；[事故 I-23、I-13](incidents-and-gates.md#incidents)；[界面与交互设计指南的“不良设计”](ui-ux-design-guide.md#bad)；[案例 1](#case-memory-engine)、[案例 23](#case-memory-steps)；本案例的 PR 在分支 `claude/project-thread-tk7qne`。
 
 **面试 30 秒版**
 
@@ -4215,7 +4215,7 @@ OpenAI 的“流式”Himawari 早已做到，但第一个字本身就要 5 秒�
 - 重启后第一条消息排队 13.8 秒（2026-10-30 后续，第二十一版 12:27 日本时间上线）：Mac 线程从生产日志取了 03:25–03:40 UTC 的数据库慢操作记录（`startup-db-v21.txt`，651 条单次总耗时 ≥ 500 毫秒的 `sqlite.slow_operation`）。开页面那 4 秒里有 263 条，排队最深 98 个，几乎都是本身只跑 0–1 毫秒、却排了 0.5–1.3 秒队的小读。重启后第一条消息的分段计时（`run.timing`，#123 加的 `db.queue`、`db.run`）显示：202 次数据库操作排队合计 13.8 秒，真正执行只有 3.6 秒；之后两条消息分别排队 0.9 秒和 2.4 秒。
   根因（代码证据）：数据库只有一个工作线程，所有读写排一条队。①每个网页请求，包括 JS、图标、`sw.js` 这类静态文件，都要先跑一次“我还持有生产权限吗”的检查（`assertActive`），每次 3 个数据库读；新版上线后浏览器缓存失效，开一次页面就是上百次读同时进队。②每个接口请求都写一次会话的“最后活跃时间”，这是要等磁盘确认的写，慢的时候单次 142–801 毫秒。③审批订阅每秒、推送定时把全部历史审批记录读出来再筛，单次 70–430 毫秒，自动批准搜索后记录越积越多。
   修法：静态文件只看内存里的服务状态，不查数据库；同一时刻的权限检查共用一次（写入本身仍带权限令牌，数据库层照样拒绝过期的写）；最后活跃时间 60 秒内不重复写；推送只读待审批，订阅改读“条数 + 修订号之和 + 待审批列表”这个一行的小结果。放弃的做法：给数据库加第二个读线程，改动面大，而且问题是请求太多，不是单次慢。效果待第二十一版之后的下一版上线后用同一条日志命令复测，现在未测量。
-- 3 秒重发反而让整轮失败（2026-10-30 后续，事故 I-37，[ADR 0123](adr/0123-cut-off-embedding-attempt-charged-at-its-ceiling.md)）：第二十版、第二十一版验收共 3 次“本轮执行失败”，都在找记忆第一次超时重发之后。用真实 SQLite 准入写测试复现：被掐断的那次记成“结果不确定”，这一轮的预算账户随之变成“待对账”；重发用同一个调用位置，被要求先对账；主对话再申请调用，被预算账户拒绝。原来的单元测试用总是放行的假准入，所以 #116 上线前没发现，重发在生产上从未成功过。
+- 3 秒重发反而让整轮失败（2026-10-30 后续，事故 I-37，[ADR 0123](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0123-cut-off-embedding-attempt-charged-at-its-ceiling.md)）：第二十版、第二十一版验收共 3 次“本轮执行失败”，都在找记忆第一次超时重发之后。用真实 SQLite 准入写测试复现：被掐断的那次记成“结果不确定”，这一轮的预算账户随之变成“待对账”；重发用同一个调用位置，被要求先对账；主对话再申请调用，被预算账户拒绝。原来的单元测试用总是放行的假准入，所以 #116 上线前没发现，重发在生产上从未成功过。
   业界做法（实际打开的一手资料）：开源网关 LiteLLM 对“到达服务后超时”的请求按预估输入 token 计费、从预算里扣，每次重试单独一条记录（`attempt-<n>`）；OpenAI Agents SDK 每次重试是新的一次尝试、单独计时，只有重放不安全时才停下。我们照此修：被自己掐断的向量请求按费用上限（16384 个 token × 输入单价）结清，重发用新的调用位置；准入失败的原因写进日志 `model.admission_failed`。放弃的做法：超时按 0 元记（服务方照样收费，会少算）、一直等对账（这一轮必然失败）、准入不计向量请求（重发仍会被挡住）。代价是每次重发最多多记一次向量请求的上限费用。效果待下一版上线复测，现在未测量。
   为什么当初这样设计（Andy 问）：当时合理的部分是，预算账本（迁移 0022）建在有费用上限的时期（全局 1 美元、单轮 0.1 美元），一次调用花费不确定，就不知道是否已经超限，先锁住整轮账户等对账，是防超支的保守做法；Pi 运行适配器把准入异常统一换成一句固定的“准入失败”，用意是不把内部错误原文混进模型输出和过程记录，这一点是推断，没找到当时的记录。后来变错的部分是，10-25 [ADR 0076](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0076-no-model-cost-budget-limits.md) 取消了所有费用上限，却保留了这把锁，理由改成“阻止同一调用被重复发出”；可这件事调用记录已经按调用位置做了，锁整轮账户就把同一轮里无关的调用也挡住了。#116 加 3 秒掐断时，测试用的是总是放行的假准入，碰不到这把锁；异常又只换成一句固定的话、不写日志，所以上线后也看不出原因。本次只修了“被自己掐断的向量请求”这一种；锁的范围要不要缩小到“只挡同一调用”，留给 Andy 定。
   怎么防止再用假的测过去（Andy 问）：Google《Software Engineering at Google》第 13 章说“We prefer realistic tests because they give more confidence that the system under test is working properly”，并指出用桩代替时“there is no way to ensure the function being stubbed behaves like the real implementation”，假实现“must have its own tests to ensure that it conforms to the API of its corresponding real implementation”（https://abseil.io/resources/swe-book/html/ch13.html ）；Martin Fowler 把这类核对叫契约测试，用来发现替身和真实服务走样（https://martinfowler.com/bliki/ContractTest.html ）。我们据此加了一道门 `npm run check:real-admission`：单元测试可以继续用假准入图快，但每个调用模型准入的源文件都必须另有一条走真实 SQLite 准入的集成测试，新增调用方不登记就过不了 `npm run check`。把测试恢复到 #116 时的状态，这道门会报错。
@@ -4223,7 +4223,7 @@ OpenAI 的“流式”Himawari 早已做到，但第一个字本身就要 5 秒�
 
 **相关 ADR/PR**
 
-[ADR 0119](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0119-conversation-speed-prewarm-on-tool-call-and-embedding-retry.md)、[ADR 0123](adr/0123-cut-off-embedding-attempt-charged-at-its-ceiling.md)、[ADR 0124](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0124-unknown-model-call-blocks-only-its-own-resend.md)、[ADR 0085](adr/0085-remove-per-turn-system-gaps.md)、[ADR 0117](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0117-magpie-routes-models-through-owned-subscriptions.md)、[事故清单 I-25、I-30、I-36、I-37](incidents-and-gates.md#incidents)、[案例 59：工具前后空等](#case-tool-gap-host-check)、[案例 24：每轮系统空档](#case-run-gaps)；PR 在分支 `claude/project-thread-jimoqj`。
+[ADR 0119](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0119-conversation-speed-prewarm-on-tool-call-and-embedding-retry.md)、[ADR 0123](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0123-cut-off-embedding-attempt-charged-at-its-ceiling.md)、[ADR 0124](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0124-unknown-model-call-blocks-only-its-own-resend.md)、[ADR 0085](adr/0085-remove-per-turn-system-gaps.md)、[ADR 0117](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0117-magpie-routes-models-through-owned-subscriptions.md)、[事故清单 I-25、I-30、I-36、I-37](incidents-and-gates.md#incidents)、[案例 59：工具前后空等](#case-tool-gap-host-check)、[案例 24：每轮系统空档](#case-run-gaps)；PR 在分支 `claude/project-thread-jimoqj`。
 
 **面试 30 秒版**
 
@@ -5597,7 +5597,7 @@ Pi 在 0.86 和 0.87 改了两处核心约定：发给模型的请求不再分�
 
 **相关 ADR/PR**
 
-[ADR 0239](adr/0239-real-memory-eval-sets.md)、PR #378、[ADR 0115](adr/0115-memory-search-relevance-threshold-and-retrieval-eval.md)（检索评测，改为对照）、[案例 78](#case-memory-capture-eval)、[案例 39](#case-jarvis-test-evals)。
+[ADR 0239](adr/0239-real-memory-eval-sets.md)、PR #378、[ADR 0115](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0115-memory-search-relevance-threshold-and-retrieval-eval.md)（检索评测，改为对照）、[案例 78](#case-memory-capture-eval)、[案例 39](#case-jarvis-test-evals)。
 
 **面试 30 秒版**
 
@@ -5685,7 +5685,7 @@ Pi 在 0.86 和 0.87 改了两处核心约定：发给模型的请求不再分�
 
 **相关 ADR/PR**
 
-[ADR 0221](adr/0221-memory-retrieval-relevance-cutoff-and-same-source-dedupe.md)（本决定）；[ADR 0115](adr/0115-memory-search-relevance-threshold-and-retrieval-eval.md)（向量门槛和评测集）；PR #375；方案讨论记录在 `.agents/reviews/topic-p3-3-fusion-cutoff/`，代码复核记录在 `.agents/reviews/pr-375/`；[案例 1](#case-memory-engine)、[案例 57](#case-memory-relevance-threshold)。
+[ADR 0221](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0221-memory-retrieval-relevance-cutoff-and-same-source-dedupe.md)（本决定）；[ADR 0115](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0115-memory-search-relevance-threshold-and-retrieval-eval.md)（向量门槛和评测集）；PR #375；方案讨论记录在 `.agents/reviews/topic-p3-3-fusion-cutoff/`，代码复核记录在 `.agents/reviews/pr-375/`；[案例 1](#case-memory-engine)、[案例 57](#case-memory-relevance-threshold)。
 
 **面试 30 秒版**
 
@@ -5877,7 +5877,7 @@ Himawari 整理记忆时会从几条记忆推出一条新结论（`reflect`）�
 - 方案讨论费用 0.48 美元，出处是 `/mnt/project-files/p4-1-correction-propagation/integrated-plan.md` 开头。
 
 **相关 ADR/PR**
-[ADR 0232](adr/0232-memory-corrections-flag-derived-memories-and-recheck-rules.md)；被它补充的 [ADR 0211](adr/0211-hard-rule-points-back-to-its-rule-memory.md)、[ADR 0219](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0219-read-only-mcp-entry-with-static-token.md)；迁移 0095。
+[ADR 0232](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0232-memory-corrections-flag-derived-memories-and-recheck-rules.md)；被它补充的 [ADR 0211](adr/0211-hard-rule-points-back-to-its-rule-memory.md)、[ADR 0219](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0219-read-only-mcp-entry-with-static-token.md)；迁移 0095。
 
 **面试 30 秒版**
 “我的个人 agent 会从几条记忆推出新结论，主人的硬规则也挂在某条记忆上。主人改了一条记忆，下游的结论和规则还按旧的走。我让数据库触发器在同一事务里标直接下游，程序再沿依据链展开，因为 SQLite 触发器里不能递归；规则由模型重读来源后程序比参数，对不上就暂停、给建议值，模型挂了不停规则。主人每次处理都记进决策记录，周报算‘标了多少、认可多少’，样本不到 5 条不出比例。”

@@ -5,7 +5,7 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 amended_by: "docs/adr/0285-one-main-thread-subthreads-and-one-inbox.md"
-amends: "docs/adr/0179-keep-low-confidence-memory-candidates-as-tentative.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0106-proactive-loop-v1-gmail-read-only.md"
+amends: "https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0179-keep-low-confidence-memory-candidates-as-tentative.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0106-proactive-loop-v1-gmail-read-only.md"
 date: "2026-11-11"
 covers: "apps/agent-service/src/production-memory-capture.ts, packages/application/src/ports/proactive-checks.ts, packages/gateway-contracts/src/contracts.ts, packages/persistence-sqlite/src/data-export/schemas.ts, packages/persistence-sqlite/src/migrations/0062_proactive_checks.sql, packages/persistence-sqlite/src/sqlite-governed-deletion.ts, packages/persistence-sqlite/src/sqlite-proactive-operations.ts"
 verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
@@ -64,7 +64,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 3. 常规判断不逐次确认。来源同文件原则 2 原话：“常规判断应由规则手册预先授权”。
 4. 新能力值不值得做，只看它是否加深四样资产。来源同文件第 4 章原话：“判断一个新能力值不值得做，只看它是否加深记忆图谱、规则手册、工具库或决策记录这四样护城河资产。”
 5. 现在记忆只从主人打字的消息里来。来源 `apps/agent-service/src/production-memory-capture.ts:978` 原话：`if (!source || source.sourceType !== "user_message" || source.threadId !== threadId) return;`。
-6. 待确认记忆不带提醒、不带人物；转正要主人自己的原话。来源 `docs/adr/0179-keep-low-confidence-memory-candidates-as-tentative.md` 决定第 1 条③原话：“不带提醒、不带人物”；第 6 条原话：“转正必须有主人自己的原话”“必须带在主人本次消息里逐字核对到的原话引用，没有就丢弃”。
+6. 待确认记忆不带提醒、不带人物；转正要主人自己的原话。来源 [ADR 0179](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0179-keep-low-confidence-memory-candidates-as-tentative.md) 决定第 1 条③原话：“不带提醒、不带人物”；第 6 条原话：“转正必须有主人自己的原话”“必须带在主人本次消息里逐字核对到的原话引用，没有就丢弃”。
 7. 运行来源类型是硬校验的枚举，使用点多。来源 `packages/gateway-contracts/src/contracts.ts:68` 原话：`sourceType: enumeration(["user_message", "schedule", "external_event"]),`。
 8. 系统主动提醒只有 Gmail 一个来源，而且写死在多处。来源 `packages/application/src/ports/proactive-checks.ts:4` `export type ProactiveSource = "gmail";`；`packages/persistence-sqlite/src/sqlite-proactive-operations.ts:29` `const SOURCES = ["gmail"] as const;`；`packages/persistence-sqlite/src/migrations/0062_proactive_checks.sql:15` `CHECK (source IN ('gmail'))`（`0069`、`0087`、`0088`、`0089` 四份迁移里同样）；`packages/persistence-sqlite/src/data-export/schemas.ts:253` `source: enumOf(["gmail"]),`。
 9. 现在已有不推送时段和顺延。来源 [已删除的主动闭环规格第 124–125 行](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/execution/specs/2026-10-29-proactive-loop-v1-gmail-design.md#L124-L125) 原话：“顺延到时段结束，再合成一条”“Andy 正开着 Himawari 网页时不弹推送”。
@@ -173,7 +173,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 ## 关联文档
 
-- [SOURCE: docs/adr/0179-keep-low-confidence-memory-candidates-as-tentative.md]
+- [SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0179-keep-low-confidence-memory-candidates-as-tentative.md]
 - [SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0106-proactive-loop-v1-gmail-read-only.md]
 - [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0146-redact-sensitive-text-before-it-leaves-for-any-model.md]
 - [SOURCE: docs/adr/0149-append-only-model-requests.md]
