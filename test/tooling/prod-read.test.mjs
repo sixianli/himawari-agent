@@ -326,7 +326,9 @@ describe("prod-read.sh", () => {
   it("prints only the system instruction text of the production configuration", () => {
     const result = run("system-instruction");
     expect(result.code).toBe(0);
-    expect(result.calls).toContain("--no-warnings - /etc/himawari/config.json $(id -u himawari-prod)");
+    expect(result.calls).toContain(
+      "--no-warnings - /etc/himawari/config.json $(id -u himawari-prod)",
+    );
     const directory = mkdtempSync(path.join(os.tmpdir(), "prod-read-cfg-"));
     directories.push(directory);
     const file = path.join(directory, "config.json");
