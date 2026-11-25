@@ -48,3 +48,14 @@
 "chat.talk.muted" = "Muted";
 "chat.talk.failed" = "Couldn’t start talking. Try again";
 "chat.option.chosen" = "You chose";
+"chat.copyCode" = "Copy code";
+"chat.menu.reply" = "Reply";
+"chat.menu.copy" = "Copy";
+"chat.menu.select" = "Select Text";
+"chat.reply.toAgent" = "Replying to her";
+"chat.reply.toOwner" = "Replying to yourself";
+"chat.reply.missing" = "Original message is gone";
+"chat.reply.cancel" = "Cancel reply";
+"chat.copied" = "Copied";
+"chat.select.title" = "Select Text";
+"chat.select.done" = "Done";

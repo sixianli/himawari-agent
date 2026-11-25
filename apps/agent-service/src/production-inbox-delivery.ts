@@ -122,7 +122,13 @@ export interface InboxDeliveryOptions {
   ) => Promise<void>;
   readonly subthreads?: Pick<
     ProductionSubthreads,
-    "open" | "subthreadMessage" | "overBudget" | "afterRun"
+    | "open"
+    | "subthreadMessage"
+    | "overBudget"
+    | "afterRun"
+    | "awaitingApproval"
+    | "listAwaitingApproval"
+    | "approvalSettled"
   >;
   readonly checkpoints?: Pick<RunCheckpointStore, "read">;
   readonly pollMs?: number;
@@ -245,7 +251,16 @@ export class ProductionInboxDelivery implements InboxDelivery {
     );
     await this.#admit(threadId, key, events, runId, contentRef, classification, false);
     await this.#markOutside(runId, events);
-    const status = await this.#await(threadId, runId, contentRef, signal, false);
+    const status = await this.#await(threadId, runId, contentRef, signal, false, true);
+    if (status === "awaiting_approval") {
+      await subthreads.awaitingApproval({ threadId, runId });
+      return {
+        status: "handled",
+        outcome: "awaiting_approval",
+        reasonCode: "subthread_awaiting_approval",
+        runId,
+      };
+    }
     const cutOff = status === "failed" && (await this.#cutOff(runId));
     if (status !== "completed" && !cutOff) return { status: "retry", reasonCode: `run_${status}` };
     const ending = await subthreads.afterRun({ threadId, runId, cutOff });
@@ -255,6 +270,22 @@ export class ProductionInboxDelivery implements InboxDelivery {
       reasonCode: cutOff ? "subthread_cut_off" : "subthread_ran",
       runId,
     };
+  }
+
+  async sweep(): Promise<void> {
+    const subthreads = this.#options.subthreads;
+    if (!subthreads) return;
+    for (const subthread of await subthreads.listAwaitingApproval()) {
+      const runId = subthread.approvalRunId;
+      if (runId === null) continue;
+      const stored = await this.#options.runs.readRun(runId as RunId);
+      if (stored && !TERMINAL.has(stored.run.status)) continue;
+      await subthreads.approvalSettled(subthread.threadId);
+      const status = stored?.run.status;
+      const cutOff = status === "failed" && (await this.#cutOff(runId as RunId));
+      if (status === "completed" || cutOff)
+        await subthreads.afterRun({ threadId: subthread.threadId, runId, cutOff });
+    }
   }
 
   async #cutOff(runId: RunId): Promise<boolean> {
@@ -340,6 +371,7 @@ export class ProductionInboxDelivery implements InboxDelivery {
     contentRef: string,
     signal: AbortSignal,
     yieldToOwner: boolean,
+    parkOnApproval = false,
   ): Promise<string> {
     const sleep = this.#options.sleep ?? defaultSleep;
     const cancel = () =>
@@ -362,6 +394,7 @@ export class ProductionInboxDelivery implements InboxDelivery {
       for (;;) {
         const stored = await this.#options.runs.readRun(runId);
         if (stored && TERMINAL.has(stored.run.status)) return stored.run.status;
+        if (parkOnApproval && stored?.run.status === "awaiting_approval") return stored.run.status;
         if (
           yieldToOwner &&
           this.#options.cancelRun &&

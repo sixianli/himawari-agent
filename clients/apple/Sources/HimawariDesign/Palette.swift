@@ -175,6 +175,8 @@ extension Color {
     public static var hmSwitchOff: Color { DesignTokens.Colors.switchOff.color }
     public static var hmGlass: Color { DesignTokens.Colors.glass.color }
     public static var hmGlassLine: Color { DesignTokens.Colors.glassLine.color }
+    public static var hmLink: Color { DesignTokens.Colors.link.color }
+    public static var hmReplyBar: Color { DesignTokens.Colors.replyBar.color }
 }
 
 extension Text {

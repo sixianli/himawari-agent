@@ -198,7 +198,14 @@ function query(type: GatewayV2Query["type"], messageId: string, payload: unknown
   return parsed;
 }
 
-async function fixture(options: { readonly bodyPreview?: string } = {}) {
+async function fixture(
+  options: {
+    readonly bodyPreview?: string;
+    readonly approvalOrigin?: (
+      threadId: string,
+    ) => Promise<{ readonly threadId: string; readonly threadTitle: string | null } | null>;
+  } = {},
+) {
   const clock = new ManualClock(NOW);
   const ids = createReferenceAdapterSet({ clock }).ids;
   const authorization = new InMemoryAuthorizationStore();
@@ -321,6 +328,7 @@ async function fixture(options: { readonly bodyPreview?: string } = {}) {
     clock,
     ownerId: OWNER_ID,
     agentId: AGENT_ID,
+    ...(options.approvalOrigin ? { approvalOrigin: options.approvalOrigin } : {}),
   });
   return {
     clock,
@@ -450,6 +458,44 @@ describe("S4 Task 11 governance Control Center boundary", () => {
       query("approval.detail", "legacy-detail", { approvalRequestId: setup.approval.id }),
     );
     expect(legacy).toMatchObject({ payload: { display: null } });
+  });
+
+  it("[ADR-0285] shows an approval asked from a subthread as coming from the main conversation, and leaves other threads as frozen", async () => {
+    const setup = await fixture({
+      approvalOrigin: async (threadId) =>
+        threadId === "thread-governance-ui"
+          ? { threadId: "main", threadTitle: "和她的对话" }
+          : null,
+    });
+    const frozen = { threadId: "thread-governance-ui", threadTitle: "查航班" };
+    const create = async (id: string, threadId: string) => {
+      const intent = {
+        ...setup.approval.intentSnapshot,
+        id: `intent-${id}`,
+        threadId,
+        idempotencyKey: createIdempotencyKey(`intent-${id}`),
+      };
+      await setup.authorization.createApproval({
+        ...setup.approval,
+        id,
+        intentId: intent.id,
+        intentSnapshot: intent,
+        semanticSnapshotHash: actionIntentFingerprint(intent),
+        display: {
+          displayTitle: null,
+          bodyPreview: null,
+          askedBecause: { kind: "no_rule_allows" },
+          origin: { ...frozen, threadId },
+        },
+      } as typeof setup.approval);
+      return setup.reads.query(query("approval.detail", `${id}-detail`, { approvalRequestId: id }));
+    };
+    expect(await create("approval-subthread", "thread-governance-ui")).toMatchObject({
+      payload: { display: { origin: { threadId: "main", threadTitle: "和她的对话" } } },
+    });
+    expect(await create("approval-own-thread", "thread-other")).toMatchObject({
+      payload: { display: { origin: { threadId: "thread-other", threadTitle: "查航班" } } },
+    });
   });
 
   it("labels a Grant with the body preview frozen on its source approval, capped at 301 characters", async () => {

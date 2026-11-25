@@ -16,10 +16,11 @@ public enum HapticEvent: String, CaseIterable, Sendable {
     case heardName
     case listeningStarted
     case listeningStopped
+    case copied
 
     public var source: HapticSource {
         switch self {
-        case .messageSent, .holdToTalkStarted, .holdToTalkReleased, .sheetSettled, .stopPressed, .faceIDSucceeded, .faceIDFailed, .pairingSucceeded:
+        case .messageSent, .holdToTalkStarted, .holdToTalkReleased, .sheetSettled, .stopPressed, .faceIDSucceeded, .faceIDFailed, .pairingSucceeded, .copied:
             .owner
         case .approvalNeeded, .approvalNeededWeighty, .longTaskFinished, .taskFailed, .heardName, .listeningStarted, .listeningStopped:
             .himawari
@@ -32,7 +33,7 @@ public enum HapticEvent: String, CaseIterable, Sendable {
         case .holdToTalkStarted, .listeningStarted: .impactMedium
         case .sheetSettled, .heardName: .impactSoft
         case .stopPressed: .impactRigid
-        case .faceIDSucceeded, .longTaskFinished: .success
+        case .faceIDSucceeded, .longTaskFinished, .copied: .success
         case .faceIDFailed: .error
         case .pairingSucceeded: .bloom
         case .approvalNeeded: .knock

@@ -128,8 +128,10 @@ struct MainShell: View {
                 ListenOverlay(controller: listening)
             }
         }
-        .hmCover(isPresented: $herOpen) {
+        .sheet(isPresented: $herOpen) {
             herPage
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
         }
         #if os(iOS)
         .hmCover(isPresented: Binding(get: { listening?.recordingKitOpen ?? false }, set: { listening?.recordingKitOpen = $0 })) {
