@@ -126,7 +126,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 - packages/application/src/services/runtime-continuation-service.ts
 - packages/application/src/ports/run-checkpoints.ts
 - packages/runtime-pi/src/pi-tool-batch-continuation.ts
-- docs/adr/0023-durable-hitl-execution.md
+- https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0023-durable-hitl-execution.md
 - packages/application/src/services/run-execution-input-service.ts
 - packages/application/src/services/run-coordinator.ts
 - packages/application/src/ports/run-dispatch.ts
@@ -144,7 +144,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 - packages/platform-node/src/payload-protector.ts
 - packages/platform-node/src/strict-configuration.ts
 - packages/platform-node/src/state-root-layout.ts
-- docs/adr/0018-sqlite-product-state-authority.md
+- https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0018-sqlite-product-state-authority.md
 - packages/application/src/ports/capabilities.ts
 - packages/application/src/services/execution-worker-service.ts
 - packages/execution-contracts/src/payload-broker-v1.ts
@@ -161,9 +161,9 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 2026-09-11 聊天运行体验更新：可撤销的联网搜索设置保存在既有 Product State，关联审批记录通过 `policyAuthorization` 标明真实授权来源，不新增迁移文件。备份/迁移须共同保留设置 revision、派生 Grant 与审计；关闭设置后，旧 Grant 的消费和 Sandbox 准入被拒绝。恢复后核对设置与当前固定 Exa 路径、主机/目录路由和模型披露身份一致，配置绑定不同不能沿用开启状态。它不授予其他文件、命令或网络权限。Pi 更新合并仅影响尚未持久化的连续累计片段，不能删除已持久化记录或工具边界。`runPolicy.timeZone` 是显式 IANA 时区，只用于新 Run 的时间上下文；历史已冻结内容保持原值。
 
-2026-10-24 联网搜索和读网页改为供应商链（[SOURCE: docs/adr/0071-replaceable-web-search-and-fetch-providers.md]）：上一段的“当前固定 Exa 路径”改为“搜索和读网页路由当前配置的供应商列表”。联网搜索设置保存同意时的收件方列表；只配置 Exa 时绑定摘要与原来相同，已开启的设置不用重新同意。恢复或迁移后，目标配置的供应商列表、搜索和读网页路由与保存的收件方列表不一致时，不能沿用开启状态，须由主人重新同意。主机侧的搜索和读网页缓存、供应商熔断状态只在内存里，不进入 Product State，不随备份、恢复或权威迁移带走。本次不新增迁移、数据格式或停机步骤。 2026-10-25 补充：需要密钥的供应商（目前是 DeepSeek）的密钥只放在每台主机自己的密钥源里，执行时由 Worker 在内存里交给网络程序，不进入 Product State、Payload、诊断或备份。恢复或迁移到新主机后，须在目标主机重新放置同名同版本的密钥文件，不能从源主机复制备份来代替；缺少密钥时该供应商报不可用，回退到链上的下一家。
+2026-10-24 联网搜索和读网页改为供应商链（[SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0071-replaceable-web-search-and-fetch-providers.md]）：上一段的“当前固定 Exa 路径”改为“搜索和读网页路由当前配置的供应商列表”。联网搜索设置保存同意时的收件方列表；只配置 Exa 时绑定摘要与原来相同，已开启的设置不用重新同意。恢复或迁移后，目标配置的供应商列表、搜索和读网页路由与保存的收件方列表不一致时，不能沿用开启状态，须由主人重新同意。主机侧的搜索和读网页缓存、供应商熔断状态只在内存里，不进入 Product State，不随备份、恢复或权威迁移带走。本次不新增迁移、数据格式或停机步骤。 2026-10-25 补充：需要密钥的供应商（目前是 DeepSeek）的密钥只放在每台主机自己的密钥源里，执行时由 Worker 在内存里交给网络程序，不进入 Product State、Payload、诊断或备份。恢复或迁移到新主机后，须在目标主机重新放置同名同版本的密钥文件，不能从源主机复制备份来代替；缺少密钥时该供应商报不可用，回退到链上的下一家。
 
-未配置受保护安装时，宿主核验信任安装结果，不读取、不计算摘要、不遍历运行时目录、Node 可执行文件和 runner，进程启动时也不算摘要；每次调用仍检查绑定、资格和各路径的规范性、所有者与写权限。防止运行时被改靠沙箱把运行时目录设为只读、且不与工作区或私有目录重叠，以及受保护安装，见 [SOURCE: docs/adr/0069-trust-unprotected-runtime-like-claude-code.md]（取代 [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0067-runtime-artifacts-by-inode-metadata.md] 和 [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0034-runtime-verification-by-inode-metadata.md]）。安装必须包含编译后的 `sandbox-runtime-digest-worker.js`，供受保护安装首次审计和安装工具计算摘要使用。ADR 0069 保留 ADR 0028 的受保护 Linux 路径：已经独立验证权限的安装，在相同进程、相同 root 保护版本身份下复用首次完整审计；每次仍验证当前进程和保护记录，失效立即拒绝，不接受普通时间缓存。保护记录不属于备份或迁移数据，目标主机必须重新建立身份、权限与安装资格，不能复制源主机记录作为证据。此变化不改变数据格式、迁移权威或停止条件。参见 [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0028-protected-runtime-installation.md] 和 [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/runbooks/hermes-control-center-upgrade-runbook.md]；本 Runbook 原有操作范围保持不变。
+未配置受保护安装时，宿主核验信任安装结果，不读取、不计算摘要、不遍历运行时目录、Node 可执行文件和 runner，进程启动时也不算摘要；每次调用仍检查绑定、资格和各路径的规范性、所有者与写权限。防止运行时被改靠沙箱把运行时目录设为只读、且不与工作区或私有目录重叠，以及受保护安装，见 [SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0069-trust-unprotected-runtime-like-claude-code.md]（取代 [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0067-runtime-artifacts-by-inode-metadata.md] 和 [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0034-runtime-verification-by-inode-metadata.md]）。安装必须包含编译后的 `sandbox-runtime-digest-worker.js`，供受保护安装首次审计和安装工具计算摘要使用。ADR 0069 保留 ADR 0028 的受保护 Linux 路径：已经独立验证权限的安装，在相同进程、相同 root 保护版本身份下复用首次完整审计；每次仍验证当前进程和保护记录，失效立即拒绝，不接受普通时间缓存。保护记录不属于备份或迁移数据，目标主机必须重新建立身份、权限与安装资格，不能复制源主机记录作为证据。此变化不改变数据格式、迁移权威或停止条件。参见 [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0028-protected-runtime-installation.md] 和 [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/runbooks/hermes-control-center-upgrade-runbook.md]；本 Runbook 原有操作范围保持不变。
 
 2026-09-11 合同核查：新增离线初始化、目录 Grant 与能力登记仍属于当前身份的停机管理操作，不修改本 Runbook 的备份/迁移数据格式。恢复必须保留其审计、目录身份与授权；不能在已恢复 state root 再运行首次初始化，不能将原主机安装资格当作目标主机资格。启动后快照按原字节复查，工具每次仍检查当前主机与授权；模型失败展示改进不改变原始记录和费用核算。
 
@@ -203,12 +203,11 @@ Schema 50 另保存独立 schema/basis 的管理员预约释放回执。它只�
 
 新控制中心在服务声明 `executionStateAvailable` 后另查 `thread.execution_state`，旧事件接口不增加字段，旧服务缺少该声明时仍走原兼容路径。恢复后应同时检查每个操作和整体结论，不能只看最后成功工具或 Run 终态；分页或版本变化造成的读取失败必须保留原结论并重新查询，不能重新执行工具。页面状态的内容 revision 不是执行权凭据；实际 Stop/清理仍经原 revision、权限和幂等控制。当前效果列表仅表示操作 outcome，不能代替原 journal 的资源释放证明。此展示升级无 migration，不修改已有恢复点，也不授权生产切换。
 
-
 内部资源快照 `readRunInventory` 只读取已有同主体 Run 的预约、绑定、队列历史、任务环境调用登记与本 Run 的执行租约及旧格式未释放标记，不变更数据库版本、额度或执行权。任务环境里的前台命令是否显示“正在执行”，按这份快照里的环境调用登记、环境是否存活且未过期、以及这个 Run 的执行租约是否有效判断：三样都成立才显示“正在执行”，否则显示“结果未确认”，不退回“正在准备”；调用登记、环境状态和执行租约来自同一次读取。生产 `thread.execution_state` 已将该快照与 Run/Trace 聚合，读取期间资源或 Run 改变时最多重读 3 次（含第一次），仍不一致才拒绝混合结论。历史 Scope 仅用于验证原工具归属，不读取或续发当前 Grant；停止、核验和资源状态未确认通过既有 `reasonCode` 表达，保持 v3 阶段枚举兼容。工具效果与资源清理分别保留；当前准备或受控执行尚无最终结果不等于结果未知，显式未知、观察失效或停止后无结果仍显示未确认。已释放但未交接的内部结果仍显示结果未确认。当前可见会话每两秒重新只读核验，隐藏或断线时停止该轮询，不把连接心跳或本地计时当作执行事实；空快照与旧权限都不能代替当前宿主停止证明或本 Runbook 的现场核验。读取超过任一 10,000 条上限时必须报告失败，不接受截断后继续操作。
 
 原运行调度现在可补交已经保存的完成输出：仅接受原 `runtime_settled/completed`，或清理未确认而保存输出的记录。恢复仍要求原冻结输入、当前权威和执行租约，并在写入回答的同一事务核对 checkpoint revision、原结果、全部前台/后台资源的永久释放、队列及未解除保护；不延长业务执行期限、不调用模型/工具、不发起第二轮清理。原输出保存后或 Run 状态变更前中断均保留可恢复身份；未知输出不能走该路径。取消先提交时不写回答。原输入不能读取或校验失败时保存 `RUN_COMPLETION_DELIVERY_REJECTED` 并保留原输出，停止自动补交；不得通过改诊断码或续发旧授权强行恢复。备份/迁移须共同保留冻结输入、checkpoint、回答 Payload、完成命令与消息身份；本变更沿用 Schema 43，升级仍须替换唯一 writer，不能因 schema 相同认定旧程序具有这些行为检查。该能力由现有 Run 调度触发；仅运行资源核查的无 Web 模式不因此创建模型/Run 执行服务。
 
-工具结果现在保留产品派发证据 `dispatchState`（明确未派发、可能派发、已接收），旧记录缺少该字段时仍使用已知旧错误码。编码工具的准入前拒绝和 Pi 前置检查失败显示为未派发；未知、矛盾或无法识别的证据不能显示成功。Worker 取消通知须经过原沙箱结果核验；没有可信结果时保留结果未知并禁止重复派发，之后只按原结果或下述确定结果丢失的边界交付。只读工具（fixed_read，例如 read/ls/find/grep）报告确定的 Pi 工具错误时，模型拿到的是 Worker 已保存的 Pi 自身错误输出（例如“文件不存在”），它经过与成功结果相同的披露检查，并作为该调用的结果引用保存；前台 bash 失败（非零退出、超时、取消、输出超过命令输出上限）时，2026-10-16 起（R2-T14）模型拿到 Worker 已保存的输出结尾，它经过同样的披露检查，输出含机器秘密（包括只剩开头行或结尾行的私钥片段）时只交出说明和命令真实的退出码、不交正文，前面加“命令可能已改动工作区、效果尚未核实”的提醒，工具结论仍是失败，错误码仍是 `SANDBOX_COMMAND_EFFECT_UNVERIFIED`；升级前已经交给模型的失败结果在重放时保持原样，仍只有错误码说明，升级不需要额外步骤（见 [SRT 统一执行设计的 R5 实现说明](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-07-srt-unified-execution-design.md#r5-实现说明2026-09-09)）。合同版本 1 的 `write`/`edit` 失败时（例如 edit 的原文在文件里找不到），2026-10-17 起（R2-T14）runner 报告这次调用有没有开始改目标文件：还没开始时原因码是 `FILE_WRITE_NOT_STARTED`，效果记为已核实，模型拿到 Pi 自己的错误；已经开始改文件或核对不通过时原因码是 `SANDBOX_WRITE_EFFECT_UNVERIFIED`，按有界失败给模型一次“文件可能已被修改，请先读取目标文件”的说明，这一轮不再把同一次调用重放到截止时间；`write`/`edit` 的结果含疑似密钥时只交出不含正文的固定说明。这两个原因码只是新的取值，SQLite schema 和 Worker 协议的结构不变，升级不需要额外步骤。2026-10-14 起（[ADR 0054 后续实现记录](../adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md#implementation-record)），Linux 上的 `read`、`ls`、`find`、`grep` 改在 Agent Service 主进程执行，不再经过 Worker 和沙箱：成功结果与 Pi 工具错误都由主进程按同一调用保存，经过同样的秘密扫描和输出上限；Agent Service 重启后恢复该调用时返回已保存的结果，不重新读取文件。Mac 上这四个工具仍在沙箱里执行。备份恢复、升级和迁移不改变这一点，也不需要额外步骤。取消原因保存在受保护诊断中，通知时间不能当作真实执行结束时间；升级、恢复或迁移不得据此删除占用、回滚已发生修改或续发权限。此变更沿用原 SQLite schema、Worker 协议和页面阶段，不构成完整错误分类、有限网络重试或平台停止资格。
+工具结果现在保留产品派发证据 `dispatchState`（明确未派发、可能派发、已接收），旧记录缺少该字段时仍使用已知旧错误码。编码工具的准入前拒绝和 Pi 前置检查失败显示为未派发；未知、矛盾或无法识别的证据不能显示成功。Worker 取消通知须经过原沙箱结果核验；没有可信结果时保留结果未知并禁止重复派发，之后只按原结果或下述确定结果丢失的边界交付。只读工具（fixed_read，例如 read/ls/find/grep）报告确定的 Pi 工具错误时，模型拿到的是 Worker 已保存的 Pi 自身错误输出（例如“文件不存在”），它经过与成功结果相同的披露检查，并作为该调用的结果引用保存；前台 bash 失败（非零退出、超时、取消、输出超过命令输出上限）时，2026-10-16 起（R2-T14）模型拿到 Worker 已保存的输出结尾，它经过同样的披露检查，输出含机器秘密（包括只剩开头行或结尾行的私钥片段）时只交出说明和命令真实的退出码、不交正文，前面加“命令可能已改动工作区、效果尚未核实”的提醒，工具结论仍是失败，错误码仍是 `SANDBOX_COMMAND_EFFECT_UNVERIFIED`；升级前已经交给模型的失败结果在重放时保持原样，仍只有错误码说明，升级不需要额外步骤（见 [SRT 统一执行设计的 R5 实现说明](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-07-srt-unified-execution-design.md#r5-实现说明2026-09-09)）。合同版本 1 的 `write`/`edit` 失败时（例如 edit 的原文在文件里找不到），2026-10-17 起（R2-T14）runner 报告这次调用有没有开始改目标文件：还没开始时原因码是 `FILE_WRITE_NOT_STARTED`，效果记为已核实，模型拿到 Pi 自己的错误；已经开始改文件或核对不通过时原因码是 `SANDBOX_WRITE_EFFECT_UNVERIFIED`，按有界失败给模型一次“文件可能已被修改，请先读取目标文件”的说明，这一轮不再把同一次调用重放到截止时间；`write`/`edit` 的结果含疑似密钥时只交出不含正文的固定说明。这两个原因码只是新的取值，SQLite schema 和 Worker 协议的结构不变，升级不需要额外步骤。2026-10-14 起（[ADR 0298 后续实现记录](../adr/0298-where-tools-run.md)），Linux 上的 `read`、`ls`、`find`、`grep` 改在 Agent Service 主进程执行，不再经过 Worker 和沙箱：成功结果与 Pi 工具错误都由主进程按同一调用保存，经过同样的秘密扫描和输出上限；Agent Service 重启后恢复该调用时返回已保存的结果，不重新读取文件。Mac 上这四个工具仍在沙箱里执行。备份恢复、升级和迁移不改变这一点，也不需要额外步骤。取消原因保存在受保护诊断中，通知时间不能当作真实执行结束时间；升级、恢复或迁移不得据此删除占用、回滚已发生修改或续发权限。此变更沿用原 SQLite schema、Worker 协议和页面阶段，不构成完整错误分类、有限网络重试或平台停止资格。
 
 当提前完成 IPC 与最终 result IPC 的退出事实矛盾时，保存确定错误 `SANDBOX_HOST_COMPLETION_CONTRADICTED`；向模型交付明确失败说明，不携带可能自称成功的原 stdout。原输出和分块仍保留作诊断，成对重启不得将该错误覆盖成成功或重新执行。该错误不证明工具没有产生效果；原披露与效果核验继续适用。
 
@@ -224,7 +223,7 @@ Schema 50 另保存独立 schema/basis 的管理员预约释放回执。它只�
 
 Worker 单独退出而 Agent 继续运行时，服务整体不可用，页面也不能停止本轮；需要成对重启服务。生产启动器在任一进程退出时会自动成对重启。将来的 Mac 常驻启动器必须保持同样的合同。现有 `hermes-ui-session-start.mjs` 先停止 Agent，再停止尚存活的 Worker，交由服务管理器重启整对；不能用只恢复 Worker 或修改业务 HTTP 就绪条件替代此步骤。这里说明所需进程合同，不授权生产重启；执行仍遵守本 Runbook 的现场检查与授权要求。
 
-前台没有完整结束块且没有确定 operation 时，不保证恢复原输出。只有已接受释放、原签名结束记录证明任务启动并退出、操作没有确定结果、且同一部署当前 epoch/fence 已严格超过原尝试时，恢复才以原 operation revision 比较写入 `SANDBOX_TOOL_RESULT_LOST`。该确定错误表示原输出和退出结果丢失，不表示工具没有产生效果；效果未知事实保留，原工具不得重放，已接受释放不得撤销。原确定结果先写入时优先，丢失错误先写入后迟到写者不能覆盖。常驻 SRT 环境和容器任务环境里的前台调用没有逐次的原签名结束记录，改用调用所在整个任务环境的释放回执证明进程已退出：环境已释放、回执依据不是“创建请求尚未发出”、环境记录里有这条调用；这个证明说明不了命令开始过，绑定之后、发出命令之前中断的调用也记成 `SANDBOX_TOOL_RESULT_LOST`；拼回原输出仍要求完整结束块，写入 `SANDBOX_TOOL_RESULT_LOST` 仍要求原尝试已被取代，两者都不重放工具。详见[第 4 层发现的缺口](../adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md#resident-fixes) [SOURCE: docs/adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md]。
+前台没有完整结束块且没有确定 operation 时，不保证恢复原输出。只有已接受释放、原签名结束记录证明任务启动并退出、操作没有确定结果、且同一部署当前 epoch/fence 已严格超过原尝试时，恢复才以原 operation revision 比较写入 `SANDBOX_TOOL_RESULT_LOST`。该确定错误表示原输出和退出结果丢失，不表示工具没有产生效果；效果未知事实保留，原工具不得重放，已接受释放不得撤销。原确定结果先写入时优先，丢失错误先写入后迟到写者不能覆盖。常驻 SRT 环境和容器任务环境里的前台调用没有逐次的原签名结束记录，改用调用所在整个任务环境的释放回执证明进程已退出：环境已释放、回执依据不是“创建请求尚未发出”、环境记录里有这条调用；这个证明说明不了命令开始过，绑定之后、发出命令之前中断的调用也记成 `SANDBOX_TOOL_RESULT_LOST`；拼回原输出仍要求完整结束块，写入 `SANDBOX_TOOL_RESULT_LOST` 仍要求原尝试已被取代，两者都不重放工具。详见[第 4 层发现的缺口](../adr/0298-where-tools-run.md) [SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md]。
 
 此错误沿原 Pi 批次交付一次，模型得到“工具已运行并结束，但输出和退出结果在服务重启时丢失；没有重新执行。它可能已经产生了效果，是否重做请先确认。”当前 Run、租约、取消、期限、披露与预算仍须核验；取消或过期不能复活或补交，旧 Handle 不因恢复而取得新 fence 权限。没有签名退出证明或原尝试仍可提交时不能声称丢失。页面仅将这一已释放的确定错误显示为失败，不推断工作区效果已核验。
 
@@ -235,10 +234,9 @@ Worker 单独退出而 Agent 继续运行时，服务整体不可用，页面也
 ## Authoritative Sources
 
 - 产品恢复、排除清单、停止服务、原子切换和保留边界：[2026-08-26-portable-durable-web-agent-design.md「同机恢复点导出与导入」（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/execution/specs/2026-08-26-portable-durable-web-agent-design.md#同机恢复点导出与导入)
-- SQLite 单一产品状态权威：[SOURCE: docs/adr/0018-sqlite-product-state-authority.md]
+- SQLite 单一产品状态权威：[SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0018-sqlite-product-state-authority.md]
 - 本 Runbook contract selector 中列出的 CLI、恢复点 adapter、管理锁、配置、host secret source 和 Payload 认证实现。
 - 受保护配置只提供 state root、deployment/Owner/Agent identity、authority 和 secret reference；运行时回读只显示引用，不显示 secret material。
-
 
 P3 文件协议使用 Schema 46 的 writer 边界。升级和恢复必须保留原文件候选、逐文件发布记录、目录移动意图/收据、队列与占用；不得整批回滚已成功文件或覆盖后续人工修改。合同 3 的确定未发布冲突是失败结果，不是成功写入。目录工具合同 4 的 `rename-native` 随目标平台构建并受 runtime 摘要核验，Mac 包不能移作 Linux 包。新增固定文件完成资格仅适用于已验证的固定程序正常结束，旧资格与普通命令的未知清理仍保留保护；实际安装资格和启用不能由测试结果自动生成。详见 [2026-09-16-workspace-authorization-lifecycle-design.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-16-workspace-authorization-lifecycle-design.md)。
 
@@ -250,17 +248,12 @@ Schema 49 的对话标题预算账户迁移保留已有行和历史迁移；当�
 
 SRT 可选工作副本使用 `privateRoot/workspace-copies` 保存当前文件基线和候选内容，生产 Owner 入口按既有 Bash 配置装配创建、选择和准备操作。`prepare` 不表示已保存回原目录；保存须配置 `save_copy` 工具和 `pi-coding-tool@5` 前台 `verified_effect` 描述，经原 Run/Worker 准入队列逐文件执行，不能启用绕过该队列的旧 `host.file.execute`。描述的 `directoryOperations` 是上限，实际 scope 仅含 read 与当前操作；移入回收区仍须 trash 授权。 备份须同时保留任务私有目录中的 `copy-save-state-*.json`、原目录 `.himawari-recovery` 中的已暂存内容/快照以及 SQLite 操作记录；最终结果写回中断后，只能在原资源已确认释放后核验并导入历史效果，不能重新派发保存。旧严格 Scope 读者会拒绝合同 5，禁止混用不支持该合同的 Agent/Worker 或复用旧安装摘要。备份或权威迁移必须保留唯一副本和受保护的选择/操作记录；换主机或路径后重新验证目录身份、来源授权与执行资格，不能沿用旧 inode 或进程证明。具体已验证范围见[P4 完成验收](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p4-completed)。
 
-
 ## Safety and Preconditions
-
-模型配置遵循[网关迁移设计](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/execution/specs/2026-10-06-vercel-gateway-migration-design.md)：文本仅`deepseek/deepseek-v4.1-flash`，嵌入仅`alibaba/qwen3-embedding-8b`、4096维，不保留GLM备用。`providerRouting`保存`order: ["runware", "deepinfra", "morph"]`与`sort: "cost"`；文本输出上限不得超过32768，单次请求还取配置与调用选项的较小值。准入使用冻结的保守估价，结算使用网关返回实际费用；缺失或矛盾费用保持待核对，不把失败当免费，也不自动重发。历史调用身份和账单不改写。
-
-Mem0运行时精确锁定`3.3.1`，保留既有`vectors.sqlite`及`history.sqlite`路径，实体派生索引单独使用同目录的`entities.sqlite`。实体索引由SDK工厂创建，不混入产品记忆主库；产品记忆仍由产品数据库与受保护Payload负责。备份恢复点只包含产品SQLite与受保护Payload文件，不包含Mem0索引；停机权威迁移会打包配置的整个Memory目录，因此也携带entities.sqlite，并检查Memory版本。实体索引本身不能替代产品状态和受保护Payload的验证。Mac对该新版本及网关行为尚未检查；Hermes结果不能证明生产服务器资格。
 
 - 有效恢复点必须通过 manifest HMAC、每文件 AES-256-GCM authentication、ciphertext/plaintext digest、schema sequence、SQLite quick/full integrity、foreign key、全表行数、Payload authentication 和 Outbox continuity 检查。
 - `backup create` 会向活动 SQLite 写入恢复点与操作 marker，并在 state root 的 `recovery-points/` 下新增加密文件；这是第一次目标 mutation。执行前必须报告主机、deployment、state root、backup ID、预计磁盘增量和 30 天保留上限，并取得覆盖该目标与动作的明确授权。
 - `backup verify` 不替换活动产品 `data/`，但会在 `recovery-points/.<backup-id>.verify-<pid>-<uuid>/` 新建临时目录，解密备份对象后写入 SQLite 明文与 Payload 密文副本，完成核验后删除该目录。Payload 正文只在内存中解密核验。目录权限为 `0700`、文件为 `0600`；临时明文、额外磁盘空间与清理均须计入本次备份或恢复授权。它属于写入步骤，不是零写入预检；已有授权完整覆盖这些目标与动作时沿用该授权。
-- 配置必须通过当前 strict schema，包含一个显式 primary、可选独立 specialist 和独立 embedding descriptor；embedding dimensions 必须与 Mem0 vector dimension 相等。恢复点流程不改写这些模型身份，也不推断或下载隐式 embedding。
+- 配置必须通过当前 strict schema，包含一个显式 primary、可选独立 specialist 和独立 embedding descriptor；embedding dimensions 必须与记忆引擎的向量维度相等。恢复点流程不改写这些模型身份，也不推断或下载隐式 embedding。
 - 若配置声明能力部署快照，restore 前后只核对其引用、SHA-256 与 active Capability Registry 一致性；恢复包不携带、改写或激活该快照。快照或本平台资格不满足时，数据库恢复可以完成，但普通 Worker 必须保持 not ready。
 - `backup restore` 是 critical 恢复 mutation。服务必须已经停止，state-root 管理锁必须可独占取得，目标必须与配置中的 state root 完全相同，且确认词必须精确为 `RESTORE_<backup-id>`。运行前必须再次报告将替换的 `data/`、恢复点 identity、数据回退范围和外部副作用不回滚边界，并取得逐次授权。
 - secret 目录及文件必须由当前服务账号拥有，目录权限为 `0700`、文件权限为 `0600`，且配置中各恰好有一个 `backup-encryption` 和 `payload-encryption` secret reference。
@@ -323,7 +316,7 @@ himawari backup restore --config <absolute-config-path> --secret-dir <absolute-s
 
 读取恢复状态时，`unresolved` 与空 `nextAttemptAt` 只表示这次核查已结束；暂时失败的 reserved 记录还会由下一次扫描重新排定。确认后台已排定须读回 `scheduled` 和其 `nextAttemptAt`，确认已释放仍须独立读回原释放回执与占用状态。原套接字已不可连时，恢复仍核验原已保存证明，不能仅以连接失败跳过核验，也不能以连接失败认定释放。
 
-已配置沙箱子系统时，后台独立检查终态 Run 遗留资源、过期执行和已有未知资源，按原资源身份执行有限 inspect/stop。Web 模式复用生产 Run 循环；无 Web 模式在启动登记和 Worker 就绪后启动仅处理资源的循环，每次扫描先复核权威，不创建模型或 Run 执行服务。原授权撤销不阻止核验清理，也不恢复执行、模型或披露权限。未绑定预约须先保存禁止启动标记，核查失败继续保护；本机 SRT 只有原宿主从未启动且已退出的证明，或新协议计划已完成准备登记封锁的证明，才允许释放；容器仍须自身的环境释放回执。自动预约恢复同样按后端分流：只对一次性 SRT 调用本机准备控制；任务环境（常驻 SRT 环境或容器环境）核对自身已持久的 `task_environment_released` 证明，环境尚未释放而 Run 没有结束时改用 `task_environment_bind_fenced`（绑定已被停止标记挡住，命令从未交给环境），释放预约占用并给模型“工具未启动”，环境不停；Run 已结束而环境尚未释放时继续保留预约占用。2026-10-19 起（D-52），Worker 在绑定之前就失败的任务环境调用不必等这一循环：Agent 收到这次调用的结果时，若预约仍未绑定、Run 仍在运行，就立即按同一个 `task_environment_bind_fenced` 依据释放并交付“工具未启动”；立即释放失败时仍留给这一循环处理。不伪造本机准备记录，也不替代环境自身的停止流程。任务环境（常驻 SRT 环境或容器环境）由同一循环另行收回：所属 Run 之后不会再执行（结果待核实、已完成、已失败、已取消，或仍在运行但检查点已算完、只差交付），没有有效的执行租约，并且已结束的 Run 没有未释放的预约时，循环停掉整个环境并核对环境释放回执；停止未确认的留到下一轮再试，不重放模型或工具。之后还会执行的 Run 的环境留给下次认领时复用或轮换；已结束且有未释放预约的仍由上面的预约恢复负责；结果待核实的 Run 有未释放预约时，环境停掉后预约恢复随之释放预约。详见[第 4 层发现的缺口](../adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md#resident-fixes) [SOURCE: docs/adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md]。对未绑定 container 预约，重启后已结束的 Run 由预约恢复调用 Run 结束时的同一停止流程停掉整个环境；停止被拒绝或拿不到停止证明时，预约和环境都保持占用，之后重启也不自动重试，要人工重新停止后才释放，见 [BL-20260929-004](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20260929-004-agent-重-启-后-停-止-终-态.md)。关闭服务或失去权威时立即取消核查，然后有限等待；close 复用同一次等待，不重新计算期限。明确 stop 可接替尚未结束的 inspect，旧检查的迟到写入被恢复 revision 拒绝；已经进行中的 stop 不重复派发。未配置后端、缺少可信宿主身份或只有启动日志均不能证明清理成功；Mac 任意后代停止资格仍须现场证明。
+已配置沙箱子系统时，后台独立检查终态 Run 遗留资源、过期执行和已有未知资源，按原资源身份执行有限 inspect/stop。Web 模式复用生产 Run 循环；无 Web 模式在启动登记和 Worker 就绪后启动仅处理资源的循环，每次扫描先复核权威，不创建模型或 Run 执行服务。原授权撤销不阻止核验清理，也不恢复执行、模型或披露权限。未绑定预约须先保存禁止启动标记，核查失败继续保护；本机 SRT 只有原宿主从未启动且已退出的证明，或新协议计划已完成准备登记封锁的证明，才允许释放；容器仍须自身的环境释放回执。自动预约恢复同样按后端分流：只对一次性 SRT 调用本机准备控制；任务环境（常驻 SRT 环境或容器环境）核对自身已持久的 `task_environment_released` 证明，环境尚未释放而 Run 没有结束时改用 `task_environment_bind_fenced`（绑定已被停止标记挡住，命令从未交给环境），释放预约占用并给模型“工具未启动”，环境不停；Run 已结束而环境尚未释放时继续保留预约占用。2026-10-19 起（D-52），Worker 在绑定之前就失败的任务环境调用不必等这一循环：Agent 收到这次调用的结果时，若预约仍未绑定、Run 仍在运行，就立即按同一个 `task_environment_bind_fenced` 依据释放并交付“工具未启动”；立即释放失败时仍留给这一循环处理。不伪造本机准备记录，也不替代环境自身的停止流程。任务环境（常驻 SRT 环境或容器环境）由同一循环另行收回：所属 Run 之后不会再执行（结果待核实、已完成、已失败、已取消，或仍在运行但检查点已算完、只差交付），没有有效的执行租约，并且已结束的 Run 没有未释放的预约时，循环停掉整个环境并核对环境释放回执；停止未确认的留到下一轮再试，不重放模型或工具。之后还会执行的 Run 的环境留给下次认领时复用或轮换；已结束且有未释放预约的仍由上面的预约恢复负责；结果待核实的 Run 有未释放预约时，环境停掉后预约恢复随之释放预约。详见[第 4 层发现的缺口](../adr/0298-where-tools-run.md) [SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md]。对未绑定 container 预约，重启后已结束的 Run 由预约恢复调用 Run 结束时的同一停止流程停掉整个环境；停止被拒绝或拿不到停止证明时，预约和环境都保持占用，之后重启也不自动重试，要人工重新停止后才释放，见 [BL-20260929-004](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20260929-004-agent-重-启-后-停-止-终-态.md)。关闭服务或失去权威时立即取消核查，然后有限等待；close 复用同一次等待，不重新计算期限。明确 stop 可接替尚未结束的 inspect，旧检查的迟到写入被恢复 revision 拒绝；已经进行中的 stop 不重复派发。未配置后端、缺少可信宿主身份或只有启动日志均不能证明清理成功；Mac 任意后代停止资格仍须现场证明。
 
 验收应独立读回释放凭据、claim/barrier 和恢复终点。已确认释放但业务结果未知时分别保留，不重发工具，也不以结果交接未完成恢复旧占用。原始预约核查异常沿用受保护 Trace，仅安全原因进入恢复状态。本地 SQLite、认证 socket 和受控宿主退出回归见[调度证据](../../test/qualification/evidence/workspace-authorization-lifecycle/p1-recovery-scheduling-01/README.md)，不替代部署实例的证明或操作授权。无 Web 启动、权威丢失、有限关闭和 stop 优先级的回归见[生命周期证据](../../test/qualification/evidence/workspace-authorization-lifecycle/p1-recovery-startup-01/README.md)。
 
@@ -351,7 +344,6 @@ Schema 34 新增 `authorization_reservations` 并为使用记录增加请求身�
 
 验收分别读回 reserved、committed、released：排队预约不增加消费，调用准入与额度承诺同事务完成；未派发释放必须同时撤销未使用 Handle。缺少 ACK 不能作为退费或重发依据。回滚只能在服务停止后恢复匹配旧版本的完整恢复点，禁止让 Schema 33 或更旧 writer 写入 Schema 34，因为它们不理解预约额度。此处仅定义升级合同，未授权或执行部署实例的迁移。
 
-
 ### v4 控制中心与持久事件核对
 
 本次调整增加 Worker 工具实际起止事件和 Pi 可观测思考边界的展示投影，沿用原有 Trace/Payload 存储，不增加数据库迁移。备份、恢复及权威迁移仍须完整保留这些记录；缺少旧时长边界的历史显示“暂无时长”，不得在恢复时补造计时或重放工具。原有停止、安装资格、加密与权威检查程序继续适用。
@@ -359,7 +351,6 @@ Schema 34 新增 `authorization_reservations` 并为使用记录增加请求身�
 聊天页的新建先进入本地草稿，首次发送才创建持久会话。审批在所属轮次处理，侧栏红点提醒；归档管理位于齿轮设置的“会话与数据”。联网搜索开关与会话内“记住我的选择”复用原来的受限搜索授权合同。设置不展示内部 checkpoint、修订和连接绿点。安装后须验证草稿恢复、幂等重试、当前轮审批以及真实模型支持的强度档位，不能以原型演示数据作为运行证据。语言切换应保持设置弹窗及当前页面状态。
 
 备份与恢复须一并保留持久执行状态、业务失败原因和同期工具结果；页面下一步只能依据恢复后的 `ThreadExecutionState` 与当前有效 `availableActions` 重新投影，不能沿用旧宿主上的操作或释放结论。命令非零退出且效果未断言时，记录仍为失败，并提示工作区可能已变化、须先检查后再决定是否提交新的授权；禁止恢复流程自动重发原命令。当前状态/页面单测不等同于真实备份恢复后的浏览器验收。
-
 
 自动标题沿用既有 Thread 与 Payload 存储；Schema 49 起标题费用记在该 Run 专属的标题预算账户 `thread-title:<runId>`，恢复点随预算表一起保留。恢复点须共同保留 `threads.title_ref`、标题来源与 revision、受保护标题 Payload，以及 `thread-title:<runId>` 对应的模型调用身份和费用记录；不能只恢复聊天正文或清除 started/unknown 记录来重新计费。已有自动标题和用户手动标题均保持原值，恢复动作本身不请求模型补名。正常停机先停止 Run 循环，再等待已发起的标题请求结束；强制中断后的记录以数据库实际状态为准，不能把进程内队列视为可恢复任务。标题模型请求最多等待 20 秒，仍受当前配置的更短期限约束；不要因正文已完成就直接杀掉服务。
 
@@ -416,7 +407,7 @@ Schema 32 增加受保护原生历史快照、Run 内顺序和 Fork 固定引用
 
 后台核查与操作结果并发写入时的版本处理，见[安装与诊断手册的核查说明](install-start-stop-runbook.md#troubleshooting)。该处理保留原资源事实、恢复所有权和期限检查，不新增数据格式，不改变本手册的备份、权威迁移或部署操作步骤；它不授权重放原工具。
 
-资源核查失败时先看持久恢复终点与安全原因：`SANDBOX_RECONCILIATION_PERMISSION_DENIED` 表示宿主检查被拒绝，不代表原执行 Grant 应重新授予；`SANDBOX_CONTROL_TIMED_OUT` 是控制连接请求超时，`SANDBOX_RECONCILIATION_TIMED_OUT` 是整个核查任务到期；身份、目录或证据变化必须核对原绑定，不能直接采用当前 PID。`unresolved` 表示本次核查已经结束。一次性 SRT 的 `bound` 记录仍按原规则暂停；任务环境（常驻 SRT 和容器）的 `bound` 记录停止未确认（`SANDBOX_TASK_ENVIRONMENT_STOP_UNCONFIRMED`，旧 Job Host 还没退出时常见）时，按同样的退避在下一次扫描重新排定（D-53，见 [ADR 0054 的 2026-10-21 补充](../adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md#resident-stop-retry)）；上一次核查因服务关闭或派发循环失败被中止（`SANDBOX_RECONCILIATION_INTERRUPTED`）的 `bound` 记录，不论后端，在下一次启动后的第一次扫描重新排定一次（D-56，见 [ADR 0054 的 2026-10-22 补充](../adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md#interrupted-recovery-retry)）；兜底的 `SANDBOX_RECONCILIATION_UNCONFIRMED` 仍暂停；身份、签名、权限等非暂时错误仍暂停。对需要停止的 `reserved` 暂时失败，下一次扫描可重新排定，退避与状态读回见[资源恢复调度](#schema-43-资源恢复调度)。失败细节经原 Job 的受保护 `restricted` Trace 保存，保留备份但不得直接输出到页面或普通日志。没有充分新释放证明时仍保留相交资源保护；不得用删除 claim 或重跑原工具来清除错误。
+资源核查失败时先看持久恢复终点与安全原因：`SANDBOX_RECONCILIATION_PERMISSION_DENIED` 表示宿主检查被拒绝，不代表原执行 Grant 应重新授予；`SANDBOX_CONTROL_TIMED_OUT` 是控制连接请求超时，`SANDBOX_RECONCILIATION_TIMED_OUT` 是整个核查任务到期；身份、目录或证据变化必须核对原绑定，不能直接采用当前 PID。`unresolved` 表示本次核查已经结束。一次性 SRT 的 `bound` 记录仍按原规则暂停；任务环境（常驻 SRT 和容器）的 `bound` 记录停止未确认（`SANDBOX_TASK_ENVIRONMENT_STOP_UNCONFIRMED`，旧 Job Host 还没退出时常见）时，按同样的退避在下一次扫描重新排定（D-53，见 [ADR 0298 的 2026-10-21 补充](../adr/0298-where-tools-run.md)）；上一次核查因服务关闭或派发循环失败被中止（`SANDBOX_RECONCILIATION_INTERRUPTED`）的 `bound` 记录，不论后端，在下一次启动后的第一次扫描重新排定一次（D-56，见 [ADR 0298 的 2026-10-22 补充](../adr/0298-where-tools-run.md)）；兜底的 `SANDBOX_RECONCILIATION_UNCONFIRMED` 仍暂停；身份、签名、权限等非暂时错误仍暂停。对需要停止的 `reserved` 暂时失败，下一次扫描可重新排定，退避与状态读回见[资源恢复调度](#schema-43-资源恢复调度)。失败细节经原 Job 的受保护 `restricted` Trace 保存，保留备份但不得直接输出到页面或普通日志。没有充分新释放证明时仍保留相交资源保护；不得用删除 claim 或重跑原工具来清除错误。
 
 | 症状 | 安全诊断 | 停止或有界修复 |
 | --- | --- | --- |
@@ -452,7 +443,6 @@ v2 已保存输出的分页引用和 cursor 归原 Run 的受保护 artifact；�
 
 Run 正常完成前停止其后台资源；SQLite 完成事务拒绝仍有未释放资源的 Run。未知清理进入原核查流程并保留写目录占用。Mac 测试主进程退出仍不证明任意后代已全部退出，不能清除隔离以获得正常完成。这里没有新增迁移文件、安装资格签发或运行中数据库修改步骤。
 
-
 ## 内置账号的恢复边界
 
 恢复副本在切换为活动 data 目录前会撤销内置账号的旧会话、设备和未完成验证请求，并禁用内置身份绑定。原因是恢复旧数据库可能重新带回旧密码或已消耗恢复码。恢复后必须通过安装运行说明中的停机 `account recover` 管理步骤设置新的凭据，才能重新开放内置账号登录；不能把恢复点中的旧凭据当作当前认证证明。
@@ -462,7 +452,6 @@ Run 正常完成前停止其后台资源；SQLite 完成事务拒绝仍有未释
 生成模型可选 `reasoningRequired` 能力需与 `reasoning` 一致；原配置省略时保持原语义。真实审批目标展示允许有界路径文本，不改变身份、Grant 或审批决定合同。
 
 恢复审批须读取已有冻结请求，不能用新时间重写同一持久化 key。验收核对 Pi 工具真实失败标记、审批等待扣除和文件回读；是否要求近期认证以实际审批合同为准，不以“工具”一概判断。
-
 
 同次进程观察现在携带 Agent 在该次核验中产生的证据，保存时不重复扫描安装字节；外部 Worker 事实仍独立核验，序号、身份、有效期及事务检查保留。注册控制入口统一核对当前 Scope、Grant 和安装；终态工具仍保存结果并完成原清理核验。此调整不改变停机、恢复、迁移或重新授权步骤，不使旧进程证据恢复执行权限。
 
@@ -528,7 +517,6 @@ Agent 只有在原 journal 已接纳永久释放记录且没有新保护时才�
 
 创建本机 Job Host 前还需保存 `sandbox-preparation-control.v1` 受保护记录，其中的控制密钥只用于核验原宿主，不授予启动权限。备份与迁移须保留该记录；旧数据不回填。已认证的 `host_never_started` 预留释放可交付确定未启动的失败，不能伪造 bound 记录；已取得启动权或使用旧协议且缺少最终证明时仍待核对。首次准备、登记或 bind 失败仍通过 `sandbox-control:*:diagnostic:preparation-failure` 尝试保留受保护诊断。Agent 在已校验的准备诊断入口，先向服务诊断输出写入 `sandbox.preparation.failed`，再读取或保存 restricted Trace。该日志仅含 `stage`、`reasonCode`、`systemCode`、非 null 的 `hostStage`，以及 hostDetail 非 null 时的 `hostDetailCode`、`hostCommand`、`hostPhase`；另含既有 `timestamp`、固定 `component`/`event` 和原身份摘要 `controlRef`。其他身份、路径、私人正文、秘密、SDK 原始错误及 hostDetail 计时/序号均不输出。读取这些固定字段无需解密 Payload；原诊断全文仍使用 `himawari diagnose run` 按私人数据处理要求查询。日志写入同步抛错时仍尝试执行原 Trace 保存流程，Trace 失败不抹去已输出的固定字段；已有第一份 Trace 不覆盖。重复日志不能证明重复执行，任何日志都不能代替释放回执。字段及校验边界见[安全服务日志合同](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#preparation-safe-log)。[2026-09-28-sandbox-preparation-control-recovery-design.md「preparation-safe-log」（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#preparation-safe-log)Payload 或 Admission 通道在成功握手后发生传输失败，失败操作按原结果结束；后续操作使用原 peer/boot、凭据与现有校验重新握手，并发调用共享一次握手，不重发失败的执行请求。准备诊断也使用同一机制。Worker 就绪状态反映两个通道当前状态；后续就绪探测可触发共享恢复，成功后才恢复 ready。握手失败仍未就绪，关闭期间迟到的回复不能恢复 Worker。 正在停止任务时，保留 broker 到清理观察保存结束，再由 close 统一断开。准备诊断请求未到达 Agent，或未通过握手、当前权威及原回执检查时，不生成这条安全日志，受保护诊断也可能未保存；不能据此声称错误已完整留存。详见[准备控制恢复合同](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#权限与失败边界)。本批没有新 migration，不改变本 Runbook 的现场操作授权要求。
 
-
 ### Schema 38 纯联网范围
 
 Schema 38 为 `sandbox-scope.v2` 和 `network_only` 合同建立 writer 屏障；这类前台 Job 使用自己的私有临时目录，不保存目录 Grant，也没有共享文件 claim。备份和恢复仍须保留原网络授权、Handle、调用回执、Scope Payload、私有环境和资源释放证据。空 claim 只说明没有用户文件占用，不能据此认定进程已结束或重发原操作；网络外部效果仍按命令退出事实记录，不宣称无副作用。
@@ -557,7 +545,7 @@ Schema 39 新增 `automatic_action_reviews`，在模型调用前保留唯一请�
 
 同一 Run 有多个资源时，停止入口会继续枚举后续页并独立请求各资源停止，最后汇总清理结论。一条资源等待或报错不阻止其他资源收到停止；只有每条资源均有永久释放回执且无残留保护时，整体才报告已释放。
 
-长期 Grant 的现时覆盖检查与创建条件一致：仅允许低风险 READ；新请求风险提高或动作类别变化时重新询问，不能因资源相同就复用。恢复、转移和升级时保留原 intent、审批及额度记录，不把过去拒绝改成批准。写入或修改授权工作目录内的内容，默认由宿主策略派生精确绑定本次 intent 的单次 Grant 而不再逐次点击（配置 `runPolicy.coding.approval: "ask"` 时恢复逐次人工批准，见 [ADR 0053](../adr/0053-workspace-auto-approval-like-codex.md)）；授权目录外的写入和联网命令仍需人工批准；记住搜索选择会为新请求派生独立单次 Grant，不是长期写权限。参见[单次批准与范围授权实施记录](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p2-scope-continuity)。
+长期 Grant 的现时覆盖检查与创建条件一致：仅允许低风险 READ；新请求风险提高或动作类别变化时重新询问，不能因资源相同就复用。恢复、转移和升级时保留原 intent、审批及额度记录，不把过去拒绝改成批准。写入或修改授权工作目录内的内容，默认由宿主策略派生精确绑定本次 intent 的单次 Grant 而不再逐次点击（配置 `runPolicy.coding.approval: "ask"` 时恢复逐次人工批准，见 [ADR 0299](../adr/0299-tool-calls-and-command-lifecycle.md)）；授权目录外的写入和联网命令仍需人工批准；记住搜索选择会为新请求派生独立单次 Grant，不是长期写权限。参见[单次批准与范围授权实施记录](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p2-scope-continuity)。
 
 ## 旧程序执行器的尾部输出（2026-09-29）
 
@@ -567,7 +555,7 @@ Schema 39 新增 `automatic_action_reviews`，在模型调用前保留唯一请�
 
 ## Bash 主进程退出后的输出等待（2026-09-29）
 
-依据 [ADR 0040](../adr/0040-background-output-closed-after-bash-returns.md#decision)，Bash 主进程退出、后台程序仍占用输出时，连续安静 100ms 后正常返回原退出码和已读输出；新输出重新计时，自然关闭不加说明。调用结束时关闭读端，不主动结束后台程序；未重定向的后台程序之后继续向原通道写输出，可能按已接受的行为退出。需要长期运行的程序应把 stdout/stderr 重定向到文件；已重定向或不再输出的后台程序可以继续运行。
+依据 [ADR 0299](../adr/0299-tool-calls-and-command-lifecycle.md)，Bash 主进程退出、后台程序仍占用输出时，连续安静 100ms 后正常返回原退出码和已读输出；新输出重新计时，自然关闭不加说明。调用结束时关闭读端，不主动结束后台程序；未重定向的后台程序之后继续向原通道写输出，可能按已接受的行为退出。需要长期运行的程序应把 stdout/stderr 重定向到文件；已重定向或不再输出的后台程序可以继续运行。
 
 模型结果使用以下说明原文：
 
@@ -575,4 +563,4 @@ Schema 39 新增 `automatic_action_reviews`，在模型调用前保留唯一请�
 
 说明不计入命令自身的输出上限，但计入整份工具结果 JSON 的上限；超过上限时不再整次失败，而是复用 Pi 的截断函数把交给模型的正文截断到上限内并加说明（`read` 保留 `Use offset=...` 续读；条目 R2-T9，见 [隔离工具执行设计](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#baseline)），只有正文清空仍装不下才沿用 `PI_RESULT_OUTPUT_LIMIT`。不另设额度或放宽任何上限，原期限、取消、资源与输出检查保持。目录释放仍按平台清理证明核验；Linux 同次开机还须 [Host 自身组为空](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#linux-host-group)。`process_group_gone` 不证明主动离组的后代全部停止。现有页面后台列表不能列出前台 Bash 自行脱离进程组的后代，这是已知限制，不能用列表为空证明没有后台进程。此改动不增加安装、迁移或恢复步骤，不改变本手册的操作授权要求。
 
-[SOURCE: docs/adr/0040-background-output-closed-after-bash-returns.md]
+[SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0040-background-output-closed-after-bash-returns.md]

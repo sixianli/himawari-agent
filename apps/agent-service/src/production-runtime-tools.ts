@@ -64,6 +64,7 @@ import {
   TOOL_RESULT_REMINDER_REJECTED,
   TOOL_RESULT_REMINDER_UNAVAILABLE,
   TOOL_RESULT_RULE_REJECTED,
+  TOOL_RESULT_SUBTHREAD_REJECTED,
   TOOL_RESULT_TELL_OWNER_REJECTED,
   TOOL_RESULT_VAULT_UNAVAILABLE,
   TOOL_SAVE_COPY,
@@ -163,10 +164,20 @@ import {
 } from "./production-sandbox-tool-result.js";
 import { type StageTiming, stageTiming } from "./production-stage-timing.js";
 import {
+  mainSubthreadDescriptors,
+  type ProductionSubthreads,
+  subthreadSideDescriptors,
+} from "./production-subthreads.js";
+import {
   type ProductionTellOwner,
   TellOwnerInputError,
   tellOwnerDescriptor,
 } from "./production-tell-owner.js";
+import {
+  type ProductionThreadTasks,
+  SubthreadToolError,
+  threadTaskDescriptors,
+} from "./production-thread-tasks.js";
 import { productionToolActionRegistry } from "./production-tool-actions.js";
 import {
   type ProductionVaultTools,
@@ -193,6 +204,8 @@ const BUILTIN_PREFLIGHT: Readonly<
   "owner-message": { prefix: "tell-owner", reasonCode: "TELL_OWNER_OWNER_SCOPE" },
   "owner-mail": { prefix: "mail-read", reasonCode: "MAIL_READ_OWNER_SCOPE" },
   "owner-options": { prefix: "offer-options", reasonCode: "OFFER_OPTIONS_OWNER_SCOPE" },
+  "owner-subthread": { prefix: "subthread", reasonCode: "SUBTHREAD_OWNER_SCOPE" },
+  "owner-plan": { prefix: "thread-task", reasonCode: "THREAD_TASK_OWNER_SCOPE" },
   "owner-rule": { prefix: "owner-rule", reasonCode: "OWNER_RULE_OWNER_SCOPE" },
   "owner-perception": { prefix: "perception", reasonCode: "PERCEPTION_OWNER_SCOPE" },
   "owner-vault": { prefix: "vault", reasonCode: "VAULT_OWNER_SCOPE" },
@@ -403,6 +416,8 @@ export interface ProductionRuntimeToolsOptions {
   readonly memoryOpen?: Pick<ProductionMemoryOpen, "open">;
   readonly reminders?: Pick<ProductionReminderTools, "run">;
   readonly tellOwner?: Pick<ProductionTellOwner, "run">;
+  readonly subthreads?: Pick<ProductionSubthreads, "run" | "conversation">;
+  readonly threadTasks?: Pick<ProductionThreadTasks, "run">;
   readonly mailRead?: Pick<ProductionMailRead, "run">;
   readonly messageOptions?: Pick<ProductionMessageOptions, "offer">;
   readonly ownerRules?: Pick<ProductionOwnerRuleTools, "run">;
@@ -665,9 +680,19 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     }
     if (this.#options.memoryRecall) descriptors.push(memoryRecallDescriptor());
     if (this.#options.reminders) descriptors.push(...reminderToolDescriptors());
-    if (this.#options.tellOwner) descriptors.push(tellOwnerDescriptor());
+    const kind = this.#options.subthreads
+      ? (await this.#options.subthreads.conversation(runId))?.kind
+      : undefined;
+    if (this.#options.tellOwner && kind !== "subthread") descriptors.push(tellOwnerDescriptor());
     if (this.#options.mailRead) descriptors.push(mailReadDescriptor());
-    if (this.#options.messageOptions) descriptors.push(offerOptionsDescriptor());
+    if (this.#options.messageOptions && kind !== "subthread")
+      descriptors.push(offerOptionsDescriptor());
+    if (this.#options.subthreads && kind === "main")
+      descriptors.push(...mainSubthreadDescriptors());
+    if (this.#options.subthreads && kind === "subthread")
+      descriptors.push(...subthreadSideDescriptors());
+    if (this.#options.threadTasks && (kind === "main" || kind === "subthread"))
+      descriptors.push(...threadTaskDescriptors());
     if (this.#options.ownerRules) descriptors.push(...ownerRuleToolDescriptors());
     if (this.#options.perception) descriptors.push(...perceptionToolDescriptors());
     if (this.#options.vault) descriptors.push(...vaultToolDescriptors());
@@ -762,6 +787,10 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       return (invocation, gate) => this.#tellOwner(invocation, gate);
     if (row.targetType === "owner-mail" && this.#options.mailRead)
       return (invocation, gate) => this.#mailRead(invocation, gate);
+    if (row.targetType === "owner-subthread" && this.#options.subthreads)
+      return (invocation, gate) => this.#subthread(invocation, gate);
+    if (row.targetType === "owner-plan" && this.#options.threadTasks)
+      return (invocation, gate) => this.#threadTask(invocation, gate);
     if (row.targetType === "owner-options" && this.#options.messageOptions)
       return (invocation, gate) => this.#offerOptions(invocation, gate);
     if (row.targetType === "owner-rule" && this.#options.ownerRules)
@@ -1033,6 +1062,38 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       }),
     );
   }
+  async #subthread(
+    invocation: RuntimeToolInvocation,
+    gate: OwnerScopeGate,
+  ): Promise<RuntimeToolExecutionResult> {
+    const subthreads = this.#options.subthreads;
+    return this.#ownerScoped(
+      invocation,
+      "subthread",
+      gate,
+      subthreads ? (call) => subthreads.run(call) : undefined,
+      (error) => ({
+        errorCode: error instanceof SubthreadToolError ? error.code : "SUBTHREAD_UNAVAILABLE",
+        note: TOOL_RESULT_SUBTHREAD_REJECTED.text,
+      }),
+    );
+  }
+  async #threadTask(
+    invocation: RuntimeToolInvocation,
+    gate: OwnerScopeGate,
+  ): Promise<RuntimeToolExecutionResult> {
+    const threadTasks = this.#options.threadTasks;
+    return this.#ownerScoped(
+      invocation,
+      "plan",
+      gate,
+      threadTasks ? (call) => threadTasks.run(call) : undefined,
+      (error) => ({
+        errorCode: error instanceof SubthreadToolError ? error.code : "THREAD_TASK_UNAVAILABLE",
+        note: TOOL_RESULT_SUBTHREAD_REJECTED.text,
+      }),
+    );
+  }
   async #mailRead(
     invocation: RuntimeToolInvocation,
     gate: OwnerScopeGate,
@@ -1080,6 +1141,8 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       | "tell"
       | "mail"
       | "options"
+      | "subthread"
+      | "plan"
       | "vault",
     gate: OwnerScopeGate,
     run:
@@ -1117,6 +1180,8 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       | "tell"
       | "mail"
       | "options"
+      | "subthread"
+      | "plan"
       | "vault",
     gate: OwnerScopeGate,
     run: (call: RuntimeToolInvocation) => Promise<{

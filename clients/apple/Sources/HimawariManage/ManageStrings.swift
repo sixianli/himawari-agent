@@ -42,9 +42,9 @@ enum M {
     static var herMemory: String { text("她记得的", ja: "覚えていること", en: "What she remembers") }
     static func memorySummary(_ summary: MemorySummary) -> String {
         text(
-            "\(summary.memories) 条记忆 · \(summary.topics) 个主题 · \(summary.rules) 条规则",
-            ja: "記憶 \(summary.memories) 件 · テーマ \(summary.topics) 個 · ルール \(summary.rules) 件",
-            en: "\(summary.memories) memories · \(summary.topics) topics · \(summary.rules) rules"
+            "\(summary.memories) 条记忆 · \(summary.rules) 条规则",
+            ja: "記憶 \(summary.memories) 件 · ルール \(summary.rules) 件",
+            en: "\(summary.memories) memories · \(summary.rules) rules"
         )
     }
     static var privacy: String { text("隐私", ja: "プライバシー", en: "Privacy") }
@@ -53,6 +53,11 @@ enum M {
     static func allowancesSummary(_ count: Int) -> String {
         if count == 0 { return text("还没有“不用再问”的事", ja: "「もう聞かない」ことはまだありません", en: "Nothing she skips asking yet") }
         return text("\(count) 条“不用再问”", ja: "\(count) 件「もう聞かない」", en: "\(count) she won't ask again")
+    }
+    static func vaultSummary(_ count: HerVaultCount) -> String? {
+        guard case let .items(items) = count else { return nil }
+        if items == 0 { return text("还没存东西", ja: "まだ何も入っていません", en: "Nothing stored yet") }
+        return text("\(items) 项", ja: "\(items) 件", en: items == 1 ? "1 item" : "\(items) items")
     }
     static var allowancesEmpty: String {
         text(
@@ -191,6 +196,28 @@ enum M {
     }
     static var actionFailed: String { text("没办成，再试一次", ja: "できませんでした。もう一度", en: "That didn't go through. Try again") }
     static var confirmDelete: String { text("删除这条记忆", ja: "この記憶を削除", en: "Delete this memory") }
+    static var previousVersions: String { text("以前的版本", ja: "以前の版", en: "Earlier versions") }
+    static var useThisVersion: String { text("用这版", ja: "この版にする", en: "Use this") }
+    static var confirmRestoreVersion: String { text("把这条记忆改回以前的版本", ja: "この記憶を以前の版に戻す", en: "Change this memory back to an earlier version") }
+    static var trashTitle: String { text("回收站", ja: "ごみ箱", en: "Trash") }
+    static func trashRow(_ count: Int) -> String { text("回收站 · \(count) 条", ja: "ごみ箱 · \(count) 件", en: "Trash · \(count)") }
+    static var recover: String { text("恢复", ja: "戻す", en: "Restore") }
+    static var confirmRecover: String { text("恢复这条记忆", ja: "この記憶を戻す", en: "Restore this memory") }
+    static func trashedLine(_ trashed: Date, daysLeft: Int) -> String {
+        text(
+            "\(pairedDay(trashed))不要的 · 还剩 \(daysLeft) 天",
+            ja: "\(pairedDay(trashed))に削除 · 残り\(daysLeft)日",
+            en: "Removed \(pairedDay(trashed)) · \(daysLeft) \(daysLeft == 1 ? "day" : "days") left"
+        )
+    }
+    static var trashFoot: String {
+        let days = ClientCapabilities.memoryTrashDays
+        return text("\(days) 天后自动删掉。", ja: "\(days)日後に自動で消えます。", en: "Deleted for good after \(days) days.")
+    }
+    static var deleteNote: String {
+        let days = ClientCapabilities.memoryTrashDays
+        return text("不要的进回收站，\(days) 天内能恢复", ja: "削除したものはごみ箱に入り、\(days)日以内なら戻せます", en: "Deleted memories go to Trash and can be restored for \(days) days")
+    }
     static var confirmEdit: String { text("改这条记忆", ja: "この記憶を直す", en: "Edit this memory") }
 
     static func basis(_ basis: MemoryBasis) -> String {

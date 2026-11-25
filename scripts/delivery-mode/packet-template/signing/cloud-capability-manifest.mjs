@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 
 export const webProviderSecretRef = "deepseek-web";
 export const webNetwork = Object.freeze(["mcp.exa.ai:443", "api.deepseek.com:443"]);
-export const newCapabilityRefs = Object.freeze([]);
+export const newCapabilityRefs = Object.freeze(__PKT_NEW_CAPABILITY_REFS_JSON__);
 const displayNames = Object.freeze({ pi: "已授权目录 Pi 工具", search: "公开网页搜索（Exa）", fetch: "公开网页读取" });
 
 export function createCapabilityManifest({ key, binding, ownerId, workerInstanceId, signerRef, issuedAt, observedAt }) {
@@ -70,15 +70,23 @@ export function manifestInvariantDigest(manifest, runtimeRoot) {
   return createHash("sha256").update(canonicalJson(invariant)).digest("hex");
 }
 
+const newCapabilityShapes = Object.freeze({
+  "himawari.pi-coding": Object.freeze({ operations: Object.freeze(["read", "write", "edit", "find", "grep", "ls", "bash"]), network: Object.freeze([]), secrets: Object.freeze([]) }),
+  "himawari.public-search": Object.freeze({ operations: Object.freeze(["web_search"]), network: webNetwork, secrets: Object.freeze([webProviderSecretRef]) }),
+  "himawari.public-fetch": Object.freeze({ operations: Object.freeze(["web_fetch"]), network: webNetwork, secrets: Object.freeze([webProviderSecretRef]) }),
+});
+
 function assertNewCapability({ manifest, binding, observation }) {
   assert.equal(observation, undefined, "NEW_CAPABILITY_ALREADY_REGISTERED");
-  assert.deepEqual(manifest.operations, ["web_fetch"], "NEW_CAPABILITY_OPERATIONS_CHANGED");
+  const shape = newCapabilityShapes[manifest.ref];
+  assert(shape, "NEW_CAPABILITY_UNKNOWN");
+  assert.deepEqual(manifest.operations, [...shape.operations], "NEW_CAPABILITY_OPERATIONS_CHANGED");
   assert.match(binding.runner.sha256, /^[a-f0-9]{64}$/, "NEW_RUNNER_DIGEST_INVALID");
   assert.equal(manifest.integrity, "sha256:" + binding.runner.sha256, "NEW_MANIFEST_ARTIFACT_CHANGED");
   assert.equal(manifest.artifact?.digest, manifest.integrity, "NEW_MANIFEST_ARTIFACT_CHANGED");
-  assert.deepEqual(manifest.scopes.network, [...webNetwork], "NEW_CAPABILITY_NETWORK_CHANGED");
-  assert.deepEqual(manifest.runtime.network, [...webNetwork], "NEW_CAPABILITY_NETWORK_CHANGED");
-  assert.deepEqual(manifest.scopes.secrets, [webProviderSecretRef], "NEW_CAPABILITY_SECRETS_CHANGED");
+  assert.deepEqual(manifest.scopes.network, [...shape.network], "NEW_CAPABILITY_NETWORK_CHANGED");
+  assert.deepEqual(manifest.runtime.network, [...shape.network], "NEW_CAPABILITY_NETWORK_CHANGED");
+  assert.deepEqual(manifest.scopes.secrets, [...shape.secrets], "NEW_CAPABILITY_SECRETS_CHANGED");
   return { capabilityRef: manifest.ref, version: manifest.version, runnerSha256: binding.runner.sha256, registered: false };
 }
 

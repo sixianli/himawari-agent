@@ -18,16 +18,16 @@ import {
   DEFAULT_VOICE_GATES,
   DEVICE_CONFIGURATION_DEFAULTS,
   type DeviceActionService,
-  type PairedDeviceScope,
-  type VaultService,
   defaultDeviceHardLimits,
   type ExecutionLiveFeed,
   type GatewayAccessDecision,
   type GatewayAuthenticationContext,
   type GatewayV2InboundMessage,
+  MAIL_INBOX_SOURCE_KIND,
   type McpMemorySyncStorePort,
   type OwnerIdentityStatePort,
   OwnerProfileService,
+  type PairedDeviceScope,
   type PayloadProtectorPort,
   type PayloadStorePort,
   PERCEPTION_CONFIGURATION_DEFAULTS,
@@ -35,19 +35,20 @@ import {
   PORT_ERROR_CODES,
   type ProductConfiguration,
   ProductThreadGatewayAdapter,
-  type ThreadMessageOptionsPort,
   perceptionSearchEvidenceText,
   RecentAuthenticationGuard,
   type RunLifecyclePort,
   readThreadExecutionEnvironment,
   type SessionDeviceStatePort,
-  MAIL_INBOX_SOURCE_KIND,
   ThreadCommandService,
   ThreadDeletionCoordinationService,
   ThreadExecutionProjection,
   ThreadForkService,
   type ThreadGatewayAccessPolicyPort,
+  type ThreadMessageOptionsPort,
   ThreadQueryService,
+  threadCommandFingerprint,
+  type VaultService,
   type VoiceAddresseeConfiguration,
   VoiceAddresseeJudge,
   type VoiceAddresseeModel,
@@ -118,9 +119,9 @@ import {
 } from "@himawari-agent/platform-node";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { BuiltInActionRuleSwitches } from "./action-rule-switches.js";
-import type { OwnerAllowances } from "./owner-allowances.js";
 import { classifiedThreadTitleReader } from "./classified-thread-title.js";
 import type { ContextExternalContent } from "./context-external-content.js";
+import type { OwnerAllowances } from "./owner-allowances.js";
 import type { ProductionApplePush } from "./production-apple-push.js";
 import {
   createProductionApprovalGateway,
@@ -217,6 +218,7 @@ import {
   PRODUCTION_SERVER_STATUS_OPERATIONS,
   ProductionServerStatusControl,
 } from "./production-server-status-control.js";
+import type { ProductionSubthreads } from "./production-subthreads.js";
 import { ThreadDeletionRetry } from "./production-thread-deletion-retry.js";
 import { type ProductionWebPush, WebPushPresence } from "./production-web-push.js";
 import {
@@ -343,6 +345,7 @@ export interface ProductionHttpCompositionOptions {
     readonly mainThread?: {
       readonly registry: InboxRunRegistry;
       readonly externalContent: Pick<ContextExternalContent, "mark">;
+      readonly subthreads?: ProductionSubthreads;
     };
     readonly onDiagnostic?: (event: Record<string, string>) => void;
   };
@@ -1304,6 +1307,7 @@ export async function createProductionHttpComposition(
           protector: payloadProtector,
           clock: { now: clock },
           ...(options.cancelRun ? { cancelRun: options.cancelRun } : {}),
+          ...(mainThreadInbox.subthreads ? { subthreads: mainThreadInbox.subthreads } : {}),
         })
       : undefined);
   const inbox = productionInbox({
@@ -1316,6 +1320,34 @@ export async function createProductionHttpComposition(
     ...(inboxDelivery ? { delivery: inboxDelivery } : {}),
     ...(options.inbox?.onDiagnostic ? { onDiagnostic: options.inbox.onDiagnostic } : {}),
   });
+  const subthreads = mainThreadInbox?.subthreads;
+  if (subthreads) {
+    subthreads.registerSources(inbox.inbox.sources);
+    const cancelRun = options.cancelRun;
+    subthreads.attach({
+      inbox: inbox.inbox,
+      ...(cancelRun
+        ? {
+            cancelThreadRuns: async (threadId: string) => {
+              const runs = await threads.listRuns(ownerId, agentId, threadId as never);
+              for (const run of runs)
+                if (!["completed", "failed", "cancelled"].includes(run.status))
+                  await cancelRun({
+                    runId: run.runId,
+                    command: {
+                      idempotencyKey: `subthread-stop:${run.runId}` as never,
+                      commandFingerprint: threadCommandFingerprint({
+                        type: "subthread.stop",
+                        runId: run.runId,
+                      }),
+                      payloadRef: run.runId as never,
+                    },
+                  }).catch(() => undefined);
+            },
+          }
+        : {}),
+    });
+  }
   if (options.proactive) {
     inbox.inbox.sources.register({
       kind: MAIL_INBOX_SOURCE_KIND,
@@ -1611,6 +1643,7 @@ export async function createProductionHttpComposition(
     now,
   });
   await perception.prepareDirectories();
+  await perception.resumeDeletions({ ownerId, agentId }).catch(() => undefined);
   const gatewayV2 = createProductionApprovalGateway({
     configuration,
     ...(options.capabilityReactivation

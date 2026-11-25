@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+  <style>@media (prefers-color-scheme: light) { .n { fill: #b8741a; } }</style>
+  <circle class="n" cx="22.55" cy="19.95" r="1.47" fill="rgb(255,236,170)"/>
+  <circle cx="21.65" cy="29.61" r="1.96" fill="rgb(115,66,17)"/>
+  <circle cx="30.76" cy="20.88" r="2.11" fill="rgb(127,74,17)"/>
+  <circle cx="15.81" cy="21.39" r="2.23" fill="rgb(138,81,18)"/>
+  <circle cx="28.78" cy="32.34" r="2.34" fill="rgb(150,88,18)"/>
+  <circle cx="26.31" cy="13.73" r="2.45" fill="rgb(162,95,18)"/>
+  <circle cx="14.66" cy="30.5" r="2.54" fill="rgb(173,103,19)"/>
+  <circle cx="36.05" cy="25.62" r="2.62" fill="rgb(185,110,19)"/>
+  <circle cx="15.74" cy="14.1" r="2.7" fill="rgb(197,117,19)"/>
+  <circle cx="23.37" cy="37.58" r="2.78" fill="rgb(208,124,20)"/>
+  <circle cx="34.11" cy="13.94" r="2.85" fill="rgb(215,130,21)"/>
+  <circle cx="9.12" cy="24.62" r="2.92" fill="rgb(218,135,24)"/>
+  <circle cx="35.85" cy="33.99" r="2.99" fill="rgb(221,140,27)"/>
+  <circle cx="21.93" cy="8.05" r="3.05" fill="rgb(224,145,29)"/>
+  <circle cx="14.42" cy="37.62" r="3.11" fill="rgb(227,149,32)"/>
+  <circle cx="40.79" cy="20.31" r="3.17" fill="rgb(230,154,35)"/>
+  <circle cx="8.66" cy="15.11" r="3.23" fill="rgb(233,159,37)"/>
+  <circle cx="29.46" cy="41.4" r="3.29" fill="rgb(236,164,40)"/>
+  <circle cx="31.94" cy="7.03" r="3.34" fill="rgb(239,168,43)"/>
+  <circle cx="6.23" cy="31.34" r="3.4" fill="rgb(242,173,45)"/>
+  <circle cx="42.5" cy="30.76" r="3.45" fill="rgb(245,178,48)"/>
+</svg>

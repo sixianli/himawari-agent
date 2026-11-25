@@ -36,7 +36,7 @@ date: "2026-11-25"
 
 - 去掉“今天”页和页签栏用的值：`home` 一段，`icon.todayTab`、`icon.newChat`、`icon.todayTop`、`icon.tab`，`type.todayTop`、`type.tabLabel`、`type.emptyTitleNewChat`，`size` 里的 `tabBarHeight`、`tabBarWidth`、`fadeTabBar`、`tabBarReserve`、`emptyMarkNewChat`、`newChatGlowRadius`，`radius.tabBar`。
 - `icon.speak` 由 `microphone` 改成自己画的声波（全套里唯一自己画的图标），`speakSize` 22、`strokeSpeak` 2.2；新增 `icon.dictate`（`microphone`）和 `icon.attach`（`plus`）。
-- 新增 `avatar` 一段：头像的位置和大小、忙时的生长（ADR 0283）和柔光、平时和“减弱动态效果”时的样子、下面“后台在办”那一条。
+- 新增 `avatar` 一段：头像的位置和大小、忙时的生长（ADR 0291）和柔光、平时和“减弱动态效果”时的样子、下面“后台在办”那一条。
 - 新增 `options` 一段：她那条话下面的选项。
 - 新增 `chat` 一段：主对话顶上的渐隐（头像下面有没有“后台在办”那一条，高度不同，两种都给了）、回答里的格式（段落间距、列表、表格；引用和代码块原型没画，不给数值，由设计线程定）、点“+”的面板、语音的声波条、说话途中那条气泡的透明度。
 - 新增 `her` 一段：她的页面的大头像、himawari 字样和带图标方块的行。

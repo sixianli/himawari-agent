@@ -44,6 +44,9 @@ const test = (name, verify) => {
     results.push({ name, passed: false, error: String(error) });
   }
 };
+const registeredTest = (ref, name, verify) => {
+  if (!capabilityApi.newCapabilityRefs.includes(ref)) test(name, verify);
+};
 test("allows only exact runtime-prefix replacement and three observed fields", () => {
   assert.equal(manifestInvariantDigest(current, newRoot), previousDigest);
 });
@@ -102,31 +105,31 @@ const observation = {
   manifestInvariantDigest: createHash("sha256").update(s0CanonicalJson(s0Invariant(previous, oldRoot))).digest("hex"),
   registryRecordSha256: "d".repeat(64),
 };
-test("accepts independently frozen old runner and unchanged catalog policy", () => {
+registeredTest(current.ref, "accepts independently frozen old runner and unchanged catalog policy", () => {
   assertCapabilityCompatibility({ manifest: current, binding: binding(newRoot), observation });
 });
 for (const field of ["activeHealthy", "versionMatchesSnapshot", "operationsMatchSnapshot", "scopesMatchSnapshot", "costMatchesSnapshot", "secretRefsMatchSnapshot", "permissionRefsMatchSnapshot", "declarationMatchesSnapshotExceptArtifact", "snapshotIntegrityMatchesRunner", "storedIntegrityMatchesDeclaration", "runnerMatchesRecorded"]) {
-  test("rejects unsuccessful S0 check " + field, () => {
+  registeredTest(current.ref, "rejects unsuccessful S0 check " + field, () => {
     assert.throws(() => assertCapabilityCompatibility({ manifest: current, binding: binding(newRoot), observation: { ...observation, [field]: false } }), new RegExp("OLD_CAPABILITY_CHECK_FAILED:" + field));
   });
-  test("rejects missing S0 check " + field, () => {
+  registeredTest(current.ref, "rejects missing S0 check " + field, () => {
     const missing = { ...observation };
     delete missing[field];
     assert.throws(() => assertCapabilityCompatibility({ manifest: current, binding: binding(newRoot), observation: missing }), new RegExp("OLD_CAPABILITY_CHECK_FAILED:" + field));
   });
 }
 for (const field of ["integrityMatchesSnapshot", "declarationInvariantMatchesSnapshot"]) {
-  test("rejects an S0 registry that no longer matches the previous snapshot " + field, () => {
+  registeredTest(current.ref, "rejects an S0 registry that no longer matches the previous snapshot " + field, () => {
     assert.throws(() => assertCapabilityCompatibility({ manifest: current, binding: binding(newRoot), observation: { ...observation, [field]: false } }), new RegExp("OLD_CAPABILITY_PREVIOUS_SHAPE_CHANGED:" + field));
   });
-  test("rejects a missing previous-shape field " + field, () => {
+  registeredTest(current.ref, "rejects a missing previous-shape field " + field, () => {
     const missing = { ...observation };
     delete missing[field];
     assert.throws(() => assertCapabilityCompatibility({ manifest: current, binding: binding(newRoot), observation: missing }), new RegExp("OLD_CAPABILITY_PREVIOUS_SHAPE_CHANGED:" + field));
   });
 }
 for (const [field, value] of [["actualRunnerSha256", "e".repeat(64)], ["runnerSha256", "e".repeat(64)], ["manifestInvariantDigest", "e".repeat(64)], ["capabilityRef", "other-capability"], ["version", "2.0.0"], ["status", "disabled"]]) {
-  test("rejects changed S0 binding " + field, () => {
+  registeredTest(current.ref, "rejects changed S0 binding " + field, () => {
     assert.throws(() => assertCapabilityCompatibility({ manifest: current, binding: binding(newRoot), observation: { ...observation, [field]: value } }));
   });
 }
@@ -135,16 +138,16 @@ const registered = structuredClone(previous);
 registered.integrity = `sha256:${registeredRunner}`;
 registered.artifact.digest = registered.integrity;
 const registeredObservation = { ...observation, runnerSha256: registeredRunner, actualRunnerSha256: registeredRunner, manifestInvariantDigest: createHash("sha256").update(s0CanonicalJson(s0Invariant(registered, oldRoot))).digest("hex") };
-test("accepts a new runner when every other declaration field matches the registered capability", () => {
+registeredTest(current.ref, "accepts a new runner when every other declaration field matches the registered capability", () => {
   const result = assertCapabilityCompatibility({ manifest: current, binding: binding(newRoot), observation: registeredObservation });
   assert.equal(result.runnerSha256, "a".repeat(64));
   assert.equal(result.registeredRunnerSha256, registeredRunner);
 });
-test("rejects a new runner whose manifest integrity names another artifact", () => {
+registeredTest(current.ref, "rejects a new runner whose manifest integrity names another artifact", () => {
   const changed = { ...binding(newRoot), runner: { ...binding(newRoot).runner, sha256: "f".repeat(64) } };
   assert.throws(() => assertCapabilityCompatibility({ manifest: current, binding: changed, observation: registeredObservation }), /NEW_MANIFEST_ARTIFACT_CHANGED/);
 });
-test("rejects an artifact digest that differs from the manifest integrity", () => {
+registeredTest(current.ref, "rejects an artifact digest that differs from the manifest integrity", () => {
   const changed = structuredClone(current);
   changed.artifact.digest = `sha256:${"f".repeat(64)}`;
   assert.throws(() => assertCapabilityCompatibility({ manifest: changed, binding: binding(newRoot), observation: registeredObservation }), /NEW_MANIFEST_ARTIFACT_CHANGED/);
@@ -155,7 +158,7 @@ for (const [name, change] of [
   ["runner argument changes", (value) => value.runtime.argv.push("--extra")],
   ["signer changes", (value) => value.artifact.signerRef = "host-signer:other"],
 ]) {
-  test("rejects a new runner combined with " + name, () => {
+  registeredTest(current.ref, "rejects a new runner combined with " + name, () => {
     const changed = structuredClone(current);
     change(changed);
     assert.throws(() => assertCapabilityCompatibility({ manifest: changed, binding: binding(newRoot), observation: registeredObservation }), /NEW_CAPABILITY_POLICY_INCOMPATIBLE/);
@@ -183,7 +186,7 @@ const registeredWeb = (manifest, key, runnerName) => {
   return { ...observation, capabilityRef: manifest.ref, runnerSha256: registeredRunner, actualRunnerSha256: registeredRunner, manifestInvariantDigest: createHash("sha256").update(s0CanonicalJson(s0Invariant(value, oldRoot))).digest("hex") };
 };
 test("__PKT_LABEL__ registers no new capability", () => {
-  assert.deepEqual([...capabilityApi.newCapabilityRefs], []);
+  assert.deepEqual([...capabilityApi.newCapabilityRefs], __PKT_NEW_CAPABILITY_REFS_JSON__);
 });
 for (const [key, ref, runnerName, operation, digest] of [
   ["search", "himawari.public-search", "web-search-main.js", "web_search", "a".repeat(64)],
@@ -198,12 +201,12 @@ for (const [key, ref, runnerName, operation, digest] of [
     assert.deepEqual(webCurrent.runtime.network, ["mcp.exa.ai:443", "api.deepseek.com:443"]);
     assert.deepEqual(webCurrent.scopes.secrets, ["deepseek-web"]);
   });
-  test("accepts a plain " + key + " runner upgrade against the registered eleventh declaration", () => {
+  registeredTest(ref, "accepts a plain " + key + " runner upgrade against the registered eleventh declaration", () => {
     const result = assertCapabilityCompatibility({ manifest: webCurrent, binding: bound(), observation: webObservation });
     assert.equal(result.runnerSha256, digest);
     assert.equal(result.registeredRunnerSha256, registeredRunner);
   });
-  test("rejects " + key + " without an S0 registry observation", () => {
+  registeredTest(ref, "rejects " + key + " without an S0 registry observation", () => {
     assert.throws(() => assertCapabilityCompatibility({ manifest: webCurrent, binding: bound(), observation: undefined }), /FROZEN_CAPABILITY_OBSERVATION_REQUIRED/);
   });
   for (const [name, change] of [
@@ -217,14 +220,44 @@ for (const [key, ref, runnerName, operation, digest] of [
     ["a filesystem scope change", (value) => value.scopes.filesystem.push("workspace:other")],
     ["a permission change", (value) => value.permissionRefs.push("permission:other")],
   ]) {
-    test("rejects " + key + " upgrade with " + name, () => {
+    registeredTest(ref, "rejects " + key + " upgrade with " + name, () => {
       const changed = structuredClone(webCurrent);
       change(changed);
       assert.throws(() => assertCapabilityCompatibility({ manifest: changed, binding: bound(), observation: webObservation }), /NEW_CAPABILITY_POLICY_INCOMPATIBLE/);
     });
   }
 }
-test("rejects pi gaining a network scope", () => {
+const firstShapes = [
+  ["himawari.pi-coding", () => current, () => binding(newRoot)],
+  ...[
+    ["search", "himawari.public-search", "web-search-main.js", "web_search", "a".repeat(64)],
+    ["fetch", "himawari.public-fetch", "web-fetch-main.js", "web_fetch", "9".repeat(64)],
+  ].map(([key, ref, runnerName, operation, digest]) => [ref, () => createCapabilityManifest({ ...options, key, binding: webBinding(ref, runnerName, operation, newRoot, digest) }), () => webBinding(ref, runnerName, operation, newRoot, digest)]),
+];
+for (const [ref, makeManifest, makeBinding] of firstShapes) {
+  if (!capabilityApi.newCapabilityRefs.includes(ref)) continue;
+  test("first registration of " + ref + " accepts the approved shape without an S0 observation", () => {
+    const result = assertCapabilityCompatibility({ manifest: makeManifest(), binding: makeBinding(), observation: undefined });
+    assert.equal(result.registered, false);
+    assert.equal(result.capabilityRef, ref);
+  });
+  test("first registration of " + ref + " rejects an existing S0 observation", () => {
+    assert.throws(() => assertCapabilityCompatibility({ manifest: makeManifest(), binding: makeBinding(), observation }), /NEW_CAPABILITY_ALREADY_REGISTERED/);
+  });
+  for (const [name, change, code] of [
+    ["an extra operation", (value) => value.operations.push("unknown"), /NEW_CAPABILITY_OPERATIONS_CHANGED/],
+    ["a network change", (value) => { value.scopes.network.push("example.com:443"); }, /NEW_CAPABILITY_NETWORK_CHANGED/],
+    ["a secret change", (value) => value.scopes.secrets.push("other-secret"), /NEW_CAPABILITY_SECRETS_CHANGED/],
+    ["an integrity change", (value) => { value.integrity = `sha256:${"e".repeat(64)}`; }, /NEW_MANIFEST_ARTIFACT_CHANGED/],
+  ]) {
+    test("first registration of " + ref + " rejects " + name, () => {
+      const changed = structuredClone(makeManifest());
+      change(changed);
+      assert.throws(() => assertCapabilityCompatibility({ manifest: changed, binding: makeBinding(), observation: undefined }), code);
+    });
+  }
+}
+registeredTest(current.ref, "rejects pi gaining a network scope", () => {
   const changed = structuredClone(current);
   changed.scopes.network.push("api.deepseek.com:443");
   assert.throws(() => assertCapabilityCompatibility({ manifest: changed, binding: binding(newRoot), observation: registeredObservation }), /NEW_CAPABILITY_POLICY_INCOMPATIBLE/);

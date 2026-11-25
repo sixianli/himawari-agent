@@ -1,8 +1,6 @@
 {
   "name": "andy-production",
-  "host": {
-    "address": "84.247.157.41"
-  },
+  "host": {},
   "fixedByTemplate": {
     "serviceAccount": "himawari-prod",
     "unit": "himawari-prod.service",

@@ -37,7 +37,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 5. 部署快照加载器要求资格记录的 `checkedAt` 距加载时刻不超过 5 分钟：`packages/platform-node/src/capabilities/capability-deployment.ts` 的 `CAPABILITY_DEPLOYMENT_MAX_QUALIFICATION_AGE_MS = 5 * 60 * 1_000`。这条只管启动时的准入，同文件 `revalidateCapabilityDeploymentSnapshot` 上方的说明原话是 “Qualification freshness gates admission; subsequent jobs still verify snapshot bytes and the actual host/runtime binding.”
 6. 执行进程启动时现场跑一遍资格检查并和快照比对：`apps/execution-worker/src/production-worker-composition.ts` 的 `qualifyProductionWorkerDeployment` 调用 `qualifyDeployment`。
 7. 执行进程写启动绑定不等资格检查完成，两件事并行进行：`apps/execution-worker/src/service-main.ts` 里 `waitForAgentBinding` 和 `qualifyProductionWorkerDeployment` 经 `bindingThenQualification` 一起等，`waitForAgentBinding` 内部调用 `writeWorkerServiceBootBinding`。启动绑定的字段里没有快照摘要：`packages/platform-node/src/state-root-layout.ts` 的 `WORKER_BOOT_BINDING_FIELDS`。
-8. 两个进程成对重启：[ADR 0036](0036-agent-worker-restart-as-a-pair.md) 决定第 1 条“Agent 和 Worker 是一个重启单位”。
+8. 两个进程成对重启：[ADR 0036](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0036-agent-worker-restart-as-a-pair.md) 决定第 1 条“Agent 和 Worker 是一个重启单位”。
 
 [↑ 返回阅读导航](#contents)
 
@@ -139,6 +139,6 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 ## 关联文档
 
-- [ADR 0036：Agent Service 与 Execution Worker 必须成对重启](0036-agent-worker-restart-as-a-pair.md)
+- [ADR 0036：Agent Service 与 Execution Worker 必须成对重启](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0036-agent-worker-restart-as-a-pair.md)
 
 [↑ 返回阅读导航](#contents)

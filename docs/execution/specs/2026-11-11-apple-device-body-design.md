@@ -64,7 +64,7 @@ date: "2026-11-11"
 
 - 愿景：[SOURCE: docs/product-vision.md]
 - 决定：[SOURCE: docs/adr/0229-native-apple-clients-and-device-api.md]、[SOURCE: docs/adr/0230-perception-records-and-memories-inferred-from-perception.md]、[SOURCE: docs/adr/0247-apple-clients-are-fully-native-with-a-capability-table.md]、[SOURCE: docs/adr/0258-each-apple-device-plays-to-its-strength.md]
-- 沿用的决定：[SOURCE: docs/adr/0165-freeze-the-request-head-per-conversation.md]、[SOURCE: docs/adr/0149-append-only-model-requests.md]、[SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0146-redact-sensitive-text-before-it-leaves-for-any-model.md]、[SOURCE: docs/adr/0179-keep-low-confidence-memory-candidates-as-tentative.md]、[SOURCE: docs/adr/0234-one-program-per-person-database-file.md]
+- 沿用的决定：[SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0165-freeze-the-request-head-per-conversation.md]、[SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0149-append-only-model-requests.md]、[SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0146-redact-sensitive-text-before-it-leaves-for-any-model.md]、[SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0179-keep-low-confidence-memory-candidates-as-tentative.md]、[SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0234-one-program-per-person-database-file.md]
 
 这份设计依赖的前提，带来源和原话的清单在两份 ADR 里：[ADR 0229 的前提](../../adr/0229-native-apple-clients-and-device-api.md#premises)（1 到 18）、[ADR 0230 的前提](../../adr/0230-perception-records-and-memories-inferred-from-perception.md#premises)（1 到 16）、[ADR 0247 的前提](../../adr/0247-apple-clients-are-fully-native-with-a-capability-table.md#premises)（1 到 5）、[ADR 0258 的前提](../../adr/0258-each-apple-device-plays-to-its-strength.md#premises)。下面只列这份文档另外用到的：
 
@@ -102,7 +102,7 @@ date: "2026-11-11"
 - 自定义键盘（Andy 已定先不做）。
 - 按量付费的实时语音模型（和“禁用贵模型”冲突）。传输层留了位置。
 - 平台做不到的：iPhone 和手表在后台自己打开麦克风、通话录音、直接读别的 App 的通知和界面、不经主人确认发短信。绕路的办法见 `/mnt/project-files/ambient-sensing/integrated-plan.md` 第 10 节。
-- 多人的开通流程本身（由 [ADR 0234](../../adr/0234-one-program-per-person-database-file.md) 和“多人使用”线程管：一套程序、一个网址、每人一个数据库文件）；这里只保证设备接口能按设备找到是谁，见[设备身份和配对](#identity)。
+- 多人的开通流程本身（由 [ADR 0234](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0234-one-program-per-person-database-file.md) 和“多人使用”线程管：一套程序、一个网址、每人一个数据库文件）；这里只保证设备接口能按设备找到是谁，见[设备身份和配对](#identity)。
 
 [返回阅读导航](#contents)
 
@@ -990,7 +990,7 @@ Mac 的动作只在 `device_policies` 允许的范围内（见[设备身份和�
 
 没有底部页签栏、“今天”页、对话列表、“新对话”、搜索问答页，也没有角上的按钮。
 
-**头像的动效**：她在忙（正在回答，或后台有子线程在办）时，标志用 ADR 0283 的生长动效（`SunflowerMark(growing: true)`，55 颗种子，每秒长 3.4 颗），头像背后一团暖金色柔光一明一暗，约 2.4 秒一个来回；平时不动、没有光。系统打开“减弱动态效果”时全部静止。
+**头像的动效**：她在忙（正在回答，或后台有子线程在办）时，标志用 ADR 0291 的生长动效（`SunflowerMark(growing: true)`，种子数按头像大小取，38pt 用 34 颗，长满一盘约 16 秒），头像背后一团暖金色柔光一明一暗，约 2.4 秒一个来回；平时不动、没有光。系统打开“减弱动态效果”时全部静止。
 
 **她每条话下面的选项**（ADR 0285 决定第 5 条）：
 

@@ -40,7 +40,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 - 出处：这条规则是哪次事件或哪次对话立的。仓库里只能查到 ADR、事故号和规格里的记载；规则本身查不到来源的，写“仓库内无记载；立这条规矩的那次对话无出处（Andy 2026-11-10 说想不起来）”；只是名单、设置这类数据项查不到来源的，写“该项来源仓库内无记载”，不顺带断言立规矩的对话无出处。
 - 生效位置：哪个文件的哪个函数或哪个提示词编号在执行它。
 - 硬/软：硬 = 程序按条件执行，不经模型判断；软 = 写成文字发给模型，模型可能照做也可能不照做；“硬+软”= 两边各写了一份。
-- 规则类型：[ADR 0163](adr/0163-owner-preferences-as-data-run-by-tested-rule-types.md) 说第一批规则类型还没定，所以这一列只是盘点用的暂称，不是决定；没有对应类型的写“尚无”。
+- 规则类型：[ADR 0301](adr/0301-the-owners-rule-book.md) 说第一批规则类型还没定，所以这一列只是盘点用的暂称，不是决定；没有对应类型的写“尚无”。
 - 测试：守着它的测试文件或用例编号；没有就写“无”。
 
 范围说明：`.claude/rules/` 和 `AGENTS.md` 里的规矩是给编码代理（写 Himawari 代码的 Claude 线程）的，不是 Himawari 这个 Agent 运行时的规则，不在清单内。
@@ -53,8 +53,8 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 - 一共盘出 57 条：程序硬规则 19 条、提示词软规则 25 条、记忆规则机制 5 条、配置和设置 8 条（逐条在后面的表里）。
 - 盘点时真正“必定执行”的主人规矩只有 Gmail 系统主动提醒那一块；2026-11-25 起这一块的程序判断已删除，新邮件交给她判断（见 [A](#hard)）。聊天里的规矩几乎都是软的。
-- Andy 举的例子“涉及退款的邮件必须看整个邮件串再决定”，现在不是一条程序规则：她看到新邮件后自己决定要不要用 `mail_read` 读整个邮件串。这个想法最早出现在 [ADR 0159](adr/0159-gmail-check-reads-full-body-and-the-owners-own-mail.md) 的已知限制里：“退款、预订是否办结需要整个邮件串，留给第二阶段”。
-- 自 [ADR 0213](adr/0213-owner-sentence-becomes-a-standing-rule.md) 起，主人可以在对话里把这类要求立成长期规则；2026-11-25 起这类邮件规则不再由程序执行，命中的规则写在新邮件旁边交给她判断。
+- Andy 举的例子“涉及退款的邮件必须看整个邮件串再决定”，现在不是一条程序规则：她看到新邮件后自己决定要不要用 `mail_read` 读整个邮件串。这个想法最早出现在 [ADR 0159](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0159-gmail-check-reads-full-body-and-the-owners-own-mail.md) 的已知限制里：“退款、预订是否办结需要整个邮件串，留给第二阶段”。
+- 自 [ADR 0301](adr/0301-the-owners-rule-book.md) 起，主人可以在对话里把这类要求立成长期规则；2026-11-25 起这类邮件规则不再由程序执行，命中的规则写在新邮件旁边交给她判断。
 - 生产库里的 `rule` 类记忆只有 3 条，全都已删除或在回收站；生产配置的 `systemInstruction` 只有一行（见 [C](#memory-rules) 和 C-1）。
 - 没有任何一条规则带“出处”字段。出处只能从 ADR、事故号和规格里倒推；57 条里有 19 条的出处仓库内查不到或只能查到一半（见 [G](#owner-confirm)）。
 - 同一条规则在代码和提示词里各写一份的有 4 处，其中 2 处已经对不上（见 [F](#findings)）。
@@ -69,12 +69,12 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 | 编号 | 原文 | 出处 | 生效位置 | 硬/软 | 规则类型（暂称） | 测试 |
 | --- | --- | --- | --- | --- | --- | --- |
-| H-8 | 静默时段内不推送，延后到时段结束后合并成一条。缺省值是每天 23:00 到 07:00 | [ADR 0106](adr/0106-proactive-loop-v1-gmail-read-only.md) | `proactive-rules.ts` 的 `quietEnd`，由 `proactive-source-runtime.ts` 给别的程序写入的来源条目推送时调用（是不是静默由规则手册的 `quiet_hours` 规则判断，静默到几点仍用 `quietUntil` 算）；设置存在 `rule_book_rules`，缺省值在 `sqlite-proactive-operations.ts` 的 `readSettings` | 硬 | 静默时段 | `rule-book-legacy-equivalence.unit.test.ts` |
-| H-10 | 垃圾邮件分类的邮件和主人自己发出的邮件不交给她，只记作已跳过 | [ADR 0106](adr/0106-proactive-loop-v1-gmail-read-only.md)；主人自己发的邮件不交给她是 ADR 0285 第 1 步的做法 | `proactive-mail-check-service.ts` 里 `categories.includes("spam")` 和 `sentByOwner` | 硬 | 某类事不提醒 | `test/integration/proactive-sources.test.ts` 里“spam and the owner's own mail are recorded as skipped and never reach her” |
-| H-12 | 待存的记忆只要分类是“敏感”，除非主人明说“记住”，一律先出确认卡，等主人点头才存；分类是“受限”的直接丢弃 | [ADR 0179](adr/0179-keep-low-confidence-memory-candidates-as-tentative.md) 一句“敏感类仍走审批”；丢弃原因码见 [ADR 0143](adr/0143-decision-ledger-for-model-gate-decisions.md)；立这条规矩的那次对话无出处（Andy 2026-11-10 说想不起来） | `automatic-memory-service.ts` 的 `isSensitive` 分支和 `restricted_excluded` | 硬 | 尚无（记忆写入门槛） | `test/integration/automatic-memory-golden.test.ts` |
-| H-13 | 待存的记忆的把握低于 850（千分制）时：能保留为“待确认”的存成待确认，否则丢弃；待确认的记忆不进主人档案，也不被邮件判断当事实用 | [ADR 0179](adr/0179-keep-low-confidence-memory-candidates-as-tentative.md) | `automatic-memory-service.ts`（`canBeKeptTentatively`）；`owner-profile-service.ts`（`tentative === true` 排除） | 硬 | 尚无（记忆写入门槛） | `packages/application/test/tentative-memory-capture.unit.test.ts`、`owner-profile-service.unit.test.ts` 的 PA-2 |
-| H-14 | 提醒时间的换算：有钟点的最多提前 1 小时提醒（离现在不到 1 小时的马上发），只有日期的当天早上 9 点提醒，两年以后的拒绝，每年的日子顺延到下一次 | [ADR 0166](adr/0166-prompt-wording-batch-1-system-and-tools.md)（提前 1 小时是有意的、每年顺延）、[ADR 0150](adr/0150-let-the-model-set-list-and-cancel-reminders.md)（已过去和超过两年的拒绝） | `apps/agent-service/src/production-memory-capture.ts` 的 `DATE_ONLY_REMIND_HOUR`、`MAXIMUM_REMINDER_HORIZON` | 硬 | 尚无（提醒时间换算） | `apps/agent-service/test/production-memory-evidence.unit.test.ts`；`prompt-wording.unit.test.ts` 的 C6 W-09 |
-| H-19 | 整理记忆判到两条记忆说法不一样时，只有模型判“新说法明确取代旧说法”、新条说得更晚、并且新条的把握不低于自动存入门槛（同 H-13），才作废旧条（门槛取 `packages/calibration/src/thresholds.ts` 的 `MEMORY_AUTO_COMMIT_GATE`，和 H-13 同一份）；其余一律让两条里说得更晚的那条进“待确认”、较早那条照常生效，并写一条 `hold` 决策记录；主人确认后两条都留，有过 `hold` 的一对以后不再互相作为整理对象（仍可能一起作为第三条新记忆的邻居，但只执行涉及那条新记忆的判断） | [ADR 0220](adr/0220-consolidation-conflicts-wait-for-the-owner.md) | `packages/memory-engine/src/consolidation.ts`（`replace` 分支和 `hold`） | 硬 | 尚无（记忆整理门槛） | `test/integration/memory-consolidation.test.ts` 的 P3-8 |
+| H-8 | 静默时段内不推送，延后到时段结束后合并成一条。缺省值是每天 23:00 到 07:00 | [ADR 0106](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0106-proactive-loop-v1-gmail-read-only.md) | `proactive-rules.ts` 的 `quietEnd`，由 `proactive-source-runtime.ts` 给别的程序写入的来源条目推送时调用（是不是静默由规则手册的 `quiet_hours` 规则判断，静默到几点仍用 `quietUntil` 算）；设置存在 `rule_book_rules`，缺省值在 `sqlite-proactive-operations.ts` 的 `readSettings` | 硬 | 静默时段 | `rule-book-legacy-equivalence.unit.test.ts` |
+| H-10 | 垃圾邮件分类的邮件和主人自己发出的邮件不交给她，只记作已跳过 | [ADR 0106](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0106-proactive-loop-v1-gmail-read-only.md)；主人自己发的邮件不交给她是 ADR 0285 第 1 步的做法 | `proactive-mail-check-service.ts` 里 `categories.includes("spam")` 和 `sentByOwner` | 硬 | 某类事不提醒 | `test/integration/proactive-sources.test.ts` 里“spam and the owner's own mail are recorded as skipped and never reach her” |
+| H-12 | 待存的记忆只要分类是“敏感”，除非主人明说“记住”，一律先出确认卡，等主人点头才存；分类是“受限”的直接丢弃 | [ADR 0300](adr/0300-how-memory-works-now.md) 一句“敏感类仍走审批”；丢弃原因码见 [ADR 0302](adr/0302-decision-records-and-calibration.md)；立这条规矩的那次对话无出处（Andy 2026-11-10 说想不起来） | `automatic-memory-service.ts` 的 `isSensitive` 分支和 `restricted_excluded` | 硬 | 尚无（记忆写入门槛） | `test/integration/automatic-memory-golden.test.ts` |
+| H-13 | 待存的记忆的把握低于 850（千分制）时：能保留为“待确认”的存成待确认，否则丢弃；待确认的记忆不进主人档案，也不被邮件判断当事实用 | [ADR 0300](adr/0300-how-memory-works-now.md) | `automatic-memory-service.ts`（`canBeKeptTentatively`）；`owner-profile-service.ts`（`tentative === true` 排除） | 硬 | 尚无（记忆写入门槛） | `packages/application/test/tentative-memory-capture.unit.test.ts`、`owner-profile-service.unit.test.ts` 的 PA-2 |
+| H-14 | 提醒时间的换算：有钟点的最多提前 1 小时提醒（离现在不到 1 小时的马上发），只有日期的当天早上 9 点提醒，两年以后的拒绝，每年的日子顺延到下一次 | [ADR 0303](adr/0303-what-the-model-is-sent.md)（提前 1 小时是有意的、每年顺延）、[ADR 0150](adr/0150-let-the-model-set-list-and-cancel-reminders.md)（已过去和超过两年的拒绝） | `apps/agent-service/src/production-memory-capture.ts` 的 `DATE_ONLY_REMIND_HOUR`、`MAXIMUM_REMINDER_HORIZON` | 硬 | 尚无（提醒时间换算） | `apps/agent-service/test/production-memory-evidence.unit.test.ts`；`prompt-wording.unit.test.ts` 的 C6 W-09 |
+| H-19 | 整理记忆判到两条记忆说法不一样时，只有模型判“新说法明确取代旧说法”、新条说得更晚、并且新条的把握不低于自动存入门槛（同 H-13），才作废旧条（门槛取 `packages/calibration/src/thresholds.ts` 的 `MEMORY_AUTO_COMMIT_GATE`，和 H-13 同一份）；其余一律让两条里说得更晚的那条进“待确认”、较早那条照常生效，并写一条 `hold` 决策记录；主人确认后两条都留，有过 `hold` 的一对以后不再互相作为整理对象（仍可能一起作为第三条新记忆的邻居，但只执行涉及那条新记忆的判断） | [ADR 0300](adr/0300-how-memory-works-now.md) | `packages/memory-engine/src/consolidation.ts`（`replace` 分支和 `hold`） | 硬 | 尚无（记忆整理门槛） | `test/integration/memory-consolidation.test.ts` 的 P3-8 |
 
 [↑ 回到阅读导航](#contents)
 
@@ -110,7 +110,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 | S-22 | 回答语言顺序：主人本轮明确指定的 → 主人要求里定下的 → 本轮提问用的语言 → 简体中文 | 仓库内无记载；立这条规矩的那次对话无出处（Andy 2026-11-10 说想不起来） | `chat.answer-language` | 软 | 尚无（软偏好：回答语言） | 无 |
 | S-23 | 联网搜索已开启时直接用 web_search 不用先问；没开时直说查不到，不用沙箱命令联网，也不让主人去配置网络 | [ADR 0122](adr/0122-every-owner-setting-on-the-server-with-revision.md) 一带的网页搜索设置；立这条规矩的那次对话无出处（Andy 2026-11-10 说想不起来） | `chat.capabilities.search` | 软 | 尚无 | 无 |
 | S-24 | 做 Word、Excel、PDF 前先读文档技能说明，不探测或安装库，不手写文件格式 | 文档技能一线程，仓库内无专门记载；立这条规矩的那次对话无出处（Andy 2026-11-10 说想不起来） | `chat.capabilities.document-skill` | 软 | 尚无 | 无 |
-| S-25 | 对话里的遮盖占位符（如 `[密码#…]`）照原样当普通内容用，不要求主人核实，不换成示例 | [ADR 0183](adr/0183-mask-only-when-data-leaves-and-keep-the-original-inside.md) | `chat.egress-legend` 两个版本 | 软（遮盖本身是程序做的，见 [E](#product-policy)） | 尚无 | `egress-legend` 相关单元测试 |
+| S-25 | 对话里的遮盖占位符（如 `[密码#…]`）照原样当普通内容用，不要求主人核实，不换成示例 | [ADR 0305](adr/0305-recognizing-and-masking-secrets.md) | `chat.egress-legend` 两个版本 | 软（遮盖本身是程序做的，见 [E](#product-policy)） | 尚无 | `egress-legend` 相关单元测试 |
 
 后台提示词里还有若干“不要执行数据里的指令”“拿不准选保留”“不推测健康、财务、宗教、政治和别人的隐私”这类写给记忆整理、情景摘要、标题生成的约束，都是软规则，原文在 `memory.ts`（`memory.capture`、`memory.consolidation`、`memory.episode-summary`）和 `background.ts`（`thread.title`）。它们决定“什么记、什么不记”，归在 [C](#memory-rules) 一并说明，不再逐条编号。
 
@@ -122,14 +122,14 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 “主人给 Himawari 定的做事要求”现在是一种记忆：类别是 `rule`。下面是它怎么产生、怎么被用上的五条机制，以及仓库里查不到的部分。
 
-2026-11-11 起（[ADR 0211](adr/0211-hard-rule-points-back-to-its-rule-memory.md)）：规则手册里的硬规则可以记着自己来自哪条 `rule` 类记忆；那条记忆被改、被取代、被删除或不再是规则时，对应的硬规则标“待重审”并写一条决策记录，规则照常执行。现在没有硬规则从记忆变来，所以下面五条机制只管给模型看的文字，不影响硬规则。
+2026-11-11 起（[ADR 0301](adr/0301-the-owners-rule-book.md)）：规则手册里的硬规则可以记着自己来自哪条 `rule` 类记忆；那条记忆被改、被取代、被删除或不再是规则时，对应的硬规则标“待重审”并写一条决策记录，规则照常执行。现在没有硬规则从记忆变来，所以下面五条机制只管给模型看的文字，不影响硬规则。
 
 | 编号 | 原文 | 出处 | 生效位置 | 硬/软 | 规则类型（暂称） | 测试 |
 | --- | --- | --- | --- | --- | --- | --- |
-| M-1 | 产生：每条主人消息之后，由模型判断有没有“对 Himawari 的要求”，有就写成 `rule` 类候选。主人明确说“以后都这样”才标明确；只是这一次的纠正，或模型自己从对话里看出的习惯，标不明确，“先作为待确认的规矩，再出现一次或主人确认后才生效” | [ADR 0163](adr/0163-owner-preferences-as-data-run-by-tested-rule-types.md) 背景；愿景 v2.2 附录第 10 条 | `memory.capture` 提示词；转正逻辑在 `durable-memory-service.ts`（重复出现或 `confirm` 时 `tentative` 改为 false） | 软（是否判成规则由模型决定；转正是程序） | 尚无 | `tentative-memory-capture.unit.test.ts` |
+| M-1 | 产生：每条主人消息之后，由模型判断有没有“对 Himawari 的要求”，有就写成 `rule` 类候选。主人明确说“以后都这样”才标明确；只是这一次的纠正，或模型自己从对话里看出的习惯，标不明确，“先作为待确认的规矩，再出现一次或主人确认后才生效” | [ADR 0301](adr/0301-the-owners-rule-book.md) 背景；愿景 v2.2 附录第 10 条 | `memory.capture` 提示词；转正逻辑在 `durable-memory-service.ts`（重复出现或 `confirm` 时 `tentative` 改为 false） | 软（是否判成规则由模型决定；转正是程序） | 尚无 | `tentative-memory-capture.unit.test.ts` |
 | M-2 | 注入：每轮把有效的 `rule` 记忆放进“主人的要求”资料块，标记为“回答时照做；主人本轮另有说法时以本轮为准” | [愿景](product-vision.md) 附录第 10 条记着这条的缺口 | `owner-profile-service.ts` 的 `compose`；标记在 `chat.turn.owner-rules-marker` | 软（块是程序放的，模型是否照做是概率） | 尚无 | `owner-profile-service.unit.test.ts` |
-| M-3 | 预算：规则和档案共用 2000 字。主人打开“每次对话都带上”的记忆先占字数、永不挤掉（它们本身就超过上限时照放，并在记忆页提示）；其余的规则在前、档案在后，放不下的挤掉。被挤掉的规则那一轮模型看不到；档案记忆自 [ADR 0286](adr/0286-the-main-model-reads-and-writes-memory-itself.md) 起不再单独成块，都列在记忆清单里（清单另按 `snapshotCharacterBudget` 计字数，表头、类别行、“你还能查到的”和省略行都算在内），所以被挤掉的档案记忆模型照样能在清单里看到，挤掉它们只影响记忆页的用量提示和下面的记录。有条目被挤掉时写一条“上下文截断”决策记录（只写编号），同一组被挤掉只记一次 | 同 M-2（愿景附录第 10 条原话：“与档案共用的 2000 字预算有没有超”）、[ADR 0214](adr/0214-record-profile-truncation-and-keep-pinned-memories.md) | `owner-profile-service.ts` 的 `OWNER_PROFILE_CHARACTER_BUDGET` 和 `#select`；`context-formation-service.ts` 写记录 | 硬（程序会丢） | 尚无 | `owner-profile-service.unit.test.ts` 的“stays within the character budget”和 `[P2-5]`；`decision-ledger.test.ts` 的 `[P2-5]` |
-| M-4 | 资格：只有状态有效、当前有效、不是待确认、没被取代的记忆才进规则块；分类不得高于本次请求的上限，也不得高于模型可见上限（[ADR 0193](adr/0193-memory-is-visible-to-the-model.md) 起是敏感：公开、私有、敏感的规则会注入，受限的不会） | [ADR 0193](adr/0193-memory-is-visible-to-the-model.md)（模型可见上限）、[ADR 0185](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0185-mark-passwords-and-keys-sensitive-instead-of-dropping-them.md)（密码、密钥标敏感）、[ADR 0112](adr/0112-memory-page-carried-memories-and-topic-browsing.md)（档案挑选规则） | `owner-profile-service.ts` 的 `#select`（用 `CLASSIFICATION_RANK` 和 `model-visibility.ts` 的 `modelVisibleCeiling`） | 硬 | 尚无 | PA-2（待确认不进档案）、PA-2b（被取代、过期、非生效状态不进）、PA-2c（敏感规则只在请求上限允许时进，受限的不进） |
+| M-3 | 预算：规则和档案共用 2000 字。主人打开“每次对话都带上”的记忆先占字数、永不挤掉（它们本身就超过上限时照放，并在记忆页提示）；其余的规则在前、档案在后，放不下的挤掉。被挤掉的规则那一轮模型看不到；档案记忆自 [ADR 0286](adr/0286-the-main-model-reads-and-writes-memory-itself.md) 起不再单独成块，都列在记忆清单里（清单另按 `snapshotCharacterBudget` 计字数，表头、类别行、“你还能查到的”和省略行都算在内），所以被挤掉的档案记忆模型照样能在清单里看到，挤掉它们只影响记忆页的用量提示和下面的记录。有条目被挤掉时写一条“上下文截断”决策记录（只写编号），同一组被挤掉只记一次 | 同 M-2（愿景附录第 10 条原话：“与档案共用的 2000 字预算有没有超”）、[ADR 0302](adr/0302-decision-records-and-calibration.md) | `owner-profile-service.ts` 的 `OWNER_PROFILE_CHARACTER_BUDGET` 和 `#select`；`context-formation-service.ts` 写记录 | 硬（程序会丢） | 尚无 | `owner-profile-service.unit.test.ts` 的“stays within the character budget”和 `[P2-5]`；`decision-ledger.test.ts` 的 `[P2-5]` |
+| M-4 | 资格：只有状态有效、当前有效、不是待确认、没被取代的记忆才进规则块；分类不得高于本次请求的上限，也不得高于模型可见上限（[ADR 0300](adr/0300-how-memory-works-now.md) 起是敏感：公开、私有、敏感的规则会注入，受限的不会） | [ADR 0300](adr/0300-how-memory-works-now.md)（模型可见上限）、[ADR 0185](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0185-mark-passwords-and-keys-sensitive-instead-of-dropping-them.md)（密码、密钥标敏感）、[ADR 0300](adr/0300-how-memory-works-now.md)（档案挑选规则） | `owner-profile-service.ts` 的 `#select`（用 `CLASSIFICATION_RANK` 和 `model-visibility.ts` 的 `modelVisibleCeiling`） | 硬 | 尚无 | PA-2（待确认不进档案）、PA-2b（被取代、过期、非生效状态不进）、PA-2c（敏感规则只在请求上限允许时进，受限的不进） |
 | M-5 | 主人在记忆页可以手动“每次对话都带”或“不带”某条记忆，覆盖自动选择 | [ADR 0122](adr/0122-every-owner-setting-on-the-server-with-revision.md) 盘点表 | `owner-profile-service.ts` 的 `pinned`、`choices` | 硬 | 尚无 | MEM-PIN |
 
 **记忆库里实际存的规则（2026-11-09 只读生产库的结果，不含原话）：** `rule` 类记忆一共 3 条，没有一条还在生效。
@@ -153,13 +153,13 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 | 编号 | 原文 | 出处 | 生效位置 | 硬/软 | 规则类型（暂称） | 测试 |
 | --- | --- | --- | --- | --- | --- | --- |
 | C-1 | 生产配置的 `runPolicy.systemInstruction`（最长 16384 字节）：拼在固定身份提示词后面发给模型 | 仓库只有测试夹具的示例值；生产值在 `/etc/himawari/config.json`，2026-11-09 经 Andy 授权只读、并同意补进清单，原文只有一行（含两条要求）：「修改或删除文件前先确认路径和内容；会覆盖或删除大量内容的操作，先向用户说明。」出处仓库内查不到；立这条规矩的那次对话无出处（Andy 2026-11-10 说想不起来） | `production-run-policy.ts` 把它和 `chat.identity` 拼成系统提示 | 软（文字）；它是主人最直接的一处写规矩的口子，现在只写了这一行 | 尚无 | 配置解析单元测试只验格式 |
-| C-2 | 主人的称呼：在设置里填，称呼主人时用它，对话里出现不同称呼时以最后出现的为准 | [ADR 0110](adr/0110-ui-batch-2026-10-29-check-it-before-the-owner-does.md)、[ADR 0122](adr/0122-every-owner-setting-on-the-server-with-revision.md) | `owner-profile-service.ts` 规则块第一行；存在 `owner_preferences` | 硬（注入）+软（模型用不用） | 尚无 | NAME-1 |
+| C-2 | 主人的称呼：在设置里填，称呼主人时用它，对话里出现不同称呼时以最后出现的为准 | [ADR 0295](adr/0295-web-chat-interface.md)、[ADR 0122](adr/0122-every-owner-setting-on-the-server-with-revision.md) | `owner-profile-service.ts` 规则块第一行；存在 `owner_preferences` | 硬（注入）+软（模型用不用） | 尚无 | NAME-1 |
 | C-3 | 界面语言、主题、强调色、对话用的模型和思考深度，服务器保存、各端同步 | [ADR 0122](adr/0122-every-owner-setting-on-the-server-with-revision.md)（I-16） | `owner_preferences`，带版本号 | 硬 | 尚无 | `test/integration/owner-settings-sync.test.ts` |
-| C-4 | 允许网页搜索开关 | [ADR 0110](adr/0110-ui-batch-2026-10-29-check-it-before-the-owner-does.md)、I-29 一带 | 服务器设置；运行环境说明按它说明有没有搜索 | 硬 | 尚无 | I-29 的门槛用例 |
-| C-5 | 系统主动提醒总开关、静默时段、重要发件人名单、Gmail 连接 | [ADR 0106](adr/0106-proactive-loop-v1-gmail-read-only.md) | 总开关在表 `proactive_settings`；静默时段、重要发件人在表 `rule_book_rules`，改动加修订号并写进只追加的 `rule_book_history`（迁移 0086，[ADR 0209](adr/0209-rule-book-with-cel-expressions-and-judge.md)） | 硬 | 静默时段、某人的事一定提醒 | `test/integration/proactive-sources.test.ts` 里“a source switched off is not checked” |
+| C-4 | 允许网页搜索开关 | [ADR 0295](adr/0295-web-chat-interface.md)、I-29 一带 | 服务器设置；运行环境说明按它说明有没有搜索 | 硬 | 尚无 | I-29 的门槛用例 |
+| C-5 | 系统主动提醒总开关、静默时段、重要发件人名单、Gmail 连接 | [ADR 0106](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0106-proactive-loop-v1-gmail-read-only.md) | 总开关在表 `proactive_settings`；静默时段、重要发件人在表 `rule_book_rules`，改动加修订号并写进只追加的 `rule_book_history`（迁移 0086，[ADR 0301](adr/0301-the-owners-rule-book.md)） | 硬 | 静默时段、某人的事一定提醒 | `test/integration/proactive-sources.test.ts` 里“a source switched off is not checked” |
 | C-6 | 推送通知开关和通知种类，按设备分开 | [ADR 0122](adr/0122-every-owner-setting-on-the-server-with-revision.md) | 推送设置，按设备保存 | 硬 | 尚无 | I-39 一带的界面用例 |
-| C-7 | 运行参数：`maxMemoryClassification`（最多把哪一档分类的记忆交给模型，已停用）、`maxSelectedMemories`（每轮最多带几条相关记忆，ADR 0286 起已停用）、`memoryLimit`、`timeZone`、`freezeThreadPrompts` | [ADR 0165](adr/0165-freeze-the-request-head-per-conversation.md)（冻结）；其余部分立规矩的那次对话无出处（Andy 2026-11-10 说想不起来） | `packages/platform-node/src/strict-configuration.ts` 的 `parseRunPolicy` | 硬 | 尚无 | `startup-configuration.unit.test.ts` |
-| C-8 | Gmail 检查的运行参数：`intervalMs`（缺省 15 分钟）、`dailyCostMicros`、`backoffThreshold`、`memoryMinimumSimilarity`（缺省取当前嵌入模型档案里系统主动提醒用的门槛，见 [ADR 0224](adr/0224-memory-embedding-runs-on-the-host.md)）、正文和往来邮件的字数上限、审查预算。2026-11-25 起 Gmail 检查不再调用模型，费用上限、降频、记忆门槛和往来邮件的上限对新邮件不再起作用 | [ADR 0106](adr/0106-proactive-loop-v1-gmail-read-only.md)、[ADR 0184](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0184-back-off-ignored-proactive-pushes.md) | `strict-configuration.ts` 的 `parseProactive` | 硬 | 每天提醒的上限（部分） | `startup-configuration.unit.test.ts` |
+| C-7 | 运行参数：`maxMemoryClassification`（最多把哪一档分类的记忆交给模型，已停用）、`maxSelectedMemories`（每轮最多带几条相关记忆，ADR 0286 起已停用）、`memoryLimit`、`timeZone`、`freezeThreadPrompts` | [ADR 0303](adr/0303-what-the-model-is-sent.md)（冻结）；其余部分立规矩的那次对话无出处（Andy 2026-11-10 说想不起来） | `packages/platform-node/src/strict-configuration.ts` 的 `parseRunPolicy` | 硬 | 尚无 | `startup-configuration.unit.test.ts` |
+| C-8 | Gmail 检查的运行参数：`intervalMs`（缺省 15 分钟）、`dailyCostMicros`、`backoffThreshold`、`memoryMinimumSimilarity`（缺省取当前嵌入模型档案里系统主动提醒用的门槛，见 [ADR 0300](adr/0300-how-memory-works-now.md)）、正文和往来邮件的字数上限、审查预算。2026-11-25 起 Gmail 检查不再调用模型，费用上限、降频、记忆门槛和往来邮件的上限对新邮件不再起作用 | [ADR 0106](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0106-proactive-loop-v1-gmail-read-only.md)、[ADR 0184](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0184-back-off-ignored-proactive-pushes.md) | `strict-configuration.ts` 的 `parseProactive` | 硬 | 每天提醒的上限（部分） | `startup-configuration.unit.test.ts` |
 
 [↑ 回到阅读导航](#contents)
 
@@ -171,7 +171,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 - 审批：改文件、联网、后台命令等操作由 `action-policy-service.ts` 判断，批准过期、内容变了、额度不可用都会拒绝（`approval_expired`、`approval_hash_mismatch` 等）。配置键 `runPolicy.coding.approval`（`workspace_auto` 或 `ask`）和 `runPolicy.automaticReview` 决定自动批准的范围。
 - 文件和沙箱边界：只能读写主人授权的工作目录，`.git`、`.env`、`.himawari-recovery` 不能读写；对应 `chat.capabilities.*` 的文字和 `tools.policy-blocked.*` 的拒绝说明。
-- 出站遮盖：密码、验证码、银行卡、证件号在发给模型前由程序遮住（[ADR 0183](adr/0183-mask-only-when-data-leaves-and-keep-the-original-inside.md)、[ADR 0185](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0185-mark-passwords-and-keys-sensitive-instead-of-dropping-them.md)），`packages/sensitive-capture/`。
+- 出站遮盖：密码、验证码、银行卡、证件号在发给模型前由程序遮住（[ADR 0305](adr/0305-recognizing-and-masking-secrets.md)、[ADR 0185](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0185-mark-passwords-and-keys-sensitive-instead-of-dropping-them.md)），`packages/sensitive-capture/`。
 - 工具反复调用没进展时停止并追加说明：`chat.tool-loop-stopped`。
 
 [↑ 回到阅读导航](#contents)

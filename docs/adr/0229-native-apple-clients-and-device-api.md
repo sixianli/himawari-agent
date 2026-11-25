@@ -67,7 +67,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 3. 现行决定留了重新评估的条件。来源 [0089-web-push-only-owner-entry.md](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0089-web-push-only-owner-entry.md) 决定第 7 条原话：“原生 App 只在下面任一条件出现时重新评估：需要锁屏小组件、灵动岛、Siri 深度整合或后台感知这类网页做不到的能力”。
 4. 原生 App 在前台开始录音后可以在后台一直录；网页应用做不到。来源苹果技术支持在开发者论坛的回答 <https://developer.apple.com/forums/thread/776949> 原话：“we allow apps that start an audio recording session in the foreground to continue recording indefinitely in the background.”（这句话线程读到过，另一个模型复核时被验证页挡住，动工前再核一次。）
 5. 服务器现在只接受浏览器里同源页面发来的修改请求。来源 `packages/platform-node/src/http-gateway-server.ts:261` 原话：`header(request, "sec-fetch-site") !== "same-origin"`，不满足就拒绝。
-6. 已经有不经过浏览器的入口先例：Muse 推送入口用 Cloudflare 服务令牌（Cloudflare 发给程序用的一对编号和密钥，带在请求头里就能通过登录门）加应用自己的密钥。来源 `docs/adr/0162-receive-muse-data-through-a-service-token-and-an-app-secret.md` 决定第 1 条原话：“两层认证。边缘层用 Cloudflare Access 的服务令牌（Service Auth 策略，请求头 `CF-Access-Client-Id` 与 `CF-Access-Client-Secret`）”“应用层再要求 `Authorization: Bearer <应用密钥>`”。MCP 入口早先也是这个做法（ADR 0219），现已由 ADR 0227 改成只认 Cloudflare Access 的登录凭证，不拿它当先例。
+6. 已经有不经过浏览器的入口先例：Muse 推送入口用 Cloudflare 服务令牌（Cloudflare 发给程序用的一对编号和密钥，带在请求头里就能通过登录门）加应用自己的密钥。来源 [ADR 0162](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0162-receive-muse-data-through-a-service-token-and-an-app-secret.md) 决定第 1 条原话：“两层认证。边缘层用 Cloudflare Access 的服务令牌（Service Auth 策略，请求头 `CF-Access-Client-Id` 与 `CF-Access-Client-Secret`）”“应用层再要求 `Authorization: Bearer <应用密钥>`”。MCP 入口早先也是这个做法（ADR 0219），现已由 ADR 0227 改成只认 Cloudflare Access 的登录凭证，不拿它当先例。
 7. 网页收服务器消息用的是一条带编号、带心跳、能断线续传的事件流。来源 `packages/platform-node/src/http-gateway-server.ts:194` `SSE_CONTENT_TYPE = "text/event-stream; charset=utf-8"`；`:1115` `request.query.afterCursor ?? header(request, "last-event-id")`；`:428` `heartbeatFrame`。
 8. 这条事件流每发一个事件都重新核对身份。来源同文件 `:463`、`:497` 原话：`readonly revalidate: () => Promise<void>;`、`await input.revalidate();`。
 9. 工具集合一变，老对话下一轮会重建一次请求开头。来源 `packages/application/src/services/thread-prompt-bundle-service.ts:89` 原话：`if (!sameNames(record.identity.toolNames, identity.toolNames)) return "tool_set_changed";`。
@@ -79,7 +79,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 15. 多通道比单条连接在后台有大传输时快。来源开源项目 Cindy（提交 `58169050`）docs/agent-net-plan.md 第 2.1 节的实测：空闲时两种方式延迟都是 44 毫秒；后台有大传输时单条连接形态涨到 246 毫秒，多通道 51 到 74 毫秒。这是它在一台 Mac 上的模拟链路，不是 Himawari 的实测。
 16. HTTP 请求签名有现成标准。来源 RFC 9421 <https://www.rfc-editor.org/rfc/rfc9421.html> 原话：“This document describes a mechanism for creating, encoding, and verifying digital signatures or message authentication codes over components of an HTTP message.”参数 `created`：“Creation time as a UNIX timestamp value of type Integer.”`nonce`：“A random unique value generated for this signature as a String value.”算法名 `ecdsa-p256-sha256`。
 17. 本 ADR 之前的规则不许在 MacBook 上做任何构建（这一句已按决定第 8 条随本 ADR 改写，下面引的是改写前的原话）。来源 `.agents/instructions/test-and-production-hosts.md` 第 8 行改写前的原话：“绝不在用户的 MacBook 上运行 Himawari 测试：不做构建，不跑 `npm run check`、`npm test`、任何 Vitest 项目或产品路径资格验证。”
-18. 每个人一个只属于自己的 Himawari；一套程序、一个网址、每人一个数据库文件。来源 `docs/adr/0234-one-program-per-person-database-file.md` 决定第 2 条原话：“只跑一套程序，每人一个数据库文件。”第 5 条原话：“登录：一个网址、一个 Cloudflare Access 应用，名单里放所有受邀邮箱。”（它取代了 ADR 0083 的“每人一个独立实例”。）
+18. 每个人一个只属于自己的 Himawari；一套程序、一个网址、每人一个数据库文件。来源 [ADR 0234](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0234-one-program-per-person-database-file.md) 决定第 2 条原话：“只跑一套程序，每人一个数据库文件。”第 5 条原话：“登录：一个网址、一个 Cloudflare Access 应用，名单里放所有受邀邮箱。”（它取代了 ADR 0083 的“每人一个独立实例”。）
 
 未核实、所以本 ADR 不依赖的：苹果安全芯片（Secure Enclave）里生成的密钥不能导出，这一点线程没读到原文；TestFlight 的人数和有效期、不公开上架、日本的第三方应用商店，线程读的是搜索结果摘录。它们列在详细设计的[还没核实的事](../execution/specs/2026-11-11-apple-device-body-design.md#unverified)里，动工前读原文。
 
@@ -177,9 +177,9 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ## 关联文档
 
 - [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0089-web-push-only-owner-entry.md]
-- [SOURCE: docs/adr/0234-one-program-per-person-database-file.md]
-- [SOURCE: docs/adr/0162-receive-muse-data-through-a-service-token-and-an-app-secret.md]
-- [SOURCE: docs/adr/0165-freeze-the-request-head-per-conversation.md]
+- [SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0234-one-program-per-person-database-file.md]
+- [SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0162-receive-muse-data-through-a-service-token-and-an-app-secret.md]
+- [SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0165-freeze-the-request-head-per-conversation.md]
 - [SOURCE: docs/adr/0230-perception-records-and-memories-inferred-from-perception.md]
 - [SOURCE: docs/execution/specs/2026-11-11-apple-device-body-design.md]
 - [SOURCE: docs/product-vision.md]

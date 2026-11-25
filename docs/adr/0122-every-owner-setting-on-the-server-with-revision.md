@@ -4,7 +4,7 @@ document_type: adr
 decision_status: accepted
 supersedes: ""
 superseded_by: ""
-amends: "docs/adr/0110-ui-batch-2026-10-29-check-it-before-the-owner-does.md"
+amends: "https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0110-ui-batch-2026-10-29-check-it-before-the-owner-does.md"
 date: "2026-10-30"
 covers: "apps/agent-service/test/production-http-composition.unit.test.ts, apps/control-center/test/app-interactions.unit.test.ts, test/integration/owner-settings-sync.test.ts"
 verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
@@ -32,7 +32,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 网页搜索开关本身存在服务器上，它失效的原因是开关绑定了模型配置的摘要，第十九版换主模型后开关就悄悄作废，这一项由审批线程处理（I-29 一带）。本线程负责其余全部设置：逐项盘点存在哪里、各端是否一致、改配置会不会被悄悄重置。
 
-[ADR 0110](0110-ui-batch-2026-10-29-check-it-before-the-owner-does.md) 第 3 条已经把称呼、界面语言、主题色（强调色）搬到服务器（表 `owner_preferences`，迁移 0063，事故 I-16），但当时只搬了这三项。
+[ADR 0110](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0110-ui-batch-2026-10-29-check-it-before-the-owner-does.md) 第 3 条已经把称呼、界面语言、主题色（强调色）搬到服务器（表 `owner_preferences`，迁移 0063，事故 I-16），但当时只搬了这三项。
 
 [↑ 返回阅读导航](#contents)
 
@@ -78,7 +78,7 @@ Andy 在 2026-10-30 09:49（日本时间）的选择卡上选了方案 A。
 
 ## 与 ADR 0110 的关系
 
-本 ADR 修改 [ADR 0110 的决定](0110-ui-batch-2026-10-29-check-it-before-the-owner-does.md#decision)第 3 条：存服务器的设置从三项扩到六项；“没送到服务器的本地改动下次打开先补发，不被旧值盖掉”改为“服务器版本号没变才补发，变了就以服务器为准”，因为原来的做法会让断线的旧设备把整套旧值推上去，盖掉别的设备后来改的值。ADR 0110 的其余决定不变。
+本 ADR 修改 [ADR 0110 的决定](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0110-ui-batch-2026-10-29-check-it-before-the-owner-does.md#decision)第 3 条：存服务器的设置从三项扩到六项；“没送到服务器的本地改动下次打开先补发，不被旧值盖掉”改为“服务器版本号没变才补发，变了就以服务器为准”，因为原来的做法会让断线的旧设备把整套旧值推上去，盖掉别的设备后来改的值。ADR 0110 的其余决定不变。
 
 [↑ 返回阅读导航](#contents)
 
@@ -114,7 +114,7 @@ Andy 在 2026-10-30 09:49（日本时间）的选择卡上选了方案 A。
 - 事故：[I-16](../incidents-and-gates.md)
 - 面试案例：[案例 66](../engineering-casebook.md#case-settings-everywhere)
 - 设计规范：[docs/ui-ux-design-guide.md](../ui-ux-design-guide.md)
-- [ADR 0105](0105-ui-batch-2026-10-28-show-what-the-owner-needs.md)、[ADR 0110](0110-ui-batch-2026-10-29-check-it-before-the-owner-does.md)、[ADR 0107](0107-every-incident-gets-an-automatic-gate.md)
+- [ADR 0105](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0105-ui-batch-2026-10-28-show-what-the-owner-needs.md)、[ADR 0110](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0110-ui-batch-2026-10-29-check-it-before-the-owner-does.md)、[ADR 0107](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0107-every-incident-gets-an-automatic-gate.md)
 - 业界做法：[MDN If-Match](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/If-Match)、[Chrome storage API](https://developer.chrome.com/docs/extensions/reference/api/storage)、[MDN Page Visibility API](https://developer.mozilla.org/en-US/docs/Web/API/Page_Visibility_API)
 
 [↑ 返回阅读导航](#contents)

@@ -4,7 +4,7 @@ document_type: adr
 decision_status: accepted
 supersedes: ""
 superseded_by: ""
-amends: "docs/adr/0239-real-memory-eval-sets.md, https://github.com/sixianli/himawari-agent/blob/9a395ec730b7c96519309bf1199355a04d8199aa/docs/adr/0180-gmail-check-reads-earlier-mail-about-the-same-matter.md, docs/adr/0179-keep-low-confidence-memory-candidates-as-tentative.md"
+amends: "docs/adr/0239-real-memory-eval-sets.md, https://github.com/sixianli/himawari-agent/blob/9a395ec730b7c96519309bf1199355a04d8199aa/docs/adr/0180-gmail-check-reads-earlier-mail-about-the-same-matter.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0179-keep-low-confidence-memory-candidates-as-tentative.md"
 date: "2026-11-12"
 covers: "apps/agent-service/src/auxiliary-judgment.ts, apps/agent-service/src/production-memory-capture.ts, packages/application/src/services/proactive-mail-check-service.ts, packages/application/src/services/real-memory-eval.ts"
 verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
@@ -29,7 +29,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 ## 背景
 
-Andy 在 2026-11-12 定的 agent 开发基本原则是：理解用户的意思（意图、时效、是否明说等）一律交给模型判断，不用关键词表、正则或写死的词典。全面体检找出的一批判断仍靠词表猜意思：待确认规矩的引用是否真的在说同一件事、邮件里的订单号、评测题干有没有泄题。设计线程的整合方案（两个低价模型各出方案、互相审核、线程核对代码后整合）把它们拆成任务 T1 到 T6，Andy 同意，其中“每轮自动召回不加每轮模型调用”。本 ADR 记 T1 到 T4：共用的判断辅助、待确认规矩的确认裁判、邮件单号抽取、评测防泄露。分类与敏感判断（T5）、搜记忆的时间范围（T6）各有自己的取舍，另记。邮件“涉钱”规则（T7）见 [ADR 0248](0248-money-floor-follows-the-models-judgement.md)。
+Andy 在 2026-11-12 定的 agent 开发基本原则是：理解用户的意思（意图、时效、是否明说等）一律交给模型判断，不用关键词表、正则或写死的词典。全面体检找出的一批判断仍靠词表猜意思：待确认规矩的引用是否真的在说同一件事、邮件里的订单号、评测题干有没有泄题。设计线程的整合方案（两个低价模型各出方案、互相审核、线程核对代码后整合）把它们拆成任务 T1 到 T6，Andy 同意，其中“每轮自动召回不加每轮模型调用”。本 ADR 记 T1 到 T4：共用的判断辅助、待确认规矩的确认裁判、邮件单号抽取、评测防泄露。分类与敏感判断（T5）、搜记忆的时间范围（T6）各有自己的取舍，另记。邮件“涉钱”规则（T7）见 [ADR 0248](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0248-money-floor-follows-the-models-judgement.md)。
 
 [返回阅读导航](#contents)
 
@@ -38,7 +38,7 @@ Andy 在 2026-11-12 定的 agent 开发基本原则是：理解用户的意思�
 ## 前提
 
 1. 自 v2.2 起 Andy 定的规则是硬性设定：`AGENTS.md` 写明“规则写进程序、必定执行、每条有回归测试”；确认的现有代码在 `apps/agent-service/src/production-memory-capture.ts` 的 `evidenceRejected`，原先用 [GENERIC_TERMS](https://github.com/sixianli/himawari-agent/blob/5e06602c1a8d4e5aef04e07585734e25e657c2ed/apps/agent-service/src/production-memory-capture.ts) 去掉虚词后比较两句话有没有共同的两字词。
-2. 待确认记忆转正“有原话还要和那条记忆相关”的规则出自 [ADR 0179](0179-keep-low-confidence-memory-candidates-as-tentative.md) 第 59 行：“原话与那条待确认记忆自己的文字……去掉「主人」「喜欢」「的」这类到处都有的词后，至少共享一个连续两个字（中文）或一个单词，否则同样丢弃、不转正”，并写明“字面判断对不上同义词（「牛奶」对「乳制品」），误拦的代价只是少转正一次”。Andy 当时要防的是“拿无关的话当证据”，裁判模型照样防得住，还认得出同义词。
+2. 待确认记忆转正“有原话还要和那条记忆相关”的规则出自 [ADR 0179](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0179-keep-low-confidence-memory-candidates-as-tentative.md) 第 59 行：“原话与那条待确认记忆自己的文字……去掉「主人」「喜欢」「的」这类到处都有的词后，至少共享一个连续两个字（中文）或一个单词，否则同样丢弃、不转正”，并写明“字面判断对不上同义词（「牛奶」对「乳制品」），误拦的代价只是少转正一次”。Andy 当时要防的是“拿无关的话当证据”，裁判模型照样防得住，还认得出同义词。
 3. 逐字核对 `quoteFromOwnerMessage` 只看引用是否出自主人原话，不看是否在说同一件事：同文件，原话必须在归一化后逐字出现在主人消息里。
 4. 邮件单号原先由正则 [REFERENCE_CONTEXT](https://github.com/sixianli/himawari-agent/blob/35b9c5064ec071dddf8f3b63c6bdbc48881e6646/packages/platform-node/src/gmail-related.ts) 在 [packages/platform-node/src/gmail-related.ts](https://github.com/sixianli/himawari-agent/blob/9a395ec730b7c96519309bf1199355a04d8199aa/packages/platform-node/src/gmail-related.ts) 里抽取，要求“订单、预约、案件”等标签紧挨着号码；[ADR 0180](https://github.com/sixianli/himawari-agent/blob/9a395ec730b7c96519309bf1199355a04d8199aa/docs/adr/0180-gmail-check-reads-earlier-mail-about-the-same-matter.md) 第 41 行写明规则：“单独的 ID、No.、# 不算”。
 5. 取相关邮件在判断模型调用之前、每日成本上限之外：`packages/application/src/services/proactive-mail-check-service.ts` 的 `#related` 先于 `#judge`；本 ADR 把抽取放进同一个每日上限和每次检查的时间窗。

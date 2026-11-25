@@ -53,13 +53,13 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 目标还须有仍为 `open` 的所属 Thread、原执行租约和恢复记录；Run 与 checkpoint 都处于 `reconciling_external_result`，checkpoint 尚无终态、output 或最终答案。其他未释放资源、未决保护或未确认意图会使本次处置被拒绝。
 
-同一轮复用本机沙箱（SRT 常驻环境，见[安装启停 Runbook](install-start-stop-runbook.md)）的工具调用也会写预约，但计划后端是 `srt-task-environment`，没有准备控制目录和 Host final；本工具只处置计划后端为 `srt` 的预约，对它们以 `SANDBOX_RESERVATION_ADMIN_NOT_ELIGIBLE` 拒绝。这些环境的释放走任务执行环境的释放回执（`process_group_gone` 等证明）；其中未绑定的预约由自动恢复按环境释放证明，或在 Run 没有结束时按“绑定已被停止标记挡住”的证明（`task_environment_bind_fenced`，见 [ADR 0054 第 4 层发现的缺口](../adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md#resident-fixes)）释放；Worker 在绑定之前就失败的调用，Agent 收到结果时还会立即按同一依据释放（D-52）。这些都不能用本 Runbook 的管理员声明代替。[2026-09-24-isolated-tool-execution-design.md「srt-resident-job-host」（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#srt-resident-job-host)
+同一轮复用本机沙箱（SRT 常驻环境，见[安装启停 Runbook](install-start-stop-runbook.md)）的工具调用也会写预约，但计划后端是 `srt-task-environment`，没有准备控制目录和 Host final；本工具只处置计划后端为 `srt` 的预约，对它们以 `SANDBOX_RESERVATION_ADMIN_NOT_ELIGIBLE` 拒绝。这些环境的释放走任务执行环境的释放回执（`process_group_gone` 等证明）；其中未绑定的预约由自动恢复按环境释放证明，或在 Run 没有结束时按“绑定已被停止标记挡住”的证明（`task_environment_bind_fenced`，见 [ADR 0298 第 4 层发现的缺口](../adr/0298-where-tools-run.md)）释放；Worker 在绑定之前就失败的调用，Agent 收到结果时还会立即按同一依据释放（D-52）。这些都不能用本 Runbook 的管理员声明代替。[2026-09-24-isolated-tool-execution-design.md「srt-resident-job-host」（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#srt-resident-job-host)
 
 ## Authoritative Sources
 
 - [管理员处置合同](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#admin-reservation-disposition)。[2026-09-28-sandbox-preparation-control-recovery-design.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md)
 - [停止证明与结果分开](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#lifecycle)。[2026-09-24-isolated-tool-execution-design.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-24-isolated-tool-execution-design.md)
-- [永久释放与结果交接](../adr/0030-durable-workspace-release-facts.md)。[SOURCE: docs/adr/0030-durable-workspace-release-facts.md]
+- [永久释放与结果交接](../adr/0298-where-tools-run.md)。[SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0030-durable-workspace-release-facts.md]
 - [安装启停](install-start-stop-runbook.md)、[同机备份恢复](backup-restore-runbook.md)。[SOURCE: docs/runbooks/install-start-stop-runbook.md] [SOURCE: docs/runbooks/backup-restore-runbook.md]
 - [只读历史清单](workspace-lifecycle-audit-runbook.md)不是实际宿主证明，也不是管理员处置授权。
 

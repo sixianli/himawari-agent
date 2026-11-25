@@ -23,6 +23,7 @@ public struct MemoryRootView: View {
     @State private var detailHeight: CGFloat = 0
     @State private var actionFailed = false
     @State private var selectedRule: RuleSummary?
+    @State private var trashOpen = false
     private let talk: (String) -> Void
     private let opening: Opening?
     private let back: (() -> Void)?
@@ -79,6 +80,12 @@ public struct MemoryRootView: View {
                 item: item,
                 basis: M.basis(store.basis(item)),
                 lastUsed: M.lastUsed(item.lastUsedAt.flatMap(Timestamp.parse)),
+                versions: MemoryStore.previousVersions(of: item),
+                useVersion: { historyId in
+                    Task {
+                        if await perform({ try await store.restoreVersion(item, historyId: historyId, reason: M.confirmRestoreVersion) }) { selected = nil }
+                    }
+                },
                 close: { selected = nil },
                 delete: { delete(item) },
                 edit: {
@@ -126,6 +133,12 @@ public struct MemoryRootView: View {
             .presentationBackground(Color.hmBackground)
         }
         .alert(M.actionFailed, isPresented: $actionFailed) {}
+        .navigationDestination(isPresented: $trashOpen) {
+            MemoryTrashPage(store: store) { trashOpen = false }
+                #if os(iOS)
+                .toolbar(.hidden, for: .navigationBar)
+                #endif
+        }
     }
 
     private func open(_ opening: Opening?) {
@@ -172,7 +185,7 @@ public struct MemoryRootView: View {
         case (.failed, _):
             EmptyStateView(Text(M.loadFailed)).frame(minHeight: DesignTokens.Size.emptyMinHeight)
         case (.loaded, .remembered):
-            RememberedList(store: store) { selected = $0 }
+            RememberedList(store: store, openTrash: { trashOpen = true }) { selected = $0 }
         case (.loaded, .rules):
             RuleList(rules: store.rules) { selectedRule = $0 }
         }
@@ -189,11 +202,13 @@ struct MemorySegment: View {
 
 struct RememberedList: View {
     let store: MemoryStore
+    let openTrash: () -> Void
     let open: (MemoryItem) -> Void
 
     var body: some View {
         let groups = store.groups(categoryLabel: M.category)
-        if groups.isEmpty {
+        let trashed = store.trashed.count
+        if groups.isEmpty && trashed == 0 {
             EmptyStateView(Text(M.nothingRemembered)).frame(minHeight: DesignTokens.Size.emptyMinHeight)
         } else {
             VStack(alignment: .leading, spacing: 24) {
@@ -206,6 +221,17 @@ struct RememberedList: View {
                             .buttonStyle(.plain)
                             if index < group.items.count - 1 { RowSeparator() }
                         }
+                    }
+                }
+                if trashed > 0 {
+                    GroupedSection {
+                        Button(action: openTrash) {
+                            HStack {
+                                MemoryRow(text: M.trashRow(trashed), detail: nil)
+                                Icon(.chevronRight, size: DesignTokens.IconSize.chevron).foregroundStyle(Color.hmMuted)
+                            }
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
             }

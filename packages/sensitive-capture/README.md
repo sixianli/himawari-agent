@@ -2,7 +2,7 @@
 
 识别并遮盖文本里的敏感信息：机器密钥、密码、验证码、银行卡号、证件号。只做识别和遮盖，不读写文件、数据库或网络，也不依赖 Himawari 的其他包，Node 和浏览器里都能用。
 
-决定和背景见 [ADR 0167](../../docs/adr/0167-sensitive-capture-package.md)。
+决定和背景见 [ADR 0305](../../docs/adr/0305-recognizing-and-masking-secrets.md)。
 
 ## 内容
 

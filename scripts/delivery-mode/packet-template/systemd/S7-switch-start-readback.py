@@ -178,7 +178,11 @@ def static_root_configuration(original):
 static_root_config = static_root_configuration(original_configuration)
 static_root_config_bytes = (json.dumps(static_root_config, indent=2, ensure_ascii=False) + '\n').encode()
 static_root_config_sha = sha(static_root_config_bytes)
+__PKT_WHEN_FIRST_TOOLS__
+if {key: value for key, value in current_configuration.items() if key != 'capabilityDeployment'} != {key: value for key, value in static_root_config.items() if key != 'capabilityDeployment'} or 'capabilityDeployment' in original_configuration or not isinstance(current_configuration.get('capabilityDeployment'), dict):
+__PKT_OTHERWISE__
 if {key: value for key, value in current_configuration.items() if key != 'capabilityDeployment'} != {key: value for key, value in static_root_config.items() if key != 'capabilityDeployment'} or current_configuration['capabilityDeployment'] == original_configuration['capabilityDeployment']:
+__PKT_END_WHEN__
     raise RuntimeError('__PKT_LABEL_UPPER___SWITCH_UNAPPROVED_CONFIG_FIELD_CHANGED')
 original_properties = show()
 if original_properties['ActiveState'] != 'inactive' or original_properties['MainPID'] != '0' or original_properties['FragmentPath'] != str(fragment):
@@ -218,8 +222,14 @@ if live_workspace != frozen_s0['workspace'] or (live_workspace['uid'], live_work
     raise RuntimeError('__PKT_LABEL_UPPER___SWITCH_WORKSPACE_DIRECTORY_CHANGED')
 catalog = upgrade_report['catalog']
 existing_refs = sorted(capability['capabilityRef'] for capability in frozen_s0['authorization']['capabilities'])
+__PKT_WHEN_FIRST_TOOLS__
+new_refs = sorted(__PKT_NEW_CAPABILITY_REFS_JSON__)
+refs = sorted(existing_refs + new_refs)
+if existing_refs or not new_refs or len(set(new_refs)) != len(new_refs) or refs != new_refs:
+__PKT_OTHERWISE__
 refs = existing_refs
 if refs != ['himawari.pi-coding', 'himawari.public-fetch', 'himawari.public-search']:
+__PKT_END_WHEN__
     raise RuntimeError('__PKT_LABEL_UPPER___SWITCH_CAPABILITY_SET_CHANGED')
 audit_before = catalog['upgradeAuditBefore']
 if set(catalog) != {'preparedConfigurationSha256', 'snapshotSha256', 'planDigest', 'upgraded', 'upgradeAuditBefore', 'upgradeAudit'} or catalog['preparedConfigurationSha256'] != sha(configuration_bytes) or sorted(entry['capabilityRef'] for entry in catalog['upgraded']) != refs or catalog['upgradeAudit'][:len(audit_before)] != audit_before or sorted(entry['action'] + ':' + entry['targetRef'] + ':' + entry['outcome'] for entry in catalog['upgradeAudit'][len(audit_before):]) != sorted('owner.capability.upgrade:' + ref + ':completed' for ref in refs):

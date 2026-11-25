@@ -65,6 +65,48 @@ public final class MemoryStore {
         await load()
     }
 
+    public var trashed: [MemoryItem] {
+        (overview?.memories ?? []).filter { $0.status == "trashed" }
+    }
+
+    public static func previousVersions(of item: MemoryItem) -> [MemoryItem.History] {
+        guard item.status == "active" else { return [] }
+        var seen: Set<String> = [item.text]
+        return item.history
+            .filter { $0.kind != "reaffirmed" }
+            .sorted { $0.at > $1.at }
+            .filter { seen.insert($0.text).inserted }
+    }
+
+    public static func trashDeadline(of item: MemoryItem) -> Date? {
+        guard let trashedAt = Timestamp.parse(item.updatedAt ?? item.recordedAt) else { return nil }
+        return trashedAt.addingTimeInterval(TimeInterval(ClientCapabilities.memoryTrashDays) * 86_400)
+    }
+
+    public func restoreVersion(_ item: MemoryItem, historyId: Int, reason: String) async throws {
+        try await mutate(item, action: "restore_version", historyId: historyId, reason: reason)
+    }
+
+    public func recover(_ item: MemoryItem, reason: String) async throws {
+        try await mutate(item, action: "recover", historyId: nil, reason: reason)
+    }
+
+    private func mutate(_ item: MemoryItem, action: String, historyId: Int?, reason: String) async throws {
+        _ = try await gateway.command(
+            .v2,
+            "memory.mutate",
+            payload: [
+                "action": .string(action),
+                "memoryId": .string(item.memoryId),
+                "expectedRevision": .number(Double(item.revision)),
+                "contentRef": nil,
+                "historyId": historyId.map { JSONValue.number(Double($0)) } ?? .null,
+            ],
+            options: ManageCommandOptions(confirmReason: reason)
+        )
+        await load()
+    }
+
     public func delete(_ item: MemoryItem, reason: String) async throws {
         _ = try await gateway.command(
             .v2,
@@ -121,7 +163,7 @@ public final class MemoryStore {
     public func summary(categoryLabel: (String) -> String) -> MemorySummary? {
         guard phase == .loaded else { return nil }
         let shown = groups(categoryLabel: categoryLabel)
-        return MemorySummary(memories: shown.reduce(0) { $0 + $1.items.count }, topics: shown.count, rules: rules.count)
+        return MemorySummary(memories: shown.reduce(0) { $0 + $1.items.count }, rules: rules.count)
     }
 
     public func setCapturePaused(_ paused: Bool, reason: String) async throws {

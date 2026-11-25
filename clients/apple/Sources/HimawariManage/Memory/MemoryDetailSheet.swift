@@ -7,6 +7,8 @@ struct MemoryDetailSheet: View {
     let item: MemoryItem
     let basis: String
     let lastUsed: String
+    let versions: [MemoryItem.History]
+    let useVersion: (Int) -> Void
     let close: () -> Void
     let delete: () -> Void
     let edit: () -> Void
@@ -39,6 +41,22 @@ struct MemoryDetailSheet: View {
             }
             .padding(.horizontal, L.fieldPaddingHorizontal)
             .himawariCard(padding: EdgeInsets())
+            if !versions.isEmpty {
+                VStack(alignment: .leading, spacing: L.fieldGap) {
+                    Text(M.previousVersions).hmType(L.fieldLabel).foregroundStyle(Color.hmMuted)
+                    VStack(spacing: 0) {
+                        ForEach(Array(versions.enumerated()), id: \.element.historyId) { index, version in
+                            versionRow(version)
+                            if index < versions.count - 1 { RowSeparator() }
+                        }
+                    }
+                    .padding(.horizontal, L.fieldPaddingHorizontal)
+                    .himawariCard(padding: EdgeInsets())
+                }
+            }
+            Text(M.deleteNote)
+                .hmType(DesignTokens.TypeScale.caption)
+                .foregroundStyle(Color.hmMuted)
             HStack {
                 Button(action: delete) {
                     Text(M.delete)
@@ -64,6 +82,27 @@ struct MemoryDetailSheet: View {
         .padding(.horizontal, L.paddingHorizontal)
         .padding(.bottom, L.paddingBottom)
         .background(Color.hmBackground)
+    }
+
+    private func versionRow(_ version: MemoryItem.History) -> some View {
+        HStack(spacing: L.titleGap) {
+            VStack(alignment: .leading, spacing: L.fieldGap) {
+                Text(version.text).hmType(L.fieldValue).foregroundStyle(Color.hmText)
+                if let date = Timestamp.parse(version.at) {
+                    Text(M.pairedDay(date)).hmType(DesignTokens.TypeScale.caption).foregroundStyle(Color.hmMuted)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Button { useVersion(version.historyId) } label: {
+                Text(M.useThisVersion)
+                    .hmType(DesignTokens.TypeScale.rowAction)
+                    .foregroundStyle(Color.hmText)
+                    .frame(minHeight: DesignTokens.Size.minTapTarget)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.vertical, L.fieldPaddingVertical)
     }
 
     private func field(_ label: String, _ value: String) -> some View {

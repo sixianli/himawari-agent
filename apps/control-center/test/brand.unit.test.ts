@@ -5,10 +5,11 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, expect, it, vi } from "vitest";
 import {
   activeGrowers,
+  growthRate,
   HimawariBrand,
   restingGrowth,
-  SEED_COUNT,
   SunflowerMark,
+  seedCountFor,
   seedsAt,
 } from "../src/components/brand.js";
 
@@ -43,14 +44,45 @@ async function mount(element: ReturnType<typeof createElement>) {
   return { host, unmount: () => act(async () => root.unmount()) };
 }
 
-it("[UI-2] draws the resting sunflower from 55 seeds only, the same count at every size", () => {
+it("[UI-2] draws the brand mark as SVG circles with the wordmark beside it", () => {
   const markup = renderToStaticMarkup(createElement(HimawariBrand, { wordmark: true }));
   expect(markup).not.toContain("<img");
   expect(markup).toContain('class="himawari-mark"');
   expect(markup).toContain('<span class="himawari-wordmark-latin">Himawari</span>');
   expect(markup).toContain('<span class="himawari-wordmark-kana" lang="ja">ひまわり</span>');
-  expect(SEED_COUNT).toBe(55);
-  expect(visible(seedsAt(restingGrowth()))).toHaveLength(SEED_COUNT);
+});
+
+it("[UI-2] uses fewer seeds on small marks and more on large ones, each tier fully drawn at rest", () => {
+  expect([24, 28, 38, 48, 56, 58, 72, 120].map(seedCountFor)).toEqual([
+    21, 21, 34, 55, 55, 89, 89, 144,
+  ]);
+  for (const seeds of [21, 34, 55, 89, 144])
+    expect(visible(seedsAt(restingGrowth(seeds), seeds))).toHaveLength(seeds);
+  const largest = (seeds: number) =>
+    Math.max(...visible(seedsAt(restingGrowth(seeds), seeds)).map((seed) => seed.r));
+  expect(largest(21)).toBeGreaterThan(largest(144));
+});
+
+it("[UI-2] takes the same time to grow a full disc at every size", () => {
+  for (const seeds of [21, 34, 55, 89, 144])
+    expect(seeds / growthRate(seeds, "busy")).toBeCloseTo(16);
+  expect(growthRate(55, "idle")).toBeLessThan(growthRate(55, "busy"));
+});
+
+it("[UI-2] picks the seed count from the mark's rendered size", async () => {
+  stubMotion(false);
+  const original = Element.prototype.getBoundingClientRect;
+  Element.prototype.getBoundingClientRect = () => ({ width: 72, height: 72 }) as DOMRect;
+  try {
+    const { host, unmount } = await mount(createElement(SunflowerMark));
+    expect(host.querySelector("svg")?.getAttribute("data-seeds")).toBe("89");
+    expect(
+      [...host.querySelectorAll("circle")].filter((c) => Number(c.getAttribute("r")) > 0),
+    ).toHaveLength(89);
+    await unmount();
+  } finally {
+    Element.prototype.getBoundingClientRect = original;
+  }
 });
 
 it("[UI-2] places every seed on the golden-angle spiral and grows new seeds from the centre outward", () => {

@@ -2329,6 +2329,10 @@ it("[ADR-0257] only the listing, recall, conversation, mail, perception and vaul
     "conversation_open",
     "memory_open",
     "mail_read",
+    "view_subthread",
+    "view_results",
+    "task_list",
+    "task_get",
     "reminder_list",
     "rule_list",
     "tool_result_recall",
@@ -2343,13 +2347,80 @@ it("[ADR-0257] only the listing, recall, conversation, mail, perception and vaul
   ).toEqual([
     "device_action",
     "offer_options",
+    "open_subthread",
+    "record_result",
     "reminder_cancel",
     "reminder_set",
+    "return_result",
     "rule_set",
     "rule_undo",
+    "send_to_subthread",
+    "stop_subthread",
+    "task_create",
+    "task_update",
+    "tell_main",
     "tell_owner",
+    "wait_result",
   ]);
-  expect(builtin).toHaveLength(17);
+  expect(builtin).toHaveLength(30);
+});
+
+it("[ADR-0285] gives the main conversation the subthread tools and a subthread its own, without tell_owner", async () => {
+  const f = fixture();
+  const kinds: Readonly<Record<string, "main" | "subthread" | "other">> = {
+    "run:main": "main",
+    "run:sub": "subthread",
+    "run:other": "other",
+  };
+  const tools = new ProductionRuntimeTools({
+    ...f.options,
+    tellOwner: { run: vi.fn() },
+    messageOptions: { offer: vi.fn() },
+    subthreads: {
+      run: vi.fn(),
+      conversation: async (runId) => {
+        const kind = kinds[runId];
+        return kind ? { threadId: `thread:${runId}`, kind } : undefined;
+      },
+    },
+    threadTasks: { run: vi.fn() },
+  });
+  const names = async (runId: string) =>
+    (await tools.listAuthorized(runId as never, [])).map(({ name }) => name);
+  const main = await names("run:main");
+  const sub = await names("run:sub");
+  const other = await names("run:other");
+  const plan = ["task_create", "task_update", "task_list", "task_get"];
+  expect(main).toEqual(
+    expect.arrayContaining([
+      "tell_owner",
+      "offer_options",
+      "open_subthread",
+      "send_to_subthread",
+      "stop_subthread",
+      "view_subthread",
+      "view_results",
+      ...plan,
+    ]),
+  );
+  for (const name of ["tell_main", "return_result", "record_result", "wait_result"])
+    expect(main).not.toContain(name);
+  expect(sub).toEqual(
+    expect.arrayContaining([
+      "tell_main",
+      "return_result",
+      "record_result",
+      "view_results",
+      "wait_result",
+      ...plan,
+    ]),
+  );
+  for (const name of ["tell_owner", "offer_options", "open_subthread", "send_to_subthread"])
+    expect(sub).not.toContain(name);
+  for (const name of ["open_subthread", "tell_main", "view_results", ...plan])
+    expect(other).not.toContain(name);
+  expect(other).toContain("tell_owner");
+  expect(await names("run:main")).toEqual(main);
 });
 
 it("[ADR-0257] runs a tool with consequences only after the exit allows it, and never asks the exit for a read", async () => {

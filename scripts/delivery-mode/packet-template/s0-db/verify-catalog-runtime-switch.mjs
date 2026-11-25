@@ -90,6 +90,22 @@ test("production callers pass the catalog registration root", () => {
  assert.equal(sources[1].text.split("const catalogRegistrationRuntimeRoot = `${catalogRegistrationPrefix}/lib/himawari-agent`;").length - 1, 1, "maintenance-common.mjs must derive the registration root from catalogRegistrationPrefix");
  assert.equal(sources[2].text.split("catalogReader.readPostSwitchAuthorization(binding)").length - 1, 1, "S7-startup-readback.mjs must read the catalog through readPostSwitchAuthorization");
 });
+test("a first-tools S0 reads the directory grant without any capability snapshot", () => {
+ const first = new Database(":memory:");
+ first.exec("CREATE TABLE product_state_records(key TEXT,owner_id TEXT,agent_id TEXT,revision INTEGER,value_json TEXT)");
+ const grantValue = JSON.stringify({ id: "directory:one", hostId: "host:one", canonicalRootId: "10:20", displayPath: "/fixture/workspace", operations: ["read"], pathPolicy: "canonical", mountPolicy: "same-device", expiresAt: "2999-01-01T00:00:00.000Z", revokedAt: null, revision: 3 });
+ first.prepare("INSERT INTO product_state_records VALUES(?,?,?,?,?)").run("host-workspace:directory-grant:directory:one", "owner:one", "agent:one", 7, grantValue);
+ first.pragma("query_only=ON");
+ const firstConfiguration = { ownerId: "owner:one", agentId: "agent:one", runPolicy: { coding: { capabilityRef: "capability:one", capabilityVersion: "1.0.0", grantId: "directory:one", hostId: "host:one" }, other: { note: "not a route" } } };
+ const workspace = { path: "/fixture/workspace", device: "10", inode: "20" };
+ const grants = catalogModule.readGrantsWithoutSnapshot(first, firstConfiguration, workspace);
+ assert.equal(grants.length, 1);
+ assert.deepEqual({ ...grants[0], metadataSha256: undefined }, { routeKey: "coding", grantId: "directory:one", capabilityRef: "capability:one", capabilityVersion: "1.0.0", revision: 3, stateRevision: 7, hostId: "host:one", canonicalRootId: "10:20", displayPath: "/fixture/workspace", device: "10", inode: "20", pathPolicy: "canonical", mountPolicy: "same-device", expiresAt: "2999-01-01T00:00:00.000Z", revokedAt: null, readAllowed: true, hostMatchesRoute: true, rootMatchesSnapshot: true, currentlyUsable: true, metadataSha256: undefined });
+ assert.equal(grants[0].metadataSha256, createHash("sha256").update(grantValue).digest("hex"));
+ assert.throws(() => catalogModule.readGrantsWithoutSnapshot(first, firstConfiguration, { ...workspace, inode: "21" }), /GRANT_ROOT_NOT_BOUND/);
+ assert.throws(() => catalogModule.readGrantsWithoutSnapshot(first, { ...firstConfiguration, runPolicy: {} }, workspace), /GRANT_ROUTE_SET_CHANGED/);
+ first.close();
+});
 database.close();
 const report = { passed: checks.every(value => value.passed), realSqlite: true, productionExecuted: false, total: checks.length, checks };
 console.log(JSON.stringify(report, null, 2));

@@ -27,4 +27,4 @@ superseded_by: ""
 
 ## Notes
 
-- 2026-10-24 用户在方案文档里选了推荐方案：Linux 上扫过整个 PID 命名空间的释放显示为“已释放”，Mac 保留提示。决定写在 [ADR 0072](../adr/0072-linux-pid-namespace-sweep-counts-as-release-confirmed.md)。用户问过“为什么不直接去掉只有旧路径会写的 confirmed”：去掉容器路径消不掉这条提示，而且它是 ADR 0033 的严格模式。
+- 2026-10-24 用户在方案文档里选了推荐方案：Linux 上扫过整个 PID 命名空间的释放显示为“已释放”，Mac 保留提示。决定写在 [ADR 0298](../adr/0298-where-tools-run.md)。用户问过“为什么不直接去掉只有旧路径会写的 confirmed”：去掉容器路径消不掉这条提示，而且它是 ADR 0033 的严格模式。

@@ -180,7 +180,7 @@ export class ThreadCommandService {
   }
 
   async admitOwnerMessage(input: {
-    readonly triggerSource?: "user_message" | "external_event";
+    readonly triggerSource?: "user_message" | "schedule" | "external_event";
     readonly modelSelection?: import("../ports/run-execution-source.js").RunModelSelection;
     readonly ownerId: OwnerId;
     readonly agentId: AgentId;

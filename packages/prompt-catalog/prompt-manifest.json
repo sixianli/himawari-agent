@@ -1489,5 +1489,120 @@
     "sha256": "f2ff2cddd375550cb2cc3efa5c038b094f2d356fefae13dc3d09446e6b67887c",
     "changedIn": "ADR 0264",
     "reason": "第 8 批：手机认出名字的口头指令，提交前问判断模型是不是在叫 Himawari"
+  },
+  "subthreads.brief": {
+    "sha256": "e3659fd05ac8eac5b15d446b2d2dcdc746e6b21f38f27d8da9ea2f3021fc5a0a",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 3 步：主对话开子线程在后台办事，子线程照 Claude Code 的待办工具列计划，做完交回结果、主对话验收"
+  },
+  "subthreads.event": {
+    "sha256": "99b337a7cc1cfd54dac4da1fc8c7a0075ef2bf6b87d628ab4cd2748c9f592ec0",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 3 步：主对话开子线程在后台办事，子线程照 Claude Code 的待办工具列计划，做完交回结果、主对话验收"
+  },
+  "subthreads.messages.preface": {
+    "sha256": "4743f9c2daadcc2aa393d31aef6cdf3ca2971ceb8192ea237dbedddbac7a3f20",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 3 步：主对话开子线程在后台办事，子线程照 Claude Code 的待办工具列计划，做完交回结果、主对话验收"
+  },
+  "tools.open-subthread": {
+    "sha256": "265508781e30071361d67ec09fdfa508c42901b74ac5aab8c5d316b42139cfcf",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 3 步：主对话开子线程在后台办事，子线程照 Claude Code 的待办工具列计划，做完交回结果、主对话验收"
+  },
+  "tools.result.subthread.rejected": {
+    "sha256": "287fbd602fddfff4ad8a725d06ebb1df8c468f65fa7c2bfed840f4f5d770b047",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 3 步：同一件大事的子线程用结果板共用结果，先看目录、要细节再取正文，等的结果到了或改版时叫醒"
+  },
+  "tools.return-result": {
+    "sha256": "62c781b357344ad44510dc1ab773f58a58abcf0af07dd4efe74ef2007c99f2d1",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 3 步：同一件大事的子线程用结果板共用结果，先看目录、要细节再取正文，等的结果到了或改版时叫醒"
+  },
+  "tools.send-to-subthread": {
+    "sha256": "eb6e9d7109ac959e77438d421f48ccf7f4f5459d4be6edb87b6231bfe2a07b90",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 3 步：主对话开子线程在后台办事，子线程照 Claude Code 的待办工具列计划，做完交回结果、主对话验收"
+  },
+  "tools.stop-subthread": {
+    "sha256": "d56c3adec94ff2c6af6f8fca11e8722346edb8a03d9c7155ab6b1b8e25fe7578",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 3 步：主对话开子线程在后台办事，子线程照 Claude Code 的待办工具列计划，做完交回结果、主对话验收"
+  },
+  "tools.task-create": {
+    "sha256": "c0ac94cbaaefe81bbd667b9d67f7e3b8466ad4c1810d97e6c462cb70bb2d5474",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 3 步：主对话开子线程在后台办事，子线程照 Claude Code 的待办工具列计划，做完交回结果、主对话验收"
+  },
+  "tools.task-get": {
+    "sha256": "2271003ca71d9e67f39f46d0282431ae46af34553e98915d7161dc7ae6b49147",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 3 步：主对话开子线程在后台办事，子线程照 Claude Code 的待办工具列计划，做完交回结果、主对话验收"
+  },
+  "tools.task-list": {
+    "sha256": "7934b1f0e98d16335cb85ffe5eb498bb58f81a67439607bbc1dad80060928498",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 3 步：主对话开子线程在后台办事，子线程照 Claude Code 的待办工具列计划，做完交回结果、主对话验收"
+  },
+  "tools.task-update": {
+    "sha256": "1965cd29af45914b4155f5a1ac63226dc5271f6376ffb01572880a6c0a8e0f34",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 3 步：主对话开子线程在后台办事，子线程照 Claude Code 的待办工具列计划，做完交回结果、主对话验收"
+  },
+  "tools.tell-main": {
+    "sha256": "f180ca8c46c729d5be17d5d1a3c22ecf5bd8ca809247f33138bdd338559dbbdf",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 3 步：主对话开子线程在后台办事，子线程照 Claude Code 的待办工具列计划，做完交回结果、主对话验收"
+  },
+  "tools.view-subthread": {
+    "sha256": "3c0ce3f7ccf08469ecb48afad96b74674f7f477a3721e22774fd59abfaaa9bae",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 3 步：主对话开子线程在后台办事，子线程照 Claude Code 的待办工具列计划，做完交回结果、主对话验收"
+  },
+  "subthreads.result-board.changed": {
+    "sha256": "2dd18af7b99464255009882b62c134de5e226d159456659bdb99af28971acc8b",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 3 步：同一件大事的子线程用结果板共用结果，先看目录、要细节再取正文，等的结果到了或改版时叫醒"
+  },
+  "subthreads.result-board.gone": {
+    "sha256": "3b0363b23f4e4b040a5076c2a34f067f8ee21a5d8dbe5f412007f154abee48fa",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 3 步：同一件大事的子线程用结果板共用结果，先看目录、要细节再取正文，等的结果到了或改版时叫醒"
+  },
+  "subthreads.result-board.gone.returned": {
+    "sha256": "fb940debd0a9a07e6747700511aefb208ea515957bbf1a2e56a9101b9304fd42",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 3 步：同一件大事的子线程用结果板共用结果，先看目录、要细节再取正文，等的结果到了或改版时叫醒"
+  },
+  "subthreads.result-board.gone.stopped": {
+    "sha256": "e721ff184e609b6db818d5de7aeea8b75ad7a3d90cd6946537440e322f4ce97a",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 3 步：同一件大事的子线程用结果板共用结果，先看目录、要细节再取正文，等的结果到了或改版时叫醒"
+  },
+  "subthreads.result-board.gone.stuck": {
+    "sha256": "f06c9681b70643a25049ce107274088f5d2ea21416fe3f911fb242c35c361048",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 3 步：同一件大事的子线程用结果板共用结果，先看目录、要细节再取正文，等的结果到了或改版时叫醒"
+  },
+  "subthreads.result-board.ready": {
+    "sha256": "2addc15ecc74402cb69f82d9173ea2d55f9aa9e01576229d29903edf3a87a971",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 3 步：同一件大事的子线程用结果板共用结果，先看目录、要细节再取正文，等的结果到了或改版时叫醒"
+  },
+  "tools.record-result": {
+    "sha256": "b8c7a8bd4841a3db540b191b2e4b5c2749f73be179dacc1cd7447bf40a5002b9",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 3 步：同一件大事的子线程用结果板共用结果，先看目录、要细节再取正文，等的结果到了或改版时叫醒"
+  },
+  "tools.view-results": {
+    "sha256": "82c26b61a2f2af989d4542c02405559fec17bbf56582555f5470669bfe3af7c2",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 3 步：同一件大事的子线程用结果板共用结果，先看目录、要细节再取正文，等的结果到了或改版时叫醒"
+  },
+  "tools.wait-result": {
+    "sha256": "19ee4720d1b151b29ddc434f3829534c41c015f9dbabe9e7127b2666e97f6875",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 3 步：同一件大事的子线程用结果板共用结果，先看目录、要细节再取正文，等的结果到了或改版时叫醒"
   }
 }

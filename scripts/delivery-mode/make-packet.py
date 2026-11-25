@@ -27,6 +27,8 @@ SSH_OPTIONS = ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15', '-o', 'ServerAl
 UNITS = ['first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'ninth']
 TEENS = ['tenth', 'eleventh', 'twelfth', 'thirteenth', 'fourteenth', 'fifteenth', 'sixteenth', 'seventeenth', 'eighteenth', 'nineteenth']
 TENS = [('twenty', 'twentieth'), ('thirty', 'thirtieth'), ('forty', 'fortieth'), ('fifty', 'fiftieth'), ('sixty', 'sixtieth'), ('seventy', 'seventieth'), ('eighty', 'eightieth'), ('ninety', 'ninetieth')]
+FIRST_INSTALL_LABEL = 'firstinstall'
+FIRST_TOOLS_CAPABILITY_REFS = ('himawari.pi-coding', 'himawari.public-search', 'himawari.public-fetch')
 ORDINALS = UNITS + TEENS + [word for base, ordinal in TENS for word in [ordinal] + [base + unit for unit in UNITS]]
 MIGRATIONS = 'packages/persistence-sqlite/src/migrations'
 MIGRATION_ENGINE = 'packages/persistence-sqlite/src/migration-engine.ts'
@@ -93,11 +95,16 @@ def git(*arguments, binary=False):
     return child.stdout if binary else child.stdout.decode().strip()
 
 
-def load_instance(name):
+def load_instance(name, host=None):
     path = INSTANCES / (name + '.json')
     if not re.fullmatch(r'[a-z0-9-]+', name) or not path.is_file():
         refuse('PACKET_INSTANCE_UNKNOWN', name)
-    return json.loads(path.read_text())
+    instance = json.loads(path.read_text())
+    address = host or os.environ.get('HIMAWARI_PACKET_HOST') or instance.get('host', {}).get('address')
+    if not isinstance(address, str) or re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9.:-]*', address) is None:
+        refuse('PACKET_HOST_UNKNOWN', 'give the target with --host <address> or HIMAWARI_PACKET_HOST')
+    instance['host'] = {**instance.get('host', {}), 'address': address}
+    return instance
 
 
 def next_label(running):
@@ -300,6 +307,7 @@ def discovery_script():
         "    'model': {key: models[0].get(key) for key in ('contextWindow', 'maxTokens')} if len(models) == 1 else None,",
         "    'publicFetchMaximumBytes': fetch.get('maximumBytes') if isinstance(fetch, dict) else None,",
         "    'budgetsPresent': 'budgets' in config,",
+        "    'capabilityDeploymentPresent': isinstance(config.get('capabilityDeployment'), dict),",
         "    'configSha256': hashlib.sha256(config_bytes).hexdigest(),",
         "    'unitSha256': hashlib.sha256(unit).hexdigest(),",
         "    'newPathsExist': [path for path in (prefix_new, operations_new) if os.path.lexists(path)],",
@@ -352,11 +360,11 @@ def interpret_discovery(facts, instance, label=None):
         refuse('PACKET_FIRST_SIGNER_KEY_NOT_FOUND', signer_keys)
     if facts.get('active') != 'active':
         refuse('PACKET_SERVICE_NOT_ACTIVE', facts.get('active'))
-    pattern = r'ExecStart=\S+ --no-global-search-paths (' + re.escape(fixed['operationsRoot']) + r'/([a-z]+)-([0-9]{8}))/pair-supervisor\.mjs --prefix (' + re.escape(fixed['releasesRoot']) + r'/[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z]+) --config ' + re.escape(fixed['config']) + r' '
+    pattern = r'ExecStart=\S+ --no-global-search-paths (?P<operations>' + re.escape(fixed['operationsRoot']) + r'/(?:(?P<label>[a-z]+)-[0-9]{8}|(?P<first>first-install)))/pair-supervisor\.mjs --prefix (?P<prefix>' + re.escape(fixed['releasesRoot']) + r'/[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z0-9]+) --config ' + re.escape(fixed['config']) + r' '
     starts = [re.match(pattern, line) for line in facts.get('execStart', [])]
     if len(starts) != 1 or starts[0] is None:
         refuse('PACKET_RUNNING_UNIT_NOT_RECOGNIZED', facts.get('execStart'))
-    operations, running_label, prefix = starts[0].group(1), starts[0].group(2), starts[0].group(4)
+    operations, running_label, prefix = starts[0].group('operations'), starts[0].group('label') or FIRST_INSTALL_LABEL, starts[0].group('prefix')
     if facts.get('staticRoot') != prefix + '/share/control-center':
         refuse('PACKET_STATIC_ROOT_NOT_RUNNING_RELEASE', facts.get('staticRoot'))
     if facts.get('budgetsPresent') is not False:
@@ -387,6 +395,8 @@ def interpret_discovery(facts, instance, label=None):
         'ORIGINAL_CONTEXT_WINDOW': model['contextWindow'],
         'ORIGINAL_MAX_TOKENS': model['maxTokens'],
         'ORIGINAL_PUBLIC_FETCH_BYTES': fetch_bytes,
+        'FIRST_TOOLS': '0' if facts.get('capabilityDeploymentPresent', True) else '1',
+        'NEW_CAPABILITY_REFS_JSON': json.dumps([] if facts.get('capabilityDeploymentPresent', True) else list(FIRST_TOOLS_CAPABILITY_REFS), separators=(',', ':')),
         'DISCOVERED_CONFIG_SHA256': facts.get('configSha256'),
         'DISCOVERED_UNIT_SHA256': facts.get('unitSha256'),
         'SOURCE_CACHE_COMMITS': sorted(commit for commit in facts.get('sourceCacheCommits', []) if re.fullmatch(r'[0-9a-f]{40}', commit)),
@@ -514,7 +524,41 @@ def schema_parameters(parameters, s0):
     return {'CURRENT_SCHEMA': current, 'PREVIOUS_SCHEMA': current - 1, 'MIGRATION_LEDGER': json.dumps(ledger, separators=(',', ':'))}
 
 
+CONDITION_LINE = re.compile(r'^__PKT_(WHEN_[A-Z0-9_]+|OTHERWISE|END_WHEN)__[ \t]*$')
+
+
+def select_conditional_blocks(text, parameters, where):
+    kept, state = [], None
+    for line in text.splitlines(keepends=True):
+        match = CONDITION_LINE.match(line.rstrip('\r\n'))
+        if match is None:
+            if state is None or state['active']:
+                kept.append(line)
+            continue
+        word = match.group(1)
+        if word.startswith('WHEN_'):
+            if state is not None:
+                refuse('PACKET_CONDITION_NESTED', where)
+            key = word[5:]
+            if key not in parameters:
+                refuse('PACKET_PARAMETER_MISSING', key + ' in ' + where)
+            state = {'condition': str(parameters[key]) == '1', 'active': str(parameters[key]) == '1', 'otherwise': False}
+        elif word == 'OTHERWISE':
+            if state is None or state['otherwise']:
+                refuse('PACKET_CONDITION_UNBALANCED', where)
+            state['otherwise'] = True
+            state['active'] = not state['condition']
+        else:
+            if state is None:
+                refuse('PACKET_CONDITION_UNBALANCED', where)
+            state = None
+    if state is not None:
+        refuse('PACKET_CONDITION_UNBALANCED', where)
+    return ''.join(kept)
+
+
 def substitute(text, parameters, where):
+    text = select_conditional_blocks(text, parameters, where)
     def value(match):
         key = match.group(0)[6:-2]
         if key not in parameters:
@@ -785,11 +829,22 @@ def python_material_sha(commit, arch):
     return artifact['sha256']
 
 
+FD_PINS = HERE / 'fd-pins.json'
+
+
+def fd_parameters(arch):
+    platform = json.loads(FD_PINS.read_text())['platforms'].get(arch)
+    if not isinstance(platform, dict) or not all(re.fullmatch(pattern, str(platform.get(key))) for key, pattern in (('triple', r'[a-z0-9_]+-unknown-linux-musl'), ('archiveSha256', r'[0-9a-f]{64}'), ('binarySha256', r'[0-9a-f]{64}'))):
+        refuse('PACKET_FD_NOT_PINNED', arch)
+    return {'FD_TRIPLE': platform['triple'], 'FD_ARCHIVE_SHA256': platform['archiveSha256'], 'FD_BINARY_SHA256': platform['binarySha256']}
+
+
 def builder_parameters(commit, discovered, settings):
     builder_hostname = settings['hostname']
     separate = builder_hostname != discovered['HOSTNAME']
     return {
         'PYTHON_SHA256': python_material_sha(commit, discovered['NODE_ARCH']),
+        **fd_parameters(discovered['NODE_ARCH']),
         'BUILDER_HOSTNAME': builder_hostname,
         'REHEARSAL_HOSTNAME': builder_hostname if separate else '',
     }
@@ -1124,7 +1179,7 @@ def prepare(arguments):
     started = time.monotonic()
     if getattr(arguments, 'full_source', False) and arguments.reuse_materials:
         refuse('PACKET_FULL_SOURCE_WITH_REUSE', '--reuse-materials copies the earlier packet\'s source bundle, so --full-source cannot take effect; drop --reuse-materials')
-    instance = load_instance(arguments.instance)
+    instance = load_instance(arguments.instance, getattr(arguments, 'host', None))
     commit = resolve_commit(arguments.commit)
     require_current_scripts(commit)
     require_claims_proven(commit, arguments.since, Path(arguments.output_root).resolve())
@@ -1201,6 +1256,7 @@ def main(argv=None):
     commands = parser.add_subparsers(dest='command', required=True)
     prepare_parser = commands.add_parser('prepare')
     prepare_parser.add_argument('--instance', default='andy-production')
+    prepare_parser.add_argument('--host')
     prepare_parser.add_argument('--commit', default='origin/main')
     prepare_parser.add_argument('--label')
     prepare_parser.add_argument('--date')
@@ -1211,13 +1267,14 @@ def main(argv=None):
     freeze_parser = commands.add_parser('freeze')
     freeze_parser.add_argument('packet')
     freeze_parser.add_argument('--instance', default='andy-production')
+    freeze_parser.add_argument('--host')
     arguments = parser.parse_args(argv)
     try:
         if arguments.command == 'prepare':
             prepare(arguments)
         else:
             started = time.monotonic()
-            configuration = freeze(Path(arguments.packet).resolve(), load_instance(arguments.instance))
+            configuration = freeze(Path(arguments.packet).resolve(), load_instance(arguments.instance, getattr(arguments, 'host', None)))
             print('PACKET_FROZEN ' + json.dumps({'packet': str(Path(arguments.packet).resolve()), 'oldConfigSha256': configuration, 'seconds': round(time.monotonic() - started, 1)}))
     except PacketError as error:
         print('PACKET_REFUSED ' + str(error), file=sys.stderr)

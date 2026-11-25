@@ -7,6 +7,7 @@ import {
   PERCEPTION_RETENTION_KEYS,
   PERCEPTION_SENSES,
   type PerceptionConfiguration,
+  type PerceptionDeletion,
   type PerceptionEpisode,
   type PerceptionEpisodeOverview,
   type PerceptionRecord,
@@ -31,7 +32,18 @@ export const PRODUCTION_PERCEPTION_OPERATIONS = Object.freeze([
   "perception.episode.read",
   "perception.usage.read",
   "perception.settings.change",
+  "perception.deletion.plan",
+  "perception.deletion.read",
+  "perception.records.delete",
 ] as const);
+
+export const PERCEPTION_DELETION_KEPT_ELSEWHERE = Object.freeze([
+  "conversation_summaries",
+  "exports",
+  "backups",
+  "model_provider_logs",
+  "offline_devices",
+]);
 
 export interface ProductionPerceptionControlOptions {
   readonly configuration: Pick<ProductConfiguration, "ownerId" | "agentId">;
@@ -124,6 +136,32 @@ export class ProductionPerceptionControl {
       summary: null,
       summarySource: "none" as const,
     };
+  }
+
+  async #deletionSnapshot(
+    head: Record<string, unknown>,
+    deletion: PerceptionDeletion | undefined,
+    generatedAt: string,
+  ) {
+    const feed = await this.#options.perception.deletionFeed(
+      this.#scope(),
+      Number.MAX_SAFE_INTEGER,
+    );
+    return {
+      ...head,
+      type: "perception.deletion.snapshot",
+      payload: {
+        planId: deletion?.id ?? null,
+        status: deletion?.status ?? null,
+        plan: deletion?.plan ?? null,
+        deleted: deletion?.receipt ?? null,
+        expiresAt: deletion?.expiresAt ?? null,
+        pendingPayloads: deletion?.pendingPayloads ?? 0,
+        deletionRevision: feed.revision,
+        keptElsewhere: PERCEPTION_DELETION_KEPT_ELSEWHERE,
+        generatedAt,
+      },
+    } as unknown as GatewayV2Snapshot;
   }
 
   async query(query: GatewayV2Query): Promise<GatewayV2Snapshot> {
@@ -221,6 +259,16 @@ export class ProductionPerceptionControl {
           payload: { ...usage, revision: settings.revision, generatedAt },
         };
       }
+      case "perception.deletion.plan": {
+        const planned = await service.planDeletion(scope, query.payload);
+        return this.#deletionSnapshot(head, planned, generatedAt);
+      }
+      case "perception.deletion.read":
+        return this.#deletionSnapshot(
+          head,
+          await service.readDeletion(scope, query.payload.planId),
+          generatedAt,
+        );
       default:
         throw new Error("PERCEPTION_OPERATION_NOT_INSTALLED");
     }
@@ -247,6 +295,13 @@ export class ProductionPerceptionControl {
             throw error;
           });
         return { resultRef: `perception-settings:${settings.revision}`, replayed: false };
+      }
+      case "perception.records.delete": {
+        const deletion = await this.#options.perception.deleteRecords(
+          scope,
+          command.payload.planId,
+        );
+        return { resultRef: `perception-deletion:${deletion.id}`, replayed: false };
       }
       default:
         throw new Error("PERCEPTION_OPERATION_NOT_INSTALLED");

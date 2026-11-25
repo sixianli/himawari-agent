@@ -21,9 +21,9 @@ import type {
   GitHubIntegrationStatePort,
   GovernanceMutationReceiptStorePort,
   HomeUrgencyStorePort,
+  InboxStorePort,
   LedgerObservationPort,
   McpConnectionStorePort,
-  VaultStorePort,
   McpMemorySyncStorePort,
   MemoryBookStorePort,
   MemoryCaptureBacklogPort,
@@ -71,12 +71,13 @@ import type {
   SensitiveMemoryApprovalStatePort,
   SessionDeletionStatePort,
   SessionDeviceStatePort,
-  InboxStorePort,
+  SubthreadStorePort,
   ThreadArtifactStorePort,
   ThreadDistillationStatePort,
   ThreadPromptBundleStorePort,
   ThreadRepositoryPort,
   TraceStorePort,
+  VaultStorePort,
   WebPushStorePort,
 } from "@himawari-agent/application";
 import type { AgentId, OwnerId, ProductAuthorityFence } from "@himawari-agent/domain";
@@ -1086,6 +1087,27 @@ export class SqliteDurableAdapters {
     });
   }
 
+  subthreads(): SubthreadStorePort {
+    return Object.freeze<SubthreadStorePort>({
+      open: (input) => this.context.write("subthread.open", input),
+      read: (input) => this.context.read("subthread.read", input),
+      readByOpenKey: (input) => this.context.read("subthread.readByOpenKey", input),
+      list: (input) => this.context.read("subthread.list", input),
+      settle: (input) => this.context.write("subthread.settle", input),
+      createTask: (input) => this.context.write("subthread.createTask", input),
+      updateTask: (input) => this.context.write("subthread.updateTask", input),
+      listTasks: (input) => this.context.read("subthread.listTasks", input),
+      listTaskChanges: (input) => this.context.read("subthread.listTaskChanges", input),
+      markStuck: (input) => this.context.write("subthread.markStuck", input),
+      recordResult: (input) => this.context.write("subthread.recordResult", input),
+      listResults: (input) => this.context.read("subthread.listResults", input),
+      readResult: (input) => this.context.write("subthread.readResult", input),
+      waitResult: (input) => this.context.write("subthread.waitResult", input),
+      listResultNotices: (input) => this.context.read("subthread.listResultNotices", input),
+      deleteResultNotice: (input) => this.context.write("subthread.deleteResultNotice", input),
+    });
+  }
+
   inbox(): InboxStorePort {
     return Object.freeze<InboxStorePort>({
       enqueue: (input) => this.context.write("inbox.enqueue", input),
@@ -1362,6 +1384,12 @@ export class SqliteDurableAdapters {
       reportDeviceUsage: (input) => this.context.write("perception.reportDeviceUsage", input),
       markUsageWarned: (input) => this.context.write("perception.markUsageWarned", input),
       prune: (input) => this.context.write("perception.prune", input),
+      planDeletion: (input) => this.context.write("perception.planDeletion", input),
+      readDeletion: (input) => this.context.read("perception.readDeletion", input),
+      startDeletion: (input) => this.context.write("perception.startDeletion", input),
+      cleanDeletion: (input) => this.context.write("perception.cleanDeletion", input),
+      openDeletions: (input) => this.context.read("perception.openDeletions", input),
+      readDeletionScopes: (input) => this.context.read("perception.readDeletionScopes", input),
       listRecordsBetween: (input) => this.context.read("perception.listRecordsBetween", input),
       readRecords: (input) => this.context.read("perception.readRecords", input),
       listEpisodesToExtract: (input) =>

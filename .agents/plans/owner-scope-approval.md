@@ -29,12 +29,12 @@
 | P11 | 一轮运行是谁发起的有记录 | `packages/application/src/ports/run-execution-source.ts:26`：`readonly sourceType: "user_message" \| "schedule" \| "external_event";` |
 | P12 | 工具结果已经能带一个标记并抬高这一轮的状态（数据分级） | `packages/runtime-pi/src/pi-runtime-adapter.ts:2235-2236`：`if (result.contentClassification) this.#raiseVisible(…)`。没有“来源可不可信”的同类标记 |
 | P13 | 已有自动复核端口，但它只看动作摘要，不看主人说了什么，也不看参数 | `apps/agent-service/src/production-automatic-review.ts:71-73`：“Only the host's frozen summary reaches the reviewer … No file contents, local paths, credentials or conversation text are disclosed.” |
-| P14 | 规则手册现在只有邮件的两道闸门，动作闸门是计划中的第 3 步 | `packages/application/src/rules/field-catalog.ts:9`：`export const RULE_GATES = ["mail_item", "mail_delivery"] as const;`；`docs/adr/0209-rule-book-with-cel-expressions-and-judge.md:104`：“第 3 步动作闸门” |
+| P14 | 规则手册现在只有邮件的两道闸门，动作闸门是计划中的第 3 步 | `packages/application/src/rules/field-catalog.ts:9`：`export const RULE_GATES = ["mail_item", "mail_delivery"] as const;`；[ADR 0209 第 104 行](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0209-rule-book-with-cel-expressions-and-judge.md?plain=1#L104)：“第 3 步动作闸门” |
 | P15 | 愿景要求常规判断预先授权，不逐次确认 | `docs/product-vision.md:58`：“常规判断应由规则手册预先授权，不逐次确认；每日需要我介入的次数与时间有上限” |
 | P16 | 苹果端设计要求读过不可信内容后中风险动作等确认，后台一律不做 | `docs/execution/specs/2026-11-11-apple-device-body-design.md:364-369`：“程序给每一轮运行记一个标记‘这一轮读过“其他”来源的感知内容’，在所有会产生后果的工具入口……检查它”；“本来按规则手册预先授权、不用问的中风险动作，这一轮改成要主人点一下确认”；“后台……一律不做，改存‘建议’” |
 | P17 | 设备动作各自登记类别、档位、要不要主人本人在场 | 同文档 518 行“动作登记表（代码里的常量）”和 495 行“每个动作单独写一项‘要不要主人本人在场’” |
-| P18 | 主人明说“以后一律”的规则直接生效 | `docs/adr/0209-rule-book-with-cel-expressions-and-judge.md` 决定 6：“主人明确说‘以后 / 一律……’的，规则直接生效，同时给一张回执卡” |
-| P19 | 审批写在工具执行里、主人点头后回放，是已批准的做法 | `docs/adr/0204-handle-pi-deviations-d2-d3-d5.md:47`：“D2、D3 批准保留” |
+| P18 | 主人明说“以后一律”的规则直接生效 | [ADR 0209](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0209-rule-book-with-cel-expressions-and-judge.md) 决定 6：“主人明确说‘以后 / 一律……’的，规则直接生效，同时给一张回执卡” |
+| P19 | 审批写在工具执行里、主人点头后回放，是已批准的做法 | [ADR 0204 第 47 行](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0204-handle-pi-deviations-d2-d3-d5.md?plain=1#L47)：“D2、D3 批准保留” |
 | P20 | Claude Code 自动模式的做法 | https://anthropic.com/engineering/claude-code-auto-mode ：“The classifier sees only user messages and the agent's tool calls”；“stripping tool results is the primary prompt-injection defense”；“everything the agent chooses on its own is unauthorized until the user says otherwise”；“When the classifier blocks an action, Claude shouldn't halt and wait for input” |
 | P21 | Meta 的两条规则 | https://ai.meta.com/blog/practical-ai-agent-security/ ：“agents must satisfy no more than two of the following three properties within a session”；三样都要时 “at a minimum requires supervision — via human-in-the-loop approval or another reliable means of validation” |
 | P22 | CaMeL：每个值带来源标记，在工具调用处按策略检查 | https://arxiv.org/abs/2503.18813 |

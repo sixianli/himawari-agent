@@ -26,6 +26,8 @@ enum DemoScene: String, CaseIterable {
     case herAllowances = "next-3-her-allowances"
     case herAllowancesEmpty = "next-3-her-allowances-empty"
     case herAllowanceDays = "next-3-her-allowance-days"
+    case memoryVersions = "next-4-memory-versions"
+    case memoryTrash = "next-4-memory-trash"
     case pairing = "11-pairing"
     case pairingScan = "15-pairing-flow-1-scan"
     case pairingConfirmServer = "15-pairing-flow-1b-confirm-server"
@@ -219,7 +221,7 @@ struct DemoSceneView: View {
             DemoSensesHost(scene: .denied)
         case .listenIntro, .listenEnroll, .listenLive, .listenInterrupted, .listenCalling, .listenAsking, .listenStopped:
             ListenDemoScene(scene: scene)
-        case .memory, .memoryDetail, .memoryEdit, .rules, .ruleDetail, .deviceAbilities, .her, .herApprovals, .herPrivacy, .herDevices, .herNotifications, .herAllowances, .herAllowancesEmpty, .herAllowanceDays:
+        case .memory, .memoryDetail, .memoryEdit, .rules, .ruleDetail, .deviceAbilities, .her, .herApprovals, .herPrivacy, .herDevices, .herNotifications, .herAllowances, .herAllowancesEmpty, .herAllowanceDays, .memoryVersions, .memoryTrash:
             EmptyView()
         }
     }
