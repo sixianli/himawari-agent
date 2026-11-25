@@ -79,12 +79,12 @@ public enum ListenNotificationRouting {
 
 @MainActor
 final class ListenNotifications {
-    static let pausedCategory = "listen.paused"
-    static let askCategory = "listen.ask"
-    static let noticeCategory = "listen.notice"
-    static let continueAction = "listen.continue"
-    static let notMeAction = "listen.notMe"
-    static let itsMeAction = "listen.itsMe"
+    nonisolated static let pausedCategory = "listen.paused"
+    nonisolated static let askCategory = "listen.ask"
+    nonisolated static let noticeCategory = "listen.notice"
+    nonisolated static let continueAction = "listen.continue"
+    nonisolated static let notMeAction = "listen.notMe"
+    nonisolated static let itsMeAction = "listen.itsMe"
     static let pauseEndedId = "listen.pauseEnded"
 
     private let center = UNUserNotificationCenter.current()

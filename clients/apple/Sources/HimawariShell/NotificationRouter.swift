@@ -36,7 +36,7 @@ public final class NotificationRouter: NSObject, UNUserNotificationCenterDelegat
         ]
     }
 
-    static func presentation(category: String, push: HimawariPush?, mainChatOnScreen: Bool) -> UNNotificationPresentationOptions {
+    nonisolated static func presentation(category: String, push: HimawariPush?, mainChatOnScreen: Bool) -> UNNotificationPresentationOptions {
         if ListenNotificationRouting.handles(category: category) { return [.banner, .sound] }
         guard let push else { return [.banner, .list, .sound] }
         if push.kind == HimawariPush.approvalKind || !mainChatOnScreen { return [.banner, .list, .sound] }
