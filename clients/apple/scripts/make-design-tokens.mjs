@@ -103,6 +103,8 @@ export function generate(tokens) {
   scalars("Handover", tokens.handover ?? {});
   scalars("Mac", tokens.mac ?? {});
   scalars("Watch", tokens.watch ?? {});
+  scalars("Chat", tokens.chat ?? {});
+  scalars("Her", tokens.her ?? {});
   lines.push("    public enum TypeScale {");
   for (const name of Object.keys(tokens.type).sort()) {
     const value = tokens.type[name];

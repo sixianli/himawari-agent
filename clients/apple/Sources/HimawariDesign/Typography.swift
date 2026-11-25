@@ -48,13 +48,13 @@ public enum HimawariVoiceWeight: Sendable {
 
 extension Font {
     @MainActor
-    public static func himawari(_ size: CGFloat, weight: HimawariVoiceWeight = .medium, relativeTo style: Font.TextStyle = .body) -> Font {
+    public static func himawari(_ size: CGFloat, weight: HimawariVoiceWeight = .medium, relativeTo style: Font.TextStyle = .body, fixed: Bool = false) -> Font {
         guard SerifFace.shared.installed else {
             let mapped: Font.Weight = weight == .regular ? .regular : (weight == .medium ? .medium : .semibold)
             return .system(size: size, weight: mapped, design: .serif)
         }
         let name = weight == .semibold ? SerifFace.boldName : SerifFace.regularName
-        return .custom(name, size: size, relativeTo: style)
+        return fixed ? .custom(name, fixedSize: size) : .custom(name, size: size, relativeTo: style)
     }
 
     public static func rounded(_ size: CGFloat, weight: Font.Weight = .semibold) -> Font {

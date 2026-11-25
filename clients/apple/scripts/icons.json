@@ -22,6 +22,7 @@
   "camera": 1.6,
   "car": 1.6,
   "check": 1.6,
+  "chevron-down": 2.2,
   "chevron-left": 2.2,
   "chevron-right": 2.2,
   "circle-check": 1.6,
@@ -38,6 +39,7 @@
   "device-mobile": {
     "custom": "device-mobile.svg"
   },
+  "device-mobile@plain": 1.6,
   "device-watch": 1.6,
   "download": 1.6,
   "ear": 1.6,
@@ -64,6 +66,7 @@
   "message-2": 1.6,
   "message-plus": 1.6,
   "microphone": 1.6,
+  "microphone-off": 1.6,
   "number-1": 1.6,
   "number-2": 1.6,
   "number-3": 1.6,
@@ -94,6 +97,9 @@
   "upload": 1.6,
   "user": 1.6,
   "users": 1.6,
+  "voice-wave": {
+    "custom": "voice-wave.svg"
+  },
   "walk": 1.6,
   "world": 1.6,
   "world-search": 1.6,

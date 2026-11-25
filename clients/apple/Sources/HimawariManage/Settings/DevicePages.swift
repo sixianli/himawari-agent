@@ -75,11 +75,10 @@ struct DeviceRow: View {
                     .foregroundStyle(presence == .connected ? Color.hmSuccess : Color.hmMuted)
             }
             .padding(.trailing, DL.rowTrailingPadding)
-            .frame(maxHeight: .infinity)
+            .frame(minHeight: SL.rowMinHeight)
             .overlay(alignment: .bottom) { if !last { RowSeparator() } }
         }
         .padding(.leading, SL.rowsPaddingHorizontal)
-        .frame(minHeight: SL.rowMinHeight)
         .contentShape(Rectangle())
     }
 }
