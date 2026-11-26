@@ -4,6 +4,7 @@ document_type: spec
 supersedes: ""
 superseded_by: ""
 date: "2026-11-11"
+implements: "docs/adr/0258-each-apple-device-plays-to-its-strength.md"
 ---
 
 # Himawari 的身体：iPhone、Apple Watch、Mac 和随身麦克风的详细设计

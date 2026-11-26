@@ -8,6 +8,7 @@ amends: "docs/adr/0230-perception-records-and-memories-inferred-from-perception.
 date: "2026-11-24"
 covers: ""
 verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
+implementation: in_progress
 ---
 
 # ADR 0285：一个主对话加她自己开的子线程，所有新事情走同一个收件箱

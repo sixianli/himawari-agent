@@ -4,6 +4,7 @@ document_type: spec
 supersedes: ""
 superseded_by: ""
 date: "2026-11-24"
+implements: "docs/adr/0286-the-main-model-reads-and-writes-memory-itself.md"
 ---
 
 # 记忆系统重新设计
