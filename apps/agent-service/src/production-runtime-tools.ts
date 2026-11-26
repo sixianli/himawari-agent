@@ -51,6 +51,7 @@ import {
   renderPrompt,
   TOOL_AUTHORIZED,
   TOOL_MOVE_DIRECTORY,
+  TOOL_RESULT_BROWSER_UNAVAILABLE,
   TOOL_RESULT_CONVERSATION_INPUT_INVALID,
   TOOL_RESULT_CONVERSATION_UNAVAILABLE,
   TOOL_RESULT_DEVICE_ACTION_UNAVAILABLE,
@@ -82,7 +83,16 @@ import {
   RECALLED_EXTERNAL_CONVERSATION_ORIGIN,
   RECALLED_EXTERNAL_RECORD_ORIGIN,
 } from "./context-external-content.js";
-import type { OwnerScopeAuthorization } from "./owner-scope-authorization.js";
+import type {
+  OwnerScopeAuthorization,
+  OwnerScopeIntentExtras,
+} from "./owner-scope-authorization.js";
+import {
+  BROWSER_SITE_TARGET,
+  BrowserToolError,
+  browserToolDescriptors,
+  type ProductionBrowserTools,
+} from "./production-browser-tools.js";
 import {
   type BackgroundCommandLimits,
   ProductionBackgroundCommands,
@@ -193,7 +203,9 @@ type WorkerToolCompletion = Pick<
   Extract<ExecutionV2Event, { type: "work.result" }>["payload"],
   "outcome" | "outputRef" | "errorCode" | "externalActionId"
 > & { readonly processExitCode?: number; readonly resourceCeiling?: CapabilityResourceCeiling };
-type OwnerScopeGate = (() => Promise<RuntimeToolExecutionResult | undefined>) | undefined;
+type OwnerScopeGate =
+  | ((extras?: OwnerScopeIntentExtras) => Promise<RuntimeToolExecutionResult | undefined>)
+  | undefined;
 const BUILTIN_PREFLIGHT: Readonly<
   Record<string, { readonly prefix: string; readonly reasonCode: string }>
 > = Object.freeze({
@@ -212,6 +224,7 @@ const BUILTIN_PREFLIGHT: Readonly<
   "conversation-context": { prefix: "context-recall", reasonCode: "CONTEXT_RECALL_RUNTIME" },
 });
 const PERCEPTION_EXTERNAL_ORIGIN = "perception_read";
+const BROWSER_EXTERNAL_ORIGIN = "browser_page";
 class OwnerScopeStop extends Error {
   readonly result: RuntimeToolExecutionResult;
   constructor(result: RuntimeToolExecutionResult) {
@@ -423,6 +436,7 @@ export interface ProductionRuntimeToolsOptions {
   readonly ownerRules?: Pick<ProductionOwnerRuleTools, "run">;
   readonly perception?: Pick<ProductionPerceptionTools, "run">;
   readonly vault?: Pick<ProductionVaultTools, "run">;
+  readonly browser?: Pick<ProductionBrowserTools, "run">;
   readonly toolActions?: ToolActionRegistry;
   readonly readOnlyRun?: (runId: RuntimeRequest["runId"]) => Promise<boolean>;
   readonly ownerScope?: Pick<OwnerScopeAuthorization, "authorize">;
@@ -696,6 +710,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     if (this.#options.ownerRules) descriptors.push(...ownerRuleToolDescriptors());
     if (this.#options.perception) descriptors.push(...perceptionToolDescriptors());
     if (this.#options.vault) descriptors.push(...vaultToolDescriptors());
+    if (this.#options.browser) descriptors.push(...browserToolDescriptors());
     this.#exposed.set(runId, new Set(refs));
     const readOnly = (await this.#options.readOnlyRun?.(runId)) === true;
     const offered = this.#registry.offer(descriptors, { readOnly });
@@ -799,6 +814,8 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       return (invocation, gate) => this.#perception(invocation, gate);
     if (row.targetType === "owner-vault" && this.#options.vault)
       return (invocation, gate) => this.#vault(invocation, gate);
+    if (row.targetType === "owner-browser" && this.#options.browser)
+      return (invocation, gate) => this.#browser(invocation, gate);
     return undefined;
   }
   #ownerScopeGate(
@@ -808,7 +825,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
   ): OwnerScopeGate {
     if (row.authorization !== "owner_scope") return undefined;
     const ownerScope = this.#options.ownerScope;
-    return async () => {
+    return async (extras) => {
       if (!ownerScope) reject();
       let permission: PermissionDecision;
       try {
@@ -826,6 +843,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
             );
           },
           signal,
+          extras,
         );
       } catch (error) {
         await this.#options.assertRunActive(invocation.runId);
@@ -884,6 +902,37 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
                 errorCode: "DEVICE_ACTION_UNAVAILABLE",
                 note: TOOL_RESULT_DEVICE_ACTION_UNAVAILABLE.text,
               },
+    );
+  }
+  async #browser(
+    invocation: RuntimeToolInvocation,
+    gate: OwnerScopeGate,
+  ): Promise<RuntimeToolExecutionResult> {
+    const browser = this.#options.browser;
+    return this.#ownerScoped(
+      invocation,
+      "browser",
+      undefined,
+      browser
+        ? async (call) =>
+            browser.run(call, {
+              authorizeSites: async (sites, display) => {
+                if (!gate) reject();
+                const stopped = await gate({
+                  targets: sites.map((ref) => ({ type: BROWSER_SITE_TARGET, ref })),
+                  display,
+                });
+                if (stopped) throw new OwnerScopeStop(stopped);
+              },
+              markExternalContent: async () => {
+                await this.#options.externalContent?.mark(call.runId, BROWSER_EXTERNAL_ORIGIN);
+              },
+            })
+        : undefined,
+      (error) =>
+        error instanceof BrowserToolError
+          ? { errorCode: error.code, note: error.note }
+          : { errorCode: "BROWSER_UNAVAILABLE", note: TOOL_RESULT_BROWSER_UNAVAILABLE.text },
     );
   }
   async #ownerRule(
@@ -1143,12 +1192,14 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       | "options"
       | "subthread"
       | "plan"
-      | "vault",
+      | "vault"
+      | "browser",
     gate: OwnerScopeGate,
     run:
       | ((call: RuntimeToolInvocation) => Promise<{
           readonly value: unknown;
           readonly contentClassification?: DataClassification;
+          readonly images?: RuntimeToolSettledResult["modelImages"];
         }>)
       | undefined,
     failure: (error: unknown) => { readonly errorCode: string; readonly note: string },
@@ -1182,11 +1233,13 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       | "options"
       | "subthread"
       | "plan"
-      | "vault",
+      | "vault"
+      | "browser",
     gate: OwnerScopeGate,
     run: (call: RuntimeToolInvocation) => Promise<{
       readonly value: unknown;
       readonly contentClassification?: DataClassification;
+      readonly images?: RuntimeToolSettledResult["modelImages"];
     }>,
     failure: (error: unknown) => { readonly errorCode: string; readonly note: string },
   ): Promise<RuntimeToolExecutionResult> {
@@ -1213,7 +1266,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     let result: RuntimeToolExecutionResult;
     let recorded = invocation.dataClassification;
     try {
-      const { value, contentClassification } = await run(invocation);
+      const { value, contentClassification, images } = await run(invocation);
       recorded = highestClassification(
         invocation.dataClassification,
         contentClassification ? [contentClassification] : [],
@@ -1231,6 +1284,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
         errorCode: null,
         externalActionId: null,
         modelContent: JSON.stringify(value),
+        ...(images && images.length > 0 ? { modelImages: images } : {}),
         ...(recorded === invocation.dataClassification ? {} : { contentClassification: recorded }),
       };
     } catch (error) {

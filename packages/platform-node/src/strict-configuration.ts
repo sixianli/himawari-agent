@@ -1129,8 +1129,6 @@ function parseAutomaticReview(
 export const WEB_PUSH_SECRET_PURPOSE = "web-push";
 export const APPLE_PUSH_SECRET_PURPOSE = "apple-push";
 export const GOOGLE_OAUTH_CLIENT_SECRET_PURPOSE = "google-oauth-client";
-export const MUSE_INTAKE_SECRET_PURPOSE = "muse-intake";
-export const GAP_EXPORT_SECRET_PURPOSE = "gap-export";
 
 function parseProactive(value: unknown): NonNullable<RunPolicyConfiguration["proactive"]> {
   const field = "configuration.runPolicy.proactive";
@@ -1331,25 +1329,6 @@ function parseReviewPrereview(
   });
 }
 
-function parseMuseIntake(value: unknown): NonNullable<RunPolicyConfiguration["museIntake"]> {
-  const field = "configuration.runPolicy.museIntake";
-  const input = record(value, field);
-  rejectUnknown(input, ["enabled", "secretRef", "gapExportSecretRef"], field);
-  if (typeof input["enabled"] !== "boolean") throw invalid(`${field}.enabled`, "must be a boolean");
-  return Object.freeze({
-    enabled: input["enabled"],
-    secretRef: safeReference(input["secretRef"], `${field}.secretRef`),
-    ...(input["gapExportSecretRef"] === undefined
-      ? {}
-      : {
-          gapExportSecretRef: safeReference(
-            input["gapExportSecretRef"],
-            `${field}.gapExportSecretRef`,
-          ),
-        }),
-  });
-}
-
 function parseImportDuplicates(value: unknown): ImportDuplicateConfiguration {
   const field = "configuration.runPolicy.importDuplicates";
   const input = record(value, field);
@@ -1400,6 +1379,24 @@ function parseInbox(value: unknown): NonNullable<RunPolicyConfiguration["inbox"]
     if (input[key] !== undefined) parsed[key] = integer(input[key], `${field}.${key}`, low, high);
   }
   return Object.freeze(parsed);
+}
+
+function parseUserComputers(value: unknown): NonNullable<RunPolicyConfiguration["userComputers"]> {
+  const field = "configuration.runPolicy.userComputers";
+  const input = record(value, field);
+  rejectUnknown(input, ["socketPath"], field);
+  return Object.freeze({ socketPath: absolutePath(input["socketPath"], `${field}.socketPath`) });
+}
+
+function parseBrowser(value: unknown): NonNullable<RunPolicyConfiguration["browser"]> {
+  const field = "configuration.runPolicy.browser";
+  const input = record(value, field);
+  rejectUnknown(input, ["maxOutputBytes", "maxTextChars", "responseReserveMs"], field);
+  return Object.freeze({
+    maxOutputBytes: integer(input["maxOutputBytes"], `${field}.maxOutputBytes`, 1024, 67_108_864),
+    maxTextChars: integer(input["maxTextChars"], `${field}.maxTextChars`, 100, 1_000_000),
+    responseReserveMs: integer(input["responseReserveMs"], `${field}.responseReserveMs`, 0, 60_000),
+  });
 }
 
 function parseWebPush(value: unknown): NonNullable<RunPolicyConfiguration["webPush"]> {
@@ -1698,11 +1695,12 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       "voiceAddressee",
       "deliveryTiming",
       "proactive",
-      "museIntake",
       "importDuplicates",
       "realEval",
       "mcpRead",
       "inbox",
+      "userComputers",
+      "browser",
     ],
     "configuration.runPolicy",
   );
@@ -1763,11 +1761,12 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       : { perception: parsePerception(input["perception"]) }),
     ...(input["proactive"] === undefined ? {} : { proactive: parseProactive(input["proactive"]) }),
     ...(input["realEval"] === undefined ? {} : { realEval: parseRealEval(input["realEval"]) }),
-    ...(input["museIntake"] === undefined
-      ? {}
-      : { museIntake: parseMuseIntake(input["museIntake"]) }),
     ...(input["mcpRead"] === undefined ? {} : { mcpRead: parseMcpRead(input["mcpRead"]) }),
     ...(input["inbox"] === undefined ? {} : { inbox: parseInbox(input["inbox"]) }),
+    ...(input["userComputers"] === undefined
+      ? {}
+      : { userComputers: parseUserComputers(input["userComputers"]) }),
+    ...(input["browser"] === undefined ? {} : { browser: parseBrowser(input["browser"]) }),
     ...(input["importDuplicates"] === undefined
       ? {}
       : { importDuplicates: parseImportDuplicates(input["importDuplicates"]) }),
@@ -2078,6 +2077,19 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       WEB_PUSH_SECRET_PURPOSE,
       "configuration.runPolicy.webPush.secretRef",
     );
+  if (
+    runPolicy?.userComputers &&
+    runPolicy.coding?.enabledTools.some((tool) => tool === "move_directory" || tool === "save_copy")
+  )
+    throw invalid(
+      "configuration.runPolicy.coding.enabledTools",
+      "move_directory and save_copy work on the original host directory, so they cannot be enabled while tools run in each user's computer",
+    );
+  if (runPolicy?.browser && !runPolicy.userComputers)
+    throw invalid(
+      "configuration.runPolicy.browser",
+      "requires configuration.runPolicy.userComputers, because the browser runs in each user's computer",
+    );
   if (runPolicy?.applePush && !runPolicy.webPush)
     throw invalid(
       "configuration.runPolicy.applePush",
@@ -2096,20 +2108,6 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       runPolicy.importDuplicates.secretRef,
       "model-auth",
       "configuration.runPolicy.importDuplicates.secretRef",
-    );
-  if (runPolicy?.museIntake)
-    assertIdentitySecretReference(
-      secretReferences,
-      runPolicy.museIntake.secretRef,
-      MUSE_INTAKE_SECRET_PURPOSE,
-      "configuration.runPolicy.museIntake.secretRef",
-    );
-  if (runPolicy?.museIntake?.gapExportSecretRef !== undefined)
-    assertIdentitySecretReference(
-      secretReferences,
-      runPolicy.museIntake.gapExportSecretRef,
-      GAP_EXPORT_SECRET_PURPOSE,
-      "configuration.runPolicy.museIntake.gapExportSecretRef",
     );
   const proactive = runPolicy?.proactive;
   if (proactive) {

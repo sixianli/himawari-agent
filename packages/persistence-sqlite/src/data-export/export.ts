@@ -834,7 +834,7 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
   ];
   if (options.withEvidence !== true)
     omitted.push({
-      what: "决策的模型输入输出原文、邮件检查结果、Muse 校准记录",
+      what: "决策的模型输入输出原文、邮件检查结果",
       count: null,
       reason: "可能含邮件正文等第三方内容；加 --with-evidence 才导出，且只放进密封文件",
     });
@@ -943,19 +943,6 @@ function buildEvidence(
       reviewedAt: optionalString(row["reviewed_at"]),
       ownerRating: optionalString(row["owner_rating"]),
       receivedAt: optionalString(row["received_at"]),
-    })),
-    museEntries: snapshot.museEntries.map((row) => ({
-      id: str(row["id"]),
-      museAt: str(row["muse_at"]),
-      museReminded: flag(row["muse_reminded"]),
-      timingOk: optionalFlag(row["timing_ok"]),
-      contentOk: optionalFlag(row["content_ok"]),
-      content: optionalPayload(row["content_ref"]),
-      note: optionalPayload(row["note_ref"]),
-      pairedDecisionId: optionalString(row["paired_decision_id"]),
-      intakeItemKey: optionalString(row["intake_item_key"]),
-      recordedAt: str(row["recorded_at"]),
-      pairedMessageId: optionalString(row["paired_message_id"]),
     })),
     prereviews: snapshot.prereviews.map((row) => ({
       id: str(row["id"]),
