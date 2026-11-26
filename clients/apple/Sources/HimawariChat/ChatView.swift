@@ -406,12 +406,12 @@ public struct ChatView: View {
                                 .padding(-DesignTokens.Chat.replyQuoteGap)
                         }
                         .task(id: message.messageId) {
-                            if message.role == .agent, let runId = message.runId { await store.loadExecution(runId, in: threadId) }
+                            if message.role == .agent, let runId = message.runId { await store.showExecution(runId, in: threadId) }
                         }
                     case let .process(runId):
                         if let line = store.processLine(for: runId, in: threadId) {
                             ProcessRowView(line: line, failed: store.run(runId, in: threadId)?.status == "failed")
-                                .task(id: runId) { await store.loadExecution(runId, in: threadId) }
+                                .task(id: runId) { await store.showExecution(runId, in: threadId) }
                         }
                     }
                 }
