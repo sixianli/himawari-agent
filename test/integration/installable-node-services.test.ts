@@ -672,7 +672,10 @@ describe("installable Node services and admin CLI", { timeout: 60_000 }, () => {
     await mkdir(releasesRoot, { recursive: true, mode: 0o700 });
     await symlink(prefix, release);
     const unitPath = path.join(work, "himawari-prod.service");
-    await writeFile(unitPath, `ExecStart=/bin/true --prefix ${release} --config x\n`);
+    await writeFile(
+      unitPath,
+      `Environment=PATH=${path.dirname(process.execPath)}:/usr/bin:/bin\nEnvironment=HOME=${work}\nEnvironment=LANG=C.UTF-8\nExecStart=/bin/true --prefix ${release} --config x\n`,
+    );
     const passwordFile = path.join(work, "restic-password");
     await writeFile(passwordFile, "offsite-backup-test-password", { mode: 0o600 });
     const settings = {
