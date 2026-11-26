@@ -30,7 +30,7 @@ date: "2026-11-26"
 备份内容（一次备份叫一个“快照”）：
 
 - 产品库恢复点：`himawari backup create` 用 SQLite 在线备份接口拍下的 `product.sqlite`（记忆、聊天记录、对话、任务、保险箱密文等都在里面）加上它引用的附件密文文件，用服务器上的备份钥匙加密，并当场解密核对过行数和完整性（代码见 `packages/persistence-sqlite/src/sqlite-recovery-point.ts`）。
-- 恢复所需的其余文件：状态目录下的 `authority.json`、密钥目录（`<stateRoot>/secrets`，含备份钥匙、附件钥匙、模型密钥）、`/etc/himawari/config.json`，以及安装时用 `--extra-path` 加进来的目录。
+- 恢复所需的其余文件：状态目录下的 `authority.json` 和 `configuration.json`、密钥目录（`<stateRoot>/secrets`，含备份钥匙、附件钥匙、模型密钥）、`/etc/himawari/config.json`，以及安装时用 `--extra-path` 加进来的目录。
 - 不含保险箱总钥匙：它只在 Andy 的 iPhone 和 iCloud 钥匙串里（ADR 0288 第 2 条），服务器和备份里都没有。
 
 整份快照再用 restic（一个成熟的开源备份程序，自带加密、去重和按日/周保留）加密后，经 rclone（一个对接各家对象存储的开源程序）上传到 Oracle 对象存储的一个桶里。东京机用“实例主体”身份（Oracle 给云主机的免密钥身份）写这个桶，服务器上不放 Oracle 密码。
@@ -94,7 +94,7 @@ python3 -I /usr/local/sbin/himawari-backup run --reason manual
 python3 -I /usr/local/sbin/himawari-backup drill
 ```
 
-区域和区间号由脚本从实例元数据读出，不用手填。安装后把 restic 密码交给 Andy 存进密码管理器。
+生产机上 Magpie（模型路由程序）的设置和用量记录也要一起备份，安装时加上 `--extra-path /var/lib/magpie/.config/magpie --extra-path /etc/magpie`。区域和区间号由脚本从实例元数据读出，不用手填。安装后把 restic 密码交给 Andy 存进密码管理器。
 
 <a id="update"></a>
 ### 更新
@@ -107,7 +107,7 @@ python3 -I /usr/local/sbin/himawari-backup drill
 1. 在生产机（原机或新装的机器，已装好同一版本的 Himawari）上停服务：`systemctl stop himawari-prod.service`。
 2. 列快照，选一个：`python3 -I /usr/local/sbin/himawari-backup status`。新机器先按[安装](#install)装好，并把 Andy 保存的 restic 密码写进 `/etc/himawari-backup/restic-password`。
 3. 下载：`RCLONE_CONFIG=/etc/himawari-backup/rclone.conf RESTIC_PASSWORD_FILE=/etc/himawari-backup/restic-password RESTIC_REPOSITORY=$(python3 -c 'import json;print(json.load(open("/etc/himawari-backup/settings.json"))["repository"])') restic restore <快照号> --target /var/lib/himawari-restore`。
-4. 新机器时：把下载目录里的 config/config.json 放回 `/etc/himawari/config.json`，state/authority.json 和 state/secrets/ 放回状态目录，属主改成服务账号、权限 600/700。
+4. 新机器时：把下载目录里的 config/config.json 放回 `/etc/himawari/config.json`，state/authority.json、state/configuration.json 和 state/secrets/ 放回状态目录，属主改成服务账号、权限 600/700。
 5. 把 state/recovery-points/<恢复点号> 复制进 `<stateRoot>/recovery-points/`，属主改成服务账号，然后以服务账号运行：`himawari backup restore --config /etc/himawari/config.json --secret-dir <stateRoot>/secrets --backup <恢复点号> --target <stateRoot> --confirm RESTORE_<恢复点号>`。恢复后内置账号要重新登录。
 6. 启动服务，读回 `/health/ready`，再跑一次 `himawari-backup drill`。
 

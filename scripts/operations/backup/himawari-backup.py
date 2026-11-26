@@ -123,6 +123,7 @@ def stage_bundle(settings, backup_id, report, reason, release, clock):
     state = Path(settings["stateRoot"])
     copy_tree(state / "recovery-points" / backup_id, bundle / "state" / "recovery-points" / backup_id)
     copy_tree(state / "authority.json", bundle / "state" / "authority.json")
+    copy_tree(state / "configuration.json", bundle / "state" / "configuration.json")
     copy_tree(Path(secret_directory(settings)), bundle / "state" / "secrets")
     copy_tree(Path(settings["config"]), bundle / "config" / "config.json")
     extras = []
