@@ -53,6 +53,24 @@ public struct CapsuleButtonStyle: ButtonStyle {
     }
 }
 
+public struct SystemNavigationTitle: View {
+    private let title: Text
+
+    public init(_ title: Text) {
+        self.title = title
+    }
+
+    public var body: some View {
+        Color.clear
+            .frame(height: 0)
+            .accessibilityHidden(true)
+            .navigationTitle(title)
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+    }
+}
+
 public struct PressableButtonStyle: ButtonStyle {
     public init() {}
 
@@ -341,22 +359,6 @@ public struct EmptyStateView: View {
             .multilineTextAlignment(.center)
             .padding(.horizontal, 32)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}
-
-public struct ScreenTitle: View {
-    private let title: Text
-
-    public init(_ title: Text) {
-        self.title = title
-    }
-
-    public var body: some View {
-        title
-            .hmType(DesignTokens.TypeScale.title1, design: .rounded)
-            .foregroundStyle(Color.hmText)
-            .frame(minHeight: DesignTokens.TypeScale.title1.lineHeight, alignment: .leading)
-            .accessibilityAddTraits(.isHeader)
     }
 }
 

@@ -67,19 +67,7 @@ struct NavigationHeader: View {
     let back: () -> Void
 
     var body: some View {
-        ZStack {
-            title
-                .hmType(DesignTokens.TypeScale.navTitle)
-                .foregroundStyle(Color.hmText)
-            HStack {
-                GlassCircleButton(Text(L.text("common.back")), action: back) {
-                    Icon(.chevronLeft, size: DesignTokens.IconSize.glassButton)
-                }
-                Spacer()
-            }
-        }
-        .frame(minHeight: DesignTokens.Size.navBarHeight)
-        .padding(.horizontal, 16)
+        SystemNavigationTitle(title)
     }
 }
 

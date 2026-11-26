@@ -27,34 +27,24 @@ public struct MemoryRootView: View {
     @State private var query = ""
     private let talk: (String) -> Void
     private let opening: Opening?
-    private let back: (() -> Void)?
 
     public init(api: DeviceAPI, confirmKey: DeviceKeySigner, talk: @escaping (String) -> Void) {
         let gateway = ManageGateway(transport: SignedDeviceTransport(http: api.http, confirmKey: confirmKey))
         _store = State(initialValue: MemoryStore(gateway: gateway))
         self.talk = talk
         opening = nil
-        back = nil
     }
 
-    init(store: MemoryStore, tab: Tab = .remembered, opening: Opening? = nil, talk: @escaping (String) -> Void = { _ in }, back: (() -> Void)? = nil) {
+    init(store: MemoryStore, tab: Tab = .remembered, opening: Opening? = nil, talk: @escaping (String) -> Void = { _ in }) {
         _store = State(initialValue: store)
         _tab = State(initialValue: tab)
         self.opening = opening
         self.talk = talk
-        self.back = back
     }
 
     public var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                if let back {
-                    GlassCircleButton(Text(M.back), action: back) {
-                        Icon(.chevronLeft, size: DesignTokens.IconSize.glassButton)
-                    }
-                }
-                ScreenTitle(Text(M.memoryTitle))
-                SearchField(text: $query, prompt: M.searchPrompt, clearLabel: M.clearSearch)
                 if TextSearch.terms(query).isEmpty {
                     MemorySegment(selection: $tab)
                     content
@@ -63,13 +53,18 @@ public struct MemoryRootView: View {
                 }
             }
             .padding(.horizontal, DesignTokens.Size.pagePaddingX)
-            .padding(.top, 14)
+            .padding(.top, 8)
             .padding(.bottom, DesignTokens.Size.sheetPaddingBottom)
         }
         .scrollIndicators(.hidden)
         .scrollDismissesKeyboard(.interactively)
         .refreshable { await store.load() }
         .himawariScreenBackground()
+        .navigationTitle(M.memoryTitle)
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.large)
+        #endif
+        .searchable(text: $query, prompt: Text(M.searchPrompt))
         .task {
             await store.load()
             open(opening)
@@ -134,9 +129,6 @@ public struct MemoryRootView: View {
         .alert(M.actionFailed, isPresented: $actionFailed) {}
         .navigationDestination(isPresented: $trashOpen) {
             MemoryTrashPage(store: store) { trashOpen = false }
-                #if os(iOS)
-                .toolbar(.hidden, for: .navigationBar)
-                #endif
         }
     }
 

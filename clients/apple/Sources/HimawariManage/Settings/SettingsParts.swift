@@ -14,15 +14,24 @@ struct SheetHeader: View {
     let action: () -> Void
 
     var body: some View {
+        if leading == .back {
+            SystemNavigationTitle(Text(title))
+        } else {
+            closeHeader
+        }
+    }
+
+    private var closeHeader: some View {
         HStack {
-            GlassCircleButton(Text(leading == .close ? M.close : M.back), size: SL.headerButton, action: action) {
-                Icon(leading == .close ? .x : .chevronLeft, size: DesignTokens.IconSize.glassButton)
+            GlassCircleButton(Text(M.close), size: SL.headerButton, action: action) {
+                Icon(.x, size: DesignTokens.IconSize.glassButton)
             }
             Spacer()
             Text(title).hmType(DesignTokens.TypeScale.sheetTitle).foregroundStyle(Color.hmText)
             Spacer()
             Color.clear.frame(width: SL.headerButton, height: SL.headerButton)
         }
+        .navigationTitle(title)
     }
 }
 
@@ -104,12 +113,13 @@ struct SettingsRow: View {
 
 struct SettingsPage<Content: View>: View {
     let gap: CGFloat
+    var systemBar = true
     @ViewBuilder let content: Content
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: gap) { content }
-                .padding(.top, DesignTokens.Size.sheetPaddingTop)
+                .padding(.top, systemBar ? SL.groupGap : DesignTokens.Size.sheetPaddingTop)
                 .padding(.horizontal, DesignTokens.Size.sheetPaddingHorizontal)
                 .padding(.bottom, DesignTokens.Size.sheetPaddingBottom)
                 .containerRelativeFrame(.vertical, alignment: .top)
@@ -117,7 +127,7 @@ struct SettingsPage<Content: View>: View {
         .scrollIndicators(.hidden)
         .himawariScreenBackground()
         #if os(iOS)
-        .toolbar(.hidden, for: .navigationBar)
+        .toolbar(systemBar ? .visible : .hidden, for: .navigationBar)
         #endif
     }
 }
@@ -137,42 +147,5 @@ struct SegmentPicker<Value: Hashable>: View {
         .pickerStyle(.segmented)
         .labelsHidden()
         .controlSize(.large)
-    }
-}
-
-struct SearchField: View {
-    @Binding var text: String
-    let prompt: String
-    let clearLabel: String
-    @FocusState private var focused: Bool
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Icon(.search, size: DesignTokens.IconSize.chevron)
-                .foregroundStyle(Color.hmMuted)
-                .accessibilityHidden(true)
-            TextField(prompt, text: $text)
-                .hmType(DesignTokens.TypeScale.body)
-                .foregroundStyle(Color.hmText)
-                .focused($focused)
-                .submitLabel(.search)
-                .autocorrectionDisabled()
-            if !text.isEmpty {
-                Button {
-                    text = ""
-                } label: {
-                    Icon(.x, size: DesignTokens.IconSize.chevron)
-                        .foregroundStyle(Color.hmMuted)
-                        .frame(minWidth: DesignTokens.Size.minTapTarget, minHeight: DesignTokens.Size.minTapTarget)
-                }
-                .buttonStyle(.pressable)
-                .accessibilityLabel(Text(clearLabel))
-            }
-        }
-        .padding(.leading, 12)
-        .frame(minHeight: DesignTokens.Size.minTapTarget)
-        .background(Color.hmFill, in: RoundedRectangle(cornerRadius: DesignTokens.Radius.segment, style: .continuous))
-        .contentShape(Rectangle())
-        .onTapGesture { focused = true }
     }
 }

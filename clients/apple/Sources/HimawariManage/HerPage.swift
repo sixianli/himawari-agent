@@ -192,16 +192,14 @@ public struct HerPage: View {
                 .padding(.top, DesignTokens.Size.sheetPaddingTop)
             }
             .himawariScreenBackground()
+            .navigationTitle(M.herPage)
             #if os(iOS)
             .toolbar(.hidden, for: .navigationBar)
             #endif
             .navigationDestination(for: Page.self) { page in
                 switch page {
                 case .memory:
-                    MemoryRootView(store: memory, talk: talk, back: { path.removeLast() })
-                        #if os(iOS)
-                        .toolbar(.hidden, for: .navigationBar)
-                        #endif
+                    MemoryRootView(store: memory, talk: talk)
                 case .notifications:
                     NotificationsPage(store: quietHours) { path.removeLast() }
                 case .privacy:
@@ -228,9 +226,6 @@ public struct HerPage: View {
                 case .approvals:
                     if let actions {
                         ApprovalsView(model: actions, openThread: { _ in close() }) { path.removeLast() }
-                            #if os(iOS)
-                            .toolbar(.hidden, for: .navigationBar)
-                            #endif
                     }
                 }
             }

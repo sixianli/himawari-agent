@@ -25,7 +25,6 @@ enum M {
     static var rules: String { text("规则", ja: "ルール", en: "Rules") }
     static var search: String { text("搜索", ja: "検索", en: "Search") }
     static var searchPrompt: String { text("搜记住的事和规则", ja: "覚えていることとルールを検索", en: "Search memories and rules") }
-    static var clearSearch: String { text("清除搜索", ja: "検索をクリア", en: "Clear search") }
     static func noSearchResults(_ query: String) -> String { text("没有找到“\(query)”", ja: "「\(query)」は見つかりません", en: "Nothing found for “\(query)”") }
     static var nothingRemembered: String {
         text("还没有记住的事", ja: "まだ覚えていることはありません", en: "Nothing remembered yet")
@@ -38,10 +37,10 @@ enum M {
     static var rulePaused: String { text("停用中", ja: "停止中", en: "Paused") }
     static var ruleNeedsReview: String { text("等你看", ja: "確認待ち", en: "Needs your look") }
 
-    static var back: String { text("返回", ja: "戻る", en: "Back") }
     static var stopRun: String { text("停下这次回答", ja: "この返事を止める", en: "Stop this answer") }
     static var chooseOption: String { text("选这一项", ja: "これを選ぶ", en: "Choose this") }
     static var collapse: String { text("收起", ja: "閉じる", en: "Close") }
+    static var herPage: String { text("她的页面", ja: "Himawari のページ", en: "Her page") }
     static var herMemory: String { text("她记得的", ja: "覚えていること", en: "What she remembers") }
     static func memorySummary(_ summary: MemorySummary) -> String {
         text(

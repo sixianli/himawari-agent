@@ -95,7 +95,7 @@ struct VaultListPage: View {
     let close: () -> Void
 
     var body: some View {
-        SettingsPage(gap: VL.gap) {
+        SettingsPage(gap: VL.gap, systemBar: false) {
             SheetHeader(title: M.vaultTitle, leading: .close, action: close)
             VaultNote(M.vaultIntro)
             switch model.phase {
@@ -595,7 +595,7 @@ public struct VaultApprovalView: View {
     }
 
     public var body: some View {
-        SettingsPage(gap: VL.gap) {
+        SettingsPage(gap: VL.gap, systemBar: false) {
             SheetHeader(title: M.vaultApproveTitle, leading: .close, action: close)
             switch model.phase {
             case .loading:
