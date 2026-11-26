@@ -4,7 +4,7 @@ supersedes: ""
 superseded_by: ""
 date: "2026-11-10"
 covers: ".agents/instructions/pi-and-workspace.md, .agents/instructions/prompt-prefix.md, .claude/rules/owner-standing-rules.md, .claude/rules/proposal-premises.md, packages/application/src/ports/model-usage.ts, packages/runtime-pi/package.json, packages/runtime-pi/src/configured-model-binding.ts, packages/runtime-pi/src/gateway-observation.ts, packages/runtime-pi/src/governed-coding-tools.ts, packages/runtime-pi/src/pi-model-transport.ts, packages/runtime-pi/src/pi-runtime-adapter.ts"
-verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
+verified_at: "7c8521fe5f55e7dd57c5bd52badd16eef647502e"
 ---
 
 # Pi 二次开发规范

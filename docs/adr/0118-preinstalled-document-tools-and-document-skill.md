@@ -6,7 +6,7 @@ supersedes: ""
 superseded_by: ""
 date: "2026-10-29"
 covers: "packages/runtime-pi/src/pi-runtime-adapter.ts, scripts/delivery-mode/deploy-preflight.py, scripts/delivery-mode/packet-template/signing/cloud-seal.mjs"
-verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
+verified_at: "7c8521fe5f55e7dd57c5bd52badd16eef647502e"
 ---
 
 # ADR 0118：生产机预装文档库和中日文字体，用“文档技能”告诉模型怎么做 Word、Excel、PDF

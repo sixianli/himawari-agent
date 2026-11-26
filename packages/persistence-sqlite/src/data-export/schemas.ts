@@ -7,7 +7,7 @@ import {
 import { PROACTIVE_SOURCE_NAME_PATTERN } from "@himawari-agent/application/proactive-sources";
 import type { JsonSchema } from "./schema.js";
 
-export const FORMAT_VERSION = "himawari.data-export.v5" as const;
+export const FORMAT_VERSION = "himawari.data-export.v6" as const;
 
 const CLASSIFICATIONS = ["public", "private", "sensitive", "restricted"] as const;
 const CATEGORIES = [
@@ -540,22 +540,6 @@ export const EVIDENCE_SCHEMA: JsonSchema = objectOf(
         receivedAt: nullable(timestamp),
       }),
     },
-    museEntries: {
-      type: "array",
-      items: objectOf({
-        id: text(1, 128),
-        museAt: timestamp,
-        museReminded: bool,
-        timingOk: nullable(bool),
-        contentOk: nullable(bool),
-        content: nullableText,
-        note: nullableText,
-        pairedDecisionId: nullable(text(1, 128)),
-        intakeItemKey: nullable(text(3, 200)),
-        recordedAt: timestamp,
-        pairedMessageId: nullable(text(1, 256)),
-      }),
-    },
     prereviews: {
       type: "array",
       items: objectOf({
@@ -587,7 +571,7 @@ export const EVIDENCE_SCHEMA: JsonSchema = objectOf(
     },
   },
   [],
-  "证据：模型输入输出原文、邮件检查结果、Muse 校准记录。只放在密封文件里。",
+  "证据：模型输入输出原文、邮件检查结果。只放在密封文件里。",
 );
 
 export const SEALED_SCHEMA: JsonSchema = objectOf({

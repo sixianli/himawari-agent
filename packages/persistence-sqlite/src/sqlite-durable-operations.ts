@@ -74,6 +74,7 @@ import type {
   TraceQuery,
 } from "@himawari-agent/gateway-contracts";
 import type Database from "better-sqlite3";
+import { SqliteAppConnectionOperations } from "./sqlite-app-connection-operations.ts";
 import {
   disablePushForRevokedDevices,
   SqliteApplePushOperations,
@@ -104,7 +105,6 @@ import { SqliteMemoryReminderOperations } from "./sqlite-memory-reminder-operati
 import { SqliteModelBudgetOperations } from "./sqlite-model-budget-operations.ts";
 import { SqliteModelInvocationOperations } from "./sqlite-model-invocation-operations.ts";
 import { SqliteModelUsageOperations } from "./sqlite-model-usage-operations.ts";
-import { SqliteMuseIntakeOperations } from "./sqlite-muse-intake-operations.ts";
 import { SqliteLedgerObservationOperations } from "./sqlite-observation-operations.ts";
 import { SqliteOwnerPreferencesOperations } from "./sqlite-owner-preferences-operations.ts";
 import { SqliteOwnerRuleOperations } from "./sqlite-owner-rule-operations.ts";
@@ -399,8 +399,8 @@ export class SqliteDurableOperations {
   private readonly vault: SqliteVaultOperations;
   private readonly mcpMemorySync: SqliteMcpMemorySyncOperations;
   private readonly proactive: SqliteProactiveOperations;
+  private readonly appConnections: SqliteAppConnectionOperations;
   private readonly decisionLedger: SqliteDecisionLedgerOperations;
-  private readonly museIntake: SqliteMuseIntakeOperations;
   private readonly ledgerObservation: SqliteLedgerObservationOperations;
   private readonly ownerPreferences: SqliteOwnerPreferencesOperations;
   private readonly modelUsage: SqliteModelUsageOperations;
@@ -522,8 +522,8 @@ export class SqliteDurableOperations {
       assertDiskHeadroom,
       proactiveSources,
     );
+    this.appConnections = new SqliteAppConnectionOperations(database, fail, assertDiskHeadroom);
     this.decisionLedger = new SqliteDecisionLedgerOperations(database, fail, assertDiskHeadroom);
-    this.museIntake = new SqliteMuseIntakeOperations(database, fail, assertDiskHeadroom);
     this.ledgerObservation = new SqliteLedgerObservationOperations(
       database,
       fail,
@@ -716,6 +716,8 @@ export class SqliteDurableOperations {
     if (operation.startsWith("mcpMemorySync."))
       return this.mcpMemorySync.execute(operation, payload);
     if (operation.startsWith("proactive.")) return this.proactive.execute(operation, payload);
+    if (operation.startsWith("appConnections."))
+      return this.appConnections.execute(operation, payload);
     if (operation.startsWith("ownerRule.")) return this.ownerRules.execute(operation, payload);
     if (operation.startsWith("inbox.")) return this.inbox.execute(operation, payload);
     if (operation.startsWith("subthread.")) return this.subthreads.execute(operation, payload);
@@ -723,7 +725,6 @@ export class SqliteDurableOperations {
       return this.correctionReview.execute(operation, payload);
     if (operation.startsWith("decisionLedger."))
       return this.decisionLedger.execute(operation, payload);
-    if (operation.startsWith("museIntake.")) return this.museIntake.execute(operation, payload);
     if (operation.startsWith("ledgerObservation."))
       return this.ledgerObservation.execute(operation, payload);
     if (operation.startsWith("ownerPreferences."))

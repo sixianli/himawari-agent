@@ -26,6 +26,7 @@ import {
   type GatewayAccessDecision,
   type GatewayAuthenticationContext,
   type GatewayV2InboundMessage,
+  GMAIL_SOURCE,
   MAIL_INBOX_SOURCE_KIND,
   type McpMemorySyncStorePort,
   type OwnerIdentityStatePort,
@@ -61,6 +62,7 @@ import {
 } from "@himawari-agent/persistence-sqlite";
 import {
   CloudflareAccessJwtVerifier as AccessJwtVerifier,
+  APP_CONNECTIONS_CALLBACK_PATH,
   assertProductionSecretSource,
   assertUnixSocketPathLength,
   authenticateHttpRequest,
@@ -73,6 +75,7 @@ import {
   CloudflareAccessIdentityClient,
   type CloudflareAccessIdentityFetcher,
   type DeviceActionHub,
+  type DeviceConnectionsPort,
   type DeviceGatewayAuditFailure,
   type DeviceNotificationHub,
   type DevicePresence,
@@ -96,6 +99,7 @@ import {
   type PairedDeviceWarning,
   type PerceptionLimitWarning,
   PerceptionService,
+  type ProductionAppConnections,
   ProductSessionAuthenticationService,
   type ProductSessionAuthenticationServiceOptions,
   prepareUnixSocketPath,
@@ -139,7 +143,6 @@ import {
   ProductionDeviceControl,
 } from "./production-device-control.js";
 import { PRODUCTION_FILES_OPERATIONS, ProductionFilesControl } from "./production-files-control.js";
-import { type ProductionGapExport, registerGapExportRoute } from "./production-gap-export.js";
 import { PRODUCTION_HOME_OPERATIONS, ProductionHomeControl } from "./production-home.js";
 import { productionInbox } from "./production-inbox-composition.js";
 import { type InboxRunRegistry, ProductionInboxDelivery } from "./production-inbox-delivery.js";
@@ -170,11 +173,6 @@ import {
 } from "./production-memory-control.js";
 import { ProductionMemoryInbox } from "./production-memory-inbox.js";
 import { flushSensitiveInterceptions } from "./production-model-egress.js";
-import { type ProductionMuseIntake, registerMuseIntakeRoute } from "./production-muse-intake.js";
-import {
-  PRODUCTION_MUSE_OPERATIONS,
-  type ProductionMuseControl,
-} from "./production-muse-intake-control.js";
 import {
   PRODUCTION_OBSERVATION_OPERATIONS,
   type ProductionObservation,
@@ -344,6 +342,7 @@ export interface ProductionHttpCompositionOptions {
     readonly applePush?: ProductionApplePush;
   };
   readonly proactive?: ProductionProactive;
+  readonly appConnections?: ProductionAppConnections;
   readonly inbox?: {
     readonly delivery?: InboxDelivery;
     readonly mainThread?: {
@@ -359,10 +358,7 @@ export interface ProductionHttpCompositionOptions {
   };
   readonly threadDeletionDiagnostic?: (event: Record<string, string>) => void;
   readonly queryPrefetch?: ProductionQueryPrefetch;
-  readonly museIntake?: ProductionMuseIntake;
-  readonly gapExport?: ProductionGapExport;
   readonly mcpRead?: ProductionMcpRead;
-  readonly museControl?: ProductionMuseControl;
   readonly observation?: ProductionObservation;
   readonly configuration: ProductConfiguration;
   readonly repository: SqliteProductStateRepository;
@@ -715,6 +711,54 @@ function authorityForConfiguration(
   return authority;
 }
 
+function deviceConnections(
+  proactive: ProductionProactive | undefined,
+  apps: ProductionAppConnections | undefined,
+): DeviceConnectionsPort {
+  return {
+    list: async () => [
+      ...(proactive ? [await proactive.connection()] : []),
+      ...(apps ? await apps.list() : []),
+    ],
+    begin: async ({ connection, ...input }) =>
+      proactive && connection === GMAIL_SOURCE.name
+        ? proactive.beginAppAuthorization(input)
+        : apps?.begin({ ...input, connection }),
+    complete: (input) =>
+      apps?.owns(input.state)
+        ? apps.complete(input)
+        : proactive
+          ? proactive.completeAppAuthorization(input)
+          : Promise.resolve("failed"),
+    disconnect: async ({ connection }) =>
+      apps?.definition(connection) ? apps.disconnect(connection) : undefined,
+  };
+}
+
+export function registerAppConnectionRoutes(
+  app: FastifyInstance,
+  connections: ProductionAppConnections,
+): void {
+  app.get(APP_CONNECTIONS_CALLBACK_PATH, async (request, reply) => {
+    const query = request.query as Record<string, unknown>;
+    const text = (key: string) =>
+      typeof query[key] === "string" && (query[key] as string).length <= 2048
+        ? (query[key] as string)
+        : null;
+    const back = connections.callback({
+      state: text("state"),
+      code: text("code"),
+      error: text("error"),
+      iss: text("iss"),
+    });
+    if (back === undefined) return reply.code(400).header("cache-control", "no-store").send();
+    return reply
+      .header("cache-control", "no-store")
+      .header("referrer-policy", "no-referrer")
+      .redirect(back, 303);
+  });
+}
+
 export function registerProactiveRoutes(
   app: FastifyInstance,
   proactive: ProductionProactive,
@@ -752,6 +796,16 @@ export function registerProactiveRoutes(
       typeof query[key] === "string" && (query[key] as string).length <= 2048
         ? (query[key] as string)
         : null;
+    const app = proactive.appCallback({
+      state: text("state"),
+      code: text("code"),
+      error: text("error"),
+    });
+    if (app !== undefined)
+      return reply
+        .header("cache-control", "no-store")
+        .header("referrer-policy", "no-referrer")
+        .redirect(app, 303);
     const subject = await owner(request);
     if (!subject) {
       if (query["return"] !== undefined) return settingsPage(reply, "failed");
@@ -799,7 +853,6 @@ function routeOptions(
   executionEnvironmentAvailable: boolean,
   memoryAvailable: boolean,
   proactiveAvailable: boolean,
-  museAvailable: boolean,
   observationAvailable: boolean,
   mcpConnectionsAvailable: boolean,
   searchAvailable: boolean,
@@ -837,7 +890,6 @@ function routeOptions(
         ...(memoryAvailable ? PRODUCTION_MEMORY_OPERATIONS : []),
         ...PRODUCTION_WEB_PUSH_OPERATIONS,
         ...(proactiveAvailable ? PRODUCTION_PROACTIVE_OPERATIONS : []),
-        ...(museAvailable ? PRODUCTION_MUSE_OPERATIONS : []),
         ...(observationAvailable ? PRODUCTION_OBSERVATION_OPERATIONS : []),
         ...PRODUCTION_OWNER_PREFERENCE_OPERATIONS,
         ...(memoryAvailable ? PRODUCTION_QUIET_HOURS_OPERATIONS : []),
@@ -1742,7 +1794,6 @@ export async function createProductionHttpComposition(
       clock: { now: clock },
     }),
     ...(options.proactive ? { proactiveControl: options.proactive } : {}),
-    ...(options.museControl ? { museControl: options.museControl } : {}),
     ...(options.observation ? { observationControl: options.observation } : {}),
     ...(ownerRuleWriter
       ? {
@@ -1866,7 +1917,6 @@ export async function createProductionHttpComposition(
       Boolean(options.executionEnvironment),
       Boolean(memoryControl),
       Boolean(options.proactive),
-      Boolean(options.museControl),
       Boolean(options.observation),
       Boolean(options.mcpRead),
       Boolean(searchControl),
@@ -1931,6 +1981,14 @@ export async function createProductionHttpComposition(
               scope.ownerId === ownerId && scope.agentId === agentId ? options.vault : undefined,
           }
         : {}),
+      ...(options.proactive || options.appConnections
+        ? {
+            connections: (scope: PairedDeviceScope) =>
+              scope.ownerId === ownerId && scope.agentId === agentId
+                ? deviceConnections(options.proactive, options.appConnections)
+                : undefined,
+          }
+        : {}),
       voiceGates: () => DEFAULT_VOICE_GATES,
       ...(speech ? { speech } : {}),
       ...(options.queryPrefetch
@@ -1945,6 +2003,7 @@ export async function createProductionHttpComposition(
       method: identityConfiguration.kind === "built-in" ? "built-in" : "cloudflare-access",
     }),
   );
+  if (options.appConnections) registerAppConnectionRoutes(app, options.appConnections);
   if (options.proactive)
     registerProactiveRoutes(app, options.proactive, {
       authentication,
@@ -1966,8 +2025,6 @@ export async function createProductionHttpComposition(
     protector: payloadProtector,
     now: clock,
   });
-  if (options.museIntake) registerMuseIntakeRoute(app, options.museIntake);
-  if (options.gapExport) registerGapExportRoute(app, options.gapExport);
   if (options.mcpRead) {
     registerMcpReadRoute(app, options.mcpRead);
     registerMcpConnectionAddressRoute(app, {

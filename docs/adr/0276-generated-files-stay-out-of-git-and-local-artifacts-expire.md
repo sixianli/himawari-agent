@@ -7,7 +7,7 @@ superseded_by: ""
 amends: ""
 date: "2026-11-15"
 covers: "clients/apple/README.md, clients/apple/scripts/mac-ui-review.sh, clients/apple/scripts/ui-review.sh, clients/apple/ui-review/.gitignore, scripts/delivery-mode/make-packet.py, scripts/disk-hygiene/install-schedule.sh, scripts/disk-hygiene/prune-rebuildable.py, scripts/disk-hygiene/retention.json"
-verified_at: "8d78eb5496a9041e33f795ebed563af9ed4391b9"
+verified_at: "7c8521fe5f55e7dd57c5bd52badd16eef647502e"
 ---
 
 # ADR 0276：截图等生成文件不进 main，开发机上的产物按可改的期限自动回收
@@ -61,9 +61,9 @@ Mac 克隆里的本机产物：
 9. 截图目录已写进忽略清单。`clients/apple/ui-review/.gitignore:2`：`latest/`；第 6 行：`mac-latest/`。
 10. 本 PR 之前，根 `.gitignore` 没有忽略工作副本目录（`git check-ignore .claude/worktrees/x .agents/local/worktrees/x` 无输出，2026-11-15 云端运行）；本 PR 在根 `.gitignore` 加了 `.claude/worktrees/`、`.agents/local/`、`.cb-delegate/`。
 11. 云端线程能取 `refs/heads/` 以外的引用：`git fetch origin refs/pull/1/head` 成功（2026-11-15 云端运行）。
-12. `.ci-output/handoff/scripts` 里是上线工具在用的脚本。`scripts/delivery-mode/make-packet.py:678`：`self.ssh_wrapper = os.environ.get('HIMAWARI_HERMES_SSH', str(REPO / '.ci-output/handoff/scripts/hermes-ssh.sh'))`。
+12. 写这份 ADR 时，`.ci-output/handoff/scripts` 里是上线工具在用的脚本（[当时的 `make-packet.py` 第 877 行](https://github.com/sixianli/himawari-agent/blob/7c8521fe5f55e7dd57c5bd52badd16eef647502e/scripts/delivery-mode/make-packet.py#L877) 默认用其中的 `hermes-ssh.sh`）。2026-11-26 起出包工具只经 SSH 连生产机上的构建账号，不再用那里的脚本。
 13. `.ci-output/worktrees` 被模型目录工具使用。[已删除的 `opencode-models.py` 第 131 行](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/.agents/opencode-models.py#L131)：`base = root / ".ci-output" / "worktrees"`。
-14. 定时任务跑的是脚本的副本，不是仓库里的脚本。`scripts/disk-hygiene/install-schedule.sh:12`：`copy="$share/prune-rebuildable.py"`；第 64 行：`install -m 0644 "$here/prune-rebuildable.py" "$copy"`。
+14. 定时任务跑的是脚本的副本，不是仓库里的脚本。`scripts/disk-hygiene/install-schedule.sh:12`：`copy="$share/prune-rebuildable.py"`；第 53 行：`install -m 0644 "$here/prune-rebuildable.py" "$copy"`。
 15. 现有“忙时跳过”的进程名单里没有 Xcode。`scripts/disk-hygiene/prune-rebuildable.py:16`：`BUSY_PATTERN = r'vitest|playwright|scripts/ci/(run|local|test|build|execute)\.mjs|npm (test|run (build|check|test))'`。
 
 <a id="benchmarks"></a>

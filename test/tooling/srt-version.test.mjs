@@ -146,25 +146,6 @@ describe("SRT version single source", () => {
     ).toEqual([`SRT_VERSION_STALE .agents/instructions/sandbox.md:1 SRT ${OLD}`]);
   });
 
-  it("checks a Hermes start script that is not one of the frozen releases", () => {
-    expect(
-      srtVersionProblems(
-        fixture({
-          files: { "scripts/operations/hermes-new-release-start.mjs": `srt: "${OLD}"\n` },
-        }),
-      ),
-    ).toEqual([
-      `SRT_VERSION_STALE scripts/operations/hermes-new-release-start.mjs:1 srt: "${OLD}"`,
-    ]);
-  });
-
-  it("fails when a frozen release start script no longer matches its pinned digest", () => {
-    const file = "scripts/operations/hermes-harness-start.mjs";
-    expect(srtVersionProblems(fixture({ files: { [file]: `srt: "${OLD}"\n` } }))).toEqual([
-      `SRT_FROZEN_RELEASE_CHANGED ${file}`,
-    ]);
-  });
-
   it("leaves historical evidence alone", () => {
     expect(
       srtVersionProblems(

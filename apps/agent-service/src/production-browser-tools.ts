@@ -1,5 +1,6 @@
 import type {
   ApprovalDisplayInput,
+  ProductConfiguration,
   RuntimeToolDescriptor,
   RuntimeToolInvocation,
 } from "@himawari-agent/application";
@@ -17,6 +18,7 @@ import {
   TOOL_RESULT_BROWSER_SITE_NOT_ALLOWED,
   TOOL_RESULT_BROWSER_UNAVAILABLE,
 } from "@himawari-agent/prompt-catalog";
+import { UserComputerClient } from "@himawari-agent/runtime-sandbox/computers";
 
 export const BROWSER_CAPABILITY_REF = "browser.use";
 export const BROWSER_PROGRAM = "himawari-browser";
@@ -78,9 +80,9 @@ export interface ProductionBrowserToolsOptions {
   readonly maxOutputBytes: number;
   readonly maxTextChars: number;
   readonly responseReserveMs: number;
-  readonly acceptsImages: (modelRef: string) => boolean;
+  readonly acceptsImages: (modelRef: string) => boolean | Promise<boolean>;
   readonly now: () => number;
-  readonly locale?: BrowserLocale;
+  readonly readLocale?: () => Promise<BrowserLocale | null>;
 }
 
 export class BrowserToolError extends Error {
@@ -250,7 +252,7 @@ export class ProductionBrowserTools {
       blockedHosts: response.blockedHosts ?? [],
     };
     if (action !== "screenshot" || !response.screenshot) return { value };
-    if (!this.#options.acceptsImages(invocation.context?.modelRef ?? ""))
+    if (!(await this.#options.acceptsImages(invocation.context?.modelRef ?? "")))
       return { value: { ...value, note: TOOL_RESULT_BROWSER_SCREENSHOT_TEXT_ONLY.text } };
     return {
       value,
@@ -295,12 +297,14 @@ export class ProductionBrowserTools {
   }
 
   #display(action: ModelAction, sites: readonly string[]) {
-    const locale = this.#options.locale ?? "zh-CN";
-    return async (): Promise<ApprovalDisplayInput> => ({
-      displayTitle: TITLES[locale](sites.join("、")),
-      bodyPreview: BODIES[action][locale],
-      origin: null,
-    });
+    return async (): Promise<ApprovalDisplayInput> => {
+      const locale = (await this.#options.readLocale?.()) ?? "zh-CN";
+      return {
+        displayTitle: TITLES[locale](sites.join("、")),
+        bodyPreview: BODIES[action][locale],
+        origin: null,
+      };
+    };
   }
 
   async #exec(
@@ -347,4 +351,21 @@ export class ProductionBrowserTools {
       throw new BrowserToolError(code, TOOL_RESULT_BROWSER_NO_PAGE.text);
     throw new BrowserToolError(code, TOOL_RESULT_BROWSER_UNAVAILABLE.text, detail);
   }
+}
+
+export function createConfiguredBrowserTools(
+  configuration: Pick<ProductConfiguration, "ownerId" | "runPolicy">,
+  options: Pick<ProductionBrowserToolsOptions, "acceptsImages" | "now" | "readLocale">,
+): ProductionBrowserTools | undefined {
+  const computers = configuration.runPolicy?.userComputers;
+  const browser = configuration.runPolicy?.browser;
+  if (!computers || !browser) return undefined;
+  return new ProductionBrowserTools({
+    ownerId: configuration.ownerId,
+    computer: new UserComputerClient(computers.socketPath),
+    maxOutputBytes: browser.maxOutputBytes,
+    maxTextChars: browser.maxTextChars,
+    responseReserveMs: browser.responseReserveMs,
+    ...options,
+  });
 }

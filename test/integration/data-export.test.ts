@@ -821,19 +821,6 @@ describe("data export: determinism and the directory", () => {
     expect(threads[0]?.archived_at).not.toBeNull();
   });
 
-  it("[P1-6][reverse] a target with leftover muse rows is not empty", async () => {
-    const source = await seeded();
-    const { files } = await exportOf(source, { evidence: true });
-    const target = await side("not-empty-evidence");
-    target.database
-      .prepare(
-        "INSERT INTO muse_reference_entries (id, owner_id, agent_id, muse_at, muse_reminded, recorded_at) VALUES ('muse-1', ?, ?, ?, 0, ?)",
-      )
-      .run(target.ownerId, target.agentId, NOW, NOW);
-    await expect(importInto(target, files, { passphrase: PASSPHRASE })).rejects.toMatchObject({
-      code: DATA_EXPORT_ERROR_CODES.TARGET_NOT_EMPTY,
-    });
-  });
   it("[P1-6] [P4-5] names the memory eval question bank as left out and still imports cleanly", async () => {
     const source = await seeded();
     const questionText = "评测题干：我早上一般喝什么咖啡？";

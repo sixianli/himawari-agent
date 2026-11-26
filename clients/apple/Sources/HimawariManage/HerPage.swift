@@ -19,6 +19,9 @@ public struct HerPage: View {
         case memory
         case notifications
         case privacy
+        case connections
+        case gmail
+        case app(String)
         case devices
         case device(String)
         case approvals
@@ -32,6 +35,8 @@ public struct HerPage: View {
     @State private var memory: MemoryStore
     @State private var quietHours: QuietHoursStore
     @State private var timers: TimersStore
+    @State private var connections: ConnectionsStore
+    @State private var gmail: GmailStore
     @State private var path: [Page] = []
     @State private var sensesOpen = false
     @State private var vaultCount: HerVaultCount = .unknown
@@ -72,6 +77,8 @@ public struct HerPage: View {
         _memory = State(initialValue: MemoryStore(gateway: gateway))
         _quietHours = State(initialValue: QuietHoursStore(gateway: gateway))
         _timers = State(initialValue: TimersStore(gateway: gateway))
+        _connections = State(initialValue: ConnectionsStore(gateway: gateway))
+        _gmail = State(initialValue: GmailStore(gateway: gateway))
         self.listening = listening
         self.actions = actions
         self.openListening = openListening
@@ -97,11 +104,13 @@ public struct HerPage: View {
         #endif
     }
 
-    init(settings: SettingsStore, memory: MemoryStore, quietHours: QuietHoursStore, timers: TimersStore? = nil, listening: (any HerListening)? = nil, actions: DeviceActionsModel? = nil, senses: AnyView? = nil, vaultItems: HerVaultCount = .items(3), path: [Page] = []) {
+    init(settings: SettingsStore, memory: MemoryStore, quietHours: QuietHoursStore, timers: TimersStore? = nil, connections: ConnectionsStore? = nil, gmail: GmailStore? = nil, listening: (any HerListening)? = nil, actions: DeviceActionsModel? = nil, senses: AnyView? = nil, vaultItems: HerVaultCount = .items(3), path: [Page] = []) {
         _settings = State(initialValue: settings)
         _memory = State(initialValue: memory)
         _quietHours = State(initialValue: quietHours)
         _timers = State(initialValue: timers ?? TimersStore(timers: nil))
+        _connections = State(initialValue: connections ?? ConnectionsStore(connections: nil))
+        _gmail = State(initialValue: gmail ?? GmailStore(overview: nil))
         _path = State(initialValue: path)
         self.listening = listening
         self.actions = actions
@@ -156,6 +165,12 @@ public struct HerPage: View {
                         }
                     }
                     SettingsGroup(label: nil) {
+                        if connections.available || actions != nil {
+                            Button { path.append(.connections) } label: {
+                                HerRow(icon: .puzzle, title: M.connectionsTitle, subtitle: connectionsSummary)
+                            }
+                            .buttonStyle(.pressable)
+                        }
                         if let hours = quietHours.hours {
                             Button { path.append(.notifications) } label: {
                                 HerRow(icon: .bell, title: M.notificationsTitle, subtitle: M.quietSummary(hours))
@@ -209,6 +224,15 @@ public struct HerPage: View {
                         openDeletion: perceptionDeletion == nil ? nil : { deletionOpen = true },
                         sensesSummary: sensesOn().map(M.sensesOn)
                     ) { path.removeLast() }
+                case .connections:
+                    ConnectionsPage(store: connections, actions: actions, openSenses: senses == nil ? nil : { sensesOpen = true }, open: { connection in
+                        path.append(connection.name == GmailStore.source ? .gmail : .app(connection.name))
+                    }) { path.removeLast() }
+                case .gmail:
+                    GmailPage(store: gmail) { path.removeLast() }
+                        .onDisappear { Task { await connections.load() } }
+                case .app(let name):
+                    AppConnectionPage(store: connections, name: name) { path.removeLast() }
                 case .devices:
                     HerDevicesPage(store: settings, open: { path.append(.device($0.id)) }, removedThisDevice: removedThisDevice) { path.removeLast() }
                 case .device(let id):
@@ -246,6 +270,12 @@ public struct HerPage: View {
         return M.timersSummary(active: counts.active, paused: counts.paused)
     }
 
+    private var connectionsSummary: String {
+        if connections.needsReconnect { return M.connectionExpired }
+        let titles = connections.connectedTitles
+        return titles.isEmpty ? M.connectionsNoneConnected : titles.formatted(.list(type: .and))
+    }
+
     private var devicesSummary: String? {
         guard settings.phase == .loaded, settings.devices.contains(where: settings.isThisDevice) else { return nil }
         return M.thisIPhone
@@ -256,8 +286,9 @@ public struct HerPage: View {
         async let memoryLoaded: Void = memory.load()
         async let quietLoaded: Void = quietHours.load()
         async let timersLoaded: Void = timers.load()
+        async let connectionsLoaded: Void = connections.load()
         vaultCount = await countVault()
-        _ = await (settingsLoaded, memoryLoaded, quietLoaded, timersLoaded)
+        _ = await (settingsLoaded, memoryLoaded, quietLoaded, timersLoaded, connectionsLoaded)
     }
 }
 
