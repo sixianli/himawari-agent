@@ -510,7 +510,9 @@ toolsDescribe("浏览器在主人自己的电脑里跑（真实镜像、gVisor �
   it("正向：打开允许的网站、读到正文、截图交给能看图的模型", async () => {
     const opened = await use("open", { action: "open", url: "https://example.com/" });
     expect(authorized.at(-1)).toEqual(["example.com"]);
-    expect((opened.value as { text: string }).text).toContain("Example Domain");
+    const page = opened.value as { page: { title: string }; text: string };
+    expect(page.page.title).toBe("Example Domain");
+    expect(page.text).toContain("documentation examples");
     const shot = await use("shot", { action: "screenshot" }, "sees-images");
     expect(shot.images?.[0]?.mimeType).toBe("image/png");
     expect(shot.images?.[0]?.data.length ?? 0).toBeGreaterThan(1000);
