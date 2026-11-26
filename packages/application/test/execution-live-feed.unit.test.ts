@@ -26,6 +26,24 @@ describe("execution live feed", () => {
     ]);
   });
 
+  it("stamps each piece with the moment she wrote it, and skips an empty opening", () => {
+    const times = ["2026-11-26T03:00:01.000Z", "2026-11-26T03:00:02.500Z"];
+    const feed = new ExecutionLiveFeed(() => times.shift() ?? "unused");
+    const stamps: string[] = [];
+    feed.subscribe((event) => {
+      if (event.kind === "text") stamps.push(`${event.text}@${event.emittedAt}`);
+    });
+    feed.assistantText({ threadId: "thread-1", runId: "run-1", timestamp: 1, text: "" });
+    feed.assistantText({ threadId: "thread-1", runId: "run-1", timestamp: 1, text: "好的" });
+    feed.assistantText({
+      threadId: "thread-1",
+      runId: "run-1",
+      timestamp: 1,
+      text: "好的，查到了",
+    });
+    expect(stamps).toEqual(["好的@2026-11-26T03:00:01.000Z", "，查到了@2026-11-26T03:00:02.500Z"]);
+  });
+
   it("[mask-not-block] shows a secret that arrives split across two pieces as written", () => {
     const { feed, shown, texts } = recorded();
     const secret = `sk-${"A".repeat(24)}`;

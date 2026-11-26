@@ -355,4 +355,46 @@ describe("product thread execution watch", () => {
     ]);
     expect(Date.now() - started).toBeLessThan(5_000);
   });
+
+  it("tells the watcher when her first characters were written, not when they were sent", async () => {
+    const times = ["2026-11-26T03:00:01.000Z", "2026-11-26T03:00:02.000Z"];
+    const live = new ExecutionLiveFeed(() => times.shift() ?? "unused");
+    const controller = new AbortController();
+    const adapter = new ProductThreadGatewayAdapter({
+      repository: {
+        read: async () => ({ id: "thread-watch", status: "active" }),
+        listRuns: async () => [],
+      },
+      execution: { read: vi.fn(), observeRun: vi.fn(async () => observation()) },
+      clock: { now: () => at(30) },
+      executionPollMilliseconds: 60_000,
+      live,
+    } as unknown as ConstructorParameters<typeof ProductThreadGatewayAdapter>[0]);
+    const stamps: unknown[] = [];
+    const watching = (async () => {
+      for await (const event of adapter.watchExecution({
+        authentication,
+        subscription: subscription as never,
+        signal: controller.signal,
+      })) {
+        if (event.type !== "thread.execution_text") continue;
+        stamps.push([event.payload.text, event.payload.emittedAt, event.payload.observedAt]);
+        if (stamps.length === 2) controller.abort();
+      }
+    })();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    live.assistantText({ threadId: "thread-watch", runId: "run-live", timestamp: 1, text: "好的" });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    live.assistantText({
+      threadId: "thread-watch",
+      runId: "run-live",
+      timestamp: 1,
+      text: "好的，查到了",
+    });
+    await watching;
+    expect(stamps).toEqual([
+      ["好的", "2026-11-26T03:00:01.000Z", at(30)],
+      ["，查到了", "2026-11-26T03:00:02.000Z", at(30)],
+    ]);
+  });
 });

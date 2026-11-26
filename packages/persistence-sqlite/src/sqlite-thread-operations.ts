@@ -47,6 +47,7 @@ import type Database from "better-sqlite3";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
 
 const PHONE_VOICE_PROOF_PREFIX = "device-voice:";
+const TALK_PROOF_PREFIX = "device-talk:";
 
 interface ThreadRow {
   readonly id: string;
@@ -1413,7 +1414,7 @@ export class SqliteThreadOperations {
          WHERE f.run_id = ? AND f.owner_id = ? AND f.agent_id = ?
          ORDER BY f.position`,
       )
-      .all(runId, ownerId, agentId) as (Omit<FoldedOwnerMessage, "viaPhoneVoice"> & {
+      .all(runId, ownerId, agentId) as (Omit<FoldedOwnerMessage, "viaPhoneVoice" | "viaTalk"> & {
       sourceProofRef: string | null;
     })[];
     return rows.map(({ sourceProofRef, ...message }) => ({
@@ -1421,6 +1422,7 @@ export class SqliteThreadOperations {
       ...(sourceProofRef?.startsWith(PHONE_VOICE_PROOF_PREFIX)
         ? { viaPhoneVoice: true as const }
         : {}),
+      ...(sourceProofRef?.startsWith(TALK_PROOF_PREFIX) ? { viaTalk: true as const } : {}),
     }));
   }
 
@@ -1908,7 +1910,7 @@ export class SqliteThreadOperations {
         ))
     `)
       .get(input.runId, input.ownerId, input.agentId) as
-      | (Omit<RunExecutionSource, "viaPhoneVoice"> & {
+      | (Omit<RunExecutionSource, "viaPhoneVoice" | "viaTalk"> & {
           modelSelectionJson: string | null;
           sourceProofRef: string;
         })
@@ -1920,6 +1922,7 @@ export class SqliteThreadOperations {
       ...(sourceProofRef.startsWith(PHONE_VOICE_PROOF_PREFIX)
         ? { viaPhoneVoice: true as const }
         : {}),
+      ...(sourceProofRef.startsWith(TALK_PROOF_PREFIX) ? { viaTalk: true as const } : {}),
       ...(modelSelectionJson ? { modelSelection: JSON.parse(modelSelectionJson) } : {}),
     };
   }
