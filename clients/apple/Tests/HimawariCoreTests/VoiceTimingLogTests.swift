@@ -38,9 +38,14 @@ import Testing
     }
 
     @Test func fewerThanFiveTurnsShowNoNumberAndSilentTurnsDoNotCountForSound() {
-        let four = (0..<4).map { record("r\($0)", said: 0, text: 1, sound: 2) }
+        let four: [VoiceTimingRecord] = (0..<4).map { index in record("r\(index)", said: 0, text: 1, sound: 2) }
         #expect(VoiceTimingSummary(four).textGap == nil)
-        let mixed = (0..<6).map { record("r\($0)", said: 0, text: Double($0 + 1), sound: $0 < 3 ? Double($0 + 2) : nil) }
+        var mixed: [VoiceTimingRecord] = []
+        for index in 0..<6 {
+            let text = Double(index + 1)
+            let sound: Double? = index < 3 ? text + 1 : nil
+            mixed.append(record("r\(index)", said: 0, text: text, sound: sound))
+        }
         let summary = VoiceTimingSummary(mixed)
         #expect(summary.rounds == 6)
         #expect(summary.textGap == VoiceTimingSummary.Spread(half: 3, ninety: 6))
