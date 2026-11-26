@@ -35,6 +35,7 @@ jobs:
           xcrun simctl bootstatus "$udid" -b >/dev/null
           xcrun simctl status_bar "$udid" override --time 9:41 --batteryState charged --batteryLevel 100 || true
           xcrun simctl install "$udid" "$app"
+          xcrun simctl privacy "$udid" grant photos "$bundle"
           mkdir -p out
           for look in light dark; do
             xcrun simctl ui "$udid" appearance "$look"
