@@ -2,6 +2,8 @@
 
 > **只是参考，不是规则**。这里记的是另一个线程给 Himawari 的 CI 提速时积累的经验，不是“CI 开源工具”线程必须遵守的规则，也不限定它的方案范围。开源工具面对的用户、机器和约束都不一样，这里的做法换个场景可能不是最好的。请从问题本身出发，大胆想更好的做法和更多可能性；这里的数据和踩过的坑可以拿来验证想法，不必照搬。
 
+> 2026-11-26 注：这里记的自托管 CI 机器（OVH CI 服务器、Oracle ARM runner）已全部撤掉，CI 现在跑在 GitHub 免费托管机器上，见 [ADR 0292](../../docs/adr/0292-how-ci-runs-now.md)。下面的机器和作业数据只是当时的记录，不是现状。
+
 这份文档记的是“让 CI 变快变顺”线程给 Himawari 的 CI 提速时做过的每一项优化：发现了什么、前后实测数据、成功还是失败、为什么，以及对“CI 开源工具”线程有什么用。Andy 2026-11-15 要求从这天起持续记，开源工具线程重新开工时先读这份。CI（持续集成）是每次推送后 GitHub Actions 自动跑的检查；runner 是装在自己机器上、替 GitHub 执行 CI 作业的程序，一个 runner 一次只跑一个作业。
 
 - [机器和作业现状](#setup)
@@ -21,7 +23,7 @@
 | CI 服务器（同一台） | 单独内存池，预留 2 GB、上限 4 GB | `ci-vps-gate` | 汇总作业 `ci/required` |
 | Oracle 东京 ARM | 4 核 24 GB | `ci-arm-1`、`ci-arm-2` | policy、static、security、tooling |
 
-来源：`docs/runbooks/ci-vps-runner-runbook.md` 第 17、67、180 行；`.github/workflows/ci.yml` 各作业的 `runs-on`。表里只列 `ci.yml` 一次完整运行的作业；另外 `main.yml` 的 `main/evidence`（约 20 秒）和 `main/confirmation`（轻量确认时才跑）跑在 `ci-vps`，`merge-queue.yml` 跑在 `ci-arm`（CI 门禁临时放宽期间只手动触发）。
+来源：[ci-vps-runner-runbook.md（已删除，固定链接）](https://github.com/sixianli/himawari-agent/blob/88e17c2430041266de223e41c4163c45d1a02369/docs/runbooks/ci-vps-runner-runbook.md) 第 17、67、180 行；`.github/workflows/ci.yml` 各作业的 `runs-on`。表里只列 `ci.yml` 一次完整运行的作业；另外 `main.yml` 的 `main/evidence`（约 20 秒）和 `main/confirmation`（轻量确认时才跑）跑在 `ci-vps`，`merge-queue.yml` 跑在 `ci-arm`（CI 门禁临时放宽期间只手动触发）。
 
 一次完整运行的依赖顺序：policy → build → tests（三份）和 browser（三个）→ `ci/required`；static、security、tooling 只等 policy。
 

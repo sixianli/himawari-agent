@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import {
+  APPROVAL_BODY_PREVIEW_DEFAULT_CHARACTERS,
   ApplicationPortError,
+  approvalBodyPreview,
   type CapabilityExecutionHandleStorePort,
   type CapabilityInvocationAuthority,
   type CapabilityInvocationReceiptPort,
@@ -51,6 +53,7 @@ import {
   renderPrompt,
   TOOL_AUTHORIZED,
   TOOL_MOVE_DIRECTORY,
+  TOOL_RESULT_APP_ACTION_FAILED,
   TOOL_RESULT_BROWSER_UNAVAILABLE,
   TOOL_RESULT_CONVERSATION_INPUT_INVALID,
   TOOL_RESULT_CONVERSATION_UNAVAILABLE,
@@ -87,6 +90,13 @@ import type {
   OwnerScopeAuthorization,
   OwnerScopeIntentExtras,
 } from "./owner-scope-authorization.js";
+import {
+  APP_ACTION_EXTERNAL_ORIGIN,
+  type AppCallAccess,
+  AppToolError,
+  appToolDescriptors,
+  type ProductionAppTools,
+} from "./production-app-tools.js";
 import {
   BROWSER_SITE_TARGET,
   BrowserToolError,
@@ -307,6 +317,23 @@ async function nextWithAuthority<T>(
   }
 }
 
+function appApproval(access: AppCallAccess): OwnerScopeIntentExtras {
+  return {
+    targets: [
+      { type: "app", ref: access.app },
+      { type: "app-tool", ref: access.tool },
+    ],
+    display: async () => ({
+      displayTitle: `${access.title} · ${access.tool}`,
+      bodyPreview: approvalBodyPreview(
+        JSON.stringify(access.arguments),
+        APPROVAL_BODY_PREVIEW_DEFAULT_CHARACTERS,
+      ),
+      origin: null,
+    }),
+  };
+}
+
 function reject(): never {
   throw new ApplicationPortError(PORT_ERROR_CODES.HANDLE_REVOKED, "Runtime tool is not authorized");
 }
@@ -436,6 +463,7 @@ export interface ProductionRuntimeToolsOptions {
   readonly ownerRules?: Pick<ProductionOwnerRuleTools, "run">;
   readonly perception?: Pick<ProductionPerceptionTools, "run">;
   readonly vault?: Pick<ProductionVaultTools, "run">;
+  readonly apps?: Pick<ProductionAppTools, "run">;
   readonly browser?: Pick<ProductionBrowserTools, "run">;
   readonly toolActions?: ToolActionRegistry;
   readonly readOnlyRun?: (runId: RuntimeRequest["runId"]) => Promise<boolean>;
@@ -710,6 +738,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     if (this.#options.ownerRules) descriptors.push(...ownerRuleToolDescriptors());
     if (this.#options.perception) descriptors.push(...perceptionToolDescriptors());
     if (this.#options.vault) descriptors.push(...vaultToolDescriptors());
+    if (this.#options.apps) descriptors.push(...appToolDescriptors());
     if (this.#options.browser) descriptors.push(...browserToolDescriptors());
     this.#exposed.set(runId, new Set(refs));
     const readOnly = (await this.#options.readOnlyRun?.(runId)) === true;
@@ -814,6 +843,8 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       return (invocation, gate) => this.#perception(invocation, gate);
     if (row.targetType === "owner-vault" && this.#options.vault)
       return (invocation, gate) => this.#vault(invocation, gate);
+    if (row.targetType === "owner-app" && this.#options.apps)
+      return (invocation, gate) => this.#app(invocation, gate);
     if (row.targetType === "owner-browser" && this.#options.browser)
       return (invocation, gate) => this.#browser(invocation, gate);
     return undefined;
@@ -902,6 +933,36 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
                 errorCode: "DEVICE_ACTION_UNAVAILABLE",
                 note: TOOL_RESULT_DEVICE_ACTION_UNAVAILABLE.text,
               },
+    );
+  }
+  async #app(
+    invocation: RuntimeToolInvocation,
+    gate: OwnerScopeGate,
+  ): Promise<RuntimeToolExecutionResult> {
+    const apps = this.#options.apps;
+    return this.#ownerScoped(
+      invocation,
+      "app",
+      undefined,
+      apps
+        ? async (call) => ({
+            value: await apps.run(call, {
+              authorize: async (access) => {
+                if (!gate) reject();
+                const stopped = await gate(appApproval(access));
+                if (stopped) throw new OwnerScopeStop(stopped);
+              },
+              markExternalContent: async () => {
+                await this.#options.externalContent?.mark(call.runId, APP_ACTION_EXTERNAL_ORIGIN);
+              },
+            }),
+            contentClassification: "private",
+          })
+        : undefined,
+      (error) =>
+        error instanceof AppToolError
+          ? { errorCode: error.code, note: error.note }
+          : { errorCode: "APP_ACTION_FAILED", note: TOOL_RESULT_APP_ACTION_FAILED.text },
     );
   }
   async #browser(
@@ -1193,6 +1254,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       | "subthread"
       | "plan"
       | "vault"
+      | "app"
       | "browser",
     gate: OwnerScopeGate,
     run:
@@ -1234,6 +1296,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       | "subthread"
       | "plan"
       | "vault"
+      | "app"
       | "browser",
     gate: OwnerScopeGate,
     run: (call: RuntimeToolInvocation) => Promise<{

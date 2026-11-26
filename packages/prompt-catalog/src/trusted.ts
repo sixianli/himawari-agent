@@ -1,4 +1,5 @@
 import * as activity from "./activity.js";
+import * as apps from "./apps.js";
 import * as authorization from "./authorization.js";
 import * as background from "./background.js";
 import * as chat from "./chat.js";
@@ -15,6 +16,7 @@ import * as tools from "./tools.js";
 export const TRUSTED_PROMPT_TEXTS: readonly string[] = trustedPromptTexts(
   [
     activity,
+    apps,
     authorization,
     background,
     chat,

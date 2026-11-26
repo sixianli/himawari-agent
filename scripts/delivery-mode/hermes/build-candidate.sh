@@ -73,7 +73,8 @@ for name in node-modules.tar.gz node-modules.json npm-ls.json; do
   cp "$out/installer-dependencies/$name" "$out/materials/$name"
 done
 rm -rf "$out/installer-dependencies"
-cp "$(setting pythonMaterial)" "$out/materials/python-3.12.10.tar.gz"
+locked_python=$(/usr/bin/python3 -I -c 'import json, sys; print(json.load(open(sys.argv[1]))["python"]["version"])' "$source/ci/toolchain-lock.json")
+cp "$(setting pythonMaterial)" "$out/materials/python-$locked_python.tar.gz"
 find "$out/report" -name '*.tar.gz' -delete
 (cd "$out/materials" && sha256sum -- * > ../SHA256SUMS)
 echo "end=$(date -Is) free-data=$(df --output=avail -B1 "$out" | tail -n 1) free-root=$(df --output=avail -B1 / | tail -n 1)" >> "$out/summary"

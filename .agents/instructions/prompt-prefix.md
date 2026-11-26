@@ -44,6 +44,7 @@ KV 缓存，也叫提示缓存（prompt cache），指模型服务方把“请�
    - 改了提示词文字，**只对新对话生效**。要让老对话也用上，必须手动换新。
 7. **工具集合尽量不变。**业界的首选是让工具一直在列表里，不能用的时候由执行端拒绝，而不是把工具删掉或加进来（[Claude Code](https://claude.dev/blog/lessons-from-building-claude-code-prompt-caching-is-everything/)、[OpenAI](https://developers.openai.com/api/docs/guides/prompt-caching)、[Manus](https://manus.im/blog/Context-Engineering-for-AI-Agents-Lessons-from-Building-Manus)）。本项目目前的取舍：工具集合变了就换新一次；只有手里有执行句柄才会出现的工具不冻结，接在冻结工具的后面，并记日志统计它们出现的频率。工具定义在请求最前面，所以这类工具出现或消失的那一轮，冻结工具之后的系统提示和全部历史都要重算一次（ADR 0165 已写明这个代价）。要改变这个取舍，先出方案。
    - `device_action`、`perception_read` 两个工具的定义是提示词目录里的固定文字，不随有没有配对设备、设备支持哪些动作而变；现在能做什么，由 `device_action` 的 `describe` 结果告诉模型。给设备加动作不得改这两个工具的定义。
+   - `app_action` 的定义同样是固定文字，不随连接了哪些应用、应用有哪些工具而变；现在能用什么，由 `app_action` 的 `describe` 结果告诉模型。接新应用不得改它的定义，也不得把应用的工具直接加进工具列表（[ADR 0311](../../docs/adr/0311-connecting-apps-through-remote-mcp.md)）。
 8. **同一对话中途不换模型、不换推理强度，其他请求参数也保持稳定。**每个模型的缓存是分开的，推理强度在多数模型上也会影响缓存；`tool_choice` 变了、提示里图片的有无变了，同样会让缓存失效（Anthropic 原话：“Changes to `tool_choice` or the presence/absence of images anywhere in the prompt invalidate the cache”）。确实要换的话，在对话开头换，或者用单独的辅助调用来做。
 9. **同一对话的请求送到同一个服务方。**缓存存在各服务方自己的机器上，换一家服务方就要整段重算。路由要按对话保持同一个去向：Magpie 走会话亲和（同一会话尽量送到同一处），Vercel AI Gateway 一类按配置的服务方顺序；服务方支持缓存路由键的（例如 OpenAI 的 `prompt_cache_key`），按对话传一个固定的键。本项目目前没有传缓存路由键。
 
