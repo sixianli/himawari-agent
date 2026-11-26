@@ -23,7 +23,7 @@ public protocol ChatTalk: AnyObject, Sendable {
     var levels: [Double] { get }
     var suggestsVoiceDownload: Bool { get }
     var running: Bool { get }
-    func begin(onSaid: @escaping @MainActor (String) -> Void) async throws
+    func begin(onSaid: @escaping @MainActor (_ said: String, _ messageId: String) -> Void) async throws
     func herReply(_ markdown: String, finished: Bool)
     func setMuted(_ muted: Bool)
     func end() async

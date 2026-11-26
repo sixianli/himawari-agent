@@ -31,7 +31,8 @@ public final class ChatTalkSession: ChatTalk {
     @ObservationIgnored private let cloudSpeech: (@Sendable (String) async throws -> CloudSpeechAudio)?
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var speech = 0
-    @ObservationIgnored private var onSaid: (@MainActor (String) -> Void)?
+    @ObservationIgnored private var onSaid: (@MainActor (_ said: String, _ messageId: String) -> Void)?
+    @ObservationIgnored private let reportTiming: (@Sendable (VoiceTiming) async -> Void)?
     @ObservationIgnored private var voice: AVSpeechSynthesisVoice?
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let activity = TalkActivityController()
@@ -40,12 +41,17 @@ public final class ChatTalkSession: ChatTalk {
     private static let levelsKept = 32
     static let voiceHintShownKey = "talk.voiceHintShown"
 
-    public init(defaults: UserDefaults = .standard, cloudSpeech: (@Sendable (String) async throws -> CloudSpeechAudio)? = nil) {
+    public init(
+        defaults: UserDefaults = .standard,
+        cloudSpeech: (@Sendable (String) async throws -> CloudSpeechAudio)? = nil,
+        reportTiming: (@Sendable (VoiceTiming) async -> Void)? = nil
+    ) {
         self.defaults = defaults
         self.cloudSpeech = cloudSpeech
+        self.reportTiming = reportTiming
     }
 
-    public func begin(onSaid: @escaping @MainActor (String) -> Void) async throws {
+    public func begin(onSaid: @escaping @MainActor (_ said: String, _ messageId: String) -> Void) async throws {
         await end()
         generation += 1
         let started = generation
@@ -70,7 +76,7 @@ public final class ChatTalkSession: ChatTalk {
         self.onSaid = onSaid
         turn = TalkTurn()
         policy = CloudSpeechPolicy()
-        timing = TalkTurnTiming()
+        finishTiming()
         heard = ""
         muted = false
         startedAt = Date()
@@ -110,6 +116,7 @@ public final class ChatTalkSession: ChatTalk {
         let said = turn.take()
         let onSaid = onSaid
         self.onSaid = nil
+        finishTiming()
         feeding?.cancel()
         feeding = nil
         dropSentences()
@@ -128,7 +135,7 @@ public final class ChatTalkSession: ChatTalk {
         activity.end()
         if wasRunning { TalkCommandCenter.shared.handler = nil }
         await pipeline?.cancel()
-        if !said.isEmpty { onSaid?(said) }
+        if !said.isEmpty { onSaid?(said, OutgoingMessage.newId()) }
     }
 
     private func perform(_ command: TalkCommand) async {
@@ -182,10 +189,23 @@ public final class ChatTalkSession: ChatTalk {
             let said = turn.take()
             heard = ""
             policy.newTurn()
-            timing = TalkTurnTiming()
+            finishTiming()
+            let messageId = OutgoingMessage.newId()
+            timing.messageId = messageId
             timing.saidAt = Date()
-            onSaid?(said)
+            onSaid?(said, messageId)
         }
+    }
+
+    private func finishTiming() {
+        sendTiming()
+        timing = TalkTurnTiming()
+    }
+
+    private func sendTiming() {
+        guard let report = timing.report, let reportTiming else { return }
+        timing.messageId = nil
+        Task { await reportTiming(report) }
     }
 
     private func receive(_ piece: TranscriptPiece, generation started: Int) {
@@ -239,6 +259,7 @@ public final class ChatTalkSession: ChatTalk {
                     if timing.firstSoundAt == nil {
                         timing.firstSoundAt = Date()
                         timing.route = sentence.route
+                        sendTiming()
                     }
                 }
                 buffersPlaying += 1

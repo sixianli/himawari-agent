@@ -101,7 +101,7 @@ struct MainShell: View {
         _herOpen = State(initialValue: herOpen)
         #if os(iOS)
         let api = model.api
-        _talkSession = State(initialValue: ChatTalkSession(cloudSpeech: { text in try await api.speech(text) }))
+        _talkSession = State(initialValue: ChatTalkSession(cloudSpeech: { text in try await api.speech(text) }, reportTiming: { timing in await api.reportVoiceTiming(timing) }))
         #endif
     }
 

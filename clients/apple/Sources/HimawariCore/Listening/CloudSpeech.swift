@@ -61,6 +61,7 @@ public struct CloudSpeechAudio: Sendable {
 }
 
 public struct TalkTurnTiming: Sendable, Equatable {
+    public var messageId: String?
     public var saidAt: Date?
     public var firstTextAt: Date?
     public var firstSoundAt: Date?
@@ -68,6 +69,52 @@ public struct TalkTurnTiming: Sendable, Equatable {
     public var route: SpeechRoute?
 
     public init() {}
+
+    public var report: VoiceTiming? {
+        guard let messageId, let saidAt, let firstTextAt else { return nil }
+        return VoiceTiming(messageId: messageId, saidAt: saidAt, firstTextAt: firstTextAt, firstSoundAt: firstSoundAt)
+    }
+}
+
+public struct VoiceTiming: Sendable, Equatable, Encodable {
+    public static let retryDelays: [Duration] = [.seconds(2), .seconds(5), .seconds(15)]
+
+    public let messageId: String
+    public let saidAt: Date
+    public let firstTextAt: Date
+    public let firstSoundAt: Date?
+
+    public init(messageId: String, saidAt: Date, firstTextAt: Date, firstSoundAt: Date?) {
+        self.messageId = messageId
+        self.saidAt = saidAt
+        self.firstTextAt = firstTextAt
+        self.firstSoundAt = firstSoundAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case messageId, saidAt, firstTextAt, firstSoundAt
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(messageId, forKey: .messageId)
+        try container.encode(Self.stamp(saidAt), forKey: .saidAt)
+        try container.encode(Self.stamp(firstTextAt), forKey: .firstTextAt)
+        if let firstSoundAt {
+            try container.encode(Self.stamp(firstSoundAt), forKey: .firstSoundAt)
+        } else {
+            try container.encodeNil(forKey: .firstSoundAt)
+        }
+    }
+
+    public static func stamp(_ date: Date) -> String {
+        date.formatted(Date.ISO8601FormatStyle(includingFractionalSeconds: true, timeZone: TimeZone(identifier: "UTC") ?? .gmt))
+    }
+
+    public static func worthRetrying(_ error: Error) -> Bool {
+        if case let .server(status, _, _, _)? = error as? DeviceAPIError { return status == 404 || status >= 500 }
+        return error is URLError
+    }
 }
 
 extension DeviceAPI {
@@ -82,5 +129,24 @@ extension DeviceAPI {
             firstAudioMs: response.header("x-himawari-speech-first-audio-ms").flatMap { Int($0) },
             chunks: response.chunks
         )
+    }
+}
+
+extension DeviceAPI {
+    public func voiceTiming(_ timing: VoiceTiming) async throws {
+        _ = try await http.send(DeviceRequest(method: "POST", path: "voice-timing", body: try JSONEncoder().encode(timing)))
+    }
+
+    public func reportVoiceTiming(_ timing: VoiceTiming, sleep: @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }) async {
+        var delays = VoiceTiming.retryDelays[...]
+        while true {
+            do {
+                try await voiceTiming(timing)
+                return
+            } catch {
+                guard VoiceTiming.worthRetrying(error), let delay = delays.popFirst() else { return }
+                do { try await sleep(delay) } catch { return }
+            }
+        }
     }
 }

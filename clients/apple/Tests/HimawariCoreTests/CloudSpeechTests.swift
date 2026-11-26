@@ -117,7 +117,47 @@ final class ByteExchange: HTTPExchange, @unchecked Sendable {
         #expect(bodies.last?["spoken"] == nil)
     }
 
-    private func api(_ exchange: ByteExchange) throws -> DeviceAPI {
+    @Test func aTurnIsReportedWithMillisecondUTCTimesAndAnExplicitNullWhenNothingWasHeard() throws {
+        var timing = TalkTurnTiming()
+        timing.saidAt = Date(timeIntervalSince1970: 1_800_000_000.5)
+        #expect(timing.report == nil)
+        timing.messageId = "msg_1"
+        #expect(timing.report == nil)
+        timing.firstTextAt = Date(timeIntervalSince1970: 1_800_000_001.25)
+        let report = try #require(timing.report)
+        let body = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(report)) as? [String: Any])
+        #expect(Set(body.keys) == ["messageId", "saidAt", "firstTextAt", "firstSoundAt"])
+        #expect(body["messageId"] as? String == "msg_1")
+        #expect(body["saidAt"] as? String == "2027-01-15T08:00:00.500Z")
+        #expect(body["firstTextAt"] as? String == "2027-01-15T08:00:01.250Z")
+        #expect(body["firstSoundAt"] is NSNull)
+    }
+
+    @Test func aTimingTheServerHasNoTurnForYetIsSentAgainButABadOneIsNot() async throws {
+        let missing = HTTPExchangeResponse(status: 404, body: Data(#"{"code":"EXECUTION_NOT_FOUND"}"#.utf8))
+        let recorded = HTTPExchangeResponse(status: 200, body: Data(#"{"recorded":true}"#.utf8))
+        let rejected = HTTPExchangeResponse(status: 400, body: Data(#"{"code":"INVALID"}"#.utf8))
+        let at = Date(timeIntervalSince1970: 1_800_000_000)
+        let timing = VoiceTiming(messageId: "msg_1", saidAt: at, firstTextAt: at, firstSoundAt: at)
+
+        let retried = RecordingExchange([missing, recorded])
+        let retriedAPI = try api(retried)
+        await retriedAPI.reportVoiceTiming(timing, sleep: { _ in })
+        #expect(retried.requests.count == 2)
+        #expect(retried.requests.first?.url?.path == "/api/device/v1/voice-timing")
+
+        let refused = RecordingExchange([rejected, recorded])
+        let refusedAPI = try api(refused)
+        await refusedAPI.reportVoiceTiming(timing, sleep: { _ in })
+        #expect(refused.requests.count == 1)
+
+        let gone = RecordingExchange(Array(repeating: missing, count: 10))
+        let goneAPI = try api(gone)
+        await goneAPI.reportVoiceTiming(timing, sleep: { _ in })
+        #expect(gone.requests.count == VoiceTiming.retryDelays.count + 1)
+    }
+
+    private func api(_ exchange: some HTTPExchange) throws -> DeviceAPI {
         let http = DeviceHTTPClient(exchange: exchange, now: { Date(timeIntervalSince1970: 1_800_000_000) })
         http.use(DeviceCredentials(origin: try #require(URL(string: "https://himawari.example.test:8443/")), deviceId: "dev_AAAAAAAAAAAAAAAAAAAAAA", access: nil, deviceKey: try SoftwareKeySigner()))
         return DeviceAPI(http: http)
