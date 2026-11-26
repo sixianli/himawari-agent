@@ -133,7 +133,6 @@ public enum DesignTokens {
     public enum Pairing {
         public static let bannerRadius: CGFloat = 22
         public static let errorIcon: CGFloat = 72
-        public static let errorTitleSize: CGFloat = 26
         public static let errorTop: CGFloat = 156
         public static let glowCenterY: CGFloat = 210
         public static let glowRadius: CGFloat = 310
@@ -147,7 +146,6 @@ public enum DesignTokens {
         public static let stepNumberWidth: CGFloat = 20
         public static let stepRowHeight: CGFloat = 56
         public static let waitingMark: CGFloat = 120
-        public static let waitingTextSize: CGFloat = 22
         public static let waitingTop: CGFloat = 86
     }
 
@@ -186,7 +184,6 @@ public enum DesignTokens {
         public static let fieldRadius: CGFloat = 22
         public static let heroGap: CGFloat = 18
         public static let heroIcon: CGFloat = 72
-        public static let heroTitleSize: CGFloat = 26
         public static let heroTop: CGFloat = 30
         public static let noteInset: CGFloat = 8
         public static let outcomeGap: CGFloat = 14
@@ -334,6 +331,7 @@ public enum DesignTokens {
         public static let puckContentGap: CGFloat = 12
         public static let puckLine: CGFloat = 0.5
         public static let puckMark: CGFloat = 46
+        public static let puckSeeds: CGFloat = 89
         public static let puckSize: CGFloat = 56
         public static let puckTop: CGFloat = 6
         public static let quoteBar: CGFloat = 3
@@ -427,27 +425,27 @@ public enum DesignTokens {
     }
 
     public enum TypeScale {
-        public static let answer = TypeToken(size: 18, weight: 400, lineHeight: 18 * 1.75, face: .system, tracking: 0)
+        public static let answer = TypeToken(size: 17, weight: 400, lineHeight: 17 * 1.45, face: .system, tracking: 0)
         public static let badge = TypeToken(size: 12, weight: 700, lineHeight: nil, face: .system, tracking: 0)
         public static let body = TypeToken(size: 17, weight: 400, lineHeight: 17 * 1.35, face: .system, tracking: 0)
         public static let bubble = TypeToken(size: 17, weight: 400, lineHeight: 17 * 1.45, face: .system, tracking: 0)
         public static let caption = TypeToken(size: 13, weight: 400, lineHeight: 13 * 1.4, face: .system, tracking: 0)
-        public static let emptyTitle = TypeToken(size: 24, weight: 600, lineHeight: nil, face: .himawari, tracking: 0)
+        public static let emptyTitle = TypeToken(size: 24, weight: 600, lineHeight: nil, face: .system, tracking: 0)
         public static let groupLabel = TypeToken(size: 15, weight: 400, lineHeight: nil, face: .system, tracking: 0)
         public static let macAnswer = TypeToken(size: 15, weight: 500, lineHeight: 15 * 1.6, face: .system, tracking: 0)
         public static let macButton = TypeToken(size: 14, weight: 400, lineHeight: nil, face: .system, tracking: 0)
         public static let macButtonSmall = TypeToken(size: 13, weight: 400, lineHeight: nil, face: .system, tracking: 0)
         public static let macButtonSmallStrong = TypeToken(size: 13, weight: 600, lineHeight: nil, face: .system, tracking: 0)
         public static let macButtonStrong = TypeToken(size: 14, weight: 600, lineHeight: nil, face: .system, tracking: 0)
-        public static let macChecklistTitle = TypeToken(size: 21, weight: 600, lineHeight: 21 * 1.45, face: .himawari, tracking: 0)
+        public static let macChecklistTitle = TypeToken(size: 21, weight: 600, lineHeight: 21 * 1.45, face: .system, tracking: 0)
         public static let macChip = TypeToken(size: 13, weight: 400, lineHeight: nil, face: .system, tracking: 0)
         public static let macDraft = TypeToken(size: 17, weight: 400, lineHeight: nil, face: .system, tracking: 0)
         public static let macInput = TypeToken(size: 19, weight: 400, lineHeight: nil, face: .system, tracking: 0)
         public static let macLabel = TypeToken(size: 12, weight: 600, lineHeight: nil, face: .system, tracking: 0)
-        public static let macNotice = TypeToken(size: 15.5, weight: 600, lineHeight: 15.5 * 1.45, face: .himawari, tracking: 0)
+        public static let macNotice = TypeToken(size: 15.5, weight: 600, lineHeight: 15.5 * 1.45, face: .system, tracking: 0)
         public static let macRow = TypeToken(size: 15, weight: 400, lineHeight: nil, face: .system, tracking: 0)
         public static let macRowStrong = TypeToken(size: 15, weight: 600, lineHeight: nil, face: .system, tracking: 0)
-        public static let macSentence = TypeToken(size: 16, weight: 600, lineHeight: 16 * 1.45, face: .himawari, tracking: 0)
+        public static let macSentence = TypeToken(size: 16, weight: 600, lineHeight: 16 * 1.45, face: .system, tracking: 0)
         public static let macSetting = TypeToken(size: 13.5, weight: 400, lineHeight: nil, face: .system, tracking: 0)
         public static let macSmall = TypeToken(size: 12.5, weight: 400, lineHeight: nil, face: .system, tracking: 0)
         public static let navTitle = TypeToken(size: 17, weight: 600, lineHeight: nil, face: .system, tracking: 0)
@@ -457,7 +455,7 @@ public enum DesignTokens {
         public static let rowAction = TypeToken(size: 15, weight: 600, lineHeight: nil, face: .system, tracking: 0)
         public static let secondary = TypeToken(size: 15, weight: 400, lineHeight: 15 * 1.45, face: .system, tracking: 0)
         public static let senseTime = TypeToken(size: 15, weight: 600, lineHeight: nil, face: .rounded, tracking: 0)
-        public static let senseTitle = TypeToken(size: 26, weight: 600, lineHeight: 26 * 1.4, face: .himawari, tracking: 0)
+        public static let senseTitle = TypeToken(size: 26, weight: 600, lineHeight: 26 * 1.4, face: .system, tracking: 0)
         public static let sheetTitle = TypeToken(size: 18, weight: 700, lineHeight: nil, face: .system, tracking: 0)
         public static let title1 = TypeToken(size: 34, weight: 700, lineHeight: 44, face: .system, tracking: 0)
         public static let watchAnswer = TypeToken(size: 16, weight: 400, lineHeight: nil, face: .system, tracking: 0)

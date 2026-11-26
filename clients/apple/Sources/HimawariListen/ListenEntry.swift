@@ -57,9 +57,9 @@ public struct ListenOverlay: View {
                     ListenCallPanel(state: live, levels: controller.levels)
                 } else {
                     ListenAskPanel(state: live) { label in
-                        Button { controller.notMe() } label: { label }.buttonStyle(.plain)
+                        Button { controller.notMe() } label: { label }.buttonStyle(.pressable)
                     } itsMe: { label in
-                        Button { Task { await controller.itsMe() } } label: { label }.buttonStyle(.plain)
+                        Button { Task { await controller.itsMe() } } label: { label }.buttonStyle(.pressable)
                     }
                 }
             }

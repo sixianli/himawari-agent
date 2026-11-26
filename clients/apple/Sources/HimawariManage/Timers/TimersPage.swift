@@ -12,8 +12,6 @@ struct TimersPage: View {
     var body: some View {
         VStack(spacing: 0) {
             SheetHeader(title: M.timersTitle, leading: .back, action: back)
-                .padding(.top, DesignTokens.Size.sheetPaddingTop)
-                .padding(.horizontal, DesignTokens.Size.sheetPaddingHorizontal)
             List {
                 Section {
                 } header: {
@@ -46,9 +44,6 @@ struct TimersPage: View {
             .refreshable { await store.load() }
         }
         .himawariScreenBackground()
-        #if os(iOS)
-        .toolbar(.hidden, for: .navigationBar)
-        #endif
         .task { await store.load() }
         .confirmationDialog(cancelling?.name ?? "", isPresented: Binding(get: { cancelling != nil }, set: { if !$0 { cancelling = nil } }), titleVisibility: .visible) {
             Button(M.timerCancel, role: .destructive) {
@@ -76,12 +71,13 @@ struct TimersPage: View {
                 .frame(maxWidth: .infinity, minHeight: SL.rowMinHeight, alignment: .leading)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.pressable)
             if timer.status == .paused {
                 Button(M.timerResume) { change(timer, .resume) }
                     .hmType(DesignTokens.TypeScale.rowAction)
                     .foregroundStyle(Color.hmLink)
-                    .buttonStyle(.borderless)
+                    .frame(minWidth: DesignTokens.Size.minTapTarget, minHeight: DesignTokens.Size.minTapTarget)
+                    .buttonStyle(.pressable)
                     .disabled(store.working.contains(timer.timerId))
             }
         }

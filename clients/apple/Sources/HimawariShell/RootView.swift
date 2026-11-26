@@ -48,7 +48,6 @@ public struct HimawariRootView: View {
                 HandoverEntryRoute(link.entry, safariURL: model.vault.pairingRecord()?.origin)
             }
         }
-        .onAppear { SerifFace.shared.prepare() }
         .onOpenURL { url in model.handlePairingLink(url.absoluteString) }
         .confirmationDialog(
             L.text("watch.offer.title"),
@@ -224,7 +223,7 @@ struct MainThreadWaiting: View {
                         .foregroundStyle(Color.hmSun)
                         .frame(minHeight: DesignTokens.Size.rowMinHeight)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

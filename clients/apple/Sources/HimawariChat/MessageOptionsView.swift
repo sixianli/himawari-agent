@@ -41,7 +41,7 @@ struct MessageOptionsView: View {
             .frame(maxWidth: DesignTokens.Options.maxWidth, alignment: .leading)
             .opacity(item.isOpen ? 1 : DesignTokens.Options.staleOpacity)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
         .disabled(!tappable(item))
         .accessibilityHint(item.action?.summary ?? item.reason ?? "")
     }

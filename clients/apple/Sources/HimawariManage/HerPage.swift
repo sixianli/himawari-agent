@@ -128,31 +128,31 @@ public struct HerPage: View {
                             Button { path.append(.approvals) } label: {
                                 HerRow(icon: .handStop, title: M.approvalsWaiting(actions.waitingCount), last: true)
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(.pressable)
                         }
                     }
                     SettingsGroup(label: nil) {
                         Button { path.append(.memory) } label: {
                             HerRow(icon: .affiliate, title: M.herMemory, subtitle: memory.summary(categoryLabel: M.category).map(M.memorySummary), last: true)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.pressable)
                     }
                     SettingsGroup(label: nil) {
                         if timers.phase != .unsupported {
                             Button { path.append(.timers) } label: {
                                 HerRow(icon: .alarm, title: M.timersTitle, subtitle: timersSummary)
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(.pressable)
                         }
                         Button { path.append(.allowances) } label: {
                             HerRow(icon: .shieldCheck, title: M.allowancesTitle, subtitle: M.allowancesSummary(memory.allowances.count), last: vaultCount == .unsupported)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.pressable)
                         if vaultCount != .unsupported {
                             Button { vaultOpen = true } label: {
                                 HerRow(icon: .key, title: M.vaultTitle, subtitle: M.vaultSummary(vaultCount), last: true)
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(.pressable)
                         }
                     }
                     SettingsGroup(label: nil) {
@@ -160,48 +160,44 @@ public struct HerPage: View {
                             Button { path.append(.notifications) } label: {
                                 HerRow(icon: .bell, title: M.notificationsTitle, subtitle: M.quietSummary(hours))
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(.pressable)
                         }
                         Button { path.append(.privacy) } label: {
                             HerRow(icon: .eye, title: M.privacy)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.pressable)
                         Button { path.append(.devices) } label: {
                             HerRow(icon: .deviceMobilePlain, title: M.devicesTitle, subtitle: devicesSummary, last: true)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.pressable)
                     }
                     SettingsGroup(label: nil) {
                         Button { path.append(.about) } label: {
                             HerRow(icon: .infoCircle, title: M.aboutTitle, subtitle: AboutPage.versionLine, last: true)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.pressable)
                     }
                 }
-                .padding(.top, DesignTokens.Her.pagePaddingTop)
+                .padding(.top, 8)
                 .padding(.horizontal, DesignTokens.Size.pagePaddingX)
                 .padding(.bottom, DesignTokens.Size.sheetPaddingBottom)
             }
             .scrollIndicators(.hidden)
             .refreshable { await load() }
-            .overlay(alignment: .topLeading) {
-                GlassCircleButton(Text(M.collapse), action: close) {
-                    Icon(.chevronDown, size: DesignTokens.IconSize.glassButton)
-                }
-                .padding(.leading, DesignTokens.Size.pagePaddingX)
-                .padding(.top, DesignTokens.Size.sheetPaddingTop)
-            }
             .himawariScreenBackground()
+            .navigationTitle(M.herPage)
             #if os(iOS)
-            .toolbar(.hidden, for: .navigationBar)
+            .navigationBarTitleDisplayMode(.inline)
             #endif
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(M.done, action: close)
+                }
+            }
             .navigationDestination(for: Page.self) { page in
                 switch page {
                 case .memory:
-                    MemoryRootView(store: memory, talk: talk, back: { path.removeLast() })
-                        #if os(iOS)
-                        .toolbar(.hidden, for: .navigationBar)
-                        #endif
+                    MemoryRootView(store: memory, talk: talk)
                 case .notifications:
                     NotificationsPage(store: quietHours) { path.removeLast() }
                 case .privacy:
@@ -228,9 +224,6 @@ public struct HerPage: View {
                 case .approvals:
                     if let actions {
                         ApprovalsView(model: actions, openThread: { _ in close() }) { path.removeLast() }
-                            #if os(iOS)
-                            .toolbar(.hidden, for: .navigationBar)
-                            #endif
                     }
                 }
             }
@@ -343,13 +336,13 @@ struct PrivacyPage: View {
                         Button(action: openSenses) {
                             HerRow(icon: .eye, title: M.letHerSense, subtitle: sensesSummary, last: openDeletion == nil)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.pressable)
                     }
                     if let openDeletion {
                         Button(action: openDeletion) {
                             HerRow(icon: .trash, title: M.deletePerception, last: true)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.pressable)
                     }
                 }
             }
@@ -378,7 +371,7 @@ struct PrivacyPage: View {
                             last: true
                         )
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
                 }
             }
         }

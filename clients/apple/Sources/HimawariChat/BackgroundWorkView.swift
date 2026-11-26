@@ -30,7 +30,7 @@ struct BackgroundWorkCapsule: View {
             .glassEffect(.regular.interactive(), in: Capsule())
             .contentShape(Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
     }
@@ -164,7 +164,7 @@ private struct MatterCard: View {
                 NavigationLink(value: SubthreadRoute(matter: matter.matter, subthreadId: subthread.subthreadId)) {
                     SubthreadRow(subthread: subthread, icon: icon(for: subthread))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
                 .overlay(alignment: .bottom) {
                     if index < matter.subthreads.count - 1 { RowSeparator() }
                 }
@@ -413,7 +413,7 @@ public struct SubthreadPage: View {
             .padding(.vertical, DesignTokens.Chat.backgroundStepPaddingY)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
     }
 
     private func earlierText(_ run: BackgroundWork.Run) -> String {
@@ -470,7 +470,7 @@ public struct SubthreadPage: View {
                 .padding(.vertical, DesignTokens.Chat.backgroundStepPaddingY)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
             if exchangesOpen {
                 ForEach(Array(items.enumerated()), id: \.offset) { index, exchange in
                     RowSeparator()
@@ -494,7 +494,7 @@ public struct SubthreadPage: View {
                         .padding(.vertical, DesignTokens.Chat.backgroundStepPaddingY)
                         .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
                 }
             }
         }

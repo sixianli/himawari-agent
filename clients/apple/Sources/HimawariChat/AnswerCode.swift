@@ -58,7 +58,7 @@ struct AnswerCodeBlock: View {
                         .frame(minWidth: DesignTokens.Size.minTapTarget, minHeight: DesignTokens.Size.minTapTarget, alignment: .trailing)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
                 .accessibilityLabel(Text(L.text("chat.copyCode")))
                 .task(id: copied) {
                     guard copied > 0 else { return }

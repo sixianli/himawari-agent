@@ -121,7 +121,7 @@ struct ChatInputBar: View {
                 .frame(width: DesignTokens.Size.composerButton, height: DesignTokens.Size.composerButton)
                 .background(fill, in: Circle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
         .accessibilityLabel(Text(label))
     }
 }

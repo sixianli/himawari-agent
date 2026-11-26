@@ -55,8 +55,9 @@ struct ReplyComposerBar: View {
             Button(action: cancel) {
                 Icon(.x, size: DesignTokens.Chat.attachRowIcon)
                     .foregroundStyle(Color.hmMuted)
+                    .frame(minWidth: DesignTokens.Size.minTapTarget, minHeight: DesignTokens.Size.minTapTarget)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
             .accessibilityLabel(Text(L.text("chat.reply.cancel")))
         }
         .padding(.vertical, DesignTokens.Chat.listMarkerGap)

@@ -20,7 +20,6 @@ public final class MacAppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         #endif
-        SerifFace.shared.prepare()
         NSApp.setActivationPolicy(.accessory)
         let model = MenuBarModel(app: AppModel(kind: .mac), settings: MacSettingsStore())
         controller = MenuBarController(model: model)

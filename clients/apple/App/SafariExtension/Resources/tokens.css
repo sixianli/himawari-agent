@@ -88,7 +88,6 @@
   --handover-field-radius: 22px;
   --handover-hero-gap: 18px;
   --handover-hero-icon: 72px;
-  --handover-hero-title-size: 26px;
   --handover-hero-top: 30px;
   --handover-note-inset: 8px;
   --handover-outcome-gap: 14px;
@@ -97,9 +96,9 @@
   --handover-sheet-gap: 18px;
   --handover-steps-gap: 18px;
   --handover-steps-padding: 20px;
-  --type-answer-size: 18px;
+  --type-answer-size: 17px;
   --type-answer-weight: 400;
-  --type-answer-line-height: 1.75;
+  --type-answer-line-height: 1.45;
   --type-badge-size: 12px;
   --type-badge-weight: 700;
   --type-badge-line-height: normal;

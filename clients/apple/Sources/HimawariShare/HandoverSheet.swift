@@ -230,7 +230,7 @@ public struct HandoverSheet: View {
                         .frame(width: DesignTokens.Size.glassButton, height: DesignTokens.Size.glassButton)
                         .background(Color.hmFill, in: Circle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
                 .accessibilityLabel(Text(L.text("sheet.close")))
                 Spacer()
             }

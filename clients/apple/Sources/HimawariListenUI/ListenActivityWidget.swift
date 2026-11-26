@@ -57,9 +57,9 @@ struct ListenActivityLockView: View {
         switch state.phase {
         case .listening:
             ListenLockBanner(state: state) { label in
-                Button(intent: PauseListeningIntent()) { label }.buttonStyle(.plain)
+                Button(intent: PauseListeningIntent()) { label }.buttonStyle(.pressable)
             } stop: { label in
-                Button(intent: StopListeningIntent()) { label }.buttonStyle(.plain)
+                Button(intent: StopListeningIntent()) { label }.buttonStyle(.pressable)
             }
         case .paused:
             ListenLockBanner(state: state) { _ in
@@ -71,18 +71,18 @@ struct ListenActivityLockView: View {
                         .frame(height: 44)
                         .background(Color.hmFill, in: Capsule())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
             } stop: { label in
-                Button(intent: StopListeningIntent()) { label }.buttonStyle(.plain)
+                Button(intent: StopListeningIntent()) { label }.buttonStyle(.pressable)
             }
         case .calling:
             ListenCallPanel(state: state, levels: VoiceLevels.resting)
                 .environment(\.colorScheme, .dark)
         case .asking:
             ListenAskPanel(state: state) { label in
-                Button(intent: NotMeIntent()) { label }.buttonStyle(.plain)
+                Button(intent: NotMeIntent()) { label }.buttonStyle(.pressable)
             } itsMe: { label in
-                Button(intent: ItsMeIntent()) { label }.buttonStyle(.plain)
+                Button(intent: ItsMeIntent()) { label }.buttonStyle(.pressable)
             }
             .environment(\.colorScheme, .dark)
         }

@@ -54,7 +54,7 @@ struct TimerDetailPage: View {
                     Button { fullResult.toggle() } label: {
                         factText(last).lineLimit(fullResult ? nil : Self.shownResultLines)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
                 }
             }
         }
@@ -77,7 +77,7 @@ struct TimerDetailPage: View {
                         .hmType(DesignTokens.TypeScale.secondary)
                         .foregroundStyle(Color.hmLink)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
             }
         }
     }

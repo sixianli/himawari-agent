@@ -406,12 +406,12 @@ public struct ChatView: View {
                                 .padding(-DesignTokens.Chat.replyQuoteGap)
                         }
                         .task(id: message.messageId) {
-                            if message.role == .agent, let runId = message.runId { await store.loadExecution(runId, in: threadId) }
+                            if message.role == .agent, let runId = message.runId { await store.showExecution(runId, in: threadId) }
                         }
                     case let .process(runId):
                         if let line = store.processLine(for: runId, in: threadId) {
                             ProcessRowView(line: line, failed: store.run(runId, in: threadId)?.status == "failed")
-                                .task(id: runId) { await store.loadExecution(runId, in: threadId) }
+                                .task(id: runId) { await store.showExecution(runId, in: threadId) }
                         }
                     }
                 }
@@ -665,7 +665,7 @@ struct OwnerBubble: View {
                 if let quote {
                     if let target = quote.targetId {
                         Button { jump(target) } label: { ReplyQuoteView(quote: quote, lines: 2) }
-                            .buttonStyle(.plain)
+                            .buttonStyle(.pressable)
                             .padding(.bottom, DesignTokens.Chat.listGap)
                     } else {
                         ReplyQuoteView(quote: quote, lines: 2)
@@ -742,7 +742,7 @@ struct QueuedMessageRow: View {
                 }
             }
             .hmType(DesignTokens.TypeScale.caption)
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
             .frame(minHeight: DesignTokens.Size.minTapTarget)
             .contentShape(Rectangle())
             .padding(.vertical, -(DesignTokens.Size.minTapTarget - (DesignTokens.TypeScale.caption.lineHeight ?? DesignTokens.Size.minTapTarget)) / 2)

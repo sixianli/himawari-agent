@@ -121,7 +121,7 @@ struct SenseActions: View {
                     .frame(maxWidth: .infinity, minHeight: DesignTokens.Size.minTapTarget)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
         }
         .padding(.bottom, DesignTokens.Size.sheetPaddingBottom)
     }
