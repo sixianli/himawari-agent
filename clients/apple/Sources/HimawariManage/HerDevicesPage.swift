@@ -19,7 +19,7 @@ struct HerDevicesPage: View {
                 SettingsGroup(label: nil) {
                     Button { open(phone) } label: {
                         HerRow(
-                            icon: .deviceMobilePlain,
+                            symbol: "iphone",
                             title: M.thisIPhone,
                             subtitle: M.phoneLine(phone.name, M.presence(store.presence(phone))),
                             last: true
