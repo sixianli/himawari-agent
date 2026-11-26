@@ -222,6 +222,11 @@ describe("ci-deploy.sh", () => {
       child.stdout.indexOf("CI_DEPLOY_PREPARE"),
     );
     expect(readFileSync(log, "utf8")).toContain("chown -R root:root /opt/himawari/node");
+    expect(child.stdout.indexOf("CI_DEPLOY_BUILDER_HOME_OWNERSHIP")).toBeGreaterThan(-1);
+    expect(child.stdout.indexOf("CI_DEPLOY_BUILDER_HOME_OWNERSHIP")).toBeLessThan(
+      child.stdout.indexOf("CI_DEPLOY_PREPARE"),
+    );
+    expect(readFileSync(log, "utf8")).toContain("chown -R himawari-build:himawari-build");
   });
 
   it("refuses when the running release is not a known commit", () => {

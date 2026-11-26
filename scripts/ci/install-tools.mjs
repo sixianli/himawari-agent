@@ -3,13 +3,16 @@ import {
   existsSync,
   lstatSync,
   mkdirSync,
+  mkdtempSync,
   readdirSync,
   readFileSync,
   realpathSync,
   renameSync,
+  rmSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { hostPlatform, supportedPlatforms } from "./platforms.mjs";
@@ -407,7 +410,16 @@ export function verifyInstalledTools({ directory, root = repositoryRoot }) {
       verifyDownload(readFileSync(join(prefix, "wheels", expected.filename)), expected);
   for (const executable of Object.values(installation.executables))
     assert(realpathSync(executable).startsWith(`${prefix}/`), "工具路径越过安装前缀");
-  const env = isolatedEnvironment(prefix, join(prefix, "bin"));
+  const scratch = mkdtempSync(join(tmpdir(), "himawari-tool-check-"));
+  try {
+    return verifyRuntimeVersions({ prefix, root, lock, version, platform, installation, scratch });
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+}
+
+function verifyRuntimeVersions({ prefix, root, lock, version, platform, installation, scratch }) {
+  const env = isolatedEnvironment(scratch, join(prefix, "bin"));
   if (installation.executables.semgrep)
     env.SSL_CERT_FILE = join(
       prefix,
