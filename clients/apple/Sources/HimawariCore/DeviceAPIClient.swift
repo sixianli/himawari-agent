@@ -122,6 +122,28 @@ public final class DeviceHTTPClient: @unchecked Sendable {
         throw DeviceAPIError.server(status: status, code: nil)
     }
 
+    public func openBytes(_ request: DeviceRequest) async throws -> HTTPByteResponse {
+        try await openBytes(request, allowClockRetry: true)
+    }
+
+    private func openBytes(_ request: DeviceRequest, allowClockRetry: Bool) async throws -> HTTPByteResponse {
+        let urlRequest = try await signed(request)
+        let response = try await exchange.bytes(urlRequest)
+        if (200..<300).contains(response.status) { return response }
+        var body = Data()
+        for try await chunk in response.chunks {
+            body.append(chunk)
+            if body.count > Self.streamErrorBodyLimit { break }
+        }
+        let failed = HTTPExchangeResponse(status: response.status, body: body)
+        if allowClockRetry, response.status == 401, let serverTime = Self.serverTime(failed.body) {
+            lock.withLock { clockOffset = serverTime.timeIntervalSince(now()) }
+            return try await openBytes(request, allowClockRetry: false)
+        }
+        _ = try Self.check(failed)
+        throw DeviceAPIError.server(status: response.status, code: nil)
+    }
+
     public func pair(origin: URL, access: ServiceAccessToken?, body: Data) async throws -> Data {
         try Self.check(try await unsigned(origin: origin, method: "POST", path: "pair", access: access, body: body))
     }
@@ -244,10 +266,15 @@ public final class DeviceHTTPClient: @unchecked Sendable {
         let error: Inner
     }
 
+    private struct BareErrorBody: Decodable {
+        let code: String
+    }
+
     static func check(_ response: HTTPExchangeResponse) throws -> Data {
         if (200..<300).contains(response.status) { return response.body }
         let body = (try? JSONDecoder().decode(ErrorBody.self, from: response.body))?.error
-        throw DeviceAPIError.server(status: response.status, code: body?.code, pairingCodeTtlSeconds: body?.pairingCodeTtlSeconds, reason: body?.reason ?? body?.reasonCode)
+        let code = body?.code ?? (try? JSONDecoder().decode(BareErrorBody.self, from: response.body))?.code
+        throw DeviceAPIError.server(status: response.status, code: code, pairingCodeTtlSeconds: body?.pairingCodeTtlSeconds, reason: body?.reason ?? body?.reasonCode)
     }
 
     static func serverTime(_ body: Data) -> Date? {

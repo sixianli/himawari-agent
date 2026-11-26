@@ -471,7 +471,7 @@ class TemplateTest(RenderedPacket):
     UPGRADE_SWITCH_SHA256 = {
     'systemd/S2-stop-and-inspect.py': 'c466dde3068064600fb817631b3fa282eac1cc47539a11635953f0518b5e4fee',
     'systemd/S7-startup-readback.mjs': '0d258810e6a4809a742b2bca8a9734353cce0114fbee4de8f2a554c78bb022fc',
-    'systemd/S7-switch-start-readback.py': '9eb298c271bfd42013261af8aa61fcb226d795bc2601d9190c60165f742848a0',
+    'systemd/S7-switch-start-readback.py': '7aaf77278298cee5413cc49a07251297d461479beac01d9588ac77e5568f1f93',
     'install/S9-clean-transport.py': '235a7d2882edaa304097746315a4be7f5c5f467fea83cd1522a43a1e3b223533',    }
 
     def render_first_tools(self):
@@ -795,6 +795,33 @@ class DerivedExpectationsTest(RenderedPacket):
         fixtures = subprocess.run([sys.executable, '-I', str(packet / 'systemd' / 'verify-switch-config-fixtures.py'), shutil.which('node')], capture_output=True, text=True, check=False)
         self.assertEqual(fixtures.returncode, 0, fixtures.stdout + fixtures.stderr)
         self.assertNotIn('speech', static_root_configuration(self.render())(copy.deepcopy(original)))
+
+    COMPUTERS_TARGET = {'browser': {'maxOutputBytes': 8388608, 'maxTextChars': 20000, 'responseReserveMs': 5000}}
+
+    def test_a_computers_target_turns_on_user_computers_and_the_browser_only(self):
+        additions = json.loads(packet_maker.run_policy_target(self.COMPUTERS_TARGET))
+        socket_path = json.loads((HERE.parent.parent / 'scripts/operations/computers/settings.json').read_text())['paths']['socket']
+        self.assertEqual(additions, {'userComputers': {'socketPath': socket_path}, 'browser': self.COMPUTERS_TARGET['browser']})
+        packet = self.render(TARGET_RUN_POLICY_JSON=packet_maker.run_policy_target(self.COMPUTERS_TARGET))
+        original = production_config(TWELFTH['OLD_PREFIX'], TWELFTH['ORIGINAL_PUBLIC_FETCH_BYTES'], TWELFTH['ORIGINAL_CONTEXT_WINDOW'], TWELFTH['ORIGINAL_MAX_TOKENS'])
+        switched = static_root_configuration(packet)(copy.deepcopy(original))
+        self.assertEqual(switched['runPolicy']['userComputers'], additions['userComputers'])
+        self.assertEqual(switched['runPolicy']['browser'], additions['browser'])
+        self.assertEqual({key: value for key, value in switched['runPolicy'].items() if key not in ('userComputers', 'browser', 'publicFetch')}, {key: value for key, value in original['runPolicy'].items() if key != 'publicFetch'})
+        fixtures = subprocess.run([sys.executable, '-I', str(packet / 'systemd' / 'verify-switch-config-fixtures.py'), shutil.which('node')], capture_output=True, text=True, check=False)
+        self.assertEqual(fixtures.returncode, 0, fixtures.stdout + fixtures.stderr)
+        self.assertNotIn('userComputers', static_root_configuration(self.render())(copy.deepcopy(original))['runPolicy'])
+
+    def test_a_computers_target_outside_the_supported_shape_is_refused(self):
+        self.assertEqual(packet_maker.run_policy_target(None), '{}')
+        browser = self.COMPUTERS_TARGET['browser']
+        for candidate in (
+            'computers', {}, {'browser': browser, 'socketPath': '/tmp/x'}, {'browser': {**browser, 'extra': 1}},
+            {'browser': {key: value for key, value in browser.items() if key != 'maxTextChars'}},
+            {'browser': {**browser, 'maxOutputBytes': -1}}, {'browser': {**browser, 'maxTextChars': 1.5}}, {'browser': {**browser, 'responseReserveMs': True}},
+        ):
+            with self.subTest(candidate=candidate), self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_COMPUTERS_TARGET_INVALID'):
+                packet_maker.run_policy_target(candidate)
 
     def test_a_speech_target_outside_the_supported_shape_is_refused(self):
         self.assertEqual(packet_maker.speech_target(None), 'null')

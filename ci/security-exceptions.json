@@ -4,7 +4,7 @@
     "status": "proposed_owner_review_required",
     "proposedAt": "2026-11-04T00:00:00Z",
     "owner": "sixianli",
-    "reviewEvidence": "本次 GitHub CI Task 8 初始化实现中，主代理逐条核对 28 条 Gitleaks 命中的源码上下文与既有 machine baseline，确认 18 个请求去重 ID、6 个重复十六进制合成启动 token、2 个公开认证标签和 2 个既有 JWT fixture。此为代码审阅后提交给 Owner 的精确例外提案；尚无 Owner 对这些独立例外的合入审阅证据。reviewReference 仅指向原始源码提交，不表示例外已获 Owner 审阅。 同次主代理核验官方 npm 缓存来源闭包，并逐项审阅干净构建中 39 个原样发布文件、48 个合成或非凭据字面量的用途，形成 published-synthetic-fixture 精确提案；公开来源本身不是豁免依据，仍待 Owner 合入审阅。 2026-10-03 Owner sixianli 曾逐条查看这 52 条并要求全部续期（记录于 .agents/tasks/round2-tool-execution/goal.md 的 G25），但该续期只提交在 claude/isolated-tool-execution 分支，main 上于 2026-10-03 过期。2026-10-24 主代理在 claude/isolated-tool-execution@44600517 上逐条复核：13 条合成字面量当前文件与历史仍被 gitleaks 8.30.0 命中（gateway-v2.contract.test.ts 一条仅剩历史命中，因 schema 要求 current 范围非空而保持原样），39 条依赖文件的锁路径、版本与 integrity 均未变化；Owner sixianli 在 Claude 项目对话中确认全部按复核建议续期。据此把提案日期改为 2026-10-24、全部到期日改为 2026-11-23，路径、摘要、数量和来源证明不变。 2026-11-04 Owner sixianli 在 Claude 项目对话中批准“51 条按现状续期 30 天”（消息 cmsg_01EE1hey9cboYNfwFnBv5dgrFc9SXu13zEM9rUxVEZ9B1R）；据此把提案日期改为 2026-11-04、已有 51 条的到期日改为 2026-12-04，路径、摘要、数量和来源证明不变。同日新增 13 条 synthetic-boot-token 例外，覆盖 gitleaks 8.30.0 在 main 上对同一合成 token（摘要 3eb1bd43…）的其余命中，每条逐行核对了 tokenValue 与 16 位十六进制重复的格式。2026-11-07：PR 248 新增的 13 条 synthetic-boot-token 例外里，有 10 条和 .github/security-review-manifest.json 重复登记，已从本文件删除，改由那份 Owner 复核清单覆盖。 2026-11-10 云端线程把 Pi 升级到 1.5.0（PR 338）后，在与 CI 相同的构建路径（tsc 编译加 packageNodeRuntime）生成运行时依赖闭包，用 findBuildSecrets 扫描，新增 42 个成员命中（来自 @earendil-works/pi-ai、@earendil-works/pi-coding-agent、@google/genai、openai、@aws-sdk/nested-clients），Pi 打包出的 pi-coding-main 分块文件无命中。逐条读了命中行：AWS 官方文档示例密钥、your-api-key 与 GEMINI_API_KEY 占位、$ACME_API_KEY 这类环境变量名引用、命令行帮助文本、bearer 认证说明文字，都不是真实凭据。每个成员对应的官方 npm tarball 的 sha512 等于锁文件 integrity，tarball 成员字节等于构建出的成员；此为提案，仍待 Owner 合入审阅，reviewReference 指向引入这些依赖版本的 PR 338。 2026-11-12 Owner sixianli 在项目线程里同意新增 8 条 published-synthetic-fixture：@modelcontextprotocol/server 的 6 个 dist 文件和它自带 zod 的 string.test.ts（PR 372 引入），以及 onnxruntime-node 的 libonnxruntime.so.1（PR 381 引入）；逐条读过命中内容，都是文档示例、测试用固定值或二进制里碰巧像密钥的字节，不是真实凭据。 2026-11-12 公开输出扫描（scripts/ci/security-source.mjs）改为：整个值只是环境变量名引用（$NAME 或 ${NAME}，名字只含大写字母和下划线，和 gitleaks 默认配置的全局放行规则一致）时不算 credential-literal。据此删除 5 条只登记了这类引用的 published-synthetic-fixture（@earendil-works/pi-coding-agent 的 docs/custom-provider.md、docs/extensions.md、docs/mcp.md 和两个 examples/extensions/*/index.ts），改后它们扫描结果为空；其余条目的命中不变，由 test/tooling/security-published.test.mjs 用真实台账和已安装的依赖文件逐条核对。"
+    "reviewEvidence": "本次 GitHub CI Task 8 初始化实现中，主代理逐条核对 28 条 Gitleaks 命中的源码上下文与既有 machine baseline，确认 18 个请求去重 ID、6 个重复十六进制合成启动 token、2 个公开认证标签和 2 个既有 JWT fixture。此为代码审阅后提交给 Owner 的精确例外提案；尚无 Owner 对这些独立例外的合入审阅证据。reviewReference 仅指向原始源码提交，不表示例外已获 Owner 审阅。 同次主代理核验官方 npm 缓存来源闭包，并逐项审阅干净构建中 39 个原样发布文件、48 个合成或非凭据字面量的用途，形成 published-synthetic-fixture 精确提案；公开来源本身不是豁免依据，仍待 Owner 合入审阅。 2026-10-03 Owner sixianli 曾逐条查看这 52 条并要求全部续期（记录于 .agents/tasks/round2-tool-execution/goal.md 的 G25），但该续期只提交在 claude/isolated-tool-execution 分支，main 上于 2026-10-03 过期。2026-10-24 主代理在 claude/isolated-tool-execution@44600517 上逐条复核：13 条合成字面量当前文件与历史仍被 gitleaks 8.30.0 命中（gateway-v2.contract.test.ts 一条仅剩历史命中，因 schema 要求 current 范围非空而保持原样），39 条依赖文件的锁路径、版本与 integrity 均未变化；Owner sixianli 在 Claude 项目对话中确认全部按复核建议续期。据此把提案日期改为 2026-10-24、全部到期日改为 2026-11-23，路径、摘要、数量和来源证明不变。 2026-11-04 Owner sixianli 在 Claude 项目对话中批准“51 条按现状续期 30 天”（消息 cmsg_01EE1hey9cboYNfwFnBv5dgrFc9SXu13zEM9rUxVEZ9B1R）；据此把提案日期改为 2026-11-04、已有 51 条的到期日改为 2026-12-04，路径、摘要、数量和来源证明不变。同日新增 13 条 synthetic-boot-token 例外，覆盖 gitleaks 8.30.0 在 main 上对同一合成 token（摘要 3eb1bd43…）的其余命中，每条逐行核对了 tokenValue 与 16 位十六进制重复的格式。2026-11-07：PR 248 新增的 13 条 synthetic-boot-token 例外里，有 10 条和 .github/security-review-manifest.json 重复登记，已从本文件删除，改由那份 Owner 复核清单覆盖。 2026-11-10 云端线程把 Pi 升级到 1.5.0（PR 338）后，在与 CI 相同的构建路径（tsc 编译加 packageNodeRuntime）生成运行时依赖闭包，用 findBuildSecrets 扫描，新增 42 个成员命中（来自 @earendil-works/pi-ai、@earendil-works/pi-coding-agent、@google/genai、openai、@aws-sdk/nested-clients），Pi 打包出的 pi-coding-main 分块文件无命中。逐条读了命中行：AWS 官方文档示例密钥、your-api-key 与 GEMINI_API_KEY 占位、$ACME_API_KEY 这类环境变量名引用、命令行帮助文本、bearer 认证说明文字，都不是真实凭据。每个成员对应的官方 npm tarball 的 sha512 等于锁文件 integrity，tarball 成员字节等于构建出的成员；此为提案，仍待 Owner 合入审阅，reviewReference 指向引入这些依赖版本的 PR 338。 2026-11-12 Owner sixianli 在项目线程里同意新增 8 条 published-synthetic-fixture：@modelcontextprotocol/server 的 6 个 dist 文件和它自带 zod 的 string.test.ts（PR 372 引入），以及 onnxruntime-node 的 libonnxruntime.so.1（PR 381 引入）；逐条读过命中内容，都是文档示例、测试用固定值或二进制里碰巧像密钥的字节，不是真实凭据。 2026-11-12 公开输出扫描（scripts/ci/security-source.mjs）改为：整个值只是环境变量名引用（$NAME 或 ${NAME}，名字只含大写字母和下划线，和 gitleaks 默认配置的全局放行规则一致）时不算 credential-literal。据此删除 5 条只登记了这类引用的 published-synthetic-fixture（@earendil-works/pi-coding-agent 的 docs/custom-provider.md、docs/extensions.md、docs/mcp.md 和两个 examples/extensions/*/index.ts），改后它们扫描结果为空；其余条目的命中不变，由 test/tooling/security-published.test.mjs 用真实台账和已安装的依赖文件逐条核对。 2026-11-27 上线线程为东京生产机（arm64）出包新增 1 条 published-synthetic-fixture：onnxruntime-node 1.30.0 的 linux/arm64 libonnxruntime.so.1，是已同意的 x64 版同一个包同一版本的另一个平台文件；命中是 HTTP 授权头格式模板和 OpenSSL 的 PEM 起止标记常量，不是真实凭据。同时改为只要求本机平台会打进产物的原生库登记（按 scripts/package-node-runtime.mjs 的 keepsNativeBinary 判断）。此为提案，待 Owner 确认，reviewReference 指向 PR 737。"
   },
   "exceptions": [
     {
@@ -2152,6 +2152,41 @@
       "expiresAt": "2026-12-04T00:00:00Z",
       "sourceProofSha256": "6e3390d6b783e7be946fad629292799da28d0b42f84856e50d2c1b0383291e75",
       "sourceReview": "2026-11-12 线程用 strings 读了命中位置，是 HTTP 请求头的格式模板和错误提示文字。官方 npm tarball 的 sha512 等于锁文件 integrity，tarball 成员字节等于构建出的成员；Owner sixianli 在项目线程里同意加入。reviewReference 指向引入 onnxruntime-node 的 PR 381。"
+    },
+    {
+      "kind": "published-synthetic-fixture",
+      "id": "published-synthetic-fixture",
+      "path": "runtime/node_modules/onnxruntime-node/bin/napi-v6/linux/arm64/libonnxruntime.so.1",
+      "package": "onnxruntime-node",
+      "version": "1.30.0",
+      "packageLockPath": "node_modules/onnxruntime-node",
+      "integrity": "sha512-twhs1C2C/BFkz1yc5OY0KIU2GUq6DURO7hD4bx5Q2Qy3nAMJwRXW8xU3NVczE29VA9lolLOYepoD8fjTGOfIqw==",
+      "sourceUrl": "https://registry.npmjs.org/onnxruntime-node/-/onnxruntime-node-1.30.0.tgz",
+      "archiveMember": "package/bin/napi-v6/linux/arm64/libonnxruntime.so.1",
+      "fileSha256": "1f549d46250b005580b597f4164984aaf75b3bcb9f3aeb07c7f8a8fe60b23c76",
+      "findings": [
+        {
+          "rule": "private-key",
+          "digest": "b1d8004ba3b72f1427d27082a737c6b85088d375e701f07299f4a1e953497112",
+          "count": 1
+        },
+        {
+          "rule": "private-key",
+          "digest": "9dc5fa87e9eb1d99cbe0a2e2c28f19ba06b9684fceffe5fb53c3bc87604a814d",
+          "count": 1
+        },
+        {
+          "rule": "bearer-token",
+          "digest": "fd5870803904313175576b9669f2f129a03143af27d87a830b1fc7848fb651da",
+          "count": 1
+        }
+      ],
+      "reason": "ONNX Runtime 动态库（linux/arm64 版）的字符串表：拼 HTTP 授权请求头的格式模板（令牌位置是运行时才填的 %s），以及 OpenSSL 内置的 PEM 起止标记常量紧挨着排在一起，扫描规则把相邻的 BEGIN 和 END 标记当成一段私钥；两段匹配之间没有任何密钥内容。",
+      "owner": "sixianli",
+      "reviewReference": "https://github.com/sixianli/himawari-agent/pull/737",
+      "expiresAt": "2026-12-04T00:00:00Z",
+      "sourceProofSha256": "6e3390d6b783e7be946fad629292799da28d0b42f84856e50d2c1b0383291e75",
+      "sourceReview": "2026-11-27 上线线程核对：官方 npm tarball onnxruntime-node-1.30.0.tgz 的 sha512 等于锁文件 integrity，sha256 等于 sourceProofSha256；tarball 成员字节等于构建出的成员。逐段读了命中：private-key 两处是 OpenSSL 的 PEM 标记常量：RSA 私钥开头标记紧挨 EC 私钥结尾标记、EC 私钥开头标记紧挨通用私钥结尾标记，两对之间只隔一两个字节的分隔符，没有任何密钥内容；bearer-token 是 \"Authorization: Bearer %s\" 模板，和已同意的 x64 版同一处。只在 arm64 产物里出现，x64 产物打包时会剪掉这个文件。"
     }
   ]
 }

@@ -54,10 +54,7 @@ import {
   threadCommandFingerprint,
   type VaultService,
 } from "@himawari-agent/application";
-import {
-  isDeviceAccessText,
-  type ThreadExecutionEnvironment,
-} from "@himawari-agent/gateway-contracts";
+import type { ThreadExecutionEnvironment } from "@himawari-agent/gateway-contracts";
 import { MemoryConsolidationService, undoConversationReview } from "@himawari-agent/memory-engine";
 import {
   SqliteGovernedDeletionAdapter,
@@ -77,16 +74,16 @@ import {
   buildHttpGatewayServer,
   CloudflareAccessIdentityClient,
   type CloudflareAccessIdentityFetcher,
-  DEVICE_ACCESS_SECRET_PURPOSES,
   type DeviceActionHub,
   type DeviceConnectionsPort,
   type DeviceGatewayAuditFailure,
   type DeviceNotificationHub,
-  type DevicePairingAccess,
   type DevicePresence,
   DevicePushService,
+  DeviceSignInService,
   digestIdentityCredential,
   EnvelopePayloadProtector,
+  FileSetupCodeSource,
   type HostProviderSecretSource,
   type HostSecretMaterialSource,
   type HttpGatewayAuthenticationPort,
@@ -175,6 +172,11 @@ import {
   ProductionMemoryControl,
 } from "./production-memory-control.js";
 import { ProductionMemoryInbox } from "./production-memory-inbox.js";
+import {
+  PRODUCTION_MEMORY_SEARCH_OPERATIONS,
+  ProductionMemorySearch,
+  type ProductionMemorySearchOptions,
+} from "./production-memory-search.js";
 import { flushSensitiveInterceptions } from "./production-model-egress.js";
 import {
   PRODUCTION_OBSERVATION_OPERATIONS,
@@ -315,6 +317,7 @@ export interface ProductionHttpCompositionOptions {
     readonly search?: {
       readonly provider: ProductionSearchOptions["provider"];
       readonly episodes?: ProductionSearchOptions["episodes"];
+      readonly embedOutsideRun: ProductionMemorySearchOptions["embedOutsideRun"];
     };
     readonly service: Pick<
       DurableMemoryService,
@@ -596,26 +599,6 @@ export class ProductionThreadGatewayAccessPolicy implements ThreadGatewayAccessP
     }
     return { allowed: true, reasonCode: "OWNER_SESSION_AUTHORIZED" };
   }
-}
-
-export async function resolveDevicePairingAccess(
-  secretReferences: readonly {
-    readonly ref: string;
-    readonly version: string;
-    readonly purpose: string;
-  }[],
-  resolve: (ref: string, version: string) => Promise<string>,
-): Promise<DevicePairingAccess | undefined> {
-  const [clientIdReference, clientSecretReference] = DEVICE_ACCESS_SECRET_PURPOSES.map((purpose) =>
-    secretReferences.find((entry) => entry.purpose === purpose),
-  );
-  if (!clientIdReference || !clientSecretReference) return undefined;
-  const clientId = await resolve(clientIdReference.ref, clientIdReference.version);
-  const clientSecret = await resolve(clientSecretReference.ref, clientSecretReference.version);
-  for (const value of [clientId, clientSecret])
-    if (!isDeviceAccessText(value))
-      compositionError(PRODUCTION_HTTP_COMPOSITION_ERROR_CODES.SECRET_MATERIAL_INVALID);
-  return { clientId, clientSecret };
 }
 
 export class ProductionHttpPayloadAdmission implements HttpGatewayPayloadAdmissionPort {
@@ -923,6 +906,7 @@ function routeOptions(
         ...PRODUCTION_DEVICE_OPERATIONS,
         ...PRODUCTION_HOME_OPERATIONS,
         ...(searchAvailable ? PRODUCTION_SEARCH_OPERATIONS : []),
+        ...(searchAvailable ? PRODUCTION_MEMORY_SEARCH_OPERATIONS : []),
         ...PRODUCTION_DATA_EXPORT_OPERATIONS,
         ...PRODUCTION_FILES_OPERATIONS,
         ...PRODUCTION_LOGIN_DEVICE_OPERATIONS,
@@ -997,10 +981,6 @@ export async function createProductionHttpComposition(
       chatModel?.input.includes("image") ??
       false,
   });
-  const devicePairingAccess = await resolveDevicePairingAccess(
-    configuration.secretReferences,
-    (ref, version) => secretSources.provider.resolve(ref, version),
-  );
   const speech = createProductionSpeech(configuration, (ref, version) =>
     secretSources.provider.resolve(ref, version),
   );
@@ -1716,6 +1696,25 @@ export async function createProductionHttpComposition(
         clock: { now: clock },
       })
     : undefined;
+  const memorySearchControl = options.memory?.search
+    ? new ProductionMemorySearch({
+        ownerId,
+        agentId,
+        provider: options.memory.search.provider,
+        state: repository.productMemoryState(),
+        ...(ownerRuleWriter ? { rules: ownerRuleWriter } : {}),
+        readText: async (record) => {
+          const payload = await memoryPayloads.get(record.contentRef);
+          if (!payload || payload.contentType !== "text/plain") return undefined;
+          return new TextDecoder("utf-8", { fatal: true }).decode(
+            await payloadProtector.unprotect({ ownerId, agentId, payload }),
+          );
+        },
+        embedOutsideRun: options.memory.search.embedOutsideRun,
+        requestTimeoutMs: configuration.deadlines.providerRequestMs,
+        clock: { now: clock },
+      })
+    : undefined;
   const readPerceptionText = async (contentRef: string) => {
     const payload = await repository.payloadStore(ownerId, agentId).get(contentRef);
     if (!payload || payload.contentType !== "text/plain") return undefined;
@@ -1786,6 +1785,7 @@ export async function createProductionHttpComposition(
     access: threadAccess,
     homeControl: home,
     ...(searchControl ? { searchControl } : {}),
+    ...(memorySearchControl ? { memorySearchControl } : {}),
     recentAuthentication,
     clock: { now: clock },
     authority: options.authority,
@@ -1846,7 +1846,6 @@ export async function createProductionHttpComposition(
       configuration,
       devices: pairedDevices,
       deviceConfiguration: () => deviceConfiguration,
-      ...(devicePairingAccess ? { pairingAccess: devicePairingAccess } : {}),
       clock: { now: clock },
     }),
     inboxControl: new ProductionInboxControl({
@@ -1964,7 +1963,20 @@ export async function createProductionHttpComposition(
       audit: repository.auditLedger(),
       push: devicePush,
       ...(options.onDeviceAuditFailed ? { onAuditFailed: options.onDeviceAuditFailed } : {}),
-      ...(devicePairingAccess ? { pairingAccess: devicePairingAccess } : {}),
+      signIn: new DeviceSignInService({
+        scope: { ownerId, agentId },
+        store: repository.pairedDevices(),
+        publicOrigin: new URL(configuration.publicOrigin),
+        setupCodes: new FileSetupCodeSource(configuration.stateRoot),
+        now,
+        onSignedIn: (device) => {
+          void applePush?.announceSignedIn(device);
+        },
+      }),
+      appleAppIds: () => {
+        const apple = configuration.runPolicy?.applePush;
+        return apple ? apple.topics.map((topic) => `${apple.teamId}.${topic}`) : [];
+      },
       exportArchive: deviceExportArchive({ ownerId, jobs: dataExportJobs }),
       perception,
       ...(options.deviceNotifications

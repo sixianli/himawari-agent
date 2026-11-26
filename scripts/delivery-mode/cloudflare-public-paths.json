@@ -6,6 +6,7 @@
   "paths": [
     "/.well-known/apple-app-site-association",
     "/api/connections/v1/callback",
+    "/api/device/v1",
     "/api/proactive/v1/google/callback"
   ],
   "retireApplications": []

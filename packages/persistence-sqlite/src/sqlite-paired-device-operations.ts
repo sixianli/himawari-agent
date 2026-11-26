@@ -1,9 +1,10 @@
 import type {
   NonceRecordResult,
+  OwnerPasskey,
   PairedDevice,
   PairedDeviceScope,
   PairedDeviceStorePort,
-  PairingRedeemResult,
+  SignInDeviceResult,
 } from "@himawari-agent/application";
 import type Database from "better-sqlite3";
 import { disablePushForRevokedDevices } from "./sqlite-apple-push-operations.ts";
@@ -20,6 +21,25 @@ const deviceColumns = `id, owner_id AS ownerId, agent_id AS agentId, revision, k
 export const INTERNAL_SESSION_NEVER_RECENTLY_AUTHENTICATED = "1970-01-01T00:00:00.000Z";
 
 type DeviceRow = Omit<PairedDevice, "supportedActions"> & { readonly supportedActions: string };
+
+const passkeyColumns = `credential_id AS credentialId, owner_id AS ownerId, agent_id AS agentId,
+  public_key AS publicKey, sign_count AS signCount, transports, backed_up AS backedUp,
+  created_at AS createdAt, last_used_at AS lastUsedAt`;
+
+type PasskeyRow = Omit<OwnerPasskey, "transports" | "backedUp"> & {
+  readonly transports: string;
+  readonly backedUp: number;
+};
+
+function toPasskey(row: PasskeyRow): OwnerPasskey {
+  return Object.freeze({
+    ...row,
+    transports: Object.freeze(JSON.parse(row.transports) as string[]),
+    backedUp: row.backedUp === 1,
+  });
+}
+
+const BASE64URL = /^[A-Za-z0-9_-]+$/u;
 
 function toDevice(row: DeviceRow): PairedDevice {
   return Object.freeze({
@@ -50,18 +70,16 @@ export class SqlitePairedDeviceOperations {
 
   execute(operation: string, payload: unknown): unknown {
     switch (operation) {
-      case "pairedDevices.createPairingCode":
-        return this.createPairingCode(payload as Input<"createPairingCode">);
-      case "pairedDevices.redeemPairingCode":
-        return this.redeemPairingCode(payload as Input<"redeemPairingCode">);
+      case "pairedDevices.listPasskeys":
+        return this.listPasskeys(payload as PairedDeviceScope);
+      case "pairedDevices.readPasskey":
+        return this.readPasskey(payload as string);
+      case "pairedDevices.signInDevice":
+        return this.signInDevice(payload as Input<"signInDevice">);
       case "pairedDevices.readDevice":
         return this.readDevice(payload as string);
       case "pairedDevices.listDevices":
         return this.listDevices(payload as PairedDeviceScope);
-      case "pairedDevices.readOpenPairingCode":
-        return this.readOpenPairingCode(payload as Input<"readOpenPairingCode">);
-      case "pairedDevices.confirmDevice":
-        return this.confirmDevice(payload as Input<"confirmDevice">);
       case "pairedDevices.renameDevice":
         return this.renameDevice(payload as Input<"renameDevice">);
       case "pairedDevices.revokeDevice":
@@ -80,107 +98,127 @@ export class SqlitePairedDeviceOperations {
     return value;
   }
 
-  private createPairingCode(input: Input<"createPairingCode">): { readonly expiresAt: string } {
-    this.assertDiskHeadroom();
-    const now = this.time(input.now);
-    const expiresAt = this.time(input.expiresAt);
-    if (!/^[0-9a-f]{64}$/u.test(input.codeHash) || expiresAt <= now)
-      this.fail("PORT_INVALID_OPERATION", "Pairing code is invalid");
-    return this.database.transaction(() => {
-      const open = this.database
-        .prepare(
-          `SELECT expires_at AS expiresAt FROM device_pairing_codes
-            WHERE code_hash = ? AND owner_id = ? AND agent_id = ? AND session_id = ?
-              AND used_at IS NULL AND expires_at > ?`,
-        )
-        .get(input.codeHash, input.ownerId, input.agentId, input.sessionId, now) as
-        | { expiresAt: string }
-        | undefined;
-      if (open) return { expiresAt: open.expiresAt };
+  private listPasskeys(input: PairedDeviceScope): readonly OwnerPasskey[] {
+    return (
       this.database
         .prepare(
-          `DELETE FROM device_pairing_codes
-            WHERE expires_at <= ? OR used_at IS NOT NULL OR (owner_id = ? AND agent_id = ?)`,
+          `SELECT ${passkeyColumns} FROM owner_passkeys
+            WHERE owner_id = ? AND agent_id = ? ORDER BY created_at, credential_id`,
         )
-        .run(now, input.ownerId, input.agentId);
-      this.database
-        .prepare(
-          `INSERT INTO device_pairing_codes
-             (code_hash, owner_id, agent_id, session_id, created_at, expires_at)
-           VALUES (?, ?, ?, ?, ?, ?)`,
-        )
-        .run(input.codeHash, input.ownerId, input.agentId, input.sessionId, now, expiresAt);
-      return { expiresAt };
-    })();
+        .all(input.ownerId, input.agentId) as PasskeyRow[]
+    ).map(toPasskey);
   }
 
-  private redeemPairingCode(input: Input<"redeemPairingCode">): PairingRedeemResult {
+  private readPasskey(credentialId: string): OwnerPasskey | undefined {
+    const row = this.database
+      .prepare(`SELECT ${passkeyColumns} FROM owner_passkeys WHERE credential_id = ?`)
+      .get(credentialId) as PasskeyRow | undefined;
+    return row ? toPasskey(row) : undefined;
+  }
+
+  private signInDevice(input: Input<"signInDevice">): SignInDeviceResult {
     this.assertDiskHeadroom();
     const now = this.time(input.now);
-    return this.database.transaction((): PairingRedeemResult => {
-      const code = this.database
-        .prepare(
-          `SELECT owner_id AS ownerId, agent_id AS agentId, expires_at AS expiresAt,
-                  used_at AS usedAt, device_id AS deviceId
-             FROM device_pairing_codes WHERE code_hash = ?`,
+    const { device, passkey } = input;
+    if (
+      !BASE64URL.test(passkey.credentialId) ||
+      !Number.isSafeInteger(passkey.signCount) ||
+      passkey.signCount < 0 ||
+      !/^sha256:[0-9a-f]{64}$/u.test(device.webAuthenticationRef) ||
+      (passkey.kind === "created" &&
+        (!/^[0-9a-f]{64}$/u.test(passkey.setupCodeHash) || !BASE64URL.test(passkey.publicKey)))
+    )
+      this.fail("PORT_INVALID_OPERATION", "Sign-in input is invalid");
+    return this.database.transaction((): SignInDeviceResult => {
+      const existing = this.readPasskey(passkey.credentialId);
+      if (passkey.kind === "created") {
+        if (existing) return { kind: "passkey_exists" };
+        if (
+          this.database
+            .prepare("SELECT 1 FROM sign_in_setup_code_uses WHERE code_hash = ?")
+            .get(passkey.setupCodeHash)
         )
-        .get(input.codeHash) as
-        | {
-            ownerId: string;
-            agentId: string;
-            expiresAt: string;
-            usedAt: string | null;
-            deviceId: string | null;
-          }
-        | undefined;
-      if (!code) return { kind: "code_invalid" };
-      if (code.usedAt !== null) {
-        const redeemed = code.deviceId ? this.readDevice(code.deviceId) : undefined;
-        return redeemed &&
-          redeemed.devicePublicKey === input.device.devicePublicKey &&
-          redeemed.confirmPublicKey === input.device.confirmPublicKey
-          ? { kind: "replayed", device: redeemed }
-          : { kind: "code_used" };
+          return { kind: "setup_code_used" };
+        this.database
+          .prepare(
+            `INSERT INTO owner_passkeys
+               (credential_id, owner_id, agent_id, public_key, sign_count, transports, backed_up,
+                created_at, last_used_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .run(
+            passkey.credentialId,
+            input.ownerId,
+            input.agentId,
+            passkey.publicKey,
+            passkey.signCount,
+            JSON.stringify(passkey.transports),
+            passkey.backedUp ? 1 : 0,
+            now,
+            now,
+          );
+        this.database
+          .prepare(
+            `INSERT INTO sign_in_setup_code_uses (code_hash, owner_id, agent_id, credential_id, used_at)
+             VALUES (?, ?, ?, ?, ?)`,
+          )
+          .run(passkey.setupCodeHash, input.ownerId, input.agentId, passkey.credentialId, now);
+      } else {
+        if (!existing || existing.ownerId !== input.ownerId || existing.agentId !== input.agentId)
+          return { kind: "passkey_unknown" };
+        this.database
+          .prepare(
+            `UPDATE owner_passkeys SET sign_count = ?, backed_up = ?, last_used_at = ?
+              WHERE credential_id = ?`,
+          )
+          .run(passkey.signCount, passkey.backedUp ? 1 : 0, now, passkey.credentialId);
       }
-      if (code.expiresAt <= now) return { kind: "code_expired" };
-      const device = input.device;
+      this.database
+        .prepare(
+          `INSERT INTO devices (id, owner_id, revision, label, status, first_seen_at, last_seen_at)
+           VALUES (?, ?, 0, ?, 'active', ?, ?)`,
+        )
+        .run(device.webDeviceId, input.ownerId, device.name, now, now);
+      this.database
+        .prepare(
+          `INSERT INTO product_sessions
+             (id, owner_id, device_id, revision, authentication_ref, status,
+              first_authenticated_at, last_active_at, recent_authenticated_at, revoked_at)
+           VALUES (?, ?, ?, 0, ?, 'active', ?, ?, ?, NULL)`,
+        )
+        .run(
+          device.webSessionId,
+          input.ownerId,
+          device.webDeviceId,
+          device.webAuthenticationRef,
+          now,
+          now,
+          INTERNAL_SESSION_NEVER_RECENTLY_AUTHENTICATED,
+        );
       this.database
         .prepare(
           `INSERT INTO paired_devices
              (id, owner_id, agent_id, revision, kind, name, release_channel, device_public_key,
-              confirm_public_key, status, supported_actions, paired_at)
-           VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, 'pending', '[]', ?)`,
+              confirm_public_key, status, supported_actions, web_device_id, web_session_id,
+              paired_at, confirmed_at)
+           VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, 'active', '[]', ?, ?, ?, ?)`,
         )
         .run(
           device.id,
-          code.ownerId,
-          code.agentId,
+          input.ownerId,
+          input.agentId,
           device.kind,
           device.name,
           device.releaseChannel,
           device.devicePublicKey,
           device.confirmPublicKey,
+          device.webDeviceId,
+          device.webSessionId,
+          now,
           now,
         );
-      this.database
-        .prepare("UPDATE device_pairing_codes SET used_at = ?, device_id = ? WHERE code_hash = ?")
-        .run(now, device.id, input.codeHash);
-      return { kind: "paired", device: this.requireDevice(device.id) };
+      return { kind: "signed_in", device: this.requireDevice(device.id) };
     })();
-  }
-
-  private readOpenPairingCode(
-    input: Input<"readOpenPairingCode">,
-  ): { readonly expiresAt: string } | undefined {
-    const now = this.time(input.now);
-    const row = this.database
-      .prepare(
-        `SELECT expires_at AS expiresAt FROM device_pairing_codes
-          WHERE owner_id = ? AND agent_id = ? AND used_at IS NULL AND expires_at > ?
-          ORDER BY expires_at DESC LIMIT 1`,
-      )
-      .get(input.ownerId, input.agentId, now) as { expiresAt: string } | undefined;
-    return row ? { expiresAt: row.expiresAt } : undefined;
   }
 
   private readDevice(deviceId: string): PairedDevice | undefined {
@@ -217,49 +255,6 @@ export class SqlitePairedDeviceOperations {
     if (input.expectedRevision !== undefined && device.revision !== input.expectedRevision)
       return this.fail("PORT_CONFLICT", "Paired device changed");
     return device;
-  }
-
-  private confirmDevice(input: Input<"confirmDevice">): PairedDevice {
-    this.assertDiskHeadroom();
-    const now = this.time(input.now);
-    if (!/^sha256:[0-9a-f]{64}$/u.test(input.webAuthenticationRef))
-      this.fail("PORT_INVALID_OPERATION", "Paired device session reference is invalid");
-    return this.database.transaction(() => {
-      const device = this.scoped(input);
-      if (device.status !== "pending")
-        return this.fail("PORT_CONFLICT", "Only a pending device can be confirmed");
-      this.database
-        .prepare(
-          `INSERT INTO devices (id, owner_id, revision, label, status, first_seen_at, last_seen_at)
-           VALUES (?, ?, 0, ?, 'active', ?, ?)`,
-        )
-        .run(input.webDeviceId, device.ownerId, device.name, now, now);
-      this.database
-        .prepare(
-          `INSERT INTO product_sessions
-             (id, owner_id, device_id, revision, authentication_ref, status,
-              first_authenticated_at, last_active_at, recent_authenticated_at, revoked_at)
-           VALUES (?, ?, ?, 0, ?, 'active', ?, ?, ?, NULL)`,
-        )
-        .run(
-          input.webSessionId,
-          device.ownerId,
-          input.webDeviceId,
-          input.webAuthenticationRef,
-          now,
-          now,
-          INTERNAL_SESSION_NEVER_RECENTLY_AUTHENTICATED,
-        );
-      this.database
-        .prepare(
-          `UPDATE paired_devices
-              SET status = 'active', confirmed_at = ?, web_device_id = ?, web_session_id = ?,
-                  revision = revision + 1
-            WHERE id = ?`,
-        )
-        .run(now, input.webDeviceId, input.webSessionId, device.id);
-      return this.requireDevice(device.id);
-    })();
   }
 
   private renameDevice(input: Input<"renameDevice">): PairedDevice {

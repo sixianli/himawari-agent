@@ -2,8 +2,8 @@ import {
   array,
   booleanValue,
   boundedString,
-  codePointString,
   ContractValidationError,
+  codePointString,
   enumeration,
   gmailMessageId,
   type InferSchema,
@@ -84,6 +84,8 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "memory.reminder.create",
   "memory.rules.read",
   "memory.rules.snapshot",
+  "memory.search.read",
+  "memory.search.snapshot",
   "memory.rule.respond",
   "memory.review.read",
   "memory.review.snapshot",
@@ -149,8 +151,6 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "improvement.snapshot",
   "device.list.read",
   "device.list.snapshot",
-  "device.pairing.start",
-  "device.pairing.confirm",
   "device.rename",
   "device.revoke",
   "perception.status.read",
@@ -634,23 +634,6 @@ const deviceIdSchema: Schema<string> = {
     return input;
   },
 };
-const devicePairingCodeSchema: Schema<string> = {
-  parse(input, path = "$") {
-    if (typeof input !== "string" || !/^[A-Za-z0-9_-]{21}[AQgw]$/u.test(input))
-      throw new ContractValidationError(
-        path,
-        "expected the canonical unpadded base64url encoding of 16 bytes",
-      );
-    return input;
-  },
-};
-const devicePairingNumberSchema: Schema<string> = {
-  parse(input, path = "$") {
-    if (typeof input !== "string" || !/^[0-9]{6}$/u.test(input))
-      throw new ContractValidationError(path, "expected a 6 digit pairing number");
-    return input;
-  },
-};
 function isHiddenNameCharacter(code: number): boolean {
   return (
     code < 0x20 ||
@@ -689,19 +672,6 @@ export function normalizeDeviceName(input: unknown): string | null {
     return null;
   }
 }
-const accessText = boundedString(256);
-export function isDeviceAccessText(input: unknown): boolean {
-  try {
-    accessText.parse(input);
-    return true;
-  } catch {
-    return false;
-  }
-}
-const deviceAccessSchema = object({
-  clientId: accessText,
-  clientSecret: accessText,
-});
 const deviceListQuerySchema = object({
   ...envelope("query", "device.list.read"),
   payload: object({}),
@@ -719,7 +689,6 @@ const deviceListSnapshotSchema = object({
         status: enumeration(DEVICE_STATUSES),
         pairedAt: timestamp,
         lastSeenAt: nullable(timestamp),
-        pairingNumber: nullable(devicePairingNumberSchema),
       }),
     ),
     limits: array(
@@ -729,27 +698,13 @@ const deviceListSnapshotSchema = object({
         value: integer(0),
       }),
     ),
-    pairing: nullable(
-      object({
-        expiresAt: timestamp,
-        access: nullable(deviceAccessSchema),
-      }),
-    ),
     generatedAt: timestamp,
   }),
-});
-const devicePairingStartCommandSchema = object({
-  ...commandEnvelope("device.pairing.start"),
-  payload: object({ pairingCode: devicePairingCodeSchema }),
 });
 const deviceRevisionTargetShape = {
   deviceId: deviceIdSchema,
   expectedRevision: integer(0),
 };
-const devicePairingConfirmCommandSchema = object({
-  ...commandEnvelope("device.pairing.confirm"),
-  payload: object(deviceRevisionTargetShape),
-});
 const deviceRevokeCommandSchema = object({
   ...commandEnvelope("device.revoke"),
   payload: object(deviceRevisionTargetShape),
@@ -2506,6 +2461,29 @@ export const BUILT_IN_ACTION_RULE_OUTCOMES = [
   "ask_owner",
   "refuse",
 ] as const;
+export const MEMORY_SEARCH_RESULT_KINDS = ["memory", "rule"] as const;
+const memorySearchQuerySchema = object({
+  ...envelope("query", "memory.search.read"),
+  payload: object({ query: boundedString(500) }),
+});
+const memorySearchSnapshotSchema = object({
+  ...envelope("snapshot", "memory.search.snapshot"),
+  payload: object({
+    query: boundedString(500),
+    results: array(
+      object({
+        kind: enumeration(MEMORY_SEARCH_RESULT_KINDS),
+        memoryId: machineString,
+        ruleId: nullable(machineString),
+        text: boundedString(2000),
+        category: enumeration(MEMORY_CATEGORY_NAMES),
+        tentative: booleanValue,
+        updatedAt: timestamp,
+      }),
+    ),
+    generatedAt: timestamp,
+  }),
+});
 const memoryRulesQuerySchema = object({
   ...envelope("query", "memory.rules.read"),
   payload: object({}),
@@ -3695,8 +3673,6 @@ const schemasByType = {
   "quiet_hours.set": quietHoursSetCommandSchema,
   "device.list.read": deviceListQuerySchema,
   "device.list.snapshot": deviceListSnapshotSchema,
-  "device.pairing.start": devicePairingStartCommandSchema,
-  "device.pairing.confirm": devicePairingConfirmCommandSchema,
   "device.rename": deviceRenameCommandSchema,
   "device.revoke": deviceRevokeCommandSchema,
   "perception.status.read": perceptionStatusQuerySchema,
@@ -3761,6 +3737,8 @@ const schemasByType = {
   "memory.reminder.create": memoryReminderCreateCommandSchema,
   "memory.rules.read": memoryRulesQuerySchema,
   "memory.rules.snapshot": memoryRulesSnapshotSchema,
+  "memory.search.read": memorySearchQuerySchema,
+  "memory.search.snapshot": memorySearchSnapshotSchema,
   "memory.rule.respond": memoryRuleRespondCommandSchema,
   "memory.review.read": memoryReviewQuerySchema,
   "memory.review.snapshot": memoryReviewSnapshotSchema,

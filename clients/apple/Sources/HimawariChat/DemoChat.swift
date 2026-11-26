@@ -356,6 +356,63 @@ public enum DemoChatFixtures {
         state.texts = base.texts
         return state
     }
+
+    public enum ScrollLoad: String, CaseIterable, Sendable {
+        case realistic
+        case plain
+        case long
+        case table
+        case code
+    }
+
+    static let longAnswer = """
+    ## 周五的安排
+
+    先说结论：**8:50 出门**，坐 9:30 的新干线。下面是我这样排的理由，你看哪里要改。
+
+    会面定在 14:00，地点在新大阪站北口旁边的咖啡馆，田中上次说他会提前十分钟到。你从家走到品川站平时要 18 分钟，早高峰进站和买便当再留 15 分钟，所以 8:50 出门比较稳。
+
+    - 9:30 品川发，12:03 到新大阪，车上可以把 `报价单 v3` 再过一遍
+    - 12:10 到 13:20 在站里吃午饭，我查了 [新大阪站美食街](https://www.shin-osaka.jp/gourmet) 的营业时间
+    - 13:40 往北口走，步行 6 分钟
+
+    > 田中邮件里提到想顺便聊一下明年的合作，你可能要准备一两句。
+
+    回程我先没订。如果谈得顺利想多留一会儿，18:00 以后每 10 分钟都有一班，指定席现在都还有空位。要我现在就订 17:00 那班吗？
+    """
+
+    static let plainAnswer = String(repeating: "会面定在 14:00，新大阪站附近。坐 9:30 的新干线，12:03 到，留出吃午饭的时间。你平时从家走到车站约 18 分钟，建议 8:50 出门。", count: 3)
+
+    public static func scrollLoad(_ load: ScrollLoad, turns: Int = 60) -> DemoChatState {
+        let start = todayAt(9, 0, daysAgo: 3)
+        let answers = [answer, answerFormatted, longAnswer, richAnswer, longAnswer]
+        let questions = [question, "那回程呢？", "顺便帮我看一下当天大阪的天气，要不要带伞，还有傍晚会不会降温很多", richQuestion, "好的"]
+        var messages: [[String: Any]] = []
+        var texts: [String: String] = [:]
+        var runs: [(String, String)] = []
+        var state = DemoChatState()
+        for index in 0..<turns {
+            let runId = "run:\(String(format: "%04x", index + 256))"
+            let at = start.addingTimeInterval(Double(index * 600))
+            messages.append(message("q\(index)", index * 2 + 1, role: "owner", at: at))
+            messages.append(message("a\(index)", index * 2 + 2, role: "agent", runId: runId, at: at.addingTimeInterval(13)))
+            texts["text:q\(index)"] = questions[index % questions.count]
+            texts["text:a\(index)"] = switch load {
+            case .realistic: answers[index % answers.count]
+            case .plain: plainAnswer
+            case .long: longAnswer
+            case .table: answerFormatted
+            case .code: richAnswer
+            }
+            runs.append((runId, "completed"))
+            state.executions[runId] = steps(runId: runId, start: at)
+        }
+        let base = osaka(messages: messages, runs: runs, texts: texts)
+        state.threads = base.threads
+        state.details = base.details
+        state.texts = base.texts
+        return state
+    }
 }
 
 public extension DemoChatFixtures {

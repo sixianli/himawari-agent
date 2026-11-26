@@ -19,6 +19,7 @@ public enum DeviceKeyError: Error, Equatable, Sendable {
     case secureEnclaveUnavailable
     case keyMissing(DeviceKeyRole)
     case keyUnreadable(DeviceKeyRole)
+    case notCreated(DeviceKeyRole)
     case keychain(Int32)
     case accessControl
     case signatureLength(Int)

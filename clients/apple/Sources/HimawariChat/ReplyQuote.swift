@@ -20,21 +20,26 @@ struct BubbleQuote: Equatable {
 struct ReplyQuoteView: View {
     let quote: BubbleQuote
     let lines: Int
+    var onInk = false
+
+    private var ink: Color {
+        onInk ? Color.hmOnText.opacity(DesignTokens.Chat.bubbleOwnerQuoteOpacity) : Color.hmMuted
+    }
 
     var body: some View {
         HStack(alignment: .top, spacing: DesignTokens.Chat.replyQuoteGap) {
             Capsule()
-                .fill(quote.targetId == nil ? Color.hmMuted : Color.hmReplyBar)
+                .fill(quote.targetId == nil ? ink : Color.hmReplyBar)
                 .frame(width: DesignTokens.Chat.replyBarWidth)
             VStack(alignment: .leading, spacing: DesignTokens.Chat.listGap) {
                 if let label = quote.label {
                     Text(label)
                         .hmType(DesignTokens.TypeScale.caption)
-                        .foregroundStyle(Color.hmMuted)
+                        .foregroundStyle(ink)
                 }
                 Text(quote.line)
                     .hmType(DesignTokens.TypeScale.secondary)
-                    .foregroundStyle(Color.hmMuted)
+                    .foregroundStyle(ink)
                     .lineLimit(lines)
                     .truncationMode(.tail)
             }
