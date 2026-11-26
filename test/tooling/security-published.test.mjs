@@ -369,6 +369,58 @@ describe("published fixture admission", () => {
     const f = fixture();
     expect(() => f.review().inspect(mutate(f))).toThrow(code);
   });
+  it("只要求本机平台会打进产物的原生库登记", () => {
+    const f = fixture();
+    const dependency = {
+      version: "1.30.0",
+      integrity: `sha512-${Buffer.alloc(64, 2).toString("base64")}`,
+      resolved: "https://registry.npmjs.org/onnxruntime-node/-/onnxruntime-node-1.30.0.tgz",
+    };
+    f.lock.packages["node_modules/onnxruntime-node"] = dependency;
+    json(join(f.root, "package-lock.json"), f.lock);
+    const native = (arch) => {
+      const archiveMember = `package/bin/napi-v6/linux/${arch}/libonnxruntime.so.1`;
+      return {
+        ...f.entry,
+        path: `runtime/node_modules/onnxruntime-node/${archiveMember.slice(8)}`,
+        package: "onnxruntime-node",
+        version: dependency.version,
+        packageLockPath: "node_modules/onnxruntime-node",
+        integrity: dependency.integrity,
+        sourceUrl: dependency.resolved,
+        archiveMember,
+      };
+    };
+    f.document.exceptions = [native("x64"), native("arm64")];
+    f.save();
+    const context = f.context();
+    for (const [arch, other] of [
+      ["x64", "arm64"],
+      ["arm64", "x64"],
+    ]) {
+      const review = createPublishedFixtureReview({
+        root: f.root,
+        context,
+        now,
+        platform: "linux",
+        arch,
+      });
+      review.inspect({ ...f, name: native(arch).path });
+      expect(review.finish()).toMatchObject({ memberCount: 1 });
+      expect(() =>
+        createPublishedFixtureReview({
+          root: f.root,
+          context,
+          now,
+          platform: "linux",
+          arch,
+        }).inspect({
+          ...f,
+          name: native(other).path,
+        }),
+      ).toThrow("PUBLIC_ARTIFACT_CONTAINS_SECRET");
+    }
+  });
   it("拒绝缺失和重复成员，未知干净成员仍接受完整扫描", () => {
     const f = fixture(),
       review = f.review();
