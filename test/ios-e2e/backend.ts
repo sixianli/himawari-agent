@@ -21,9 +21,8 @@ import {
   authorityLease,
   type Harness,
   harness,
+  issueSetupCode,
   ownerId,
-  pairingCode,
-  web,
 } from "../fixtures/device-api-harness.ts";
 import { ANSWER_ENDING, ANSWER_OPENING, e2eAnswer, LONG_REQUEST } from "./answers.ts";
 
@@ -278,17 +277,6 @@ async function ownerMessages(h: Harness) {
   );
 }
 
-async function confirmPending(h: Harness) {
-  const listed = await web(h, "list");
-  const devices = (listed.body["devices"] ?? []) as {
-    id: string;
-    revision: number;
-    status: string;
-  }[];
-  for (const device of devices.filter((candidate) => candidate.status === "pending"))
-    await web(h, "confirm", { deviceId: device.id, expectedRevision: device.revision });
-}
-
 export async function startE2eBackend(): Promise<E2eBackend> {
   const root = await mkdtemp(path.join(tmpdir(), "himawari-ios-e2e-"));
   const tls = await certificates(root);
@@ -386,11 +374,6 @@ export async function startE2eBackend(): Promise<E2eBackend> {
     },
   });
   void runs.loop.start();
-  const confirming = setInterval(() => {
-    confirmPending(h).catch((error) =>
-      process.stderr.write(`IOS_E2E_CONFIRM_FAILED ${String(error)}\n`),
-    );
-  }, 300);
   const front = new SwitchableFront(frontPort, appPort, tls);
   await front.start();
   const control = createHttpServer((request, response) => {
@@ -401,11 +384,7 @@ export async function startE2eBackend(): Promise<E2eBackend> {
     const route = `${request.method} ${request.url}`;
     note(`CONTROL ${route}`);
     (async () => {
-      if (route === "POST /pairing-link") {
-        const started = await web(h, "pairing-codes");
-        pairingCode(started.body["pairingUri"]);
-        return reply(201, { link: started.body["pairingUri"] });
-      }
+      if (route === "POST /setup-code") return reply(201, { code: await issueSetupCode(h) });
       if (route === "POST /offline") {
         await front.stop();
         return reply(200, { online: false });
@@ -432,7 +411,6 @@ export async function startE2eBackend(): Promise<E2eBackend> {
     controlOrigin: `http://127.0.0.1:${controlPort}`,
     caPath: tls.caPath,
     close: async () => {
-      clearInterval(confirming);
       await runs.loop.stop(5_000);
       await front.stop();
       await new Promise<void>((resolve) => control.close(() => resolve()));

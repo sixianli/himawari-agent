@@ -6,9 +6,9 @@ import {
   buildDeviceTestRequest,
   type DeviceTestKeyPair,
   generateDeviceTestKeyPair,
+  SoftwarePasskey,
 } from "@himawari-agent/testing";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { pairingCode } from "../fixtures/device-api-harness.ts";
 import { ANSWER_ENDING, ANSWER_OPENING } from "../ios-e2e/answers.ts";
 import { type E2eBackend, startE2eBackend } from "../ios-e2e/backend.ts";
 
@@ -72,32 +72,45 @@ function signed(
   };
 }
 
-async function pairDevice() {
-  const link = JSON.parse(
-    (await call(`${backend.controlOrigin}/pairing-link`, { method: "POST" })).text,
-  ) as { link: string };
-  const keys = generateDeviceTestKeyPair();
-  const confirmKeys = generateDeviceTestKeyPair();
-  const paired = await call(`${backend.origin}/api/device/v1/pair`, {
+function post(url: string, body: unknown) {
+  return call(url, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      pairingCode: pairingCode(link.link),
+    body: JSON.stringify(body),
+  });
+}
+
+async function signIn() {
+  const { code } = JSON.parse(
+    (await call(`${backend.controlOrigin}/setup-code`, { method: "POST" })).text,
+  ) as { code: string };
+  const keys = generateDeviceTestKeyPair();
+  const confirmKeys = generateDeviceTestKeyPair();
+  const options = await post(`${backend.origin}/api/device/v1/sign-in/setup/options`, {
+    setupCode: code,
+    device: {
       kind: "iphone",
       name: "E2E iPhone",
       releaseChannel: "direct",
       devicePublicKey: keys.publicKeySpkiBase64,
       confirmPublicKey: confirmKeys.publicKeySpkiBase64,
-    }),
+    },
   });
-  expect(paired.status, paired.text).toBe(201);
-  const device = { id: (JSON.parse(paired.text) as { device: { id: string } }).device.id, keys };
-  for (let attempt = 0; attempt < 50; attempt += 1) {
-    const config = signed(device, "GET", "/api/device/v1/config");
-    if ((await call(config.url, config.init)).status === 200) return device;
-    await delay(200);
-  }
-  throw new Error("IOS_E2E_PAIRING_NOT_CONFIRMED");
+  expect(options.status, options.text).toBe(200);
+  const started = JSON.parse(options.text) as {
+    flowId: string;
+    publicKey: { challenge: string; rp: { id: string } };
+  };
+  const finished = await post(`${backend.origin}/api/device/v1/sign-in/setup/finish`, {
+    flowId: started.flowId,
+    credential: new SoftwarePasskey(backend.origin).create(started.publicKey),
+  });
+  expect(finished.status, finished.text).toBe(201);
+  const device = { id: (JSON.parse(finished.text) as { device: { id: string } }).device.id, keys };
+  const config = signed(device, "GET", "/api/device/v1/config");
+  const reply = await call(config.url, config.init);
+  expect(reply.status, reply.text).toBe(200);
+  return device;
 }
 
 async function mainThread(device: { id: string; keys: DeviceTestKeyPair }) {
@@ -123,8 +136,8 @@ describe("iPhone end-to-end backend", () => {
     await backend?.close();
   });
 
-  it("pairs a device over HTTPS and streams the answer to it piece by piece", async () => {
-    const device = await pairDevice();
+  it("signs a device in with a passkey over HTTPS and streams the answer to it piece by piece", async () => {
+    const device = await signIn();
     const thread = await mainThread(device);
     const pieces: { at: number; text: string }[] = [];
     const stream = signed(
