@@ -25,7 +25,7 @@ struct RuleDetailSheet: View {
                             Button { openMemory(memoryId) } label: {
                                 SettingsRow(icon: nil, title: row.title, detail: row.detail, note: row.note, chevron: true, last: index == rows.count - 1)
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(.pressable)
                         } else {
                             SettingsRow(icon: nil, title: row.title, detail: row.detail, note: row.note, last: index == rows.count - 1)
                         }
@@ -41,7 +41,7 @@ struct RuleDetailSheet: View {
                         .padding(.horizontal, R.destructivePadding)
                         .frame(minHeight: R.actionHeight)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
                 Spacer()
                 if rule.status == "needs_review" && rule.enforced {
                     pill(M.reconfirmRule) { respond("reconfirm") }
@@ -64,6 +64,6 @@ struct RuleDetailSheet: View {
                 .frame(minHeight: R.actionHeight)
                 .background(Color.hmFill, in: Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
     }
 }

@@ -114,7 +114,7 @@ struct PanelView: View {
                 .padding(.horizontal, DesignTokens.Mac.panelCardPadding)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
         if model.noticesExpanded {
             ScrollViewReader { proxy in
                 ScrollView {
@@ -193,7 +193,7 @@ struct PanelView: View {
             .background(Capsule().fill(Color.hmFill))
             .contentShape(Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
     }
 
     @ViewBuilder

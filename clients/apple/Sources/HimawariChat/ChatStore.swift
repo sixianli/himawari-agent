@@ -168,6 +168,7 @@ public final class ChatStore {
     }
 
     private func restartConnections() {
+        notice?.retrying()
         events.restartConnection()
         watched?.stream.restartConnection()
     }
@@ -268,12 +269,18 @@ public final class ChatStore {
         return items
     }
 
+    public func showExecution(_ runId: String, in threadId: String) async {
+        guard ExecutionRefresh.needed(loaded: executions[runId] != nil, runStatus: run(runId, in: threadId)?.status) else { return }
+        await loadExecution(runId, in: threadId)
+    }
+
     public func loadExecution(_ runId: String, in threadId: String) async {
         guard !frozen else { return }
         guard executionLoads.begin(runId) else { return }
         while true {
             do {
-                executions[runId] = try await api.executionRecords(threadId: threadId, runId: runId, known: executions[runId] ?? [])
+                let records = try await api.executionRecords(threadId: threadId, runId: runId, known: executions[runId] ?? [])
+                if executions[runId] != records { executions[runId] = records }
             } catch {
                 executionLoads.cancel(runId)
                 await handle(error)

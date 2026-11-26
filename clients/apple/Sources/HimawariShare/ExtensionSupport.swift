@@ -124,7 +124,6 @@ open class HandoverHostController: UIViewController {
     override open func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .clear
-        SerifFace.shared.prepare()
         Task { await load() }
     }
 

@@ -1050,11 +1050,6 @@ export const messages = {
   "proactive.reconnect.button": "重新连接",
   "proactive.dailyLimit":
     "今天的邮件检查到了每日费用上限：模型先停，规则照常把银行、学校等来信放进来；0:00 自动恢复，对话不受影响。",
-  "proactive.backoff.stage1":
-    "来自 {domain} 的提醒，你连续 {count} 次没点开，已降频：这一类最多每天推送 1 条，提醒仍然会列在这个页面里。",
-  "proactive.backoff.stage2":
-    "来自 {domain} 的提醒，降频后你又连续 {count} 次没点开，已暂停推送：提醒仍然会列在这个页面里。",
-  "proactive.backoff.restore": "恢复推送",
   "proactive.paused": "系统主动提醒已关：不看邮件、不记录、不推送。",
   "proactive.foot": "到点的提醒和要紧的邮件会推送到你开过通知的设备。",
   "dailyReview.title": "每天打分",

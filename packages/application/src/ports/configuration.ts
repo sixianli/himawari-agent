@@ -1,5 +1,4 @@
 import type { AgentId, DemoLocale, DeploymentId, OwnerId } from "@himawari-agent/domain";
-import type { VoiceAddresseeConfiguration } from "../services/voice-addressee.js";
 import type { ApplePushConfiguration } from "./apple-push.js";
 import type { DataClassification } from "./common.js";
 import type { DeviceConfiguration } from "./device-limits.js";
@@ -291,7 +290,6 @@ export interface ProactiveConfiguration {
   readonly reviewSilentSharePermille: number;
   readonly reviewPrereview: ReviewPrereviewConfiguration;
   readonly reviewMemoryUnusedDays: number;
-  readonly backoffThreshold: number;
 }
 
 export interface ReviewPrereviewConfiguration {
@@ -457,8 +455,6 @@ export interface RunPolicyConfiguration {
   readonly homeFeed?: HomeFeedConfiguration;
   readonly searchAsk?: SearchAskConfiguration;
   readonly perception?: PerceptionConfiguration;
-  readonly voiceAddressee?: VoiceAddresseeRouteConfiguration;
-  readonly homeUrgency?: HomeUrgencyConfiguration;
   readonly proactive?: ProactiveConfiguration;
   readonly coding?: CodingRouteConfiguration;
   readonly publicSearch?: PublicSearchRouteConfiguration;
@@ -470,12 +466,6 @@ export interface RunPolicyConfiguration {
   readonly freezeThreadPrompts?: boolean;
   readonly memoryLimit: number;
   readonly retiredKeys?: readonly string[];
-}
-
-export interface VoiceAddresseeRouteConfiguration extends VoiceAddresseeConfiguration {
-  readonly model: string;
-  readonly secretRef: string;
-  readonly inputMicrosPerMillionTokens: number;
 }
 
 export interface AutomaticReviewConfiguration {
@@ -513,17 +503,4 @@ export interface ProductConfiguration {
 
 export interface ConfigurationPort {
   load(): Promise<ProductConfiguration>;
-}
-
-export interface HomeUrgencyConfiguration {
-  readonly enabled: boolean;
-  readonly modelRef?: string;
-  readonly dailyLimit: number;
-  readonly dailyCostMicros: number;
-  readonly perCall: number;
-  readonly referenceLimit: number;
-  readonly requestTimeoutMs: number;
-  readonly checkIntervalSeconds: number;
-  readonly retryAfterHours: number;
-  readonly affirmLabelMax: Readonly<Record<string, number>>;
 }

@@ -25,7 +25,7 @@ struct HerDevicesPage: View {
                             last: true
                         )
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
                 }
             }
             if let origin = store.identity?.origin {
@@ -47,7 +47,7 @@ struct HerDevicesPage: View {
                         .frame(minHeight: DesignTokens.Size.pill)
                         .background(Color.hmFill, in: Capsule())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
                 .frame(maxWidth: .infinity)
             }
         }

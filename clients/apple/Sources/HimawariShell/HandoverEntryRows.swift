@@ -19,7 +19,7 @@ struct HandoverEntryRows: View {
                     statusColor: Color.hmMuted
                 )
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
         }
     }
 }

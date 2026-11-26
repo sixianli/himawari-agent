@@ -94,7 +94,7 @@ struct EntryHero: View {
             Icon(icon, size: DesignTokens.Handover.heroIcon)
                 .foregroundStyle(Color.hmSun)
             Text(title)
-                .font(.himawari(DesignTokens.Handover.heroTitleSize, weight: .semibold))
+                .font(.system(.title, weight: .semibold))
                 .foregroundStyle(Color.hmText)
                 .multilineTextAlignment(.center)
         }

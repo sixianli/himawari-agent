@@ -27,7 +27,7 @@ struct MemoryEditSheet: View {
                         .frame(width: L.headerButton, height: L.headerButton)
                         .background(Color.hmFill, in: Circle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
                 .accessibilityLabel(Text(M.close))
                 Spacer()
                 Text(M.edit).hmType(DesignTokens.TypeScale.sheetTitle).foregroundStyle(Color.hmText)
@@ -44,7 +44,7 @@ struct MemoryEditSheet: View {
                         .foregroundStyle(Color.hmSun)
                         .frame(width: L.headerButton, height: L.headerButton, alignment: .trailing)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
                 .disabled(trimmed.isEmpty || saving)
             }
             TextField("", text: $text, axis: .vertical)

@@ -737,7 +737,7 @@ describe.each(["worker", "direct"] as const)("home feed through %s", (execution)
     ]);
     const snapshot = await f.read();
     expect(keys(snapshot)).toEqual(["insight:insight-rule", "insight:insight-plain"]);
-    expect(snapshot.items.map(({ rank }) => rank)).toEqual(["rule", "unscored"]);
+    expect(snapshot.items.map(({ rank }) => rank)).toEqual(["rule", "awaiting"]);
     expect(snapshot.awaitingCount).toBe(2);
     expect(snapshot.items[1]).toMatchObject({
       kind: "heads_up",
@@ -826,7 +826,7 @@ describe.each(["worker", "direct"] as const)("home feed through %s", (execution)
       sentence: "我的血压偏高",
       target: { type: "memory_request", id: "memory-request-1", threadId: THREAD_ID },
       dataClassification: "sensitive",
-      rank: "unscored",
+      rank: "awaiting",
       actions: [
         { action: "approved", label: "记下", polarity: "positive" },
         { action: "rejected", label: "不记", polarity: "negative" },
@@ -1105,9 +1105,9 @@ describe.each(["worker", "direct"] as const)("home feed through %s", (execution)
       ["insight:insight-rule", "rule"],
       ["reminder:reminder-due", "deadline"],
       ["insight:insight-due", "deadline"],
-      ["approval:approval-far", "unscored"],
-      ["insight:insight-plain", "unscored"],
-      ["memory_request:memory-request-1", "unscored"],
+      ["approval:approval-far", "awaiting"],
+      ["insight:insight-plain", "awaiting"],
+      ["memory_request:memory-request-1", "awaiting"],
       ["run:run-scheduled", "recency"],
     ];
     const first = await f.read();

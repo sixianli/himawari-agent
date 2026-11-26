@@ -97,7 +97,7 @@ Andy 的全局指令已复制到 [.claude/rules/owner-global-instructions.md](.c
 <a id="approved-web-design-baselines"></a>
 ## 已批准的网页设计基线
 
-设计或修改 Himawari 网页（视觉设计、聊天交互、品牌素材）之前，先读[网页设计基线](.agents/instructions/web-design-baselines.md)。
+设计或修改 Himawari 网页（视觉设计、聊天交互、品牌素材）之前，先读[网页设计基线](.agents/instructions/web-design-baselines.md)。iPhone、Apple Watch、Mac 三个 App 的界面和交互一律照苹果最新的《Human Interface Guidelines》（苹果官方界面设计规范）做，能用系统组件就用系统组件，见 [Andy 定的长期规则](.claude/rules/owner-standing-rules.md#apple-clients-follow-the-hig)。
 
 <a id="engineering-diagrams"></a>
 ## 工程图

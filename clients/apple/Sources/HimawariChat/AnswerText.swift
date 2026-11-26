@@ -9,7 +9,7 @@ struct AnswerText: View {
     var copyCode: (String) -> Void = { _ in }
     var codeMenu: (String) -> MessageMenuActions? = { _ in nil }
 
-    private static let voice = DesignTokens.TypeScale.answer.with(face: .himawari)
+    private static let voice = DesignTokens.TypeScale.answer
 
     var body: some View {
         let blocks = AnswerMarkdown.blocks(text, streaming: streaming)
@@ -37,7 +37,13 @@ struct AnswerText: View {
         }
     }
 
+    private static let inlineMemo = TextMemo<AttributedString>(limit: 2000)
+
     static func inline(_ source: String) -> AttributedString {
+        inlineMemo.value(for: source, make: parseInline)
+    }
+
+    private static func parseInline(_ source: String) -> AttributedString {
         let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace, failurePolicy: .returnPartiallyParsedIfPossible)
         let parsed = (try? AttributedString(markdown: source, options: options)) ?? AttributedString(source)
         var linked = AnswerLinks.linkingBareURLs(parsed)

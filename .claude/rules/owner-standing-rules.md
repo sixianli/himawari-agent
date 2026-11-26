@@ -10,6 +10,7 @@
 - [模型上下文的排列](#prompt-layout-for-the-kv-cache)
 - [独立判断，不盲从](#independent-judgment)
 - [理解用户的意思交给模型，不写词表](#meaning-goes-to-the-model)
+- [苹果客户端照苹果最新规范做](#apple-clients-follow-the-hig)
 
 <a id="money-and-models"></a>
 ## 钱和模型
@@ -64,3 +65,11 @@
 - 门槛：`npm run check:meaning-word-lists` 找出新增的词表形状，每一处必须在 [词表登记表](../../docs/meaning-word-lists.md) 登记类别和理由。登记表里没有“理解用户意思”这一类；要加新类别，先问 Andy。
 - 做法参考 PR 423、467 和 ADR 0249、ADR 0252：独立裁判提示词、严格解析、失败走安全默认、用本机回环模型桩写自动测试，再用真模型小批量评测（花钱先按本文件“钱和模型”一节问）。
 - 起因：[I-104](../../docs/incidents-and-gates.md#incidents)，这类词表已经出现三次。
+
+<a id="apple-clients-follow-the-hig"></a>
+## 苹果客户端照苹果最新规范做
+
+- Andy 2026-11-26 定（原话：“iOS watchOS macOS 的 app 的 ui 和 ux 必须遵守和践行 apple 最新的开发规范，包括不限于各种组件的设计，页面的设计，各用户的交互方式等等”）：iPhone、Apple Watch、Mac 三个 App 的组件、页面和交互方式，都按苹果当前版本的《Human Interface Guidelines》（苹果官方的界面设计规范，<https://developer.apple.com/design/human-interface-guidelines>）做。
+- 能用系统组件就用系统组件：导航用系统导航栏（返回钮、标题、边缘右滑返回），搜索用 `.searchable`，分段切换用 `Picker(.segmented)`，列表、开关、菜单、弹层、左滑操作都用系统的。只有系统组件做不出已经定稿的设计时才自绘，并写明原因；自绘的组件在点击区域（至少 44×44 点、整块可点）、按下反馈、动态字体和 VoiceOver 上要和系统组件一样好。细则见 [界面设计规范第 70 条](../../docs/ui-ux-design-guide.md)。
+- 设计稿和规划与这条冲突时，以这条为准，并告诉规划线程改设计稿。
+- 门槛：`npm run check:apple-design` 拦下页面代码里只有字能点的按钮样式（`.plain`、`.borderless`）。

@@ -24,53 +24,47 @@ public struct MemoryRootView: View {
     @State private var actionFailed = false
     @State private var selectedRule: RuleSummary?
     @State private var trashOpen = false
+    @State private var query = ""
     private let talk: (String) -> Void
     private let opening: Opening?
-    private let back: (() -> Void)?
 
     public init(api: DeviceAPI, confirmKey: DeviceKeySigner, talk: @escaping (String) -> Void) {
         let gateway = ManageGateway(transport: SignedDeviceTransport(http: api.http, confirmKey: confirmKey))
         _store = State(initialValue: MemoryStore(gateway: gateway))
         self.talk = talk
         opening = nil
-        back = nil
     }
 
-    init(store: MemoryStore, tab: Tab = .remembered, opening: Opening? = nil, talk: @escaping (String) -> Void = { _ in }, back: (() -> Void)? = nil) {
+    init(store: MemoryStore, tab: Tab = .remembered, opening: Opening? = nil, talk: @escaping (String) -> Void = { _ in }) {
         _store = State(initialValue: store)
         _tab = State(initialValue: tab)
         self.opening = opening
         self.talk = talk
-        self.back = back
     }
 
     public var body: some View {
-        ZStack(alignment: .topTrailing) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    if let back {
-                        GlassCircleButton(Text(M.back), action: back) {
-                            Icon(.chevronLeft, size: DesignTokens.IconSize.glassButton)
-                        }
-                    }
-                    ScreenTitle(Text(M.memoryTitle))
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                if TextSearch.terms(query).isEmpty {
                     MemorySegment(selection: $tab)
                     content
+                } else {
+                    MemorySearchResults(store: store, query: query, openMemory: { selected = $0 }, openRule: { selectedRule = $0 })
                 }
-                .padding(.horizontal, DesignTokens.Size.pagePaddingX)
-                .padding(.top, 14)
-                .padding(.bottom, DesignTokens.Size.sheetPaddingBottom)
             }
-            .scrollIndicators(.hidden)
-            .refreshable { await store.load() }
-
-            GlassCircleButton(Text(M.search), action: {}) {
-                Icon(.search, size: DesignTokens.IconSize.glassButton)
-            }
-            .padding(.trailing, DesignTokens.Size.pagePaddingX)
-            .padding(.top, 10)
+            .padding(.horizontal, DesignTokens.Size.pagePaddingX)
+            .padding(.top, 8)
+            .padding(.bottom, DesignTokens.Size.sheetPaddingBottom)
         }
+        .scrollIndicators(.hidden)
+        .scrollDismissesKeyboard(.interactively)
+        .refreshable { await store.load() }
         .himawariScreenBackground()
+        .navigationTitle(M.memoryTitle)
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.large)
+        #endif
+        .searchable(text: $query, prompt: Text(M.searchPrompt))
         .task {
             await store.load()
             open(opening)
@@ -135,9 +129,6 @@ public struct MemoryRootView: View {
         .alert(M.actionFailed, isPresented: $actionFailed) {}
         .navigationDestination(isPresented: $trashOpen) {
             MemoryTrashPage(store: store) { trashOpen = false }
-                #if os(iOS)
-                .toolbar(.hidden, for: .navigationBar)
-                #endif
         }
     }
 
@@ -200,6 +191,46 @@ struct MemorySegment: View {
     }
 }
 
+struct MemorySearchResults: View {
+    let store: MemoryStore
+    let query: String
+    let openMemory: (MemoryItem) -> Void
+    let openRule: (RuleSummary) -> Void
+
+    var body: some View {
+        let memories = store.groups(categoryLabel: M.category).flatMap(\.items).filter { TextSearch.matches($0.text, query: query) }
+        let rules = store.rules.filter { TextSearch.matches($0.summary, query: query) }
+        if memories.isEmpty && rules.isEmpty {
+            EmptyStateView(Text(M.noSearchResults(query.trimmingCharacters(in: .whitespaces)))).frame(minHeight: DesignTokens.Size.emptyMinHeight)
+        } else {
+            VStack(alignment: .leading, spacing: 24) {
+                if !memories.isEmpty {
+                    GroupedSection(Text(M.remembered)) {
+                        ForEach(Array(memories.enumerated()), id: \.element.id) { index, item in
+                            Button { openMemory(item) } label: {
+                                MemoryRow(text: item.text, detail: nil)
+                            }
+                            .buttonStyle(.pressable)
+                            if index < memories.count - 1 { RowSeparator() }
+                        }
+                    }
+                }
+                if !rules.isEmpty {
+                    GroupedSection(Text(M.rules)) {
+                        ForEach(Array(rules.enumerated()), id: \.element.id) { index, rule in
+                            Button { openRule(rule) } label: {
+                                MemoryRow(text: rule.summary, detail: nil)
+                            }
+                            .buttonStyle(.pressable)
+                            if index < rules.count - 1 { RowSeparator() }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 struct RememberedList: View {
     let store: MemoryStore
     let openTrash: () -> Void
@@ -218,7 +249,7 @@ struct RememberedList: View {
                             Button { open(item) } label: {
                                 MemoryRow(text: item.text, detail: detail(store.provenance(item)))
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(.pressable)
                             if index < group.items.count - 1 { RowSeparator() }
                         }
                     }
@@ -231,7 +262,7 @@ struct RememberedList: View {
                                 Icon(.chevronRight, size: DesignTokens.IconSize.chevron).foregroundStyle(Color.hmMuted)
                             }
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.pressable)
                     }
                 }
             }
@@ -281,7 +312,7 @@ struct RuleList: View {
                     Button { open(rule) } label: {
                         MemoryRow(text: rule.summary, detail: status(rule))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
                     if index < rules.count - 1 { RowSeparator() }
                 }
             }

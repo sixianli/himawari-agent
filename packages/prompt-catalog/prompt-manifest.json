@@ -240,9 +240,9 @@
     "reason": "第二步 PR-A：工作目录、沙箱命令清单、文档技能目录、联网搜索开关、搜索和抓取服务商名、抓取上限从系统提示和工具定义挪到最后一条消息的运行环境说明；系统提示只留不随这些值变化的规则，并写明运行环境说明的约束力和发送时机"
   },
   "chat.task-boundary": {
-    "sha256": "e7f8cf9f00ce8e82e3c33ae563998a5fb9f28355c68412281479770d494c0c7b",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
+    "sha256": "f3e726ae772ac26efa1eb3229284e8a6a747193b64ea51d0959f06de1f4685f0",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 5 步：手机听到的语音在 owner-message 上标 source=phone-voice，由她结合上下文判断是不是在对她说，不再另设小模型判断"
   },
   "chat.tool-guidelines-header": {
     "sha256": "0ef890121f71aa2b318b6292159fa3401d79e46d3c0fdd45d1ab768cd3851628",
@@ -348,11 +348,6 @@
     "sha256": "bd9ec88d02e4d3c4b6f21b5dab89941946a27e7727395de39d6489a43a1e2fd8",
     "changedIn": "ADR 0219",
     "reason": "新增：真实记忆回忆评测的出题、作答、判分提示词"
-  },
-  "home.urgency": {
-    "sha256": "845629e56803e841ec93a29ec735e1553db095888dc322f477f9e7b1375a2d62",
-    "changedIn": "ADR 0255",
-    "reason": "新增：首页上等主人定的事由模型打要紧度，审批另写一句话和同意按钮文字"
   },
   "inbox.events.entry": {
     "sha256": "fdc03a3f74c899b3acf556a65a32d0bbb93a6c3dab1e1579f568ec09c5241d94",
@@ -839,36 +834,6 @@
   },
   "perception.now-header": {
     "sha256": "717130edd1cf2ec9b6ba5f1d0bdb3f20f86384e6745586712f1e053a7aa7918e",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
-  },
-  "perception.source.calendar": {
-    "sha256": "eb77d4cb7c6254e07b24aafb66a5b247f600d856bf75c97d628d87e01029830d",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
-  },
-  "perception.source.items-header": {
-    "sha256": "b372be4acbdf2e4cc1467754cce9833a87a067453438261807647c6d09de0273",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
-  },
-  "perception.source.location": {
-    "sha256": "1921f31349109f4d2929ea12df3f591fca857dca09cd1944790d92aae91c9412",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
-  },
-  "perception.source.message": {
-    "sha256": "dfad03d71a06d0c13e43356748558f0c8ddf4d3fa457e360b698677fcb3c6614",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
-  },
-  "perception.source.screen": {
-    "sha256": "387323bac164bef1cb6535cabca113c77892b5e40a981b3d474845457a04f743",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
-  },
-  "perception.source.speech": {
-    "sha256": "d17c642a7acbc011b22fcad50912d547c7a62b3b3e5029ce178e0d8b0db5a9c7",
     "changedIn": "ADR 0230",
     "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
   },
@@ -1499,11 +1464,6 @@
     "sha256": "a55c0eceeba5e2b024a12f881ccc8ccb7e9029e470da74d3aa09df7adff68f3d",
     "changedIn": "ADR 0166",
     "reason": "W-10、W-14：联网搜索默认打开、不逐次询问（ADR 0121），删掉“经用户确认”"
-  },
-  "voice.addressee-question": {
-    "sha256": "f2ff2cddd375550cb2cc3efa5c038b094f2d356fefae13dc3d09446e6b67887c",
-    "changedIn": "ADR 0264",
-    "reason": "第 8 批：手机认出名字的口头指令，提交前问判断模型是不是在叫 Himawari"
   },
   "subthreads.brief": {
     "sha256": "e3659fd05ac8eac5b15d446b2d2dcdc746e6b21f38f27d8da9ea2f3021fc5a0a",

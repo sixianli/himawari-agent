@@ -12,7 +12,6 @@ import {
   type ApprovalRequest,
   type DeviceActionRecord,
   HER_WORDS_PUSH_PREFIX,
-  hasVisibleText,
   type MemoryReminder,
   type MessageUrgency,
   type NotificationAction,
@@ -217,11 +216,6 @@ export interface ProductionApplePushOptions extends PairedDeviceScope {
   readonly messageUrgency?: (messageId: string) => Promise<MessageUrgency | undefined>;
   readonly now: () => string;
   readonly randomBytes?: (size: number) => Buffer;
-  readonly approvalCopy?: (input: {
-    readonly approvalRequestId: string;
-    readonly semanticSnapshotHash: string;
-    readonly locale: WebPushLocale;
-  }) => Promise<{ readonly affirmLabel: string | null }>;
   readonly onDelivery?: (outcome: {
     readonly pushType: string;
     readonly kind: string;
@@ -460,29 +454,11 @@ export class ProductionApplePush implements PushCompanionChannel {
     });
   }
 
-  async #approvalCopy(approval: ApprovalRequest, locale: WebPushLocale): Promise<string | null> {
-    const read = this.#options.approvalCopy;
-    if (!read) return null;
-    try {
-      const copy = await read({
-        approvalRequestId: approval.id,
-        semanticSnapshotHash: approval.semanticSnapshotHash,
-        locale,
-      });
-      const label = copy.affirmLabel?.trim() ?? "";
-      return hasVisibleText(label) ? label : null;
-    } catch (error) {
-      this.#options.onFailure(error);
-      return null;
-    }
-  }
-
   async #actions(
     entry: ApplePushDue,
     now: string,
     locale: WebPushLocale,
     approval: ApprovalRequest | undefined,
-    affirmLabel: string | null,
   ): Promise<readonly ApplePushAction[]> {
     if (entry.item.kind !== "approval" || !approval) return [];
     const ownerPresence =
@@ -498,8 +474,8 @@ export class ProductionApplePush implements PushCompanionChannel {
     const actions: ApplePushAction[] = [
       {
         action: "approve",
-        label: ownerPresence ? text.approveInApp : (affirmLabel ?? text.approve),
-        labelBasis: !ownerPresence && affirmLabel !== null ? "model" : "catalog",
+        label: ownerPresence ? text.approveInApp : text.approve,
+        labelBasis: "catalog",
         polarity: "positive",
         token: random(32).toString("base64url"),
         ownerPresence,
@@ -550,12 +526,6 @@ export class ProductionApplePush implements PushCompanionChannel {
       : undefined;
     const approval =
       item.kind === "approval" ? approvals.find(({ id }) => id === item.sourceRef) : undefined;
-    const affirmLabel =
-      approval &&
-      (approval as ApprovalRequest & { recentAuthenticationRequired?: boolean })
-        .recentAuthenticationRequired !== true
-        ? await this.#approvalCopy(approval, locale)
-        : null;
     const result = await this.#transmit("alert", item.kind, {
       token: registration.token,
       environment: registration.environment,
@@ -574,7 +544,7 @@ export class ProductionApplePush implements PushCompanionChannel {
         kind: item.kind,
         badge,
         urgency,
-        actions: await this.#actions(entry, now, locale, approval, affirmLabel),
+        actions: await this.#actions(entry, now, locale, approval),
       }),
     });
     const attempts = (attempt?.attempts ?? 0) + 1;

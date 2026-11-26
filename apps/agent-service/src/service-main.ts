@@ -13,13 +13,11 @@ import {
   classificationRank,
   createProactiveSeal,
   type DataClassification,
-  DEFAULT_HOME_URGENCY,
   DEVICE_CONFIGURATION_DEFAULTS,
   DurableMemoryService,
   defaultDeviceHardLimits,
   ExecutionLiveFeed,
   enforceableOwnerRule,
-  type HomeUrgencyRunResult,
   type IdGeneratorPort,
   INBOX_LOOP_DEFAULTS,
   MemoryCheckupService,
@@ -104,7 +102,6 @@ import {
   SystemdProviderSecretSource,
   stableErrorCode,
   TypeSafeJevTransport,
-  type VoiceAddresseeDecision,
   writeAgentServiceBootBinding,
   writeAuthorityFile,
   writeServiceDiagnostic,
@@ -142,7 +139,6 @@ import { AgentServiceExecutionClient } from "./production-execution-client.js";
 import { strictModeUnavailableTools } from "./production-execution-environment.js";
 import { createProductionFileReadServices } from "./production-file-read-services.js";
 import { ProductionGapExport } from "./production-gap-export.js";
-import { HOME_URGENCY_MAX_OUTPUT_TOKENS } from "./production-home.js";
 import { createConfiguredHostWeb } from "./production-host-web.js";
 import {
   createProductionHttpComposition,
@@ -235,7 +231,6 @@ import { ProductionThreadTasks } from "./production-thread-tasks.js";
 import { productionToolActionRegistry } from "./production-tool-actions.js";
 import { toolCallSandboxPrewarm } from "./production-tool-call-prewarm.js";
 import { ProductionVaultTools } from "./production-vault-tools.js";
-import { productionVoiceAddressee } from "./production-voice-addressee.js";
 import { ProductionWebPush, WebPushPresence } from "./production-web-push.js";
 import { createProductionWorkerParentBindingRegistry } from "./production-worker-parent-binding-registry.js";
 import {
@@ -303,14 +298,6 @@ let sandboxCommandInventoryOnce: Promise<SandboxCommandInventory> | undefined;
 function sandboxCommandInventory(): Promise<SandboxCommandInventory> {
   sandboxCommandInventoryOnce ??= inspectSandboxCommands();
   return sandboxCommandInventoryOnce;
-}
-
-function voiceAddresseeOption(
-  configuration: ProductConfiguration,
-  secretSource: ReturnType<typeof hostModelSources>["provider"],
-): { readonly voiceAddressee?: VoiceAddresseeDecision } {
-  const voiceAddressee = productionVoiceAddressee(configuration, secretSource);
-  return voiceAddressee ? { voiceAddressee } : {};
 }
 
 function productionClock(): ClockPort {
@@ -2577,62 +2564,6 @@ export async function startTenantRuntime(
             }),
         });
       }
-      const homeUrgencyConfiguration = configuration.runPolicy?.homeUrgency ?? DEFAULT_HOME_URGENCY;
-      const homeUrgencyRef = homeUrgencyConfiguration.modelRef ?? proactiveConfiguration?.modelRef;
-      const homeUrgencyDescriptor = modelComposition.descriptors.generation.find(
-        ({ ref }) => ref === homeUrgencyRef,
-      );
-      if (homeUrgencyConfiguration.modelRef !== undefined && !homeUrgencyDescriptor)
-        throw new Error("HOME_URGENCY_MODEL_UNAVAILABLE");
-      const homeUrgencyRepository = repository;
-      const homeUrgency =
-        homeUrgencyConfiguration.enabled &&
-        homeUrgencyDescriptor &&
-        protector &&
-        homeUrgencyRepository
-          ? {
-              settings: homeUrgencyConfiguration,
-              seal: createProactiveSeal({
-                payloads: homeUrgencyRepository.payloadStore(
-                  configuration.ownerId,
-                  configuration.agentId,
-                ),
-                protector,
-                ids,
-              }),
-              model: modelComposition.composition.proactiveModel(homeUrgencyDescriptor.ref, {
-                maxOutputTokens: HOME_URGENCY_MAX_OUTPUT_TOKENS,
-                requestTimeoutMs: homeUrgencyConfiguration.requestTimeoutMs,
-                purpose: "home-urgency",
-              }),
-              modelAllows: (classification: DataClassification) =>
-                homeUrgencyDescriptor.allowedDataClassifications.includes(classification),
-              timeZone: configuration.runPolicy?.timeZone ?? "UTC",
-              estimateCostMicros: proactiveCostEstimator(
-                homeUrgencyDescriptor.cost,
-                HOME_URGENCY_MAX_OUTPUT_TOKENS,
-              ),
-              readLocale: async () =>
-                (
-                  await homeUrgencyRepository.ownerPreferences().read({
-                    ownerId: configuration.ownerId,
-                    agentId: configuration.agentId,
-                  })
-                ).locale,
-              onScored: (result: HomeUrgencyRunResult) => {
-                if (result.attempted > 0 || result.failures.length > 0)
-                  writeServiceDiagnostic(errorOutput, {
-                    component: "agent-service",
-                    event: "home.urgency_scored",
-                    attempted: result.attempted,
-                    recorded: result.recorded,
-                    failed: result.failures.length,
-                    stoppedBy: result.stoppedBy,
-                    ...(result.failures[0] ? { code: result.failures[0].slice(0, 120) } : {}),
-                  });
-              },
-            }
-          : undefined;
       const realEvalConfiguration = configuration.runPolicy?.realEval;
       const realEvalDescriptor = realEvalConfiguration
         ? modelComposition.descriptors.generation.find(
@@ -3134,9 +3065,6 @@ export async function startTenantRuntime(
             threadTitle,
             publicOrigin: configuration.publicOrigin,
             now: () => clock.now(),
-            approvalCopy: async (input) => ({
-              affirmLabel: (await http?.home.approvalCopy(input))?.affirmLabel ?? null,
-            }),
             onDelivery: (outcome) =>
               writeServiceDiagnostic(errorOutput, {
                 component: "agent-service",
@@ -3672,8 +3600,6 @@ export async function startTenantRuntime(
               ),
             }
           : {}),
-        ...voiceAddresseeOption(configuration, sources.provider),
-        ...(homeUrgency ? { homeUrgency } : {}),
         ...(museIntake ? { museIntake } : {}),
         ...(gapExport ? { gapExport } : {}),
         ...(mcpRead ? { mcpRead } : {}),

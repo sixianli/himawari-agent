@@ -1215,18 +1215,8 @@ describe("[IOS-4] push channels", () => {
     await context.push.tick();
     expect(context.apns.ofType("alert")).toHaveLength(1);
   });
-  it("[IOS-4] uses the model-written approve button text for a plain approval, keeps the sentence off the lock screen, and keeps the fixed text when the owner must be present", async () => {
-    const asked: string[] = [];
-    const context = await setup(
-      {},
-      {},
-      {
-        approvalCopy: async ({ approvalRequestId }) => {
-          asked.push(approvalRequestId);
-          return { affirmLabel: "发出去" };
-        },
-      },
-    );
+  it("[IOS-4] gives a plain approval the fixed approve text, keeps the sentence off the lock screen, and shows the review text when the owner must be present", async () => {
+    const context = await setup();
     context.device(IPHONE, "iphone");
     await context.register(IPHONE, "alert");
     context.setClock(T0);
@@ -1241,7 +1231,7 @@ describe("[IOS-4] push channels", () => {
       (alert.json["himawari"] as Payload).actions.find(({ action }) => action === "approve");
     const plain = must(alerts.find((alert) => approveOf(alert)?.ownerPresence === false));
     const present = must(alerts.find((alert) => approveOf(alert)?.ownerPresence === true));
-    expect(approveOf(plain)).toMatchObject({ label: "发出去", labelBasis: "model" });
+    expect(approveOf(plain)).toMatchObject({ label: "同意", labelBasis: "catalog" });
     expect(approveOf(present)).toMatchObject({ label: "看内容再定", labelBasis: "catalog" });
     expect(
       (plain.json["himawari"] as Payload).actions.find(({ action }) => action === "deny"),
@@ -1250,37 +1240,8 @@ describe("[IOS-4] push channels", () => {
       labelBasis: "catalog",
     });
     expect((plain.json["aps"] as { alert: { body: string } }).alert.body).toBe("查下周东京天气");
-    expect(asked).toEqual(["plain"]);
   });
 
-  it.each([
-    ["the read throws", async () => Promise.reject(new Error("COPY_UNAVAILABLE")), 1],
-    ["no label was written", async () => ({ affirmLabel: null }), 0],
-    ["the label is blank", async () => ({ affirmLabel: "   " }), 0],
-    ["the label has no visible character", async () => ({ affirmLabel: "\u200B" }), 0],
-    ["the label is only a filler character", async () => ({ affirmLabel: "\u3164" }), 0],
-  ])(
-    "[IOS-4] REVERSE: falls back to the fixed approve text when %s",
-    async (_name, approvalCopy, failureCount) => {
-      const context = await setup({}, {}, { approvalCopy });
-      context.device(IPHONE, "iphone");
-      await context.register(IPHONE, "alert");
-      context.setClock(T0);
-      context.approval("plain", false);
-      await context.push.tick();
-      const [alert] = context.apns.ofType("alert");
-      const actions = (
-        alert?.json["himawari"] as {
-          actions: { action: string; label: string; labelBasis: string }[];
-        }
-      ).actions;
-      expect(actions.find(({ action }) => action === "approve")).toMatchObject({
-        label: "同意",
-        labelBasis: "catalog",
-      });
-      expect(context.failures).toHaveLength(failureCount);
-    },
-  );
   function macSetup(nowMs: () => number = () => Date.parse(T0)) {
     const hub = new DeviceNotificationHub();
     const presence = new DevicePresence();

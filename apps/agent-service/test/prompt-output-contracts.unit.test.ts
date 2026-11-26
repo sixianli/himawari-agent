@@ -1,5 +1,4 @@
 import * as application from "@himawari-agent/application";
-import * as platform from "@himawari-agent/platform-node";
 import type { PromptEntry } from "@himawari-agent/prompt-catalog";
 import * as catalog from "@himawari-agent/prompt-catalog";
 import { describe, expect, it } from "vitest";
@@ -48,11 +47,8 @@ const PARSERS: Readonly<Record<string, unknown>> = {
   parseLeakVerdict: application.parseLeakVerdict,
   parsePrereview: application.parsePrereview,
   parsePerceptionExtraction: application.parsePerceptionExtraction,
-  parsePerceptionSourceCheck: application.parsePerceptionSourceCheck,
   parsePerceptionImage: application.parsePerceptionImage,
-  parseHomeUrgency: application.parseHomeUrgency,
   parseRuleReviewAnswer: application.parseRuleReviewAnswer,
-  voiceAddresseeProbability: platform.voiceAddresseeProbability,
 };
 
 const NOT_COVERED = new Set(["memory.consolidation", "memory.consolidation.format"]);
@@ -82,15 +78,9 @@ describe("[PROMPT-CONTRACT] background prompts and the parsers that read their a
         "eval.real-memory.judge",
         "eval.real-memory.leak-judge",
         "eval.real-memory.question",
-        "home.urgency",
         "memory.capture",
         "perception.extract",
         "perception.image.understand",
-        "perception.source.calendar",
-        "perception.source.location",
-        "perception.source.message",
-        "perception.source.screen",
-        "perception.source.speech",
         "memory.classification",
         "memory.confirmation-judge",
         "memory.conversation-review",
@@ -98,27 +88,8 @@ describe("[PROMPT-CONTRACT] background prompts and the parsers that read their a
         "review.prereview",
         "review.typesafe-questions",
         "rule.review",
-        "voice.addressee-question",
       ].sort(),
     );
-  });
-
-  it("voice addressee: reads the yes probability only from the one answer the question asks for", () => {
-    const answer = (fields: Record<string, unknown>) => ({
-      model: "typesafe-ai/jev",
-      answers: [{ type: "predicate", name: "addressed", probability: 0.92, ...fields }],
-    });
-    expect(platform.voiceAddresseeProbability(answer({}), "typesafe-ai/jev")).toBe(0.92);
-    for (const body of [
-      answer({ probability: 1.2 }),
-      answer({ probability: "0.9" }),
-      answer({ name: "other" }),
-      answer({ type: "choice" }),
-      { model: "typesafe-ai/jev", answers: [] },
-      { answers: answer({}).answers },
-    ])
-      expect(() => platform.voiceAddresseeProbability(body, "typesafe-ai/jev")).toThrow();
-    expect(() => platform.voiceAddresseeProbability(answer({}), "typesafe-ai/jev-2")).toThrow();
   });
 
   it("memory capture: accepts the JSON the prompt asks for, also inside a Markdown fence", () => {
@@ -198,23 +169,6 @@ describe("[PROMPT-CONTRACT] background prompts and the parsers that read their a
     expect(application.parseJudgeVerdict("答对了")).toBeNull();
   });
 
-  it("home urgency: accepts the items JSON the prompt asks for, and rejects a renamed key and plain text", () => {
-    expect(
-      application
-        .parseHomeUrgency(
-          JSON.stringify({
-            items: [{ n: 1, score: 640, sentence: "给田中发确认邮件", affirm: "发出去" }],
-          }),
-          1,
-        )
-        .get(1),
-    ).toEqual({ score: 640, sentence: "给田中发确认邮件", affirm: "发出去" });
-    expect(
-      application.parseHomeUrgency(JSON.stringify({ scores: [{ n: 1, score: 640 }] }), 1).size,
-    ).toBe(0);
-    expect(application.parseHomeUrgency("第一件最要紧。", 1).size).toBe(0);
-  });
-
   it("[iOS-5] perception extraction: accepts the JSON the prompt asks for and rejects a renamed list", () => {
     const answer = {
       candidates: [
@@ -242,36 +196,7 @@ describe("[PROMPT-CONTRACT] background prompts and the parsers that read their a
     expect(application.parsePerceptionExtraction("没有值得记的。", 12)).toBeNull();
   });
 
-  it("[iOS-5] perception source check and image reading: accept the JSON their prompts ask for", () => {
-    expect(
-      application.parsePerceptionSourceCheck(
-        JSON.stringify({
-          items: [
-            {
-              id: "a",
-              result: "remind",
-              what: "水费 15 号前交",
-              due: "2026-11-15",
-              reason: "有截止日期",
-            },
-            { id: "b", result: "ignore" },
-          ],
-        }),
-        ["a", "b"],
-      ),
-    ).toEqual([
-      {
-        id: "a",
-        result: "remind",
-        what: "水费 15 号前交",
-        due: "2026-11-15",
-        reason: "有截止日期",
-      },
-      { id: "b", result: "ignore" },
-    ]);
-    expect(
-      application.parsePerceptionSourceCheck(JSON.stringify({ results: [] }), ["a"]),
-    ).toBeNull();
+  it("[iOS-5] perception image reading: accepts the JSON its prompt asks for", () => {
     expect(
       application.parsePerceptionImage(
         JSON.stringify({ text: "发票 120 元", description: "一张发票" }),

@@ -29,7 +29,7 @@ struct HerAllowancesPage: View {
                     Button { choosingDays = true } label: {
                         SettingsRow(icon: nil, title: M.allowanceDaysTitle, value: M.allowanceDaysValue(days), chevron: true, last: true)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
                 }
             }
             Text(M.allowancesFoot)
@@ -81,7 +81,7 @@ struct AllowanceRow: View {
                         .frame(minHeight: DesignTokens.Size.minTapTarget)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
             }
             .padding(.vertical, SL.rowPaddingVertical)
             .frame(minHeight: SL.rowMinHeight)

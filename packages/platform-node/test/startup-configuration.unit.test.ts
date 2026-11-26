@@ -10,7 +10,6 @@ import {
   PERCEPTION_CONFIGURATION_DEFAULTS,
   PERCEPTION_CONFIGURATION_RANGES,
   type PerceptionConfiguration,
-  VOICE_ADDRESSEE_DEFAULTS,
 } from "@himawari-agent/application";
 import { createAgentId, createDeploymentId, createOwnerId } from "@himawari-agent/domain";
 import { afterEach, describe, expect, it } from "vitest";
@@ -290,47 +289,21 @@ describe("strict product configuration", () => {
       expect(() => parseProductConfiguration(withRetrieval(invalid), at)).toThrow();
   });
 
-  it("[iOS-8] accepts the name-call decision model only with a model, a key, a price and sane thresholds", () => {
-    const withAddressee = (voiceAddressee: unknown) => {
-      const input = config(path.join(tmpdir(), "himawari-voice-addressee"));
-      input["runPolicy"] = {
-        version: "policy-voice-addressee",
-        systemInstruction: "test",
-        memoryLimit: 10,
-        voiceAddressee,
-      };
-      return input;
+  it("accepts the retired voiceAddressee key and drops it from the run policy", () => {
+    const input = config(path.join(tmpdir(), "himawari-voice-addressee"));
+    input["runPolicy"] = {
+      version: "policy-voice-addressee",
+      systemInstruction: "test",
+      memoryLimit: 10,
+      voiceAddressee: {
+        model: "typesafe-ai/jev",
+        secretRef: "vercel-ai-gateway-api-key",
+        inputMicrosPerMillionTokens: 42_000,
+      },
     };
-    const at = "2026-11-13T00:00:00.000Z";
-    const base = {
-      model: "typesafe-ai/jev",
-      secretRef: "vercel-ai-gateway-api-key",
-      inputMicrosPerMillionTokens: 42_000,
-    };
-    expect(parseProductConfiguration(withAddressee(base), at).runPolicy?.voiceAddressee).toEqual({
-      ...VOICE_ADDRESSEE_DEFAULTS,
-      ...base,
-    });
-    expect(
-      parseProductConfiguration(
-        withAddressee({ ...base, yesAtLeastPermille: 850, noAtMostPermille: 150, timeoutMs: 800 }),
-        at,
-      ).runPolicy?.voiceAddressee,
-    ).toMatchObject({ yesAtLeastPermille: 850, noAtMostPermille: 150, timeoutMs: 800 });
-    const { model: _model, ...withoutModel } = base;
-    const { secretRef: _secret, ...withoutSecret } = base;
-    for (const invalid of [
-      withoutModel,
-      withoutSecret,
-      { ...base, inputMicrosPerMillionTokens: 0 },
-      { ...base, yesAtLeastPermille: 400 },
-      { ...base, noAtMostPermille: 600 },
-      { ...base, yesAtLeastPermille: 500, noAtMostPermille: 500 },
-      { ...base, timeoutMs: 50 },
-      { ...base, baseUrl: "https://example.test" },
-      "on",
-    ])
-      expect(() => parseProductConfiguration(withAddressee(invalid), at)).toThrow();
+    const policy = parseProductConfiguration(input, "2026-11-26T00:00:00.000Z").runPolicy;
+    expect(policy?.retiredKeys).toEqual(["voiceAddressee"]);
+    expect(policy && "voiceAddressee" in policy).toBe(false);
   });
 
   it("accepts the retired deliveryTiming key and drops it from the run policy", () => {
@@ -1742,7 +1715,6 @@ it("[PG-12] accepts proactive Gmail checks only with a Google client secret and 
       },
     },
     reviewMemoryUnusedDays: 90,
-    backoffThreshold: 3,
   });
   raw["runPolicy"] = {
     ...policy,
@@ -1770,7 +1742,6 @@ it("[PG-12] accepts proactive Gmail checks only with a Google client secret and 
       reviewSecondsPerItem: 10,
       reviewSilentSharePermille: 200,
       reviewMemoryUnusedDays: 30,
-      backoffThreshold: 5,
     },
   };
   expect(
@@ -1780,7 +1751,6 @@ it("[PG-12] accepts proactive Gmail checks only with a Google client secret and 
     reviewSecondsPerItem: 10,
     reviewSilentSharePermille: 200,
     reviewMemoryUnusedDays: 30,
-    backoffThreshold: 5,
   });
   raw["runPolicy"] = {
     ...policy,
@@ -1815,8 +1785,6 @@ it("[PG-12] accepts proactive Gmail checks only with a Google client secret and 
     { ...proactive, reviewPrereview: { reduction: { threshold: 900 } } },
     { ...proactive, reviewMemoryUnusedDays: 6 },
     { ...proactive, reviewMemoryUnusedDays: 3_651 },
-    { ...proactive, backoffThreshold: 11 },
-    { ...proactive, backoffThreshold: -1 },
     { ...proactive, relatedMailsPerMail: 51 },
     { ...proactive, relatedRequestsPerCheck: 0 },
     { ...proactive, wholeThreadMailsPerMail: 0 },
@@ -2088,100 +2056,19 @@ it("accepts Muse intake only with a boolean switch and one secret whose purpose 
   }
 });
 
-it("accepts home urgency scoring settings, fills in the defaults, and refuses values out of range", () => {
+it("refuses the removed home urgency scoring settings as an unknown runPolicy key", () => {
   const raw = config("/tmp/himawari-home-urgency-config");
-  const policy = {
+  raw["runPolicy"] = { version: "1", systemInstruction: "test", memoryLimit: 10 };
+  expect(parseProductConfiguration(raw, "2026-11-12T00:00:00.000Z").runPolicy).not.toHaveProperty(
+    "homeUrgency",
+  );
+  raw["runPolicy"] = {
     version: "1",
     systemInstruction: "test",
     memoryLimit: 10,
+    homeUrgency: { enabled: true },
   };
-  raw["runPolicy"] = { ...policy, homeUrgency: {} };
-  expect(parseProductConfiguration(raw, "2026-11-12T00:00:00.000Z").runPolicy?.homeUrgency).toEqual(
-    {
-      enabled: true,
-      dailyLimit: 1_000,
-      dailyCostMicros: 1_000_000,
-      perCall: 20,
-      referenceLimit: 30,
-      requestTimeoutMs: 30_000,
-      checkIntervalSeconds: 60,
-      retryAfterHours: 24,
-      affirmLabelMax: { "zh-CN": 6, ja: 8, en: 16 },
-    },
-  );
-  raw["runPolicy"] = {
-    ...policy,
-    homeUrgency: {
-      enabled: false,
-      modelRef: "model-primary",
-      dailyLimit: 0,
-      perCall: 5,
-      affirmLabelMax: { "zh-CN": 4, fr: 12 },
-    },
-  };
-  expect(
-    parseProductConfiguration(raw, "2026-11-12T00:00:00.000Z").runPolicy?.homeUrgency,
-  ).toMatchObject({
-    enabled: false,
-    modelRef: "model-primary",
-    dailyLimit: 0,
-    perCall: 5,
-    referenceLimit: 30,
-    affirmLabelMax: { "zh-CN": 4, fr: 12 },
-  });
-  raw["runPolicy"] = policy;
-  expect(
-    parseProductConfiguration(raw, "2026-11-12T00:00:00.000Z").runPolicy?.homeUrgency,
-  ).toBeUndefined();
-  for (const invalid of [
-    { enabled: "yes" },
-    { unknown: 1 },
-    { modelRef: "model-embedding" },
-    { modelRef: "model-missing" },
-    { dailyLimit: -1 },
-    { dailyLimit: 100_001 },
-    { perCall: 0 },
-    { perCall: 51 },
-    { referenceLimit: 201 },
-    { requestTimeoutMs: 10 },
-    { checkIntervalSeconds: 5 },
-    { retryAfterHours: 0 },
-    { affirmLabelMax: { "zh-CN": 0 } },
-    { affirmLabelMax: { "zh-CN": 65 } },
-    { affirmLabelMax: { "not a tag": 6 } },
-    { affirmLabelMax: [6] },
-  ]) {
-    raw["runPolicy"] = { ...policy, homeUrgency: invalid };
-    expect(() => parseProductConfiguration(raw, "2026-11-12T00:00:00.000Z")).toThrow();
-  }
-  (raw["modelDescriptors"] as Record<string, unknown>[]).push({
-    ref: "model-specialist",
-    role: "specialist",
-    provider: "typesafe",
-    model: "jev-latest",
-    modelVersion: "jev-1.13.0",
-    version: "snapshot-1",
-    priority: 2,
-    name: "Jev reviewer",
-    api: "typesafe-systemone",
-    capabilities: ["text"],
-    cost: { input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0 },
-    allowedDataClassifications: ["private", "sensitive"],
-    disclosure: "external_remote",
-    secretRef: "provider-specialist",
-  });
-  (raw["secretReferences"] as Record<string, unknown>[]).push({
-    ref: "provider-specialist",
-    version: "v1",
-    purpose: "model-auth",
-    scope: "model-specialist",
-  });
-  raw["runPolicy"] = { ...policy, homeUrgency: { modelRef: "model-specialist" } };
-  expect(() => parseProductConfiguration(raw, "2026-11-12T00:00:00.000Z")).toThrow(
-    expect.objectContaining({
-      details: expect.objectContaining({ field: "configuration.runPolicy.homeUrgency.modelRef" }),
-    }),
-  );
+  expect(() => parseProductConfiguration(raw, "2026-11-12T00:00:00.000Z")).toThrow();
 });
 
 it("[A4] accepts a duplicate-judgement route that names a model-auth secret, fills the defaults and rejects bad values", () => {

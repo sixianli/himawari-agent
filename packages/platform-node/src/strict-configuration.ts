@@ -18,7 +18,6 @@ import {
   type ConfiguredModelDescriptor,
   type DataClassification,
   DEFAULT_HOME_FEED,
-  DEFAULT_HOME_URGENCY,
   DEFAULT_REVIEW_PREREVIEW,
   DEFAULT_SEARCH_ASK,
   DEVICE_CONFIGURATION_DEFAULTS,
@@ -55,10 +54,6 @@ import {
   type TaskEnvironmentConfiguration,
   type TaskEnvironmentImageConfiguration,
   type ToolRefusalConfiguration,
-  VOICE_ADDRESSEE_DEFAULTS,
-  VOICE_ADDRESSEE_RANGES,
-  type VoiceAddresseeConfiguration,
-  type VoiceAddresseeRouteConfiguration,
   WEB_FETCH_MAXIMUM_BYTES,
   WEB_PROVIDER_IDS,
   WEB_PROVIDERS,
@@ -1118,7 +1113,6 @@ function parseProactive(value: unknown): NonNullable<RunPolicyConfiguration["pro
       "reviewSilentSharePermille",
       "reviewPrereview",
       "reviewMemoryUnusedDays",
-      "backoffThreshold",
     ],
     field,
   );
@@ -1186,7 +1180,6 @@ function parseProactive(value: unknown): NonNullable<RunPolicyConfiguration["pro
     reviewSilentSharePermille: optional("reviewSilentSharePermille", 500, 0, 1_000),
     reviewPrereview: parseReviewPrereview(input["reviewPrereview"], `${field}.reviewPrereview`),
     reviewMemoryUnusedDays: optional("reviewMemoryUnusedDays", 90, 7, 3_650),
-    backoffThreshold: optional("backoffThreshold", 3, 0, 10),
     intervalMs: optional("intervalMs", 900_000, 60_000, 86_400_000),
     perCheckMs: optional("perCheckMs", 180_000, 10_000, 900_000),
     dailyCostMicros,
@@ -1566,37 +1559,6 @@ function parseSearchAsk(value: unknown): NonNullable<RunPolicyConfiguration["sea
   );
 }
 
-function parseVoiceAddressee(value: unknown): VoiceAddresseeRouteConfiguration {
-  const field = "configuration.runPolicy.voiceAddressee";
-  const input = record(value, field);
-  const keys = Object.keys(VOICE_ADDRESSEE_DEFAULTS) as (keyof VoiceAddresseeConfiguration)[];
-  rejectUnknown(input, [...keys, "model", "secretRef", "inputMicrosPerMillionTokens"], field);
-  const tuning = Object.fromEntries(
-    keys.map((key) => {
-      const [minimum, maximum] = VOICE_ADDRESSEE_RANGES[key];
-      return [
-        key,
-        input[key] === undefined
-          ? VOICE_ADDRESSEE_DEFAULTS[key]
-          : integer(input[key], `${field}.${key}`, minimum, maximum),
-      ];
-    }),
-  ) as unknown as VoiceAddresseeConfiguration;
-  if (tuning.noAtMostPermille >= tuning.yesAtLeastPermille)
-    throw invalid(`${field}.noAtMostPermille`, "must be smaller than yesAtLeastPermille");
-  return Object.freeze({
-    ...tuning,
-    model: safeReference(input["model"], `${field}.model`),
-    secretRef: safeReference(input["secretRef"], `${field}.secretRef`),
-    inputMicrosPerMillionTokens: integer(
-      input["inputMicrosPerMillionTokens"],
-      `${field}.inputMicrosPerMillionTokens`,
-      1,
-      100_000_000,
-    ),
-  });
-}
-
 function parsePerception(value: unknown): PerceptionConfiguration {
   const field = "configuration.runPolicy.perception";
   const input = record(value, field);
@@ -1619,54 +1581,6 @@ function parsePerception(value: unknown): PerceptionConfiguration {
       "must not be smaller than episodeSilenceSeconds",
     );
   return Object.freeze(parsed);
-}
-
-function parseHomeUrgency(value: unknown): NonNullable<RunPolicyConfiguration["homeUrgency"]> {
-  const field = "configuration.runPolicy.homeUrgency";
-  const input = record(value, field);
-  const bounds = {
-    dailyLimit: [0, 100_000],
-    dailyCostMicros: [0, 100_000_000],
-    perCall: [1, 50],
-    referenceLimit: [0, 200],
-    requestTimeoutMs: [1_000, 300_000],
-    checkIntervalSeconds: [10, 86_400],
-    retryAfterHours: [1, 720],
-  } as const;
-  const keys = Object.keys(bounds) as (keyof typeof bounds)[];
-  rejectUnknown(input, ["enabled", "modelRef", "affirmLabelMax", ...keys], field);
-  const limits =
-    input["affirmLabelMax"] === undefined
-      ? DEFAULT_HOME_URGENCY.affirmLabelMax
-      : record(input["affirmLabelMax"], `${field}.affirmLabelMax`);
-  for (const locale of Object.keys(limits))
-    if (!/^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$/u.test(locale) || locale.length > 16)
-      throw invalid(`${field}.affirmLabelMax.${locale}`, "must be a language tag");
-  return Object.freeze({
-    enabled:
-      input["enabled"] === undefined
-        ? DEFAULT_HOME_URGENCY.enabled
-        : boolean(input["enabled"], `${field}.enabled`),
-    ...(input["modelRef"] === undefined
-      ? {}
-      : { modelRef: safeReference(input["modelRef"], `${field}.modelRef`) }),
-    ...(Object.fromEntries(
-      keys.map((key) => [
-        key,
-        input[key] === undefined
-          ? DEFAULT_HOME_URGENCY[key]
-          : integer(input[key], `${field}.${key}`, bounds[key][0], bounds[key][1]),
-      ]),
-    ) as Record<keyof typeof bounds, number>),
-    affirmLabelMax: Object.freeze(
-      Object.fromEntries(
-        Object.entries(limits).map(([locale, limit]) => [
-          locale,
-          integer(limit, `${field}.affirmLabelMax.${locale}`, 1, 64),
-        ]),
-      ),
-    ),
-  });
 }
 
 function parseRealEval(value: unknown): NonNullable<RunPolicyConfiguration["realEval"]> {
@@ -1749,7 +1663,6 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       "perception",
       "voiceAddressee",
       "deliveryTiming",
-      "homeUrgency",
       "proactive",
       "museIntake",
       "importDuplicates",
@@ -1814,12 +1727,6 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
     ...(input["perception"] === undefined
       ? {}
       : { perception: parsePerception(input["perception"]) }),
-    ...(input["voiceAddressee"] === undefined
-      ? {}
-      : { voiceAddressee: parseVoiceAddressee(input["voiceAddressee"]) }),
-    ...(input["homeUrgency"] === undefined
-      ? {}
-      : { homeUrgency: parseHomeUrgency(input["homeUrgency"]) }),
     ...(input["proactive"] === undefined ? {} : { proactive: parseProactive(input["proactive"]) }),
     ...(input["realEval"] === undefined ? {} : { realEval: parseRealEval(input["realEval"]) }),
     ...(input["museIntake"] === undefined
@@ -1849,6 +1756,7 @@ const RETIRED_RUN_POLICY_KEYS = [
   "maxMemoryClassification",
   "deliveryTiming",
   "maxSelectedMemories",
+  "voiceAddressee",
 ] as const;
 
 function retiredRunPolicyKeys(input: JsonRecord): {
@@ -2184,20 +2092,6 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
     )
       throw invalid(
         "configuration.runPolicy.proactive.modelRef",
-        "must name a configured openai-completions generation model that accepts private data",
-      );
-  }
-  const homeUrgencyModelRef = runPolicy?.homeUrgency?.modelRef;
-  if (homeUrgencyModelRef !== undefined) {
-    const descriptor = modelDescriptors.find(({ ref }) => ref === homeUrgencyModelRef);
-    if (
-      !descriptor ||
-      descriptor.role === "embedding" ||
-      descriptor.api !== "openai-completions" ||
-      !descriptor.allowedDataClassifications.includes("private")
-    )
-      throw invalid(
-        "configuration.runPolicy.homeUrgency.modelRef",
         "must name a configured openai-completions generation model that accepts private data",
       );
   }

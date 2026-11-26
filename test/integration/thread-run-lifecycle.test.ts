@@ -5486,6 +5486,56 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
       expect(input.context.trigger.payloadRef).toBe(run.source.payloadRef);
     });
 
+    it("marks a message the phone heard by voice for her, alone or among others, and never a typed one", async () => {
+      const { send, inputFor } = await foldFixture();
+      const alone = await send("voice-alone", "Himawari 昨天提醒我交房租了", {
+        sourceProofRef: "device-voice:phone-1",
+      });
+      const aloneRun = await inputFor(alone.message.runId as RunId);
+      expect(aloneRun.source.viaPhoneVoice).toBe(true);
+      const aloneInput = await aloneRun.create();
+      expect(aloneInput.context.trigger.payloadRef).toBe(`fold-prompt:${alone.message.runId}`);
+      expect(await aloneRun.read(aloneInput.context.trigger.payloadRef)).toBe(
+        `<owner-message id="${alone.message.id}" source="phone-voice">\nHimawari 昨天提醒我交房租了\n</owner-message>`,
+      );
+    });
+
+    it("marks only the folded message that came by voice", async () => {
+      const { send, inputFor } = await foldFixture();
+      const typed = await send("typed", "查东京天气");
+      const spoken = await send("spoken", "顺便看看明天", {
+        sourceProofRef: "device-voice:phone-1",
+      });
+      const touched = await send("touched", "再查一下后天", { sourceProofRef: "device:phone-1" });
+      const run = await inputFor(typed.message.runId as RunId);
+      expect(run.source.viaPhoneVoice).toBeUndefined();
+      const input = await run.create();
+      const text = await run.read(input.context.trigger.payloadRef);
+      expect(text).toContain(`<owner-message id="${typed.message.id}">\n查东京天气`);
+      expect(text).toContain(
+        `<owner-message id="${spoken.message.id}" source="phone-voice">\n顺便看看明天`,
+      );
+      expect(text).toContain(`<owner-message id="${touched.message.id}">\n再查一下后天`);
+    });
+
+    it("marks a voice message steered into a running answer", async () => {
+      const { send, setup } = await foldFixture();
+      const first = await send("a", "帮我比较三家牙科诊所");
+      const later = await send("b", "只要周六开门的", { sourceProofRef: "device-voice:phone-1" });
+      const firstRun = first.message.runId as RunId;
+      const steering = await steeringFor(setup, firstRun, "running");
+      const notes: { ref: string; modelContent: string }[] = [];
+      const stop = steering.subscribe(firstRun, (note) => {
+        notes.push(note);
+        return true;
+      });
+      await steering.poll();
+      stop();
+      expect(notes[0]?.modelContent).toBe(
+        `<owner-message id="${later.message.id}" source="phone-voice">\n只要周六开门的\n</owner-message>`,
+      );
+    });
+
     it("stops at the per-run limit and leaves the rest queued for their own Run", async () => {
       const { send, inputFor, status } = await foldFixture();
       const first = await send("a", "一");

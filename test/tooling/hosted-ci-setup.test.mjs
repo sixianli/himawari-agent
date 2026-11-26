@@ -60,11 +60,12 @@ describe("iPhone 工作流", () => {
     readFileSync(path.join(repositoryRoot, ".github/workflows/apple.yml"), "utf8"),
   );
   it("只在免费的 macOS 标准机器上跑，只读权限，跳过草稿", () => {
-    expect(Object.keys(workflow.jobs)).toEqual(["iphone"]);
-    const job = workflow.jobs.iphone;
-    expect(job["runs-on"]).toBe(macRunnerLabel);
+    expect(Object.keys(workflow.jobs)).toEqual(["iphone", "iphone-accessibility"]);
+    for (const job of Object.values(workflow.jobs)) {
+      expect(job["runs-on"]).toBe(macRunnerLabel);
+      expect(job.if).toContain("github.event.pull_request.draft != true");
+    }
     expect(workflow.permissions).toEqual({ contents: "read" });
-    expect(job.if).toContain("github.event.pull_request.draft != true");
     expect(() =>
       validateHostedRunners({
         "apple.yml": readFileSync(path.join(repositoryRoot, ".github/workflows/apple.yml"), "utf8"),
@@ -89,5 +90,30 @@ describe("iPhone 工作流", () => {
         "utf8",
       ).length,
     ).toBeGreaterThan(0);
+  });
+  it("每个示例场景都跑苹果的无障碍审计，审计测试在 Himawari scheme 里", () => {
+    const job = workflow.jobs["iphone-accessibility"];
+    expect(job.name).toContain("apple/iphone-accessibility");
+    expect(job.strategy.matrix.shard.length).toBeGreaterThan(1);
+    const shard = job.steps.find((step) => step.run?.includes("xcodebuild test"));
+    expect(shard.env.TEST_RUNNER_HIMAWARI_AUDIT_SHARD).toContain("matrix.shard");
+    const audit = job.steps.find((step) => step.run?.includes("xcodebuild test"))?.run ?? "";
+    expect(audit).toContain("-scheme Himawari");
+    expect(audit).toContain("-only-testing:HimawariUITests");
+    expect(audit).toContain("set -o pipefail");
+    const scheme = readFileSync(
+      path.join(
+        repositoryRoot,
+        "clients/apple/App/Himawari.xcodeproj/xcshareddata/xcschemes/Himawari.xcscheme",
+      ),
+      "utf8",
+    );
+    expect(scheme).toContain('BlueprintName = "HimawariUITests"');
+    const project = readFileSync(
+      path.join(repositoryRoot, "clients/apple/App/Himawari.xcodeproj/project.pbxproj"),
+      "utf8",
+    );
+    expect(project).toContain('productType = "com.apple.product-type.bundle.ui-testing";');
+    expect(project).toContain("TEST_TARGET_NAME = Himawari;");
   });
 });

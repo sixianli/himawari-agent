@@ -12,8 +12,14 @@ public enum AnswerBlock: Equatable, Sendable {
 }
 
 public enum AnswerMarkdown {
+    private static let parsed = TextMemo<[AnswerBlock]>(limit: 400)
+
     public static func blocks(_ text: String, streaming: Bool = false) -> [AnswerBlock] {
-        let source = streaming ? settled(text) : text
+        if streaming { return parse(settled(text), streaming: true) }
+        return parsed.value(for: text) { parse($0, streaming: false) }
+    }
+
+    private static func parse(_ source: String, streaming: Bool) -> [AnswerBlock] {
         var parser = Parser(lines: source.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n"))
         return parser.run(streaming: streaming)
     }

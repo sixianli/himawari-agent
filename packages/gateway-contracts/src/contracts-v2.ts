@@ -49,7 +49,6 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "proactive.review.rate",
   "proactive.review.checkup",
   "proactive.source.manage",
-  "proactive.backoff.restore",
   "proactive.sources.read",
   "proactive.sources.snapshot",
   "proactive.source.settings.set",
@@ -503,15 +502,6 @@ const proactiveOverviewSnapshotSchema = object({
     quietHours: proactiveQuietHoursSchema,
     importantSenders: proactiveSendersSchema,
     dailyLimitReached: booleanValue,
-    backoff: array(
-      object({
-        classKey: boundedString(128),
-        domain: boundedString(128),
-        stage: integer(1, 2),
-        ignoredCount: integer(0),
-        changedAt: timestamp,
-      }),
-    ),
     insights: array(
       object({
         id: machineString,
@@ -1057,8 +1047,8 @@ export const HOME_ITEM_KINDS = [
   "running",
   "problem",
 ] as const;
-export const HOME_SENTENCE_BASES = ["recorded", "catalog", "model", "none"] as const;
-export const HOME_RANKS = ["rule", "deadline", "unscored", "model", "recency"] as const;
+export const HOME_SENTENCE_BASES = ["recorded", "catalog", "none"] as const;
+export const HOME_RANKS = ["rule", "deadline", "awaiting", "recency"] as const;
 export const HOME_TARGET_TYPES = [
   "mail",
   "memory",
@@ -1104,7 +1094,7 @@ export const HOME_ACTIONS = [
   "undo",
   "reconnect",
 ] as const;
-export const HOME_LABEL_BASES = ["catalog", "model"] as const;
+export const HOME_LABEL_BASES = ["catalog"] as const;
 export const HOME_POLARITIES = ["positive", "negative", "neutral"] as const;
 const homeQuerySchema = object({
   ...envelope("query", "home.read"),
@@ -1643,10 +1633,6 @@ const proactiveSourceManageCommandSchema = object({
     source: proactiveSourceName,
     action: enumeration(["disconnect", "clear_records"]),
   }),
-});
-const proactiveBackoffRestoreCommandSchema = object({
-  ...commandEnvelope("proactive.backoff.restore"),
-  payload: object({ classKey: nullable(boundedString(128)) }),
 });
 const proactiveSafetyLimitShape = {
   limit: integer(1),
@@ -3845,7 +3831,6 @@ const schemasByType = {
   "proactive.review.rate": proactiveReviewRateCommandSchema,
   "proactive.review.checkup": proactiveReviewCheckupCommandSchema,
   "proactive.source.manage": proactiveSourceManageCommandSchema,
-  "proactive.backoff.restore": proactiveBackoffRestoreCommandSchema,
   "proactive.sources.read": proactiveSourcesQuerySchema,
   "proactive.sources.snapshot": proactiveSourcesSnapshotSchema,
   "proactive.source.settings.set": proactiveSourceSettingsSetCommandSchema,

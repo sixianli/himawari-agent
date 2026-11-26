@@ -1364,13 +1364,6 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "cascade with Owner or Agent deletion; never changed on its own",
   ),
   entry(
-    "home_item_scores",
-    "HomeUrgencyStorePort",
-    "append-only model urgency scores of home items waiting for the owner: one row per item per model call, with the score or a failure code, the prompt id, model, a digest of the item text, the cost of the whole call and time; approval rows may also carry the model-written button label in plain text and a reference to the model-written sentence",
-    "payload_reference",
-    "approval rows cascade with the approval request and their sentence payload is removed with the Run; other rows hold no content and cascade with Owner or Agent deletion; never changed or deleted on its own",
-  ),
-  entry(
     "decision_signals",
     "ProactiveStorePort, WebPushStorePort, DecisionLedgerPort",
     "append-only observations of what happened to a proactive decision without the owner rating it: reminder opened, done or muted then undone, mail thread replied; timing and small codes only",
@@ -1453,13 +1446,6 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "one row per source thread with a result; a new reply updates the same row; push_class holds due:<sender domain> of a pushed reminder in plain text",
     "payload_reference",
     "removed with its payloads when the owner disconnects the source or deletes proactive records",
-  ),
-  entry(
-    "proactive_push_backoff",
-    "ProactiveStorePort",
-    "per source and sender-domain class of reminder pushes: current backoff stage, when counting started, last allowed push; no mail text",
-    "metadata_only",
-    "removed with its Owner or Agent, when the owner deletes that source's proactive records, or when that source is disconnected",
   ),
   entry(
     "proactive_processed_messages",

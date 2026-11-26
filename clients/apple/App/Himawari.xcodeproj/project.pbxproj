@@ -84,6 +84,13 @@
 			remoteGlobalIDString = EA779591B4B8B78247BF76BE;
 			remoteInfo = HimawariWatchWidgets;
 		};
+		45FFC5EAAE4F78535F3E0434 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = C1B4530B5C03453949F249C1 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = D3DC968DCAF7E04C4C4E67A5;
+			remoteInfo = Himawari;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -180,7 +187,16 @@
 		07D46FA691E96988B9252455 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
 		C5E688A2DCCE9C85433F6155 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
 		9978D058279653003F112BD5 /* ja */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ja; path = ja.lproj/Localizable.strings; sourceTree = "<group>"; };
+		9EEF70993A013CE3527EC7AB /* HimawariUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HimawariUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		751CC8FA3BFE45ADBD018838 /* UITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = UITests;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		ABA489076D8B5F5098C67C30 /* Frameworks */ = {
@@ -242,6 +258,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A26D0C3011DFBEAEFA10F329 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -256,6 +279,7 @@
 				A3CF9E94B9BDE59BC8B24077 /* Watch */,
 				E1B2E1E7EEA285F45BD9561C /* WatchWidgets */,
 				E7DC9E439858A3B1E2174D8A /* ListenActivity */,
+				751CC8FA3BFE45ADBD018838 /* UITests */,
 				70C166AFCB661E3D73C8AB48 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -270,6 +294,7 @@
 				C782E7CFB846E7ED080D3FB2 /* HimawariWatch.app */,
 				CFAE68B3CB72329EB0805157 /* HimawariWatchWidgets.appex */,
 				4F54B23756842FA2134945C7 /* HimawariListenActivity.appex */,
+				9EEF70993A013CE3527EC7AB /* HimawariUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -518,6 +543,27 @@
 			productReference = CFAE68B3CB72329EB0805157 /* HimawariWatchWidgets.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		4CCD543FBF45F561A307E1DD /* HimawariUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4000494629CAF42673D416A9 /* Build configuration list for PBXNativeTarget "HimawariUITests" */;
+			buildPhases = (
+				9D61D3C69BD2A3E50A06E1F1 /* Sources */,
+				A26D0C3011DFBEAEFA10F329 /* Frameworks */,
+				C832E259139F6947DD8BC77F /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				1C4D63DB9AE5783898F29324 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				751CC8FA3BFE45ADBD018838 /* UITests */,
+			);
+			name = HimawariUITests;
+			productName = HimawariUITests;
+			productReference = 9EEF70993A013CE3527EC7AB /* HimawariUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -554,6 +600,7 @@
 				5B7F226195276BF2C8D4623C /* HimawariWatch */,
 				EA779591B4B8B78247BF76BE /* HimawariWatchWidgets */,
 				2330D670C9DF278261995A21 /* HimawariListenActivity */,
+				4CCD543FBF45F561A307E1DD /* HimawariUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -624,6 +671,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C832E259139F6947DD8BC77F /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -683,6 +737,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		9D61D3C69BD2A3E50A06E1F1 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 
@@ -711,6 +772,11 @@
 			isa = PBXTargetDependency;
 			target = EA779591B4B8B78247BF76BE /* HimawariWatchWidgets */;
 			targetProxy = D4FF9E9EDF803F7821FAF6FE /* PBXContainerItemProxy */;
+		};
+		1C4D63DB9AE5783898F29324 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = D3DC968DCAF7E04C4C4E67A5 /* Himawari */;
+			targetProxy = 45FFC5EAAE4F78535F3E0434 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 /* Begin PBXVariantGroup section */
@@ -1149,6 +1215,40 @@
 			};
 			name = Release;
 		};
+		2929D7474C7A07B461A86E9D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(HIMAWARI_BUNDLE_PREFIX).uitests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_TARGET_NAME = Himawari;
+			};
+			name = Debug;
+		};
+		2FF896748D2A1CD408E66D9F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(HIMAWARI_BUNDLE_PREFIX).uitests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_TARGET_NAME = Himawari;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -1220,6 +1320,15 @@
 			buildConfigurations = (
 				7270F1AEEE5323041A419D2D /* Debug */,
 				236CCA5EF381B69C4DF054E6 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		4000494629CAF42673D416A9 /* Build configuration list for PBXNativeTarget "HimawariUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				2929D7474C7A07B461A86E9D /* Debug */,
+				2FF896748D2A1CD408E66D9F /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
