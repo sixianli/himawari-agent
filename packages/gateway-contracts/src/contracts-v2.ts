@@ -91,6 +91,8 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "memory.reminder.create",
   "memory.rules.read",
   "memory.rules.snapshot",
+  "memory.search.read",
+  "memory.search.snapshot",
   "memory.rule.respond",
   "memory.review.read",
   "memory.review.snapshot",
@@ -2671,6 +2673,29 @@ export const BUILT_IN_ACTION_RULE_OUTCOMES = [
   "ask_owner",
   "refuse",
 ] as const;
+export const MEMORY_SEARCH_RESULT_KINDS = ["memory", "rule"] as const;
+const memorySearchQuerySchema = object({
+  ...envelope("query", "memory.search.read"),
+  payload: object({ query: boundedString(500) }),
+});
+const memorySearchSnapshotSchema = object({
+  ...envelope("snapshot", "memory.search.snapshot"),
+  payload: object({
+    query: boundedString(500),
+    results: array(
+      object({
+        kind: enumeration(MEMORY_SEARCH_RESULT_KINDS),
+        memoryId: machineString,
+        ruleId: nullable(machineString),
+        text: boundedString(2000),
+        category: enumeration(MEMORY_CATEGORY_NAMES),
+        tentative: booleanValue,
+        updatedAt: timestamp,
+      }),
+    ),
+    generatedAt: timestamp,
+  }),
+});
 const memoryRulesQuerySchema = object({
   ...envelope("query", "memory.rules.read"),
   payload: object({}),
@@ -3933,6 +3958,8 @@ const schemasByType = {
   "memory.reminder.create": memoryReminderCreateCommandSchema,
   "memory.rules.read": memoryRulesQuerySchema,
   "memory.rules.snapshot": memoryRulesSnapshotSchema,
+  "memory.search.read": memorySearchQuerySchema,
+  "memory.search.snapshot": memorySearchSnapshotSchema,
   "memory.rule.respond": memoryRuleRespondCommandSchema,
   "memory.review.read": memoryReviewQuerySchema,
   "memory.review.snapshot": memoryReviewSnapshotSchema,

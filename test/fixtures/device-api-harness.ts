@@ -243,6 +243,9 @@ export async function harness(
       read: (contentRef: string) => Promise<string | undefined>,
     ) => Promise<string | undefined>;
     readonly searchControl?: Parameters<typeof createProductionApprovalGateway>[0]["searchControl"];
+    readonly memorySearch?: (input: {
+      readonly repository: SqliteProductStateRepository;
+    }) => NonNullable<Parameters<typeof createProductionApprovalGateway>[0]["memorySearchControl"]>;
     readonly files?: (input: {
       readonly repository: SqliteProductStateRepository;
       readonly protector: EnvelopePayloadProtector;
@@ -418,6 +421,7 @@ export async function harness(
     authority: () => authority,
     executionAuthority: () => authority as never,
     ...(options.searchControl ? { searchControl: options.searchControl } : {}),
+    ...(options.memorySearch ? { memorySearchControl: options.memorySearch({ repository }) } : {}),
     museControl: new ProductionMuseControl({
       scope: { ownerId, agentId },
       store: repository.museIntake(),
