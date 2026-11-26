@@ -19,6 +19,7 @@ public struct ChatView: View {
     @Environment(\.chatCanAttach) private var canAttach
     @Environment(\.chatStopRun) private var stopRun
     @Environment(\.chatChooseOption) private var chooseOption
+    @State private var explaining: ThreadMessage?
     @Environment(\.chatTalk) private var talk
     @Environment(\.chatOwnerAwaited) private var ownerAwaited
     @Environment(\.chatOpensTalk) private var opensTalk
@@ -45,9 +46,19 @@ public struct ChatView: View {
     @State private var safari: SafariLink?
     #endif
 
-    public init(store: ChatStore, threadId: String, draft: String = "", openHerPage: (() -> Void)? = nil, close: (() -> Void)? = nil) {
+    private let explainSpoken: ((ThreadMessage, @escaping () -> Void) -> AnyView)?
+
+    public init(
+        store: ChatStore,
+        threadId: String,
+        draft: String = "",
+        openHerPage: (() -> Void)? = nil,
+        close: (() -> Void)? = nil,
+        explainSpoken: ((ThreadMessage, @escaping () -> Void) -> AnyView)? = nil
+    ) {
         self.store = store
         self.close = close
+        self.explainSpoken = explainSpoken
         self.openHerPage = openHerPage
         self.threadId = threadId
         _draft = State(initialValue: draft)
@@ -254,6 +265,9 @@ public struct ChatView: View {
             .sheet(item: $selecting) { message in
                 SelectTextSheet(message: message) { selecting = nil }
             }
+            .sheet(item: $explaining) { message in
+                explainSpoken?(message) { explaining = nil }
+            }
             .fullScreenCover(item: $safari) { link in
                 SafariView(url: link.url).ignoresSafeArea()
             }
@@ -280,7 +294,8 @@ public struct ChatView: View {
         return MessageMenuActions(
             reply: close == nil ? { startReply(to: message) } : nil,
             copy: { copyToPasteboard(MessageCopy.text(raw, fromAgent: fromAgent)) },
-            select: { selecting = SelectableMessage(id: message.messageId, text: raw, fromAgent: fromAgent) }
+            select: { selecting = SelectableMessage(id: message.messageId, text: raw, fromAgent: fromAgent) },
+            why: fromAgent && message.spoken && explainSpoken != nil ? { explaining = message } : nil
         )
     }
 
@@ -310,7 +325,7 @@ public struct ChatView: View {
         let whole = menu(for: message)
         return { code in
             guard let whole else { return nil }
-            return MessageMenuActions(reply: whole.reply, copy: { copyToPasteboard(code) }, select: whole.select)
+            return MessageMenuActions(reply: whole.reply, copy: { copyToPasteboard(code) }, select: whole.select, why: whole.why)
         }
     }
 

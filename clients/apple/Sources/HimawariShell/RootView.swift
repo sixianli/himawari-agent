@@ -104,7 +104,7 @@ struct MainShell: View {
     var body: some View {
         Group {
             if let threadId = fixedThreadId ?? mainThreadId {
-                ChatView(store: chat, threadId: threadId, draft: draft.text, openHerPage: { herOpen = true })
+                ChatView(store: chat, threadId: threadId, draft: draft.text, openHerPage: { herOpen = true }, explainSpoken: explainSpoken)
                     .id(draft.nonce)
                     .environment(\.chatStopRun, stopRun)
                     .environment(\.chatChooseOption, chooseOption)
@@ -160,6 +160,14 @@ struct MainShell: View {
             mainThreadId = try await MainThreadLocator(api: model.api, confirmKey: model.confirmKey).mainThreadId()
         } catch {
             lookupFailed = true
+        }
+    }
+
+    private var explainSpoken: (ThreadMessage, @escaping () -> Void) -> AnyView {
+        let api = model.api
+        let confirmKey = model.confirmKey
+        return { message, close in
+            AnyView(SpokenExplanationSheet(api: api, confirmKey: confirmKey, messageId: message.messageId, close: close))
         }
     }
 

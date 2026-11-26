@@ -26,12 +26,16 @@ public struct HerPage: View {
         case timers
         case timer(String)
         case about
+        case files
+        case herWork
     }
 
     @State private var settings: SettingsStore
     @State private var memory: MemoryStore
     @State private var quietHours: QuietHoursStore
     @State private var timers: TimersStore
+    @State private var stats: DecisionStatsStore
+    @State private var files: OwnerFilesStore
     @State private var path: [Page] = []
     @State private var sensesOpen = false
     @State private var vaultCount: HerVaultCount = .unknown
@@ -72,6 +76,8 @@ public struct HerPage: View {
         _memory = State(initialValue: MemoryStore(gateway: gateway))
         _quietHours = State(initialValue: QuietHoursStore(gateway: gateway))
         _timers = State(initialValue: TimersStore(gateway: gateway))
+        _stats = State(initialValue: DecisionStatsStore(gateway: gateway))
+        _files = State(initialValue: OwnerFilesStore(gateway: gateway, api: api))
         self.listening = listening
         self.actions = actions
         self.openListening = openListening
@@ -102,6 +108,8 @@ public struct HerPage: View {
         _memory = State(initialValue: memory)
         _quietHours = State(initialValue: quietHours)
         _timers = State(initialValue: timers ?? TimersStore(timers: nil))
+        _stats = State(initialValue: DecisionStatsStore(stats: nil))
+        _files = State(initialValue: OwnerFilesStore(files: nil))
         _path = State(initialValue: path)
         self.listening = listening
         self.actions = actions
@@ -133,9 +141,15 @@ public struct HerPage: View {
                     }
                     SettingsGroup(label: nil) {
                         Button { path.append(.memory) } label: {
-                            HerRow(icon: .affiliate, title: M.herMemory, subtitle: memory.summary(categoryLabel: M.category).map(M.memorySummary), last: true)
+                            HerRow(icon: .affiliate, title: M.herMemory, subtitle: memory.summary(categoryLabel: M.category).map(M.memorySummary), last: files.phase == .unsupported)
                         }
                         .buttonStyle(.pressable)
+                        if files.phase != .unsupported {
+                            Button { path.append(.files) } label: {
+                                HerRow(icon: .folder, title: M.filesTitle, systemSymbol: "folder", last: true)
+                            }
+                            .buttonStyle(.pressable)
+                        }
                     }
                     SettingsGroup(label: nil) {
                         if timers.phase != .unsupported {
@@ -145,9 +159,15 @@ public struct HerPage: View {
                             .buttonStyle(.pressable)
                         }
                         Button { path.append(.allowances) } label: {
-                            HerRow(icon: .shieldCheck, title: M.allowancesTitle, subtitle: M.allowancesSummary(memory.allowances.count), last: vaultCount == .unsupported)
+                            HerRow(icon: .shieldCheck, title: M.allowancesTitle, subtitle: M.allowancesSummary(memory.allowances.count), last: vaultCount == .unsupported && stats.phase == .unsupported)
                         }
                         .buttonStyle(.pressable)
+                        if stats.phase != .unsupported {
+                            Button { path.append(.herWork) } label: {
+                                HerRow(icon: .listCheck, title: M.herWorkTitle, systemSymbol: "chart.bar", last: vaultCount == .unsupported)
+                            }
+                            .buttonStyle(.pressable)
+                        }
                         if vaultCount != .unsupported {
                             Button { vaultOpen = true } label: {
                                 HerRow(icon: .key, title: M.vaultTitle, subtitle: M.vaultSummary(vaultCount), last: true)
@@ -221,6 +241,10 @@ public struct HerPage: View {
                     TimerDetailPage(store: timers, timerId: id) { path.removeLast() }
                 case .about:
                     AboutPage(server: server) { path.removeLast() }
+                case .files:
+                    FilesPage(store: files)
+                case .herWork:
+                    HerWorkPage(store: stats)
                 case .approvals:
                     if let actions {
                         ApprovalsView(model: actions, openThread: { _ in close() }) { path.removeLast() }
@@ -256,8 +280,10 @@ public struct HerPage: View {
         async let memoryLoaded: Void = memory.load()
         async let quietLoaded: Void = quietHours.load()
         async let timersLoaded: Void = timers.load()
+        async let statsLoaded: Void = stats.load(.week)
+        async let filesLoaded: Void = files.load()
         vaultCount = await countVault()
-        _ = await (settingsLoaded, memoryLoaded, quietLoaded, timersLoaded)
+        _ = await (settingsLoaded, memoryLoaded, quietLoaded, timersLoaded, statsLoaded, filesLoaded)
     }
 }
 
@@ -283,6 +309,7 @@ struct HerRow: View {
     let icon: IconName
     let title: String
     var subtitle: String? = nil
+    var systemSymbol: String? = nil
     var value: String? = nil
     var chevron = true
     var last = false
@@ -290,7 +317,15 @@ struct HerRow: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: SL.rowGap) {
-                Icon(icon, size: DesignTokens.Her.rowIcon)
+                Group {
+                    if let systemSymbol {
+                        Image(systemName: systemSymbol)
+                            .font(.body)
+                            .accessibilityHidden(true)
+                    } else {
+                        Icon(icon, size: DesignTokens.Her.rowIcon)
+                    }
+                }
                     .foregroundStyle(Color.hmGlyph)
                     .frame(width: DesignTokens.Her.rowTile, height: DesignTokens.Her.rowTile)
                     .background(Color.hmTile, in: RoundedRectangle(cornerRadius: DesignTokens.Her.rowTileRadius, style: .continuous))

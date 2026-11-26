@@ -216,7 +216,11 @@ import {
   ProductionServerStatusControl,
 } from "./production-server-status-control.js";
 import { createProductionSpeech } from "./production-speech.js";
-import { ProductionSpokenDecisions, spokenMessagesReader } from "./production-spoken-decisions.js";
+import {
+  PRODUCTION_SPOKEN_DECISION_OPERATIONS,
+  ProductionSpokenDecisions,
+  spokenMessagesReader,
+} from "./production-spoken-decisions.js";
 import {
   DEFAULT_TIMER_TIME_ZONE,
   localTime,
@@ -873,6 +877,7 @@ function routeOptions(
         ...(searchAvailable ? PRODUCTION_SEARCH_OPERATIONS : []),
         ...PRODUCTION_DATA_EXPORT_OPERATIONS,
         ...PRODUCTION_FILES_OPERATIONS,
+        ...PRODUCTION_SPOKEN_DECISION_OPERATIONS,
         ...PRODUCTION_LOGIN_DEVICE_OPERATIONS,
         ...(mcpConnectionsAvailable ? PRODUCTION_MCP_CONNECTION_OPERATIONS : []),
         ...PRODUCTION_PERCEPTION_OPERATIONS,

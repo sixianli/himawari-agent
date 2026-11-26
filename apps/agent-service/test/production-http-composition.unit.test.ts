@@ -30,6 +30,7 @@ import {
   initializeStateRoot,
   parseProductConfiguration,
 } from "@himawari-agent/platform-node";
+import { buildDeviceTestRequest, generateDeviceTestKeyPair } from "@himawari-agent/testing";
 import { exportJWK, importJWK, type JSONWebKeySet, SignJWT } from "jose";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -48,7 +49,6 @@ import {
   ProductionMcpRead,
   type ProductionMcpReadOptions,
 } from "../src/production-mcp-read.js";
-import { buildDeviceTestRequest, generateDeviceTestKeyPair } from "@himawari-agent/testing";
 import { createMcpAccess } from "./fixtures/mcp-access.js";
 import { productionHttpRs256TestKeys } from "./fixtures/production-http-rs256.test-key.js";
 
@@ -394,6 +394,9 @@ describe("production HTTP composition", () => {
           "data.export.cancel",
           "data.export.status.read",
           "files.list.read",
+          "decision.spoken.read",
+          "decision.spoken.rate",
+          "decision.stats.read",
           "login.devices.read",
           "login.device.revoke",
           "login.devices.revoke_others",
@@ -1638,7 +1641,7 @@ describe("production HTTP composition", () => {
         payload: {
           ...ownerEnvelope(second.authenticationRef, "files.list.read"),
           kind: "query",
-          payload: { kind: null, origin: null, before: null, limit: 20 },
+          payload: { kind: null, origin: null, before: null, limit: 20, search: null },
         },
       });
       expect(phoneFiles.statusCode, phoneFiles.body).toBe(200);

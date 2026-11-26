@@ -715,7 +715,13 @@ export const governanceMessages = [
     ],
     generatedAt: "2026-11-12T03:06:30.000Z",
   }),
-  fixture("query", "files.list.read", { kind: null, origin: "uploaded", before: null, limit: 50 }),
+  fixture("query", "files.list.read", {
+    kind: null,
+    origin: "uploaded",
+    before: null,
+    limit: 50,
+    search: "大阪",
+  }),
   fixture("snapshot", "files.list.snapshot", {
     files: [
       {

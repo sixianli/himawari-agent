@@ -1323,6 +1323,7 @@ const filesListQuerySchema = object({
     origin: nullable(enumeration(FILE_LIST_ORIGINS)),
     before: nullable(fileListCursorSchema),
     limit: integer(1, FILE_LIST_PAGE_LIMIT),
+    search: nullable(boundedString(200)),
   }),
 });
 const filesListSnapshotSchema = object({

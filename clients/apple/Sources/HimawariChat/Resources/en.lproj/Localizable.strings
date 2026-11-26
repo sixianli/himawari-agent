@@ -52,6 +52,7 @@
 "chat.menu.reply" = "Reply";
 "chat.menu.copy" = "Copy";
 "chat.menu.select" = "Select Text";
+"chat.menu.why" = "Why She Said This";
 "chat.reply.toAgent" = "Replying to her";
 "chat.reply.toOwner" = "Replying to yourself";
 "chat.reply.missing" = "Original message is gone";

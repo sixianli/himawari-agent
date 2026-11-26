@@ -52,6 +52,7 @@
 "chat.menu.reply" = "回复";
 "chat.menu.copy" = "复制";
 "chat.menu.select" = "选择文字";
+"chat.menu.why" = "为什么说这个";
 "chat.reply.toAgent" = "回复她";
 "chat.reply.toOwner" = "回复你自己";
 "chat.reply.missing" = "原消息已不在";
