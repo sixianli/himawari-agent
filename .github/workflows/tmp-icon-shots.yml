@@ -1,0 +1,51 @@
+name: Tmp icon shots
+on:
+  push:
+    branches: [claude/project-thread-tbaibb]
+    paths: [.github/workflows/tmp-icon-shots.yml]
+permissions:
+  contents: read
+jobs:
+  shots:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - run: >-
+          xcodebuild build
+          -project clients/apple/App/Himawari.xcodeproj
+          -scheme Himawari
+          -configuration Debug
+          -destination 'generic/platform=iOS Simulator'
+          -derivedDataPath "$RUNNER_TEMP/dd"
+          ARCHS=arm64
+          ONLY_ACTIVE_ARCH=YES
+          COMPILER_INDEX_STORE_ENABLE=NO
+          CODE_SIGNING_ALLOWED=NO
+          -quiet
+      - run: |
+          set -euo pipefail
+          app="$RUNNER_TEMP/dd/Build/Products/Debug-iphonesimulator/Himawari.app"
+          bundle="$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$app/Info.plist")"
+          runtime="$(xcrun simctl list runtimes available | grep -E '^iOS ' | tail -1 | sed -E 's/.* - (com\.apple\.CoreSimulator\.SimRuntime\.[^ ]+).*/\1/')"
+          udid="$(xcrun simctl create Shots com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro "$runtime")"
+          xcrun simctl boot "$udid"
+          xcrun simctl bootstatus "$udid" -b >/dev/null
+          xcrun simctl status_bar "$udid" override --time 9:41 --batteryState charged --batteryLevel 100 || true
+          xcrun simctl install "$udid" "$app"
+          mkdir -p out
+          for look in light dark; do
+            xcrun simctl ui "$udid" appearance "$look"
+            for scene in next-3-her 16-chat-states-6-steps next-2-chat-attach next-8-background-sheet; do
+              xcrun simctl launch --terminate-running-process "$udid" "$bundle" -HimawariDemoScene "$scene" -AppleLanguages "(zh-Hans)" -AppleLocale zh_CN >/dev/null
+              sleep 12
+              xcrun simctl io "$udid" screenshot "out/$scene-$look.png"
+            done
+          done
+          ls -la out
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: icon-shots
+          path: out/*.png
