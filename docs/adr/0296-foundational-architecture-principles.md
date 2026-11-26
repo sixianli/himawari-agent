@@ -5,8 +5,8 @@ decision_status: accepted
 supersedes: "https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0001-pi-runtime-adapter.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0002-headless-agent-gateway.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0003-single-logical-agent-authority.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0004-deterministic-authorization.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0005-replaceable-memory-boundary.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0006-primary-agent-scoped-workers.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0007-policy-controlled-model-routing.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0008-governed-capability-registry.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0009-protected-agent-trust-root.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0010-complete-session-trace.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0011-composable-service-boundaries.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0013-agent-thread-run-memory-model.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0014-central-attention-policy.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0015-product-state-over-pi-runtime-projection.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0016-typescript-node-runtime.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0017-workspace-monorepo.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0018-sqlite-product-state-authority.md"
 superseded_by: ""
 date: "2026-11-26"
-covers: "packages/domain, packages/application, packages/runtime-pi, packages/gateway-contracts, packages/persistence-sqlite/src/migration-engine.ts, docs/architecture-v0.1.md"
-verified_at: "7d0ffcd52cbb69d4941871cf9bf08d93f3843da8"
+covers: "packages/domain, packages/application, packages/runtime-pi, packages/gateway-contracts, packages/persistence-sqlite/src/migration-engine.ts, docs/architecture-v0.2.md"
+verified_at: "7c8521fe5f55e7dd57c5bd52badd16eef647502e"
 ---
 
 # ADR 0296：Himawari 的基础架构原则
@@ -30,7 +30,7 @@ verified_at: "7d0ffcd52cbb69d4941871cf9bf08d93f3843da8"
 
 ## 背景
 
-项目开始时（2026-08 下旬）定下的十七条基础架构原则，原来各占一份很短的 ADR（0001 到 0011、0013 到 0018），每份只有一两段决定。它们至今仍然成立，具体怎么落地写在[架构文档](../architecture-v0.1.md)里。这份 ADR 把它们合成一份，方便一次读完；每条后面的括号是原来的编号，旧文全文（含当时比较过的方案）在 `supersedes` 列的固定提交链接里。原则之间冲突时，按[产品愿景](../product-vision.md)的顺序裁决。
+项目开始时（2026-08 下旬）定下的十七条基础架构原则，原来各占一份很短的 ADR（0001 到 0011、0013 到 0018），每份只有一两段决定。它们至今仍然成立，具体怎么落地写在[架构文档](../architecture-v0.2.md)里。这份 ADR 把它们合成一份，方便一次读完；每条后面的括号是原来的编号，旧文全文（含当时比较过的方案）在 `supersedes` 列的固定提交链接里。原则之间冲突时，按[产品愿景](../product-vision.md)的顺序裁决。
 
 <a id="decision"></a>
 

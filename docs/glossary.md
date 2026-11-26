@@ -4,7 +4,7 @@ supersedes: ""
 superseded_by: ""
 date: "2026-11-02"
 covers: ".agents/instructions/prompt-prefix.md, scripts/check-glossary.mjs"
-verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
+verified_at: "7c8521fe5f55e7dd57c5bd52badd16eef647502e"
 ---
 
 # Himawari 词表
@@ -68,7 +68,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 - 数据库列和存的值（例如 `discarded`、`memory_candidate`、`owner_rating`）、接口操作名、代码标识符：改它们要迁移，会让旧数据对不上，而且用户看不到。
 - 已经通过的 ADR 正文和归档文档：历史记录不重写，在这里记“旧叫法 → 新叫法”即可。
-- `docs/product-vision.md`：只有 Andy 能改愿景正文。v2.3（[ADR 0153](adr/0153-adopt-product-vision-v2-3.md)）已把“决策账本”改称“决策记录”；愿景里其余旧写法（例如附录里记录旧版改动的文字）不改，所以这个文件不在检查范围内。
+- `docs/product-vision.md`：只有 Andy 能改愿景正文。v2.3（[ADR 0153](https://github.com/sixianli/himawari-agent/blob/10dfa43248c29f0a958e92e4b9b2cffa3b48c056/docs/adr/0153-adopt-product-vision-v2-3.md)）已把“决策账本”改称“决策记录”；愿景里其余旧写法（例如附录里记录旧版改动的文字）不改，所以这个文件不在检查范围内。
 - 已冻结的设计原型（`docs/assets/`）、照着操作的 Runbook（`docs/runbooks/`）和已做完的实施计划（`docs/execution/plans/`）：原型是定稿截图的源文件，Runbook 改文字前要对照它的 `Authoritative Sources` 核对步骤，计划是还没删掉的旧任务清单，不再新建，做完就删除。
 - 发给模型的提示词和工具结果文字：已发出的内容只能往后追加（见 [prompt-prefix.md](../.agents/instructions/prompt-prefix.md)），不为改名而改动。
 

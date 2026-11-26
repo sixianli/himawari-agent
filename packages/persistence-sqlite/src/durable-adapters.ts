@@ -1,4 +1,5 @@
 import type {
+  AppConnectionStorePort,
   ApplePushStorePort,
   AttentionStatePort,
   AuditLedgerPort,
@@ -1222,6 +1223,15 @@ export class SqliteDurableAdapters {
       listSourceSettings: (input) => this.context.read("proactive.listSourceSettings", input),
       writeSourceSettings: (input) => this.context.write("proactive.writeSourceSettings", input),
       processedSince: (input) => this.context.read("proactive.processedSince", input),
+    });
+  }
+  appConnections(): AppConnectionStorePort {
+    return Object.freeze<AppConnectionStorePort>({
+      read: (input) => this.context.read("appConnections.read", input),
+      list: (input) => this.context.read("appConnections.list", input),
+      save: (input) => this.context.write("appConnections.save", input),
+      mark: (input) => this.context.write("appConnections.mark", input),
+      remove: (input) => this.context.write("appConnections.remove", input),
     });
   }
   ownerPreferences(): OwnerPreferencesStorePort {
