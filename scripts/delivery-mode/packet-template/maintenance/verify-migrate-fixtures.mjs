@@ -78,7 +78,7 @@ function writeConfiguration(value) {
 }
 
 const pendingNames = new Set(common.migrationExpectedLedger.map((row) => row.name));
-const productionApplied = migrations.filter((migration) => !pendingNames.has(migration.name));
+const productionApplied = migrations.filter((migration) => !pendingNames.has(migration.name)).map((migration, index) => ({ ...migration, sequence: index + 1 }));
 
 function seedCurrent(value) {
   assert.equal(productionApplied.length, from, `MIGRATE_FIXTURE_PRODUCTION_APPLIED_COUNT:${productionApplied.length}:${from}`);
