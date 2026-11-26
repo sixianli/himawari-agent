@@ -3678,6 +3678,8 @@ export async function startTenantRuntime(
                     search: (input) =>
                       runMemoryEpisodes ? runMemoryEpisodes.search(input) : Promise.resolve([]),
                   },
+                  embedOutsideRun: (context, operation) =>
+                    memory.embedForExternalRead(context, operation),
                 },
               }
             : {}),

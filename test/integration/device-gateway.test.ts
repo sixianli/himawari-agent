@@ -1,5 +1,7 @@
 import { DEFAULT_SEARCH_ASK, type ProductMemoryRecord } from "@himawari-agent/application";
+import { HybridMemoryProvider } from "@himawari-agent/memory-engine";
 import { afterEach, describe, expect, it } from "vitest";
+import { ProductionMemorySearch } from "../../apps/agent-service/src/production-memory-search.ts";
 import { ProductionSearchControl } from "../../apps/agent-service/src/production-search.ts";
 import {
   agentId,
@@ -640,6 +642,55 @@ describe("手机搜索页问答经设备通道", () => {
     const h = await harness();
     const client = await pairAndConfirm(h);
     const response = await ask(h, client, "我对什么过敏");
+    expect(response.statusCode).not.toBe(200);
+  });
+});
+
+describe("手机记忆页检索经设备通道", () => {
+  const search = (h: Harness, client: PairedClient) =>
+    gateway(
+      h,
+      client,
+      gatewayBody({
+        gateway: "v2",
+        type: "memory.search.read",
+        command: false,
+        payload: { query: "我对什么过敏" },
+      }),
+    );
+
+  it("装配了检索时，手机能调到它；没有任何记忆时结果为空", async () => {
+    const h = await harness({
+      memorySearch: ({ repository }) =>
+        new ProductionMemorySearch({
+          ownerId: ownerId as ProductMemoryRecord["ownerId"],
+          agentId: agentId as ProductMemoryRecord["agentId"],
+          provider: new HybridMemoryProvider({
+            index: repository.memoryIndex(),
+            embedder: null,
+            embeddableClassifications: [],
+            now: () => "2026-11-26T01:00:00.000Z",
+          }),
+          state: repository.productMemoryState(),
+          readText: async () => undefined,
+          embedOutsideRun: (_context, operation) => operation(),
+          requestTimeoutMs: 5_000,
+          clock: { now: () => "2026-11-26T01:00:00.000Z" },
+        }),
+    });
+    const client = await pairAndConfirm(h);
+    const response = await search(h, client);
+    expect(response.statusCode, response.body).toBe(200);
+    expect(JSON.parse(response.body)).toMatchObject({
+      type: "memory.search.snapshot",
+      payload: { query: "我对什么过敏", results: [] },
+    });
+  });
+
+  it("没有装配检索时这个操作不可用", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    const response = await search(h, client);
     expect(response.statusCode).not.toBe(200);
   });
 });
