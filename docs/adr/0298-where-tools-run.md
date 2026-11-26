@@ -5,8 +5,8 @@ decision_status: accepted
 supersedes: "https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0025-pi-tools-and-managed-execution-lifecycles.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0026-job-scoped-network-egress.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0029-protected-native-runtime-history.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0030-durable-workspace-release-facts.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0031-isolated-tool-execution.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0032-original-directory-disk-and-sensitive-file-limits.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0033-process-sandbox-default-and-optional-containers.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0036-agent-worker-restart-as-a-pair.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0037-macos-bundled-bash.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0055-bash-uses-system-commands-in-sandbox.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0069-trust-unprotected-runtime-like-claude-code.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0072-linux-pid-namespace-sweep-counts-as-release-confirmed.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0094-stop-job-host-supervision-after-final-result.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0116-reuse-host-file-check-by-file-state.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0156-srt-0-0-81-with-a-locked-seccomp-helper.md"
 superseded_by: ""
 date: "2026-11-26"
-covers: "packages/runtime-sandbox/src/job-host.ts, packages/execution-contracts/src/sandbox-runtime-version.ts, packages/platform-node/src/capabilities/sandbox-host-verifier.ts, apps/agent-service/src/production-sandbox-services.ts, apps/execution-worker/src/production-sandbox-execution-v2.ts, packages/runtime-sandbox/scripts/check-srt-boundary.mjs"
-verified_at: "7d0ffcd52cbb69d4941871cf9bf08d93f3843da8"
+covers: "packages/runtime-sandbox/src/user-computer/manager.ts, apps/agent-service/src/production-computer-tools.ts, apps/agent-service/src/production-browser-tools.ts, packages/runtime-sandbox/computer-image/himawari-browser.mjs, packages/runtime-sandbox/computer-image/Dockerfile, packages/runtime-sandbox/src/job-host.ts, packages/execution-contracts/src/sandbox-runtime-version.ts, packages/platform-node/src/capabilities/sandbox-host-verifier.ts, apps/agent-service/src/production-sandbox-services.ts, apps/execution-worker/src/production-sandbox-execution-v2.ts, packages/runtime-sandbox/scripts/check-srt-boundary.mjs"
+verified_at: "e691135f5add430cdec85201e781a6eb59e96a45"
 ---
 
 # ADR 0298：工具在哪里执行：沙箱和执行环境
@@ -26,6 +26,8 @@ verified_at: "7d0ffcd52cbb69d4941871cf9bf08d93f3843da8"
   - [安装核验](#host-check)
   - [SRT 版本](#srt)
   - [进程和历史](#process)
+  - [每人一台电脑](#user-computers)
+  - [浏览器](#browser)
 - [还没做到的](#not-yet)
 - [放弃的做法](#rejected)
 - [后果](#consequences)
@@ -119,12 +121,40 @@ SRT 指 Anthropic 开源的 sandbox-runtime（`@anthropic-ai/sandbox-runtime`）
 - Job Host 交回最终结果后，调用方不再检查心跳和租约；之后迟迟不退出由收尾期限兜底强制清理。
 - 运行历史由 Himawari 受保护地持久化：Pi 的原生消息作为不可变的加密 Payload，快照保存有序引用。模型调用、工具执行和停止确认之前先等需要的历史写完，写不进去就终止继续执行。展示用的过程记录和规范运行历史分开保存。
 
+<a id="user-computers"></a>
+
+### 每人一台电脑
+
+Andy 2026-11-26 同意的方案是给每个用户一台用 gVisor 隔离的长期“电脑”（gVisor 是 Google 开源的容器运行时，命令名 `runsc`，给每个容器一个用户态内核，容器里的程序碰不到宿主的真内核）。现在已经有的部分：
+
+- 电脑管理 `UserComputerManager`（`packages/runtime-sandbox/src/user-computer/`）：按用户 id 算出用户键，每个用户一个 Docker 容器 `himawari-computer-<用户键>`，用配置里的运行时（生产是 `runsc`）启动；第一次用时创建，关着就开机，开机前按宿主 `/proc/meminfo` 的 `MemAvailable` 减去预留量判断放不放得下，放不下先关最久没用、没有调用在跑的电脑，还不够就排队，超过等待时长报 `COMPUTER_WAITING_FOR_MEMORY` 并写明在等什么。每台电脑的内存用量读 cgroup 的 `memory.current` 加宿主上 runsc 进程的 RSS，不用 `docker stats`（东京机上它显示 0）。
+- 空闲关机：没有调用在跑、最后一次调用结束超过配置的空闲时长就 `docker stop`，只停不删。常驻的浏览器进程不算“在用”。30 天没开机的电脑可以列出来（`staleComputers`），删除要调用 `deleteComputer`；在聊天里先问用户、确认后才删，这一步还没接上。
+- 磁盘：每人一个固定大小的 ext4 磁盘文件，loop 挂到宿主上同目录的 `home/`，再绑定挂到电脑里的 `/home/himawari`，写满就写不进。根目录保持 runsc 默认的覆盖层，`apt` 装的东西关机就没了；pip、npm、micromamba 的安装位置由镜像的环境变量指到家目录。
+- 隔离和网络：每台电脑在自己的 `--internal` Docker 网络里，别的用户的电脑连不到；去掉全部能力后只加回装软件要用的几项，`no-new-privileges`，内存、CPU、进程数有硬上限。出口代理开在这个网络的网关地址上，带每台电脑自己的口令，只放行这个用户当前正在跑的所有调用给的网址的并集，没有调用在跑时全部拒绝，并沿用现有出口的公网地址检查。
+- 接口：`UserComputers.exec({ ownerId, argv, stdin, cwd, env, allowedDomains, deadlineAt, maxOutputBytes })`。挂磁盘要 root，所以电脑管理由单独的 root 进程（`user-computer/host-main.ts`）运行，经一个只有服务账号组能连的 Unix 套接字收请求；Himawari 服务用 `UserComputerClient` 调它，不需要 Docker 权限。开机失败就报错，不退回 SRT。
+- 镜像：`packages/runtime-sandbox/computer-image/Dockerfile`，基于按摘要锁定的 Playwright 镜像，带 Chromium、Node、Python 文档库和 micromamba。`.github/workflows/user-computer.yml` 在 GitHub 的 arm64 机器上装锁定版本的 gVisor、构建镜像，并在 runsc 里跑资格测试 `test/qualification/user-computer-qualification.ts`。
+- 编码工具：配置里有 `runPolicy.userComputers`（电脑管理套接字的路径）时，`read`、`write`、`edit`、`bash`、`find`、`grep`、`ls` 七个编码工具在授权通过之后交给主人自己的电脑执行（`apps/agent-service/src/production-computer-tools.ts`），不再走 SRT，也不发执行句柄。做法是把 Himawari 打包好的程序目录（编码能力的沙箱绑定里的 `runtimeRoot`，每次上线自动换成新版本）只读挂到电脑里的 `/opt/himawari`，在电脑里运行和容器模式同一个 Pi 运行器 `container-pi-main.js`，工作目录是 `/home/himawari/workspace`；所以 Pi 自带的 `grep`、`find` 用的是电脑里的 `rg`、`fd`，不碰宿主。程序目录换了版本时电脑会重建一次，家目录不受影响。路径仍按授权目录检查，再换成工作目录里的相对路径；电脑里在授权目录原来的路径上放一个指向工作目录的链接，模型在 `bash` 里写原来的绝对路径也能用。命令能用的软件路径由镜像的 `HIMAWARI_COMMAND_PATH` 给出，包括家目录里装的软件。网络按编码能力绑定里这个工具的网络设置放行部署配置的网址。
+- 第一次给某个用户执行编码工具时，先把这个用户原来授权的目录整个复制到电脑里的 `~/workspace`（电脑管理的 `seedWorkspace`，只认配置 `hostPaths.seedRoots` 下的目录），只复制一次，记下来源和时间；复制失败就报 `COMPUTER_SEED_FAILED`，工具不执行。之后电脑里的改动不写回原目录。
+- 一次调用发到电脑之后服务重启、没拿到结果的，下次报“结果未知”，不自动重做。工具在电脑里跑时不能开 `move_directory` 和 `save_copy`（它们改的是宿主上的原目录），配置校验会拒绝。`bash` 的工具说明换成电脑版（`tools.builtin.bash.computer`），写明家目录里的东西关机后还在、`apt` 装的关机就没了；按对话冻结的规则，只对新对话生效。
+
+<a id="browser"></a>
+
+### 浏览器
+
+浏览器工具 `browser`（`apps/agent-service/src/production-browser-tools.ts`）在主人自己的电脑里开网页、点击、输入、按键、后退、截图和读页面文字。电脑里的程序是 `himawari-browser`（`packages/runtime-sandbox/computer-image/himawari-browser.mjs`），用 Playwright 起一个常驻的 Chromium，资料目录在家目录的 `~/.himawari/browser/profile`，所以登录状态留在主人自己的磁盘上；电脑关机前，电脑管理先执行 `himawari-browser stop` 把浏览器收好（配置项 `beforeStop`）。
+
+- 每次动作都是一次 `UserComputers.exec`，网址只能经电脑的出网代理出去。`open` 放行要去的网站，`click`、`type`、`press`、`back` 放行当前页面所在的网站，`read` 和 `screenshot` 什么都不放行。没放行的网站代理直接拒绝，工具报 `BROWSER_SITE_NOT_ALLOWED` 并说出是哪个网站。
+- 授权走统一的主人范围授权，目标类型是 `browser-site`，按网站问主人；已有的“这次任务 / 几天 / 一直”照常有效，读过外部网页后只认“这次任务”。授权提示的文字按主人设的界面语言。
+- 截图只交给能看图的模型（看模型目录里这个模型的输入类型），交给 Pi 的工具结果里多一张图；不能看图的模型只拿到一句说明。
+- 配置里同时有 `runPolicy.userComputers` 和 `runPolicy.browser`（单次输出上限、正文字数上限、给回复留的时间）时才开这个工具；只有后者，配置校验拒绝。
+
 <a id="not-yet"></a>
 
 ## 还没做到的
 
 - macOS 安装包自带一份核验过的 Bash（`runtimeRoot/pi-tools/bin/bash`，计入安装摘要并附 GPLv3 许可证和源码获取方式）已决定但未实现；来源、版本和签名方式要先写 Spec 由 Andy 确认。Mac 上的服务端验证目前无限期推迟。
 - 远端执行只预留了接口：Agent 目前只能配置一个非 SRT 后端，远端执行还要先传入工作目录、结束后核对版本再写回。
+- 每人一台电脑：生产机还没装电脑管理的 root 服务，也没打开电脑模式。工具在电脑里跑时，`bash` 之后的“工作目录改动”记录和对话里的产出文件列表还没接上（它们读的是宿主上的授权目录）；30 天没用的电脑在聊天里先问再删也还没接上。
 
 <a id="rejected"></a>
 

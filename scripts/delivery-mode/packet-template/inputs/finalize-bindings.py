@@ -212,7 +212,7 @@ def materials(binding):
     manifest = read('install/p5-materials.json')
     require(manifest['schemaVersion'] == 2 and manifest['purpose'] == 'cloud-__PKT_LABEL__-install' and manifest['nonProduction'] is False and manifest['nodeAlreadyInstalled'] is True and manifest['nodeSha256'] == binding['host']['nodeSha256'] and manifest['sourceHead'] == head, '__PKT_LABEL_UPPER___MATERIAL_MANIFEST_INVALID')
     bundle_name = 'source-' + head[:7] + '.bundle'
-    expected = {bundle_name, 'candidate.tar.gz', 'context.json', 'python-3.12.10.tar.gz', 'node-modules.tar.gz', 'node-modules.json', 'npm-ls.json'}
+    expected = {bundle_name, 'candidate.tar.gz', 'context.json', '__PKT_PYTHON_ARCHIVE_NAME__', 'node-modules.tar.gz', 'node-modules.json', 'npm-ls.json'}
     require(isinstance(manifest['files'], list) and len(manifest['files']) == len(expected) and {entry['name'] for entry in manifest['files']} == expected, '__PKT_LABEL_UPPER___MATERIAL_SET_INVALID')
     indexed = {}
     for entry in manifest['files']:

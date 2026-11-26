@@ -7,7 +7,7 @@ superseded_by: ""
 amends: "https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0110-ui-batch-2026-10-29-check-it-before-the-owner-does.md"
 date: "2026-10-30"
 covers: "apps/agent-service/test/production-http-composition.unit.test.ts, apps/control-center/test/app-interactions.unit.test.ts, test/integration/owner-settings-sync.test.ts"
-verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
+verified_at: "7c8521fe5f55e7dd57c5bd52badd16eef647502e"
 ---
 
 # ADR 0122：主人的每一项账户设置都存在服务器上，带版本号，旧设备不能覆盖新值

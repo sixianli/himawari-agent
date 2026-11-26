@@ -36,14 +36,6 @@ describe("[P0-7] calibration report", () => {
     applyMigrations(database, await loadBundledMigrations());
     database.prepare("INSERT INTO owners (id, revision) VALUES ('o', 0)").run();
     database.prepare("INSERT INTO agents (id, owner_id, revision) VALUES ('a', 'o', 0)").run();
-    const insertPayload = database.prepare(
-      `INSERT INTO payloads (
-        ref, owner_id, agent_id, classification, storage_kind, ciphertext, content_digest,
-        encryption_algorithm, key_ref, lifecycle_state, created_at, content_type
-      ) VALUES (?, 'o', 'a', 'private', 'sqlite_blob', X'00', ?, 'fixture', 'fixture-key',
-        'active', ?, 'text/plain')`,
-    );
-    insertPayload.run("payload-muse", "sha256:payload-muse", IN_WINDOW);
     return { root, databasePath, database };
   }
 
@@ -66,17 +58,6 @@ describe("[P0-7] calibration report", () => {
       .run(`d${counter}`, kind, checkedAt, outcome, rating, rating === null ? null : checkedAt);
   }
 
-  function addGmailCheck(database: Database.Database, id: string, rating: string | null) {
-    database
-      .prepare(
-        `INSERT INTO decision_ledger (
-          id, owner_id, agent_id, kind, scenario, checked_at, counts, verdict, reason_code, inputs,
-          cost_micros, duration_ms, owner_rating, rated_at
-        ) VALUES (?, 'o', 'a', 'proactive', 'gmail', ?, '{}', 'silent', 'fixture', '{}', 0, 0, ?, ?)`,
-      )
-      .run(id, IN_WINDOW, rating, rating === null ? null : IN_WINDOW);
-  }
-
   function addProactive(
     database: Database.Database,
     verdict: "pushed" | "silent",
@@ -92,50 +73,6 @@ describe("[P0-7] calibration report", () => {
         ) VALUES (?, 'o', 'a', 'proactive', 'gmail', ?, '{}', ?, 'fixture', '{}', 0, 0, ?, ?)`,
       )
       .run(`p${counter}`, checkedAt, verdict, rating, rating === null ? null : checkedAt);
-  }
-
-  function addMail(
-    database: Database.Database,
-    messageId: string,
-    outcome: string,
-    rating: string | null,
-  ) {
-    database
-      .prepare(
-        `INSERT INTO proactive_processed_messages (
-          owner_id, agent_id, source, message_id, thread_id, decision_id, outcome, processed_at,
-          owner_rating
-        ) VALUES ('o', 'a', 'gmail', ?, ?, 'gmail-check', ?, ?, ?)`,
-      )
-      .run(messageId, `thread-${messageId}`, outcome, IN_WINDOW, rating);
-  }
-
-  function addMuse(
-    database: Database.Database,
-    id: string,
-    reminded: boolean,
-    timingOk: boolean | null,
-    contentOk: boolean | null,
-    pairedMessageId: string | null,
-    museAt = IN_WINDOW,
-  ) {
-    database
-      .prepare(
-        `INSERT INTO muse_reference_entries (
-          id, owner_id, agent_id, muse_at, muse_reminded, timing_ok, content_ok, content_ref,
-          paired_message_id, recorded_at
-        ) VALUES (?, 'o', 'a', ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
-        id,
-        museAt,
-        reminded ? 1 : 0,
-        timingOk === null ? null : timingOk ? 1 : 0,
-        contentOk === null ? null : contentOk ? 1 : 0,
-        reminded ? "payload-muse" : null,
-        pairedMessageId,
-        museAt,
-      );
   }
 
   function capture() {
@@ -193,7 +130,7 @@ describe("[P0-7] calibration report", () => {
     expect(text).toContain("| 记忆搜索没生效 | 2 | 0 | 样本不足（0 条） |");
     expect(text).not.toContain("不适用");
     expect(text).not.toContain("| consolidation | 3 | 3 | 0");
-    expect(text).toContain("样本不足：这一周没有 Muse 对照条目。");
+    expect(text).not.toContain("Muse");
   });
 
   it("says insufficient sample instead of 0% when nothing is rated, and lowering the threshold shows the rate", async () => {
@@ -215,50 +152,6 @@ describe("[P0-7] calibration report", () => {
       root: emptyFixture.root,
     });
     expect(empty.text()).toContain("这一周没有决策记录。");
-  });
-
-  it("compares Muse and Himawari mail by mail and keeps unpaired entries apart", async () => {
-    const { root, databasePath, database } = await fixture();
-    addGmailCheck(database, "gmail-check", null);
-    addMail(database, "m1", "act", "useful");
-    addMail(database, "m2", "ignore", "missed");
-    addMail(database, "m3", "know", null);
-    addMuse(database, "e1", true, true, true, "m1");
-    addMuse(database, "e2", true, false, true, "m2");
-    addMuse(database, "e3", true, true, false, null);
-    addMuse(database, "e4", false, null, null, "m3");
-    addMuse(database, "e5", true, true, true, "m9");
-    addMuse(database, "e6", true, true, true, "m1", BEFORE_WINDOW);
-    database.close();
-
-    const output = capture();
-    const result = run([`--db=${databasePath}`, `--end=${END}`, "--min-samples=3", "--no-record"], {
-      now: NOW,
-      output,
-      root,
-    });
-    expect(result.muse).toMatchObject({
-      entries: 5,
-      reminded: 4,
-      silent: 1,
-      unpaired: 1,
-      pairedMails: 4,
-      buckets: { both: 1, museOnly: 1, himawariOnly: 1, noHimawariRecord: 1 },
-      himawariRatingsOnPairedMails: { useful: 1, unneeded: 0, missed: 1, unrated: 1 },
-    });
-    expect(output.text()).toContain("Muse 提醒的时机对的占比：75.0%（3/4，95% 区间 30.1%–95.4%）");
-    expect(output.text()).toContain("Muse 提醒的内容对的占比：75.0%（3/4，95% 区间 30.1%–95.4%）");
-    expect(output.text()).toContain(
-      "配对率（条目里写明了对应邮件的占比）：80.0%（4/5，95% 区间 37.6%–96.4%）",
-    );
-
-    const strict = capture();
-    run([`--db=${databasePath}`, `--end=${END}`, "--no-record"], {
-      now: NOW,
-      output: strict,
-      root,
-    });
-    expect(strict.text()).toContain("Muse 提醒的时机对的占比：样本不足（4 条）");
   });
 
   it("appends one history line per changed measurement and compares with the earlier week", async () => {
@@ -287,25 +180,23 @@ describe("[P0-7] calibration report", () => {
       .map((line) => JSON.parse(line));
     expect(lines).toHaveLength(2);
     expect(lines[1]).toMatchObject({
-      schema: "himawari-calibration-week.v4",
+      schema: "himawari-calibration-week.v5",
       ownerId: "o",
       window: { start: "2026-10-25T15:00:00.000Z", end: "2026-11-01T15:00:00.000Z" },
       groups: [{ group: "memory_kept", total: 5, rated: 5, useful: 4, unneeded: 1, missed: 0 }],
     });
+    expect(lines[1]).not.toHaveProperty("muse");
     expect(await readFile(path.join(root, "reports", "2026-11-02.md"), "utf8")).toContain(
       "# 校准周报",
     );
   });
 
-  it("includes a decision at the window start, excludes one at the end, and counts a silent entry on an ignored mail as both silent", async () => {
+  it("includes a decision at the window start and excludes one at the end", async () => {
     const { root, databasePath, database } = await fixture();
     addMemoryDecision(database, "memory_candidate", "kept", "useful", "2026-10-25T15:00:00.000Z");
     addMemoryDecision(database, "memory_candidate", "kept", "useful", "2026-11-01T14:59:59.999Z");
     addMemoryDecision(database, "memory_candidate", "kept", "useful", "2026-10-25T14:59:59.999Z");
     addMemoryDecision(database, "memory_candidate", "kept", "useful", "2026-11-01T15:00:00.000Z");
-    addGmailCheck(database, "gmail-check", null);
-    addMail(database, "quiet", "ignore", null);
-    addMuse(database, "quiet-entry", false, null, null, "quiet");
     database.close();
     const result = run([`--db=${databasePath}`, `--end=${END}`, "--no-record"], {
       now: NOW,
@@ -316,15 +207,6 @@ describe("[P0-7] calibration report", () => {
       total: 2,
       rated: 2,
     });
-    expect(result.muse.buckets).toEqual({
-      both: 0,
-      museOnly: 0,
-      himawariOnly: 0,
-      bothSilent: 1,
-      noHimawariRecord: 0,
-    });
-    const { buckets, pairedMails } = result.muse;
-    expect(Object.values(buckets).reduce((sum, count) => sum + count, 0)).toBe(pairedMails);
   });
 
   it("skips a damaged history line without touching the file, and refuses a half given scope or a timestamp it cannot window", async () => {
@@ -427,7 +309,7 @@ describe("[P0-7] calibration report", () => {
     expect(stdout).toContain("| 读完邮件提醒了你 | 5 | 5 | 提醒得对 100.0%（5/5");
     const [line] = (await readFile(history, "utf8")).trim().split("\n");
     expect(JSON.parse(line as string)).toMatchObject({
-      schema: "himawari-calibration-week.v4",
+      schema: "himawari-calibration-week.v5",
       commit: "41a6ce3",
     });
   });

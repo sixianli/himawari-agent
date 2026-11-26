@@ -52,7 +52,6 @@ import {
   type UtterancePrefetchPort,
 } from "./device-api-routes.js";
 import { type DeviceGatewayAuditFailure, DeviceGatewayError } from "./device-gateway.js";
-import type { SpeechSynthesisPort } from "./speech-synthesis.js";
 import { DevicePushError, type DevicePushPort } from "./device-push.js";
 import { DeviceSignatureError } from "./device-request-signature.js";
 import {
@@ -63,6 +62,7 @@ import {
 import type { PerceptionService } from "./perception-service.js";
 import { withPreviewStorage } from "./preview-page-storage.js";
 import type { RuntimeMetricsSnapshot } from "./runtime-observability.js";
+import type { SpeechSynthesisPort } from "./speech-synthesis.js";
 import { PLAIN_TEXT_MAXIMUM_CHARACTERS, parseTextAdmission } from "./text-admission.js";
 
 export const HTTP_GATEWAY_ERROR_CODES = Object.freeze({
@@ -150,6 +150,7 @@ export interface HttpGatewayServerOptions {
     readonly pairingAccess?: DevicePairingAccess;
     readonly perception?: PerceptionService;
     readonly vault?: (scope: PairedDeviceScope) => VaultService | undefined;
+    readonly connections?: DeviceApiRouteOptions["connections"];
     readonly actions?: {
       readonly service: (scope: PairedDeviceScope) => DeviceActionService | undefined;
       readonly hub: DeviceActionHub;
@@ -162,6 +163,7 @@ export interface HttpGatewayServerOptions {
     readonly exportArchive?: DeviceApiRouteOptions["exportArchive"];
     readonly chatAttachments?: DeviceApiRouteOptions["chatAttachments"];
     readonly recordVoiceTiming?: DeviceApiRouteOptions["recordVoiceTiming"];
+    readonly listVoiceTiming?: DeviceApiRouteOptions["listVoiceTiming"];
   };
   readonly health?: HttpGatewayHealthPort;
   readonly metrics?: HttpGatewayMetricsPort;
@@ -1337,6 +1339,7 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
       ...(options.devices.perception ? { perception: options.devices.perception } : {}),
       ...(options.devices.actions ? { actions: options.devices.actions } : {}),
       ...(options.devices.vault ? { vault: options.devices.vault } : {}),
+      ...(options.devices.connections ? { connections: options.devices.connections } : {}),
       ...(options.devices.notifications ? { notifications: options.devices.notifications } : {}),
       ...(options.devices.voiceGates ? { voiceGates: options.devices.voiceGates } : {}),
       ...(options.devices.prefetch ? { prefetch: options.devices.prefetch } : {}),
@@ -1384,6 +1387,9 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
             contentType: input.contentType ?? "text/plain",
           })
         ).payloadRef,
+      ...(options.devices.listVoiceTiming
+        ? { listVoiceTiming: options.devices.listVoiceTiming }
+        : {}),
       ...(options.devices.recordVoiceTiming
         ? { recordVoiceTiming: options.devices.recordVoiceTiming }
         : {}),

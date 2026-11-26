@@ -1,0 +1,93 @@
+name: User computer
+on:
+  pull_request:
+    paths:
+      - packages/runtime-sandbox/computer-image/**
+      - packages/runtime-sandbox/src/user-computer/**
+      - packages/runtime-sandbox/src/network-egress.ts
+      - test/qualification/user-computer-qualification.ts
+      - test/qualification/vitest.user-computer.config.ts
+      - apps/agent-service/src/production-computer-tools.ts
+      - apps/agent-service/src/production-browser-tools.ts
+      - apps/agent-service/src/capability-programs/container-pi-main.ts
+      - packages/execution-contracts/src/pi-container-runner-v1.ts
+      - .github/workflows/user-computer.yml
+  push:
+    branches: [main]
+    paths:
+      - packages/runtime-sandbox/computer-image/**
+      - packages/runtime-sandbox/src/user-computer/**
+      - packages/runtime-sandbox/src/network-egress.ts
+      - test/qualification/user-computer-qualification.ts
+      - test/qualification/vitest.user-computer.config.ts
+      - apps/agent-service/src/production-computer-tools.ts
+      - apps/agent-service/src/production-browser-tools.ts
+      - apps/agent-service/src/capability-programs/container-pi-main.ts
+      - packages/execution-contracts/src/pi-container-runner-v1.ts
+      - .github/workflows/user-computer.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: user-computer-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+defaults:
+  run:
+    shell: bash
+jobs:
+  qualify:
+    name: user-computer/qualify
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
+    env:
+      GVISOR_RELEASE: 20261123.1
+      GVISOR_SHA512: 930967c01eaa8c91a90903ba866070dd165c580d3197287747bb1444ee11dab7350db11d8f90bf00efb2cdcfb2318602d3f329c522c9e9436a86fe6a93c7b7fc
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.22.3
+      - name: 安装锁定版本的 gVisor（runsc）并登记为 Docker 运行时
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/gvisor.tar.bz2" "https://storage.googleapis.com/gvisor/releases/release/${GVISOR_RELEASE}/aarch64/gvisor.tar.bz2"
+          echo "${GVISOR_SHA512}  $RUNNER_TEMP/gvisor.tar.bz2" | sha512sum -c -
+          sudo mkdir -p /opt/gvisor
+          sudo tar -xjf "$RUNNER_TEMP/gvisor.tar.bz2" -C /opt/gvisor
+          sudo ln -sf /opt/gvisor/runsc /usr/local/bin/runsc
+          sudo /usr/local/bin/runsc install
+          sudo systemctl reload docker
+          docker info --format '{{json .Runtimes}}' | grep -q runsc
+          runsc --version
+      - name: 构建电脑镜像（arm64）
+        run: |
+          docker build --pull=false -t himawari-computer:ci packages/runtime-sandbox/computer-image
+          echo "HIMAWARI_COMPUTER_IMAGE_ID=$(docker image inspect --format '{{.Id}}' himawari-computer:ci)" >> "$GITHUB_ENV"
+      - name: 在 gVisor 里检查镜像里的工具
+        run: |
+          docker run --rm --runtime=runsc --network none "$HIMAWARI_COMPUTER_IMAGE_ID" sh -c '
+            set -e
+            node --version
+            python3 -c "import docx, openpyxl, pptx, pypdf, reportlab, pandas, matplotlib; print(\"python libraries ok\")"
+            micromamba --version
+            "$HIMAWARI_BROWSER_EXECUTABLE" --version
+            test -x /usr/local/bin/himawari-browser
+            timeout -k 1 5 true
+          '
+          docker run --rm --runtime=runsc --network none "$HIMAWARI_COMPUTER_IMAGE_ID" sh -c '
+            "$HIMAWARI_BROWSER_EXECUTABLE" --headless=new --no-sandbox --disable-gpu --screenshot=/tmp/shot.png "data:text/html,<h1>himawari</h1>" >/dev/null 2>&1
+            test -s /tmp/shot.png && echo "chromium screenshot ok"
+          '
+      - name: 安装依赖并打包 Himawari 程序目录
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build:node
+      - name: 真实 Docker + gVisor 跑每人一台电脑的资格测试
+        run: |
+          sudo -E env "PATH=$PATH" \
+            HIMAWARI_COMPUTER_QUALIFICATION=1 \
+            HIMAWARI_COMPUTER_RUNTIME=runsc \
+            HIMAWARI_COMPUTER_TOOLS_IMAGE="$HIMAWARI_COMPUTER_IMAGE_ID" \
+            HIMAWARI_CONTAINER_DOCKER_CLI=/usr/bin/docker \
+            npx vitest run --config test/qualification/vitest.user-computer.config.ts

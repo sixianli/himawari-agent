@@ -37,3 +37,17 @@ export { prepareJobPolicy } from "./job-policy.ts";
 export * from "./policy.js";
 export { processGroupPresent, readProcessStartToken } from "./process-identity.ts";
 export * from "./qualification.js";
+export { UserComputerClient } from "./user-computer/client.ts";
+export {
+  parseUserComputerConfig,
+  readUserComputerConfig,
+  type UserComputerConfig,
+} from "./user-computer/config.ts";
+export {
+  computerNames,
+  computerOwnerKey,
+  UserComputerManager,
+  type UserComputerManagerOptions,
+} from "./user-computer/manager.ts";
+export { serveUserComputers } from "./user-computer/protocol.ts";
+export * from "./user-computer/types.ts";

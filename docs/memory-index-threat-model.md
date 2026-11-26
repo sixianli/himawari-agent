@@ -4,7 +4,7 @@ supersedes: ""
 superseded_by: ""
 date: "2026-11-11"
 covers: "packages/persistence-sqlite/src/data-export/snapshot.ts, packages/persistence-sqlite/src/sqlite-recovery-point.ts, test/integration/data-export.test.ts, test/integration/sqlite-recovery-point.test.ts"
-verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
+verified_at: "7c8521fe5f55e7dd57c5bd52badd16eef647502e"
 ---
 
 # 记忆检索索引的威胁模型

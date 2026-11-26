@@ -1,3 +1,4 @@
+export * from "./app-connections.js";
 export * from "./apple-push-sender.js";
 export * from "./authenticated-uds-transport.js";
 export * from "./bounded-jwks-fetcher.js";
@@ -11,8 +12,6 @@ export * from "./capabilities/directory-move-scope.js";
 export * from "./capabilities/index.js";
 export * from "./ciphertext-file-store.js";
 export * from "./deepseek-web-provider.js";
-export * from "./demo-mailbox.js";
-export * from "./demo-mailbox-token.js";
 export * from "./device-action-hub.js";
 export * from "./device-api-routes.js";
 export * from "./speech-synthesis.js";

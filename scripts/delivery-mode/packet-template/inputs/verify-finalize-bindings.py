@@ -80,7 +80,7 @@ def fixture(root):
     current['host']['systemBwrap']['sha256'] = observed['systemToolIdentities']['bwrap']['sha256']
     current['host']['systemBwrapIdentity']['sha256'] = observed['systemToolIdentities']['bwrap']['sha256']
     files = []
-    for name in [bundle_name, 'candidate.tar.gz', 'context.json', 'python-3.12.10.tar.gz', 'node-modules.tar.gz', 'node-modules.json', 'npm-ls.json', 'source-build-inputs.json']:
+    for name in [bundle_name, 'candidate.tar.gz', 'context.json', '__PKT_PYTHON_ARCHIVE_NAME__', 'node-modules.tar.gz', 'node-modules.json', 'npm-ls.json', 'source-build-inputs.json']:
         data = json.dumps({'testedSha': current['d1Commit'], 'headSha': current['d1Commit'], 'baseSha': current['d1Commit']}).encode() if name == 'context.json' else ('fictitious material ' + name).encode()
         (root / 'materials' / name).write_bytes(data)
         files.append({'name': name, 'bytes': len(data), 'sha256': digest(data)})
@@ -299,7 +299,7 @@ test('rejects unapproved requested system path', edit('inputs/system-tools-obser
 test('rejects non-root tool identity', edit('inputs/system-tools-observed.json', lambda value: value['systemToolIdentities']['bash']['identity'].__setitem__('uid', 1)), rejected=True)
 test('rejects writable observed tool', edit('inputs/system-tools-observed.json', lambda value: value['systemToolIdentities']['bash']['identity'].__setitem__('mode', '0777')), rejected=True)
 test('rejects nonabsolute canonical target', edit('inputs/system-tools-observed.json', lambda value: value['systemToolIdentities']['bash'].__setitem__('realpath', 'relative')), rejected=True)
-for name in ['candidate.tar.gz', 'context.json', bundle_name, 'source-build-inputs.json', 'python-3.12.10.tar.gz', 'node-modules.tar.gz', 'node-modules.json', 'npm-ls.json']:
+for name in ['candidate.tar.gz', 'context.json', bundle_name, 'source-build-inputs.json', '__PKT_PYTHON_ARCHIVE_NAME__', 'node-modules.tar.gz', 'node-modules.json', 'npm-ls.json']:
     test('rejects changed material bytes ' + name, mutate=lambda root, filename=name: (root / 'materials' / filename).write_bytes(b'changed fictitious material'), rejected=True)
 test('rejects duplicate material manifest entry', edit('install/p5-materials.json', lambda value: value['files'].append(copy.deepcopy(value['files'][0]))), rejected=True)
 test('rejects wrong material source revision', edit('install/p5-materials.json', lambda value: value.__setitem__('sourceHead', 'wrong')), rejected=True)

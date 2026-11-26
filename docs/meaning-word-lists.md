@@ -4,7 +4,7 @@ supersedes: ""
 superseded_by: ""
 date: "2026-11-13"
 covers: "apps/agent-service/src/production-owner-rules.ts, packages/application/src/services/thread-prompt-bundle-service.ts, packages/integration-web/src/untrusted-content.ts, packages/memory-engine/src/segmentation.ts, packages/sensitive-capture/src/external.ts, packages/sensitive-capture/src/identifiers.ts, packages/sensitive-capture/src/machine-secrets.ts, packages/sensitive-capture/src/redaction.ts, packages/sensitive-capture/src/secret-like.ts, scripts/check-meaning-word-lists.mjs, scripts/evals/memory-capture-live.eval.ts, scripts/model-review/opencode-review.mjs"
-verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
+verified_at: "7c8521fe5f55e7dd57c5bd52badd16eef647502e"
 ---
 
 # 词表登记表

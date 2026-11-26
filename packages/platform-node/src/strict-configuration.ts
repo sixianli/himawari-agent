@@ -62,13 +62,7 @@ import {
   WEB_PROVIDERS,
   type WebProviderId,
 } from "@himawari-agent/application";
-import {
-  createAgentId,
-  createDeploymentId,
-  createOwnerId,
-  DEMO_LOCALES,
-  isDemoLocale,
-} from "@himawari-agent/domain";
+import { createAgentId, createDeploymentId, createOwnerId } from "@himawari-agent/domain";
 import { assertMachineSecretFree } from "@himawari-agent/sensitive-capture";
 
 export const CONFIGURATION_SCHEMA_VERSION = "himawari.configuration.v1" as const;
@@ -1135,8 +1129,53 @@ function parseAutomaticReview(
 export const WEB_PUSH_SECRET_PURPOSE = "web-push";
 export const APPLE_PUSH_SECRET_PURPOSE = "apple-push";
 export const GOOGLE_OAUTH_CLIENT_SECRET_PURPOSE = "google-oauth-client";
-export const MUSE_INTAKE_SECRET_PURPOSE = "muse-intake";
-export const GAP_EXPORT_SECRET_PURPOSE = "gap-export";
+export const APP_CONNECTION_CLIENT_SECRET_PURPOSE = "app-connection-client";
+
+function parseAppConnections(
+  value: unknown,
+): NonNullable<RunPolicyConfiguration["appConnections"]> {
+  const field = "configuration.runPolicy.appConnections";
+  if (!Array.isArray(value) || value.length > 32)
+    throw invalid(field, "must be a list of at most 32 apps");
+  const names = new Set<string>();
+  return Object.freeze(
+    value.map((entry, index) => {
+      const at = `${field}[${index}]`;
+      const item = record(entry, at);
+      rejectUnknown(
+        item,
+        ["name", "title", "serverUrl", "clientId", "clientSecretRef", "trustsReadOnlyLabels"],
+        at,
+      );
+      const name = string(item["name"], `${at}.name`);
+      if (!/^[a-z][a-z0-9_]{0,63}$/u.test(name) || names.has(name))
+        throw invalid(`${at}.name`, "must be a unique lowercase name");
+      names.add(name);
+      const title = string(item["title"], `${at}.title`);
+      if (title.length > 64) throw invalid(`${at}.title`, "must be at most 64 characters");
+      const serverUrl = string(item["serverUrl"], `${at}.serverUrl`);
+      let parsed: URL;
+      try {
+        parsed = new URL(serverUrl);
+      } catch {
+        throw invalid(`${at}.serverUrl`, "must be an https URL");
+      }
+      if (parsed.protocol !== "https:" || parsed.username || parsed.password || parsed.hash)
+        throw invalid(`${at}.serverUrl`, "must be an https URL");
+      const clientId = string(item["clientId"], `${at}.clientId`);
+      if (clientId.length > 256 || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(clientId))
+        throw invalid(`${at}.clientId`, "must be an OAuth client id");
+      return Object.freeze({
+        name,
+        title,
+        serverUrl: parsed.href,
+        clientId,
+        clientSecretRef: safeReference(item["clientSecretRef"], `${at}.clientSecretRef`),
+        trustsReadOnlyLabels: boolean(item["trustsReadOnlyLabels"], `${at}.trustsReadOnlyLabels`),
+      });
+    }),
+  );
+}
 
 function parseProactive(value: unknown): NonNullable<RunPolicyConfiguration["proactive"]> {
   const field = "configuration.runPolicy.proactive";
@@ -1146,7 +1185,6 @@ function parseProactive(value: unknown): NonNullable<RunPolicyConfiguration["pro
     [
       "modelRef",
       "gmail",
-      "demoInbox",
       "intervalMs",
       "perCheckCostMicros",
       "perCheckMs",
@@ -1170,15 +1208,10 @@ function parseProactive(value: unknown): NonNullable<RunPolicyConfiguration["pro
     ],
     field,
   );
-  const demoInbox = input["demoInbox"];
-  if (demoInbox !== undefined && !isDemoLocale(demoInbox))
-    throw invalid(`${field}.demoInbox`, `must be one of ${DEMO_LOCALES.join(", ")}`);
-  if ((input["gmail"] === undefined) === (demoInbox === undefined))
-    throw invalid(field, "must set exactly one of gmail and demoInbox");
-  const gmail = input["gmail"] === undefined ? undefined : record(input["gmail"], `${field}.gmail`);
-  if (gmail) rejectUnknown(gmail, ["clientId", "clientSecretRef"], `${field}.gmail`);
-  const clientId = gmail ? string(gmail["clientId"], `${field}.gmail.clientId`) : "";
-  if (gmail && (clientId.length > 256 || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(clientId)))
+  const gmail = record(input["gmail"], `${field}.gmail`);
+  rejectUnknown(gmail, ["clientId", "clientSecretRef"], `${field}.gmail`);
+  const clientId = string(gmail["clientId"], `${field}.gmail.clientId`);
+  if (clientId.length > 256 || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(clientId))
     throw invalid(`${field}.gmail.clientId`, "must be a Google OAuth client id");
   const optional = (key: string, fallback: number, minimum: number, maximum: number) =>
     input[key] === undefined ? fallback : integer(input[key], `${field}.${key}`, minimum, maximum);
@@ -1217,18 +1250,10 @@ function parseProactive(value: unknown): NonNullable<RunPolicyConfiguration["pro
     );
   return Object.freeze({
     modelRef: safeReference(input["modelRef"], `${field}.modelRef`),
-    ...(gmail
-      ? {
-          gmail: Object.freeze({
-            clientId,
-            clientSecretRef: safeReference(
-              gmail["clientSecretRef"],
-              `${field}.gmail.clientSecretRef`,
-            ),
-          }),
-        }
-      : {}),
-    ...(demoInbox === undefined ? {} : { demoInbox }),
+    gmail: Object.freeze({
+      clientId,
+      clientSecretRef: safeReference(gmail["clientSecretRef"], `${field}.gmail.clientSecretRef`),
+    }),
     reviewBudgetSeconds: optional("reviewBudgetSeconds", 120, 10, 3_600),
     reviewSecondsPerItem: optional("reviewSecondsPerItem", 5, 1, 60),
     reviewSilentSharePermille: optional("reviewSilentSharePermille", 500, 0, 1_000),
@@ -1351,25 +1376,6 @@ function parseReviewPrereview(
   });
 }
 
-function parseMuseIntake(value: unknown): NonNullable<RunPolicyConfiguration["museIntake"]> {
-  const field = "configuration.runPolicy.museIntake";
-  const input = record(value, field);
-  rejectUnknown(input, ["enabled", "secretRef", "gapExportSecretRef"], field);
-  if (typeof input["enabled"] !== "boolean") throw invalid(`${field}.enabled`, "must be a boolean");
-  return Object.freeze({
-    enabled: input["enabled"],
-    secretRef: safeReference(input["secretRef"], `${field}.secretRef`),
-    ...(input["gapExportSecretRef"] === undefined
-      ? {}
-      : {
-          gapExportSecretRef: safeReference(
-            input["gapExportSecretRef"],
-            `${field}.gapExportSecretRef`,
-          ),
-        }),
-  });
-}
-
 function parseImportDuplicates(value: unknown): ImportDuplicateConfiguration {
   const field = "configuration.runPolicy.importDuplicates";
   const input = record(value, field);
@@ -1420,6 +1426,24 @@ function parseInbox(value: unknown): NonNullable<RunPolicyConfiguration["inbox"]
     if (input[key] !== undefined) parsed[key] = integer(input[key], `${field}.${key}`, low, high);
   }
   return Object.freeze(parsed);
+}
+
+function parseUserComputers(value: unknown): NonNullable<RunPolicyConfiguration["userComputers"]> {
+  const field = "configuration.runPolicy.userComputers";
+  const input = record(value, field);
+  rejectUnknown(input, ["socketPath"], field);
+  return Object.freeze({ socketPath: absolutePath(input["socketPath"], `${field}.socketPath`) });
+}
+
+function parseBrowser(value: unknown): NonNullable<RunPolicyConfiguration["browser"]> {
+  const field = "configuration.runPolicy.browser";
+  const input = record(value, field);
+  rejectUnknown(input, ["maxOutputBytes", "maxTextChars", "responseReserveMs"], field);
+  return Object.freeze({
+    maxOutputBytes: integer(input["maxOutputBytes"], `${field}.maxOutputBytes`, 1024, 67_108_864),
+    maxTextChars: integer(input["maxTextChars"], `${field}.maxTextChars`, 100, 1_000_000),
+    responseReserveMs: integer(input["responseReserveMs"], `${field}.responseReserveMs`, 0, 60_000),
+  });
 }
 
 function parseWebPush(value: unknown): NonNullable<RunPolicyConfiguration["webPush"]> {
@@ -1718,11 +1742,13 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       "voiceAddressee",
       "deliveryTiming",
       "proactive",
-      "museIntake",
+      "appConnections",
       "importDuplicates",
       "realEval",
       "mcpRead",
       "inbox",
+      "userComputers",
+      "browser",
     ],
     "configuration.runPolicy",
   );
@@ -1782,12 +1808,16 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       ? {}
       : { perception: parsePerception(input["perception"]) }),
     ...(input["proactive"] === undefined ? {} : { proactive: parseProactive(input["proactive"]) }),
-    ...(input["realEval"] === undefined ? {} : { realEval: parseRealEval(input["realEval"]) }),
-    ...(input["museIntake"] === undefined
+    ...(input["appConnections"] === undefined
       ? {}
-      : { museIntake: parseMuseIntake(input["museIntake"]) }),
+      : { appConnections: parseAppConnections(input["appConnections"]) }),
+    ...(input["realEval"] === undefined ? {} : { realEval: parseRealEval(input["realEval"]) }),
     ...(input["mcpRead"] === undefined ? {} : { mcpRead: parseMcpRead(input["mcpRead"]) }),
     ...(input["inbox"] === undefined ? {} : { inbox: parseInbox(input["inbox"]) }),
+    ...(input["userComputers"] === undefined
+      ? {}
+      : { userComputers: parseUserComputers(input["userComputers"]) }),
+    ...(input["browser"] === undefined ? {} : { browser: parseBrowser(input["browser"]) }),
     ...(input["importDuplicates"] === undefined
       ? {}
       : { importDuplicates: parseImportDuplicates(input["importDuplicates"]) }),
@@ -2098,6 +2128,19 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       WEB_PUSH_SECRET_PURPOSE,
       "configuration.runPolicy.webPush.secretRef",
     );
+  if (
+    runPolicy?.userComputers &&
+    runPolicy.coding?.enabledTools.some((tool) => tool === "move_directory" || tool === "save_copy")
+  )
+    throw invalid(
+      "configuration.runPolicy.coding.enabledTools",
+      "move_directory and save_copy work on the original host directory, so they cannot be enabled while tools run in each user's computer",
+    );
+  if (runPolicy?.browser && !runPolicy.userComputers)
+    throw invalid(
+      "configuration.runPolicy.browser",
+      "requires configuration.runPolicy.userComputers, because the browser runs in each user's computer",
+    );
   if (runPolicy?.applePush && !runPolicy.webPush)
     throw invalid(
       "configuration.runPolicy.applePush",
@@ -2117,29 +2160,21 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       "model-auth",
       "configuration.runPolicy.importDuplicates.secretRef",
     );
-  if (runPolicy?.museIntake)
+  for (const [index, connection] of (runPolicy?.appConnections ?? []).entries())
     assertIdentitySecretReference(
       secretReferences,
-      runPolicy.museIntake.secretRef,
-      MUSE_INTAKE_SECRET_PURPOSE,
-      "configuration.runPolicy.museIntake.secretRef",
-    );
-  if (runPolicy?.museIntake?.gapExportSecretRef !== undefined)
-    assertIdentitySecretReference(
-      secretReferences,
-      runPolicy.museIntake.gapExportSecretRef,
-      GAP_EXPORT_SECRET_PURPOSE,
-      "configuration.runPolicy.museIntake.gapExportSecretRef",
+      connection.clientSecretRef,
+      APP_CONNECTION_CLIENT_SECRET_PURPOSE,
+      `configuration.runPolicy.appConnections[${index}].clientSecretRef`,
     );
   const proactive = runPolicy?.proactive;
   if (proactive) {
-    if (proactive.gmail)
-      assertIdentitySecretReference(
-        secretReferences,
-        proactive.gmail.clientSecretRef,
-        GOOGLE_OAUTH_CLIENT_SECRET_PURPOSE,
-        "configuration.runPolicy.proactive.gmail.clientSecretRef",
-      );
+    assertIdentitySecretReference(
+      secretReferences,
+      proactive.gmail.clientSecretRef,
+      GOOGLE_OAUTH_CLIENT_SECRET_PURPOSE,
+      "configuration.runPolicy.proactive.gmail.clientSecretRef",
+    );
     const descriptor = modelDescriptors.find(({ ref }) => ref === proactive.modelRef);
     if (
       !descriptor ||

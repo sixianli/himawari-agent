@@ -23,7 +23,7 @@ export const REDACTOR_ONLY_FILES = Object.freeze([
   "packages/application/src/services/model-egress.ts",
   "packages/application/src/services/perception-extraction.ts",
   "packages/platform-node/src/files/pi-output-export.ts",
-  "apps/agent-service/src/production-gap-export.ts",
+  "apps/agent-service/src/export-masking.ts",
 ]);
 
 export const SENSITIVE_RULE_PACKAGE = "packages/sensitive-capture/src/";
