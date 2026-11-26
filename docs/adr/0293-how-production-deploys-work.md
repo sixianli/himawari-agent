@@ -86,7 +86,7 @@ ADR 0099 整份作废：它是给 2026-11-25 退租的那台 x86 云服务器（
 ### 失败时怎么办
 
 - `S2_STOP` 之前失败，旧版本继续服务。
-- `S2_STOP` 或之后失败，看实例文件的 `onDeployFailure`（或环境变量 `HIMAWARI_DEPLOY_ON_FAILURE`）：`rollback` 时立即回退；`keep` 时不回退，失败的新版本和现场原样保留，要恢复时手动运行 `rollback.sh`。`andy-production` 设为 `keep`（Andy 2026-11-15 在决定卡上选了“失败后不回滚，保留现场”）。
+- `S2_STOP` 或之后失败，看实例文件的 `onDeployFailure`（或环境变量 `HIMAWARI_DEPLOY_ON_FAILURE`）：`rollback` 时立即回退；`keep` 时不回退，失败的新版本和现场原样保留，要恢复时手动运行 `rollback.sh`。`andy-production` 设为 `rollback`（Andy 2026-11-26 开始真实使用后在决定卡上选了“自动退回上一版”，取代 2026-11-15 的“失败后不回滚，保留现场”）。
 
 <a id="cleanup"></a>
 

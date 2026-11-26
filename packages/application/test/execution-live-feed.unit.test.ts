@@ -26,6 +26,19 @@ describe("execution live feed", () => {
     ]);
   });
 
+  it("remembers the moment of her first character for each run, and null for a run with none", () => {
+    const times = ["2026-11-26T03:00:01.000Z", "2026-11-26T03:00:02.500Z"];
+    const feed = new ExecutionLiveFeed(() => times.shift() ?? "unused");
+    feed.assistantText({ threadId: "thread-1", runId: "run-1", timestamp: 1, text: "" });
+    expect(feed.firstEmittedAt("run-1")).toBeNull();
+    feed.assistantText({ threadId: "thread-1", runId: "run-1", timestamp: 1, text: "好的" });
+    feed.assistantText({ threadId: "thread-1", runId: "run-1", timestamp: 1, text: "好的，来了" });
+    expect(feed.firstEmittedAt("run-1")).toBe("2026-11-26T03:00:01.000Z");
+    feed.finished("run-1");
+    expect(feed.firstEmittedAt("run-1")).toBe("2026-11-26T03:00:01.000Z");
+    expect(feed.firstEmittedAt("run-other")).toBeNull();
+  });
+
   it("stamps each piece with the moment she wrote it, and skips an empty opening", () => {
     const times = ["2026-11-26T03:00:01.000Z", "2026-11-26T03:00:02.500Z"];
     const feed = new ExecutionLiveFeed(() => times.shift() ?? "unused");

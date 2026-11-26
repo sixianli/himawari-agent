@@ -9,6 +9,7 @@ import type {
 import { DEVICE_VOICE_TIMING_EVENT } from "./thread-execution-projection.js";
 
 export interface DeviceVoiceTimingInput {
+  readonly messageId: string;
   readonly runId: string;
   readonly saidAt: string;
   readonly firstTextAt: string;
@@ -22,6 +23,7 @@ export function deviceVoiceTimingRecorder(dependencies: {
   readonly payloads: Pick<PayloadStorePort, "put">;
   readonly protector: PayloadProtectorPort;
   readonly now: () => string;
+  readonly firstTextEmittedAt?: (runId: string) => string | null;
 }) {
   const ignoreDuplicate = (error: unknown) => {
     if (!(error instanceof ApplicationPortError) || error.code !== PORT_ERROR_CODES.DUPLICATE)
@@ -43,6 +45,8 @@ export function deviceVoiceTimingRecorder(dependencies: {
           contentType: "application/json",
           plaintext: new TextEncoder().encode(
             JSON.stringify({
+              messageId: input.messageId,
+              emittedAt: dependencies.firstTextEmittedAt?.(input.runId) ?? null,
               saidAt: input.saidAt,
               firstTextAt: input.firstTextAt,
               firstSoundAt: input.firstSoundAt,
@@ -78,5 +82,64 @@ export function deviceVoiceTimingRecorder(dependencies: {
       ignoreDuplicate(error);
     }
     return "recorded";
+  };
+}
+
+export interface DeviceVoiceTimingItem {
+  readonly messageId: string;
+  readonly saidAt: string;
+  readonly firstTextAt: string;
+  readonly firstSoundAt: string | null;
+  readonly emittedAt: string | null;
+}
+
+const MAXIMUM_VOICE_TIMING_ITEMS = 50;
+
+export function deviceVoiceTimingLister(dependencies: {
+  readonly ownerId: string;
+  readonly agentId: string;
+  readonly trace: TraceStorePort;
+  readonly payloads: Pick<PayloadStorePort, "get">;
+  readonly protector: PayloadProtectorPort;
+}) {
+  const instant = (value: unknown): value is string =>
+    typeof value === "string" && !Number.isNaN(Date.parse(value));
+  return async (limit: number): Promise<readonly DeviceVoiceTimingItem[]> => {
+    const events = await dependencies.trace.readRecentByType({
+      ownerId: dependencies.ownerId as never,
+      agentId: dependencies.agentId as never,
+      eventType: DEVICE_VOICE_TIMING_EVENT,
+      limit: Math.min(Math.max(limit, 1), MAXIMUM_VOICE_TIMING_ITEMS),
+    });
+    const items: DeviceVoiceTimingItem[] = [];
+    for (const event of events) {
+      if (event.payloadRef === null) continue;
+      const payload = await dependencies.payloads.get(event.payloadRef);
+      if (!payload || payload.contentType !== "application/json") continue;
+      let record: Record<string, unknown>;
+      try {
+        record = JSON.parse(
+          new TextDecoder("utf-8", { fatal: true }).decode(
+            await dependencies.protector.unprotect({
+              ownerId: event.ownerId,
+              agentId: event.agentId,
+              payload,
+            }),
+          ),
+        );
+      } catch {
+        continue;
+      }
+      const { messageId, saidAt, firstTextAt, firstSoundAt, emittedAt } = record;
+      if (typeof messageId !== "string" || !instant(saidAt) || !instant(firstTextAt)) continue;
+      items.push({
+        messageId,
+        saidAt,
+        firstTextAt,
+        firstSoundAt: instant(firstSoundAt) ? firstSoundAt : null,
+        emittedAt: instant(emittedAt) ? emittedAt : null,
+      });
+    }
+    return items.sort((left, right) => right.saidAt.localeCompare(left.saidAt));
   };
 }

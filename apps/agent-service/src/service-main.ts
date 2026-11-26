@@ -123,6 +123,7 @@ import { createProductionAuthorityLifecycle } from "./production-authority-lifec
 import { createProductionAutomaticReview } from "./production-automatic-review.js";
 import { backgroundCommandLimits } from "./production-background-commands.js";
 import { createProductionCapabilityReactivationVerifier } from "./production-capability-reactivation.js";
+import { createConfiguredComputerTools } from "./production-computer-tools.js";
 import {
   DEFAULT_TOOL_RESULT_SHARE,
   MEMORY_SNAPSHOT_WINDOW_SHARE,
@@ -1168,6 +1169,7 @@ export async function startTenantRuntime(
       secrets: sources.provider,
     });
     const hostReadOnlyPort = new DescriptorRelativeReadOnly();
+    const computer = await createConfiguredComputerTools(configuration, clock);
     let externalEgress: ReturnType<typeof createProductionModelEgress> | undefined;
     let approvalThreadTitle: ((threadId: string) => Promise<string | null>) | undefined;
     const fileReadServices = createProductionFileReadServices({
@@ -1180,6 +1182,7 @@ export async function startTenantRuntime(
       hostReadOnlyPort,
       workspaceSnapshotPort: hostReadOnlyPort,
       ...(hostWeb ? { hostWeb } : {}),
+      ...(computer ? { computer } : {}),
       externalTag: async () => {
         externalEgress ??= createProductionModelEgress(configuration, sources);
         try {

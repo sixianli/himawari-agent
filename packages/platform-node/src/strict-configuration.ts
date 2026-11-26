@@ -1402,6 +1402,13 @@ function parseInbox(value: unknown): NonNullable<RunPolicyConfiguration["inbox"]
   return Object.freeze(parsed);
 }
 
+function parseUserComputers(value: unknown): NonNullable<RunPolicyConfiguration["userComputers"]> {
+  const field = "configuration.runPolicy.userComputers";
+  const input = record(value, field);
+  rejectUnknown(input, ["socketPath"], field);
+  return Object.freeze({ socketPath: absolutePath(input["socketPath"], `${field}.socketPath`) });
+}
+
 function parseWebPush(value: unknown): NonNullable<RunPolicyConfiguration["webPush"]> {
   const field = "configuration.runPolicy.webPush";
   const input = record(value, field);
@@ -1703,6 +1710,7 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       "realEval",
       "mcpRead",
       "inbox",
+      "userComputers",
     ],
     "configuration.runPolicy",
   );
@@ -1768,6 +1776,9 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       : { museIntake: parseMuseIntake(input["museIntake"]) }),
     ...(input["mcpRead"] === undefined ? {} : { mcpRead: parseMcpRead(input["mcpRead"]) }),
     ...(input["inbox"] === undefined ? {} : { inbox: parseInbox(input["inbox"]) }),
+    ...(input["userComputers"] === undefined
+      ? {}
+      : { userComputers: parseUserComputers(input["userComputers"]) }),
     ...(input["importDuplicates"] === undefined
       ? {}
       : { importDuplicates: parseImportDuplicates(input["importDuplicates"]) }),
@@ -2077,6 +2088,14 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       runPolicy.webPush.secretRef,
       WEB_PUSH_SECRET_PURPOSE,
       "configuration.runPolicy.webPush.secretRef",
+    );
+  if (
+    runPolicy?.userComputers &&
+    runPolicy.coding?.enabledTools.some((tool) => tool === "move_directory" || tool === "save_copy")
+  )
+    throw invalid(
+      "configuration.runPolicy.coding.enabledTools",
+      "move_directory and save_copy work on the original host directory, so they cannot be enabled while tools run in each user's computer",
     );
   if (runPolicy?.applePush && !runPolicy.webPush)
     throw invalid(
