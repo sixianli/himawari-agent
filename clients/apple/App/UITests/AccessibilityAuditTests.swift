@@ -15,11 +15,11 @@ final class AccessibilityAuditTests: XCTestCase {
     func testEveryDemoScene() throws {
         var found: [AuditFinding] = []
         for scene in try Self.scenes() {
-            let app = launch(scene)
             XCUIDevice.shared.appearance = .light
+            let app = launch(scene)
             found += audit(app, scene: scene, mode: "light", types: .all)
             XCUIDevice.shared.appearance = .dark
-            Thread.sleep(forTimeInterval: 0.5)
+            Thread.sleep(forTimeInterval: Self.appearanceSettle)
             found += audit(app, scene: scene, mode: "dark", types: .contrast)
             app.terminate()
         }
@@ -60,6 +60,7 @@ final class AccessibilityAuditTests: XCTestCase {
     }
 
     private static let auditAttempts = 2
+    private static let appearanceSettle: TimeInterval = 1
 
     private func judge(_ found: [AuditFinding]) throws {
         let baseline = try AuditBaseline.load(from: Self.appleRoot.appendingPathComponent(AuditBaseline.path))
