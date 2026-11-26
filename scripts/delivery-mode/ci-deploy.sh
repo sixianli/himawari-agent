@@ -96,6 +96,9 @@ echo "CI_DEPLOY_READBACK"
 for attempt in $(seq 1 24); do
   if [[ "$(remote "/usr/bin/systemctl is-active '$unit_name'" 2>/dev/null)" == active ]] && remote "curl -fsS -o /dev/null --max-time 5 http://127.0.0.1:8400/health/ready" 2>/dev/null; then
     echo "CI_DEPLOY_READY $commit"
+    running_release="$(remote "grep -o -m1 -E '$releases_root/[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9a-f]{7,40}' '$unit_path'")" || refuse COMPUTERS_RELEASE_UNREADABLE "cannot read the running release from $unit_path on $host" 7
+    echo "CI_DEPLOY_COMPUTERS $running_release"
+    remote "bash '$repo/scripts/operations/computers/install-computers.sh' ensure --release '$running_release'" || refuse COMPUTERS_FAILED "the service is up, but each user's computer service did not install or start; see journalctl -u himawari-computers on $host" 7
     exit 0
   fi
   sleep 5
