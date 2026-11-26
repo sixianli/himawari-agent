@@ -367,6 +367,68 @@ describe("strict product configuration", () => {
     expect(() => parseProductConfiguration(input, "2026-10-29T00:00:00.000Z")).toThrow();
   });
 
+  describe("speech", () => {
+    const speech = {
+      adapter: "dashscope-qwen-tts",
+      magpieModelRef: "primary",
+      provider: "dashscope-intl",
+      model: "qwen3-tts-flash",
+      voice: "Serena",
+      languageType: "Chinese",
+      firstAudioTimeoutMs: 1500,
+      maximumCharacters: 600,
+    };
+    const withSpeech = (change: Record<string, unknown>, magpie = true) => {
+      const input = config(path.join(tmpdir(), "himawari-speech"));
+      const models = input["modelDescriptors"] as Record<string, unknown>[];
+      const { providerRouting: _routing, ...primary } = models[0] ?? {};
+      if (magpie)
+        input["modelDescriptors"] = [
+          { ...primary, provider: "magpie", baseUrl: "http://127.0.0.1:3425/v1" },
+          models[1],
+        ];
+      input["speech"] = { ...speech, magpieModelRef: models[0]?.["ref"], ...change };
+      return input;
+    };
+
+    it("accepts a speech voice routed through the configured Magpie primary", () => {
+      const parsed = parseProductConfiguration(withSpeech({}), "2026-11-26T00:00:00.000Z");
+      expect(parsed.speech).toMatchObject({
+        adapter: "dashscope-qwen-tts",
+        provider: "dashscope-intl",
+        model: "qwen3-tts-flash",
+        voice: "Serena",
+        languageType: "Chinese",
+        firstAudioTimeoutMs: 1500,
+        maximumCharacters: 600,
+      });
+    });
+
+    it("leaves speech off when it is not configured", () => {
+      const input = config(path.join(tmpdir(), "himawari-no-speech"));
+      expect(parseProductConfiguration(input, "2026-11-26T00:00:00.000Z").speech).toBeUndefined();
+    });
+
+    it.each([
+      { name: "an unknown adapter", change: { adapter: "openai-tts" } },
+      { name: "an unknown field", change: { endpoint: "https://example.com" } },
+      { name: "an unknown Magpie model", change: { magpieModelRef: "missing" } },
+      { name: "a provider id with a path", change: { provider: "dashscope/../x" } },
+      { name: "a first-audio limit below 200 ms", change: { firstAudioTimeoutMs: 100 } },
+      { name: "more than 600 characters a sentence", change: { maximumCharacters: 601 } },
+    ])("refuses $name", ({ change }) => {
+      expect(() =>
+        parseProductConfiguration(withSpeech(change), "2026-11-26T00:00:00.000Z"),
+      ).toThrow();
+    });
+
+    it("refuses speech whose model is not a Magpie route", () => {
+      expect(() =>
+        parseProductConfiguration(withSpeech({}, false), "2026-11-26T00:00:00.000Z"),
+      ).toThrow();
+    });
+  });
+
   it("refuses a base URL on an AI Gateway primary", () => {
     const input = config(path.join(tmpdir(), "himawari-gateway-base-url"));
     const models = input["modelDescriptors"] as Record<string, unknown>[];

@@ -128,6 +128,7 @@ import {
 } from "./production-approval-gateway.js";
 import { backgroundCommandRef } from "./production-background-commands.js";
 import { registerChatExportRoute } from "./production-chat-export.js";
+import { createProductionSpeech } from "./production-speech.js";
 import {
   DataExportJobs,
   deviceExportArchive,
@@ -945,6 +946,9 @@ export async function createProductionHttpComposition(
   const devicePairingAccess = await resolveDevicePairingAccess(
     configuration.secretReferences,
     (ref, version) => secretSources.provider.resolve(ref, version),
+  );
+  const speech = createProductionSpeech(configuration, (ref, version) =>
+    secretSources.provider.resolve(ref, version),
   );
   const payloadKey = soleSecret(configuration, "payload-encryption");
   const payloadProtector = new EnvelopePayloadProtector({
@@ -1921,6 +1925,7 @@ export async function createProductionHttpComposition(
           }
         : {}),
       voiceGates: () => DEFAULT_VOICE_GATES,
+      ...(speech ? { speech } : {}),
       ...(options.queryPrefetch
         ? { prefetch: utterancePrefetch(options.queryPrefetch, perception, agentId) }
         : {}),

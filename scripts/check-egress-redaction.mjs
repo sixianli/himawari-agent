@@ -76,6 +76,7 @@ export const EXTERNAL_EGRESS_PATTERNS = Object.freeze([
   { name: "AI Gateway decision request", pattern: /\/decisions[`"']/u },
   { name: "Exa MCP request", pattern: /https:\/\/mcp\.exa\.ai\/mcp/u },
   { name: "DeepSeek web tool request", pattern: /\/v1\/tools\/(?:search|fetch)/u },
+  { name: "DashScope speech request", pattern: /multimodal-generation\/generation/u },
 ]);
 
 export const ALLOWED_EXTERNAL_EGRESS_FILES = Object.freeze(
@@ -83,6 +84,7 @@ export const ALLOWED_EXTERNAL_EGRESS_FILES = Object.freeze(
     ["packages/platform-node/src/typesafe-jev-transport.ts", ["TypeSafe review request"]],
     ["packages/platform-node/src/exa-public-search.ts", ["Exa MCP request"]],
     ["packages/platform-node/src/deepseek-web-provider.ts", ["DeepSeek web tool request"]],
+    ["packages/platform-node/src/speech-synthesis.ts", ["DashScope speech request"]],
     [
       "packages/platform-node/src/memory-import-duplicate-decision.ts",
       ["AI Gateway decision request"],
@@ -109,6 +111,7 @@ export const REQUIRED_EXTERNAL_REDACTION_CALLS = Object.freeze(
       "packages/platform-node/src/deepseek-web-provider.ts",
       ["redactForExternalText", "maskedPublicFetchUrl"],
     ],
+    ["packages/platform-node/src/speech-synthesis.ts", ["redactForExternalText"]],
   ]),
 );
 

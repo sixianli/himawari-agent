@@ -477,6 +477,20 @@ export interface AutomaticReviewConfiguration {
   readonly confidenceThreshold?: number;
 }
 
+export const SPEECH_ADAPTERS = ["dashscope-qwen-tts"] as const;
+export type SpeechAdapter = (typeof SPEECH_ADAPTERS)[number];
+
+export interface SpeechConfiguration {
+  readonly adapter: SpeechAdapter;
+  readonly magpieModelRef: string;
+  readonly provider: string;
+  readonly model: string;
+  readonly voice: string;
+  readonly languageType: string;
+  readonly firstAudioTimeoutMs: number;
+  readonly maximumCharacters: number;
+}
+
 export interface ProductConfiguration {
   readonly schemaVersion: string;
   readonly deploymentId: DeploymentId;
@@ -492,6 +506,7 @@ export interface ProductConfiguration {
   readonly taskEnvironments?: TaskEnvironmentConfiguration;
   readonly http?: HttpConfiguration;
   readonly identity?: IdentityConfiguration;
+  readonly speech?: SpeechConfiguration;
   readonly modelDescriptors: readonly ConfiguredModelDescriptor[];
   readonly memory: ConfiguredMemoryDescriptor;
   readonly repositoryAllowlistRefs: readonly string[];

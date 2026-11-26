@@ -471,7 +471,7 @@ class TemplateTest(RenderedPacket):
     UPGRADE_SWITCH_SHA256 = {
     'systemd/S2-stop-and-inspect.py': 'c466dde3068064600fb817631b3fa282eac1cc47539a11635953f0518b5e4fee',
     'systemd/S7-startup-readback.mjs': '0d258810e6a4809a742b2bca8a9734353cce0114fbee4de8f2a554c78bb022fc',
-    'systemd/S7-switch-start-readback.py': 'cca47a75b61ae53e229c79689fa89483ca0704784febd46ebe24493afb52d8e9',
+    'systemd/S7-switch-start-readback.py': '9eb298c271bfd42013261af8aa61fcb226d795bc2601d9190c60165f742848a0',
     'install/S9-clean-transport.py': '235a7d2882edaa304097746315a4be7f5c5f467fea83cd1522a43a1e3b223533',    }
 
     def render_first_tools(self):
@@ -780,6 +780,34 @@ class DerivedExpectationsTest(RenderedPacket):
         unchanged = static_root_configuration(self.render())(copy.deepcopy(original))
         self.assertEqual(unchanged['modelDescriptors'][1], original['modelDescriptors'][1])
         self.assertEqual(unchanged['memory'], original['memory'])
+
+    SPEECH_TARGET = {'adapter': 'dashscope-qwen-tts', 'magpieModelRef': 'deepseek-primary', 'provider': 'dashscope-intl', 'model': 'qwen3-tts-flash', 'voice': 'Serena', 'languageType': 'Chinese', 'firstAudioTimeoutMs': 1500, 'maximumCharacters': 600}
+
+    def test_an_approved_speech_target_adds_only_the_speech_section(self):
+        packet = self.render(TARGET_SPEECH_JSON=packet_maker.speech_target(self.SPEECH_TARGET))
+        original = production_config(TWELFTH['OLD_PREFIX'], TWELFTH['ORIGINAL_PUBLIC_FETCH_BYTES'], TWELFTH['ORIGINAL_CONTEXT_WINDOW'], TWELFTH['ORIGINAL_MAX_TOKENS'])
+        switched = static_root_configuration(packet)(copy.deepcopy(original))
+        self.assertEqual(switched['speech'], self.SPEECH_TARGET)
+        self.assertEqual({key: value for key, value in switched.items() if key not in ('speech', 'http', 'runPolicy', 'modelDescriptors')}, {key: value for key, value in original.items() if key not in ('http', 'runPolicy', 'modelDescriptors')})
+        replaced = static_root_configuration(packet)({**copy.deepcopy(original), 'speech': {**self.SPEECH_TARGET, 'voice': 'Cherry'}})
+        self.assertEqual(replaced['speech'], self.SPEECH_TARGET)
+        fixtures = subprocess.run([sys.executable, '-I', str(packet / 'systemd' / 'verify-switch-config-fixtures.py'), shutil.which('node')], capture_output=True, text=True, check=False)
+        self.assertEqual(fixtures.returncode, 0, fixtures.stdout + fixtures.stderr)
+        self.assertNotIn('speech', static_root_configuration(self.render())(copy.deepcopy(original)))
+
+    def test_a_speech_target_outside_the_supported_shape_is_refused(self):
+        self.assertEqual(packet_maker.speech_target(None), 'null')
+        self.assertEqual(json.loads(packet_maker.speech_target(self.SPEECH_TARGET)), self.SPEECH_TARGET)
+        valid = self.SPEECH_TARGET
+        missing_voice = {key: value for key, value in valid.items() if key != 'voice'}
+        for candidate in (
+            {**valid, 'adapter': 'openai-tts'}, {**valid, 'provider': 'dashscope/../x'}, {**valid, 'provider': 'Upper'},
+            {**valid, 'voice': 'has space'}, {**valid, 'languageType': 'zh-CN'}, {**valid, 'firstAudioTimeoutMs': 100},
+            {**valid, 'firstAudioTimeoutMs': 1500.0}, {**valid, 'maximumCharacters': 601}, {**valid, 'maximumCharacters': True},
+            {**valid, 'endpoint': 'https://example.com'}, missing_voice, 'speech',
+        ):
+            with self.subTest(candidate=candidate), self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_SPEECH_TARGET_INVALID'):
+                packet_maker.speech_target(candidate)
 
     def test_p3_1_an_embedding_target_outside_the_local_policy_is_refused(self):
         valid = {'ref': 'local-embedding', 'role': 'embedding', 'provider': 'local-onnx', 'model': 'jina-embeddings-v5-text-small-retrieval-int8', 'version': 'v', 'allowedDataClassifications': ['public', 'private'], 'disclosure': 'local_only', 'secretRef': None, 'capabilities': ['embedding'], 'cost': {'input': 0, 'output': 0, 'cacheRead': 0, 'cacheWrite': 0}, 'dimensions': 1024, 'artifactSha256': 'a' * 64}
