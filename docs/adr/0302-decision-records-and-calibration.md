@@ -82,6 +82,8 @@ Himawari 每做一个判断（提醒不提醒、记不记、整理时改不改�
 
 ### Muse 数据怎样收进来
 
+[ADR 0309](0309-apps-sign-in-with-passkeys-and-the-web-is-removed.md) 决定第 10 条：不再对标 Muse，这条接收通道连同存储、周报对照和网页 Muse 页整条删除；删除前现行代码仍按下面。
+
 - Muse 的提醒记录经 `POST /api/muse-intake/v1/batch` 自动送来，两层认证：边缘层用 Cloudflare Access 的服务令牌，应用层再要求单独的应用密钥。配置 `runPolicy.museIntake.enabled` 为真才注册这条路径，否则是 404。
 - 只有 Muse 自己能证明的来源（系统记录、聊天记录、由它们推出的）参与数字，其他只存档。含机密的文字不存正文。
 - 按批次序号去重，整批重发回“重放”；同一条内容不同进冲突表，不覆盖。距上一批超过 3 小时推一次“Muse 通道中断”，一次中断只推一次。

@@ -41,6 +41,8 @@ verified_at: "7d0ffcd52cbb69d4941871cf9bf08d93f3843da8"
 
 ## 决定
 
+[ADR 0309](0309-apps-sign-in-with-passkeys-and-the-web-is-removed.md) 决定网页最后整体删除，从现在起不再给网页加功能；删除前现行代码仍按下面。
+
 <a id="process"></a>
 
 ### 过程区和回答下方
