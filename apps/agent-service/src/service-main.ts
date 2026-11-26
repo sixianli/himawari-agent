@@ -66,8 +66,6 @@ import {
   BoundedJwksFetcher,
   CloudflareAccessJwtVerifier,
   createApplePushSender,
-  createDemoGoogleOAuth,
-  createDemoMailReader,
   createGmailReader,
   createGoogleOAuth,
   createWebPushSender,
@@ -125,6 +123,7 @@ import { createProductionAuthorityLifecycle } from "./production-authority-lifec
 import { createProductionAutomaticReview } from "./production-automatic-review.js";
 import { backgroundCommandLimits } from "./production-background-commands.js";
 import { createProductionCapabilityReactivationVerifier } from "./production-capability-reactivation.js";
+import { createConfiguredComputerTools } from "./production-computer-tools.js";
 import {
   DEFAULT_TOOL_RESULT_SHARE,
   MEMORY_SNAPSHOT_WINDOW_SHARE,
@@ -1170,6 +1169,7 @@ export async function startTenantRuntime(
       secrets: sources.provider,
     });
     const hostReadOnlyPort = new DescriptorRelativeReadOnly();
+    const computer = await createConfiguredComputerTools(configuration, clock);
     let externalEgress: ReturnType<typeof createProductionModelEgress> | undefined;
     let approvalThreadTitle: ((threadId: string) => Promise<string | null>) | undefined;
     const fileReadServices = createProductionFileReadServices({
@@ -1182,6 +1182,7 @@ export async function startTenantRuntime(
       hostReadOnlyPort,
       workspaceSnapshotPort: hostReadOnlyPort,
       ...(hostWeb ? { hostWeb } : {}),
+      ...(computer ? { computer } : {}),
       externalTag: async () => {
         externalEgress ??= createProductionModelEgress(configuration, sources);
         try {
@@ -2297,9 +2298,7 @@ export async function startTenantRuntime(
         agentId: configuration.agentId,
       };
       const proactiveStore =
-        proactiveConfiguration &&
-        (proactiveSecret || proactiveConfiguration.demoInbox) &&
-        proactiveDescriptor
+        proactiveConfiguration && proactiveSecret && proactiveDescriptor
           ? repository.proactive()
           : undefined;
       const proactiveSeal =
@@ -2350,22 +2349,19 @@ export async function startTenantRuntime(
         });
       if (
         proactiveConfiguration &&
-        (proactiveSecret || proactiveConfiguration.demoInbox) &&
+        proactiveSecret &&
         proactiveDescriptor &&
         proactiveStore &&
         proactiveSeal
       ) {
-        const demoInbox = proactiveConfiguration.demoInbox;
-        const oauth = demoInbox
-          ? createDemoGoogleOAuth()
-          : createGoogleOAuth({
-              clientId: requireValue(proactiveGmail).clientId,
-              clientSecret: await hostModelSources(configuration).provider.resolve(
-                requireValue(proactiveSecret).ref,
-                requireValue(proactiveSecret).version,
-              ),
-              redirectUri: proactiveRedirectUri(configuration.publicOrigin),
-            });
+        const oauth = createGoogleOAuth({
+          clientId: proactiveConfiguration.gmail.clientId,
+          clientSecret: await hostModelSources(configuration).provider.resolve(
+            proactiveSecret.ref,
+            proactiveSecret.version,
+          ),
+          redirectUri: proactiveRedirectUri(configuration.publicOrigin),
+        });
         const feedbackStore = repository.webPush();
         const reviewPayloads = repository.payloadStore(
           configuration.ownerId,
@@ -2443,9 +2439,7 @@ export async function startTenantRuntime(
           ownerRules: repository.ownerRules(),
           seal: proactiveSeal,
           oauth,
-          reader: demoInbox
-            ? createDemoMailReader({ now: () => clock.now(), timeZone: proactiveTimeZone })
-            : createGmailReader({ oauth }),
+          reader: createGmailReader({ oauth }),
           readAccount: (accessToken) => readGmailAccount({ accessToken }),
           ledger: repository.decisionLedger(),
           readMemoryText: readReviewText,

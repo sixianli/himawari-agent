@@ -46,7 +46,7 @@ CI（持续集成，每次推送和开 PR 时自动跑检查和测试的那套�
 - 只用 GitHub 免费的三种托管机器：`ubuntu-24.04`（x64）、`ubuntu-24.04-arm`（ARM）、`macos-26`。`npm run check:ci-policy` 读 `.github/workflows/` 下全部工作流，`runs-on` 不是这三种之一（包括更大的付费机器、`self-hosted`、浮动标签和算出来的表达式）就以 `HOSTED_RUNNER_REQUIRED` 失败。仓库是公开的，这三种机器不花钱。
 - `policy`、`tooling`、`security` 跑在 ARM；`static`、`build`、`browser`、`tests`、汇总作业 `ci/required`、main 确认、合并队列和“关闭 PR 时取消 CI”跑在 x64。`static` 必须在 x64：`npm run check` 里的 `check:delivery-dependencies` 会真的运行只认 linux-x64 的依赖收集脚本，在 ARM 上会失败。
 - `Apple` 工作流在 `macos-26` 上跑 `HimawariCore` 单元测试，并不签名编译 iPhone App（`apple/iphone`）；另有 `apple/iphone-accessibility` 三份并行，在模拟器里对每个示例场景跑苹果的无障碍审计（`clients/apple/App/UITests/AccessibilityAuditTests.swift`，见[界面设计规范的自动检查](../ui-ux-design-guide.md#gates)）。这几个 Mac 作业之前先在 `ubuntu-24.04` 上跑一个几秒钟的 `apple/changes`：用 `scripts/ci/apple-scope.mjs` 看这次 PR 或推送有没有改 `clients/apple/`、`apple.yml` 或这个脚本，没改就跳过 Mac 作业，说不清改了什么时照跑。免费账号同时只给 5 台 Mac 机器，2026-11-25 到 11-26 的 Apple 运行里约一半来自没碰 iPhone 客户端的 PR，把 Mac 机器排满了。只有 `ci/required` 是合并必需的检查，所以被跳过的 Mac 作业不会卡住合并。
-- 沙箱测试要的 bubblewrap、socat、ripgrep 和 Ubuntu 24.04 的 AppArmor 放宽，由 `scripts/ci/prepare-hosted.sh` 在每个作业开头装好。
+- 沙箱测试要的 bubblewrap、socat、ripgrep 和 Ubuntu 24.04 的 AppArmor 放宽，由 `scripts/ci/prepare-hosted.sh` 在每个作业开头装好；它也装 restic，供集成测试跑真实的机外备份和恢复演练。
 - main 上较早的策略文件还写着自托管机器的旧标签，`check-policy.mjs` 的 `resolvePolicySource` 在比较时把它们整体换成对应的托管标签，摘要仍按原始字节算。
 
 <a id="jobs"></a>

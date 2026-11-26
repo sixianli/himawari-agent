@@ -555,6 +555,7 @@ describe("encrypted same-host SQLite recovery points", () => {
     expect(serialized.includes(Buffer.from(term))).toBe(false);
     expect(serialized.includes(Buffer.from("local-model-weights-sentinel"))).toBe(false);
     expect(names.some((name) => name.includes("models"))).toBe(false);
+    expect(names.filter((name) => name.includes("plaintext"))).toEqual([]);
     const plain = await readFile(source.databasePath);
     expect(plain.includes(vector)).toBe(true);
   });

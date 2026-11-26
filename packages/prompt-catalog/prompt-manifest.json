@@ -1017,6 +1017,11 @@
     "changedIn": "ADR 0166",
     "reason": "W-04、Q1：替换 Pi 原文里“完整输出存进临时文件”的错话，按 sandboxed-coding-operations.ts、pi-host-publication.ts 的实际行为写（Andy 2026-11-05 定 Q1 选 B）"
   },
+  "tools.builtin.bash.computer": {
+    "sha256": "2dfc7bdcc3aed62b0e0fc650f8b045e1c0b6c4e9873acddd14833196b98a6929",
+    "changedIn": "ADR 0298",
+    "reason": "每人一台电脑：bash 在主人自己的电脑里跑时，写明工作目录、家目录持久、apt 装的东西关机即失、只能连配置的域名"
+  },
   "tools.builtin.bash.timeout": {
     "sha256": "19e3ed360fc2c25292325151780c74f5a629c4f3b8e02b4fe7d6cadb80254d7b",
     "changedIn": "ADR 0166",

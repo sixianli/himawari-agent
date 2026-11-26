@@ -18,6 +18,7 @@ import {
 } from "@himawari-agent/application";
 import { validatePublicFetchUrl } from "@himawari-agent/platform-node";
 import { redactForExternalText, redactForExternalUrl } from "@himawari-agent/sensitive-capture";
+import { isComputerTool } from "./production-computer-tools.js";
 import type {
   FileReadExecutionContext,
   ProductionFileReadServices,
@@ -419,6 +420,60 @@ export async function executeProductionCodingRequest(
     return result.outcome === "failed" ? { ...result, dispatchState: "not_sent" } : result;
   }
   await active();
+  if (services.computer && grant !== null && !binding.workspaceCopy && isComputerTool(tool)) {
+    const finished = (await ctx.load("computer-result")) as RuntimeToolSettledResult | undefined;
+    if (finished) return finished;
+    if (await ctx.load("computer-dispatched")) {
+      const unknown: RuntimeToolSettledResult = {
+        dispatchState: "possibly_sent",
+        outcome: "result_unknown",
+        resultRef: null,
+        errorCode: "COMPUTER_RESULT_UNKNOWN",
+        externalActionId: null,
+        modelContent:
+          "这次工具调用已经发到你的电脑里，但服务中途重启，没拿到结果，不知道有没有执行完。没有自动重做；需要的话先检查现状再决定。",
+      };
+      await ctx.save("computer-result", unknown);
+      return unknown;
+    }
+    let relativePath: string | null = null;
+    if (tool !== "bash") {
+      const target = args["path"] ?? ".";
+      try {
+        relativePath =
+          target === "." || target === grant.displayPath
+            ? ""
+            : resolveHostFileReadPath(grant, target as string);
+      } catch {
+        return failed("CODING_PATH_OUTSIDE_SCOPE");
+      }
+    }
+    await ctx.save("computer-dispatched", { at: ctx.now() });
+    const startedAt = ctx.now();
+    const executed = await services.computer.execute({
+      ownerId: ctx.ownerId,
+      tool,
+      toolCallId: call.toolCallId,
+      hostId: binding.hostId,
+      grant,
+      parameters: args,
+      relativePath,
+      maximumOutputBytes: binding.maximumBytes,
+      deadlineAt: frozen.expiresAt,
+    });
+    await active();
+    const settled: RuntimeToolSettledResult = {
+      dispatchState: "accepted",
+      executionTiming: { startedAt, endedAt: ctx.now() },
+      outcome: executed.isError ? "failed" : "succeeded",
+      resultRef: null,
+      errorCode: executed.errorCode,
+      externalActionId: null,
+      modelContent: executed.modelContent,
+    };
+    await ctx.save("computer-result", settled);
+    return settled;
+  }
   if (services.hostReadOnly && grant !== null && ["read", "ls", "find", "grep"].includes(tool)) {
     const cached = (await ctx.load("host-result")) as RuntimeToolSettledResult | undefined;
     if (cached) return cached;

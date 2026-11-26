@@ -1565,6 +1565,58 @@ describe("[R2-T2] coding route approval mode", () => {
   });
 });
 
+describe("每人一台电脑的配置", () => {
+  const AT = "2026-11-26T00:00:00.000Z";
+  function withComputers(
+    userComputers: unknown,
+    enabledTools: readonly string[] = ["read", "write", "edit", "bash", "find", "grep", "ls"],
+  ): Record<string, unknown> {
+    const raw = config(path.join(tmpdir(), "himawari-user-computers"));
+    raw["runPolicy"] = {
+      version: "policy-v1",
+      systemInstruction: "test",
+      memoryLimit: 10,
+      userComputers,
+      coding: {
+        hostId: "host",
+        workerInstanceId: "worker",
+        grantId: "directory:grant",
+        capabilityRef: "himawari.pi-coding",
+        capabilityVersion: "1.0.0",
+        maximumBytes: 4096,
+        enabledTools,
+      },
+    };
+    return raw;
+  }
+
+  it("读出电脑管理的 socket 路径", () => {
+    expect(
+      parseProductConfiguration(
+        withComputers({ socketPath: "/run/himawari-computers/computers.sock" }),
+        AT,
+      ).runPolicy?.userComputers,
+    ).toEqual({ socketPath: "/run/himawari-computers/computers.sock" });
+  });
+
+  it.each([
+    ["相对路径", { socketPath: "computers.sock" }],
+    ["多出字段", { socketPath: "/run/computers.sock", host: "x" }],
+    ["缺 socket", {}],
+  ])("拒绝：%s", (_name, value) => {
+    expect(() => parseProductConfiguration(withComputers(value), AT)).toThrow();
+  });
+
+  it("工具在电脑里跑时不能开改原目录的 move_directory 和 save_copy", () => {
+    for (const tool of ["move_directory", "save_copy"]) {
+      const raw = withComputers({ socketPath: "/run/computers.sock" }, ["read", "bash", tool]);
+      expect(() => parseProductConfiguration(raw, AT)).toThrow();
+      delete (raw["runPolicy"] as Record<string, unknown>)["userComputers"];
+      expect(parseProductConfiguration(raw, AT).runPolicy?.coding?.enabledTools).toContain(tool);
+    }
+  });
+});
+
 it("[WP-7] accepts web push only with a web-push secret and an https or mailto subject", () => {
   const raw = config("/tmp/himawari-web-push-config");
   const policy = {
@@ -1899,8 +1951,8 @@ it("[PG-12][reverse] rejects a proactive model that the mail check cannot call, 
   );
 });
 
-it("[P6-demo] accepts a fake inbox in place of Gmail, in one of the offered languages, and never both at once", () => {
-  const raw = config("/tmp/himawari-demo-inbox-config");
+it("requires the proactive check to name a Gmail client and rejects the removed fake inbox", () => {
+  const raw = config("/tmp/himawari-proactive-gmail-config");
   const policy = {
     version: "1",
     systemInstruction: "test",
@@ -1915,18 +1967,13 @@ it("[P6-demo] accepts a fake inbox in place of Gmail, in one of the offered lang
     clientId: "123-abc.apps.googleusercontent.com",
     clientSecretRef: "google-oauth",
   };
-  for (const locale of ["ja", "en"]) {
-    raw["runPolicy"] = { ...policy, proactive: { modelRef: "model-primary", demoInbox: locale } };
-    const parsed = parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.proactive;
-    expect(parsed?.demoInbox).toBe(locale);
-    expect(parsed).not.toHaveProperty("gmail");
-  }
+  raw["runPolicy"] = { ...policy, proactive: { modelRef: "model-primary", gmail } };
+  const parsed = parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.proactive;
+  expect(parsed?.gmail).toEqual(gmail);
   for (const invalid of [
     { modelRef: "model-primary" },
     { modelRef: "model-primary", gmail, demoInbox: "ja" },
-    { modelRef: "model-primary", demoInbox: "zh-CN" },
-    { modelRef: "model-primary", demoInbox: "" },
-    { modelRef: "model-primary", demoInbox: true },
+    { modelRef: "model-primary", demoInbox: "ja" },
   ]) {
     raw["runPolicy"] = { ...policy, proactive: invalid };
     expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();

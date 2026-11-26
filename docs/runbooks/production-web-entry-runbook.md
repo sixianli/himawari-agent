@@ -6,7 +6,7 @@ contract_sha256: "sha256:b68b57aa515784f37a01bd767e2e8df37445dc9e8967675d0d34948
 supersedes: ""
 superseded_by: ""
 date: "2026-10-27"
-covers: "apps/agent-service/src/service-main.ts, packages/platform-node/src/http-gateway-server.ts, packages/platform-node/src/identity-gateway.ts, scripts/delivery-mode/rollback-remote.py, scripts/operations/prod-read.sh"
+covers: "apps/agent-service/src/service-main.ts, packages/platform-node/src/http-gateway-server.ts, packages/platform-node/src/identity-gateway.ts, scripts/delivery-mode/rollback-remote.py, scripts/operations/prod-read.sh, scripts/delivery-mode/sync-cloudflare-public-paths.mjs, scripts/delivery-mode/cloudflare-public-paths.json"
 verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
@@ -62,6 +62,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 - **入口的组成（2026-10-27 起）**：
   - `himawari.siyi.win` 经隧道 `himawari-prod`（编号 `5f2c1695-5510-4e12-a44a-85b33a12e87c`）转到生产机 `http://127.0.0.1:8400`。隧道令牌是用户自己用 `cloudflared service install` 装的，Claude 不读、不复制。
   - Access 应用 “Himawari” 拦在前面：策略 “Allow James only” 只放一个邮箱，会话 1 个月；登录方式只开了 One-time PIN（邮箱验证码，Access 往允许的邮箱发 6 位码）。应用 “Himawari public files (bypass)” 对 `manifest.webmanifest`、`sw.js` 和图标放行所有人，因为 iPhone 添加到主屏幕和注册推送时不带登录 cookie。
+  - 应用 “Himawari app entry (bypass)” 给 iPhone 和 Mac App 用的路径放行所有人（[ADR 0309](../adr/0309-apps-sign-in-with-passkeys-and-the-web-is-removed.md) 第 6 条），这些路径由 Himawari 自己的通行密钥和设备签名把关。它不在控制台手改：要放行的路径写在 `scripts/delivery-mode/cloudflare-public-paths.json` 的 `paths`，每次自动上线成功后，`.github/workflows/deploy-production.yml` 用 production 环境密钥 `CLOUDFLARE_ACCESS_TOKEN`（只有 Access: Apps and Policies 的编辑权限）运行 `scripts/delivery-mode/sync-cloudflare-public-paths.mjs`，把这个应用改成和清单一致，读回核对，再从外网确认每条路径不再跳到 Access 登录页、首页仍然跳。所以接口的代码和它的放行写在同一个 PR 里，代码上线后才放行。原先守着同一路径的其他 Access 应用会让脚本以 `CONFLICTING_APPLICATION` 停下，要在同一个 PR 里把它的名字写进 `retireApplications`，脚本先删它再放行。
   - 生产配置：`publicOrigin` 是 `https://himawari.siyi.win`，`publicMode` 是 `true`，`identity.kind` 是 `cloudflare-access`（`audience` 是 “Himawari” 应用的 AUD，一串应用标识）。`bootstrap.enabled` 是 `false`。
   - 放行应用的路径不是精确匹配：Cloudflare 的 Access 应用路径会连带覆盖它下面的子路径，而且实测不分大小写，所以放行 `/sw.js` 也会放行 `/sw.js/x`、`/SW.JS`。这些请求到了应用只会得到 404，挡住它们靠的是应用自己只认这 6 个公开文件（`packages/platform-node/src/http-gateway-server.ts` 的 `sendHomeScreenFile`）。
   - 域名 `siyi.win` 的整域设置（2026-10-28 15:04 读回）：最低 TLS 版本（TLS 是 HTTPS 用的加密协议）`1.2`，TLS 1.3 开，SSL 模式 `full`，自动 HTTPS 改写开；“始终用 HTTPS”（Always Use HTTPS，http 请求自动跳到 https）2026-10-28 15:09 起开。在那之前 `himawari.siyi.win` 的 http 跳转是 Access 顺带做的，没有 Access 的 `himawari-files.siyi.win` 会以明文 http 到达应用。
