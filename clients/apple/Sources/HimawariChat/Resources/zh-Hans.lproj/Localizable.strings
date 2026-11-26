@@ -90,3 +90,5 @@
 "background.exchange.budget" = "说钱不够";
 "background.exchange.resultBoard" = "结果板";
 "background.readOnly" = "这里只能看。有话回主对话说，她会转过来。";
+"chat.bubble.her" = "她说";
+"chat.bubble.owner" = "你说";

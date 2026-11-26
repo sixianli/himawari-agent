@@ -90,3 +90,5 @@
 "background.exchange.budget" = "Needs more budget";
 "background.exchange.resultBoard" = "Result board";
 "background.readOnly" = "Read only. Talk to her in the main chat and she will pass it on.";
+"chat.bubble.her" = "She said";
+"chat.bubble.owner" = "You said";

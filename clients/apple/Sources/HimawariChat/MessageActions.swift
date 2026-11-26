@@ -14,10 +14,14 @@ struct MessageMenuActions {
 
 extension View {
     @ViewBuilder
-    func messageMenu(_ actions: MessageMenuActions?) -> some View {
+    func messageMenu(_ actions: MessageMenuActions?, ownPreview: Bool = false) -> some View {
         #if os(iOS)
         if let actions {
-            modifier(MessageMenu(actions: actions))
+            if ownPreview {
+                modifier(FramedMessageMenu(actions: actions))
+            } else {
+                contextMenu { MessageMenuItems(actions: actions) }
+            }
         } else {
             self
         }
@@ -28,26 +32,33 @@ extension View {
 }
 
 #if os(iOS)
-struct MessageMenu: ViewModifier {
+struct MessageMenuItems: View {
+    let actions: MessageMenuActions
+
+    var body: some View {
+        if let reply = actions.reply {
+            Button(action: reply) { Label(L.text("chat.menu.reply"), systemImage: "arrowshape.turn.up.left") }
+        }
+        Button(action: actions.copy) { Label(L.text("chat.menu.copy"), systemImage: "doc.on.doc") }
+        Button(action: actions.select) { Label(L.text("chat.menu.select"), systemImage: "text.cursor") }
+    }
+}
+
+struct FramedMessageMenu: ViewModifier {
     let actions: MessageMenuActions
     @State private var width: CGFloat?
 
-    private static let shape = RoundedRectangle(cornerRadius: DesignTokens.Radius.bubble, style: .continuous)
+    private static let shape = RoundedRectangle(cornerRadius: DesignTokens.Chat.codeRadius, style: .continuous)
 
     func body(content: Content) -> some View {
         content
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
             .contextMenu {
-                if let reply = actions.reply {
-                    Button(action: reply) { Label(L.text("chat.menu.reply"), systemImage: "arrowshape.turn.up.left") }
-                }
-                Button(action: actions.copy) { Label(L.text("chat.menu.copy"), systemImage: "doc.on.doc") }
-                Button(action: actions.select) { Label(L.text("chat.menu.select"), systemImage: "text.cursor") }
+                MessageMenuItems(actions: actions)
             } preview: {
                 content
                     .frame(width: width)
-                    .padding(DesignTokens.Chat.menuPreviewPadding)
-                    .background(Color.hmBackground, in: Self.shape)
+                    .background(Color.hmBubble, in: Self.shape)
                     .clipShape(Self.shape)
             }
     }

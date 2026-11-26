@@ -90,3 +90,5 @@
 "background.exchange.budget" = "予算不足の連絡";
 "background.exchange.resultBoard" = "結果ボード";
 "background.readOnly" = "ここは見るだけです。話があればメインの会話でどうぞ。彼女が伝えます。";
+"chat.bubble.her" = "彼女";
+"chat.bubble.owner" = "あなた";
