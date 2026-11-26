@@ -1,4 +1,5 @@
 import { mkdtemp, readdir, rm, stat } from "node:fs/promises";
+import { request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createSessionId } from "@himawari-agent/domain";
@@ -19,6 +20,7 @@ import {
   harness,
   issueSetupCode,
   ownerId,
+  type PairedClient,
   pairAndConfirm,
   removeDeviceHarnessDirectories,
   send,
@@ -320,6 +322,49 @@ describe("[ADR-0309] signing in from the App with a passkey", () => {
     );
     expect(out.statusCode).toBe(200);
     expect(h.wiped).toEqual([mac.deviceId, phone.deviceId]);
+    await h.repository.close();
+  });
+
+  it("shows a device online only while its event stream is open", async () => {
+    const h = await harness();
+    const phone = await pairAndConfirm(h, "Andy iPhone");
+    const mac = await pairAndConfirm(h, "Andy Mac", "mac");
+    const address = await h.app.listen({ host: "127.0.0.1", port: 0 });
+    const online = async () => {
+      const listed = await send(
+        h,
+        signedRequest(h, phone, { method: "GET", path: "/api/device/v1/devices" }),
+      );
+      expect(listed.statusCode).toBe(200);
+      const body = listed.json() as { devices: { id: string; online: boolean }[] };
+      return Object.fromEntries(body.devices.map((device) => [device.id, device.online]));
+    };
+    const connect = (who: PairedClient) =>
+      new Promise<{ ended: Promise<void>; drop: () => void }>((resolve, reject) => {
+        const request = signedRequest(h, who, { method: "GET", path: "/api/device/v1/stream" });
+        const url = new URL(request.url);
+        const outgoing = httpRequest(
+          `${address}${url.pathname}${url.search}`,
+          { method: "GET", headers: request.headers },
+          (response) => {
+            expect(response.statusCode).toBe(200);
+            const ended = new Promise<void>((done) => response.on("close", () => done()));
+            response.resume();
+            resolve({ ended, drop: () => outgoing.destroy() });
+          },
+        );
+        outgoing.on("error", () => undefined);
+        outgoing.once("error", reject);
+        outgoing.end();
+      });
+
+    expect(await online()).toEqual({ [phone.deviceId]: false, [mac.deviceId]: false });
+    const stream = await connect(mac);
+    expect(await online()).toEqual({ [phone.deviceId]: false, [mac.deviceId]: true });
+    stream.drop();
+    await stream.ended;
+    await expect.poll(online).toEqual({ [phone.deviceId]: false, [mac.deviceId]: false });
+    await h.app.close();
     await h.repository.close();
   });
 

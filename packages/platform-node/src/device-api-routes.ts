@@ -529,6 +529,7 @@ export async function presentDevicePerception(
 }
 
 interface HeldDeviceStream {
+  readonly path: string;
   readonly stream: Readable;
   readonly connection: NodeJS.EventEmitter & { destroy(): unknown };
   readonly openedAt: number;
@@ -560,7 +561,7 @@ function holdDeviceStream(
   report: (diagnostic: DeviceStreamDiagnostic) => void,
 ): void {
   const open = held.get(deviceId) ?? [];
-  const entry: HeldDeviceStream = { stream, connection, openedAt: Date.now() };
+  const entry: HeldDeviceStream = { path, stream, connection, openedAt: Date.now() };
   const heldSeconds = (since: number) => Math.round((Date.now() - since) / 1000);
   while (open.length >= maximum) {
     const oldest = open.shift();
@@ -813,7 +814,12 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
         const devices = await options.devices.list(scope(authenticated.authentication));
         return options.sendJson(reply, 200, {
           thisDeviceId: authenticated.device.id,
-          devices: devices.filter((listed) => listed.status === "active").map(presentPairedDevice),
+          devices: devices
+            .filter((listed) => listed.status === "active")
+            .map((listed) => ({
+              ...presentPairedDevice(listed),
+              online: (heldStreams.get(listed.id) ?? []).some((held) => held.path === "stream"),
+            })),
           server: {
             origin: options.publicOrigin.origin,
             since: options.signIn ? await options.signIn.firstPasskeyAt() : null,
