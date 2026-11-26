@@ -39,9 +39,8 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 4. **测试文件不能悄悄不跑。** 这一条已由 `check-policy.mjs` 的 `planTestInventory` 实现，不新增代码；[BL-20261021-002](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261021-002-测-试-运-行-脚-本-自-检.md) 据此关闭。测试分层仍按 `ci/policy.json` 现有的 6 个项目（`unit`、`contracts`、`integration`、`e2e`、`pi-compat`、`tooling`），不改名。
 5. **覆盖率门禁保留，但不为数字补测试。** `ci/coverage-policy.json` 的改动行覆盖阈值照旧；不得为了凑覆盖率新增说不出价值的测试，评审可以要求删除。
 6. **界面改动看截图、报未覆盖。** 控制中心改动要在浅色和深色两种主题下实际渲染并看截图；没被任何检查加载的改动文件写“未验证”；不能用自己生成的截图批准自己的视觉改动，视觉改动仍按 AGENTS.md 的设计基线由用户确认（[BL-20261021-006](../backlog/BL-20261021-006-控-制-中-心-界-面-截-图.md)）。
-7. **派活简报与停止文件。** 给 opencode 的简报要求每个新测试附六项问答，停止文件按三态写结果、修 bug 附红绿记录；模板在 `opencode-orchestration` skill。
-8. **速度预算在测试主机上量。** 单测文件单独运行 5 秒内、超过 10 秒写原因，这个数在 Hermes 或云测试账号上测，不在 Mac 上测（Mac 不跑测试）。
-9. **不采纳的部分。** Cindy 把守则用 @docs/ai/AI_TESTING_RULES.md 挂进 CLAUDE.md，本项目不这样做，因为用户要求系统级指令精简、不重复；Cindy 的 8 层按文件名后缀分层，本项目保留现有 6 个项目；Cindy 的“完整结果以 CI 为准”在本项目对应第 3 层加 GitHub 必过检查，不变。
+7. **速度预算在 CI 或测试主机上量。** 单测文件单独运行 5 秒内、超过 10 秒写原因，这个数不在 Mac 上测（Mac 不跑服务器测试）。
+8. **不采纳的部分。** Cindy 把守则用 @docs/ai/AI_TESTING_RULES.md 挂进 CLAUDE.md，本项目不这样做，因为用户要求系统级指令精简、不重复；Cindy 的 8 层按文件名后缀分层，本项目保留现有 6 个项目；Cindy 的“完整结果以 CI 为准”在本项目对应第 3 层加 GitHub 必过检查，不变。
 
 [↑ 返回阅读导航](#contents)
 
