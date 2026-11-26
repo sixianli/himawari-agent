@@ -20,6 +20,8 @@ public struct HerPage: View {
         case notifications
         case privacy
         case connections
+        case agents
+        case agent(String)
         case gmail
         case app(String)
         case devices
@@ -37,6 +39,7 @@ public struct HerPage: View {
     @State private var quietHours: QuietHoursStore
     @State private var timers: TimersStore
     @State private var connections: ConnectionsStore
+    @State private var agents: AgentsStore
     @State private var gmail: GmailStore
     @State private var path: [Page] = []
     @State private var sensesOpen = false
@@ -80,6 +83,7 @@ public struct HerPage: View {
         _quietHours = State(initialValue: QuietHoursStore(gateway: gateway))
         _timers = State(initialValue: TimersStore(gateway: gateway))
         _connections = State(initialValue: ConnectionsStore(gateway: gateway))
+        _agents = State(initialValue: AgentsStore(gateway: gateway))
         _gmail = State(initialValue: GmailStore(gateway: gateway))
         self.listening = listening
         self.actions = actions
@@ -107,12 +111,13 @@ public struct HerPage: View {
         #endif
     }
 
-    init(settings: SettingsStore, memory: MemoryStore, quietHours: QuietHoursStore, timers: TimersStore? = nil, connections: ConnectionsStore? = nil, gmail: GmailStore? = nil, listening: (any HerListening)? = nil, actions: DeviceActionsModel? = nil, senses: AnyView? = nil, vaultItems: HerVaultCount = .items(3), path: [Page] = []) {
+    init(settings: SettingsStore, memory: MemoryStore, quietHours: QuietHoursStore, timers: TimersStore? = nil, connections: ConnectionsStore? = nil, agents: AgentsStore? = nil, gmail: GmailStore? = nil, listening: (any HerListening)? = nil, actions: DeviceActionsModel? = nil, senses: AnyView? = nil, vaultItems: HerVaultCount = .items(3), path: [Page] = []) {
         _settings = State(initialValue: settings)
         _memory = State(initialValue: memory)
         _quietHours = State(initialValue: quietHours)
         _timers = State(initialValue: timers ?? TimersStore(timers: nil))
         _connections = State(initialValue: connections ?? ConnectionsStore(connections: nil))
+        _agents = State(initialValue: agents ?? AgentsStore(agents: nil))
         _gmail = State(initialValue: gmail ?? GmailStore(overview: nil))
         _path = State(initialValue: path)
         self.listening = listening
@@ -154,6 +159,12 @@ public struct HerPage: View {
                         if timers.phase != .unsupported {
                             Button { path.append(.timers) } label: {
                                 HerRow(icon: .alarm, title: M.timersTitle, subtitle: timersSummary)
+                            }
+                            .buttonStyle(.pressable)
+                        }
+                        if agents.available {
+                            Button { path.append(.agents) } label: {
+                                HerRow(icon: .affiliate, title: M.agentsTitle, subtitle: M.agentsSummary(agents.shown.map(\.name)))
                             }
                             .buttonStyle(.pressable)
                         }
@@ -232,6 +243,10 @@ public struct HerPage: View {
                     ConnectionsPage(store: connections, actions: actions, openSenses: senses == nil ? nil : { sensesOpen = true }, open: { connection in
                         path.append(connection.name == GmailStore.source ? .gmail : .app(connection.name))
                     }) { path.removeLast() }
+                case .agents:
+                    AgentsPage(store: agents, open: { path.append(.agent($0)) }) { path.removeLast() }
+                case .agent(let id):
+                    AgentPage(store: agents, agentId: id) { path.removeLast() }
                 case .gmail:
                     GmailPage(store: gmail) { path.removeLast() }
                         .onDisappear { Task { await connections.load() } }
@@ -293,8 +308,9 @@ public struct HerPage: View {
         async let quietLoaded: Void = quietHours.load()
         async let timersLoaded: Void = timers.load()
         async let connectionsLoaded: Void = connections.load()
+        async let agentsLoaded: Void = agents.load()
         vaultCount = await countVault()
-        _ = await (settingsLoaded, memoryLoaded, quietLoaded, timersLoaded, connectionsLoaded)
+        _ = await (settingsLoaded, memoryLoaded, quietLoaded, timersLoaded, connectionsLoaded, agentsLoaded)
     }
 }
 
