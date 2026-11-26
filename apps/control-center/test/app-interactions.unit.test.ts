@@ -197,7 +197,6 @@ describe("control center application bootstrap and interaction", () => {
               quietHours: [],
               importantSenders: [],
               dailyLimitReached: false,
-              backoff: [],
               insights: [],
               audit: { active: false, since: "2026-11-04T00:00:00.000Z", items: [], pending: 0 },
               decisions: [],

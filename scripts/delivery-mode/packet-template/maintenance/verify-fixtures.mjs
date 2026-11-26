@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { Worker } from "node:worker_threads";
 import { readGrantsWithoutSnapshot, historyDigests, historyRow, readS0State, unresolvedQuery, readRouteAuthorization, readExistingWorkspace, historyTables, catalogRegistrationPrefix } from "../s0-db/read-s0-db.mjs";
-import { oldPrefix, newPrefix, spaceSamplingWarnings, cli as maintenanceCli, strictCapabilityKeys, verifyHistoryUnchanged, configurationStage, staticRootConfiguration, staticRootConfigurationBytes, approvedEmbeddingDescriptor, oldStaticRoot, newStaticRoot, verifyStartupAuthority, verifyAuthorizationUsable, readCatalogRecords, verifyCatalogRecordsAtS0, catalogStrictView, verifyUpgradedCatalog as verifyUpgradedCatalogWith, verifyUpgradePlan, verifyPreparedCapabilities, verifyPendingCapabilities as verifyPendingCapabilitiesWith, upgradeResultExpectation as upgradeResultExpectationWith, isFirstTools, routeIdentity, definitionsForLedger, historyIgnoredColumns, historyIgnoredColumnsFor, migrationExpectedLedger } from "./maintenance-common.mjs";
+import { oldPrefix, newPrefix, spaceSamplingWarnings, cli as maintenanceCli, strictCapabilityKeys, verifyHistoryUnchanged, configurationStage, staticRootConfiguration, staticRootConfigurationBytes, approvedEmbeddingDescriptor, approvedSpeech, oldStaticRoot, newStaticRoot, verifyStartupAuthority, verifyAuthorizationUsable, readCatalogRecords, verifyCatalogRecordsAtS0, catalogStrictView, verifyUpgradedCatalog as verifyUpgradedCatalogWith, verifyUpgradePlan, verifyPreparedCapabilities, verifyPendingCapabilities as verifyPendingCapabilitiesWith, upgradeResultExpectation as upgradeResultExpectationWith, isFirstTools, routeIdentity, definitionsForLedger, historyIgnoredColumns, historyIgnoredColumnsFor, migrationExpectedLedger } from "./maintenance-common.mjs";
 import { validateWorkspacePlan, verifyExistingGrant, verifyWorkspaceIdentity } from "./workspace-grant.mjs";
 
 const verifyUpgradedCatalog = (current, previousAudit, newRefs = []) => verifyUpgradedCatalogWith(current, previousAudit, newRefs);
@@ -59,8 +59,9 @@ if (approvedEmbeddingDescriptor !== null) {
   expectedStaticConfiguration.modelDescriptors[1] = structuredClone(approvedEmbeddingDescriptor);
   expectedStaticConfiguration.memory.dimensions = approvedEmbeddingDescriptor.dimensions;
 }
+if (approvedSpeech !== null) expectedStaticConfiguration.speech = structuredClone(approvedSpeech);
 assert.deepEqual(staticConfiguration, expectedStaticConfiguration, "STATIC_ROOT_CONFIGURATION_SHAPE_CHANGED");
-assert.deepEqual(Object.keys(staticConfiguration), Object.keys(original), "STATIC_ROOT_CONFIGURATION_KEY_ORDER_CHANGED");
+assert.deepEqual(Object.keys(staticConfiguration), Object.keys(expectedStaticConfiguration), "STATIC_ROOT_CONFIGURATION_KEY_ORDER_CHANGED");
 assert.deepEqual(Object.keys(staticConfiguration.modelDescriptors[0]), Object.keys(original.modelDescriptors[0]), "STATIC_ROOT_CONFIGURATION_MODEL_KEY_ORDER_CHANGED");
 assert.equal(staticRootConfigurationBytes(original).toString("utf8"), JSON.stringify(staticConfiguration, null, 2) + "\n", "STATIC_ROOT_CONFIGURATION_BYTES_CHANGED");
 const preparedConfiguration = { ...structuredClone(staticConfiguration), capabilityDeployment: { snapshotPath: "/fixture/snapshot", sha256: `sha256:${"2".repeat(64)}` } };

@@ -270,6 +270,16 @@ export const CHAT_EGRESS_LEGEND_WITH_RESTORE = fixedPrompt({
   text: "文中形如 [密码#abcdefgh]、[验证码#abcdefgh]、[银行卡 尾号1111#abcdefgh]、[证件号#abcdefgh]、[密钥] 的方括号内容，是系统遮住的真实敏感信息，同一个值始终是同一个编号。请照原样当作普通内容使用，不要要求主人核实它们，也不要换成示例；回答里需要提到它们时请照原样写出，系统在显示给主人时会换回原值。如果某项操作必须用到原值，请直接告诉主人这项信息已被遮掉。",
 });
 
+export const CHAT_OWNER_SPOKEN_TURN = fixedPrompt({
+  id: "chat.owner-spoken-turn",
+  purpose:
+    "主人这一轮是用嘴说的（手机上点了“和她说话”），附在本轮用户消息末尾，提示她先短回一句、用口语、不念符号",
+  usedBy: ["packages/application/src/services/run-execution-input-service.ts"],
+  layer: "last-user-message",
+  output: "free-text",
+  text: "<spoken-turn>主人这一句是用嘴说的，你的回答会被手机一句一句念出来：先用一句简短的口语回应，再接着往下说；用平常说话的方式，不要写 Markdown 符号（星号、井号、反引号、表格线、列表符号），不要念网址，需要给网址、代码或长内容时只说一句“已经放在聊天记录里了”，内容照常写进回答里供主人之后看。</spoken-turn>",
+});
+
 export const CHAT_TASK_BOUNDARY = fixedPrompt({
   id: "chat.task-boundary",
   purpose: "说明最后一条用户消息的结构，以及已取消的历史请求不要自动恢复",

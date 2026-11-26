@@ -11,7 +11,7 @@ import {
   readPreUpgradeAuthorization, readCatalogState, runPrepare, verifyUpgradePlan, verifyUpgradedCatalog, verifyCatalogRecordsAtS0, readCatalogResume,
   readPostSwitchAuthorization, readRestoredCatalog, evidenceRoot, oldPrefix, newPrefix, operations, sha,
   currentConfigurationStage, readOriginalConfiguration, staticRootConfigurationBytes, staticRootConfigurationSha256, newStaticRoot, verifyPendingCapabilities, verifyPreparedCapabilities, upgradeResultExpectation,
-  approvedModelRef, approvedModelLimits, approvedPublicFetchBytes, approvedEmbeddingDescriptor, currentSchema, targetSchema,
+  approvedModelRef, approvedModelLimits, approvedPublicFetchBytes, approvedEmbeddingDescriptor, approvedSpeech, currentSchema, targetSchema,
   migrateDatabase, readMigrationContent, describeMigrationSnapshot,
 } from "./maintenance-common.mjs";
 import { fixed } from "../s0-db/read-s0-db.mjs";
@@ -85,6 +85,7 @@ async function applyStaticRootConfiguration(binding) {
       const embedding = loaded.modelDescriptors?.find((entry) => entry.role === "embedding");
       assert(embedding && embedding.provider === approvedEmbeddingDescriptor.provider && embedding.model === approvedEmbeddingDescriptor.model && embedding.dimensions === approvedEmbeddingDescriptor.dimensions && loaded.memory?.dimensions === approvedEmbeddingDescriptor.dimensions, "__PKT_LABEL_UPPER___MAINTENANCE_NEW_RUNTIME_REJECTED_EMBEDDING");
     }
+    if (approvedSpeech !== null) assert.deepEqual({ ...loaded.speech }, { ...approvedSpeech }, "__PKT_LABEL_UPPER___MAINTENANCE_NEW_RUNTIME_REJECTED_SPEECH");
   } catch (error) {
     rmSync(nextPath, { force: true });
     throw error;

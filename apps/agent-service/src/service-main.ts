@@ -13,13 +13,11 @@ import {
   classificationRank,
   createProactiveSeal,
   type DataClassification,
-  DEFAULT_HOME_URGENCY,
   DEVICE_CONFIGURATION_DEFAULTS,
   DurableMemoryService,
   defaultDeviceHardLimits,
   ExecutionLiveFeed,
   enforceableOwnerRule,
-  type HomeUrgencyRunResult,
   type IdGeneratorPort,
   INBOX_LOOP_DEFAULTS,
   MemoryCheckupService,
@@ -141,7 +139,6 @@ import { AgentServiceExecutionClient } from "./production-execution-client.js";
 import { strictModeUnavailableTools } from "./production-execution-environment.js";
 import { createProductionFileReadServices } from "./production-file-read-services.js";
 import { ProductionGapExport } from "./production-gap-export.js";
-import { HOME_URGENCY_MAX_OUTPUT_TOKENS } from "./production-home.js";
 import { createConfiguredHostWeb } from "./production-host-web.js";
 import {
   createProductionHttpComposition,
@@ -1899,6 +1896,9 @@ export async function startTenantRuntime(
         }),
         ledger: repository.decisionLedger(),
         push: { enqueue: (input) => requireValue(repository).webPush().enqueue(input) },
+        urgency: {
+          recordUrgency: (input) => requireValue(repository).inbox().recordUrgency(input),
+        },
         payloads,
         protector,
         clock: { now: () => clock.now() },
@@ -2564,62 +2564,6 @@ export async function startTenantRuntime(
             }),
         });
       }
-      const homeUrgencyConfiguration = configuration.runPolicy?.homeUrgency ?? DEFAULT_HOME_URGENCY;
-      const homeUrgencyRef = homeUrgencyConfiguration.modelRef ?? proactiveConfiguration?.modelRef;
-      const homeUrgencyDescriptor = modelComposition.descriptors.generation.find(
-        ({ ref }) => ref === homeUrgencyRef,
-      );
-      if (homeUrgencyConfiguration.modelRef !== undefined && !homeUrgencyDescriptor)
-        throw new Error("HOME_URGENCY_MODEL_UNAVAILABLE");
-      const homeUrgencyRepository = repository;
-      const homeUrgency =
-        homeUrgencyConfiguration.enabled &&
-        homeUrgencyDescriptor &&
-        protector &&
-        homeUrgencyRepository
-          ? {
-              settings: homeUrgencyConfiguration,
-              seal: createProactiveSeal({
-                payloads: homeUrgencyRepository.payloadStore(
-                  configuration.ownerId,
-                  configuration.agentId,
-                ),
-                protector,
-                ids,
-              }),
-              model: modelComposition.composition.proactiveModel(homeUrgencyDescriptor.ref, {
-                maxOutputTokens: HOME_URGENCY_MAX_OUTPUT_TOKENS,
-                requestTimeoutMs: homeUrgencyConfiguration.requestTimeoutMs,
-                purpose: "home-urgency",
-              }),
-              modelAllows: (classification: DataClassification) =>
-                homeUrgencyDescriptor.allowedDataClassifications.includes(classification),
-              timeZone: configuration.runPolicy?.timeZone ?? "UTC",
-              estimateCostMicros: proactiveCostEstimator(
-                homeUrgencyDescriptor.cost,
-                HOME_URGENCY_MAX_OUTPUT_TOKENS,
-              ),
-              readLocale: async () =>
-                (
-                  await homeUrgencyRepository.ownerPreferences().read({
-                    ownerId: configuration.ownerId,
-                    agentId: configuration.agentId,
-                  })
-                ).locale,
-              onScored: (result: HomeUrgencyRunResult) => {
-                if (result.attempted > 0 || result.failures.length > 0)
-                  writeServiceDiagnostic(errorOutput, {
-                    component: "agent-service",
-                    event: "home.urgency_scored",
-                    attempted: result.attempted,
-                    recorded: result.recorded,
-                    failed: result.failures.length,
-                    stoppedBy: result.stoppedBy,
-                    ...(result.failures[0] ? { code: result.failures[0].slice(0, 120) } : {}),
-                  });
-              },
-            }
-          : undefined;
       const realEvalConfiguration = configuration.runPolicy?.realEval;
       const realEvalDescriptor = realEvalConfiguration
         ? modelComposition.descriptors.generation.find(
@@ -3062,6 +3006,14 @@ export async function startTenantRuntime(
         : undefined;
       if (webPushConfiguration && webPushSecret && episodeProtector) {
         const pushRepository = repository;
+        const messageUrgency = async (messageId: string) =>
+          (
+            await pushRepository.inbox().readUrgency({
+              ownerId: configuration.ownerId,
+              agentId: configuration.agentId,
+              messageIds: [messageId],
+            })
+          )[messageId];
         const pushSources = hostModelSources(configuration);
         const readPlain = async (ref: string) => {
           const payload = await consolidationPayloads.get(ref);
@@ -3106,15 +3058,13 @@ export async function startTenantRuntime(
           applePush = new ProductionApplePush({
             ownerId: configuration.ownerId,
             agentId: configuration.agentId,
+            messageUrgency,
             store: pushRepository.applePush(),
             sender: applePushSender,
             configuration: () => applePushConfiguration,
             threadTitle,
             publicOrigin: configuration.publicOrigin,
             now: () => clock.now(),
-            approvalCopy: async (input) => ({
-              affirmLabel: (await http?.home.approvalCopy(input))?.affirmLabel ?? null,
-            }),
             onDelivery: (outcome) =>
               writeServiceDiagnostic(errorOutput, {
                 component: "agent-service",
@@ -3135,6 +3085,7 @@ export async function startTenantRuntime(
           placement: macPlacement,
           ownerId: configuration.ownerId,
           agentId: configuration.agentId,
+          messageUrgency,
           store: pushRepository.webPush(),
           sender: createWebPushSender({
             privateKey: await pushSources.keys.resolve(webPushSecret.ref, webPushSecret.version),
@@ -3649,7 +3600,6 @@ export async function startTenantRuntime(
               ),
             }
           : {}),
-        ...(homeUrgency ? { homeUrgency } : {}),
         ...(museIntake ? { museIntake } : {}),
         ...(gapExport ? { gapExport } : {}),
         ...(mcpRead ? { mcpRead } : {}),

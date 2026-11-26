@@ -1,6 +1,5 @@
 ---
 status: active
-document_type: spec
 supersedes: ""
 superseded_by: ""
 date: "2026-09-10"

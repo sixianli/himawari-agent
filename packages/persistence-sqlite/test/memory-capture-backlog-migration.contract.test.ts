@@ -23,7 +23,6 @@ afterEach(async () => {
 const LEDGER_TABLES = [
   "decision_ledger",
   "decision_signals",
-  "proactive_push_backoff",
   "source_insights",
   "proactive_processed_messages",
   "decision_ledger_payloads",
@@ -35,21 +34,7 @@ type Database = ReturnType<typeof openQualifiedDatabase>;
 function dumpLedgerTables(database: Database) {
   return {
     ...Object.fromEntries(
-      LEDGER_TABLES.map((table) => [
-        table,
-        database
-          .prepare(`SELECT * FROM ${table}`)
-          .all()
-          .map((row) =>
-            table === "proactive_push_backoff"
-              ? Object.fromEntries(
-                  Object.entries(row as Record<string, unknown>).filter(
-                    ([column]) => column !== "source",
-                  ),
-                )
-              : row,
-          ),
-      ]),
+      LEDGER_TABLES.map((table) => [table, database.prepare(`SELECT * FROM ${table}`).all()]),
     ),
     schemaNames: database
       .prepare(
@@ -83,12 +68,6 @@ function seedLedger(database: Database) {
        VALUES ('sig-1', ?, ?, 'd-old', 'opened', ?, 5, '{}', 'ref-1', ?)`,
     )
     .run(OWNER, AGENT, "2026-11-01T00:00:01.000Z", "2026-11-01T00:00:02.000Z");
-  database
-    .prepare(
-      `INSERT INTO proactive_push_backoff (owner_id, agent_id, class_key, stage, since_at, step_decision_id, ignored_count, updated_at)
-       VALUES (?, ?, 'c', 1, ?, 'd-old', 3, ?)`,
-    )
-    .run(OWNER, AGENT, T0, T0);
   database
     .prepare(
       `INSERT INTO source_insights (id, owner_id, agent_id, source, thread_id, last_message_id, result,

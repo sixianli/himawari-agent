@@ -290,7 +290,6 @@ export interface ProactiveConfiguration {
   readonly reviewSilentSharePermille: number;
   readonly reviewPrereview: ReviewPrereviewConfiguration;
   readonly reviewMemoryUnusedDays: number;
-  readonly backoffThreshold: number;
 }
 
 export interface ReviewPrereviewConfiguration {
@@ -456,7 +455,6 @@ export interface RunPolicyConfiguration {
   readonly homeFeed?: HomeFeedConfiguration;
   readonly searchAsk?: SearchAskConfiguration;
   readonly perception?: PerceptionConfiguration;
-  readonly homeUrgency?: HomeUrgencyConfiguration;
   readonly proactive?: ProactiveConfiguration;
   readonly coding?: CodingRouteConfiguration;
   readonly publicSearch?: PublicSearchRouteConfiguration;
@@ -479,6 +477,20 @@ export interface AutomaticReviewConfiguration {
   readonly confidenceThreshold?: number;
 }
 
+export const SPEECH_ADAPTERS = ["dashscope-qwen-tts"] as const;
+export type SpeechAdapter = (typeof SPEECH_ADAPTERS)[number];
+
+export interface SpeechConfiguration {
+  readonly adapter: SpeechAdapter;
+  readonly magpieModelRef: string;
+  readonly provider: string;
+  readonly model: string;
+  readonly voice: string;
+  readonly languageType: string;
+  readonly firstAudioTimeoutMs: number;
+  readonly maximumCharacters: number;
+}
+
 export interface ProductConfiguration {
   readonly schemaVersion: string;
   readonly deploymentId: DeploymentId;
@@ -494,6 +506,7 @@ export interface ProductConfiguration {
   readonly taskEnvironments?: TaskEnvironmentConfiguration;
   readonly http?: HttpConfiguration;
   readonly identity?: IdentityConfiguration;
+  readonly speech?: SpeechConfiguration;
   readonly modelDescriptors: readonly ConfiguredModelDescriptor[];
   readonly memory: ConfiguredMemoryDescriptor;
   readonly repositoryAllowlistRefs: readonly string[];
@@ -505,17 +518,4 @@ export interface ProductConfiguration {
 
 export interface ConfigurationPort {
   load(): Promise<ProductConfiguration>;
-}
-
-export interface HomeUrgencyConfiguration {
-  readonly enabled: boolean;
-  readonly modelRef?: string;
-  readonly dailyLimit: number;
-  readonly dailyCostMicros: number;
-  readonly perCall: number;
-  readonly referenceLimit: number;
-  readonly requestTimeoutMs: number;
-  readonly checkIntervalSeconds: number;
-  readonly retryAfterHours: number;
-  readonly affirmLabelMax: Readonly<Record<string, number>>;
 }

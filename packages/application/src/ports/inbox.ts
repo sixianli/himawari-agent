@@ -104,4 +104,21 @@ export interface InboxStorePort {
       readonly now: string;
     },
   ): Promise<InboxSettingsRecord>;
+  recordUrgency(
+    input: OwnerRuleScope & {
+      readonly messageId: string;
+      readonly urgency: MessageUrgency;
+      readonly now: string;
+    },
+  ): Promise<void>;
+  readUrgency(
+    input: OwnerRuleScope & { readonly messageIds: readonly string[] },
+  ): Promise<Readonly<Record<string, MessageUrgency>>>;
+}
+
+export const MESSAGE_URGENCIES = ["low", "normal", "high"] as const;
+export type MessageUrgency = (typeof MESSAGE_URGENCIES)[number];
+
+export function isMessageUrgency(value: unknown): value is MessageUrgency {
+  return typeof value === "string" && (MESSAGE_URGENCIES as readonly string[]).includes(value);
 }

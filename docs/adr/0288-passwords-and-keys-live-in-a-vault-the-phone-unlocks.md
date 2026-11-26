@@ -8,6 +8,7 @@ amends: "https://github.com/sixianli/himawari-agent/blob/b153d125a00229ae2f617e9
 date: "2026-11-25"
 covers: "AGENTS.md, apps/execution-worker/src/program-secret-injection.ts, clients/apple/Sources/HimawariCore/KeychainValueStore.swift, clients/apple/Sources/HimawariCore/SecureEnclaveKeys.swift, packages/platform-node/src/paired-device-service.ts, packages/runtime-sandbox/src/network-egress.ts"
 verified_at: "cbda12b8fc3e2f2273f1048c46bbf39060938cc3"
+implementation: in_progress
 ---
 
 # ADR 0288：密码和密钥放进保险箱，钥匙在 iPhone 上，每次办事刷脸批一次

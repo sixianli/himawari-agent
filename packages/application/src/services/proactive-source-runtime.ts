@@ -284,12 +284,10 @@ export async function recordProactiveProgramEntry(
           dueAt: entry.dueAt,
           priority: entry.priority,
           push: true,
-          pushClass: null,
         },
       ],
       repliedThreads: [],
       push,
-      backoff: [],
       cursor: null,
       onlyIfNew: {
         source: entry.source,

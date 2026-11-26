@@ -87,7 +87,6 @@ export interface ProactiveModel {
   readonly saveSettings: (settings: ProactiveSettings) => Promise<boolean>;
   readonly disconnect: () => Promise<boolean>;
   readonly clearRecords: () => Promise<boolean>;
-  readonly restoreBackoff: (classKey: string | null) => Promise<boolean>;
   readonly connect: () => void;
 }
 
@@ -255,7 +254,6 @@ export function useProactive(input: {
     disconnect: () => send("proactive.source.manage", { source: "gmail", action: "disconnect" }),
     clearRecords: () =>
       send("proactive.source.manage", { source: "gmail", action: "clear_records" }),
-    restoreBackoff: (classKey) => send("proactive.backoff.restore", { classKey }),
     connect: () => assign(PROACTIVE_GOOGLE_START_PATH),
   };
 }
