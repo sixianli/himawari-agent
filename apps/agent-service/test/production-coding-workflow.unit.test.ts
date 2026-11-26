@@ -806,6 +806,95 @@ it("[R2-P1] keeps a read rejected before execution as not sent", async () => {
   expect(execute).not.toHaveBeenCalled();
 });
 
+describe("工具在主人自己的电脑里跑", () => {
+  it("授权之后交给电脑执行，路径换成工作目录里的相对路径，结果只执行一次", async () => {
+    const f = fixture();
+    const execute = vi.fn<NonNullable<ProductionFileReadServices["computer"]>["execute"]>(
+      async () => ({ modelContent: "pi-result.v1", isError: false, errorCode: null }),
+    );
+    const services = { ...f.services, authorize: allowRead(), computer: { execute } };
+    const call = {
+      ...f.call,
+      capabilityRef: "coding.read",
+      arguments: { path: "/workspace/docs/plan.md" },
+    };
+    const first = await executeProductionCodingRequest(call, "read", services, f.ctx);
+    expect(first).toMatchObject({
+      outcome: "succeeded",
+      dispatchState: "accepted",
+      modelContent: "pi-result.v1",
+    });
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute.mock.calls[0]?.[0]).toMatchObject({
+      ownerId: f.ctx.ownerId,
+      tool: "read",
+      relativePath: "docs/plan.md",
+      grant: f.binding.grant,
+      maximumOutputBytes: f.binding.maximumBytes,
+    });
+    expect(f.ctx.phase).not.toHaveBeenCalled();
+    expect(f.services.issue).not.toHaveBeenCalled();
+    expect(await executeProductionCodingRequest(call, "read", services, f.ctx)).toEqual(first);
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
+
+  it("bash 不带路径，交给电脑时相对路径为空", async () => {
+    const f = fixture();
+    const execute = vi.fn<NonNullable<ProductionFileReadServices["computer"]>["execute"]>(
+      async () => ({ modelContent: "pi-result.v1", isError: false, errorCode: null }),
+    );
+    const services = { ...f.services, authorize: allowRead(), computer: { execute } };
+    const call = { ...f.call, capabilityRef: "coding.bash", arguments: { command: "pwd" } };
+    await executeProductionCodingRequest(call, "bash", services, f.ctx);
+    expect(execute.mock.calls[0]?.[0]).toMatchObject({ tool: "bash", relativePath: null });
+  });
+
+  it("反向：工作目录以外的路径不交给电脑", async () => {
+    const f = fixture();
+    const execute = vi.fn<NonNullable<ProductionFileReadServices["computer"]>["execute"]>();
+    const services = { ...f.services, authorize: allowRead(), computer: { execute } };
+    const call = { ...f.call, capabilityRef: "coding.read", arguments: { path: "/etc/passwd" } };
+    expect(await executeProductionCodingRequest(call, "read", services, f.ctx)).toMatchObject({
+      outcome: "failed",
+      dispatchState: "not_sent",
+      errorCode: "CODING_PATH_OUTSIDE_SCOPE",
+    });
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it("发出去以后服务重启、没拿到结果时报结果未知，不重做", async () => {
+    const f = fixture();
+    const execute = vi.fn<NonNullable<ProductionFileReadServices["computer"]>["execute"]>();
+    const services = { ...f.services, authorize: allowRead(), computer: { execute } };
+    f.values.set("computer-dispatched", { at: now });
+    const call = { ...f.call, capabilityRef: "coding.bash", arguments: { command: "rm -rf x" } };
+    expect(await executeProductionCodingRequest(call, "bash", services, f.ctx)).toMatchObject({
+      outcome: "result_unknown",
+      dispatchState: "possibly_sent",
+      errorCode: "COMPUTER_RESULT_UNKNOWN",
+    });
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it("电脑开不起来时如实报错，不退回沙箱", async () => {
+    const f = fixture();
+    const execute = vi.fn<NonNullable<ProductionFileReadServices["computer"]>["execute"]>(
+      async () => ({
+        modelContent: "工具没有在你的电脑里执行：COMPUTER_START_FAILED",
+        isError: true,
+        errorCode: "COMPUTER_START_FAILED",
+      }),
+    );
+    const services = { ...f.services, authorize: allowRead(), computer: { execute } };
+    const call = { ...f.call, capabilityRef: "coding.bash", arguments: { command: "ls" } };
+    expect(await executeProductionCodingRequest(call, "bash", services, f.ctx)).toMatchObject({
+      outcome: "failed",
+      errorCode: "COMPUTER_START_FAILED",
+    });
+    expect(f.ctx.phase).not.toHaveBeenCalled();
+  });
+});
+
 function hostWebFixture(
   execute: NonNullable<ProductionFileReadServices["hostWeb"]>["execute"],
   webMemory = new WebToolMemory(),

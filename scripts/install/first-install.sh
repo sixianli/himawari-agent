@@ -80,8 +80,12 @@ if [[ ! -x "$node_prefix/bin/node" || "$("$node_prefix/bin/node" --version)" != 
   [[ "$(sha256sum "$tarball" | cut -d ' ' -f 1)" == "$node_sha" ]] || { echo "FIRST_INSTALL_NODE_DIGEST_MISMATCH" >&2; exit 1; }
   rm -rf "$node_prefix"
   mkdir -p "$node_prefix"
-  tar -xzf "$tarball" -C "$node_prefix" --strip-components 1
+  tar -xzf "$tarball" -C "$node_prefix" --strip-components 1 --no-same-owner
   rm -f "$tarball"
+fi
+if [[ -n "$(find "$node_prefix" \( ! -user root -o ! -group root -o -perm /022 \) ! -type l -print -quit)" ]]; then
+  echo "FIRST_INSTALL_NODE_NOT_ROOT_OWNED $node_prefix: run chown -R root:root $node_prefix and chmod -R go-w $node_prefix" >&2
+  exit 1
 fi
 node_sha_installed=$(sha256sum "$node_prefix/bin/node" | cut -d ' ' -f 1)
 echo "FIRST_INSTALL_NODE $("$node_prefix/bin/node" --version) sha256=$node_sha_installed"

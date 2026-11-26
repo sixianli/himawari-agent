@@ -787,7 +787,6 @@ function web() {
     "modelBudgetPort",
     "modelUsage",
     "decisionLedger",
-    "gapCaseMarks",
     "perception",
     "pairedDevices",
     "deviceActions",

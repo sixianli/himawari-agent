@@ -1,4 +1,3 @@
-import { invalidateRecoveredBuiltInIdentity } from "./built-in-identity-recovery.js";
 import {
   createCipheriv,
   createDecipheriv,
@@ -13,8 +12,8 @@ import {
   lstat,
   mkdir,
   open,
-  readFile,
   readdir,
+  readFile,
   rename,
   rm,
   writeFile,
@@ -35,6 +34,7 @@ import type {
 } from "@himawari-agent/domain";
 import { createBackupId } from "@himawari-agent/domain";
 import BetterSqlite3 from "better-sqlite3";
+import { invalidateRecoveredBuiltInIdentity } from "./built-in-identity-recovery.js";
 import { readSchemaIdentity } from "./migration-engine.js";
 import { acquireStateRootLock } from "./state-root-lock.js";
 
@@ -650,7 +650,9 @@ export class SqliteRecoveryPointAdapter implements RecoveryPointPort {
           });
         } finally {
           snapshot.close();
-          await rm(snapshotPath, { force: true });
+          for (const leftover of [snapshotPath, `${snapshotPath}-wal`, `${snapshotPath}-shm`]) {
+            await rm(leftover, { force: true });
+          }
         }
         await this.#fault("create.after-encryption");
 
