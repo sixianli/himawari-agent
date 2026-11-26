@@ -305,7 +305,7 @@ HealthState         GatewayV2ControlPlane/ReadModel          ExecutionTransport
 
 `SqliteRecoveryPointAdapter` 实现 `RecoveryPointPort`，把 SQLite online backup 和数据库实际引用的 content-addressed Payload ciphertext 作为唯一 allowlist；`runtime/`、`cache/`、lock、socket、日志、secret 与 orphan ciphertext 不进入恢复点。每个文件用随机 DEK 和独立 nonce 执行 AES-256-GCM，DEK 由配置声明的 host `backup-encryption` KEK 包装，canonical manifest 另以 HMAC-SHA256 认证；产品状态只保存 manifest reference、digest、状态与时间，不保存 key material。
 
-create 在最终 rename 前自动解密到权限受限 staging，并核对 manifest authentication、ciphertext/plaintext digest、schema sequence、SQLite quick/full integrity、foreign key、全表 row counts、Payload envelope authentication 和可靠事件 Outbox continuity。restore 只接受配置中的同一 state root、精确确认词和可独占 state-root 管理锁；验证完成后先把当前 `data/` 移到唯一 previous 路径，再原子放入新 data，任一切换阶段失败都恢复 previous。manifest 固定 30 天 `retainUntil`，`purgeExpired()` 删除到期加密副本与恢复点记录；这只是同机逻辑恢复，不改变 authority，也不是 off-host disaster recovery。[SOURCE: docs/runbooks/backup-restore-runbook.md]
+create 在最终 rename 前自动解密到权限受限 staging，并核对 manifest authentication、ciphertext/plaintext digest、schema sequence、SQLite quick/full integrity、foreign key、全表 row counts、Payload envelope authentication 和可靠事件 Outbox continuity。restore 只接受配置中的同一 state root、精确确认词和可独占 state-root 管理锁；验证完成后先把当前 `data/` 移到唯一 previous 路径，再原子放入新 data，任一切换阶段失败都恢复 previous。manifest 固定 30 天 `retainUntil`，`purgeExpired()` 删除到期加密副本与恢复点记录；这只是同机逻辑恢复，不改变 authority，也不是 off-host disaster recovery。[SOURCE: docs/runbooks/production-offsite-backup-runbook.md]
 
 ### SQLite execution, authority and atomic product commits
 
