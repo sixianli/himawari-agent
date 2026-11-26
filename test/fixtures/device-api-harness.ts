@@ -15,6 +15,7 @@ import {
   type DeviceActionRegistry,
   type DeviceConfiguration,
   defaultDeviceHardLimits,
+  deviceVoiceTimingLister,
   deviceVoiceTimingRecorder,
   type GatewayAuthenticationContext,
   PERCEPTION_CONFIGURATION_DEFAULTS,
@@ -603,6 +604,13 @@ export async function harness(
       ...(options.chatAttachments
         ? { chatAttachments: () => options.chatAttachments as { readonly images: boolean } }
         : {}),
+      listVoiceTiming: deviceVoiceTimingLister({
+        ownerId,
+        agentId,
+        trace: repository.traceStore(),
+        payloads: repository.payloadStore(ownerId, agentId),
+        protector,
+      }),
       recordVoiceTiming: deviceVoiceTimingRecorder({
         ownerId,
         agentId,

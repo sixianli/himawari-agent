@@ -103,10 +103,46 @@ describe("[VOICE-TIMING] the phone reports when she was heard", () => {
     const records = steps.json().payload.records as { name: string; text: string }[];
     const timing = records.find(({ name }) => name === "device.voice_timing");
     expect(JSON.parse(timing?.text ?? "{}")).toEqual({
+      messageId: "device-message-timing-0001",
+      emittedAt: null,
       saidAt: SAID,
       firstTextAt: TEXT,
       firstSoundAt: SOUND,
     });
+    await h.repository.close();
+  });
+
+  it("lists the latest turns newest first, caps the limit, and starts empty", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    const empty = await get(h, client, "voice-timing");
+    expect(empty.statusCode, empty.body).toBe(200);
+    expect(empty.json().payload ?? empty.json()).toMatchObject({ items: [] });
+    await answeredTurn(h, client, "device-message-timing-0010");
+    await post(h, client, "voice-timing", {
+      messageId: "device-message-timing-0010",
+      saidAt: SAID,
+      firstTextAt: TEXT,
+      firstSoundAt: null,
+    });
+    const listed = await get(h, client, "voice-timing?limit=20");
+    expect(listed.statusCode, listed.body).toBe(200);
+    const body = listed.json();
+    expect(body.payload ?? body).toEqual({
+      items: [
+        {
+          messageId: "device-message-timing-0010",
+          saidAt: SAID,
+          firstTextAt: TEXT,
+          firstSoundAt: null,
+          emittedAt: null,
+        },
+      ],
+    });
+    for (const bad of ["limit=0", "limit=abc", "limit=-1", "limit=1000"])
+      expect((await get(h, client, `voice-timing?${bad}`)).statusCode).toBe(
+        bad === "limit=1000" ? 200 : 400,
+      );
     await h.repository.close();
   });
 

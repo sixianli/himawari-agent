@@ -126,6 +126,7 @@
   },
   "amd64": {
     "ci/toolchain-lock.json": 2,
+    "packages/runtime-sandbox/computer-image/Dockerfile": 3,
     "scripts/ci/install-tools.mjs": 1,
     "scripts/delivery-mode/check-template-neutral.py": 1,
     "scripts/install/first-install.sh": 1,
