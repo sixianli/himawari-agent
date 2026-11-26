@@ -1,28 +1,18 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { createProactiveSeal, type MuseIntakeItemWrite } from "@himawari-agent/application";
 import { createAgentId, createOwnerId } from "@himawari-agent/domain";
-import {
-  type GatewayV2Query,
-  GMAIL_MESSAGE_ID_PATTERN,
-  gatewayV2MessageSchema,
-} from "@himawari-agent/gateway-contracts";
+import { type GatewayV2Query, gatewayV2MessageSchema } from "@himawari-agent/gateway-contracts";
 import {
   applyMigrations,
   loadBundledMigrations,
   openQualifiedDatabase,
   SqliteProductStateRepository,
 } from "@himawari-agent/persistence-sqlite";
-import {
-  DeterministicIdGenerator,
-  DeterministicPayloadProtector,
-  ManualClock,
-} from "@himawari-agent/testing";
+import { ManualClock } from "@himawari-agent/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import { ProductionObservation } from "../../apps/agent-service/src/production-observation.ts";
 import { fixture as contractFixture } from "../../packages/gateway-contracts/test/gateway-v2.fixture.ts";
-import { GMAIL_MESSAGE_ID } from "../../packages/persistence-sqlite/src/sqlite-muse-intake-operations.ts";
 
 const OWNER_ID = createOwnerId("owner-email");
 const OTHER_OWNER_ID = createOwnerId("owner-other");
@@ -40,7 +30,6 @@ interface Mail {
   readonly skipReason?: "category";
   readonly rating: "useful" | "unneeded" | "missed" | null;
   readonly inputs: Record<string, unknown>;
-  readonly muse: "none" | "reminded" | "withheld";
 }
 
 const MAILS: readonly Mail[] = [
@@ -63,17 +52,8 @@ const MAILS: readonly Mail[] = [
       memoryByMail: { "mail-both": ["memory-b", "memory-a", "_memory-c", "memory\nctl"] },
       relatedByMail: { "mail-both": ["thread-x", "thread-y"] },
     },
-    muse: "reminded",
   },
-  {
-    key: "muse-only",
-    gmailId: "mail-muse-only",
-    processed: true,
-    outcome: "ignore",
-    rating: "missed",
-    inputs: { floorHits: {}, memoryByMail: {}, relatedByMail: {} },
-    muse: "reminded",
-  },
+
   {
     key: "himawari-only",
     gmailId: "mail-himawari-only",
@@ -81,7 +61,6 @@ const MAILS: readonly Mail[] = [
     outcome: "check",
     rating: null,
     inputs: { floorHits: {}, memoryByMail: {}, relatedByMail: {} },
-    muse: "none",
   },
   {
     key: "prototype-key",
@@ -90,7 +69,6 @@ const MAILS: readonly Mail[] = [
     outcome: "know",
     rating: null,
     inputs: { floorHits: {}, memoryByMail: {}, relatedByMail: {} },
-    muse: "none",
   },
   {
     key: "legacy",
@@ -99,7 +77,6 @@ const MAILS: readonly Mail[] = [
     outcome: "know",
     rating: null,
     inputs: {},
-    muse: "none",
   },
   {
     key: "skipped",
@@ -109,7 +86,6 @@ const MAILS: readonly Mail[] = [
     skipReason: "category",
     rating: null,
     inputs: { floorHits: {}, memoryByMail: {}, relatedByMail: {} },
-    muse: "none",
   },
   {
     key: "long",
@@ -118,57 +94,8 @@ const MAILS: readonly Mail[] = [
     outcome: "act",
     rating: null,
     inputs: { floorHits: {}, memoryByMail: {}, relatedByMail: {} },
-    muse: "none",
-  },
-  {
-    key: "withheld",
-    gmailId: "mail-withheld",
-    processed: true,
-    outcome: "act",
-    rating: null,
-    inputs: { floorHits: {}, memoryByMail: {}, relatedByMail: {} },
-    muse: "withheld",
-  },
-  {
-    key: "muse-no-record",
-    gmailId: "mail-muse-no-record",
-    processed: false,
-    outcome: "ignore",
-    rating: null,
-    inputs: {},
-    muse: "reminded",
   },
 ];
-
-function intakeItem(
-  mail: Mail,
-  titleRef: string,
-  textRef: string,
-  withheld: boolean,
-): MuseIntakeItemWrite {
-  return {
-    kind: "proactive",
-    naturalKey: mail.key,
-    state: "delivered",
-    reasonCode: null,
-    decision: "send",
-    reasonEnum: "changed",
-    priority: "regular",
-    occurredAt: AT,
-    scheduledFor: null,
-    startedAt: null,
-    preparedAt: AT,
-    handoffAcceptedAt: AT,
-    eventAt: AT,
-    titleRef,
-    textRef,
-    textWithheld: withheld,
-    options: [],
-    gmailMessageId: mail.gmailId,
-    sources: { occurred_at: "system_record", text: "chat_record" },
-    contentDigest: `digest-${mail.key}`,
-  };
-}
 
 describe("[P1-5] one mail's decision trace", () => {
   const directories: string[] = [];
@@ -225,49 +152,16 @@ describe("[P1-5] one mail's decision trace", () => {
       minimumFreeBytes: 0,
       now: () => AT,
     });
-    const seal = createProactiveSeal({
-      payloads: repository.payloadStore(OWNER_ID, AGENT_ID),
-      protector: new DeterministicPayloadProtector(),
-      ids: new DeterministicIdGenerator(),
-    });
-    const intake = repository.museIntake();
-    let seq = 0;
-    for (const mail of MAILS.filter((entry) => entry.muse !== "none")) {
-      seq += 1;
-      const titleRef = await seal.seal({ ...scope, text: `Muse title ${mail.key}`, at: AT });
-      const textRef = await seal.seal({ ...scope, text: `Muse text ${mail.key}`, at: AT });
-      await intake.ingestBatch({
-        ...scope,
-        batchId: `batch-${seq}`,
-        senderId: "muse",
-        batchSeq: seq,
-        sentAt: AT,
-        receivedAt: AT,
-        rejectedCount: 0,
-        droppedFieldCount: 0,
-        items: [intakeItem(mail, titleRef, textRef, mail.muse === "withheld")],
-      });
-      await intake.rate({
-        ...scope,
-        kind: "proactive",
-        naturalKey: mail.key,
-        timingOk: true,
-        contentOk: true,
-        entryId: `rating-${mail.key}`,
-        now: AT,
-      });
-    }
     const observation = (own: typeof scope = scope) =>
       new ProductionObservation({
         scope: own,
         observation: repository.ledgerObservation(),
         ledger: repository.decisionLedger(),
-        seal,
         clock: new ManualClock(AT),
         schedule: { configured: false, intervalMs: 0, perCheckMs: 0 },
         serviceRevision: "test",
       });
-    return { repository, observation, seal, intake };
+    return { repository, observation };
   }
 
   const query = (messageId: string) =>
@@ -283,7 +177,7 @@ describe("[P1-5] one mail's decision trace", () => {
     return snapshot.payload;
   }
 
-  it("resolves a Gmail mail id to its judgment, rules, memories and the Muse entry", async () => {
+  it("resolves a Gmail mail id to its judgment, rules and memories", async () => {
     const h = await fixture();
     try {
       const payload = await read(h, "mail-both");
@@ -297,62 +191,6 @@ describe("[P1-5] one mail's decision trace", () => {
         memoryIds: ["_memory-c", "memory ctl", "memory-a", "memory-b"],
         relatedMessages: 2,
       });
-      expect(payload.muse.entries).toHaveLength(1);
-      expect(payload.muse.entries[0]).toMatchObject({
-        reminded: true,
-        kind: "proactive",
-        title: "Muse title both",
-        text: "Muse text both",
-        textWithheld: false,
-        timingOk: true,
-        contentOk: true,
-      });
-      expect(payload.comparison).toBe("both");
-    } finally {
-      await h.repository.close();
-    }
-  });
-
-  it("[negative] reports truncation only when there are more than 20 Muse entries", async () => {
-    const h = await fixture();
-    try {
-      let sequence = 100;
-      const ingest = async (count: number, gmailId: string) => {
-        for (let index = 0; index < count; index += 1) {
-          const mail = { ...MAILS[0], key: `${gmailId}-${index}`, gmailId } as Mail;
-          const titleRef = await h.seal.seal({ ...scope, text: `title ${index}`, at: AT });
-          const textRef = await h.seal.seal({ ...scope, text: `text ${index}`, at: AT });
-          await h.intake.ingestBatch({
-            ...scope,
-            batchId: `batch-${gmailId}-${index}`,
-            senderId: "muse",
-            batchSeq: sequence + index,
-            sentAt: AT,
-            receivedAt: AT,
-            rejectedCount: 0,
-            droppedFieldCount: 0,
-            items: [intakeItem(mail, titleRef, textRef, false)],
-          });
-          await h.intake.rate({
-            ...scope,
-            kind: "proactive",
-            naturalKey: mail.key,
-            timingOk: true,
-            contentOk: true,
-            entryId: `rating-${mail.key}`,
-            now: AT,
-          });
-        }
-      };
-      await ingest(20, "mail-twenty");
-      sequence += 100;
-      await ingest(21, "mail-twentyone");
-      const twenty = await read(h, "mail-twenty");
-      expect(twenty.muse.entries).toHaveLength(20);
-      expect(twenty.muse.truncated).toBe(false);
-      const over = await read(h, "mail-twentyone");
-      expect(over.muse.entries).toHaveLength(20);
-      expect(over.muse.truncated).toBe(true);
     } finally {
       await h.repository.close();
     }
@@ -363,50 +201,6 @@ describe("[P1-5] one mail's decision trace", () => {
     try {
       const payload = await read(h, "__proto__");
       expect(payload.mail).toMatchObject({ ruleIds: [], memoryIds: [], relatedMessages: 0 });
-    } finally {
-      await h.repository.close();
-    }
-  });
-
-  it("[negative] judges the comparison from every Muse entry, not only the 20 shown", async () => {
-    const h = await fixture();
-    try {
-      const contentRef = await h.seal.seal({ ...scope, text: "late", at: AT });
-      const write = (index: number) => {
-        const base = {
-          id: `late-${index}`,
-          ...scope,
-          museAt: `2026-10-29T03:${String(index).padStart(2, "0")}:00.000Z`,
-          noteRef: null,
-          pairedDecisionId: null,
-          pairedMessageId: "mail-himawari-only",
-          recordedAt: AT,
-        };
-        return h.repository
-          .decisionLedger()
-          .recordMuse(
-            index === 20
-              ? { ...base, museReminded: true, timingOk: true, contentOk: true, contentRef }
-              : { ...base, museReminded: false },
-          );
-      };
-      for (let index = 0; index < 21; index += 1) await write(index);
-      const payload = await read(h, "mail-himawari-only");
-      expect(payload.muse.entries).toHaveLength(20);
-      expect(payload.muse.truncated).toBe(true);
-      expect(payload.comparison).toBe("both");
-    } finally {
-      await h.repository.close();
-    }
-  });
-
-  it("uses the same comparison words as the weekly report buckets", async () => {
-    const h = await fixture();
-    try {
-      expect((await read(h, "mail-muse-only")).comparison).toBe("museOnly");
-      expect((await read(h, "mail-himawari-only")).comparison).toBe("noMuseEntry");
-      expect((await read(h, "mail-skipped")).comparison).toBe("noMuseEntry");
-      expect((await read(h, "mail-muse-no-record")).comparison).toBe("noHimawariRecord");
     } finally {
       await h.repository.close();
     }
@@ -428,34 +222,20 @@ describe("[P1-5] one mail's decision trace", () => {
     }
   });
 
-  it("[negative] an unknown mail id, another owner's mail and a withheld Muse text show nothing", async () => {
+  it("[negative] an unknown mail id and another owner's mail show nothing", async () => {
     const h = await fixture();
     try {
       const unknown = await read(h, "mail-does-not-exist");
       expect(unknown.mail).toBeNull();
-      expect(unknown.muse.entries).toEqual([]);
-      expect(unknown.comparison).toBe("noHimawariRecord");
+      expect(unknown).not.toHaveProperty("muse");
       const foreign = await read(h, "mail-both", {
         ownerId: OTHER_OWNER_ID,
         agentId: OTHER_AGENT_ID,
       });
       expect(foreign.mail).toBeNull();
-      expect(foreign.muse.entries).toEqual([]);
-      const withheld = await read(h, "mail-withheld");
-      expect(withheld.muse.entries[0]).toMatchObject({
-        title: null,
-        text: null,
-        textWithheld: true,
-      });
-      expect(JSON.stringify(withheld)).not.toContain("Muse text withheld");
     } finally {
       await h.repository.close();
     }
-  });
-
-  it("[negative] the contract and the storage layer accept exactly the same mail ids", () => {
-    expect(GMAIL_MESSAGE_ID_PATTERN.source).toBe(GMAIL_MESSAGE_ID.source);
-    expect(GMAIL_MESSAGE_ID_PATTERN.flags).toBe(GMAIL_MESSAGE_ID.flags);
   });
 
   it("accepts a 256 character mail id that starts with an underscore, and rejects 257", async () => {

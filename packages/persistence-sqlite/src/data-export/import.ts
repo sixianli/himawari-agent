@@ -73,7 +73,6 @@ interface Sealed {
     }[];
     readonly sourceInsights: readonly Record<string, unknown>[];
     readonly processedMessages: readonly Record<string, unknown>[];
-    readonly museEntries: readonly Record<string, unknown>[];
     readonly prereviews: readonly Record<string, unknown>[];
   } | null;
 }
@@ -89,7 +88,6 @@ const EMPTY_TARGET_TABLES = [
   "memory_conversation_reviews",
   "source_insights",
   "proactive_processed_messages",
-  "muse_reference_entries",
   "rule_book_rules",
   "rule_book_history",
   "external_memory_proposals",
@@ -251,18 +249,6 @@ export async function importPortableExport(
           row,
           await protect(row["header"] as ParsedText, (row["header"] as ParsedText).text),
         );
-    for (const row of evidence.museEntries) {
-      if (row["content"] !== null)
-        evidenceRefs.set(
-          `${String(row["id"])}/content`,
-          await protect(row["content"] as ParsedText, (row["content"] as ParsedText).text),
-        );
-      if (row["note"] !== null)
-        evidenceRefs.set(
-          `${String(row["id"])}/note`,
-          await protect(row["note"] as ParsedText, (row["note"] as ParsedText).text),
-        );
-    }
   }
 
   const importedMemoryIds = new Set(plans.map(({ memory }) => memory.id));
@@ -875,27 +861,7 @@ function writeEvidence(
       row["ownerRating"],
       row["receivedAt"],
     );
-  const muse = database.prepare(
-    `INSERT INTO muse_reference_entries (id, owner_id, agent_id, muse_at, muse_reminded, timing_ok, content_ok, content_ref, note_ref, paired_decision_id, intake_item_key, recorded_at, paired_message_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  );
   const bit = (value: unknown): number | null => (value === null ? null : value ? 1 : 0);
-  for (const row of evidence.museEntries)
-    muse.run(
-      row["id"],
-      ownerId,
-      agentId,
-      row["museAt"],
-      row["museReminded"] ? 1 : 0,
-      bit(row["timingOk"]),
-      bit(row["contentOk"]),
-      refs.get(`${String(row["id"])}/content`) ?? null,
-      refs.get(`${String(row["id"])}/note`) ?? null,
-      row["pairedDecisionId"],
-      row["intakeItemKey"],
-      row["recordedAt"],
-      row["pairedMessageId"],
-    );
   const prereview = database.prepare(
     `INSERT INTO decision_prereviews (id, owner_id, agent_id, decision_id, mail_source, message_id, calibration_group, category, status, rating, confidence_permille, history_conflict, failure_code, model_ref, prompt_id, text_digest, data_classification, cost_micros, duration_ms, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,

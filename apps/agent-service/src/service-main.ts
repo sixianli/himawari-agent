@@ -81,13 +81,11 @@ import {
   ExecutionAdmissionUdsServer,
   ExecutionUdsError,
   failureReason,
-  GAP_EXPORT_SECRET_PURPOSE,
   GOOGLE_OAUTH_CLIENT_SECRET_PURPOSE,
   initializeStateRoot,
   JsonFileConfigurationPort,
   MacOsKeychainProviderSecretSource,
   MacOsKeychainSecretSource,
-  MUSE_INTAKE_SECRET_PURPOSE,
   NodeVaultCrypto,
   PayloadUdsServer,
   parseServiceArguments,
@@ -138,7 +136,6 @@ import { ProductionExecutionAdmissionHandler } from "./production-execution-admi
 import { AgentServiceExecutionClient } from "./production-execution-client.js";
 import { strictModeUnavailableTools } from "./production-execution-environment.js";
 import { createProductionFileReadServices } from "./production-file-read-services.js";
-import { ProductionGapExport } from "./production-gap-export.js";
 import { createConfiguredHostWeb } from "./production-host-web.js";
 import {
   createProductionHttpComposition,
@@ -184,8 +181,6 @@ import {
   productionEgressThreadOf,
   productionSensitiveInterceptionRecorder,
 } from "./production-model-egress.js";
-import { createMuseChannelPushSource, ProductionMuseIntake } from "./production-muse-intake.js";
-import { ProductionMuseControl } from "./production-muse-intake-control.js";
 import { ProductionObservation, readServiceRevision } from "./production-observation.js";
 import { productionOwnerIntentGate } from "./production-owner-intent.js";
 import { ProductionOwnerRuleTools, ProductionOwnerRuleWriter } from "./production-owner-rules.js";
@@ -761,10 +756,7 @@ export async function startTenantRuntime(
   let proactive: ProductionProactive | undefined;
   let memoryClassifier: ProductionMemoryClassifier | undefined;
   let memoryImportDuplicates: ReturnType<typeof productionImportDuplicateChecker>;
-  let museIntake: ProductionMuseIntake | undefined;
-  let gapExport: ProductionGapExport | undefined;
   let mcpRead: ProductionMcpRead | undefined;
-  let museControl: ProductionMuseControl | undefined;
   let observation: ProductionObservation | undefined;
   let realEval: ProductionRealEval | RealEvalSampleExpiry | undefined;
   let perceptionExtraction: ProductionPerceptionExtraction | undefined;
@@ -2745,69 +2737,6 @@ export async function startTenantRuntime(
             }),
         });
       }
-      const museIntakeConfiguration = configuration.runPolicy?.museIntake;
-      const museIntakeSecret =
-        museIntakeConfiguration?.enabled === true
-          ? configuration.secretReferences.find(
-              ({ ref, purpose }) =>
-                ref === museIntakeConfiguration.secretRef && purpose === MUSE_INTAKE_SECRET_PURPOSE,
-            )
-          : undefined;
-      if (museIntakeSecret && protector) {
-        const museSeal = createProactiveSeal({
-          payloads: repository.payloadStore(configuration.ownerId, configuration.agentId),
-          protector,
-          ids,
-        });
-        museControl = new ProductionMuseControl({
-          scope: proactiveScope,
-          store: repository.museIntake(),
-          seal: museSeal,
-          ids,
-          clock,
-        });
-        museIntake = new ProductionMuseIntake({
-          scope: proactiveScope,
-          store: repository.museIntake(),
-          seal: museSeal,
-          ids,
-          clock,
-          secret: await hostModelSources(configuration).provider.resolve(
-            museIntakeSecret.ref,
-            museIntakeSecret.version,
-          ),
-        });
-      } else if (museIntakeConfiguration?.enabled === true) {
-        throw new Error("MUSE_INTAKE_RUNTIME_UNAVAILABLE");
-      }
-      const gapExportRef = museIntakeConfiguration?.gapExportSecretRef;
-      const gapExportSecret =
-        museIntakeConfiguration?.enabled === true && gapExportRef !== undefined
-          ? configuration.secretReferences.find(
-              ({ ref, purpose }) => ref === gapExportRef && purpose === GAP_EXPORT_SECRET_PURPOSE,
-            )
-          : undefined;
-      if (gapExportSecret && protector) {
-        gapExport = new ProductionGapExport({
-          scope: {
-            ownerId: configuration.ownerId,
-            agentId: configuration.agentId,
-          },
-          marks: repository.gapCaseMarks(),
-          seal: createProactiveSeal({
-            payloads: repository.payloadStore(configuration.ownerId, configuration.agentId),
-            protector,
-            ids,
-          }),
-          clock,
-          secret: await hostModelSources(configuration).provider.resolve(
-            gapExportSecret.ref,
-            gapExportSecret.version,
-          ),
-        });
-      } else if (gapExportRef !== undefined && museIntakeConfiguration?.enabled === true) {
-        throw new Error("GAP_EXPORT_RUNTIME_UNAVAILABLE");
-      }
       const mcpSyncStore = repository.mcpMemorySync();
       const externalProposals = new ProductionMcpMemoryWriter({
         configuration,
@@ -3110,14 +3039,6 @@ export async function startTenantRuntime(
                 status: "pending",
               }),
           awaitingCount: async () => http?.home.awaitingCount(),
-          ...(museIntake
-            ? {
-                museChannel: createMuseChannelPushSource({
-                  scope: proactiveScope,
-                  store: repository.museIntake(),
-                }),
-              }
-            : {}),
           ...(proactive && proactiveStore && proactiveSeal
             ? {
                 proactive: createProactivePushSource({
@@ -3207,18 +3128,8 @@ export async function startTenantRuntime(
         },
         observation: repository.ledgerObservation(),
         ledger: repository.decisionLedger(),
-        marks: repository.gapCaseMarks(),
         ...(configuration.runPolicy?.mcpRead
           ? { mcpConnections: repository.mcpConnections() }
-          : {}),
-        ...(protector
-          ? {
-              seal: createProactiveSeal({
-                payloads: repository.payloadStore(configuration.ownerId, configuration.agentId),
-                protector,
-                ids,
-              }),
-            }
           : {}),
         clock,
         schedule: {
@@ -3600,10 +3511,7 @@ export async function startTenantRuntime(
               ),
             }
           : {}),
-        ...(museIntake ? { museIntake } : {}),
-        ...(gapExport ? { gapExport } : {}),
         ...(mcpRead ? { mcpRead } : {}),
-        ...(museControl ? { museControl } : {}),
         ...(observation ? { observation } : {}),
         memory: {
           ...(memoryComposition
