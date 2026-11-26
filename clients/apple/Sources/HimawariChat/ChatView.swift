@@ -669,7 +669,7 @@ struct ChatRowActions {
     let showExecution: (String) async -> Void
 }
 
-struct ChatRowView: View, Equatable {
+struct ChatRowView: View, @MainActor Equatable {
     let model: ChatRowModel
     let actions: ChatRowActions
 
