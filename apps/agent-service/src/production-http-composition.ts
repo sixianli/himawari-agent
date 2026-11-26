@@ -1,6 +1,7 @@
 import { createHash, createHmac, randomBytes } from "node:crypto";
 import { lstat } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type {
   CancelCoordinatedRunInput,
   CapabilityReactivationVerifierPort,
@@ -129,7 +130,6 @@ import {
 } from "./production-approval-gateway.js";
 import { backgroundCommandRef } from "./production-background-commands.js";
 import { registerChatExportRoute } from "./production-chat-export.js";
-import { createProductionSpeech } from "./production-speech.js";
 import {
   DataExportJobs,
   deviceExportArchive,
@@ -215,7 +215,10 @@ import {
 import {
   PRODUCTION_SERVER_STATUS_OPERATIONS,
   ProductionServerStatusControl,
+  readServerDisk,
+  readServerRelease,
 } from "./production-server-status-control.js";
+import { createProductionSpeech } from "./production-speech.js";
 import {
   DEFAULT_TIMER_TIME_ZONE,
   localTime,
@@ -1824,6 +1827,8 @@ export async function createProductionHttpComposition(
       configuration,
       health,
       clock: { now: clock },
+      release: () => readServerRelease(fileURLToPath(import.meta.url)),
+      disk: () => readServerDisk(configuration.stateRoot),
     }),
     dataExportControl: new ProductionDataExportControl({
       configuration,

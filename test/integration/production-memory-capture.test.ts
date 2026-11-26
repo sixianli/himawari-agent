@@ -4408,6 +4408,136 @@ describe("production memory capture", () => {
     ).toEqual(["sensitive"]);
   });
 
+  it("[import-preview] splits a file into entries on the server, sorts and checks them, and the phone imports what it ticked", async () => {
+    const context = await setup(
+      "请记住，我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    await context.protect(
+      "payload-file-1",
+      [
+        "# User Profile",
+        "我最喜欢的颜色是蓝色。我每天早上跑步",
+        "我的身份证号是 110101199003071234",
+        "",
+        "## General Tips",
+        "- 用 pnpm 而不是 npm",
+      ].join("\n"),
+    );
+    await context.protect("payload-file-2", "not json");
+    context.classifyOutputs.push(
+      JSON.stringify({
+        items: [
+          { id: "0", category: "preference", classification: "private", topic: null },
+          { id: "1", category: "preference", classification: "private", topic: null },
+          { id: "2", category: "other", classification: "private", topic: null },
+        ],
+      }),
+    );
+    context.duplicateAnswers.push(
+      { matchKey: "m0", probabilityPermille: 920 },
+      { matchKey: null, probabilityPermille: 0 },
+      { matchKey: null, probabilityPermille: 0 },
+    );
+    const snapshot = await context.control.query({
+      ...envelope,
+      kind: "query",
+      type: "memory.import.preview.read",
+      payload: {
+        source: "codex",
+        files: [{ name: "MEMORY.md", contentRef: "payload-file-1" }],
+      },
+    } as never);
+    if (snapshot.type !== "memory.import.preview.snapshot") throw new Error("snapshot");
+    expect(snapshot.payload.files).toEqual([{ name: "MEMORY.md", state: "read", found: 4 }]);
+    expect(snapshot.payload.found).toBe(4);
+    expect(
+      snapshot.payload.items.map(({ text, category, flag, selectable, checked, topic }) => ({
+        text,
+        category,
+        flag,
+        selectable,
+        checked,
+        topic,
+      })),
+    ).toEqual([
+      {
+        text: "我最喜欢的颜色是蓝色",
+        category: "preference",
+        flag: "duplicate",
+        selectable: false,
+        checked: false,
+        topic: null,
+      },
+      {
+        text: "我每天早上跑步",
+        category: "preference",
+        flag: null,
+        selectable: true,
+        checked: true,
+        topic: null,
+      },
+      {
+        text: "我的身份证号是 110101199003071234",
+        category: "other",
+        flag: "secret",
+        selectable: true,
+        checked: false,
+        topic: "other",
+      },
+      {
+        text: "用 pnpm 而不是 npm",
+        category: "project",
+        flag: "coding",
+        selectable: true,
+        checked: false,
+        topic: null,
+      },
+    ]);
+    expect(context.classifyPrompts.join("\n")).not.toContain("110101199003071234");
+    expect(JSON.stringify(context.duplicateRequests)).not.toContain("110101199003071234");
+    const ticked = snapshot.payload.items.filter(({ checked }) => checked);
+    await command(
+      context.control,
+      "memory.import.commit",
+      {
+        batchId: "memory-import-preview",
+        source: "codex",
+        items: ticked.map(({ contentRef, category, subCategory, topic }) => ({
+          contentRef,
+          category,
+          subCategory,
+          topic,
+        })),
+      },
+      "import-preview",
+    );
+    const imported = (await overview(context.control)).memories.filter(
+      ({ importBatchId }) => importBatchId === "memory-import-preview",
+    );
+    expect(imported.map(({ text, dataClassification }) => [text, dataClassification])).toEqual([
+      ["我每天早上跑步", "private"],
+    ]);
+
+    const unreadable = await context.control.query({
+      ...envelope,
+      kind: "query",
+      type: "memory.import.preview.read",
+      payload: {
+        source: "himawari",
+        files: [{ name: "himawari-memories.json", contentRef: "payload-file-2" }],
+      },
+    } as never);
+    if (unreadable.type !== "memory.import.preview.snapshot") throw new Error("snapshot");
+    expect(unreadable.payload).toEqual({
+      files: [{ name: "himawari-memories.json", state: "unreadable", found: 0 }],
+      found: 0,
+      items: [],
+    });
+  });
+
   it("[A4] judges an imported entry against the owner's private memories with the model and never compares words", async () => {
     const context = await setup(
       "请记住，我对乳制品不耐受。",

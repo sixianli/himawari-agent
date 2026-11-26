@@ -146,6 +146,8 @@ describe("device management gateway messages", () => {
         ready: true,
         status: "healthy",
         dependencies: [],
+        release: null,
+        disk: null,
         generatedAt: "2026-11-12T03:00:00.000Z",
         ...overrides,
       });
@@ -174,6 +176,8 @@ describe("device management gateway messages", () => {
         { dependencies: [{ name: "sqlite", required: true, status: "healthy" }] },
       ],
       ["missing live", { live: undefined }],
+      ["release without a commit hash", { release: { commit: "main", installedAt: null } }],
+      ["disk with no size", { disk: { availableBytes: 0, totalBytes: 0 } }],
     ])("rejects %s", (_name, overrides) => {
       rejects(status(overrides));
     });

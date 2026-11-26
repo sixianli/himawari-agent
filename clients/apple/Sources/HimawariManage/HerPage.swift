@@ -26,12 +26,19 @@ public struct HerPage: View {
         case timers
         case timer(String)
         case about
+        case serverStatus
+        case transfer
+        case importPaste
+        case importPreview
     }
 
     @State private var settings: SettingsStore
     @State private var memory: MemoryStore
     @State private var quietHours: QuietHoursStore
     @State private var timers: TimersStore
+    @State private var dataExport: DataExportStore
+    @State private var memoryImport: MemoryImportStore
+    @State private var serverStatus: ServerStatusStore
     @State private var path: [Page] = []
     @State private var sensesOpen = false
     @State private var vaultCount: HerVaultCount = .unknown
@@ -72,6 +79,9 @@ public struct HerPage: View {
         _memory = State(initialValue: MemoryStore(gateway: gateway))
         _quietHours = State(initialValue: QuietHoursStore(gateway: gateway))
         _timers = State(initialValue: TimersStore(gateway: gateway))
+        _dataExport = State(initialValue: DataExportStore(gateway: gateway, download: { try await api.dataExportArchive(exportId: $0) }))
+        _memoryImport = State(initialValue: MemoryImportStore(gateway: gateway))
+        _serverStatus = State(initialValue: ServerStatusStore(gateway: gateway))
         self.listening = listening
         self.actions = actions
         self.openListening = openListening
@@ -97,11 +107,15 @@ public struct HerPage: View {
         #endif
     }
 
-    init(settings: SettingsStore, memory: MemoryStore, quietHours: QuietHoursStore, timers: TimersStore? = nil, listening: (any HerListening)? = nil, actions: DeviceActionsModel? = nil, senses: AnyView? = nil, vaultItems: HerVaultCount = .items(3), path: [Page] = []) {
+    init(settings: SettingsStore, memory: MemoryStore, quietHours: QuietHoursStore, timers: TimersStore? = nil, gateway: ManageGateway? = nil, memoryImport: MemoryImportStore? = nil, listening: (any HerListening)? = nil, actions: DeviceActionsModel? = nil, senses: AnyView? = nil, vaultItems: HerVaultCount = .items(3), path: [Page] = []) {
         _settings = State(initialValue: settings)
         _memory = State(initialValue: memory)
         _quietHours = State(initialValue: quietHours)
         _timers = State(initialValue: timers ?? TimersStore(timers: nil))
+        let demoGateway = gateway ?? ManageGateway(transport: NoTransport())
+        _dataExport = State(initialValue: DataExportStore(gateway: demoGateway, download: { _ in Data() }))
+        _memoryImport = State(initialValue: memoryImport ?? MemoryImportStore(gateway: demoGateway))
+        _serverStatus = State(initialValue: ServerStatusStore(gateway: demoGateway))
         _path = State(initialValue: path)
         self.listening = listening
         self.actions = actions
@@ -172,6 +186,10 @@ public struct HerPage: View {
                         .buttonStyle(.pressable)
                     }
                     SettingsGroup(label: nil) {
+                        Button { path.append(.transfer) } label: {
+                            HerRow(icon: .download, title: M.transferTitle)
+                        }
+                        .buttonStyle(.pressable)
                         Button { path.append(.about) } label: {
                             HerRow(icon: .infoCircle, title: M.aboutTitle, subtitle: AboutPage.versionLine, last: true)
                         }
@@ -220,7 +238,20 @@ public struct HerPage: View {
                 case .timer(let id):
                     TimerDetailPage(store: timers, timerId: id) { path.removeLast() }
                 case .about:
-                    AboutPage(server: server) { path.removeLast() }
+                    AboutPage(server: server, openStatus: { path.append(.serverStatus) }) { path.removeLast() }
+                case .serverStatus:
+                    ServerStatusPage(store: serverStatus) { path.removeLast() }
+                case .transfer:
+                    DataTransferPage(
+                        export: dataExport,
+                        importer: memoryImport,
+                        openPaste: { path.append(.importPaste) },
+                        openPreview: { path.append(.importPreview) }
+                    ) { path.removeLast() }
+                case .importPaste:
+                    MemoryImportPastePage(store: memoryImport, openPreview: { path.append(.importPreview) }) { path.removeLast() }
+                case .importPreview:
+                    MemoryImportPreviewPage(store: memoryImport, finish: finishImport) { path.removeLast() }
                 case .approvals:
                     if let actions {
                         ApprovalsView(model: actions, openThread: { _ in close() }) { path.removeLast() }
@@ -238,6 +269,12 @@ public struct HerPage: View {
         .sheet(isPresented: $vaultOpen, onDismiss: { Task { vaultCount = await countVault() } }) {
             vault?({ vaultOpen = false })
         }
+    }
+
+    private func finishImport() {
+        memoryImport.reset()
+        path.removeAll { $0 == .importPreview || $0 == .importPaste }
+        Task { await memory.load() }
     }
 
     private var timersSummary: String? {

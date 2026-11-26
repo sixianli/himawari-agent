@@ -220,6 +220,7 @@ export const CLIENT_CAPABILITY_TABLE: readonly ClientCapabilityEntry[] = Object.
   routine("v2", "data.export.cancel"),
   query("v2", "data.export.status.read"),
   query("v2", "memory.import.duplicates.read"),
+  query("v2", "memory.import.preview.read"),
   change("v2", "memory.import.commit"),
   change("v2", "memory.import.undo"),
   notOnPhone("v2", "github.monitor.set_state", "command", WEB_TASKS_ONLY),

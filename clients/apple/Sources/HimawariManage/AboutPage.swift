@@ -4,6 +4,7 @@ import SwiftUI
 
 struct AboutPage: View {
     let server: String?
+    var openStatus: (() -> Void)? = nil
     let back: () -> Void
     @Environment(\.openURL) private var openURL
 
@@ -19,7 +20,13 @@ struct AboutPage: View {
             SheetHeader(title: M.aboutTitle, leading: .back, action: back)
             SettingsGroup(label: nil) {
                 SettingsRow(icon: nil, title: M.aboutVersion, value: Self.versionLine ?? "-")
-                SettingsRow(icon: nil, title: M.aboutServer, detail: server ?? M.aboutNotConnected, last: true)
+                SettingsRow(icon: nil, title: M.aboutServer, detail: server ?? M.aboutNotConnected, last: server == nil || openStatus == nil)
+                if server != nil, let openStatus {
+                    Button(action: openStatus) {
+                        SettingsRow(icon: nil, title: M.serverStatusTitle, chevron: true, last: true)
+                    }
+                    .buttonStyle(.pressable)
+                }
             }
             SettingsGroup(label: M.aboutLicenses) {
                 ForEach(Array(ThirdPartyLicenses.all.enumerated()), id: \.element.id) { index, item in

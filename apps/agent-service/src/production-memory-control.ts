@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   ApplicationPortError,
   type ClockPort,
@@ -46,7 +47,19 @@ import {
   RULE_CONDITION_FIELDS,
 } from "@himawari-agent/gateway-contracts";
 import { isConsolidationUndoable } from "@himawari-agent/memory-engine";
+import {
+  containsCredential,
+  containsRestrictedIdentifier,
+} from "@himawari-agent/sensitive-capture";
 import type { BuiltInActionRuleSwitches } from "./action-rule-switches.js";
+import {
+  capImportCandidates,
+  type ImportDuplicateVerdict,
+  type ImportFileParse,
+  importFlag,
+  importFlagSelectable,
+  parseImportFile,
+} from "./memory-import-preview.js";
 import type { OwnerAllowances } from "./owner-allowances.js";
 import { type DecisionChainMemoryView, readDecisionChain } from "./production-decision-chain.js";
 import {
@@ -76,6 +89,7 @@ type ClassifySnapshot = Extract<GatewayV2Snapshot, { type: "memory.classify.snap
 type ImportDuplicateResultView = Awaited<
   ReturnType<ProductionImportDuplicateChecker["check"]>
 >[number];
+type ImportPreviewSnapshot = Extract<GatewayV2Snapshot, { type: "memory.import.preview.snapshot" }>;
 type ImportDuplicatesSnapshot = Extract<
   GatewayV2Snapshot,
   { type: "memory.import.duplicates.snapshot" }
@@ -88,6 +102,7 @@ export const PRODUCTION_MEMORY_OPERATIONS = Object.freeze([
   "memory.basis.read",
   "memory.classify.read",
   "memory.import.duplicates.read",
+  "memory.import.preview.read",
   "decision.chain.read",
   "memory.approval.respond",
   "memory.mutate",
@@ -1349,6 +1364,7 @@ export class ProductionMemoryControl {
     if (query.type === "memory.basis.read") return this.#basisChain(query);
     if (query.type === "memory.classify.read") return this.#classify(query);
     if (query.type === "memory.import.duplicates.read") return this.#importDuplicates(query);
+    if (query.type === "memory.import.preview.read") return this.#importPreview(query);
     if (query.type === "decision.chain.read") return this.#decisionChain(query);
     if (query.type === "memory.rules.read") return this.#rules(query);
     if (query.type === "memory.review.read") return this.#review(query);
@@ -1483,29 +1499,7 @@ export class ProductionMemoryControl {
   async #classify(
     query: Extract<GatewayV2Query, { type: "memory.classify.read" }>,
   ): Promise<ClassifySnapshot> {
-    const results: MemoryClassification[] = [];
-    const pending: { index: number; text: string }[] = [];
-    for (const [index, ref] of query.payload.contentRefs.entries()) {
-      const payload = await this.options.payloads.get(ref);
-      if (payload && classificationRank(payload.dataClassification) > classificationRank("private"))
-        results[index] = DETERMINISTIC_SENSITIVE;
-      else pending.push({ index, text: await this.readText(ref) });
-    }
-    const judged = this.options.classifier
-      ? await this.options.classifier.classify(pending.map(({ text }) => text))
-      : pending.map(() => UNCLASSIFIED);
-    for (const [position, { index }] of pending.entries())
-      results[index] = judged[position] ?? UNCLASSIFIED;
-    for (const [index, ref] of query.payload.contentRefs.entries()) {
-      const result = results[index] ?? UNCLASSIFIED;
-      if (result.classification !== "sensitive") continue;
-      this.#sensitiveJudgments.delete(ref);
-      this.#sensitiveJudgments.set(ref, result);
-      for (const oldest of this.#sensitiveJudgments.keys()) {
-        if (this.#sensitiveJudgments.size <= SENSITIVE_JUDGMENTS_KEPT) break;
-        this.#sensitiveJudgments.delete(oldest);
-      }
-    }
+    const results = await this.#classifyRefs(query.payload.contentRefs);
     return {
       ...query,
       kind: "snapshot",
@@ -1523,6 +1517,152 @@ export class ProductionMemoryControl {
         }),
       },
     } as ClassifySnapshot;
+  }
+
+  async #classifyRefs(contentRefs: readonly string[]): Promise<readonly MemoryClassification[]> {
+    const results: MemoryClassification[] = [];
+    const pending: { index: number; text: string }[] = [];
+    for (const [index, ref] of contentRefs.entries()) {
+      const payload = await this.options.payloads.get(ref);
+      if (payload && classificationRank(payload.dataClassification) > classificationRank("private"))
+        results[index] = DETERMINISTIC_SENSITIVE;
+      else pending.push({ index, text: await this.readText(ref) });
+    }
+    const judged = this.options.classifier
+      ? await this.options.classifier.classify(pending.map(({ text }) => text))
+      : pending.map(() => UNCLASSIFIED);
+    for (const [position, { index }] of pending.entries())
+      results[index] = judged[position] ?? UNCLASSIFIED;
+    for (const [index, ref] of contentRefs.entries()) {
+      const result = results[index] ?? UNCLASSIFIED;
+      if (result.classification !== "sensitive") continue;
+      this.#sensitiveJudgments.delete(ref);
+      this.#sensitiveJudgments.set(ref, result);
+      for (const oldest of this.#sensitiveJudgments.keys()) {
+        if (this.#sensitiveJudgments.size <= SENSITIVE_JUDGMENTS_KEPT) break;
+        this.#sensitiveJudgments.delete(oldest);
+      }
+    }
+    return contentRefs.map((_, index) => results[index] ?? UNCLASSIFIED);
+  }
+
+  async #importPayload(text: string, dataClassification: DataClassification): Promise<string> {
+    const { ownerId, agentId } = this.options.configuration;
+    const digest = createHash("sha256").update(text, "utf8").digest("base64url");
+    const copy = await this.options.protector.protect({
+      ownerId,
+      agentId,
+      ref: `memory-import:${dataClassification}:${digest}`,
+      dataClassification,
+      contentType: "text/plain",
+      plaintext: new TextEncoder().encode(text),
+      createdAt: this.options.clock.now(),
+    });
+    try {
+      await this.options.payloads.put(copy);
+    } catch (error) {
+      if (!(error instanceof ApplicationPortError) || error.code !== PORT_ERROR_CODES.DUPLICATE)
+        throw error;
+    }
+    return copy.ref;
+  }
+
+  async #importPreview(
+    query: Extract<GatewayV2Query, { type: "memory.import.preview.read" }>,
+  ): Promise<ImportPreviewSnapshot> {
+    const { source, files } = query.payload;
+    const parsed: ImportFileParse[] = [];
+    for (const file of files) {
+      const text = await this.readText(file.contentRef).catch(() => null);
+      parsed.push(
+        text === null
+          ? { state: "unreadable", items: [] }
+          : parseImportFile(source, file.name, text),
+      );
+    }
+    const candidates = capImportCandidates(parsed);
+    const secrets = candidates.map(
+      ({ text }) => containsCredential(text) || containsRestrictedIdentifier(text),
+    );
+    const refs: string[] = [];
+    for (const [index, candidate] of candidates.entries())
+      refs.push(
+        await this.#importPayload(
+          candidate.text,
+          candidate.sensitive || secrets[index] ? "sensitive" : "private",
+        ),
+      );
+    const toClassify = candidates.flatMap((candidate, index) =>
+      !candidate.classified && !secrets[index] ? [index] : [],
+    );
+    const judged = toClassify.length
+      ? await this.#classifyRefs(toClassify.map((index) => refs[index] ?? ""))
+      : [];
+    const classifications = new Map(toClassify.map((index, position) => [index, judged[position]]));
+    const sensitive = candidates.map((candidate, index) => {
+      const judgment = classifications.get(index);
+      return (
+        secrets[index] === true ||
+        candidate.sensitive ||
+        judgment?.classification === "sensitive" ||
+        judgment?.failed === true
+      );
+    });
+    for (const [index, candidate] of candidates.entries())
+      if (sensitive[index] && !candidate.sensitive && !secrets[index])
+        refs[index] = await this.#storedAtLeast(refs[index] ?? "", candidate.text, "sensitive");
+    const askable = candidates.flatMap((_, index) => (sensitive[index] ? [] : [index]));
+    const checker = this.options.importDuplicates;
+    const verdicts = new Map<number, ImportDuplicateVerdict>();
+    if (checker && askable.length) {
+      const results = await this.#checkImportDuplicates(
+        checker,
+        askable.map((index) => refs[index] ?? ""),
+      );
+      for (const [position, index] of askable.entries())
+        verdicts.set(index, results[position]?.verdict ?? "skipped");
+    }
+    return {
+      ...query,
+      kind: "snapshot",
+      type: "memory.import.preview.snapshot",
+      payload: {
+        files: files.map((file, index) => ({
+          name: file.name,
+          state: parsed[index]?.state ?? "unreadable",
+          found: parsed[index]?.items.length ?? 0,
+        })),
+        found: parsed.reduce((sum, file) => sum + file.items.length, 0),
+        items: candidates.map((candidate, index) => {
+          const judgment = classifications.get(index);
+          const category = candidate.coding
+            ? candidate.category
+            : judgment && !judgment.failed
+              ? judgment.category
+              : candidate.category;
+          const topic = sensitive[index]
+            ? (candidate.topic ?? judgment?.topic ?? sensitiveTopicFor(category))
+            : null;
+          const flag = importFlag({
+            secret: secrets[index] === true,
+            classificationFailed: judgment?.failed === true,
+            coding: candidate.coding,
+            duplicate: verdicts.get(index) ?? "skipped",
+          });
+          return {
+            contentRef: refs[index] ?? "",
+            text: candidate.text,
+            from: candidate.from,
+            category,
+            subCategory: candidate.subCategory,
+            topic,
+            flag,
+            selectable: importFlagSelectable(flag),
+            checked: flag === null,
+          };
+        }),
+      },
+    } as ImportPreviewSnapshot;
   }
 
   async #importDuplicates(

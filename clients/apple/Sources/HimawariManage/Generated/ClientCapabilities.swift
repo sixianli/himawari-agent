@@ -172,6 +172,7 @@ public enum ClientCapabilities {
         ClientCapability(gateway: .v2, type: "data.export.cancel", kind: .command, tier: .routine, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "data.export.status.read", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "memory.import.duplicates.read", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
+        ClientCapability(gateway: .v2, type: "memory.import.preview.read", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "memory.import.commit", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "memory.import.undo", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "github.monitor.set_state", kind: .command, tier: .notOnPhone, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
@@ -242,6 +243,9 @@ public enum ClientCapabilities {
     public static let serverFilledReferences = ["authorizationRef", "recentAuthenticationRef"]
     public static let allowanceDays: ClosedRange<Int> = 1...90
     public static let memoryTrashDays = 7
+    public static let memoryImportFilesMaximum = 10
+    public static let memoryImportFileNameMaximum = 128
+    public static let textUploadMaximumCharacters = 65536
 
     public static func find(_ gateway: ClientGateway, _ type: String) -> ClientCapability? {
         all.first { $0.gateway == gateway && $0.type == type }

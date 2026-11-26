@@ -30,6 +30,7 @@ import {
   initializeStateRoot,
   parseProductConfiguration,
 } from "@himawari-agent/platform-node";
+import { buildDeviceTestRequest, generateDeviceTestKeyPair } from "@himawari-agent/testing";
 import { exportJWK, importJWK, type JSONWebKeySet, SignJWT } from "jose";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -48,7 +49,6 @@ import {
   ProductionMcpRead,
   type ProductionMcpReadOptions,
 } from "../src/production-mcp-read.js";
-import { buildDeviceTestRequest, generateDeviceTestKeyPair } from "@himawari-agent/testing";
 import { createMcpAccess } from "./fixtures/mcp-access.js";
 import { productionHttpRs256TestKeys } from "./fixtures/production-http-rs256.test-key.js";
 
@@ -1498,6 +1498,8 @@ describe("production HTTP composition", () => {
             status: string;
             reasonCode: string | null;
           }[];
+          release: unknown;
+          disk: { availableBytes: number; totalBytes: number };
         };
       };
       const webBody = webStatus.json() as typeof phoneStatus.payload;
@@ -1508,6 +1510,10 @@ describe("production HTTP composition", () => {
       expect(phoneStatus.payload.live).toBe(webBody.live);
       expect(phoneStatus.payload.ready).toBe(webBody.ready);
       expect(phoneStatus.payload.status).toBe(webBody.status);
+      const disk = phoneStatus.payload.disk;
+      expect(disk.totalBytes).toBeGreaterThan(0);
+      expect(disk.availableBytes).toBeLessThanOrEqual(disk.totalBytes);
+      expect(phoneStatus.payload.release).toBeNull();
       expect(phoneStatus.payload.dependencies).toEqual(
         webBody.dependencies.map(({ name, required, status, reasonCode }) => ({
           name,
