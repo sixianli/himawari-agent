@@ -3128,9 +3128,7 @@ export async function startTenantRuntime(
         },
         observation: repository.ledgerObservation(),
         ledger: repository.decisionLedger(),
-        ...(mcpRead
-          ? { mcpConnections: repository.mcpConnections() }
-          : {}),
+        ...(mcpRead ? { mcpConnections: repository.mcpConnections() } : {}),
         clock,
         schedule: {
           configured: proactive !== undefined,
