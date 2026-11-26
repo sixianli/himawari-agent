@@ -5,7 +5,6 @@ import {
   assertWritableSchema,
   bundledSchemaFingerprint,
   buildChatExport,
-  buildDemoPack,
   buildPortableExport,
   CHAT_FORMAT_VERSION,
   CHAT_SEALED_FILE,
@@ -50,7 +49,7 @@ export const DATA_COMMAND_ERROR_CODES = Object.freeze({
 } as const);
 
 interface ParsedData {
-  readonly action: "export" | "export-chats" | "inspect" | "import" | "demo-pack";
+  readonly action: "export" | "export-chats" | "inspect" | "import";
   readonly values: Map<string, string>;
   readonly flags: Set<string>;
 }
@@ -62,8 +61,7 @@ function parse(arguments_: readonly string[]): ParsedData {
     (action !== "export" &&
       action !== "export-chats" &&
       action !== "inspect" &&
-      action !== "import" &&
-      action !== "demo-pack")
+      action !== "import")
   )
     throw new Error(DATA_COMMAND_ERROR_CODES.ARGUMENT_INVALID);
   const values = new Map<string, string>();
@@ -119,21 +117,6 @@ export async function runDataCommand(
   now: () => string = () => new Date().toISOString(),
 ): Promise<unknown> {
   const { action, values, flags } = parse(arguments_);
-  if (action === "demo-pack") {
-    const locale = values.get("--locale");
-    const out = values.get("--out");
-    if (!locale || !out || values.size !== 2 || flags.size !== 0)
-      throw new Error(DATA_COMMAND_ERROR_CODES.ARGUMENT_INVALID);
-    const pack = buildDemoPack({ locale, migrationSequence: LATEST_MIGRATION_SEQUENCE, now });
-    await writePortableDirectory(out, pack.files);
-    return Object.freeze({
-      outputSchemaVersion: 1,
-      command: "data.demo-pack",
-      locale,
-      out,
-      counts: pack.manifest.counts,
-    });
-  }
   if (action === "inspect") {
     const from = values.get("--from");
     if (!from) throw new Error(DATA_COMMAND_ERROR_CODES.ARGUMENT_INVALID);
