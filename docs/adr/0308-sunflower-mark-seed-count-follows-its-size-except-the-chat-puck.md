@@ -2,14 +2,14 @@
 status: active
 document_type: adr
 decision_status: accepted
-supersedes: "https://github.com/sixianli/himawari-agent/blob/383003adb908eda96f097796905caaa5a4b705dd/docs/adr/0283-sunflower-mark-keeps-55-seeds-and-apps-get-icons.md"
+supersedes: "https://github.com/sixianli/himawari-agent/blob/0c688f2bb200019bbdf515818c7cab156ad58c2a/docs/adr/0291-sunflower-mark-seed-count-follows-its-size.md"
 superseded_by: ""
-date: "2026-11-25"
-covers: "apps/control-center/src/components/brand-seeds.ts, apps/control-center/src/components/brand.tsx, apps/control-center/test/brand.unit.test.ts, apps/control-center/public/favicon.svg, assets/brand/himawari/README.md, assets/brand/himawari/v4/logo-sunflower-disc.svg, clients/apple/Sources/HimawariDesign/SunflowerSeeds.swift, clients/apple/Sources/HimawariDesign/Sunflower.swift, clients/apple/Tests/HimawariManageTests/SunflowerSeedsTests.swift, scripts/render-brand-assets.mjs, scripts/check-brand-assets.mjs, test/tooling/apple-app-icon.test.mjs, test/tooling/brand-asset.test.mjs"
+date: "2026-11-26"
+covers: "apps/control-center/src/components/brand-seeds.ts, apps/control-center/src/components/brand.tsx, apps/control-center/test/brand.unit.test.ts, apps/control-center/public/favicon.svg, assets/brand/himawari/README.md, assets/brand/himawari/v4/logo-sunflower-disc.svg, clients/apple/Sources/HimawariDesign/SunflowerSeeds.swift, clients/apple/Sources/HimawariDesign/Sunflower.swift, clients/apple/Tests/HimawariManageTests/SunflowerSeedsTests.swift, clients/apple/Sources/HimawariChat/ChatPuck.swift, docs/assets/apple-clients/2026-11-25-v4/tokens.json, scripts/render-brand-assets.mjs, scripts/check-brand-assets.mjs, test/tooling/apple-app-icon.test.mjs, test/tooling/brand-asset.test.mjs"
 verified_at: "383003adb908eda96f097796905caaa5a4b705dd"
 ---
 
-# ADR 0291：标志按显示大小取种子数，小图点少、大图点多
+# ADR 0308：标志按显示大小取种子数，主对话顶部小圆例外用 89 粒
 
 <a id="contents"></a>
 
@@ -25,7 +25,9 @@ verified_at: "383003adb908eda96f097796905caaa5a4b705dd"
 
 ## 背景
 
-[ADR 0283](https://github.com/sixianli/himawari-agent/blob/383003adb908eda96f097796905caaa5a4b705dd/docs/adr/0283-sunflower-mark-keeps-55-seeds-and-apps-get-icons.md) 定的是“所有尺寸同一个点数，55 粒”。2026-11-25 Andy 看了 iPhone 上主对话的小头像（38pt）和“她的页面”的大头像（58pt）后说：“放大的情况下使用点多一点的 logo，缩小的情况下使用点少一点的 logo。目的是什么呢？目的是无论这个 logo 放大还是缩小，在人眼里看过去的视觉效果都是一致的。”
+本 ADR 取代 [ADR 0291](https://github.com/sixianli/himawari-agent/blob/0c688f2bb200019bbdf515818c7cab156ad58c2a/docs/adr/0291-sunflower-mark-seed-count-follows-its-size.md)，只加一条例外（见“决定”第 7 条），其余决定原样保留。2026-11-26 Andy 在真机上看了主对话顶部的毛玻璃小圆（里面的标志 46pt，按分档表是 34 粒），原话：“把这里的 logo 换成点多的”。
+
+以下是 ADR 0291 的原背景：[ADR 0283](https://github.com/sixianli/himawari-agent/blob/383003adb908eda96f097796905caaa5a4b705dd/docs/adr/0283-sunflower-mark-keeps-55-seeds-and-apps-get-icons.md) 定的是“所有尺寸同一个点数，55 粒”。2026-11-25 Andy 看了 iPhone 上主对话的小头像（38pt）和“她的页面”的大头像（58pt）后说：“放大的情况下使用点多一点的 logo，缩小的情况下使用点少一点的 logo。目的是什么呢？目的是无论这个 logo 放大还是缩小，在人眼里看过去的视觉效果都是一致的。”
 
 固定 55 粒时，种子的大小跟着标志一起缩放：38pt 的头像里最大的一粒直径约 3.5pt，58pt 的头像里约 5.3pt，72pt 的大图里约 6.6pt。小图里点挤成一片，大图里点又显得粗。人眼判断“是不是同一个图案”看的是每粒点的实际大小和点与点的间距，所以要让这两样在各个尺寸下大致不变。
 
@@ -52,6 +54,7 @@ verified_at: "383003adb908eda96f097796905caaa5a4b705dd"
 4. **由显示大小自动决定，调用方不用传参数。** 苹果端 `SunflowerMark` 在画布里按实际边长选粒数；网页 `SunflowerMark` 在页面排版后量出 SVG 的实际大小再选，尺寸变化时重新选。两端用同一张表（`SunflowerSeeds.seedCount(forDiameter:)` 和 `seedCountFor`）。
 5. **网页标签页图标用 21 粒。** 新增 `apps/control-center/public/favicon.svg`，由 `node scripts/render-brand-assets.mjs` 用同一份种子数学生成，`npm run check:brand` 检查它和代码一致。
 6. **ADR 0283 的其余决定照旧：** 苹果三端桌面图标、PWA 图标和 `assets/brand/himawari/v4/logo-sunflower-disc.svg` 仍是 55 粒（它们的花盘显示直径落在 55 粒那一档），由同一个脚本生成；配色、黄金角、淡出、只在表达状态时才动，都不变。
+7. **例外：主对话顶部毛玻璃小圆用 89 粒。** 粒数写在设计 token `chat.puck.seeds`（89），`SunflowerMark(motion:seeds:)` 接受调用方指定粒数，小圆从 token 读；其余地方仍不传参数，按第 4 条自动选。忙时在七成和整朵之间来回，也就是 62.3 到 89 粒（画出 63 到 89 粒，正在长出的那一粒也画），来回一次按第 3 条的速度约 9.6 秒；减弱动态效果时静止成整朵 89 粒。花盘大小仍是标志直径的 94%，所以点更密、每粒更小，大小不变。
 
 [↑ 返回阅读导航](#contents)
 
@@ -60,7 +63,7 @@ verified_at: "383003adb908eda96f097796905caaa5a4b705dd"
 ## 比较过的方案
 
 - **保持所有尺寸 55 粒。** 实现最简单，但正是 Andy 指出的问题：小图挤、大图粗。放弃。
-- **调用方手动传粒数（例如 `SunflowerMark(seeds: 34)`）。** 每处都要记得传对，改了大小也容易忘记改粒数。按实际大小自动选更不容易出错。放弃。
+- **调用方手动传粒数（例如 `SunflowerMark(seeds: 34)`）。** 每处都要记得传对，改了大小也容易忘记改粒数。按实际大小自动选更不容易出错，作为默认做法；只有 Andy 点名的顶部小圆传粒数，且从 token 读、不写死。
 - **连续地按大小算粒数（不取斐波那契数）。** 大小一变粒数就跟着变，向日葵的两组螺旋会断开、看起来乱。只用斐波那契数分档。
 - **动画保持每秒 3.4 粒。** 144 粒的大图要 40 多秒才长满，看起来比小图慢很多；21 粒的小图 6 秒就换一盘，像在闪。改为总时长不变。
 
@@ -73,6 +76,7 @@ verified_at: "383003adb908eda96f097796905caaa5a4b705dd"
 - iPhone 主对话头像变成 34 粒、“她的页面”头像变成 89 粒，两处最大的一粒直径都约 4.3pt；网页侧栏小标志变成 21 粒、首页大图变成 89 粒。
 - 测试：`clients/apple/Tests/HimawariManageTests/SunflowerSeedsTests.swift` 检查分档、每档静止时画出的粒数、点多时每粒更小而花盘大小一致、每档长满一盘都是 16 秒；`apps/control-center/test/brand.unit.test.ts` 检查同样几点，并检查标志按量出的实际大小选粒数（72px 时画出 89 粒）。
 - 网页标志第一次画出时还没量过大小，先按最小的 24px（21 粒）画，排版后、浏览器绘制前立刻换成正确的粒数，用户看不到切换。
+- 顶部小圆比按表多出 55 粒，每粒更小；`SunflowerSeedsTests.swift` 检查小圆的 token 是 89、按表本该是 34、静止画出 89 粒、忙时画出 63 到 89 粒、来回一程是长满时间的三成。
 - 苹果端代码在云端线程里编译不了，合并前由 CI 的 iPhone 编译检查。
 - 未测量：真机上 144 粒大图的帧率（目前没有用到 72pt 以上的标志）。
 
@@ -82,7 +86,8 @@ verified_at: "383003adb908eda96f097796905caaa5a4b705dd"
 
 ## 关联文档
 
-- [ADR 0283：标志的种子从 233 粒减到 55 粒](https://github.com/sixianli/himawari-agent/blob/383003adb908eda96f097796905caaa5a4b705dd/docs/adr/0283-sunflower-mark-keeps-55-seeds-and-apps-get-icons.md)（本 ADR 取代它）
+- [ADR 0291：标志按显示大小取种子数](https://github.com/sixianli/himawari-agent/blob/0c688f2bb200019bbdf515818c7cab156ad58c2a/docs/adr/0291-sunflower-mark-seed-count-follows-its-size.md)（本 ADR 取代它）
+- [ADR 0283：标志的种子从 233 粒减到 55 粒](https://github.com/sixianli/himawari-agent/blob/383003adb908eda96f097796905caaa5a4b705dd/docs/adr/0283-sunflower-mark-keeps-55-seeds-and-apps-get-icons.md)（ADR 0291 取代了它）
 - [界面设计规范](../ui-ux-design-guide.md)
 - [标志资源说明](../../assets/brand/himawari/README.md)
 
