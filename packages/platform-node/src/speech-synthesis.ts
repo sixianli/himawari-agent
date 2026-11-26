@@ -38,7 +38,7 @@ export interface SpeechSynthesisPort {
 
 export const DASHSCOPE_QWEN_TTS_PATH = "/api/v1/services/aigc/multimodal-generation/generation";
 export const DASHSCOPE_QWEN_TTS_SAMPLE_RATE = 24_000;
-export const SPEECH_PCM_MEDIA_TYPE = `audio/L16;rate=${DASHSCOPE_QWEN_TTS_SAMPLE_RATE};channels=1`;
+export const SPEECH_PCM_MEDIA_TYPE = `audio/pcm;rate=${DASHSCOPE_QWEN_TTS_SAMPLE_RATE};bits=16;channels=1;endian=little`;
 const SSE_LINE_LIMIT = 4 * 1024 * 1024;
 
 export interface MagpieSpeechOptions {

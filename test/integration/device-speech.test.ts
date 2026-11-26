@@ -122,7 +122,9 @@ describe("device speech goes through Magpie to the configured voice", () => {
     const { h, client, magpie } = await setup("audio");
     const response = await speak(h, client, { text: "明天上午十点你和牙医有约。" });
     expect(response.statusCode, response.body).toBe(200);
-    expect(response.headers["content-type"]).toBe("audio/L16;rate=24000;channels=1");
+    expect(response.headers["content-type"]).toBe(
+      "audio/pcm;rate=24000;bits=16;channels=1;endian=little",
+    );
     expect(response.headers["x-himawari-speech-sample-rate"]).toBe("24000");
     expect(Number(response.headers["x-himawari-speech-first-audio-ms"])).toBeGreaterThanOrEqual(0);
     expect(response.rawPayload.equals(Buffer.concat(PCM_PARTS))).toBe(true);
