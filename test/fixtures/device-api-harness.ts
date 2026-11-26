@@ -57,8 +57,12 @@ import {
   buildHttpGatewayServer,
   DeviceActionHub,
   DeviceNotificationHub,
-  type DevicePairingAccess,
   DevicePresence,
+  DeviceSignInService,
+  displaySetupCode,
+  FileSetupCodeSource,
+  generateSetupCode,
+  writeSetupCode,
   DevicePushService,
   EnvelopePayloadProtector,
   NodeVaultCrypto,
@@ -75,6 +79,7 @@ import {
   type DeviceTestRequestInput,
   generateDeviceTestKeyPair,
   ManualClock,
+  SoftwarePasskey,
 } from "@himawari-agent/testing";
 import type { FastifyInstance } from "fastify";
 import { expect } from "vitest";
@@ -128,6 +133,8 @@ export interface Harness {
   readonly webAuthentication: GatewayAuthenticationContext;
   readonly warnings: PairedDeviceWarning[];
   readonly stateRoot: string;
+  readonly passkey: SoftwarePasskey;
+  readonly signedIn: string[];
   readonly presence: { deviceId: string; visible: boolean }[];
   readonly registered: { deviceId: string; pushType: string }[];
   readonly revoking: string[];
@@ -163,7 +170,6 @@ export async function harness(
   options: {
     readonly origin?: string;
     readonly staticRoot?: string;
-    readonly pairingAccess?: DevicePairingAccess;
     readonly actionRegistry?: DeviceActionRegistry;
     readonly applePush?: ApplePushConfiguration;
     readonly revokeHookFails?: "prepare" | "wipe";
@@ -379,6 +385,7 @@ export async function harness(
   const registered: Harness["registered"] = [];
   const revoking: string[] = [];
   const wiped: string[] = [];
+  const signedIn: string[] = [];
   const payloadAdmission = new ProductionHttpPayloadAdmission({
     ownerId,
     agentId,
@@ -557,7 +564,18 @@ export async function harness(
         onPresence: (deviceId, visible) => presence.push({ deviceId, visible }),
         onRegistered: (deviceId, pushType) => registered.push({ deviceId, pushType }),
       }),
-      ...(options.pairingAccess ? { pairingAccess: options.pairingAccess } : {}),
+      signIn: new DeviceSignInService({
+        scope: { ownerId, agentId },
+        store: repository.pairedDevices(),
+        publicOrigin: new URL(publicOrigin),
+        setupCodes: new FileSetupCodeSource(stateRoot),
+        now,
+        onSignedIn: (device) => signedIn.push(device.id),
+      }),
+      appleAppIds: () =>
+        options.applePush
+          ? options.applePush.topics.map((topic) => `${options.applePush?.teamId}.${topic}`)
+          : [],
       perception,
       vault: (scope) =>
         scope.ownerId === ownerId && scope.agentId === agentId ? vault : undefined,
@@ -614,6 +632,8 @@ export async function harness(
     webAuthentication,
     warnings,
     stateRoot,
+    passkey: new SoftwarePasskey(publicOrigin),
+    signedIn,
     presence,
     registered,
     revoking,
@@ -668,34 +688,78 @@ export interface PairedClient {
   readonly revision: number;
 }
 
-export function pairingCode(uri: unknown): string {
-  const encoded = String(uri).replace(/^himawari-pair:/u, "");
-  return (JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")) as { code: string }).code;
+export async function issueSetupCode(h: Harness, minutes = 15): Promise<string> {
+  const code = generateSetupCode();
+  await writeSetupCode({
+    stateRoot: h.stateRoot,
+    scope: { ownerId, agentId },
+    code,
+    now: new Date(h.clock.now()),
+    minutes,
+  });
+  return displaySetupCode(code);
 }
 
-export async function pair(
-  h: Harness,
-  name = "Andy iPhone",
-  kind: "iphone" | "watch" | "mac" = "iphone",
-) {
-  const started = await web(h, "pairing-codes");
-  expect(started.status).toBe(201);
+export async function signInRequest(h: Harness, path: string, body: unknown) {
+  return h.app.inject({
+    method: "POST",
+    url: `/api/device/v1/sign-in/${path}`,
+    headers: { host: new URL(h.origin).host, "content-type": "application/json" },
+    payload: JSON.stringify(body),
+  });
+}
+
+export function signInDevice(name = "Andy iPhone", kind: "iphone" | "watch" | "mac" = "iphone") {
   const keys = generateDeviceTestKeyPair();
   const confirmKeys = generateDeviceTestKeyPair();
-  const response = await h.app.inject({
-    method: "POST",
-    url: "/api/device/v1/pair",
-    headers: { host: new URL(h.origin).host, "content-type": "application/json" },
-    payload: JSON.stringify({
-      pairingCode: pairingCode(started.body["pairingUri"]),
+  return {
+    keys,
+    confirmKeys,
+    device: {
       kind,
       name,
       releaseChannel: "direct",
       devicePublicKey: keys.publicKeySpkiBase64,
       confirmPublicKey: confirmKeys.publicKeySpkiBase64,
-    }),
+    },
+  };
+}
+
+export async function signInWithPasskey(
+  h: Harness,
+  device: ReturnType<typeof signInDevice>["device"] | Record<string, unknown>,
+) {
+  const enrolled =
+    (await h.repository.pairedDevices().listPasskeys({ ownerId, agentId })).length > 0;
+  if (enrolled) {
+    const options = await signInRequest(h, "options", { device });
+    expect(options.statusCode, options.body).toBe(200);
+    const started = options.json() as {
+      flowId: string;
+      publicKey: { challenge: string; rpId: string };
+    };
+    const response = await signInRequest(h, "finish", {
+      flowId: started.flowId,
+      credential: h.passkey.get(started.publicKey),
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    return (response.json() as { device: { id: string; revision: number } }).device;
+  }
+  const options = await signInRequest(h, "setup/options", {
+    setupCode: await issueSetupCode(h),
+    device,
   });
-  return { response, keys, confirmKeys, code: pairingCode(started.body["pairingUri"]) };
+  expect(options.statusCode, options.body).toBe(200);
+  const started = options.json() as {
+    flowId: string;
+    publicKey: { challenge: string; rp: { id: string } };
+  };
+  const response = await signInRequest(h, "setup/finish", {
+    flowId: started.flowId,
+    credential: h.passkey.create(started.publicKey),
+  });
+  expect(response.statusCode, response.body).toBe(201);
+  return (response.json() as { device: { id: string; revision: number } }).device;
 }
 
 export async function pairAndConfirm(
@@ -703,19 +767,13 @@ export async function pairAndConfirm(
   name?: string,
   kind?: "iphone" | "watch" | "mac",
 ): Promise<PairedClient> {
-  const paired = await pair(h, name, kind);
-  expect(paired.response.statusCode).toBe(201);
-  const device = (paired.response.json() as { device: { id: string; revision: number } }).device;
-  const confirmed = await web(h, "confirm", {
-    deviceId: device.id,
-    expectedRevision: device.revision,
-  });
-  expect(confirmed.status).toBe(200);
+  const client = signInDevice(name, kind);
+  const device = await signInWithPasskey(h, client.device);
   return {
     deviceId: device.id,
-    keys: paired.keys,
-    confirmKeys: paired.confirmKeys,
-    revision: (confirmed.body["device"] as { revision: number }).revision,
+    keys: client.keys,
+    confirmKeys: client.confirmKeys,
+    revision: device.revision,
   };
 }
 

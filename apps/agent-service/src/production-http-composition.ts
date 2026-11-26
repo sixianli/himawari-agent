@@ -52,10 +52,7 @@ import {
   threadCommandFingerprint,
   type VaultService,
 } from "@himawari-agent/application";
-import {
-  isDeviceAccessText,
-  type ThreadExecutionEnvironment,
-} from "@himawari-agent/gateway-contracts";
+import type { ThreadExecutionEnvironment } from "@himawari-agent/gateway-contracts";
 import { MemoryConsolidationService, undoConversationReview } from "@himawari-agent/memory-engine";
 import {
   SqliteGovernedDeletionAdapter,
@@ -74,15 +71,15 @@ import {
   buildHttpGatewayServer,
   CloudflareAccessIdentityClient,
   type CloudflareAccessIdentityFetcher,
-  DEVICE_ACCESS_SECRET_PURPOSES,
   type DeviceActionHub,
   type DeviceGatewayAuditFailure,
   type DeviceNotificationHub,
-  type DevicePairingAccess,
   type DevicePresence,
   DevicePushService,
+  DeviceSignInService,
   digestIdentityCredential,
   EnvelopePayloadProtector,
+  FileSetupCodeSource,
   type HostProviderSecretSource,
   type HostSecretMaterialSource,
   type HttpGatewayAuthenticationPort,
@@ -129,7 +126,6 @@ import {
 } from "./production-approval-gateway.js";
 import { backgroundCommandRef } from "./production-background-commands.js";
 import { registerChatExportRoute } from "./production-chat-export.js";
-import { createProductionSpeech } from "./production-speech.js";
 import {
   DataExportJobs,
   deviceExportArchive,
@@ -216,6 +212,7 @@ import {
   PRODUCTION_SERVER_STATUS_OPERATIONS,
   ProductionServerStatusControl,
 } from "./production-server-status-control.js";
+import { createProductionSpeech } from "./production-speech.js";
 import {
   DEFAULT_TIMER_TIME_ZONE,
   localTime,
@@ -601,26 +598,6 @@ export class ProductionThreadGatewayAccessPolicy implements ThreadGatewayAccessP
   }
 }
 
-export async function resolveDevicePairingAccess(
-  secretReferences: readonly {
-    readonly ref: string;
-    readonly version: string;
-    readonly purpose: string;
-  }[],
-  resolve: (ref: string, version: string) => Promise<string>,
-): Promise<DevicePairingAccess | undefined> {
-  const [clientIdReference, clientSecretReference] = DEVICE_ACCESS_SECRET_PURPOSES.map((purpose) =>
-    secretReferences.find((entry) => entry.purpose === purpose),
-  );
-  if (!clientIdReference || !clientSecretReference) return undefined;
-  const clientId = await resolve(clientIdReference.ref, clientIdReference.version);
-  const clientSecret = await resolve(clientSecretReference.ref, clientSecretReference.version);
-  for (const value of [clientId, clientSecret])
-    if (!isDeviceAccessText(value))
-      compositionError(PRODUCTION_HTTP_COMPOSITION_ERROR_CODES.SECRET_MATERIAL_INVALID);
-  return { clientId, clientSecret };
-}
-
 export class ProductionHttpPayloadAdmission implements HttpGatewayPayloadAdmissionPort {
   readonly #ownerId: OwnerId;
   readonly #agentId: AgentId;
@@ -944,10 +921,6 @@ export async function createProductionHttpComposition(
       chatModel?.input.includes("image") ??
       false,
   });
-  const devicePairingAccess = await resolveDevicePairingAccess(
-    configuration.secretReferences,
-    (ref, version) => secretSources.provider.resolve(ref, version),
-  );
   const speech = createProductionSpeech(configuration, (ref, version) =>
     secretSources.provider.resolve(ref, version),
   );
@@ -1784,7 +1757,6 @@ export async function createProductionHttpComposition(
       configuration,
       devices: pairedDevices,
       deviceConfiguration: () => deviceConfiguration,
-      ...(devicePairingAccess ? { pairingAccess: devicePairingAccess } : {}),
       clock: { now: clock },
     }),
     inboxControl: new ProductionInboxControl({
@@ -1902,7 +1874,20 @@ export async function createProductionHttpComposition(
       audit: repository.auditLedger(),
       push: devicePush,
       ...(options.onDeviceAuditFailed ? { onAuditFailed: options.onDeviceAuditFailed } : {}),
-      ...(devicePairingAccess ? { pairingAccess: devicePairingAccess } : {}),
+      signIn: new DeviceSignInService({
+        scope: { ownerId, agentId },
+        store: repository.pairedDevices(),
+        publicOrigin: new URL(configuration.publicOrigin),
+        setupCodes: new FileSetupCodeSource(configuration.stateRoot),
+        now,
+        onSignedIn: (device) => {
+          void applePush?.announceSignedIn(device);
+        },
+      }),
+      appleAppIds: () => {
+        const apple = configuration.runPolicy?.applePush;
+        return apple ? apple.topics.map((topic) => `${apple.teamId}.${topic}`) : [];
+      },
       exportArchive: deviceExportArchive({ ownerId, jobs: dataExportJobs }),
       perception,
       ...(options.deviceNotifications

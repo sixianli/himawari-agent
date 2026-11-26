@@ -461,7 +461,6 @@ export const governanceMessages = [
         status: "active",
         pairedAt: "2026-11-12T03:00:00.000Z",
         lastSeenAt: "2026-11-12T03:05:00.000Z",
-        pairingNumber: null,
       },
       {
         id: "dev_BBBBBBBBBBBBBBBBBBBBBB",
@@ -472,20 +471,10 @@ export const governanceMessages = [
         status: "pending",
         pairedAt: "2026-11-12T03:06:00.000Z",
         lastSeenAt: null,
-        pairingNumber: "482910",
       },
     ],
     limits: [{ key: "device.request.body_bytes", unit: "bytes", value: 1048576 }],
-    pairing: {
-      expiresAt: "2026-11-12T03:16:00.000Z",
-      access: { clientId: "access-client-01", clientSecret: "secret-01" },
-    },
     generatedAt: "2026-11-12T03:06:30.000Z",
-  }),
-  fixture("command", "device.pairing.start", { pairingCode: "AAAAAAAAAAAAAAAAAAAAAA" }),
-  fixture("command", "device.pairing.confirm", {
-    deviceId: "dev_BBBBBBBBBBBBBBBBBBBBBB",
-    expectedRevision: 0,
   }),
   fixture("command", "device.rename", {
     deviceId: "dev_AAAAAAAAAAAAAAAAAAAAAA",

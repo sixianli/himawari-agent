@@ -21,12 +21,12 @@ import { afterEach, describe, expect, it } from "vitest";
 import { SqliteMemoryConversationReviewOperations } from "../../packages/persistence-sqlite/src/sqlite-memory-conversation-review-operations.ts";
 import {
   openSide,
+  putPayload,
   SECRET_API_KEY,
   SECRET_BANK_CARD,
   SECRET_MAIL_BODY,
   SECRET_PASSWORD,
   SECRETS,
-  putPayload,
   type Side,
   seedEverything,
   seedMemory,
@@ -965,6 +965,8 @@ describe("data export: paired devices", () => {
   const devicePublicKey = `MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE${"D".repeat(86)}==`;
   const confirmPublicKey = `MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE${"C".repeat(86)}==`;
   const codeHash = "e".repeat(64);
+  const credentialId = "credential-for-export-test-0001";
+  const passkeyPublicKey = `pQECAyYgASFYI${"P".repeat(40)}`;
   const nonce = "nonce-for-export-test-0001";
   const deviceId = `dev_${"A".repeat(22)}`;
 
@@ -980,11 +982,18 @@ describe("data export: paired devices", () => {
       .run(deviceId, source.ownerId, source.agentId, devicePublicKey, confirmPublicKey, NOW, NOW);
     source.database
       .prepare(
-        `INSERT INTO device_pairing_codes
-           (code_hash, owner_id, agent_id, session_id, created_at, expires_at, used_at, device_id)
-         VALUES (?, ?, ?, 'session-export', ?, '2026-11-10T00:10:00.000Z', ?, ?)`,
+        `INSERT INTO owner_passkeys
+           (credential_id, owner_id, agent_id, public_key, sign_count, transports, backed_up,
+            created_at, last_used_at)
+         VALUES (?, ?, ?, ?, 0, '["internal"]', 1, ?, ?)`,
       )
-      .run(codeHash, source.ownerId, source.agentId, NOW, NOW, deviceId);
+      .run(credentialId, source.ownerId, source.agentId, passkeyPublicKey, NOW, NOW);
+    source.database
+      .prepare(
+        `INSERT INTO sign_in_setup_code_uses (code_hash, owner_id, agent_id, credential_id, used_at)
+         VALUES (?, ?, ?, ?, ?)`,
+      )
+      .run(codeHash, source.ownerId, source.agentId, credentialId, NOW);
     source.database
       .prepare(
         "INSERT INTO device_request_nonces (device_id, nonce, expires_at) VALUES (?, ?, '2026-11-10T00:02:00.000Z')",
@@ -1016,17 +1025,24 @@ describe("data export: paired devices", () => {
     ]);
     expect(manifest.counts.pairedDevices).toBe(1);
     expect(manifest.omitted.map(({ what }) => what)).toContain(
-      "配对设备的公钥、配对码和请求随机值",
+      "设备公钥、通行密钥、设置码记录和请求随机值",
     );
     expect(parsePortable(files, source.migrationSequence).pairedDevices).toHaveLength(1);
   });
 
-  it("[P1-6][reverse] public keys, pairing codes and request nonces appear in no exported file, and import restores no device", async () => {
+  it("[P1-6][reverse] public keys, passkeys, setup code uses and request nonces appear in no exported file, and import restores no device", async () => {
     const source = await withDevice();
     const { files } = await exportOf(source);
     for (const [path, bytes] of files) {
       const text = decoder.decode(bytes);
-      for (const credential of [devicePublicKey, confirmPublicKey, codeHash, nonce])
+      for (const credential of [
+        devicePublicKey,
+        confirmPublicKey,
+        codeHash,
+        nonce,
+        credentialId,
+        passkeyPublicKey,
+      ])
         expect(text, path).not.toContain(credential);
     }
     const target = await side("devices-not-restored");

@@ -74,6 +74,7 @@ import {
   PairedDeviceError,
   type PairedDeviceService,
 } from "./paired-device-service.js";
+import type { DeviceSignInService } from "./device-sign-in.js";
 import type { AuthorizedUpload, PerceptionService } from "./perception-service.js";
 import {
   SPEECH_ERROR_CODES,
@@ -97,7 +98,14 @@ const THREAD_ID_SEGMENT = "[A-Za-z0-9][A-Za-z0-9._:-]{0,127}";
 const FILE_ID_SEGMENT = "[A-Za-z0-9](?:[A-Za-z0-9._:-]|%3[Aa]){0,127}";
 
 export const DEVICE_API_ROUTES = Object.freeze([
-  { method: "POST", path: "pair", signed: false },
+  { method: "GET", path: "sign-in", signed: false },
+  { method: "POST", path: "sign-in/setup/options", signed: false },
+  { method: "POST", path: "sign-in/setup/finish", signed: false },
+  { method: "POST", path: "sign-in/options", signed: false },
+  { method: "POST", path: "sign-in/finish", signed: false },
+  { method: "GET", path: "devices", signed: true },
+  { method: "POST", path: "devices/rename", signed: true },
+  { method: "POST", path: "devices/revoke", signed: true },
   { method: "GET", path: "config", signed: true },
   { method: "GET", path: "stream", signed: true },
   { method: "POST", path: "messages", signed: true },
@@ -257,11 +265,6 @@ export interface DeviceApiAuthority {
   readonly fencingToken: number;
 }
 
-export interface DevicePairingAccess {
-  readonly clientId: string;
-  readonly clientSecret: string;
-}
-
 export type DeviceHomeResolution =
   | {
       readonly ok: true;
@@ -291,7 +294,7 @@ export interface DeviceDownload {
 
 export interface DeviceApiRouteOptions {
   readonly home?: DeviceHomePort;
-  readonly pairingAccess?: DevicePairingAccess;
+  readonly signIn?: DeviceSignInService;
   readonly publicOrigin: URL;
   readonly devices: PairedDeviceService;
   readonly configuration: () => DeviceConfiguration;
@@ -431,10 +434,6 @@ function isNotFound(error: unknown): boolean {
   return error instanceof ApplicationPortError && error.code === PORT_ERROR_CODES.NOT_FOUND;
 }
 
-export function pairingAccessFields({ clientId, clientSecret }: DevicePairingAccess) {
-  return { clientId, clientSecret };
-}
-
 const HOME_ACT_REPLAY_WINDOW_MS = 10 * 60 * 1000;
 const HOME_ACT_REPLAY_LIMIT = 256;
 
@@ -442,21 +441,8 @@ function stableSuffix(deviceId: string, messageId: string): string {
   return createHash("sha256").update(`${deviceId}\n${messageId}`).digest("hex").slice(0, 40);
 }
 
-export function devicePairingNumber(input: {
-  readonly devicePublicKey: string;
-  readonly confirmPublicKey: string;
-}): string {
-  const digest = createHash("sha256")
-    .update(Buffer.from("himawari-pairing-v1", "utf8"))
-    .update(Buffer.from(input.devicePublicKey, "base64"))
-    .update(Buffer.from(input.confirmPublicKey, "base64"))
-    .digest();
-  return String(digest.readUInt32BE(0) % 1_000_000).padStart(6, "0");
-}
-
 export function presentPairedDevice(device: PairedDevice) {
   return {
-    pairingNumber: device.status === "pending" ? devicePairingNumber(device) : null,
     id: device.id,
     revision: device.revision,
     kind: device.kind,
@@ -781,11 +767,83 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
       device.all("/", async () => options.rejectNotAllowed());
       device.all("/*", async () => options.rejectNotAllowed());
 
-      device.post("/pair", async (request, reply) => {
-        const paired = await options.devices.pair(json(request));
-        return options.sendJson(reply, paired.replayed ? 200 : 201, {
-          device: presentPairedDevice(paired.device),
+      const signIn = (): DeviceSignInService => options.signIn ?? options.rejectNotAllowed();
+
+      device.get("/sign-in", async (_request, reply) =>
+        options.sendJson(reply, 200, signIn().publicInfo()),
+      );
+
+      device.post("/sign-in/setup/options", async (request, reply) =>
+        options.sendJson(reply, 200, await signIn().setupOptions(json(request))),
+      );
+
+      device.post("/sign-in/setup/finish", async (request, reply) =>
+        options.sendJson(reply, 201, {
+          device: presentPairedDevice(await signIn().setupFinish(json(request))),
+        }),
+      );
+
+      device.post("/sign-in/options", async (request, reply) =>
+        options.sendJson(reply, 200, await signIn().signInOptions(json(request))),
+      );
+
+      device.post("/sign-in/finish", async (request, reply) =>
+        options.sendJson(reply, 200, {
+          device: presentPairedDevice(await signIn().signInFinish(json(request))),
+        }),
+      );
+
+      const deviceChange = (body: Record<string, unknown>, extra: readonly string[] = []) => {
+        only(body, ["deviceId", "expectedRevision", ...extra]);
+        if (
+          typeof body["deviceId"] !== "string" ||
+          !/^dev_[A-Za-z0-9_-]{22}$/u.test(body["deviceId"]) ||
+          !Number.isSafeInteger(body["expectedRevision"]) ||
+          (body["expectedRevision"] as number) < 0
+        )
+          options.rejectBody(400);
+        return {
+          deviceId: body["deviceId"] as string,
+          expectedRevision: body["expectedRevision"] as number,
+        };
+      };
+
+      device.get("/devices", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        const devices = await options.devices.list(scope(authenticated.authentication));
+        return options.sendJson(reply, 200, {
+          thisDeviceId: authenticated.device.id,
+          devices: devices.filter((listed) => listed.status === "active").map(presentPairedDevice),
+          server: {
+            origin: options.publicOrigin.origin,
+            since: options.signIn ? await options.signIn.firstPasskeyAt() : null,
+          },
         });
+      });
+
+      device.post("/devices/rename", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        const body = json(request);
+        const target = deviceChange(body, ["name"]);
+        if (typeof body["name"] !== "string") options.rejectBody(400);
+        const renamed = await options.devices.rename({
+          ...scope(authenticated.authentication),
+          ...target,
+          name: body["name"] as string,
+        });
+        return options.sendJson(reply, 200, { device: presentPairedDevice(renamed) });
+      });
+
+      device.post("/devices/revoke", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        const target = deviceChange(json(request));
+        if (target.deviceId !== authenticated.device.id && !authenticated.confirmed)
+          throw new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.CONFIRMATION_REQUIRED, 403);
+        const revoked = await options.devices.revoke({
+          ...scope(authenticated.authentication),
+          ...target,
+        });
+        return options.sendJson(reply, 200, { device: presentPairedDevice(revoked) });
       });
 
       device.get("/config", async (request, reply) => {
@@ -2040,38 +2098,6 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
       devices: devices.map(presentPairedDevice),
       limits: presentDeviceLimits(options.configuration()),
     });
-  });
-
-  app.post(`${DEVICE_MANAGEMENT_PREFIX}/pairing-codes`, async (request, reply) => {
-    const authentication = await managed(request);
-    emptyBody(request);
-    if (!authentication.sessionId) options.rejectBody(403);
-    const pairing = await options.devices.startPairing({
-      ...scope(authentication),
-      sessionId: authentication.sessionId as string,
-    });
-    return options.sendJson(reply, 201, {
-      expiresAt: pairing.expiresAt,
-      pairingUri: `himawari-pair:${Buffer.from(
-        JSON.stringify({
-          v: 1,
-          origin: options.publicOrigin.origin,
-          code: pairing.code,
-          ...(options.pairingAccess
-            ? {
-                access: pairingAccessFields(options.pairingAccess),
-              }
-            : {}),
-        }),
-      ).toString("base64url")}`,
-    });
-  });
-
-  app.post(`${DEVICE_MANAGEMENT_PREFIX}/confirm`, async (request, reply) => {
-    const authentication = await managed(request);
-    const body = deviceAction(request);
-    const device = await options.devices.confirm({ ...scope(authentication), ...body });
-    return options.sendJson(reply, 200, { device: presentPairedDevice(device) });
   });
 
   app.post(`${DEVICE_MANAGEMENT_PREFIX}/rename`, async (request, reply) => {

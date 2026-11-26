@@ -1711,19 +1711,11 @@ export const messages = {
   "agents.weekly.window": "{from}〜{to}",
   "agents.weekly.empty": "この週は接続がありません。",
   "review.settings.devices": "デバイス",
-  "devices.help": "iPhone・Apple Watch・Mac の Himawari で QR コードを読み取ってペアリングします。",
-  "devices.add": "デバイスを追加",
-  "devices.qrLabel": "ペアリング用 QR コード",
-  "devices.qrHelp":
-    "デバイスの Himawari でこのコードを読み取ってください。{time} まで 1 回だけ使えます。読み取ったデバイスは下に表示され、「確認」を押すまで使えません。",
+  "devices.help":
+    "デバイスは Himawari アプリからパスキーでログインします。追加するにはそのデバイスでアプリを開いてください。",
   "devices.empty": "ペアリング済みのデバイスはまだありません。",
   "devices.listLabel": "ペアリング済みのデバイス",
-  "devices.pendingNotice":
-    "「{name}」という {kind} がペアリングを求めています。心当たりがなければ削除してください。",
   "devices.revoked": "{kind}・削除済み",
-  "devices.pairingNumber":
-    "確認番号 {number}：デバイスの表示と同じ場合だけ「確認」を押してください。",
-  "devices.confirm": "確認",
   "devices.rename": "名前を変更",
   "devices.name": "デバイス名",
   "devices.save": "保存",
