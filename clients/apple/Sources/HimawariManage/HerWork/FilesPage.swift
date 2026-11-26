@@ -88,10 +88,8 @@ struct FilesPage: View {
             open(file) { previewing = $0 }
         } label: {
             HStack(spacing: 12) {
-                Image(systemName: M.fileSymbol(file.kind))
-                    .font(.title3)
+                Icon(M.fileIcon(file.kind), size: DesignTokens.IconSize.listRow)
                     .foregroundStyle(Color.hmSun)
-                    .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(file.name)
                         .font(.body)

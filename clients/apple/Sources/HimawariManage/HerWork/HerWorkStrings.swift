@@ -1,5 +1,6 @@
 import Foundation
 import HimawariCore
+import HimawariDesign
 
 extension M {
     static var whyHide: String { text("收起", ja: "閉じる", en: "Hide") }
@@ -110,15 +111,15 @@ extension M {
         }
     }
 
-    static func fileSymbol(_ kind: OwnerFile.Kind) -> String {
+    static func fileIcon(_ kind: OwnerFile.Kind) -> IconName {
         switch kind {
-        case .document: "doc.text"
-        case .data: "tablecells"
-        case .image: "photo"
-        case .web: "globe"
-        case .code: "chevron.left.forwardslash.chevron.right"
-        case .pdf: "doc.richtext"
-        case .other: "doc"
+        case .document: .fileText
+        case .data: .fileSpreadsheet
+        case .image: .photo
+        case .web: .world
+        case .code: .code
+        case .pdf: .fileText
+        case .other: .fileText
         }
     }
 }

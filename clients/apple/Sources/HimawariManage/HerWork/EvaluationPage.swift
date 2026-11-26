@@ -102,7 +102,7 @@ private struct StatRow: View {
                     Text(value).font(.title3.weight(.semibold)).monospacedDigit()
                 }
                 if let trend, trend != .same {
-                    Image(systemName: trend == .up ? "arrow.up.right" : "arrow.down.right")
+                    Text(trend == .up ? "↑" : "↓")
                         .font(.footnote.weight(.semibold))
                         .foregroundStyle(.secondary)
                         .accessibilityLabel(trend == .up ? M.statsUp : M.statsDown)
