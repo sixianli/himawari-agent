@@ -31,6 +31,11 @@ public final class MacAppDelegate: NSObject, NSApplicationDelegate {
         let controller = MenuBarController(model: menu)
         controller.openMain = { [weak self] in self?.showMainWindow() }
         controller.openSettingsWindow = { [weak self] in self?.showSettings() }
+        controller.openAwaiting = { [weak self] in
+            guard let self else { return }
+            main.go(to: .her(.approvals))
+            showMainWindow()
+        }
         self.controller = controller
     }
 

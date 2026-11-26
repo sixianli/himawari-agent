@@ -12,19 +12,8 @@
 "input.sendFailed" = "送れませんでした。もう一度試してください";
 "input.offline" = "サーバーにつながりません。つながったら送ります";
 "input.openOnPhone" = "iPhone の会話でも見られます";
-"panel.running" = "この Mac で作業中";
 "panel.stop" = "止める";
 "panel.progress" = "%1$d / %2$d";
-"panel.awaiting" = "決めてほしいこと";
-"panel.actionFailed" = "うまくいきませんでした。もう一度押してください";
-"panel.presenceReason" = "ご本人の承認であることを確認";
-"panel.noticeDismiss" = "了解";
-"panel.moreNotices" = "ほかに %d 件の通知";
-"panel.fewerNotices" = "閉じる";
-"panel.talk" = "Himawari に話しかける";
-"panel.notPaired" = "まだ Himawari とつながっていません";
-"panel.pair" = "つなぐ";
-"panel.offline" = "サーバーにつながりません";
 "menu.settings" = "設定…";
 "menu.quit" = "Himawari を終了";
 "checklist.notNow" = "触らない";
@@ -86,3 +75,7 @@
 "settings.launchAtLogin.needsApproval" = "システム設定の「ログイン項目」でHimawariを許可してください。";
 "settings.launchAtLogin.openLoginItems" = "ログイン項目を開く";
 "settings.launchAtLogin.failed" = "変更できませんでした。もう一度お試しください。";
+"menu.running" = "このMacで作業中：%@";
+"menu.awaiting" = "あなたの判断待ち %d 件";
+"menu.talk" = "Himawariに話しかける…";
+"menu.open" = "Himawariを開く";

@@ -12,19 +12,8 @@
 "input.sendFailed" = "Not sent. Try again";
 "input.offline" = "Can't reach your server. It will send once connected";
 "input.openOnPhone" = "Also in your iPhone chats";
-"panel.running" = "Doing on this Mac";
 "panel.stop" = "Stop";
 "panel.progress" = "%1$d / %2$d";
-"panel.awaiting" = "For you to decide";
-"panel.actionFailed" = "That didn't go through. Click again.";
-"panel.presenceReason" = "confirm it is you approving this";
-"panel.noticeDismiss" = "Got it";
-"panel.moreNotices" = "%d more notifications";
-"panel.fewerNotices" = "Show less";
-"panel.talk" = "Ask Himawari";
-"panel.notPaired" = "Not connected to your Himawari yet";
-"panel.pair" = "Connect";
-"panel.offline" = "Can't reach your server";
 "menu.settings" = "Settings…";
 "menu.quit" = "Quit Himawari";
 "checklist.notNow" = "Leave them";
@@ -86,3 +75,7 @@
 "settings.launchAtLogin.needsApproval" = "Allow Himawari in Login Items in System Settings.";
 "settings.launchAtLogin.openLoginItems" = "Open Login Items";
 "settings.launchAtLogin.failed" = "Couldn't change this. Try again.";
+"menu.running" = "Working on this Mac: %@";
+"menu.awaiting" = "%d waiting for you";
+"menu.talk" = "Talk to Himawari…";
+"menu.open" = "Open Himawari";

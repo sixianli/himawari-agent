@@ -12,19 +12,8 @@
 "input.sendFailed" = "没发出去，再试一次";
 "input.offline" = "连不上服务器，连上后会自动发";
 "input.openOnPhone" = "在 iPhone 的对话里也看得到";
-"panel.running" = "正在这台 Mac 上做";
 "panel.stop" = "停下";
 "panel.progress" = "%1$d / %2$d";
-"panel.awaiting" = "等你定";
-"panel.actionFailed" = "没办成，再点一次";
-"panel.presenceReason" = "确认是你本人在同意这件事";
-"panel.noticeDismiss" = "知道了";
-"panel.moreNotices" = "还有 %d 条通知";
-"panel.fewerNotices" = "收起";
-"panel.talk" = "跟 Himawari 说";
-"panel.notPaired" = "还没和你的 Himawari 连上";
-"panel.pair" = "去连接";
-"panel.offline" = "连不上你的服务器";
 "menu.settings" = "设置…";
 "menu.quit" = "退出 Himawari";
 "checklist.notNow" = "不动";
@@ -86,3 +75,7 @@
 "settings.launchAtLogin.needsApproval" = "要在系统设置的“登录项”里允许 Himawari。";
 "settings.launchAtLogin.openLoginItems" = "打开登录项";
 "settings.launchAtLogin.failed" = "没改成，再试一次";
+"menu.running" = "正在这台 Mac 上做：%@";
+"menu.awaiting" = "等你定 %d 件";
+"menu.talk" = "跟 Himawari 说…";
+"menu.open" = "打开 Himawari";
