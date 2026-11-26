@@ -60,16 +60,27 @@ describe("iPhone 工作流", () => {
     readFileSync(path.join(repositoryRoot, ".github/workflows/apple.yml"), "utf8"),
   );
   it("只在免费的 macOS 标准机器上跑，只读权限，跳过草稿", () => {
-    expect(Object.keys(workflow.jobs)).toEqual(["iphone"]);
-    const job = workflow.jobs.iphone;
-    expect(job["runs-on"]).toBe(macRunnerLabel);
+    expect(Object.keys(workflow.jobs)).toEqual(["iphone", "iphone-accessibility", "scroll"]);
+    for (const job of Object.values(workflow.jobs)) {
+      expect(job["runs-on"]).toBe(macRunnerLabel);
+      expect(job.if).toContain("github.event.pull_request.draft != true");
+    }
     expect(workflow.permissions).toEqual({ contents: "read" });
-    expect(job.if).toContain("github.event.pull_request.draft != true");
     expect(() =>
       validateHostedRunners({
         "apple.yml": readFileSync(path.join(repositoryRoot, ".github/workflows/apple.yml"), "utf8"),
       }),
     ).not.toThrow();
+  });
+  it("滚动测速作业用开了优化的调试版跑长对话滚动脚本，并上传结果", () => {
+    const steps = workflow.jobs.scroll.steps;
+    const build = steps.find((step) => step.run?.startsWith("xcodebuild build"))?.run ?? "";
+    expect(build).toContain("-scheme Himawari ");
+    expect(build).toContain("SWIFT_OPTIMIZATION_LEVEL=-O");
+    expect(build).toContain("CODE_SIGNING_ALLOWED=NO");
+    const bench = steps.find((step) => step.run?.startsWith("bash clients/apple/scripts/scroll-bench.sh"))?.run ?? "";
+    expect(bench).toContain("--loads realistic,plain");
+    expect(steps.some((step) => step.with?.name === "scroll-bench")).toBe(true);
   });
   it("跑 HimawariCore 单元测试，并不签名编译 iPhone 的 Himawari scheme", () => {
     const steps = workflow.jobs.iphone.steps;
@@ -89,5 +100,30 @@ describe("iPhone 工作流", () => {
         "utf8",
       ).length,
     ).toBeGreaterThan(0);
+  });
+  it("每个示例场景都跑苹果的无障碍审计，审计测试在 Himawari scheme 里", () => {
+    const job = workflow.jobs["iphone-accessibility"];
+    expect(job.name).toContain("apple/iphone-accessibility");
+    expect(job.strategy.matrix.shard.length).toBeGreaterThan(1);
+    const shard = job.steps.find((step) => step.run?.includes("xcodebuild test"));
+    expect(shard.env.TEST_RUNNER_HIMAWARI_AUDIT_SHARD).toContain("matrix.shard");
+    const audit = job.steps.find((step) => step.run?.includes("xcodebuild test"))?.run ?? "";
+    expect(audit).toContain("-scheme Himawari");
+    expect(audit).toContain("-only-testing:HimawariUITests");
+    expect(audit).toContain("set -o pipefail");
+    const scheme = readFileSync(
+      path.join(
+        repositoryRoot,
+        "clients/apple/App/Himawari.xcodeproj/xcshareddata/xcschemes/Himawari.xcscheme",
+      ),
+      "utf8",
+    );
+    expect(scheme).toContain('BlueprintName = "HimawariUITests"');
+    const project = readFileSync(
+      path.join(repositoryRoot, "clients/apple/App/Himawari.xcodeproj/project.pbxproj"),
+      "utf8",
+    );
+    expect(project).toContain('productType = "com.apple.product-type.bundle.ui-testing";');
+    expect(project).toContain("TEST_TARGET_NAME = Himawari;");
   });
 });

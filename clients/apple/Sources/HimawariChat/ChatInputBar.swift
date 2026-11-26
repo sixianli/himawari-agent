@@ -111,6 +111,7 @@ struct ChatInputBar: View {
                         }
                         .onEnded { _ in holdChanged(.ended) }
                 )
+                .accessibilityHidden(true)
         }
     }
 

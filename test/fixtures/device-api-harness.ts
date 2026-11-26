@@ -1,6 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
-import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -28,8 +27,6 @@ import {
   ThreadForkService,
   ThreadQueryService,
   VaultService,
-  VOICE_ADDRESSEE_DEFAULTS,
-  type VoiceAddresseeConfiguration,
   type VoiceGates,
 } from "@himawari-agent/application";
 import {
@@ -70,7 +67,6 @@ import {
   PerceptionService,
   ScopedThreadSearchTokenizer,
   SessionBoundCsrfService,
-  VoiceAddresseeDecision,
 } from "@himawari-agent/platform-node";
 import {
   buildDeviceTestRequest,
@@ -89,7 +85,6 @@ import {
   ProductionHttpPayloadAdmission,
   ProductionThreadGatewayAccessPolicy,
   utterancePrefetch,
-  voiceAddressee,
 } from "../../apps/agent-service/src/production-http-composition.ts";
 import { ProductionMuseControl } from "../../apps/agent-service/src/production-muse-intake-control.ts";
 
@@ -110,73 +105,11 @@ export const webToken = "web-session-token-for-device-api-test";
 const csrfKey = new Uint8Array(32).fill(5);
 export const ownerSubjectRef = "cloudflare-access:owner-device-api";
 const temporaryDirectories: string[] = [];
-const decisionServers: Server[] = [];
 
 export async function removeDeviceHarnessDirectories(): Promise<void> {
   await Promise.all([
     ...temporaryDirectories.splice(0).map((directory) => rm(directory, { recursive: true })),
-    ...decisionServers
-      .splice(0)
-      .map((server) => new Promise<void>((resolve) => server.close(() => resolve()))),
   ]);
-}
-
-export const DECISION_GATEWAY_KEY = "proxy-injected";
-export const DECISION_MODEL = "typesafe-ai/jev";
-
-export interface DecisionGateway {
-  readonly requests: { readonly authorization: string; readonly body: Record<string, unknown> }[];
-  answer: (body: Record<string, unknown>) => {
-    readonly status: number;
-    readonly body: unknown;
-    readonly delayMs?: number;
-    readonly headers?: Record<string, string>;
-    readonly unfinished?: boolean;
-  };
-}
-
-export function decisionAnswer(probability: number, model = DECISION_MODEL) {
-  return {
-    status: 200,
-    body: {
-      model,
-      answers: [{ type: "predicate", name: "addressed", probability }],
-      usage: { input_tokens: 380, output_tokens: 21, total_tokens: 401 },
-    },
-  };
-}
-
-async function decisionGateway(): Promise<{
-  readonly gateway: DecisionGateway;
-  readonly baseUrl: string;
-}> {
-  const gateway: DecisionGateway = { requests: [], answer: () => decisionAnswer(0.97) };
-  const server = createServer((request, response) => {
-    const chunks: Buffer[] = [];
-    request.on("data", (chunk: Buffer) => chunks.push(chunk));
-    request.on("end", () => {
-      const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as Record<string, unknown>;
-      gateway.requests.push({ authorization: request.headers.authorization ?? "", body });
-      const answer =
-        request.method === "POST" && request.url === "/v1/decisions"
-          ? gateway.answer(body)
-          : { status: 404, body: { error: { type: "not_found" } } };
-      setTimeout(() => {
-        if (response.destroyed) return;
-        response.writeHead(answer.status, {
-          "content-type": "application/json",
-          ...answer.headers,
-        });
-        if (answer.unfinished) response.write(JSON.stringify(answer.body));
-        else response.end(JSON.stringify(answer.body));
-      }, answer.delayMs ?? 0);
-    });
-  });
-  decisionServers.push(server);
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const address = server.address();
-  if (address === null || typeof address === "string") throw new Error("DECISION_GATEWAY_ADDRESS");
-  return { gateway, baseUrl: `http://127.0.0.1:${address.port}/v1` };
 }
 
 export function sha256Ref(value: string) {
@@ -202,8 +135,6 @@ export interface Harness {
   readonly perceptionConfiguration: { current: PerceptionConfiguration };
   readonly timeZone: { current: string };
   readonly voiceGates: { current: VoiceGates };
-  readonly decisions: DecisionGateway;
-  readonly addressee: { current: VoiceAddresseeConfiguration };
   readonly prefetch: QueryPrefetch;
   readonly prefetchLimits: { current: QueryPrefetchLimits };
   readonly embeddedQueries: string[];
@@ -235,7 +166,6 @@ export async function harness(
     readonly actionRegistry?: DeviceActionRegistry;
     readonly applePush?: ApplePushConfiguration;
     readonly revokeHookFails?: "prepare" | "wipe";
-    readonly withoutAddressee?: boolean;
     readonly withoutNotifications?: boolean;
     readonly indexTermLimit?: number;
     readonly indexReadText?: (
@@ -557,20 +487,6 @@ export async function harness(
     embedDocument: async (text) => new Float32Array([[...text].length, 0]),
   };
   const queryEmbedder = prefetchingEmbedder(fixtureEmbedder, prefetch);
-  const { gateway: decisions, baseUrl: decisionBaseUrl } = await decisionGateway();
-  const addressee = { current: VOICE_ADDRESSEE_DEFAULTS };
-  const addresseeRoute = voiceAddressee(
-    new VoiceAddresseeDecision({
-      model: DECISION_MODEL,
-      inputMicrosPerMillionTokens: 42_000,
-      apiKey: async () => DECISION_GATEWAY_KEY,
-      baseUrl: decisionBaseUrl,
-    }),
-    () => addressee.current,
-    perception,
-    agentId,
-    () => Date.parse(clock.now()),
-  );
   const app = buildHttpGatewayServer({
     publicOrigin,
     staticRoot: options.staticRoot ?? stateRoot,
@@ -671,7 +587,6 @@ export async function harness(
         perception,
         agentId,
       ),
-      ...(options.withoutAddressee ? {} : { addressee: addresseeRoute }),
       ...(options.exportArchive ? { exportArchive: options.exportArchive } : {}),
     },
   });
@@ -694,8 +609,6 @@ export async function harness(
     perceptionConfiguration,
     timeZone,
     voiceGates,
-    decisions,
-    addressee,
     prefetch,
     prefetchLimits,
     embeddedQueries,

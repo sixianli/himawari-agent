@@ -50,11 +50,6 @@ import {
   ThreadQueryService,
   threadCommandFingerprint,
   type VaultService,
-  type VoiceAddresseeConfiguration,
-  VoiceAddresseeJudge,
-  type VoiceAddresseeModel,
-  type VoiceAddresseeOutcome,
-  type VoiceAddresseeRequest,
 } from "@himawari-agent/application";
 import {
   isDeviceAccessText,
@@ -375,7 +370,6 @@ export interface ProductionHttpCompositionOptions {
   };
   readonly threadDeletionDiagnostic?: (event: Record<string, string>) => void;
   readonly queryPrefetch?: ProductionQueryPrefetch;
-  readonly voiceAddressee?: VoiceAddresseeModel;
   readonly museIntake?: ProductionMuseIntake;
   readonly gapExport?: ProductionGapExport;
   readonly mcpRead?: ProductionMcpRead;
@@ -1966,13 +1960,6 @@ export async function createProductionHttpComposition(
       ...(options.queryPrefetch
         ? { prefetch: utterancePrefetch(options.queryPrefetch, perception, agentId) }
         : {}),
-      addressee: voiceAddressee(
-        options.voiceAddressee,
-        voiceAddresseeConfiguration(configuration),
-        perception,
-        agentId,
-        () => now().getTime(),
-      ),
     },
     ...(httpConfiguration.previewOrigin ? { previewOrigin: httpConfiguration.previewOrigin } : {}),
     ...(options.onSlowRequest ? { onSlowRequest: options.onSlowRequest } : {}),
@@ -2091,43 +2078,6 @@ export async function createProductionHttpComposition(
       }
     },
   });
-}
-
-function voiceAddresseeConfiguration(
-  configuration: ProductConfiguration,
-): (() => VoiceAddresseeConfiguration) | undefined {
-  const route = configuration.runPolicy?.voiceAddressee;
-  return route ? () => route : undefined;
-}
-
-export function voiceAddressee(
-  model: VoiceAddresseeModel | undefined,
-  configuration: (() => VoiceAddresseeConfiguration) | undefined,
-  perception: PerceptionService,
-  agentId: AgentId,
-  now: () => number,
-): (input: {
-  readonly authentication: GatewayAuthenticationContext;
-  readonly request: VoiceAddresseeRequest;
-}) => Promise<VoiceAddresseeOutcome> {
-  if (!model || !configuration)
-    return async ({ request }) =>
-      request.trigger === "hands_on" ? "addressed" : "addressed_unsure";
-  const judges = new Map<string, VoiceAddresseeJudge>();
-  return ({ authentication, request }) => {
-    const scope = { ownerId: authentication.ownerId as OwnerId, agentId };
-    let judge = judges.get(scope.ownerId);
-    if (!judge) {
-      judge = new VoiceAddresseeJudge({
-        model,
-        configuration,
-        reserve: (micros) => perception.reserveModelCost(scope, micros),
-        now,
-      });
-      judges.set(scope.ownerId, judge);
-    }
-    return judge.decide(request);
-  };
 }
 
 export function utterancePrefetch(

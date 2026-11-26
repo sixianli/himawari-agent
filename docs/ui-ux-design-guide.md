@@ -3,7 +3,7 @@ status: active
 supersedes: ""
 superseded_by: ""
 date: "2026-10-29"
-covers: "AGENTS.md, apps/control-center/test/app-interactions.unit.test.ts, apps/control-center/test/brand.unit.test.ts, assets/brand/himawari/v3/logo-sunflower-disc.svg, scripts/check-brand-assets.mjs, scripts/check-layout-audit.mjs, scripts/delivery-mode/browser-acceptance-gate.py, scripts/test-file-preview-browser.mjs, test/integration/owner-settings-sync.test.ts, test/integration/product-path-browser.test.ts, test/integration/public-search-authorization.test.ts"
+covers: "AGENTS.md, clients/apple/scripts/check-design.mjs, clients/apple/scripts/design-baseline.json, clients/apple/App/UITests/AccessibilityAuditTests.swift, clients/apple/App/UITests/accessibility-baseline.json, .github/workflows/apple.yml, apps/control-center/test/app-interactions.unit.test.ts, apps/control-center/test/brand.unit.test.ts, assets/brand/himawari/v3/logo-sunflower-disc.svg, scripts/check-brand-assets.mjs, scripts/check-layout-audit.mjs, scripts/delivery-mode/browser-acceptance-gate.py, scripts/test-file-preview-browser.mjs, test/integration/owner-settings-sync.test.ts, test/integration/product-path-browser.test.ts, test/integration/public-search-authorization.test.ts"
 verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
@@ -141,7 +141,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 这一节管 iPhone、Apple Watch、Mac 上的 App。批准的原型和截图在 `docs/assets/apple-clients/` 下，说明在[详细设计的“界面照哪一版做”](execution/specs/2026-11-11-apple-device-body-design.md#ui-baseline)。
 
 53. **App 的每一页都用原生界面做，按手机的用法重新设计，不把网页嵌进来，也不照搬网页的布局**（Andy 2026-11-12：“你不会要跟我说你是直接把网页迁移到 ios app 吧？”；[ADR 0247](adr/0247-apple-clients-are-fully-native-with-a-capability-table.md)）。
-54. **App 的图标用 Tabler Icons 的线条款（outline，一套 MIT 许可的开源图标），单色。** 线宽 1.6（只有返回和关闭这类小箭头用 2.2，60 点以上的大图标用 1.3，数值在 `tokens.json`），过程行里 24 点，对话里（过程行、输入条、选项）的图标颜色跟它旁边的字走，不上色、不加底色块；只有输入条右下角深色圆底（`speak`）上的图标（声波、发送、停止）用 `onSpeak`，不跟字走，否则浅色下和圆底同色看不见。“她的页面”和它下面各页的列表行前面，图标放在 34 点的圆角方块里（圆角 10，底色用途名 `iconTile`，图标 19 点、颜色 `glyph`，像 iPhone 设置 App 的行），2026-11-25 照 Andy 看过的原型第 64 版改；感知、收听两排（第 4 版的 `07-senses`、`08-ears`，从第 3 版搬来）的列表行仍是 26 点、不加底、颜色跟字走的图标（`icon.listRow`），照源文件做，要不要也改成方块由设计线程定。不自己手画。要新图标就从这一套里选。全套里只有一个是自己画的：输入条右下角“和她说话”的声波，五根长短不一的竖线，线宽 2.2、圆头；听写用 `microphone`，左边“+”用 `plus`，同一个意思在每一屏都用同一个图标。网页仍用第 41 条的圆润图标，两边不混用（Andy 2026-11-12：“我要的是苹果设计风格的线条简洁图标”，四套并排后“选择 D”）。
+54. **App 的图标用 Tabler Icons 的线条款（outline，一套 MIT 许可的开源图标），单色。** 线宽 1.6（只有返回和关闭这类小箭头用 2.2，60 点以上的大图标用 1.3，数值在 `tokens.json`），过程行里 24 点，对话里（过程行、输入条、选项）的图标颜色跟它旁边的字走，不上色、不加底色块；只有输入条右下角深色圆底（`speak`）上的图标（声波、发送、停止）用 `onSpeak`，不跟字走，否则浅色下和圆底同色看不见。“她的页面”和它下面各页的列表行前面，图标放在 34 点的圆角方块里（圆角 10，底色用途名 `iconTile`，图标 19 点、颜色 `glyph`，像 iPhone 设置 App 的行），2026-11-25 照 Andy 看过的原型第 64 版改；感知、收听两排（第 4 版的 `07-senses`、`08-ears`，从第 3 版搬来）的列表行仍是 26 点、不加底、颜色跟字走的图标（`icon.listRow`），照源文件做，要不要也改成方块由设计线程定。不自己手画。要新图标就从这一套里选。返回、关闭、分享、搜索这些系统控件的位置例外，用系统图标，见第 83 条。全套里只有一个是自己画的：输入条右下角“和她说话”的声波，五根长短不一的竖线，线宽 2.2、圆头；听写用 `microphone`，左边“+”用 `plus`，同一个意思在每一屏都用同一个图标。网页仍用第 41 条的圆润图标，两边不混用（Andy 2026-11-12：“我要的是苹果设计风格的线条简洁图标”，四套并排后“选择 D”）。
 55. **导航和按钮是浮在内容上的一层玻璃，颜色用得少。** 顶上她的头像、返回钮、输入条都浮在内容上面，内容从下面滚过去；卡片不描边，靠浅灰底和柔和阴影分层；按钮是胶囊形，只有主按钮是实心的文字色；向日葵金只用在能点的字、带动作的选项、“要你同意”、列表行的图标方块（第 54 条）上（Andy 2026-11-12 要求按苹果现行的 iOS 设计规范做，“简洁、优雅、有设计感”；批准“可以，就按照最新版原型做”）。
 56. **所有文字都用苹果的系统字：英文 SF Pro，中文苹方，包括她的回答。** 2026-11-26 起不再用宋体之类的衬线字（Andy 原话：“对话的字体换成苹果官方的字体”）。iPhone 上字号用系统文本样式：设计 token 的字号等于某个文本样式的默认大小时（17 是 `.body`、15 是 `.subheadline`、13 是 `.footnote` 等），代码直接用那个文本样式，跟着系统“动态字体”放大缩小；回答和气泡都是 `.body`。`npm run check:apple-design` 会拦下自定义字体和衬线字（`.custom(…size:)`、`design: .serif`、`UIFont(name:)`）。“她的页面”顶上的 himawari 字样是标志图片，不是文字，不受这条约束。依据：Apple《Human Interface Guidelines》的 [Typography](https://developer.apple.com/design/human-interface-guidelines/typography)。
 57. **对话里“它正在做什么”只占一行。** 这句话由 Himawari 自己写，说的是事（“正在查周五早上的新干线”），不是工具名；图标由 Himawari 从固定的 40 个动作图标里挑，没有合适的用“别的工具”那一个。换了一件事就在原地换，不往下堆。进行中是字上慢慢扫过一道光，图标不动、不转圈；没成功时用平常的话说出来并接着做下一步，不用红色；要主人同意时，这一行下面出一张同意卡片（第 67 条）；做完后收成一行“做了 N 件事 · 用时”，N 等于点开后列出的步数，点开看每一步；没做成收成“没做成 · 用时”，主人按了停收成“停了 · 用时”。系统开启“减少动态效果”时那道光不动（Andy 2026-11-12：“这四十个图标我很喜欢，设计风格我很喜欢”“同意图标由 himawari 自己从这 40 个里面挑”；图在 `docs/assets/apple-clients/2026-11-12-process-row/`）。
@@ -151,7 +151,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 61. **触感每一下都有固定的含义，而且看场合。** 主人的手引起的事和 Himawari 的事分开；回答逐字出来时不震；录音和收听时不震；主人正看着时只有“等你点头”震；手表戴着就只在手表上震；设置里能调三档。页面不直接调震动，只报发生了什么事，由共用的一处决定震不震、怎么震（Andy 2026-11-12：“触感要做的智能、体贴一些”；事件表见[详细设计的“触感”](execution/specs/2026-11-11-apple-device-body-design.md#haptics)）。
 62. **每一端只做它最擅长的事，不把别的端的页面搬过来。** iPhone 管提醒、随时对话、刷脸点头和各种感官；手表只有一眼看完、一两下做完的事；Mac 常驻菜单栏，管主人眼前的东西和这台 Mac 上的文件，不做聊天窗口和管理页；要看完内容才能定的事，手表上只给“在 iPhone 上看”。一件事只在一处响，哪一端定了，其他端一起收走（Andy 2026-11-12：“每一端都有各自的优势，那就把这个优势做到最好，其他不必要的功能就可以直接拿掉”；[ADR 0258](adr/0258-each-apple-device-plays-to-its-strength.md)）。2026-11-16 起手表和 Mac 暂停，只做 iPhone。
 63. **打开就是一个主对话，不放问好、日期这类装点的字。** 灵动岛正下方居中浮着一个毛玻璃小圆（直径 56 点，系统 `.ultraThinMaterial`，里面是 46 点的向日葵），消息从它后面滚过去；没有顶栏的底、himawari 字样和深色圆底。点小圆打开她的页面，记忆和设置都从那一页进；没有底部页签栏、“今天”页、对话列表和“新对话”。她在忙（正在回答，或后台有事在办）时标志从中间一点点伸出小点，没有暖光；平时不动；系统开了“减弱动态效果”时全部静止。页面上的每个数字都要说得出数的是什么（Andy 2026-11-12：“像日期、问好这些完全没有必要”；2026-11-24 20:06：“打开就是一个主对话，没有新建线程这个入口，只有一个主对话”；2026-11-25 00:06 在六种头像样式里选了这一种：“我选这一个”；2026-11-26 02:00 看了毛玻璃小圆的原型后定稿：“可以，就按照这版来做吧”，01:48：“不要背后的一团暖光”）。
-64. **一屏只有一个实心的主按钮。** 要主人定的事给两个等宽的按钮，肯定的在右、实心，上面写的是会发生的事（“改到 9:40”“发出去”），不写“好”“确定”“同意”。否定的按钮写不做的那件事（“不发”“不订”）。例外是同意卡片：要做的事已经写在卡片正中，按钮管的是上面选的那个范围，所以写“不要”和“同意”。她那条话下面的选项不算按钮：带动作的选项本身就写会发生的事（“回复 田中：周四 15:00 可以”），最后一个是“不用了”。同一屏有几件事时，只有最要紧的那一件用实心按钮，其余的用浅底按钮。
+64. **一屏只有一个实心的主按钮。** 要主人定的事给两个等宽的按钮，肯定的在右、实心（会删东西的除外，见第 80 条），上面写的是会发生的事（“改到 9:40”“发出去”），不写“好”“确定”“同意”。否定的按钮写不做的那件事（“不发”“不订”）。例外是同意卡片：要做的事已经写在卡片正中，按钮管的是上面选的那个范围，所以写“不要”和“同意”。她那条话下面的选项不算按钮：带动作的选项本身就写会发生的事（“回复 田中：周四 15:00 可以”），最后一个是“不用了”。同一屏有几件事时，只有最要紧的那一件用实心按钮，其余的用浅底按钮。
 65. **要再多看一点就在原地展开，不另弹一页把同一句话和同一对按钮再显示一遍。** 展开和收起用朝下、朝上的箭头；› 只用在进下一层（Andy 2026-11-12 看到底部弹层里四个一样的按钮：“好丑啊……好没有设计感”）。
 66. **界面不按事情的种类写死。** 主对话的选项、同意卡片和通知上，一件事都按“一句话、明细、肯定按钮、否定按钮、来源、要不要本人在场”这一个样子画；没见过的种类照这个样子显示。服务器多一种事，界面不用跟着改（Andy 2026-11-12：“而不是一套固定死的工作流”；[ADR 0258](adr/0258-each-apple-device-plays-to-its-strength.md)）。
 67. **Himawari 自己想到的事就是主对话里她的一句话。** 有可点的下一步时，下面竖排几个选项：只是接着问的白底细边；带具体动作的浅金底、左边一个发送图标，按钮字由服务器按真实收件人和内容生成，点一次就执行；最后一个灰字“不用了”；点过的变成主人的一条话，上面一行小字“选了”；有了更新的消息，旧的选项变灰。要主人同意的是一张同意卡片：“要你同意”和来源、程序写的真实动作和明细、四个范围（只这一次、这件事里、几天内、以后都行，花钱只能只这一次）、“不要”和“同意”。不再有“提议”和“告诉你一声”两种样子（ADR 0285 决定第 5 条；名字见[词表](glossary.md#terms)第 23 到 26 行）。
@@ -170,6 +170,45 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
     - 没接通、没做完或只是摆设的按钮和入口不放出来，做好了再放。
     - 每份规划稿写明每个能点的东西用哪个系统组件；自绘的写明原因。每次验收在正反向之外再加三条：点边缘、不点在字上也能触发；选中项在浅色和深色截图里都一眼认得出；VoiceOver 读出的名字和状态对。
     - 依据：Apple《Human Interface Guidelines》的 [Buttons](https://developer.apple.com/design/human-interface-guidelines/buttons)（点击区域至少 44×44 点）、[Segmented controls](https://developer.apple.com/design/human-interface-guidelines/segmented-controls)、[Accessibility](https://developer.apple.com/design/human-interface-guidelines/accessibility)。起因是 Andy 2026-11-26 9:32 看了记忆页的切换后说：“这里的写个选中的 tab 按钮不够明显，而且，只有准确的点击在文字上的时候才会触发切换，你必须按照 ios app 的 ui ux 开发最佳实践来开发各种组件 ui 给我极致的 ux 体验”；9:34 看了记忆页右上角的搜索钮：“这里这个按钮有必要存在吗？如果有就做到可用，好用，再放出来给我用！”
+
+<a id="apple-hig"></a>
+
+#### 照苹果最新 HIG 做的通用要求
+
+下面几条是把苹果《Human Interface Guidelines》（HIG，苹果官方的界面设计规范）现行版本落到本项目的写法，2026-11-26 按 Andy 的要求整理（原话：“iOS watchOS macOS 的 app 的 ui 和 ux 必须遵守和践行 apple 最新的开发规范，包括不限于各种组件的设计，页面的设计，各用户的交互方式等等”）。每条标明出处：**【官方】**是 HIG 或苹果开发者文档、WWDC（苹果每年的开发者大会）原文写的；**【社区】**是开发者社区公认的做法，不是苹果的规定，附来源。核对 HIG 时用的是各页 2026-11-26 的线上版本，各页最近一次改版日期写在括号里。和上面第 53 到 70 条冲突时以这里为准；能机器检查的，写明是哪道门槛（见[自动检查](#gates)的苹果客户端几行），不能的进[苹果客户端验收清单](#apple-acceptance)。
+
+71. **页面怎么进出照系统的走。** 推进去的一层用系统导航栏：标题、系统返回钮、边缘右滑返回都由系统给，不隐藏导航栏再自己画返回钮。弹层用 `.sheet`，能往下滑关掉；一次只开一个弹层，关掉一个再开下一个；只看不改的弹层用系统的关闭钮，要保存改动的才用“完成”，并且和“取消”配对；“取消”“完成”“返回”三个不同时出现。【官方】[Sheets](https://developer.apple.com/design/human-interface-guidelines/sheets)（2026-03-24）、[Toolbars](https://developer.apple.com/design/human-interface-guidelines/toolbars)。门槛：`hidden-navigation-bar`。
+72. **玻璃（Liquid Glass，iOS 26 起系统控件用的半透明材质）只用在浮在内容上的那一层。** 导航栏、工具条、输入条、顶上的小圆这类控件层可以用；滚动的内容（消息、卡片、列表行）里不用；不在玻璃上再叠一层玻璃。系统组件自带玻璃，不另加底色；自绘控件要玻璃时用系统的 `.glassEffect`，不自己调半透明颜色冒充，而且少用。玻璃上的字和图标用单色，颜色只留给真正要强调的（例如“要你同意”）。【官方】[Materials](https://developer.apple.com/design/human-interface-guidelines/materials)（2025-09-09）、[Color](https://developer.apple.com/design/human-interface-guidelines/color)（2025-12-16）、[Adopting Liquid Glass](https://developer.apple.com/documentation/technologyoverviews/adopting-liquid-glass)。门槛：无，进验收清单。
+73. **所有字都跟系统的“动态字体”（Dynamic Type，用户在系统设置里调的字号）走。** 字号一律用 `.hmType(...)`（底下是系统文本样式，见第 56 条），不写 `.font(.system(size:))`；和字号一起变大才看得清的尺寸（图标、行高）用 `@ScaledMetric`。字放到最大的辅助字号时，重要的字不截断，横排挤不下就改竖排（`ViewThatFits`）。正文默认 17 点，最小 11 点；不用 Ultralight、Thin、Light 这几档细字重。【官方】[Typography](https://developer.apple.com/design/human-interface-guidelines/typography)（2025-12-16）、[Accessibility](https://developer.apple.com/design/human-interface-guidelines/accessibility)（2025-06-09）。门槛：`fixed-font`、`custom-font`、无障碍审计的 `dynamicType` 和 `textClipped`。现状：`RootView` 把字号封顶在 `accessibility2`，比 HIG 要求的“最大辅助字号下也尽量显示完整”少两档，交 iPhone 编码线程评估去掉封顶。
+74. **字和底色的对比度，浅色、深色都要够。** 17 点及以下的字至少 4.5:1，18 点以上或粗体至少 3:1；状态不能只靠颜色区分，还要有形状、图标或字重的变化；打开系统的“增强对比度”“降低透明度”时也要看得清。【官方】[Accessibility](https://developer.apple.com/design/human-interface-guidelines/accessibility)、[Dark Mode](https://developer.apple.com/design/human-interface-guidelines/dark-mode)。门槛：`text-contrast`（`tokens.json` 里正文用的字色对 `bg`、`surface` 达到 4.5:1）、无障碍审计的 `contrast`（真屏幕上量）。
+75. **点击区域至少 44×44 点，控件之间留够空。** 苹果 Buttons 页写的是按钮的点击区域至少 44×44 点；Accessibility 页的表把 iOS 控件写成默认 44×44、最小 28×28，本项目按 44 执行。有边框的控件之间留约 12 点，没边框的约 24 点。【官方】[Buttons](https://developer.apple.com/design/human-interface-guidelines/buttons)（2025-12-16）、[Accessibility](https://developer.apple.com/design/human-interface-guidelines/accessibility)。门槛：`plain-button`、无障碍审计的 `hitRegion`。
+76. **VoiceOver（读屏）和语音控制能用到每一个功能。** 只有图标的按钮必须有 `accessibilityLabel`；选中、开关这类状态由系统控件自带的特征读出来，自绘的用 `.accessibilityAddTraits` 补上；纯装饰的图 `accessibilityHidden(true)`；一行里的几段字合成一个元素（`accessibilityElement(children: .combine)`）。手势（点按、长按、滑动）做的事，屏幕上必须另有按钮，或者加 `accessibilityAction`。能点的东西用 `Button`，不用 `.onTapGesture`（点按手势不会告诉读屏“这是按钮”）。【官方】[Accessibility](https://developer.apple.com/design/human-interface-guidelines/accessibility)（“Offer alternatives to gestures”）、[VoiceOver](https://developer.apple.com/design/human-interface-guidelines/voiceover)；“用 Button 不用点按手势”是【社区】做法，见 SwiftLint 的 [accessibility_trait_for_button](https://realm.github.io/SwiftLint/accessibility_trait_for_button.html) 规则。门槛：`gesture-without-button`、无障碍审计的 `sufficientElementDescription`、`trait`、`elementDetection`。
+77. **外观跟系统走，App 里不设浅色深色开关。** 第 68 条已写；同时检查深色加“增强对比度”“降低透明度”下的样子。【官方】[Dark Mode](https://developer.apple.com/design/human-interface-guidelines/dark-mode)。门槛：`app-color-scheme`、无障碍审计在深色下再跑一遍。
+78. **动效有目的、短、能打断。** 常用操作不加多余动画；不让人等动画播完才能继续；系统开了“减弱动态效果”时，自动播放和重复的动画（缩放、位移、景深变化、模糊进出）换成淡入淡出或不动。【官方】[Motion](https://developer.apple.com/design/human-interface-guidelines/motion)（2025-09-09）、[Accessibility](https://developer.apple.com/design/human-interface-guidelines/accessibility)。门槛：无，进验收清单。
+79. **触感按系统定的含义用，能关。** 系统控件（开关、选择器）自带的触感不再重复加；自己加的只配合离散的事件，不长时间震；页面只经 `Haptics.shared.report` 报事件（第 61 条）。【官方】[Playing haptics](https://developer.apple.com/design/human-interface-guidelines/playing-haptics)。门槛：`direct-haptics`。
+80. **按钮有按下的样子，会删东西的不当主按钮。** 自绘按钮一定有按下状态（`.pressable`）；一屏里最可能点的那个用突出样式；删除这类不可挽回的操作用 `role: .destructive`（系统红），即使它最常被点也不做成实心主按钮，这一点优先于第 64 条“肯定的在右、实心”。【官方】[Buttons](https://developer.apple.com/design/human-interface-guidelines/buttons)。门槛：`plain-button`；删除不做主按钮进验收清单。
+81. **常用组件照 HIG 对应页的细则。** 分段切换在 iPhone 上不超过约 5 段，段名用名词，同一个控件里全用字或全用图标；开关的开和关一眼能分；菜单项用动词开头，点了还要再填东西的末尾加“…”；搜索边打字边出结果，占位字说明能搜什么；列表点一行要有选中反馈。【官方】[Segmented controls](https://developer.apple.com/design/human-interface-guidelines/segmented-controls)、[Toggles](https://developer.apple.com/design/human-interface-guidelines/toggles)、[Menus](https://developer.apple.com/design/human-interface-guidelines/menus)（2026-06-08）、[Search fields](https://developer.apple.com/design/human-interface-guidelines/search-fields)（2026-06-08）、[Lists and tables](https://developer.apple.com/design/human-interface-guidelines/lists-and-tables)。门槛：无，进验收清单。
+82. **不用到时自己消失的界面传达要紧的事。** 提示条、气泡这类定时消失的东西，只用来说“已复制”这种不看也不要紧的话；要主人知道或决定的事，留在原处等他自己关。【官方】[Accessibility](https://developer.apple.com/design/human-interface-guidelines/accessibility)（“Minimize use of time-boxed interface elements”）。门槛：无，进验收清单。
+83. **系统控件的位置用系统的图标。** 返回、关闭、分享、搜索、更多这类系统控件，用系统按钮自带的 SF Symbols（苹果的系统图标库），不换成 Tabler；第 54 条的 Tabler 线条图标只用在 Himawari 自己的内容上（过程行的 40 个动作图标、列表行的图标方块、输入条）。【官方】[Toolbars](https://developer.apple.com/design/human-interface-guidelines/toolbars)（“Prefer system-provided symbols”）、[Dark Mode](https://developer.apple.com/design/human-interface-guidelines/dark-mode)（“Use SF Symbols wherever possible”）。门槛：无，进验收清单。
+84. **门槛要能挡住后来者，已有的问题单独记账。** 新规则上线时已经存在的违规，记在登记表里并写明原因，新代码不许再增加；修好一处就把登记的数量减下来：代码检查不减就失败；无障碍审计在真模拟器上跑，同一场景每次数出的问题会差一两个，所以不减只在 CI 上给出警告（`A11Y_AUDIT_STALE`），由看到警告的线程把数字改小。审计超时会自动重跑一次，两次都超时记为 `auditDidNotFinish`。这是 SwiftLint 0.55 起的 `--baseline` 用法（【社区】，[SwiftLint 0.55.0 发布说明](https://github.com/realm/SwiftLint/releases/tag/0.55.0)）。本项目的两张登记表：`clients/apple/scripts/design-baseline.json`（代码检查）和 `clients/apple/App/UITests/accessibility-baseline.json`（无障碍审计）。
+
+<a id="apple-acceptance"></a>
+
+#### 苹果客户端验收清单
+
+机器查不了的条目，由 iOS 规划线程在每次验收时逐条看，并把结果写进验收记录；每条都要在浅色和深色、默认字号和最大辅助字号下各看一次。
+
+- [ ] 每个能点的东西用的是哪个系统组件，规划稿里写了；自绘的写了原因（第 70 条）。
+- [ ] 点能点的东西的边缘、不点在字上也能触发；选中项在浅色和深色截图里一眼认得出（第 70 条）。
+- [ ] 打开 VoiceOver，每个能点的东西读出的名字和状态对；手势能做的事，屏幕上另有按钮或在读屏的“操作”里（第 76 条）。
+- [ ] 推进去的页能边缘右滑返回；弹层能往下滑关掉，同时只有一个弹层（第 71 条）。
+- [ ] 玻璃只出现在控件层，滚动内容里没有玻璃，玻璃上没有再叠玻璃（第 72 条）。
+- [ ] 最大辅助字号下，重要的字没被截断，布局没有叠在一起（第 73 条）。
+- [ ] 打开“减弱动态效果”后，自动和重复的动画不再缩放、位移（第 78 条）。
+- [ ] 打开“增强对比度”和“降低透明度”后字都看得清（第 74、77 条）。
+- [ ] 会删东西的按钮是红色、不是实心主按钮（第 80 条）。
+- [ ] 分段、开关、菜单、搜索、列表符合第 81 条；要紧的事没有用定时消失的提示（第 82 条）。
+- [ ] 返回、关闭、分享、搜索这些位置用的是系统图标（第 83 条）。
 
 [↑ 返回目录](#contents)
 
@@ -305,8 +344,11 @@ Andy 批准并明确表示喜欢的设计。每行的原型链接是当时批注
 | 审批卡片本地浏览器验收 | `HIMAWARI_CHROMIUM_PATH=<Chromium 路径，可省> node scripts/test-run-approval-browser.mjs chromium`，不在 `npm run check` 里 | 用假后台在真浏览器里走四遍：两个搜索一张卡片、一个搜索一张卡片、拒绝后不放行、一次读请求永远不回时 25 秒内自己恢复并显示回答 |
 | 回答字重 | `npm run check:answer-weight` | 回答正文字重（I-12） |
 | 设置各端一致 | `test/integration/owner-settings-sync.test.ts` 和 `apps/control-center/test/app-interactions.unit.test.ts` 的 `[I-16]` 测试 | 只存浏览器本地的新设置、服务器协议漏掉的设置、断线旧设备盖掉新值、换模型配置后设置丢失（I-16） |
+| 苹果客户端页面代码 | `npm run check:apple-design`（`clients/apple/scripts/check-design.mjs`，用例在 `test/tooling/apple-design-check.test.mjs`） | iPhone、手表、Mac 的页面代码里：写死的颜色和尺寸、直接调震动、`.plain` 和 `.borderless` 这种只有字能点的按钮（第 70 条）、点按和长按手势没有读屏能用的替代（`gesture-without-button`，第 76 条）、隐藏系统导航栏（第 71 条）、App 自己定浅色深色（第 77 条）、不跟动态字体放大的字号（`fixed-font`，第 73 条）、系统字以外的字体（`custom-font`，第 56 条）；`tokens.json` 里正文字色在浅色、深色下对底色不到 4.5:1（`text-contrast`，第 74 条）；生成的令牌文件过期。已有的违规记在 `clients/apple/scripts/design-baseline.json`，超出数量、修好后不减数量、没写原因都失败（第 84 条） |
+| 苹果无障碍审计 | CI 的 `apple/iphone-accessibility` 作业（`clients/apple/App/UITests/AccessibilityAuditTests.swift`），不在 `npm run check` 里，需要 Mac 上的 Xcode 和 iPhone 模拟器 | 从 `DemoScenes.swift` 读出全部静态示例场景，场景按顺序分成三份在三台机器上并行跑。每个场景用苹果的 `performAccessibilityAudit`（[WWDC23 Perform accessibility audits for your app](https://developer.apple.com/videos/play/wwdc2023/10035/)）在浅色下跑全部审计项，再切到深色只跑对比度：对比度不够、点击区域太小、没有名字的元素、读屏特征不对、字不跟动态字体变、字被截断。没有在最大辅助字号下再跑一遍：试过一次，审计在大字号下超时跑不完。已知问题按“场景、浅色或深色、审计项”计数，记在 `clients/apple/App/UITests/accessibility-baseline.json` 并写原因；某一格的问题比登记的多，作业失败；比登记的少，作业给出警告，提醒把数字改小 |
+| 苹果截图比对 | Mac 上 `clients/apple/scripts/ui-review.sh --check`，不在 CI 里 | 每个示例场景浅色、深色截图和 `clients/apple/Tests/Snapshots/iPhone-390/` 逐像素比，差异超过 0.05% 失败。没放进 CI：快照是在 Andy 的 Mac 上拍的，GitHub 机器的 Xcode 和模拟器版本不同，字的渲染会有细微差别，放进去会常常误报；字跟不跟动态字体变、字有没有被截断，由上面的无障碍审计查；最大辅助字号下的样子按验收清单人工看 |
 | 进行中图标的动作 | `npx vitest run --config vitest.workspace.ts --project tooling test/tooling/icon-motion-css.test.mjs` 和 `npx vitest run --config vitest.workspace.ts --project browser apps/control-center/test/icon-motion.unit.test.ts apps/control-center/test/execution-process.unit.test.ts`，不在 `npm run check` 里 | 按第几层选中的动作规则指向不存在的图标或图层、用了以 `icon-` 开头却没定义的动画名；旧的转框和整体缩放写法（`.row-icon::after`、`process-ring-spin`、`process-step-running`）又回来，换了新名字的不拦；动作没放进“允许动态效果”里、减少动态效果时没有静态底色；搜索网页和读网页没共用雷达；审查行、思考行在不该动的时候动（第 51 条） |
 
-还不能自动检查、要靠人看的：同一组元素的视觉对齐（第 8 条）、信息该不该显示（第 1 条）、颜色含义（第 21 条）、说明文字有没有收进 ⓘ（第 48 条）、行名和列名是否说清对象（第 49 条）、原型能否看手机版（第 50 条）。改界面时用三语截图自己看一遍。
+苹果客户端还不能自动检查的，见[苹果客户端验收清单](#apple-acceptance)。网页还不能自动检查、要靠人看的：同一组元素的视觉对齐（第 8 条）、信息该不该显示（第 1 条）、颜色含义（第 21 条）、说明文字有没有收进 ⓘ（第 48 条）、行名和列名是否说清对象（第 49 条）、原型能否看手机版（第 50 条）。改界面时用三语截图自己看一遍。
 
 [↑ 返回目录](#contents)

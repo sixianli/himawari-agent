@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { generate, generateCss } from "./make-design-tokens.mjs";
+import { generate, generateCss, parseColor } from "./make-design-tokens.mjs";
 
 const appleRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const repositoryRoot = path.resolve(appleRoot, "../..");
@@ -12,6 +12,9 @@ export const PAGE_DIRECTORIES = [
   "Sources/HimawariManage",
   "Sources/HimawariSenses",
   "Sources/HimawariShare",
+  "Sources/HimawariActions",
+  "Sources/HimawariListen",
+  "Sources/HimawariListenUI",
   "Sources/HimawariMacUI",
   "Sources/HimawariWatchUI",
   "App",
@@ -21,6 +24,17 @@ export const TOKENS_SOURCE = "docs/assets/apple-clients/2026-11-25-v4/tokens.jso
 export const TOKENS_OUTPUT = "Sources/HimawariDesign/Generated/DesignTokens.swift";
 export const WEB_DIRECTORY = "App/SafariExtension/Resources";
 export const CSS_OUTPUT = `${WEB_DIRECTORY}/tokens.css`;
+export const BASELINE = "scripts/design-baseline.json";
+
+export const TEXT_CONTRAST = {
+  minimum: 4.5,
+  foregrounds: ["text", "muted", "sun", "danger", "success", "glyph"],
+  backgrounds: ["bg", "surface"],
+  pairs: [
+    ["onSpeak", "speak"],
+    ["onText", "text"],
+  ],
+};
 
 const WEB_RULES = [
   {
@@ -72,11 +86,44 @@ const RULES = [
       /\.buttonStyle\(\s*\.plain\s*\)|\bPlainButtonStyle\(\)|\.buttonStyle\(\s*\.borderless\s*\)/u,
   },
   {
+    code: "hidden-navigation-bar",
+    pattern:
+      /\btoolbar\(\s*\.hidden\s*,\s*for:\s*\.navigationBar|\.navigationBarHidden\(\s*true|\btoolbarVisibility\(\s*\.hidden\s*,\s*for:\s*\.navigationBar/u,
+  },
+  {
+    code: "app-color-scheme",
+    pattern: /\.preferredColorScheme\(/u,
+  },
+  {
+    code: "fixed-font",
+    pattern: /\.font\(\s*\.system\(\s*size:/u,
+  },
+  {
     code: "number-literal",
     pattern:
       /\b(?:size|cornerRadius|width|height|minWidth|minHeight|maxWidth|maxHeight|idealWidth|idealHeight|lineSpacing|fontSize|radius)\s*:\s*-?\d|\.(?:lineSpacing|cornerRadius|opacity|kerning|tracking)\(\s*-?\d/u,
   },
 ];
+
+const GESTURE = /\.on(?:Tap|LongPress)Gesture\b/u;
+const GESTURE_ALTERNATIVE =
+  /\.accessibilityAction\b|\.accessibilityAddTraits\(\s*\.(?:isButton|isLink)\b|\.accessibilityHidden\(\s*true\s*\)/u;
+
+function modifierChain(lines, start) {
+  let depth = 0;
+  let text = "";
+  for (let index = start; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (index > start && depth === 0 && !line.trim().startsWith(".")) break;
+    text += `${line}\n`;
+    for (const character of line) {
+      if (character === "(" || character === "{" || character === "[") depth += 1;
+      if (character === ")" || character === "}" || character === "]") depth -= 1;
+    }
+    if (depth < 0) break;
+  }
+  return text;
+}
 
 export const FONT_DIRECTORIES = ["Sources", "App"];
 
@@ -97,13 +144,79 @@ export function findFontViolations(source, file) {
 
 export function findViolations(source, file) {
   const violations = [];
-  source.split("\n").forEach((line, index) => {
+  const lines = source.split("\n");
+  lines.forEach((line, index) => {
     for (const rule of RULES) {
       if (rule.pattern.test(line))
         violations.push({ file, line: index + 1, code: rule.code, text: line.trim() });
     }
+    if (GESTURE.test(line) && !GESTURE_ALTERNATIVE.test(modifierChain(lines, index)))
+      violations.push({ file, line: index + 1, code: "gesture-without-button", text: line.trim() });
   });
   return violations;
+}
+
+function luminance([red, green, blue]) {
+  const channel = (value) => {
+    const unit = value / 255;
+    return unit <= 0.03928 ? unit / 12.92 : ((unit + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * channel(red) + 0.7152 * channel(green) + 0.0722 * channel(blue);
+}
+
+function over(color, base) {
+  const [red, green, blue, alpha = 1] = color;
+  return [0, 1, 2].map((index) => [red, green, blue][index] * alpha + base[index] * (1 - alpha));
+}
+
+export function contrastRatio(foreground, background) {
+  const [a, b] = [luminance(foreground), luminance(background)].sort((x, y) => y - x);
+  return (a + 0.05) / (b + 0.05);
+}
+
+export function findContrastProblems(tokens, rule = TEXT_CONTRAST) {
+  const problems = [];
+  for (const [appearance, palette] of Object.entries(tokens.color ?? {})) {
+    const base = parseColor(palette.bg).slice(0, 3);
+    const solid = (name) => over(parseColor(palette[name]), base);
+    const pairs = [
+      ...rule.foregrounds.flatMap((fg) => rule.backgrounds.map((bg) => [fg, bg])),
+      ...rule.pairs,
+    ];
+    for (const [fg, bg] of pairs) {
+      if (palette[fg] === undefined || palette[bg] === undefined) {
+        problems.push({ appearance, fg, bg, ratio: 0, missing: true });
+        continue;
+      }
+      const ratio = contrastRatio(solid(fg), solid(bg));
+      if (ratio < rule.minimum) problems.push({ appearance, fg, bg, ratio });
+    }
+  }
+  return problems;
+}
+
+export function applyBaseline(problems, baseline) {
+  const counted = new Map();
+  for (const problem of problems) {
+    const key = `${problem.file}|${problem.code}`;
+    counted.set(key, (counted.get(key) ?? 0) + 1);
+  }
+  const allowed = new Map(baseline.map((entry) => [`${entry.file}|${entry.code}`, entry]));
+  const remaining = problems.filter((problem) => {
+    const entry = allowed.get(`${problem.file}|${problem.code}`);
+    return !entry || counted.get(`${problem.file}|${problem.code}`) > entry.count;
+  });
+  const stale = baseline
+    .filter(
+      (entry) => !entry.why || (counted.get(`${entry.file}|${entry.code}`) ?? 0) < entry.count,
+    )
+    .map((entry) => ({
+      file: BASELINE,
+      line: 0,
+      code: entry.why ? "baseline-stale" : "baseline-without-reason",
+      text: `${entry.file} ${entry.code} allows ${entry.count}, found ${counted.get(`${entry.file}|${entry.code}`) ?? 0}`,
+    }));
+  return [...remaining, ...stale];
 }
 
 function swiftFiles(directory) {
@@ -132,11 +245,22 @@ export function checkDesign(root = appleRoot, repo = repositoryRoot) {
     if (path.relative(root, file) === CSS_OUTPUT) continue;
     problems.push(...findWebViolations(readFileSync(file, "utf8"), path.relative(root, file)));
   }
+  const baselineFile = path.join(root, BASELINE);
+  const baseline = existsSync(baselineFile) ? JSON.parse(readFileSync(baselineFile, "utf8")) : [];
+  const swiftProblems = applyBaseline(problems.splice(0), baseline);
+  problems.push(...swiftProblems);
   const tokens = path.join(repo, TOKENS_SOURCE);
   const output = path.join(root, TOKENS_OUTPUT);
   let tokensChecked = false;
   if (existsSync(tokens)) {
     tokensChecked = true;
+    for (const low of findContrastProblems(JSON.parse(readFileSync(tokens, "utf8"))))
+      problems.push({
+        file: TOKENS_SOURCE,
+        line: 0,
+        code: low.missing ? "contrast-token-missing" : "text-contrast",
+        text: `${low.appearance} ${low.fg} on ${low.bg} ${low.ratio.toFixed(2)}:1 < ${TEXT_CONTRAST.minimum}:1`,
+      });
     const expected = generate(JSON.parse(readFileSync(tokens, "utf8")));
     const actual = existsSync(output) ? readFileSync(output, "utf8") : "";
     if (expected !== actual)
@@ -160,7 +284,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   }
   if (problems.length) {
     process.stdout.write(
-      "APPLE_DESIGN_FAILED page code must use DesignTokens or Layout for colors and sizes; regenerate tokens with clients/apple/scripts/make-design-tokens.mjs\n",
+      "APPLE_DESIGN_FAILED page code must follow docs/ui-ux-design-guide.md#apple-clients: DesignTokens for colors and sizes, system buttons and navigation, Dynamic Type fonts, an accessible alternative for every gesture; regenerate tokens with clients/apple/scripts/make-design-tokens.mjs\n",
     );
     process.exit(1);
   }
