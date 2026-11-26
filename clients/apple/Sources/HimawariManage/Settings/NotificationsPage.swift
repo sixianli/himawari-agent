@@ -84,11 +84,8 @@ struct ClockRow: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: SL.rowGap) {
+            DatePicker(selection: Binding(get: { date(time) }, set: { change(clock($0)) }), displayedComponents: .hourAndMinute) {
                 Text(title).hmType(SL.rowValue).foregroundStyle(Color.hmText)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                DatePicker("", selection: Binding(get: { date(time) }, set: { change(clock($0)) }), displayedComponents: .hourAndMinute)
-                    .labelsHidden()
             }
             .padding(.vertical, SL.rowPaddingVertical)
             .frame(minHeight: SL.rowMinHeight)
