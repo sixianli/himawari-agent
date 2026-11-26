@@ -79,6 +79,7 @@ public enum IconName: String, CaseIterable, Sendable {
     case plane
     case playerPause = "player-pause"
     case playerStop = "player-stop"
+    case stop
     case plus
     case point
     case qrcodeOff = "qrcode-off"
@@ -193,6 +194,7 @@ public enum IconName: String, CaseIterable, Sendable {
         case .plane: "airplane"
         case .playerPause: "pause.fill"
         case .playerStop: "stop.fill"
+        case .stop: "stop"
         case .plus: "plus"
         case .point: "circle.fill"
         case .qrcodeOff: "qrcode"
