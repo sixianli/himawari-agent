@@ -9,7 +9,6 @@ public struct ChatView: View {
     private let threadId: String
     @State private var draft = ""
     @State private var uploading = false
-    @State private var bannerHeight: CGFloat = 0
     @FocusState private var inputFocused: Bool
     @Environment(\.transcriptScrollsToTopAfter) private var scrollToTopAfter
     @Environment(\.chatVoice) private var voice
@@ -34,7 +33,7 @@ public struct ChatView: View {
     @State private var hold: HoldPhase?
     @State private var heard = ""
     @State private var dictating = false
-    @State private var dictationPrefix = ""
+    @State private var dictation = DictationDraft()
     @State private var selecting: SelectableMessage?
     @State private var copiedCount = 0
     @State private var copiedShown = false
@@ -92,12 +91,6 @@ public struct ChatView: View {
     private var chrome: some View {
         VStack(spacing: 0) {
             header
-            if store.offlineShown {
-                OfflineBanner()
-                    .padding(.top, DesignTokens.Chat.puckBannerGap)
-                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { bannerHeight = $0 }
-                    .transition(.opacity)
-            }
             Spacer(minLength: 0)
             if copiedShown {
                 CopiedToast()
@@ -137,6 +130,7 @@ public struct ChatView: View {
                 voice: voice != nil,
                 hold: hold,
                 dictating: dictating,
+                offline: store.offlineShown,
                 openAttach: attachAction,
                 stop: stopAction,
                 startTalk: talkStarter,
@@ -437,7 +431,7 @@ public struct ChatView: View {
                 }
             }
             .padding(.horizontal, DesignTokens.Size.chatPaddingX)
-            .padding(.top, Self.headerHeight + DesignTokens.Chat.puckContentGap + (shownBackgroundWork == nil ? 0 : DesignTokens.Chat.puckBannerGap + DesignTokens.Avatar.backgroundPillHeight) + (store.offlineShown ? DesignTokens.Chat.puckBannerGap + bannerHeight : 0))
+            .padding(.top, Self.headerHeight + DesignTokens.Chat.puckContentGap + (shownBackgroundWork == nil ? 0 : DesignTokens.Chat.puckBannerGap + DesignTokens.Avatar.backgroundPillHeight))
             .padding(.bottom, 110)
         }
         .defaultScrollAnchor(.bottom, for: .alignment)
@@ -508,8 +502,18 @@ public struct ChatView: View {
     }
 
     private func submit() {
-        if dictating { stopDictation() }
-        deliver(draft, clearDraft: true)
+        guard dictating, let voice else {
+            dictation.discardPending()
+            deliver(draft, clearDraft: true)
+            return
+        }
+        dictating = false
+        let shown = draft
+        draft = ""
+        Task {
+            let text = await dictation.submit(draft: shown) { await voice.finish() }
+            deliver(text, clearDraft: true)
+        }
     }
 
     private func deliver(_ text: String, clearDraft: Bool) {
@@ -603,11 +607,11 @@ public struct ChatView: View {
             return
         }
         dictating = true
-        dictationPrefix = draft.isEmpty ? "" : draft + " "
+        dictation.begin(draft: draft)
         Task {
             do {
                 try await voice.start { text in
-                    if dictating { draft = dictationPrefix + text }
+                    if let shown = dictation.live(text) { draft = shown }
                 }
             } catch {
                 dictating = false
@@ -618,10 +622,8 @@ public struct ChatView: View {
     private func stopDictation() {
         guard let voice, dictating else { return }
         dictating = false
-        let prefix = dictationPrefix
         Task {
-            let said = await voice.finish()
-            if !said.isEmpty { draft = prefix + said }
+            if let said = await dictation.stop(finish: { await voice.finish() }) { draft = said }
         }
     }
 }
@@ -700,23 +702,6 @@ struct StreamingAnswer: View {
 
     var body: some View {
         AnswerText(text: text, streaming: true)
-    }
-}
-
-struct OfflineBanner: View {
-    var body: some View {
-        HStack(spacing: 8) {
-            Circle()
-                .fill(Color.hmMuted)
-                .frame(width: DesignTokens.Size.offlineDot, height: DesignTokens.Size.offlineDot)
-            Text(L.text("chat.offline"))
-                .hmType(DesignTokens.TypeScale.offlineBanner)
-                .foregroundStyle(Color.hmText)
-        }
-        .padding(.vertical, DesignTokens.Size.offlineBannerPaddingVertical)
-        .padding(.horizontal, DesignTokens.Size.offlineBannerPaddingHorizontal)
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: DesignTokens.Radius.offlineBanner, style: .continuous))
-        .accessibilityElement(children: .combine)
     }
 }
 
