@@ -73,7 +73,7 @@ public final class ChatTalkSession: ChatTalk {
     public func setMuted(_ muted: Bool) {
         self.muted = muted
         if muted {
-            turn = TalkTurn()
+            turn.drop()
             heard = ""
             levels = []
         }
@@ -120,7 +120,7 @@ public final class ChatTalkSession: ChatTalk {
         guard started == generation, !muted else { return }
         let spoken = !piece.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         if spoken, reply.ownerSpoke(whileSpeaking: phase == .herTurn) { interrupt() }
-        turn.heard(piece.text, isFinal: piece.isFinal, at: .now)
+        turn.heard(piece.text, isFinal: piece.isFinal, from: piece.start, to: piece.end, at: .now)
         heard = turn.text
     }
 
