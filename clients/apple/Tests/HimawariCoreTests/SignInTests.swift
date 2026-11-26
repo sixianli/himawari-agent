@@ -146,7 +146,7 @@ private final class ScriptedCeremony: PasskeyCeremony, @unchecked Sendable {
 
     @Test func serverAnswersBecomeTheFourThingsThePhoneShows() async throws {
         func problem(_ status: Int, _ code: String, headers: [String: String] = [:]) async -> SignInProblem? {
-            let exchange = RecordingExchange([HTTPExchangeResponse(status: status, body: Data(#"{"code":"\#(code)"}"#.utf8), headers: headers)])
+            let exchange = RecordingExchange([HTTPExchangeResponse(status: status, body: Data(#"{"error":{"code":"\#(code)"}}"#.utf8), headers: headers)])
             let api = DeviceAPI(http: DeviceHTTPClient(exchange: exchange))
             do {
                 _ = try await api.setUpOptions(origin: Self.origin, setupCode: "K7QM-4XHP", device: try Self.device(), relyingParty: "x")
@@ -160,7 +160,6 @@ private final class ScriptedCeremony: PasskeyCeremony, @unchecked Sendable {
         #expect(await problem(429, "DEVICE_SETUP_CODE_ATTEMPTS", headers: ["Retry-After": "300"]) == .tooManyAttempts(retryAfterMinutes: 5))
         #expect(await problem(429, "DEVICE_SETUP_CODE_ATTEMPTS", headers: ["retry-after": "61"]) == .tooManyAttempts(retryAfterMinutes: 2))
         #expect(await problem(429, "DEVICE_SETUP_CODE_ATTEMPTS") == .tooManyAttempts(retryAfterMinutes: nil))
-        #expect(await problem(409, "DEVICE_LIMIT_REACHED") == .deviceLimit)
         #expect(await problem(401, "DEVICE_PASSKEY_REJECTED") == .passkeyRejected)
         #expect(await problem(410, "DEVICE_SIGN_IN_FLOW_EXPIRED") == .tryAgain)
         #expect(await problem(418, "SOMETHING_NEW") == .unreachable(code: "SOMETHING_NEW"))

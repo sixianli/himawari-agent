@@ -257,7 +257,6 @@ public enum SignInProblem: Sendable, Equatable {
     case noPasskeyHere
     case passkeyRejected
     case tryAgain
-    case deviceLimit
     case unreachable(code: String?)
     case keysUnavailable
     case keysUnreadable
@@ -283,7 +282,6 @@ public enum SignInProblem: Sendable, Equatable {
             case "DEVICE_SETUP_CODE_ATTEMPTS": return .tooManyAttempts(retryAfterMinutes: nil)
             case "DEVICE_SIGN_IN_FLOW_EXPIRED": return .tryAgain
             case "DEVICE_PASSKEY_REJECTED": return .passkeyRejected
-            case "DEVICE_LIMIT_REACHED": return .deviceLimit
             case "DEVICE_REVOKED": return .removed
             default: return .unreachable(code: code ?? "HTTP \(status)")
             }

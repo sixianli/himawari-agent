@@ -154,7 +154,6 @@ public struct SignInView: View {
         switch problem {
         case .noPasskeyHere?: L.text("signIn.problem.noPasskey")
         case .passkeyRejected?: L.text("signIn.problem.passkeyRejected")
-        case .deviceLimit?: L.text("signIn.problem.deviceLimit")
         case .keysUnavailable?: L.text("signIn.problem.keys")
         case .tryAgain?: L.text("signIn.problem.tryAgain")
         case let .unreachable(code)?: SetupCodePage.unreachable(code: code, host: nil)
@@ -255,7 +254,6 @@ struct SetupCodePage: View {
         case let .tooManyAttempts(minutes?): L.format("signIn.code.tooManyMinutes", minutes)
         case .tooManyAttempts: L.text("signIn.code.tooMany")
         case .passkeyNeededAfterCode: L.text("signIn.code.passkeyNeeded")
-        case .deviceLimit: L.text("signIn.problem.deviceLimit")
         case .keysUnavailable: L.text("signIn.problem.keys")
         case .tryAgain, .noPasskeyHere, .passkeyRejected: L.text("signIn.problem.tryAgain")
         case let .unreachable(code): unreachable(code: code, host: host)

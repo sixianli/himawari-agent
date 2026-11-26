@@ -18,7 +18,6 @@
 "signIn.unreachableHost" = "%@ に接続できません。";
 "signIn.problem.noPasskey" = "このデバイスには Himawari のパスキーがまだありません。はじめての場合はセットアップコードを入力してください。";
 "signIn.problem.passkeyRejected" = "サーバがこのパスキーを受け付けません。削除された可能性があります。セットアップコードでもう一度サインインしてください。";
-"signIn.problem.deviceLimit" = "サインイン中のデバイスが多すぎます。先にほかのデバイスから古いものを削除してください。";
 "signIn.problem.keys" = "このデバイスで鍵を作れませんでした。再起動してからもう一度お試しください。";
 "signIn.problem.tryAgain" = "サインインできませんでした。もう一度お試しください。";
 "signIn.problem.keysUnreadable.title" = "このデバイスの鍵を今は読めません";

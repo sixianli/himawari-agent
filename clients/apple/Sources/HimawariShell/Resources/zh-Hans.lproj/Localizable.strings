@@ -18,7 +18,6 @@
 "signIn.unreachableHost" = "连不上服务器 %@。";
 "signIn.problem.noPasskey" = "这台设备上还没有 Himawari 的通行密钥。第一次用请输入设置码。";
 "signIn.problem.passkeyRejected" = "服务器不认这把通行密钥，可能已被移除。请用设置码重新登录。";
-"signIn.problem.deviceLimit" = "已登录的设备太多了。先在别的设备上移除一台旧设备。";
 "signIn.problem.keys" = "这台设备建不了设备密钥，重启后再试一次。";
 "signIn.problem.tryAgain" = "没登录上，请再试一次。";
 "signIn.problem.keysUnreadable.title" = "暂时读不到这台设备的密钥";

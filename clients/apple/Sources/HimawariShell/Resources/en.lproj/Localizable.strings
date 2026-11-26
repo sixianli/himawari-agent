@@ -18,7 +18,6 @@
 "signIn.unreachableHost" = "Can’t reach %@.";
 "signIn.problem.noPasskey" = "There’s no Himawari passkey on this device yet. The first time, enter a setup code.";
 "signIn.problem.passkeyRejected" = "The server doesn’t accept this passkey; it may have been removed. Sign in again with a setup code.";
-"signIn.problem.deviceLimit" = "Too many devices are signed in. Remove an old one from another device first.";
 "signIn.problem.keys" = "This device couldn’t create its keys. Restart it and try again.";
 "signIn.problem.tryAgain" = "Couldn’t sign in. Please try again.";
 "signIn.problem.keysUnreadable.title" = "Can’t read this device’s keys right now";
