@@ -21,14 +21,21 @@
 "chat.herPage" = "Her page";
 "common.close" = "Close";
 "attach.add" = "Show her something";
-"attach.title" = "Show her something";
+"attach.title" = "Add";
 "attach.camera" = "Camera";
 "attach.photos" = "Photos";
 "attach.files" = "Files";
 "attach.location" = "Where I am";
 "attach.remove" = "Remove %@";
-"attach.problem.tooMany" = "Up to %d at a time";
+"attach.retry" = "Retry";
+"attach.problem.tooMany" = "Up to %d";
 "attach.problem.tooLarge" = "Too large for her to take";
+"attach.problem.fileTooLarge" = "This file is too large (up to %d MB)";
+"attach.problem.images" = "She can't look at images right now. Send text or a file instead";
+"attach.recent.denied" = "Allow photo access to see your recent photos here";
+"attach.recent.settings" = "Open Settings";
+"attach.recent.more" = "Choose more photos";
+"attach.recent.photo" = "Photo";
 "attach.problem.outdated" = "The server can not take attachments yet. Update the server first";
 "attach.problem.upload" = "Not uploaded. Try again later";
 "attach.problem.unreadable" = "She can not read this file yet";
@@ -47,6 +54,7 @@
 "chat.talk.herTurn" = "She’s talking · just speak to cut in";
 "chat.talk.muted" = "Muted";
 "chat.talk.failed" = "Couldn’t start talking. Try again";
+"chat.talk.voiceHint" = "Download a Premium voice in Settings > Accessibility > Spoken Content > Voices and she will sound more natural";
 "chat.option.chosen" = "You chose";
 "chat.copyCode" = "Copy code";
 "chat.menu.reply" = "Reply";
@@ -67,6 +75,8 @@
 "background.dollars.tiny" = "under $0.01";
 "background.spent" = "%@ spent";
 "background.budgetLine" = "%@ spent of %@";
+"background.spent.tiny" = "under $0.01 spent";
+"background.budgetLine.tiny" = "under $0.01 spent of %@";
 "background.step" = "step %d of %d";
 "background.untitled" = "Subthread";
 "background.tag.working" = "Working";
@@ -90,3 +100,5 @@
 "background.exchange.budget" = "Needs more budget";
 "background.exchange.resultBoard" = "Result board";
 "background.readOnly" = "Read only. Talk to her in the main chat and she will pass it on.";
+"chat.bubble.her" = "She said";
+"chat.bubble.owner" = "You said";

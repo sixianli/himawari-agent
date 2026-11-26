@@ -12,6 +12,7 @@ import {
 
 export const PI_CONTAINER_RUNNER_V1 = "pi-container-runner.v1" as const;
 export const PI_CONTAINER_WORKSPACE_ROOT = "/workspaces";
+export const PI_COMPUTER_WORKSPACE = "/home/himawari/workspace";
 export const PI_CONTAINER_RUNNER_PATH =
   "/opt/himawari/node_modules/@himawari-agent/agent-service/dist/capability-programs/container-pi-main.js";
 
@@ -53,7 +54,10 @@ export type PiContainerRunnerInput = InferSchema<typeof input>;
 export const piContainerRunnerInputSchema: Schema<PiContainerRunnerInput> = {
   parse(value, location = "$") {
     const parsed = input.parse(value, location);
-    if (parsed.workspace !== `${PI_CONTAINER_WORKSPACE_ROOT}/${parsed.canonicalRootId}`)
+    if (
+      parsed.workspace !== `${PI_CONTAINER_WORKSPACE_ROOT}/${parsed.canonicalRootId}` &&
+      parsed.workspace !== PI_COMPUTER_WORKSPACE
+    )
       throw new ContractValidationError(
         `${location}.workspace`,
         "expected the mounted directory of the approved root",

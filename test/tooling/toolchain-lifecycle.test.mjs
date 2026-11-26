@@ -268,7 +268,15 @@ describe("合成工具包的安装过程", () => {
     const original = readFileSync(join(f.toolsDirectory, "installation.json"));
     f.lock.rules.version = "2";
     f.saveLock();
+    const callsBeforeVerify = boundary.calls.length;
     const verified = verifyInstalledTools({ directory: f.toolsDirectory, root: f.root });
+    const verifyCalls = boundary.calls.slice(callsBeforeVerify);
+    expect(verifyCalls.length).toBeGreaterThan(0);
+    for (const call of verifyCalls) {
+      expect(call.options.env.HOME.startsWith(f.toolsDirectory)).toBe(false);
+      expect(call.options.env.TMPDIR.startsWith(f.toolsDirectory)).toBe(false);
+      expect(existsSync(call.options.env.HOME)).toBe(false);
+    }
     expect(verified.toolchainSha256).not.toBe(installed.toolchainSha256);
     expect(verified.originalInstallationSha256).toBe(hash(original));
     expect(readFileSync(join(f.toolsDirectory, "installation.json"))).toEqual(original);

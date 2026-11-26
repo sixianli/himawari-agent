@@ -78,6 +78,13 @@ const VAULT_WRAPPED_KEY = [
 const VAULT_PASSWORD = ["tByJMmanrteJYrzRyAz6eC7I+9mY5n5X", "MjMmS01n940gxxayiFeZE/6q"].join("");
 const VAULT_LINE = `    {\n      "wrappedKey": "${VAULT_WRAPPED_KEY}",\n      "password": "${VAULT_PASSWORD}"\n    }\n`;
 
+const PEM_RSA_BEGIN = ["-----BEGIN", "RSA", "PRIVATE KEY-----"].join(" ");
+const PEM_EC_BEGIN = ["-----BEGIN", "EC", "PRIVATE KEY-----"].join(" ");
+const PEM_EC_END = ["-----END", "EC", "PRIVATE KEY-----"].join(" ");
+const EXCEPTIONS_LEDGER = "ci/security-exceptions.json";
+const EXCEPTIONS_SIBLING = "ci/other-exceptions.json";
+const ONNX_MARKER_TEXT = `      "sourceReview": "${PEM_RSA_BEGIN}\\" 与 \\"${PEM_EC_END}\\"、\\"${PEM_EC_BEGIN}\\" 与 \\"${PEM_END}\\""\n`;
+
 const FIXTURES = {
   [REVIEW_316_RECORD]: REVIEW_316_LINE,
   [REVIEW_316_SIBLING]: REVIEW_316_LINE,
@@ -109,6 +116,8 @@ const FIXTURES = {
   "scripts/embedding-models/build-artifact-copy.py": TOKENIZER_DIGEST_LINE(TOKENIZER_DIGEST),
   [VAULT_FIXTURE]: VAULT_LINE,
   [VAULT_SIBLING]: VAULT_LINE,
+  [EXCEPTIONS_LEDGER]: ONNX_MARKER_TEXT,
+  [EXCEPTIONS_SIBLING]: ONNX_MARKER_TEXT,
 };
 
 const EXPECTED_WITH_REPOSITORY_CONFIG = [
@@ -130,6 +139,7 @@ const EXPECTED_WITH_REPOSITORY_CONFIG = [
   "scripts/embedding-models/other-artifact.py generic-api-key",
   "scripts/embedding-models/build-artifact-copy.py generic-api-key",
   `${VAULT_SIBLING} generic-api-key`,
+  `${EXCEPTIONS_SIBLING} private-key`,
 ].sort();
 
 function gitleaksOnPath(version) {
@@ -245,6 +255,7 @@ describe("gitleaks repository configuration", () => {
           `${KEY_TAIL_TEST} generic-api-key`,
           "scripts/embedding-models/build-artifact.py generic-api-key",
           `${VAULT_FIXTURE} generic-api-key`,
+          `${EXCEPTIONS_LEDGER} private-key`,
         ].sort(),
       );
   }, 120000);
@@ -312,6 +323,11 @@ describe("gitleaks repository configuration", () => {
       "vault fixture any path",
       "'''(?:^|/)clients/apple/Tests/HimawariCoreTests/Fixtures/vault-contract\\.json$'''",
       "'''(?:^|/)clients/apple/Tests/HimawariCoreTests/Fixtures/[^/]+\\.json$'''",
+    ],
+    [
+      "onnxruntime marker text any ledger",
+      "'''(?:^|/)ci/security-exceptions\\.json$'''",
+      "'''(?:^|/)ci/[^/]+\\.json$'''",
     ],
     [
       "deepseek any value",

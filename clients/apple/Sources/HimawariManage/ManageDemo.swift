@@ -167,12 +167,15 @@ enum ManageDemo {
     static func answer(_ type: String, allowances: Bool) -> String {
         switch type {
         case "memory.overview.read": memories
+        case "memory.search.read": searchHits
         case "memory.rules.read": allowances ? rules : #"{"payload":{"rules":[],"allowances":[],"allowanceDays":7}}"#
         case "device.list.read": devices
         case "quiet_hours.read": #"{"payload":{"version":"v1","editable":true,"enabled":true,"start":"23:00","end":"07:00","classes":["scheduled_reminder","run_result","mail_reminder","her_words"],"rules":[{"ruleId":"rule-quiet","summary":"晚上 11 点到早上 7 点别推"}]}}"#
         default: "{}"
         }
     }
+
+    static let searchHits = #"{"payload":{"query":"过敏","results":[{"kind":"memory","memoryId":"m3","ruleId":null,"text":"对花生过敏","category":"health","tentative":false,"updatedAt":"2026-10-21T03:00:00Z"},{"kind":"rule","memoryId":"m6","ruleId":"r1","text":"给没发过邮件的人发信，先问我","category":"rule","tentative":false,"updatedAt":"2026-10-20T03:00:00Z"}],"generatedAt":"2026-11-26T03:00:00Z"}}"#
 
     private static func memory(
         _ id: String, _ group: String, _ text: String, inference: Bool, recordedAt: String, lastUsedAt: String?, quote: String?,

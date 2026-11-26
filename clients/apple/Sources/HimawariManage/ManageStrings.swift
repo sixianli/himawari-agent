@@ -25,6 +25,7 @@ enum M {
     static var rules: String { text("规则", ja: "ルール", en: "Rules") }
     static var search: String { text("搜索", ja: "検索", en: "Search") }
     static var searchPrompt: String { text("搜记住的事和规则", ja: "覚えていることとルールを検索", en: "Search memories and rules") }
+    static var searchFailed: String { text("现在搜不了，稍后再试", ja: "いまは検索できません。あとでもう一度", en: "Search isn't available right now. Try again later") }
     static func noSearchResults(_ query: String) -> String { text("没有找到“\(query)”", ja: "「\(query)」は見つかりません", en: "Nothing found for “\(query)”") }
     static var nothingRemembered: String {
         text("还没有记住的事", ja: "まだ覚えていることはありません", en: "Nothing remembered yet")
@@ -56,6 +57,33 @@ enum M {
     static var aboutServer: String { text("服务器", ja: "サーバー", en: "Server") }
     static var aboutLicenses: String { text("开源许可", ja: "オープンソースライセンス", en: "Open source licenses") }
     static var aboutNotConnected: String { text("没有连着", ja: "未接続", en: "Not connected") }
+    static var developerMode: String { text("开发者模式", ja: "開発者モード", en: "Developer mode") }
+    static var developer: String { text("开发者", ja: "開発者", en: "Developer") }
+    static var talkTiming: String { text("说话计时", ja: "会話の計時", en: "Talk timing") }
+    static var talkTimingRecent: String { text("最近 20 轮", ja: "直近 20 回", en: "Last 20 turns") }
+    static var talkTimingTurns: String { text("每一轮", ja: "各回", en: "Each turn") }
+    static var talkTimingTextGap: String { text("说完 → 第一个字", ja: "話し終わり → 最初の文字", en: "Done speaking → first word") }
+    static var talkTimingSoundGap: String { text("第一个字 → 第一声", ja: "最初の文字 → 最初の声", en: "First word → first sound") }
+    static var talkTimingDefinition: String {
+        text(
+            "一半：这些轮里一半在这个时间以内；九成：九成在这个时间以内。没出声的轮不算第二行。",
+            ja: "半分：これらの回の半分がこの時間以内。9 割：9 割がこの時間以内。声が出なかった回は 2 行目に数えません。",
+            en: "Half: half of these turns took this long or less. 90%: nine in ten did. Turns with no sound don't count toward the second row."
+        )
+    }
+    static func talkTimingSpread(half: String, ninety: String) -> String {
+        text("一半 \(half) · 九成 \(ninety)", ja: "半分 \(half) · 9 割 \(ninety)", en: "Half \(half) · 90% \(ninety)")
+    }
+    static func talkTimingTooFew(_ count: Int) -> String { text("轮数太少（\(count) 轮）", ja: "回数が少なすぎます（\(count) 回）", en: "Too few turns (\(count))") }
+    static func seconds(_ value: String) -> String { text("\(value) 秒", ja: "\(value) 秒", en: "\(value) s") }
+    static var talkTimingSilent: String { text("没出声", ja: "声なし", en: "No sound") }
+    static var talkTimingSaid: String { text("说完", ja: "話し終わり", en: "Done speaking") }
+    static var talkTimingFirstText: String { text("第一个字到手机", ja: "最初の文字が届いた", en: "First word reached the phone") }
+    static var talkTimingFirstSound: String { text("第一声", ja: "最初の声", en: "First sound") }
+    static var talkTimingEmitted: String { text("服务器发出第一个字", ja: "サーバーが最初の文字を送った", en: "Server sent the first word") }
+    static var talkTimingEmpty: String { text("还没有说话记录", ja: "まだ会話の記録はありません", en: "No talk records yet") }
+    static var talkTimingFailed: String { text("没读到计时", ja: "計時を読み込めませんでした", en: "Couldn't load timing") }
+    static var tryAgain: String { text("再试一次", ja: "もう一度", en: "Try again") }
     static var allowancesTitle: String { text("同意过的事", ja: "承認したこと", en: "What you've allowed") }
     static func allowancesSummary(_ count: Int) -> String {
         if count == 0 { return text("还没有“不用再问”的事", ja: "「もう聞かない」ことはまだありません", en: "Nothing she skips asking yet") }
@@ -363,4 +391,58 @@ enum M {
         }
         return "\(shortDate(date)) \(time)"
     }
+    static var gmailTitle: String { "Gmail" }
+    static var gmailConnectTitle: String { text("连接 Gmail，让 Himawari 帮你盯收件箱", ja: "Gmail を接続して受信箱を見てもらう", en: "Connect Gmail so Himawari keeps an eye on your inbox") }
+    static var gmailConnectBody: String {
+        text(
+            "只读。每 15 分钟看一次新邮件，要你处理的事和快到期的事由 Himawari 告诉你；只有要紧又快到期的才推送。",
+            ja: "読み取りのみ。15 分ごとに新着メールを読み、対応が必要なことや期限が近いことを伝えます。急ぎで期限が近いものだけ通知します。",
+            en: "Read-only. Every 15 minutes Himawari reads new mail and tells you what needs you and what is due soon. Only urgent things due soon are pushed."
+        )
+    }
+    static var gmailNotConnected: String { text("没连接", ja: "未接続", en: "Not connected") }
+    static var gmailConnect: String { text("连接 Gmail", ja: "Gmail を接続", en: "Connect Gmail") }
+    static var gmailReconnect: String { text("重新连接", ja: "再接続", en: "Reconnect") }
+    static func gmailConnectedOn(_ date: Date) -> String {
+        text("连接于 \(pairedDay(date))", ja: "\(pairedDay(date))に接続", en: "Connected \(pairedDay(date))")
+    }
+    static var gmailLastRead: String { text("上次看邮件", ja: "最後にメールを確認", en: "Last checked mail") }
+    static var gmailExpired: String { text("Google 授权失效，Gmail 读不了", ja: "Google の許可が切れ、Gmail を読めません", en: "Google access expired, so Gmail can’t be read") }
+    static func gmailUnreadSince(_ date: Date) -> String {
+        let shown = date.formatted(.dateTime.month().day().hour().minute().locale(locale))
+        return text("从 \(shown) 起没看邮件", ja: "\(shown) 以降メールを確認していません", en: "No mail checked since \(shown)")
+    }
+    static var gmailDailyLimit: String { text("今天到了每日费用上限，0:00 恢复", ja: "今日の費用上限に達しました。0:00 に再開します", en: "Today’s cost limit is reached; checks resume at 0:00") }
+    static var gmailWatch: String { text("盯着新邮件", ja: "新着メールを見張る", en: "Watch new mail") }
+    static var gmailWatchOn: String { text("Himawari 定时看新邮件，要紧的会提醒你", ja: "Himawari が定期的に新着メールを確認し、大事なものを知らせます", en: "Himawari checks new mail on a schedule and tells you about what matters") }
+    static var gmailWatchOff: String { text("Himawari 现在不自己看新邮件", ja: "Himawari は今、自分では新着メールを確認しません", en: "Himawari isn’t checking new mail on its own right now") }
+    static var gmailWatchStart: String { text("开始盯着新邮件", ja: "新着メールの見張りを始める", en: "Start watching new mail") }
+    static var gmailWatchStop: String { text("不再盯着新邮件", ja: "新着メールの見張りをやめる", en: "Stop watching new mail") }
+    static var connectionsTitle: String { text("连接", ja: "接続", en: "Connections") }
+    static var connectionConnected: String { text("已连接", ja: "接続済み", en: "Connected") }
+    static var connectionExpired: String { text("授权失效，要重新连接", ja: "許可が切れました。再接続してください", en: "Access expired. Reconnect") }
+    static func connectionConnect(_ title: String) -> String { text("连接 \(title)", ja: "\(title) を接続", en: "Connect \(title)") }
+    static func connectionAbout(_ title: String) -> String {
+        text(
+            "连接后 Himawari 能用 \(title) 查东西；建、改、删之类会改东西的操作，每次都先问你。",
+            ja: "接続すると Himawari が \(title) で調べものができます。作成・変更・削除など内容を変える操作は毎回先に確認します。",
+            en: "Once connected, Himawari can look things up in \(title). Anything that creates, changes or deletes something asks you first, every time."
+        )
+    }
+    static func connectionDisconnect(_ title: String) -> String { text("断开 \(title)", ja: "\(title) の接続を解除", en: "Disconnect \(title)") }
+    static var connectionDisconnectDetail: String {
+        text("Himawari 不再能用这个应用，存在服务器上的登录也一并删掉。", ja: "Himawari はこのアプリを使えなくなり、サーバーに保存したログインも削除します。", en: "Himawari can no longer use this app, and the sign-in kept on the server is deleted.")
+    }
+    static func connectionDenied(_ title: String) -> String { text("你没有同意，\(title) 没连上", ja: "許可されなかったため、\(title) に接続していません", en: "Access wasn’t granted, so \(title) isn’t connected") }
+    static func connectionFailed(_ title: String) -> String { text("\(title) 没连上，再试一次", ja: "\(title) に接続できませんでした。もう一度お試しください", en: "\(title) didn’t connect. Try again") }
+    static var connectionsThisDevice: String { text("这台 iPhone", ja: "この iPhone", en: "This iPhone") }
+    static var connectionHealth: String { text("健康", ja: "ヘルスケア", en: "Health") }
+    static var connectionHealthInSenses: String { text("点这里打开感知设置，在里面开关", ja: "ここから感知の設定を開いてオン・オフします", en: "Opens sensing settings, where you turn it on or off") }
+    static var connectionsNoneConnected: String { text("还没连接应用", ja: "まだアプリを接続していません", en: "No apps connected yet") }
+    static var gmailDisconnect: String { text("断开 Gmail", ja: "Gmail の接続を解除", en: "Disconnect Gmail") }
+    static var gmailDisconnectDetail: String {
+        text("Himawari 不再看你的邮件，Google 那边的授权也一并收回。", ja: "メールを読まなくなり、Google 側の許可も取り消します。", en: "Himawari stops reading your mail and the Google access is revoked.")
+    }
+    static var gmailDenied: String { text("你在 Google 没有同意，Gmail 没连上", ja: "Google で許可されなかったため、接続していません", en: "Google access wasn’t granted, so Gmail isn’t connected") }
+    static var gmailFailed: String { text("Gmail 没连上，再试一次", ja: "Gmail に接続できませんでした。もう一度お試しください", en: "Gmail didn’t connect. Try again") }
 }

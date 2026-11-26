@@ -25,20 +25,17 @@ import {
   parseMemoryText,
 } from "../memory-import.js";
 import { memorySourceCounts, memorySourceState } from "../memory-source.js";
-import type { MuseModel } from "../muse.js";
 import type { ProactiveGroup, ProactiveModel } from "../proactive.js";
 import { LineIcon } from "./answer-footer.js";
 import { CorrectionReviewSection } from "./correction-review.js";
 import { ExternalProposalsSection } from "./external-proposals.js";
 import { Glyph } from "./glyphs.js";
-import { MailDecisionPage } from "./mail-decision-page.js";
 import {
   MemoryApprovalCard,
   openMemoryPage,
   openNotificationSettings,
   TextEditor,
 } from "./memory-panel.js";
-import { MuseReference } from "./muse-reference.js";
 import { ActionButton, Dropdown, EmptyState } from "./primitives.js";
 import {
   clock,
@@ -865,7 +862,6 @@ function ReminderAddCard({
 export function RemindersPage({
   memory,
   proactive = null,
-  muse = null,
   focus = null,
   locale,
   message,
@@ -873,7 +869,6 @@ export function RemindersPage({
 }: {
   memory: MemoryModel | null;
   proactive?: ProactiveModel | null;
-  muse?: MuseModel | null;
   focus?: string | null;
   locale?: string | undefined;
   message: Message;
@@ -882,7 +877,6 @@ export function RemindersPage({
   const [notice, setNotice] = useState<Notice>(null);
   const [adding, setAdding] = useState(false);
   const [tab, setTab] = useState<"reminders" | "report">("reminders");
-  const [mailView, setMailView] = useState<{ messageId: string; endDay: string } | null>(null);
   const highlight = useHighlight(focus);
   const weekly = proactive?.weekly ?? null;
   useEffect(() => {
@@ -1023,29 +1017,12 @@ export function RemindersPage({
           ))}
         </div>
       ) : null}
-      {showReport && mailView && proactive.readMail ? (
-        <MailDecisionPage
-          proactive={proactive}
-          weekly={weekly}
-          messageId={mailView.messageId}
-          endDay={mailView.endDay}
-          message={message}
-          locale={locale ?? DEFAULT_UI_LOCALE}
-          onBack={() => setMailView(null)}
-          onOpenThread={onOpenThread}
-        />
-      ) : showReport ? (
+      {showReport ? (
         <WeeklyReport
           proactive={proactive}
           weekly={weekly}
           message={message}
           locale={locale ?? DEFAULT_UI_LOCALE}
-          {...(proactive.readMail
-            ? {
-                onOpenMail: (messageId: string, endDay: string) =>
-                  setMailView({ messageId, endDay }),
-              }
-            : {})}
           onRate={() => {
             setTab("reminders");
             window.requestAnimationFrame(() =>
@@ -1164,7 +1141,6 @@ export function RemindersPage({
           {proactive ? (
             <ProactiveReviewSection proactive={proactive} message={message} locale={locale} />
           ) : null}
-          {muse ? <MuseReference muse={muse} message={message} locale={locale} /> : null}
           {overview.reminders.length ||
           overview.upcoming.length ||
           overview.cancelled.length ||

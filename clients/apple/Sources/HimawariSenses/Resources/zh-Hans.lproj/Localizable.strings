@@ -2,7 +2,7 @@
 "senses.thisDevice" = "这台 iPhone";
 "senses.handedOver" = "你交给它的";
 "senses.footnote" = "每一项都能单独关。关掉后不再记新的，已经记下的留在“感知到的”里，可以删。";
-"senses.back" = "返回";
+"senses.close" = "关闭";
 
 "state.on" = "开着";
 "state.off" = "关着";

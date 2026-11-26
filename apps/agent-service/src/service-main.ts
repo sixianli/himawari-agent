@@ -61,13 +61,12 @@ import {
   sqliteLibraryVersion,
 } from "@himawari-agent/persistence-sqlite";
 import {
+  APP_CONNECTION_CLIENT_SECRET_PURPOSE,
   APPLE_PUSH_SECRET_PURPOSE,
   assertProductionSecretSource,
   BoundedJwksFetcher,
   CloudflareAccessJwtVerifier,
   createApplePushSender,
-  createDemoGoogleOAuth,
-  createDemoMailReader,
   createGmailReader,
   createGoogleOAuth,
   createWebPushSender,
@@ -81,15 +80,14 @@ import {
   ExecutionAdmissionUdsServer,
   ExecutionUdsError,
   failureReason,
-  GAP_EXPORT_SECRET_PURPOSE,
   GOOGLE_OAUTH_CLIENT_SECRET_PURPOSE,
   initializeStateRoot,
   JsonFileConfigurationPort,
   MacOsKeychainProviderSecretSource,
   MacOsKeychainSecretSource,
-  MUSE_INTAKE_SECRET_PURPOSE,
   NodeVaultCrypto,
   PayloadUdsServer,
+  ProductionAppConnections,
   parseServiceArguments,
   portErrorSite,
   RuntimeHealthModel,
@@ -125,6 +123,7 @@ import { createProductionAuthorityLifecycle } from "./production-authority-lifec
 import { createProductionAutomaticReview } from "./production-automatic-review.js";
 import { backgroundCommandLimits } from "./production-background-commands.js";
 import { createProductionCapabilityReactivationVerifier } from "./production-capability-reactivation.js";
+import { createConfiguredComputerTools } from "./production-computer-tools.js";
 import {
   DEFAULT_TOOL_RESULT_SHARE,
   MEMORY_SNAPSHOT_WINDOW_SHARE,
@@ -138,7 +137,6 @@ import { ProductionExecutionAdmissionHandler } from "./production-execution-admi
 import { AgentServiceExecutionClient } from "./production-execution-client.js";
 import { strictModeUnavailableTools } from "./production-execution-environment.js";
 import { createProductionFileReadServices } from "./production-file-read-services.js";
-import { ProductionGapExport } from "./production-gap-export.js";
 import { createConfiguredHostWeb } from "./production-host-web.js";
 import {
   createProductionHttpComposition,
@@ -147,6 +145,7 @@ import {
 } from "./production-http-composition.js";
 import { InboxRunRegistry } from "./production-inbox-delivery.js";
 import { expandConfigurationWithMagpieModels, priceTiers } from "./production-magpie-models.js";
+import { ProductionAppTools } from "./production-app-tools.js";
 import { ProductionMailRead } from "./production-mail-read.js";
 import { ProductionMcpMemoryWriter } from "./production-mcp-memory-writer.js";
 import { ProductionMcpRead } from "./production-mcp-read.js";
@@ -184,8 +183,6 @@ import {
   productionEgressThreadOf,
   productionSensitiveInterceptionRecorder,
 } from "./production-model-egress.js";
-import { createMuseChannelPushSource, ProductionMuseIntake } from "./production-muse-intake.js";
-import { ProductionMuseControl } from "./production-muse-intake-control.js";
 import { ProductionObservation, readServiceRevision } from "./production-observation.js";
 import { productionOwnerIntentGate } from "./production-owner-intent.js";
 import { ProductionOwnerRuleTools, ProductionOwnerRuleWriter } from "./production-owner-rules.js";
@@ -219,6 +216,7 @@ import {
 } from "./production-run-memory.js";
 import { configuredWorkspaceRoot, createProductionRunPolicy } from "./production-run-policy.js";
 import { recordInCurrentRun } from "./production-run-timing.js";
+import { createConfiguredBrowserTools } from "./production-browser-tools.js";
 import { ProductionRuntimeTools } from "./production-runtime-tools.js";
 import {
   createProductionSandboxServices,
@@ -759,12 +757,10 @@ export async function startTenantRuntime(
   let applePush: ProductionApplePush | undefined;
   let applePushSender: ReturnType<typeof createApplePushSender> | undefined;
   let proactive: ProductionProactive | undefined;
+  let appConnections: ProductionAppConnections | undefined;
   let memoryClassifier: ProductionMemoryClassifier | undefined;
   let memoryImportDuplicates: ReturnType<typeof productionImportDuplicateChecker>;
-  let museIntake: ProductionMuseIntake | undefined;
-  let gapExport: ProductionGapExport | undefined;
   let mcpRead: ProductionMcpRead | undefined;
-  let museControl: ProductionMuseControl | undefined;
   let observation: ProductionObservation | undefined;
   let realEval: ProductionRealEval | RealEvalSampleExpiry | undefined;
   let perceptionExtraction: ProductionPerceptionExtraction | undefined;
@@ -1170,6 +1166,7 @@ export async function startTenantRuntime(
       secrets: sources.provider,
     });
     const hostReadOnlyPort = new DescriptorRelativeReadOnly();
+    const computer = await createConfiguredComputerTools(configuration, clock);
     let externalEgress: ReturnType<typeof createProductionModelEgress> | undefined;
     let approvalThreadTitle: ((threadId: string) => Promise<string | null>) | undefined;
     const fileReadServices = createProductionFileReadServices({
@@ -1182,6 +1179,7 @@ export async function startTenantRuntime(
       hostReadOnlyPort,
       workspaceSnapshotPort: hostReadOnlyPort,
       ...(hostWeb ? { hostWeb } : {}),
+      ...(computer ? { computer } : {}),
       externalTag: async () => {
         externalEgress ??= createProductionModelEgress(configuration, sources);
         try {
@@ -1969,7 +1967,22 @@ export async function startTenantRuntime(
             code: stableErrorCode(error),
           }),
       });
+      const browser = createConfiguredBrowserTools(configuration, {
+        now: () => Date.parse(clock.now()),
+        acceptsImages: async (modelRef) => {
+          const models = modelComposition?.composition.piModels;
+          if (!models || modelRef.length === 0) return false;
+          return (await models.resolve(modelRef)).model.input.includes("image");
+        },
+        readLocale: async () =>
+          (
+            await requireValue(repository)
+              .ownerPreferences()
+              .read({ ownerId: configuration.ownerId, agentId: configuration.agentId })
+          ).locale,
+      });
       const tools = new ProductionRuntimeTools({
+        ...(browser ? { browser } : {}),
         steering,
         memoryRecall,
         tellOwner,
@@ -1985,6 +1998,14 @@ export async function startTenantRuntime(
         ownerScope,
         externalContent,
         perception: perceptionTools,
+        apps: new ProductionAppTools({
+          connections: {
+            list: async () => (await appConnections?.list()) ?? [],
+            definition: (name) => appConnections?.definition(name),
+            tools: async (name) => appConnections?.tools(name),
+            call: async (name, tool, input) => appConnections?.call(name, tool, input),
+          },
+        }),
         vault: new ProductionVaultTools({
           scope: perceptionScope,
           list: (scope) => activeVault.listForModel(scope),
@@ -2297,9 +2318,7 @@ export async function startTenantRuntime(
         agentId: configuration.agentId,
       };
       const proactiveStore =
-        proactiveConfiguration &&
-        (proactiveSecret || proactiveConfiguration.demoInbox) &&
-        proactiveDescriptor
+        proactiveConfiguration && proactiveSecret && proactiveDescriptor
           ? repository.proactive()
           : undefined;
       const proactiveSeal =
@@ -2310,6 +2329,40 @@ export async function startTenantRuntime(
               ids,
             })
           : undefined;
+      const appConnectionConfigurations = configuration.runPolicy?.appConnections ?? [];
+      if (appConnectionConfigurations.length > 0 && protector) {
+        const definitions = [];
+        for (const entry of appConnectionConfigurations) {
+          const secret = configuration.secretReferences.find(
+            ({ ref, purpose }) =>
+              ref === entry.clientSecretRef && purpose === APP_CONNECTION_CLIENT_SECRET_PURPOSE,
+          );
+          if (!secret) continue;
+          definitions.push({
+            name: entry.name,
+            title: entry.title,
+            serverUrl: entry.serverUrl,
+            clientId: entry.clientId,
+            clientSecret: await hostModelSources(configuration).provider.resolve(
+              secret.ref,
+              secret.version,
+            ),
+            trustsReadOnlyLabels: entry.trustsReadOnlyLabels,
+          });
+        }
+        appConnections = new ProductionAppConnections({
+          scope: { ownerId: configuration.ownerId, agentId: configuration.agentId },
+          store: repository.appConnections(),
+          seal: createProactiveSeal({
+            payloads: repository.payloadStore(configuration.ownerId, configuration.agentId),
+            protector,
+            ids,
+          }),
+          definitions,
+          publicOrigin: configuration.publicOrigin,
+          now: () => clock.now(),
+        });
+      }
       memoryImportDuplicates = productionImportDuplicateChecker(
         configuration,
         hostModelSources(configuration).provider,
@@ -2350,22 +2403,19 @@ export async function startTenantRuntime(
         });
       if (
         proactiveConfiguration &&
-        (proactiveSecret || proactiveConfiguration.demoInbox) &&
+        proactiveSecret &&
         proactiveDescriptor &&
         proactiveStore &&
         proactiveSeal
       ) {
-        const demoInbox = proactiveConfiguration.demoInbox;
-        const oauth = demoInbox
-          ? createDemoGoogleOAuth()
-          : createGoogleOAuth({
-              clientId: requireValue(proactiveGmail).clientId,
-              clientSecret: await hostModelSources(configuration).provider.resolve(
-                requireValue(proactiveSecret).ref,
-                requireValue(proactiveSecret).version,
-              ),
-              redirectUri: proactiveRedirectUri(configuration.publicOrigin),
-            });
+        const oauth = createGoogleOAuth({
+          clientId: proactiveConfiguration.gmail.clientId,
+          clientSecret: await hostModelSources(configuration).provider.resolve(
+            proactiveSecret.ref,
+            proactiveSecret.version,
+          ),
+          redirectUri: proactiveRedirectUri(configuration.publicOrigin),
+        });
         const feedbackStore = repository.webPush();
         const reviewPayloads = repository.payloadStore(
           configuration.ownerId,
@@ -2443,9 +2493,7 @@ export async function startTenantRuntime(
           ownerRules: repository.ownerRules(),
           seal: proactiveSeal,
           oauth,
-          reader: demoInbox
-            ? createDemoMailReader({ now: () => clock.now(), timeZone: proactiveTimeZone })
-            : createGmailReader({ oauth }),
+          reader: createGmailReader({ oauth }),
           readAccount: (accessToken) => readGmailAccount({ accessToken }),
           ledger: repository.decisionLedger(),
           readMemoryText: readReviewText,
@@ -2744,69 +2792,6 @@ export async function startTenantRuntime(
               code: stableErrorCode(error),
             }),
         });
-      }
-      const museIntakeConfiguration = configuration.runPolicy?.museIntake;
-      const museIntakeSecret =
-        museIntakeConfiguration?.enabled === true
-          ? configuration.secretReferences.find(
-              ({ ref, purpose }) =>
-                ref === museIntakeConfiguration.secretRef && purpose === MUSE_INTAKE_SECRET_PURPOSE,
-            )
-          : undefined;
-      if (museIntakeSecret && protector) {
-        const museSeal = createProactiveSeal({
-          payloads: repository.payloadStore(configuration.ownerId, configuration.agentId),
-          protector,
-          ids,
-        });
-        museControl = new ProductionMuseControl({
-          scope: proactiveScope,
-          store: repository.museIntake(),
-          seal: museSeal,
-          ids,
-          clock,
-        });
-        museIntake = new ProductionMuseIntake({
-          scope: proactiveScope,
-          store: repository.museIntake(),
-          seal: museSeal,
-          ids,
-          clock,
-          secret: await hostModelSources(configuration).provider.resolve(
-            museIntakeSecret.ref,
-            museIntakeSecret.version,
-          ),
-        });
-      } else if (museIntakeConfiguration?.enabled === true) {
-        throw new Error("MUSE_INTAKE_RUNTIME_UNAVAILABLE");
-      }
-      const gapExportRef = museIntakeConfiguration?.gapExportSecretRef;
-      const gapExportSecret =
-        museIntakeConfiguration?.enabled === true && gapExportRef !== undefined
-          ? configuration.secretReferences.find(
-              ({ ref, purpose }) => ref === gapExportRef && purpose === GAP_EXPORT_SECRET_PURPOSE,
-            )
-          : undefined;
-      if (gapExportSecret && protector) {
-        gapExport = new ProductionGapExport({
-          scope: {
-            ownerId: configuration.ownerId,
-            agentId: configuration.agentId,
-          },
-          marks: repository.gapCaseMarks(),
-          seal: createProactiveSeal({
-            payloads: repository.payloadStore(configuration.ownerId, configuration.agentId),
-            protector,
-            ids,
-          }),
-          clock,
-          secret: await hostModelSources(configuration).provider.resolve(
-            gapExportSecret.ref,
-            gapExportSecret.version,
-          ),
-        });
-      } else if (gapExportRef !== undefined && museIntakeConfiguration?.enabled === true) {
-        throw new Error("GAP_EXPORT_RUNTIME_UNAVAILABLE");
       }
       const mcpSyncStore = repository.mcpMemorySync();
       const externalProposals = new ProductionMcpMemoryWriter({
@@ -3110,14 +3095,6 @@ export async function startTenantRuntime(
                 status: "pending",
               }),
           awaitingCount: async () => http?.home.awaitingCount(),
-          ...(museIntake
-            ? {
-                museChannel: createMuseChannelPushSource({
-                  scope: proactiveScope,
-                  store: repository.museIntake(),
-                }),
-              }
-            : {}),
           ...(proactive && proactiveStore && proactiveSeal
             ? {
                 proactive: createProactivePushSource({
@@ -3207,18 +3184,8 @@ export async function startTenantRuntime(
         },
         observation: repository.ledgerObservation(),
         ledger: repository.decisionLedger(),
-        marks: repository.gapCaseMarks(),
         ...(configuration.runPolicy?.mcpRead
           ? { mcpConnections: repository.mcpConnections() }
-          : {}),
-        ...(protector
-          ? {
-              seal: createProactiveSeal({
-                payloads: repository.payloadStore(configuration.ownerId, configuration.agentId),
-                protector,
-                ids,
-              }),
-            }
           : {}),
         clock,
         schedule: {
@@ -3571,6 +3538,7 @@ export async function startTenantRuntime(
           settled: async (ids) => (await webPush?.settled(ids)) ?? [],
         },
         ...(proactive ? { proactive } : {}),
+        ...(appConnections ? { appConnections } : {}),
         threadDeletionDiagnostic: (event: Record<string, string>) =>
           writeServiceDiagnostic(errorOutput, { component: "agent-service", ...event }),
         messageOptions,
@@ -3600,10 +3568,7 @@ export async function startTenantRuntime(
               ),
             }
           : {}),
-        ...(museIntake ? { museIntake } : {}),
-        ...(gapExport ? { gapExport } : {}),
         ...(mcpRead ? { mcpRead } : {}),
-        ...(museControl ? { museControl } : {}),
         ...(observation ? { observation } : {}),
         memory: {
           ...(memoryComposition
@@ -3617,6 +3582,8 @@ export async function startTenantRuntime(
                     search: (input) =>
                       runMemoryEpisodes ? runMemoryEpisodes.search(input) : Promise.resolve([]),
                   },
+                  embedOutsideRun: (context, operation) =>
+                    memory.embedForExternalRead(context, operation),
                 },
               }
             : {}),

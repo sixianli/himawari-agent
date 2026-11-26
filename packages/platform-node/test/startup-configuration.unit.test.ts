@@ -1565,6 +1565,81 @@ describe("[R2-T2] coding route approval mode", () => {
   });
 });
 
+describe("每人一台电脑的配置", () => {
+  const AT = "2026-11-26T00:00:00.000Z";
+  function withComputers(
+    userComputers: unknown,
+    enabledTools: readonly string[] = ["read", "write", "edit", "bash", "find", "grep", "ls"],
+  ): Record<string, unknown> {
+    const raw = config(path.join(tmpdir(), "himawari-user-computers"));
+    raw["runPolicy"] = {
+      version: "policy-v1",
+      systemInstruction: "test",
+      memoryLimit: 10,
+      userComputers,
+      coding: {
+        hostId: "host",
+        workerInstanceId: "worker",
+        grantId: "directory:grant",
+        capabilityRef: "himawari.pi-coding",
+        capabilityVersion: "1.0.0",
+        maximumBytes: 4096,
+        enabledTools,
+      },
+    };
+    return raw;
+  }
+
+  it("读出电脑管理的 socket 路径", () => {
+    expect(
+      parseProductConfiguration(
+        withComputers({ socketPath: "/run/himawari-computers/computers.sock" }),
+        AT,
+      ).runPolicy?.userComputers,
+    ).toEqual({ socketPath: "/run/himawari-computers/computers.sock" });
+  });
+
+  it.each([
+    ["相对路径", { socketPath: "computers.sock" }],
+    ["多出字段", { socketPath: "/run/computers.sock", host: "x" }],
+    ["缺 socket", {}],
+  ])("拒绝：%s", (_name, value) => {
+    expect(() => parseProductConfiguration(withComputers(value), AT)).toThrow();
+  });
+
+  it("读出浏览器的限额，没有电脑时拒绝", () => {
+    const browser = { maxOutputBytes: 8_388_608, maxTextChars: 20_000, responseReserveMs: 5_000 };
+    const raw = withComputers({ socketPath: "/run/computers.sock" });
+    (raw["runPolicy"] as Record<string, unknown>)["browser"] = browser;
+    expect(parseProductConfiguration(raw, AT).runPolicy?.browser).toEqual(browser);
+    delete (raw["runPolicy"] as Record<string, unknown>)["userComputers"];
+    expect(() => parseProductConfiguration(raw, AT)).toThrow(
+      expect.objectContaining({
+        details: expect.objectContaining({ field: "configuration.runPolicy.browser" }),
+      }),
+    );
+  });
+
+  it.each([
+    ["多出字段", { maxOutputBytes: 8192, maxTextChars: 1000, responseReserveMs: 0, extra: 1 }],
+    ["缺字段", { maxOutputBytes: 8192, maxTextChars: 1000 }],
+    ["输出上限太小", { maxOutputBytes: 1, maxTextChars: 1000, responseReserveMs: 0 }],
+  ])("浏览器配置拒绝：%s", (_name, browser) => {
+    const raw = withComputers({ socketPath: "/run/computers.sock" });
+    (raw["runPolicy"] as Record<string, unknown>)["browser"] = browser;
+    expect(() => parseProductConfiguration(raw, AT)).toThrow();
+  });
+
+  it("工具在电脑里跑时不能开改原目录的 move_directory 和 save_copy", () => {
+    for (const tool of ["move_directory", "save_copy"]) {
+      const raw = withComputers({ socketPath: "/run/computers.sock" }, ["read", "bash", tool]);
+      expect(() => parseProductConfiguration(raw, AT)).toThrow();
+      delete (raw["runPolicy"] as Record<string, unknown>)["userComputers"];
+      expect(parseProductConfiguration(raw, AT).runPolicy?.coding?.enabledTools).toContain(tool);
+    }
+  });
+});
+
 it("[WP-7] accepts web push only with a web-push secret and an https or mailto subject", () => {
   const raw = config("/tmp/himawari-web-push-config");
   const policy = {
@@ -1899,8 +1974,8 @@ it("[PG-12][reverse] rejects a proactive model that the mail check cannot call, 
   );
 });
 
-it("[P6-demo] accepts a fake inbox in place of Gmail, in one of the offered languages, and never both at once", () => {
-  const raw = config("/tmp/himawari-demo-inbox-config");
+it("requires the proactive check to name a Gmail client and rejects the removed fake inbox", () => {
+  const raw = config("/tmp/himawari-proactive-gmail-config");
   const policy = {
     version: "1",
     systemInstruction: "test",
@@ -1915,18 +1990,13 @@ it("[P6-demo] accepts a fake inbox in place of Gmail, in one of the offered lang
     clientId: "123-abc.apps.googleusercontent.com",
     clientSecretRef: "google-oauth",
   };
-  for (const locale of ["ja", "en"]) {
-    raw["runPolicy"] = { ...policy, proactive: { modelRef: "model-primary", demoInbox: locale } };
-    const parsed = parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.proactive;
-    expect(parsed?.demoInbox).toBe(locale);
-    expect(parsed).not.toHaveProperty("gmail");
-  }
+  raw["runPolicy"] = { ...policy, proactive: { modelRef: "model-primary", gmail } };
+  const parsed = parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.proactive;
+  expect(parsed?.gmail).toEqual(gmail);
   for (const invalid of [
     { modelRef: "model-primary" },
     { modelRef: "model-primary", gmail, demoInbox: "ja" },
-    { modelRef: "model-primary", demoInbox: "zh-CN" },
-    { modelRef: "model-primary", demoInbox: "" },
-    { modelRef: "model-primary", demoInbox: true },
+    { modelRef: "model-primary", demoInbox: "ja" },
   ]) {
     raw["runPolicy"] = { ...policy, proactive: invalid };
     expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
@@ -2076,46 +2146,15 @@ it("[P5-3] accepts the MCP entry only behind Cloudflare Access, with its own aud
   );
 });
 
-it("accepts Muse intake only with a boolean switch and one secret whose purpose is muse-intake", () => {
+it("refuses the removed Muse intake settings as an unknown runPolicy key", () => {
   const raw = config("/tmp/himawari-muse-intake-config");
-  const policy = {
-    version: "1",
-    systemInstruction: "test",
-    memoryLimit: 10,
-  };
-  const references = raw["secretReferences"] as unknown[];
-  raw["secretReferences"] = [
-    ...references,
-    { ref: "muse-intake-secret", version: "v1", purpose: "muse-intake", scope: "agent" },
-    { ref: "other-secret", version: "v1", purpose: "google-oauth-client", scope: "agent" },
-    { ref: "gap-export-secret", version: "v1", purpose: "gap-export", scope: "agent" },
-  ];
-  const museIntake = { enabled: true, secretRef: "muse-intake-secret" };
-  raw["runPolicy"] = { ...policy, museIntake };
-  expect(parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.museIntake).toEqual(
-    museIntake,
-  );
-  const withGapExport = { ...museIntake, gapExportSecretRef: "gap-export-secret" };
-  raw["runPolicy"] = { ...policy, museIntake: withGapExport };
-  expect(parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.museIntake).toEqual(
-    withGapExport,
-  );
+  const policy = { version: "1", systemInstruction: "test", memoryLimit: 10 };
   raw["runPolicy"] = { ...policy };
-  expect(
-    parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.museIntake,
-  ).toBeUndefined();
-  for (const invalid of [
-    { ...museIntake, enabled: "yes" },
-    { secretRef: "muse-intake-secret" },
-    { ...museIntake, secretRef: "other-secret" },
-    { ...museIntake, secretRef: "missing-secret" },
-    { ...museIntake, secret: "inline" },
-    { ...museIntake, gapExportSecretRef: "muse-intake-secret" },
-    { ...museIntake, gapExportSecretRef: "missing-secret" },
-  ]) {
-    raw["runPolicy"] = { ...policy, museIntake: invalid };
-    expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
-  }
+  expect(parseProductConfiguration(raw, "2026-11-26T00:00:00.000Z").runPolicy).not.toHaveProperty(
+    "museIntake",
+  );
+  raw["runPolicy"] = { ...policy, museIntake: { enabled: true, secretRef: "muse-intake-secret" } };
+  expect(() => parseProductConfiguration(raw, "2026-11-26T00:00:00.000Z")).toThrow();
 });
 
 it("refuses the removed home urgency scoring settings as an unknown runPolicy key", () => {

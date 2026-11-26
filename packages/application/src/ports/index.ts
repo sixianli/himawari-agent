@@ -1,3 +1,4 @@
+export * from "./app-connections.js";
 export * from "./apple-push.js";
 export * from "./authority-identities.js";
 export * from "./authorization.js";
@@ -48,7 +49,6 @@ export * from "./memory-review.js";
 export * from "./model-budget.js";
 export * from "./model-invocation.js";
 export * from "./model-usage.js";
-export * from "./muse-intake.js";
 export * from "./observability.js";
 export * from "./owner-intent-check.js";
 export * from "./owner-preferences.js";

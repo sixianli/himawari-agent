@@ -1,41 +1,73 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
 
-const design = new URL("../../clients/apple/Sources/HimawariDesign/", import.meta.url);
+const apple = fileURLToPath(new URL("../../clients/apple/", import.meta.url));
+const design = path.join(apple, "Sources/HimawariDesign");
 
-function configNames() {
-  const icons = JSON.parse(
-    readFileSync(new URL("../../clients/apple/scripts/icons.json", import.meta.url), "utf8"),
-  );
-  return Object.keys(icons).map((key) => {
-    const [source, variant] = key.split("@");
-    return variant ? `${source}-${variant}` : source;
+function iconSource() {
+  return readFileSync(path.join(design, "Icon.swift"), "utf8");
+}
+
+function swiftFiles(directory) {
+  return readdirSync(directory).flatMap((entry) => {
+    const full = path.join(directory, entry);
+    if (statSync(full).isDirectory()) return swiftFiles(full);
+    return entry.endsWith(".swift") ? [full] : [];
   });
 }
 
-function swiftNames() {
-  const source = readFileSync(new URL("Icon.swift", design), "utf8");
-  const body = source.slice(source.indexOf("enum IconName"), source.indexOf("public struct Icon"));
-  const names = [...body.matchAll(/^\s*case\s+(\w+)(?:\s*=\s*"([^"]+)")?\s*$/gmu)].map(
-    (match) => match[2] ?? match[1],
+function tablerNames(source) {
+  const block = source.slice(
+    source.indexOf("static let tabler"),
+    source.indexOf("public var drawnFromTabler"),
   );
-  const caseTokens = body.match(/\bcase\b/gu) ?? [];
-  expect(caseTokens.length, "Icon.swift has a case line the test cannot parse").toBe(names.length);
-  return names;
+  return [...block.matchAll(/\.(\w+)/gu)].map((match) => match[1]);
 }
 
-function catalogNames() {
-  return readdirSync(new URL("Resources/Icons.xcassets/", design))
+function rawName(source, caseName) {
+  const explicit = source.match(new RegExp(`case ${caseName} = "([a-z0-9-]+)"`, "u"));
+  return explicit
+    ? explicit[1]
+    : caseName.replace(/[A-Z0-9]/gu, (part) => `-${part.toLowerCase()}`);
+}
+
+it("names an SF Symbol for every icon and draws only the chosen ones from Tabler", () => {
+  const source = iconSource();
+  const enumBody = source.slice(
+    source.indexOf("enum IconName"),
+    source.indexOf("public static let tabler"),
+  );
+  const cases = [...enumBody.matchAll(/^\s*case\s+(\w+)/gmu)].map((match) => match[1]);
+  const mapped = [...source.matchAll(/^\s*case \.(\w+): "([a-z0-9.]+)"$/gmu)].map((m) => m[1]);
+  expect(cases.length).toBeGreaterThan(50);
+  expect(mapped.sort()).toEqual([...cases].sort());
+  const tabler = tablerNames(source);
+  expect(tabler.length).toBeGreaterThan(0);
+  for (const name of tabler) expect(cases).toContain(name);
+  const catalog = path.join(design, "Resources/Icons.xcassets");
+  const shipped = readdirSync(catalog)
     .filter((entry) => entry.endsWith(".imageset"))
-    .map((entry) => entry.slice(0, -".imageset".length));
-}
+    .map((entry) => entry.replace(/\.imageset$/u, ""))
+    .sort();
+  expect(shipped).toEqual(tabler.map((name) => rawName(source, name)).sort());
+});
 
-it("lists every icon in icons.json, Icon.swift and the asset catalog", () => {
-  const config = configNames().sort();
-  const swift = swiftNames().sort();
-  const catalog = catalogNames().sort();
-  expect(new Set(config).size).toBe(config.length);
-  expect(config.length).toBeGreaterThan(50);
-  expect(swift).toEqual(config);
-  expect(catalog).toEqual(config);
+it("ships the Tabler licence and the generator list for exactly the icons it draws", () => {
+  expect(existsSync(path.join(design, "Resources/Licenses/tabler-icons.txt"))).toBe(true);
+  const listed = Object.keys(
+    JSON.parse(readFileSync(path.join(apple, "scripts/icons.json"), "utf8")),
+  ).map((key) => key.replace("@", "-"));
+  const shipped = readdirSync(path.join(design, "Resources/Icons.xcassets"))
+    .filter((entry) => entry.endsWith(".imageset"))
+    .map((entry) => entry.replace(/\.imageset$/u, ""));
+  expect(listed.sort()).toEqual(shipped.sort());
+  const strays = swiftFiles(path.join(apple, "Sources")).filter(
+    (file) =>
+      /Image\(systemName:/u.test(readFileSync(file, "utf8")) &&
+      !file.endsWith("Icon.swift") &&
+      !file.endsWith("AnswerCode.swift"),
+  );
+  expect(strays).toEqual([]);
 });

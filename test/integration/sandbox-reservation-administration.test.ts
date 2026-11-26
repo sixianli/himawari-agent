@@ -1597,7 +1597,7 @@ describe("[R2-L4][prod-sandbox-D2-admin] offline reservation administration", ()
   });
 });
 
-describe.each(["docs/runbooks/install-start-stop-runbook.md"])(
+describe.each(["docs/runbooks/sandbox-reservation-administrative-disposition-runbook.md"])(
   "[R2-L4][prod-sandbox-upgrade-gate] %s",
   (runbook) => {
     it("allows the original Schema 49 reservation only after migration and administrator disposition", async () => {

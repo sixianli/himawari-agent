@@ -20,11 +20,13 @@ import {
   DEVICE_CONFIGURATION_DEFAULTS,
   type DeviceActionService,
   defaultDeviceHardLimits,
+  deviceVoiceTimingLister,
   deviceVoiceTimingRecorder,
   type ExecutionLiveFeed,
   type GatewayAccessDecision,
   type GatewayAuthenticationContext,
   type GatewayV2InboundMessage,
+  GMAIL_SOURCE,
   MAIL_INBOX_SOURCE_KIND,
   type McpMemorySyncStorePort,
   type OwnerIdentityStatePort,
@@ -52,10 +54,7 @@ import {
   threadCommandFingerprint,
   type VaultService,
 } from "@himawari-agent/application";
-import {
-  isDeviceAccessText,
-  type ThreadExecutionEnvironment,
-} from "@himawari-agent/gateway-contracts";
+import type { ThreadExecutionEnvironment } from "@himawari-agent/gateway-contracts";
 import { MemoryConsolidationService, undoConversationReview } from "@himawari-agent/memory-engine";
 import {
   SqliteGovernedDeletionAdapter,
@@ -63,6 +62,7 @@ import {
 } from "@himawari-agent/persistence-sqlite";
 import {
   CloudflareAccessJwtVerifier as AccessJwtVerifier,
+  APP_CONNECTIONS_CALLBACK_PATH,
   assertProductionSecretSource,
   assertUnixSocketPathLength,
   authenticateHttpRequest,
@@ -74,15 +74,16 @@ import {
   buildHttpGatewayServer,
   CloudflareAccessIdentityClient,
   type CloudflareAccessIdentityFetcher,
-  DEVICE_ACCESS_SECRET_PURPOSES,
   type DeviceActionHub,
+  type DeviceConnectionsPort,
   type DeviceGatewayAuditFailure,
   type DeviceNotificationHub,
-  type DevicePairingAccess,
   type DevicePresence,
   DevicePushService,
+  DeviceSignInService,
   digestIdentityCredential,
   EnvelopePayloadProtector,
+  FileSetupCodeSource,
   type HostProviderSecretSource,
   type HostSecretMaterialSource,
   type HttpGatewayAuthenticationPort,
@@ -98,6 +99,7 @@ import {
   type PairedDeviceWarning,
   type PerceptionLimitWarning,
   PerceptionService,
+  type ProductionAppConnections,
   ProductSessionAuthenticationService,
   type ProductSessionAuthenticationServiceOptions,
   prepareUnixSocketPath,
@@ -129,7 +131,6 @@ import {
 } from "./production-approval-gateway.js";
 import { backgroundCommandRef } from "./production-background-commands.js";
 import { registerChatExportRoute } from "./production-chat-export.js";
-import { createProductionSpeech } from "./production-speech.js";
 import {
   DataExportJobs,
   deviceExportArchive,
@@ -142,7 +143,6 @@ import {
   ProductionDeviceControl,
 } from "./production-device-control.js";
 import { PRODUCTION_FILES_OPERATIONS, ProductionFilesControl } from "./production-files-control.js";
-import { type ProductionGapExport, registerGapExportRoute } from "./production-gap-export.js";
 import { PRODUCTION_HOME_OPERATIONS, ProductionHomeControl } from "./production-home.js";
 import { productionInbox } from "./production-inbox-composition.js";
 import { type InboxRunRegistry, ProductionInboxDelivery } from "./production-inbox-delivery.js";
@@ -172,12 +172,12 @@ import {
   ProductionMemoryControl,
 } from "./production-memory-control.js";
 import { ProductionMemoryInbox } from "./production-memory-inbox.js";
-import { flushSensitiveInterceptions } from "./production-model-egress.js";
-import { type ProductionMuseIntake, registerMuseIntakeRoute } from "./production-muse-intake.js";
 import {
-  PRODUCTION_MUSE_OPERATIONS,
-  type ProductionMuseControl,
-} from "./production-muse-intake-control.js";
+  PRODUCTION_MEMORY_SEARCH_OPERATIONS,
+  ProductionMemorySearch,
+  type ProductionMemorySearchOptions,
+} from "./production-memory-search.js";
+import { flushSensitiveInterceptions } from "./production-model-egress.js";
 import {
   PRODUCTION_OBSERVATION_OPERATIONS,
   type ProductionObservation,
@@ -216,6 +216,7 @@ import {
   PRODUCTION_SERVER_STATUS_OPERATIONS,
   ProductionServerStatusControl,
 } from "./production-server-status-control.js";
+import { createProductionSpeech } from "./production-speech.js";
 import {
   DEFAULT_TIMER_TIME_ZONE,
   localTime,
@@ -285,7 +286,7 @@ export interface ProductionHttpCompositionOptions {
     price?: { input: number; output: number };
     priceTier?: "low" | "mid" | "high";
   }[];
-  readonly live?: Pick<ExecutionLiveFeed, "subscribe" | "current">;
+  readonly live?: Pick<ExecutionLiveFeed, "subscribe" | "current" | "firstEmittedAt">;
   readonly cancelRun?: (
     input: Pick<CancelCoordinatedRunInput, "runId" | "command">,
   ) => Promise<void>;
@@ -316,6 +317,7 @@ export interface ProductionHttpCompositionOptions {
     readonly search?: {
       readonly provider: ProductionSearchOptions["provider"];
       readonly episodes?: ProductionSearchOptions["episodes"];
+      readonly embedOutsideRun: ProductionMemorySearchOptions["embedOutsideRun"];
     };
     readonly service: Pick<
       DurableMemoryService,
@@ -346,6 +348,7 @@ export interface ProductionHttpCompositionOptions {
     readonly applePush?: ProductionApplePush;
   };
   readonly proactive?: ProductionProactive;
+  readonly appConnections?: ProductionAppConnections;
   readonly inbox?: {
     readonly delivery?: InboxDelivery;
     readonly mainThread?: {
@@ -361,10 +364,7 @@ export interface ProductionHttpCompositionOptions {
   };
   readonly threadDeletionDiagnostic?: (event: Record<string, string>) => void;
   readonly queryPrefetch?: ProductionQueryPrefetch;
-  readonly museIntake?: ProductionMuseIntake;
-  readonly gapExport?: ProductionGapExport;
   readonly mcpRead?: ProductionMcpRead;
-  readonly museControl?: ProductionMuseControl;
   readonly observation?: ProductionObservation;
   readonly configuration: ProductConfiguration;
   readonly repository: SqliteProductStateRepository;
@@ -601,26 +601,6 @@ export class ProductionThreadGatewayAccessPolicy implements ThreadGatewayAccessP
   }
 }
 
-export async function resolveDevicePairingAccess(
-  secretReferences: readonly {
-    readonly ref: string;
-    readonly version: string;
-    readonly purpose: string;
-  }[],
-  resolve: (ref: string, version: string) => Promise<string>,
-): Promise<DevicePairingAccess | undefined> {
-  const [clientIdReference, clientSecretReference] = DEVICE_ACCESS_SECRET_PURPOSES.map((purpose) =>
-    secretReferences.find((entry) => entry.purpose === purpose),
-  );
-  if (!clientIdReference || !clientSecretReference) return undefined;
-  const clientId = await resolve(clientIdReference.ref, clientIdReference.version);
-  const clientSecret = await resolve(clientSecretReference.ref, clientSecretReference.version);
-  for (const value of [clientId, clientSecret])
-    if (!isDeviceAccessText(value))
-      compositionError(PRODUCTION_HTTP_COMPOSITION_ERROR_CODES.SECRET_MATERIAL_INVALID);
-  return { clientId, clientSecret };
-}
-
 export class ProductionHttpPayloadAdmission implements HttpGatewayPayloadAdmissionPort {
   readonly #ownerId: OwnerId;
   readonly #agentId: AgentId;
@@ -737,6 +717,54 @@ function authorityForConfiguration(
   return authority;
 }
 
+function deviceConnections(
+  proactive: ProductionProactive | undefined,
+  apps: ProductionAppConnections | undefined,
+): DeviceConnectionsPort {
+  return {
+    list: async () => [
+      ...(proactive ? [await proactive.connection()] : []),
+      ...(apps ? await apps.list() : []),
+    ],
+    begin: async ({ connection, ...input }) =>
+      proactive && connection === GMAIL_SOURCE.name
+        ? proactive.beginAppAuthorization(input)
+        : apps?.begin({ ...input, connection }),
+    complete: (input) =>
+      apps?.owns(input.state)
+        ? apps.complete(input)
+        : proactive
+          ? proactive.completeAppAuthorization(input)
+          : Promise.resolve("failed"),
+    disconnect: async ({ connection }) =>
+      apps?.definition(connection) ? apps.disconnect(connection) : undefined,
+  };
+}
+
+export function registerAppConnectionRoutes(
+  app: FastifyInstance,
+  connections: ProductionAppConnections,
+): void {
+  app.get(APP_CONNECTIONS_CALLBACK_PATH, async (request, reply) => {
+    const query = request.query as Record<string, unknown>;
+    const text = (key: string) =>
+      typeof query[key] === "string" && (query[key] as string).length <= 2048
+        ? (query[key] as string)
+        : null;
+    const back = connections.callback({
+      state: text("state"),
+      code: text("code"),
+      error: text("error"),
+      iss: text("iss"),
+    });
+    if (back === undefined) return reply.code(400).header("cache-control", "no-store").send();
+    return reply
+      .header("cache-control", "no-store")
+      .header("referrer-policy", "no-referrer")
+      .redirect(back, 303);
+  });
+}
+
 export function registerProactiveRoutes(
   app: FastifyInstance,
   proactive: ProductionProactive,
@@ -766,7 +794,7 @@ export function registerProactiveRoutes(
     return reply
       .header("cache-control", "no-store")
       .header("referrer-policy", "no-referrer")
-      .redirect(await proactive.authorizationRedirect(subject), 303);
+      .redirect(proactive.beginAuthorization(subject), 303);
   });
   app.get(PROACTIVE_GOOGLE_CALLBACK_PATH, async (request, reply) => {
     const query = request.query as Record<string, unknown>;
@@ -774,6 +802,16 @@ export function registerProactiveRoutes(
       typeof query[key] === "string" && (query[key] as string).length <= 2048
         ? (query[key] as string)
         : null;
+    const app = proactive.appCallback({
+      state: text("state"),
+      code: text("code"),
+      error: text("error"),
+    });
+    if (app !== undefined)
+      return reply
+        .header("cache-control", "no-store")
+        .header("referrer-policy", "no-referrer")
+        .redirect(app, 303);
     const subject = await owner(request);
     if (!subject) {
       if (query["return"] !== undefined) return settingsPage(reply, "failed");
@@ -821,7 +859,6 @@ function routeOptions(
   executionEnvironmentAvailable: boolean,
   memoryAvailable: boolean,
   proactiveAvailable: boolean,
-  museAvailable: boolean,
   observationAvailable: boolean,
   mcpConnectionsAvailable: boolean,
   searchAvailable: boolean,
@@ -859,7 +896,6 @@ function routeOptions(
         ...(memoryAvailable ? PRODUCTION_MEMORY_OPERATIONS : []),
         ...PRODUCTION_WEB_PUSH_OPERATIONS,
         ...(proactiveAvailable ? PRODUCTION_PROACTIVE_OPERATIONS : []),
-        ...(museAvailable ? PRODUCTION_MUSE_OPERATIONS : []),
         ...(observationAvailable ? PRODUCTION_OBSERVATION_OPERATIONS : []),
         ...PRODUCTION_OWNER_PREFERENCE_OPERATIONS,
         ...(memoryAvailable ? PRODUCTION_QUIET_HOURS_OPERATIONS : []),
@@ -870,6 +906,7 @@ function routeOptions(
         ...PRODUCTION_DEVICE_OPERATIONS,
         ...PRODUCTION_HOME_OPERATIONS,
         ...(searchAvailable ? PRODUCTION_SEARCH_OPERATIONS : []),
+        ...(searchAvailable ? PRODUCTION_MEMORY_SEARCH_OPERATIONS : []),
         ...PRODUCTION_DATA_EXPORT_OPERATIONS,
         ...PRODUCTION_FILES_OPERATIONS,
         ...PRODUCTION_LOGIN_DEVICE_OPERATIONS,
@@ -944,10 +981,6 @@ export async function createProductionHttpComposition(
       chatModel?.input.includes("image") ??
       false,
   });
-  const devicePairingAccess = await resolveDevicePairingAccess(
-    configuration.secretReferences,
-    (ref, version) => secretSources.provider.resolve(ref, version),
-  );
   const speech = createProductionSpeech(configuration, (ref, version) =>
     secretSources.provider.resolve(ref, version),
   );
@@ -963,6 +996,16 @@ export async function createProductionHttpComposition(
     payloads: repository.payloadStore(ownerId, agentId),
     protector: payloadProtector,
     now: clock,
+    ...(options.live
+      ? { firstTextEmittedAt: (runId: string) => options.live?.firstEmittedAt(runId) ?? null }
+      : {}),
+  });
+  const listVoiceTiming = deviceVoiceTimingLister({
+    ownerId,
+    agentId,
+    trace: repository.traceStore(),
+    payloads: repository.payloadStore(ownerId, agentId),
+    protector: payloadProtector,
   });
   const csrfKeyRef = configuredSecret(
     configuration,
@@ -1653,6 +1696,25 @@ export async function createProductionHttpComposition(
         clock: { now: clock },
       })
     : undefined;
+  const memorySearchControl = options.memory?.search
+    ? new ProductionMemorySearch({
+        ownerId,
+        agentId,
+        provider: options.memory.search.provider,
+        state: repository.productMemoryState(),
+        ...(ownerRuleWriter ? { rules: ownerRuleWriter } : {}),
+        readText: async (record) => {
+          const payload = await memoryPayloads.get(record.contentRef);
+          if (!payload || payload.contentType !== "text/plain") return undefined;
+          return new TextDecoder("utf-8", { fatal: true }).decode(
+            await payloadProtector.unprotect({ ownerId, agentId, payload }),
+          );
+        },
+        embedOutsideRun: options.memory.search.embedOutsideRun,
+        requestTimeoutMs: configuration.deadlines.providerRequestMs,
+        clock: { now: clock },
+      })
+    : undefined;
   const readPerceptionText = async (contentRef: string) => {
     const payload = await repository.payloadStore(ownerId, agentId).get(contentRef);
     if (!payload || payload.contentType !== "text/plain") return undefined;
@@ -1723,6 +1785,7 @@ export async function createProductionHttpComposition(
     access: threadAccess,
     homeControl: home,
     ...(searchControl ? { searchControl } : {}),
+    ...(memorySearchControl ? { memorySearchControl } : {}),
     recentAuthentication,
     clock: { now: clock },
     authority: options.authority,
@@ -1758,7 +1821,6 @@ export async function createProductionHttpComposition(
       clock: { now: clock },
     }),
     ...(options.proactive ? { proactiveControl: options.proactive } : {}),
-    ...(options.museControl ? { museControl: options.museControl } : {}),
     ...(options.observation ? { observationControl: options.observation } : {}),
     ...(ownerRuleWriter
       ? {
@@ -1784,7 +1846,6 @@ export async function createProductionHttpComposition(
       configuration,
       devices: pairedDevices,
       deviceConfiguration: () => deviceConfiguration,
-      ...(devicePairingAccess ? { pairingAccess: devicePairingAccess } : {}),
       clock: { now: clock },
     }),
     inboxControl: new ProductionInboxControl({
@@ -1883,7 +1944,6 @@ export async function createProductionHttpComposition(
       Boolean(options.executionEnvironment),
       Boolean(memoryControl),
       Boolean(options.proactive),
-      Boolean(options.museControl),
       Boolean(options.observation),
       Boolean(options.mcpRead),
       Boolean(searchControl),
@@ -1899,10 +1959,24 @@ export async function createProductionHttpComposition(
       configuration: () => deviceConfiguration,
       chatAttachments: () => chatAttachments,
       recordVoiceTiming: (input) => recordVoiceTiming(input),
+      listVoiceTiming: (limit) => listVoiceTiming(limit),
       audit: repository.auditLedger(),
       push: devicePush,
       ...(options.onDeviceAuditFailed ? { onAuditFailed: options.onDeviceAuditFailed } : {}),
-      ...(devicePairingAccess ? { pairingAccess: devicePairingAccess } : {}),
+      signIn: new DeviceSignInService({
+        scope: { ownerId, agentId },
+        store: repository.pairedDevices(),
+        publicOrigin: new URL(configuration.publicOrigin),
+        setupCodes: new FileSetupCodeSource(configuration.stateRoot),
+        now,
+        onSignedIn: (device) => {
+          void applePush?.announceSignedIn(device);
+        },
+      }),
+      appleAppIds: () => {
+        const apple = configuration.runPolicy?.applePush;
+        return apple ? apple.topics.map((topic) => `${apple.teamId}.${topic}`) : [];
+      },
       exportArchive: deviceExportArchive({ ownerId, jobs: dataExportJobs }),
       perception,
       ...(options.deviceNotifications
@@ -1934,6 +2008,14 @@ export async function createProductionHttpComposition(
               scope.ownerId === ownerId && scope.agentId === agentId ? options.vault : undefined,
           }
         : {}),
+      ...(options.proactive || options.appConnections
+        ? {
+            connections: (scope: PairedDeviceScope) =>
+              scope.ownerId === ownerId && scope.agentId === agentId
+                ? deviceConnections(options.proactive, options.appConnections)
+                : undefined,
+          }
+        : {}),
       voiceGates: () => DEFAULT_VOICE_GATES,
       ...(speech ? { speech } : {}),
       ...(options.queryPrefetch
@@ -1948,6 +2030,7 @@ export async function createProductionHttpComposition(
       method: identityConfiguration.kind === "built-in" ? "built-in" : "cloudflare-access",
     }),
   );
+  if (options.appConnections) registerAppConnectionRoutes(app, options.appConnections);
   if (options.proactive)
     registerProactiveRoutes(app, options.proactive, {
       authentication,
@@ -1969,8 +2052,6 @@ export async function createProductionHttpComposition(
     protector: payloadProtector,
     now: clock,
   });
-  if (options.museIntake) registerMuseIntakeRoute(app, options.museIntake);
-  if (options.gapExport) registerGapExportRoute(app, options.gapExport);
   if (options.mcpRead) {
     registerMcpReadRoute(app, options.mcpRead);
     registerMcpConnectionAddressRoute(app, {

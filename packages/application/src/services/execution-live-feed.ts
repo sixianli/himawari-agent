@@ -28,6 +28,8 @@ export class ExecutionLiveFeed {
     { readonly threadId: string; readonly itemId: string; readonly shown: string }
   >();
 
+  readonly #firstEmittedAt = new Map<string, string>();
+
   constructor(now: () => string = () => new Date().toISOString()) {
     this.#now = now;
   }
@@ -58,6 +60,14 @@ export class ExecutionLiveFeed {
       const oldest = this.#texts.keys().next().value;
       if (oldest !== undefined) this.#texts.delete(oldest);
     }
+    const emittedAt = this.#now();
+    if (!this.#firstEmittedAt.has(input.runId)) {
+      this.#firstEmittedAt.set(input.runId, emittedAt);
+      if (this.#firstEmittedAt.size > RETAINED_RUNS) {
+        const oldest = this.#firstEmittedAt.keys().next().value;
+        if (oldest !== undefined) this.#firstEmittedAt.delete(oldest);
+      }
+    }
     this.#emit({
       kind: "text",
       threadId: input.threadId,
@@ -65,8 +75,12 @@ export class ExecutionLiveFeed {
       itemId,
       offset,
       text: shown.slice(offset),
-      emittedAt: this.#now(),
+      emittedAt,
     });
+  }
+
+  firstEmittedAt(runId: string): string | null {
+    return this.#firstEmittedAt.get(runId) ?? null;
   }
 
   changed(runId: string): void {

@@ -2,8 +2,8 @@ import {
   array,
   booleanValue,
   boundedString,
-  codePointString,
   ContractValidationError,
+  codePointString,
   enumeration,
   gmailMessageId,
   type InferSchema,
@@ -53,15 +53,9 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "proactive.sources.snapshot",
   "proactive.source.settings.set",
   "proactive.source.switch_off",
-  "muse.overview.read",
-  "muse.overview.snapshot",
-  "muse.item.rate",
-  "muse.intake.set",
-  "muse.data.clear",
   "proactive.weekly.read",
   "proactive.weekly.snapshot",
   "proactive.observation.start",
-  "proactive.gapcase.mark",
   "owner.preferences.read",
   "owner.preferences.snapshot",
   "owner.preferences.set",
@@ -90,6 +84,8 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "memory.reminder.create",
   "memory.rules.read",
   "memory.rules.snapshot",
+  "memory.search.read",
+  "memory.search.snapshot",
   "memory.rule.respond",
   "memory.review.read",
   "memory.review.snapshot",
@@ -155,8 +151,6 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "improvement.snapshot",
   "device.list.read",
   "device.list.snapshot",
-  "device.pairing.start",
-  "device.pairing.confirm",
   "device.rename",
   "device.revoke",
   "perception.status.read",
@@ -640,23 +634,6 @@ const deviceIdSchema: Schema<string> = {
     return input;
   },
 };
-const devicePairingCodeSchema: Schema<string> = {
-  parse(input, path = "$") {
-    if (typeof input !== "string" || !/^[A-Za-z0-9_-]{21}[AQgw]$/u.test(input))
-      throw new ContractValidationError(
-        path,
-        "expected the canonical unpadded base64url encoding of 16 bytes",
-      );
-    return input;
-  },
-};
-const devicePairingNumberSchema: Schema<string> = {
-  parse(input, path = "$") {
-    if (typeof input !== "string" || !/^[0-9]{6}$/u.test(input))
-      throw new ContractValidationError(path, "expected a 6 digit pairing number");
-    return input;
-  },
-};
 function isHiddenNameCharacter(code: number): boolean {
   return (
     code < 0x20 ||
@@ -695,19 +672,6 @@ export function normalizeDeviceName(input: unknown): string | null {
     return null;
   }
 }
-const accessText = boundedString(256);
-export function isDeviceAccessText(input: unknown): boolean {
-  try {
-    accessText.parse(input);
-    return true;
-  } catch {
-    return false;
-  }
-}
-const deviceAccessSchema = object({
-  clientId: accessText,
-  clientSecret: accessText,
-});
 const deviceListQuerySchema = object({
   ...envelope("query", "device.list.read"),
   payload: object({}),
@@ -725,7 +689,6 @@ const deviceListSnapshotSchema = object({
         status: enumeration(DEVICE_STATUSES),
         pairedAt: timestamp,
         lastSeenAt: nullable(timestamp),
-        pairingNumber: nullable(devicePairingNumberSchema),
       }),
     ),
     limits: array(
@@ -735,27 +698,13 @@ const deviceListSnapshotSchema = object({
         value: integer(0),
       }),
     ),
-    pairing: nullable(
-      object({
-        expiresAt: timestamp,
-        access: nullable(deviceAccessSchema),
-      }),
-    ),
     generatedAt: timestamp,
   }),
-});
-const devicePairingStartCommandSchema = object({
-  ...commandEnvelope("device.pairing.start"),
-  payload: object({ pairingCode: devicePairingCodeSchema }),
 });
 const deviceRevisionTargetShape = {
   deviceId: deviceIdSchema,
   expectedRevision: integer(0),
 };
-const devicePairingConfirmCommandSchema = object({
-  ...commandEnvelope("device.pairing.confirm"),
-  payload: object(deviceRevisionTargetShape),
-});
 const deviceRevokeCommandSchema = object({
   ...commandEnvelope("device.revoke"),
   payload: object(deviceRevisionTargetShape),
@@ -1683,55 +1632,6 @@ const proactiveSourceSwitchOffCommandSchema = object({
   ...commandEnvelope("proactive.source.switch_off"),
   payload: object({ source: proactiveSourceName }),
 });
-const museOverviewQuerySchema = object({
-  ...envelope("query", "muse.overview.read"),
-  payload: object({}),
-});
-const museItemKindSchema = enumeration(["proactive", "scheduled"]);
-const museOverviewSnapshotSchema = object({
-  ...envelope("snapshot", "muse.overview.snapshot"),
-  payload: object({
-    channel: object({
-      state: enumeration(["never", "ok", "stale", "down", "paused"]),
-      lastBatchAt: nullable(timestamp),
-      gapCount: integer(0),
-    }),
-    receivedWeek: integer(0),
-    suppressedWeek: integer(0),
-    pending: integer(0),
-    delay: nullable(object({ medianMinutes: integer(0), samples: integer(10) })),
-    items: array(
-      object({
-        kind: museItemKindSchema,
-        naturalKey: machineString,
-        occurredAt: timestamp,
-        title: nullable(proactiveTextSchema(300)),
-        text: nullable(proactiveTextSchema(500)),
-        withheld: booleanValue,
-        timingOk: nullable(booleanValue),
-        contentOk: nullable(booleanValue),
-      }),
-    ),
-    generatedAt: timestamp,
-  }),
-});
-const museItemRateCommandSchema = object({
-  ...commandEnvelope("muse.item.rate"),
-  payload: object({
-    kind: museItemKindSchema,
-    naturalKey: machineString,
-    timingOk: nullable(booleanValue),
-    contentOk: nullable(booleanValue),
-  }),
-});
-const museIntakeSetCommandSchema = object({
-  ...commandEnvelope("muse.intake.set"),
-  payload: object({ paused: booleanValue }),
-});
-const museDataClearCommandSchema = object({
-  ...commandEnvelope("muse.data.clear"),
-  payload: object({}),
-});
 
 const sensitiveInterceptionCursorSchema = object({
   firstSeenAt: timestamp,
@@ -1919,69 +1819,6 @@ const proactiveWeeklySnapshotSchema = object({
           }),
         }),
       ),
-      muse: object({
-        entries: integer(0),
-        reminded: integer(0),
-        silent: integer(0),
-        unpaired: integer(0),
-        pairedMails: integer(0),
-        timing: calibrationRateSchema,
-        content: calibrationRateSchema,
-        pairing: calibrationRateSchema,
-        buckets: object({
-          both: integer(0),
-          museOnly: integer(0),
-          himawariOnly: integer(0),
-          bothSilent: integer(0),
-          noHimawariRecord: integer(0),
-        }),
-      }),
-      gapCases: array(
-        object({
-          id: machineString,
-          messageId: nullable(gmailMessageId),
-          museAt: timestamp,
-          museTitle: nullable(proactiveTextSchema(300)),
-          museText: nullable(proactiveTextSchema(500)),
-          museTextWithheld: booleanValue,
-          himawariOutcome: machineString,
-          himawariReasonCode: machineString,
-          himawariReason: nullable(proactiveTextSchema(500)),
-          ownerRating: nullable(enumeration(["useful", "unneeded", "missed"])),
-          attribution: enumeration([
-            "notRemembered",
-            "notRetrieved",
-            "wrongJudgment",
-            "notReadFully",
-          ]),
-          memoryHits: integer(0),
-          relatedMessages: integer(0),
-          decidedAt: timestamp,
-          marked: booleanValue,
-        }),
-      ),
-      gap: nullable(
-        object({
-          pairedMails: integer(0),
-          ratedMails: integer(0),
-          unratedMails: integer(0),
-          lines: array(
-            object({
-              line: enumeration(["hitRate", "disturbanceRate"]),
-              mails: integer(0),
-              museReminded: integer(0),
-              himawariReminded: integer(0),
-              muse: calibrationRateSchema,
-              himawari: calibrationRateSchema,
-              difference: nullable(numberInRange(-1, 1)),
-              low: nullable(numberInRange(-1, 1)),
-              high: nullable(numberInRange(-1, 1)),
-              verdict: enumeration(["insufficient", "inconclusive", "decided"]),
-              direction: enumeration(["museHigher", "himawariHigher", "none"]),
-            }),
-          ),
-        }),
-      ),
       implicit: object({
         pushedDecisions: integer(0),
         otherDecisionEvents: integer(0),
@@ -2062,14 +1899,6 @@ const proactiveWeeklySnapshotSchema = object({
       ),
     }),
     generatedAt: timestamp,
-  }),
-});
-const proactiveGapCaseMarkCommandSchema = object({
-  ...commandEnvelope("proactive.gapcase.mark"),
-  payload: object({
-    caseId: machineString,
-    endDay: jstDaySchema,
-    marked: booleanValue,
   }),
 });
 const proactiveObservationStartCommandSchema = object({
@@ -2379,31 +2208,6 @@ const decisionEmailSnapshotSchema = object({
         relatedMessages: nullable(integer(0)),
       }),
     ),
-    muse: object({
-      entries: array(
-        object({
-          entryId: boundedString(128),
-          museAt: timestamp,
-          reminded: booleanValue,
-          kind: nullable(enumeration(["proactive", "scheduled"])),
-          state: nullable(enumeration(["delivered", "suppressed", "succeeded", "failed"])),
-          title: nullable(proactiveTextSchema(300)),
-          text: nullable(proactiveTextSchema(500)),
-          textWithheld: booleanValue,
-          timingOk: nullable(booleanValue),
-          contentOk: nullable(booleanValue),
-        }),
-      ),
-      truncated: booleanValue,
-    }),
-    comparison: enumeration([
-      "both",
-      "museOnly",
-      "himawariOnly",
-      "bothSilent",
-      "noMuseEntry",
-      "noHimawariRecord",
-    ]),
   }),
 });
 const memoryOverviewSnapshotSchema = object({
@@ -2657,6 +2461,29 @@ export const BUILT_IN_ACTION_RULE_OUTCOMES = [
   "ask_owner",
   "refuse",
 ] as const;
+export const MEMORY_SEARCH_RESULT_KINDS = ["memory", "rule"] as const;
+const memorySearchQuerySchema = object({
+  ...envelope("query", "memory.search.read"),
+  payload: object({ query: boundedString(500) }),
+});
+const memorySearchSnapshotSchema = object({
+  ...envelope("snapshot", "memory.search.snapshot"),
+  payload: object({
+    query: boundedString(500),
+    results: array(
+      object({
+        kind: enumeration(MEMORY_SEARCH_RESULT_KINDS),
+        memoryId: machineString,
+        ruleId: nullable(machineString),
+        text: boundedString(2000),
+        category: enumeration(MEMORY_CATEGORY_NAMES),
+        tentative: booleanValue,
+        updatedAt: timestamp,
+      }),
+    ),
+    generatedAt: timestamp,
+  }),
+});
 const memoryRulesQuerySchema = object({
   ...envelope("query", "memory.rules.read"),
   payload: object({}),
@@ -3835,15 +3662,9 @@ const schemasByType = {
   "proactive.sources.snapshot": proactiveSourcesSnapshotSchema,
   "proactive.source.settings.set": proactiveSourceSettingsSetCommandSchema,
   "proactive.source.switch_off": proactiveSourceSwitchOffCommandSchema,
-  "muse.overview.read": museOverviewQuerySchema,
-  "muse.overview.snapshot": museOverviewSnapshotSchema,
-  "muse.item.rate": museItemRateCommandSchema,
-  "muse.intake.set": museIntakeSetCommandSchema,
-  "muse.data.clear": museDataClearCommandSchema,
   "proactive.weekly.read": proactiveWeeklyQuerySchema,
   "proactive.weekly.snapshot": proactiveWeeklySnapshotSchema,
   "proactive.observation.start": proactiveObservationStartCommandSchema,
-  "proactive.gapcase.mark": proactiveGapCaseMarkCommandSchema,
   "owner.preferences.read": ownerPreferencesQuerySchema,
   "owner.preferences.snapshot": ownerPreferencesSnapshotSchema,
   "owner.preferences.set": ownerPreferencesSetCommandSchema,
@@ -3852,8 +3673,6 @@ const schemasByType = {
   "quiet_hours.set": quietHoursSetCommandSchema,
   "device.list.read": deviceListQuerySchema,
   "device.list.snapshot": deviceListSnapshotSchema,
-  "device.pairing.start": devicePairingStartCommandSchema,
-  "device.pairing.confirm": devicePairingConfirmCommandSchema,
   "device.rename": deviceRenameCommandSchema,
   "device.revoke": deviceRevokeCommandSchema,
   "perception.status.read": perceptionStatusQuerySchema,
@@ -3918,6 +3737,8 @@ const schemasByType = {
   "memory.reminder.create": memoryReminderCreateCommandSchema,
   "memory.rules.read": memoryRulesQuerySchema,
   "memory.rules.snapshot": memoryRulesSnapshotSchema,
+  "memory.search.read": memorySearchQuerySchema,
+  "memory.search.snapshot": memorySearchSnapshotSchema,
   "memory.rule.respond": memoryRuleRespondCommandSchema,
   "memory.review.read": memoryReviewQuerySchema,
   "memory.review.snapshot": memoryReviewSnapshotSchema,

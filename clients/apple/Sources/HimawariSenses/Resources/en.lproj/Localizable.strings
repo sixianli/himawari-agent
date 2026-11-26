@@ -2,7 +2,7 @@
 "senses.thisDevice" = "This iPhone";
 "senses.handedOver" = "Things you hand over";
 "senses.footnote" = "Each one can be turned off on its own. Once off, nothing new is recorded; what was already recorded stays in Sensed, where you can delete it.";
-"senses.back" = "Back";
+"senses.close" = "Close";
 
 "state.on" = "On";
 "state.off" = "Off";

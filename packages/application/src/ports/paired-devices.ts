@@ -14,8 +14,6 @@ export type PairedDeviceReleaseChannel = (typeof PAIRED_DEVICE_RELEASE_CHANNELS)
 export const PAIRED_DEVICE_STATUSES = ["pending", "active", "revoked"] as const;
 export type PairedDeviceStatus = (typeof PAIRED_DEVICE_STATUSES)[number];
 
-export const PAIRING_CODE_LIFETIME_MILLISECONDS = 10 * 60 * 1000;
-
 export interface PairedDeviceScope {
   readonly ownerId: OwnerId;
   readonly agentId: AgentId;
@@ -39,51 +37,65 @@ export interface PairedDevice extends PairedDeviceScope {
   readonly lastSeenAt: string | null;
 }
 
-export type PairingRedeemResult =
-  | { readonly kind: "paired"; readonly device: PairedDevice }
-  | { readonly kind: "replayed"; readonly device: PairedDevice }
-  | { readonly kind: "code_invalid" }
-  | { readonly kind: "code_expired" }
-  | { readonly kind: "code_used" };
+export interface OwnerPasskey extends PairedDeviceScope {
+  readonly credentialId: string;
+  readonly publicKey: string;
+  readonly signCount: number;
+  readonly transports: readonly string[];
+  readonly backedUp: boolean;
+  readonly createdAt: string;
+  readonly lastUsedAt: string | null;
+}
+
+export interface SignedInDeviceInput {
+  readonly id: string;
+  readonly kind: PairedDeviceKind;
+  readonly name: string;
+  readonly releaseChannel: PairedDeviceReleaseChannel;
+  readonly devicePublicKey: string;
+  readonly confirmPublicKey: string;
+  readonly webDeviceId: string;
+  readonly webSessionId: string;
+  readonly webAuthenticationRef: string;
+}
+
+export type SignInPasskeyInput =
+  | {
+      readonly kind: "created";
+      readonly setupCodeHash: string;
+      readonly credentialId: string;
+      readonly publicKey: string;
+      readonly signCount: number;
+      readonly transports: readonly string[];
+      readonly backedUp: boolean;
+    }
+  | {
+      readonly kind: "used";
+      readonly credentialId: string;
+      readonly signCount: number;
+      readonly backedUp: boolean;
+    };
+
+export type SignInDeviceResult =
+  | { readonly kind: "signed_in"; readonly device: PairedDevice }
+  | { readonly kind: "setup_code_used" }
+  | { readonly kind: "passkey_unknown" }
+  | { readonly kind: "passkey_exists" };
 
 export type NonceRecordResult = "accepted" | "replayed" | "full";
 
 export interface PairedDeviceStorePort {
-  createPairingCode(
+  listPasskeys(input: PairedDeviceScope): Promise<readonly OwnerPasskey[]>;
+  readPasskey(credentialId: string): Promise<OwnerPasskey | undefined>;
+  signInDevice(
     input: PairedDeviceScope & {
-      readonly codeHash: string;
-      readonly sessionId: string;
       readonly now: string;
-      readonly expiresAt: string;
+      readonly passkey: SignInPasskeyInput;
+      readonly device: SignedInDeviceInput;
     },
-  ): Promise<{ readonly expiresAt: string }>;
-  redeemPairingCode(input: {
-    readonly codeHash: string;
-    readonly now: string;
-    readonly device: {
-      readonly id: string;
-      readonly kind: PairedDeviceKind;
-      readonly name: string;
-      readonly releaseChannel: PairedDeviceReleaseChannel;
-      readonly devicePublicKey: string;
-      readonly confirmPublicKey: string;
-    };
-  }): Promise<PairingRedeemResult>;
+  ): Promise<SignInDeviceResult>;
   readDevice(deviceId: string): Promise<PairedDevice | undefined>;
   listDevices(input: PairedDeviceScope): Promise<readonly PairedDevice[]>;
-  readOpenPairingCode(
-    input: PairedDeviceScope & { readonly now: string },
-  ): Promise<{ readonly expiresAt: string } | undefined>;
-  confirmDevice(
-    input: PairedDeviceScope & {
-      readonly deviceId: string;
-      readonly expectedRevision: number;
-      readonly now: string;
-      readonly webDeviceId: string;
-      readonly webSessionId: string;
-      readonly webAuthenticationRef: string;
-    },
-  ): Promise<PairedDevice>;
   renameDevice(
     input: PairedDeviceScope & {
       readonly deviceId: string;

@@ -1,0 +1,13 @@
+{
+  "accountId": "341855223c647728540929c55d92ccc8",
+  "hostname": "himawari.siyi.win",
+  "applicationName": "Himawari app entry (bypass)",
+  "policyName": "Himawari app entry: everyone",
+  "paths": [
+    "/.well-known/apple-app-site-association",
+    "/api/connections/v1/callback",
+    "/api/device/v1",
+    "/api/proactive/v1/google/callback"
+  ],
+  "retireApplications": []
+}

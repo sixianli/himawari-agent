@@ -1,4 +1,5 @@
 import type {
+  AppConnectionStorePort,
   ApplePushStorePort,
   AttentionStatePort,
   AuditLedgerPort,
@@ -16,7 +17,6 @@ import type {
   DeviceActionStorePort,
   ExecutionEnvironmentStorePort,
   ExternalMemoryProposalStorePort,
-  GapCaseMarkPort,
   GatewayReadModelPort,
   GitHubIntegrationStatePort,
   GovernanceMutationReceiptStorePort,
@@ -37,7 +37,6 @@ import type {
   ModelBudgetPort,
   ModelInvocationIdentityPort,
   ModelUsageStorePort,
-  MuseIntakePort,
   OwnerIdentityStatePort,
   OwnerPreferencesStorePort,
   OwnerRuleStorePort,
@@ -313,6 +312,7 @@ export class SqliteDurableAdapters {
         this.context.read("trace.readRun", { runId, afterSequence, limit }),
       readSession: (sessionId, afterRecordedAt, limit) =>
         this.context.read("trace.readSession", { sessionId, afterRecordedAt, limit }),
+      readRecentByType: (input) => this.context.read("trace.readRecentByType", input),
     });
   }
 
@@ -1225,18 +1225,19 @@ export class SqliteDurableAdapters {
       processedSince: (input) => this.context.read("proactive.processedSince", input),
     });
   }
+  appConnections(): AppConnectionStorePort {
+    return Object.freeze<AppConnectionStorePort>({
+      read: (input) => this.context.read("appConnections.read", input),
+      list: (input) => this.context.read("appConnections.list", input),
+      save: (input) => this.context.write("appConnections.save", input),
+      mark: (input) => this.context.write("appConnections.mark", input),
+      remove: (input) => this.context.write("appConnections.remove", input),
+    });
+  }
   ownerPreferences(): OwnerPreferencesStorePort {
     return Object.freeze<OwnerPreferencesStorePort>({
       read: (input) => this.context.read("ownerPreferences.read", input),
       write: (input) => this.context.write("ownerPreferences.write", input),
-    });
-  }
-
-  gapCaseMarks(): GapCaseMarkPort {
-    return Object.freeze<GapCaseMarkPort>({
-      mark: (input) => this.context.write("decisionLedger.gapMark", input),
-      unmark: (input) => this.context.write("decisionLedger.gapUnmark", input),
-      list: (input) => this.context.read("decisionLedger.gapMarks", input),
     });
   }
 
@@ -1250,13 +1251,10 @@ export class SqliteDurableAdapters {
       rate: (input) => this.context.write("decisionLedger.rate", input),
       listReviewPool: (input) => this.context.read("decisionLedger.listReviewPool", input),
       rateMany: (input) => this.context.write("decisionLedger.rateMany", input),
-      recordMuse: (input) => this.context.write("decisionLedger.recordMuse", input),
-      listMuse: (input) => this.context.read("decisionLedger.listMuse", input),
       lastRuleUses: (input) => this.context.read("decisionLedger.lastRuleUses", input),
       listSignals: (input) => this.context.read("decisionLedger.listSignals", input),
       readCalibrationRows: (input) =>
         this.context.read("decisionLedger.readCalibrationRows", input),
-      readGapCandidates: (input) => this.context.read("decisionLedger.readGapCandidates", input),
       readMailTrace: (input) => this.context.read("decisionLedger.readMailTrace", input),
     });
   }
@@ -1273,18 +1271,6 @@ export class SqliteDurableAdapters {
       appendCheck: (input) => this.context.write("ledgerObservation.appendCheck", input),
       listChecks: (input) => this.context.read("ledgerObservation.listChecks", input),
       listEvents: (input) => this.context.read("ledgerObservation.listEvents", input),
-    });
-  }
-
-  museIntake(): MuseIntakePort {
-    return Object.freeze<MuseIntakePort>({
-      ingestBatch: (input) => this.context.write("museIntake.ingestBatch", input),
-      listItems: (input) => this.context.read("museIntake.listItems", input),
-      channelStatus: (input) => this.context.read("museIntake.channelStatus", input),
-      checkChannel: (input) => this.context.write("museIntake.checkChannel", input),
-      setPaused: (input) => this.context.write("museIntake.setPaused", input),
-      rate: (input) => this.context.write("museIntake.rate", input),
-      clearAll: (input) => this.context.write("museIntake.clearAll", input),
     });
   }
 
@@ -1325,12 +1311,11 @@ export class SqliteDurableAdapters {
 
   pairedDevices(): PairedDeviceStorePort {
     return Object.freeze<PairedDeviceStorePort>({
-      createPairingCode: (input) => this.context.write("pairedDevices.createPairingCode", input),
-      redeemPairingCode: (input) => this.context.write("pairedDevices.redeemPairingCode", input),
+      listPasskeys: (input) => this.context.read("pairedDevices.listPasskeys", input),
+      readPasskey: (credentialId) => this.context.read("pairedDevices.readPasskey", credentialId),
+      signInDevice: (input) => this.context.write("pairedDevices.signInDevice", input),
       readDevice: (deviceId) => this.context.read("pairedDevices.readDevice", deviceId),
       listDevices: (input) => this.context.read("pairedDevices.listDevices", input),
-      readOpenPairingCode: (input) => this.context.read("pairedDevices.readOpenPairingCode", input),
-      confirmDevice: (input) => this.context.write("pairedDevices.confirmDevice", input),
       renameDevice: (input) => this.context.write("pairedDevices.renameDevice", input),
       revokeDevice: (input) => this.context.write("pairedDevices.revokeDevice", input),
       recordNonce: (input) => this.context.write("pairedDevices.recordNonce", input),

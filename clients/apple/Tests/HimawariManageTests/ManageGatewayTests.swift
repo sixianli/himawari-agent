@@ -59,11 +59,11 @@ final class ManageGatewayTests: XCTestCase {
         let recording = transport()
         for _ in 0..<2 {
             _ = try await gateway(recording).command(
-                .v2, "muse.intake.set", payload: ["paused": true], options: ManageCommandOptions(confirmReason: "暂停", idempotencyKey: "device-option-abc")
+                .v2, "memory.settings.set", payload: ["capturePaused": true], options: ManageCommandOptions(confirmReason: "暂停", idempotencyKey: "device-option-abc")
             )
         }
         _ = try await gateway(recording).command(
-            .v2, "muse.intake.set", payload: ["paused": true], options: ManageCommandOptions(confirmReason: "暂停")
+            .v2, "memory.settings.set", payload: ["capturePaused": true], options: ManageCommandOptions(confirmReason: "暂停")
         )
         let calls = await recording.calls
         XCTAssertEqual(calls.map { $0.body["idempotencyKey"] }, [.string("device-option-abc"), .string("device-option-abc"), .string("device-0123456789abcdef0123")])
@@ -72,7 +72,7 @@ final class ManageGatewayTests: XCTestCase {
     func testPausingSkipsFaceIDButResumingAsksForIt() async throws {
         let pause = transport()
         _ = try await gateway(pause).command(
-            .v2, "muse.intake.set", payload: ["paused": true], options: ManageCommandOptions(confirmReason: "恢复")
+            .v2, "memory.settings.set", payload: ["capturePaused": true], options: ManageCommandOptions(confirmReason: "恢复")
         )
         let pauseCalls = await pause.calls
         XCTAssertEqual(pauseCalls.map(\.path), [ManageGateway.gatewayPath])
@@ -80,7 +80,7 @@ final class ManageGatewayTests: XCTestCase {
 
         let resume = transport()
         _ = try await gateway(resume).command(
-            .v2, "muse.intake.set", payload: ["paused": false], options: ManageCommandOptions(confirmReason: "恢复")
+            .v2, "memory.settings.set", payload: ["capturePaused": false], options: ManageCommandOptions(confirmReason: "恢复")
         )
         let resumeCalls = await resume.calls
         XCTAssertEqual(resumeCalls.map(\.path), [ManageGateway.challengePath, ManageGateway.gatewayPath])
@@ -202,7 +202,7 @@ final class ManageGatewayTests: XCTestCase {
         for type in ["device.list.read", "server.status.read", "login.devices.read", "files.list.read", "data.export.status.read"] {
             XCTAssertEqual(ClientCapabilities.find(.v2, type)?.tier, .read, type)
         }
-        for type in ["device.pairing.start", "device.pairing.confirm", "device.rename", "device.revoke", "login.device.revoke", "login.devices.revoke_others", "data.export.start"] {
+        for type in ["device.rename", "device.revoke", "login.device.revoke", "login.devices.revoke_others", "data.export.start"] {
             XCTAssertEqual(ClientCapabilities.find(.v2, type)?.tier, .change, type)
         }
         XCTAssertEqual(ClientCapabilities.find(.v2, "data.export.cancel")?.tier, .routine)
