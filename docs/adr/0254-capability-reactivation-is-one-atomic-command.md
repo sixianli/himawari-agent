@@ -7,7 +7,7 @@ superseded_by: ""
 amends: ""
 date: "2026-11-12"
 covers: "apps/agent-service/src/production-sandbox-services.ts, apps/execution-worker/src/production-worker-composition.ts, apps/execution-worker/src/service-main.ts, apps/execution-worker/test/service-main.unit.test.ts, ci/operations-pending.json, packages/application/src/services/capability-lifecycle-service.ts, packages/application/src/services/recent-authentication-service.ts, packages/execution-contracts/src/sandbox-qualification-v1.ts, packages/gateway-contracts/src/client-capabilities.ts, packages/persistence-sqlite/src/sqlite-durable-operations.ts, packages/platform-node/src/capabilities/capability-deployment.ts, packages/platform-node/src/state-root-layout.ts"
-verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
+verified_at: "7c8521fe5f55e7dd57c5bd52badd16eef647502e"
 ---
 
 # ADR 0254：能力重新启用是一条原子命令，核对封存快照和执行进程通过检查后的公布
@@ -68,7 +68,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 6. 审计：复用现有治理命令的审计追加，动作名是命令类型。
 7. 同一条命令重放：记录已是在用且修订号等于期望加 1 时，直接返回同一结果，不再核对、不重复写。
 8. 生产网关只在核验入口已装配时才把 `capability.reactivate` 列进已安装清单。配置里没有部署快照时不装配核验入口，命令不进已安装清单。
-9. 调用方是 iPhone 端，网页控制中心不加重新启用的按钮（Andy 2026-11-12 定：有 App 版就不再做网页版）；这个命令在 `ci/operations-pending.json` 里登记为暂时没有网页调用方。手机端界面和回执的说法是“核对安装包和上线时的检查结果”，不写“已重新检查运行环境”。
+9. 调用方是 iPhone 端，网页控制中心不加重新启用的按钮（Andy 2026-11-12 定：有 App 版就不再做网页版）；2026-11-24 iPhone 只留一个主对话后，原来要放按钮的“它会的本事”页已删，现在 iPhone 和网页都没有调用方，`ci/operations-pending.json` 里登记为“缺：调用方”，后端和测试保留。手机端界面和回执的说法是“核对安装包和上线时的检查结果”，不写“已重新检查运行环境”。
 10. 最近认证在写幂等收据之前先验一次（和停用、退回相同）：认证没过的请求不留收据，不占用那个幂等键。
 
 [↑ 返回阅读导航](#contents)
@@ -130,7 +130,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 - 不改表，不改迁移号，不改发给模型的内容。
 - 契约新增一个命令类型；运行目录多一份文件。
-- 手机能力表（`packages/gateway-contracts/src/client-capabilities.ts`）已登记 `capability.reactivate`，归“改”类（要面容），Swift 端生成文件同步；手机上的按钮和文案由 iOS 第 11 批线程做。
+- 手机能力表（`packages/gateway-contracts/src/client-capabilities.ts`）已登记 `capability.reactivate`，归“改”类（要面容），Swift 端生成文件同步；手机上还没有按钮（见上面第 9 条）。
 - 重新启用只恢复能力本身，句柄和定时任务不回来。
 
 [↑ 返回阅读导航](#contents)

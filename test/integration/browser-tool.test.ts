@@ -216,6 +216,9 @@ beforeAll(async () => {
     responseReserveMs: RESERVE_MS,
     acceptsImages: (modelRef) => modelRef === "model-with-images",
     now: () => Date.now(),
+    readLocale: async () =>
+      (await resource.repository.ownerPreferences().read({ ownerId: OWNER_ID, agentId: AGENT_ID }))
+        .locale,
   });
 }, CALL_MS);
 
@@ -359,6 +362,49 @@ describe("browser tool in the owner's own computer", () => {
         use(call("call:denied", { action: "open", url: "https://example.org/" })),
       ).rejects.toBeInstanceOf(Stopped);
       expect(computer.calls.length).toBe(before);
+    },
+    CALL_MS,
+  );
+
+  it(
+    "words the approval in the language the owner picked",
+    async () => {
+      const preferences = resource.repository.ownerPreferences();
+      const current = await preferences.read({ ownerId: OWNER_ID, agentId: AGENT_ID });
+      await preferences.write({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        name: current.name,
+        locale: "en",
+        accent: current.accent,
+        theme: current.theme,
+        modelRef: current.modelRef,
+        thinkingLevel: current.thinkingLevel,
+        expectedRevision: current.revision,
+        now: new Date().toISOString(),
+      });
+      try {
+        await expect(
+          use(call("call:english", { action: "open", url: "https://example.net/" })),
+        ).rejects.toBeInstanceOf(Stopped);
+        const approval = await pending();
+        expect(approval.display).toMatchObject({ displayTitle: "Use the browser on example.net" });
+        await respond(approval, "denied");
+      } finally {
+        const latest = await preferences.read({ ownerId: OWNER_ID, agentId: AGENT_ID });
+        await preferences.write({
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          name: latest.name,
+          locale: null,
+          accent: latest.accent,
+          theme: latest.theme,
+          modelRef: latest.modelRef,
+          thinkingLevel: latest.thinkingLevel,
+          expectedRevision: latest.revision,
+          now: new Date().toISOString(),
+        });
+      }
     },
     CALL_MS,
   );

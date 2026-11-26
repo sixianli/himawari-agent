@@ -13,6 +13,11 @@ import {
 } from "@himawari-agent/runtime-sandbox";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
+  BROWSER_CAPABILITY_REF,
+  BrowserToolError,
+  ProductionBrowserTools,
+} from "../../apps/agent-service/src/production-browser-tools.ts";
+import {
   type ComputerToolName,
   createProductionComputerTools,
   type ProductionComputerTools,
@@ -429,5 +434,114 @@ toolsDescribe("七个编码工具在主人自己的电脑里跑（真实镜像�
     );
     expect(text(shell)).not.toContain("改过的第一行");
     expect(text(shell)).toContain("readme.txt");
+  }, 300_000);
+});
+
+toolsDescribe("浏览器在主人自己的电脑里跑（真实镜像、gVisor 和出网代理）", () => {
+  const owner = `browser-${Math.random().toString(16).slice(2, 10)}`;
+  let root = "";
+  let manager: UserComputerManager;
+  let closeServer = async () => {};
+  let client: UserComputerClient;
+  let browser: ProductionBrowserTools;
+  const authorized: string[][] = [];
+
+  const use = (toolCallId: string, args: Record<string, unknown>, modelRef = "text-only") =>
+    browser.run(
+      {
+        runId: "run-browser-qualification",
+        toolCallId,
+        capabilityRef: BROWSER_CAPABILITY_REF,
+        capabilityHandleRef: null,
+        arguments: args,
+        dataClassification: "private",
+        executionDeadlineAt: new Date(Date.now() + 120_000).toISOString(),
+        context: { threadId: "thread-browser-qualification", modelRef },
+      } as never,
+      {
+        authorizeSites: async (sites) => {
+          authorized.push([...sites]);
+        },
+        markExternalContent: async () => {},
+      },
+    );
+
+  beforeAll(async () => {
+    root = await mkdtemp(path.join(tmpdir(), "himawari-computer-browser-"));
+    const socketPath = path.join(root, "computers.sock");
+    const configuration = parseUserComputerConfig({
+      schemaVersion: "user-computers.v1",
+      docker: { executable: dockerExecutable, host: null },
+      runtime,
+      image: { reference: null, digest: toolsImage },
+      stateDirectory: path.join(root, "state"),
+      socket: { path: socketPath, groupId: null },
+      disk: { mode: "loop", sizeBytes: 512 * 1024 * 1024 },
+      resources: { memoryBytes: 1024 * 1024 * 1024, cpus: 1, maxProcesses: 256 },
+      admission: { startBytes: 64 * 1024 * 1024, reserveBytes: 0, waitMs: 1000, pollMs: 250 },
+      idle: { stopAfterMs: 1, checkIntervalMs: 3_600_000, staleAfterMs: 30 * 86_400_000 },
+      commandTimeoutMs: 120_000,
+      stopGraceSeconds: 1,
+      beforeStop: { argv: ["himawari-browser", "stop"], timeoutSeconds: 20 },
+      hostPaths: { runtimeRoots: [RUNTIME_ROOT], seedRoots: [path.join(root, "seeds")] },
+    });
+    manager = new UserComputerManager(configuration);
+    const server = await serveUserComputers(manager, socketPath);
+    closeServer = () => new Promise((resolve) => server.close(() => resolve()));
+    client = new UserComputerClient(socketPath);
+    browser = new ProductionBrowserTools({
+      ownerId: owner,
+      computer: client,
+      maxOutputBytes: 8 * 1024 * 1024,
+      maxTextChars: 20_000,
+      responseReserveMs: 5_000,
+      acceptsImages: (modelRef) => modelRef === "sees-images",
+      now: () => Date.now(),
+    });
+  }, 120_000);
+
+  afterAll(async () => {
+    await manager.deleteComputer(owner).catch(() => undefined);
+    await closeServer();
+    await manager.close();
+    await rm(root, { recursive: true, force: true });
+  }, 120_000);
+
+  it("正向：打开允许的网站、读到正文、截图交给能看图的模型", async () => {
+    const opened = await use("open", { action: "open", url: "https://example.com/" });
+    expect(authorized.at(-1)).toEqual(["example.com"]);
+    const page = opened.value as { page: { title: string }; text: string };
+    expect(page.page.title).toBe("Example Domain");
+    expect(page.text).toContain("documentation examples");
+    const shot = await use("shot", { action: "screenshot" }, "sees-images");
+    expect(shot.images?.[0]?.mimeType).toBe("image/png");
+    expect(shot.images?.[0]?.data.length ?? 0).toBeGreaterThan(1000);
+  }, 300_000);
+
+  it("反向：点去没放行的网站，电脑的出网代理拦下，工具说出是哪个网站", async () => {
+    const read = await use("read", { action: "read" });
+    const link = /\[((?:f\d+)?e\d+) link /u.exec((read.value as { text: string }).text)?.[1];
+    expect(link).toBeDefined();
+    const clicked = use("click", { action: "click", ref: link });
+    await expect(clicked).rejects.toBeInstanceOf(BrowserToolError);
+    await clicked.catch((error: BrowserToolError) => {
+      expect(error.code).toBe("BROWSER_SITE_NOT_ALLOWED");
+      expect(error.note).toMatch(/iana\.org/u);
+    });
+  }, 300_000);
+
+  it("关机前把浏览器收好，网站数据留在主人自己的磁盘上", async () => {
+    expect(await manager.stopIdle()).toHaveLength(1);
+    const listed = await client.exec({
+      ownerId: owner,
+      argv: ["sh", "-c", "ls ~/.himawari/browser/profile/Default"],
+      allowedDomains: [],
+      deadlineAt: new Date(Date.now() + 120_000).toISOString(),
+      maxOutputBytes: 64 * 1024,
+    });
+    expect(listed.exitCode).toBe(0);
+    expect(decode(listed.stdout)).toContain("Preferences");
+    const again = await use("again", { action: "read" });
+    expect((again.value as { page: { url: string } }).page.url).toBe("about:blank");
   }, 300_000);
 });
