@@ -126,31 +126,31 @@ public struct HerPage: View {
                     if let actions, actions.waitingCount > 0 {
                         SettingsGroup(label: nil) {
                             Button { path.append(.approvals) } label: {
-                                HerRow(symbol: "hourglass", title: M.approvalsWaiting(actions.waitingCount), last: true)
+                                HerRow(icon: .handStop, title: M.approvalsWaiting(actions.waitingCount), last: true)
                             }
                             .buttonStyle(.pressable)
                         }
                     }
                     SettingsGroup(label: nil) {
                         Button { path.append(.memory) } label: {
-                            HerRow(symbol: "brain", title: M.herMemory, subtitle: memory.summary(categoryLabel: M.category).map(M.memorySummary), last: true)
+                            HerRow(icon: .affiliate, title: M.herMemory, subtitle: memory.summary(categoryLabel: M.category).map(M.memorySummary), last: true)
                         }
                         .buttonStyle(.pressable)
                     }
                     SettingsGroup(label: nil) {
                         if timers.phase != .unsupported {
                             Button { path.append(.timers) } label: {
-                                HerRow(symbol: "alarm", title: M.timersTitle, subtitle: timersSummary)
+                                HerRow(icon: .alarm, title: M.timersTitle, subtitle: timersSummary)
                             }
                             .buttonStyle(.pressable)
                         }
                         Button { path.append(.allowances) } label: {
-                            HerRow(symbol: "checkmark.shield", title: M.allowancesTitle, subtitle: M.allowancesSummary(memory.allowances.count), last: vaultCount == .unsupported)
+                            HerRow(icon: .shieldCheck, title: M.allowancesTitle, subtitle: M.allowancesSummary(memory.allowances.count), last: vaultCount == .unsupported)
                         }
                         .buttonStyle(.pressable)
                         if vaultCount != .unsupported {
                             Button { vaultOpen = true } label: {
-                                HerRow(symbol: "key", title: M.vaultTitle, subtitle: M.vaultSummary(vaultCount), last: true)
+                                HerRow(icon: .key, title: M.vaultTitle, subtitle: M.vaultSummary(vaultCount), last: true)
                             }
                             .buttonStyle(.pressable)
                         }
@@ -158,22 +158,22 @@ public struct HerPage: View {
                     SettingsGroup(label: nil) {
                         if let hours = quietHours.hours {
                             Button { path.append(.notifications) } label: {
-                                HerRow(symbol: "bell", title: M.notificationsTitle, subtitle: M.quietSummary(hours))
+                                HerRow(icon: .bell, title: M.notificationsTitle, subtitle: M.quietSummary(hours))
                             }
                             .buttonStyle(.pressable)
                         }
                         Button { path.append(.privacy) } label: {
-                            HerRow(symbol: "hand.raised", title: M.privacy)
+                            HerRow(icon: .eye, title: M.privacy)
                         }
                         .buttonStyle(.pressable)
                         Button { path.append(.devices) } label: {
-                            HerRow(symbol: "iphone", title: M.devicesTitle, subtitle: devicesSummary, last: true)
+                            HerRow(icon: .deviceMobilePlain, title: M.devicesTitle, subtitle: devicesSummary, last: true)
                         }
                         .buttonStyle(.pressable)
                     }
                     SettingsGroup(label: nil) {
                         Button { path.append(.about) } label: {
-                            HerRow(symbol: "info.circle", title: M.aboutTitle, subtitle: AboutPage.versionLine, last: true)
+                            HerRow(icon: .infoCircle, title: M.aboutTitle, subtitle: AboutPage.versionLine, last: true)
                         }
                         .buttonStyle(.pressable)
                     }
@@ -280,24 +280,20 @@ struct HerHero: View {
 }
 
 struct HerRow: View {
-    let symbol: String
+    let icon: IconName
     let title: String
     var subtitle: String? = nil
     var value: String? = nil
     var chevron = true
     var last = false
-    @ScaledMetric(relativeTo: .body) private var symbolWidth = DesignTokens.Her.rowSymbolWidth
 
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: SL.rowGap) {
-                Image(systemName: symbol)
-                    .font(.body)
-                    .imageScale(.large)
-                    .symbolRenderingMode(.monochrome)
+                Icon(icon, size: DesignTokens.Her.rowIcon)
                     .foregroundStyle(Color.hmGlyph)
-                    .frame(width: symbolWidth)
-                    .accessibilityHidden(true)
+                    .frame(width: DesignTokens.Her.rowTile, height: DesignTokens.Her.rowTile)
+                    .background(Color.hmTile, in: RoundedRectangle(cornerRadius: DesignTokens.Her.rowTileRadius, style: .continuous))
                 VStack(alignment: .leading, spacing: DesignTokens.Her.rowSubtitleGap) {
                     Text(title).hmType(SL.rowValue).foregroundStyle(Color.hmText)
                     if let subtitle {
@@ -338,13 +334,13 @@ struct PrivacyPage: View {
                 SettingsGroup(label: nil) {
                     if let openSenses {
                         Button(action: openSenses) {
-                            HerRow(symbol: "eye", title: M.letHerSense, subtitle: sensesSummary, last: openDeletion == nil)
+                            HerRow(icon: .eye, title: M.letHerSense, subtitle: sensesSummary, last: openDeletion == nil)
                         }
                         .buttonStyle(.pressable)
                     }
                     if let openDeletion {
                         Button(action: openDeletion) {
-                            HerRow(symbol: "trash", title: M.deletePerception, last: true)
+                            HerRow(icon: .trash, title: M.deletePerception, last: true)
                         }
                         .buttonStyle(.pressable)
                     }

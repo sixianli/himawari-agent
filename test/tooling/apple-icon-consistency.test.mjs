@@ -1,46 +1,41 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { readFileSync, readdirSync } from "node:fs";
 import { expect, it } from "vitest";
 
-const apple = fileURLToPath(new URL("../../clients/apple/", import.meta.url));
-const design = path.join(apple, "Sources/HimawariDesign");
+const design = new URL("../../clients/apple/Sources/HimawariDesign/", import.meta.url);
 
-function iconSource() {
-  return readFileSync(path.join(design, "Icon.swift"), "utf8");
-}
-
-function swiftFiles(directory) {
-  return readdirSync(directory).flatMap((entry) => {
-    const full = path.join(directory, entry);
-    if (statSync(full).isDirectory()) return swiftFiles(full);
-    return entry.endsWith(".swift") ? [full] : [];
+function configNames() {
+  const icons = JSON.parse(
+    readFileSync(new URL("../../clients/apple/scripts/icons.json", import.meta.url), "utf8"),
+  );
+  return Object.keys(icons).map((key) => {
+    const [source, variant] = key.split("@");
+    return variant ? `${source}-${variant}` : source;
   });
 }
 
-it("draws every icon with an SF Symbol and ships no icon images of its own", () => {
-  const source = iconSource();
-  const enumBody = source.slice(
-    source.indexOf("enum IconName"),
-    source.indexOf("public var weight"),
+function swiftNames() {
+  const source = readFileSync(new URL("Icon.swift", design), "utf8");
+  const body = source.slice(source.indexOf("enum IconName"), source.indexOf("public struct Icon"));
+  const names = [...body.matchAll(/^\s*case\s+(\w+)(?:\s*=\s*"([^"]+)")?\s*$/gmu)].map(
+    (match) => match[2] ?? match[1],
   );
-  const cases = [...enumBody.matchAll(/^\s*case\s+(\w+)/gmu)].map((match) => match[1]);
-  const mapped = [...source.matchAll(/^\s*case \.(\w+): "([a-z0-9.]+)"$/gmu)].map((m) => m[1]);
-  expect(cases.length).toBeGreaterThan(50);
-  expect(mapped.sort()).toEqual([...cases].sort());
-  expect(source).toContain("Image(systemName:");
-  expect(source).not.toMatch(/Image\(\s*name\.rawValue/u);
-  expect(existsSync(path.join(design, "Resources/Icons.xcassets"))).toBe(false);
-});
+  const caseTokens = body.match(/\bcase\b/gu) ?? [];
+  expect(caseTokens.length, "Icon.swift has a case line the test cannot parse").toBe(names.length);
+  return names;
+}
 
-it("leaves no Tabler icons, scripts or licence behind in the Apple clients", () => {
-  expect(
-    readdirSync(path.join(design, "Resources/Licenses")).filter((f) => /tabler/iu.test(f)),
-  ).toEqual([]);
-  expect(existsSync(path.join(apple, "scripts/icons.json"))).toBe(false);
-  expect(existsSync(path.join(apple, "scripts/make-icons.mjs"))).toBe(false);
-  const mentions = swiftFiles(path.join(apple, "Sources")).filter((file) =>
-    /tabler|Icons\.xcassets/iu.test(readFileSync(file, "utf8")),
-  );
-  expect(mentions).toEqual([]);
+function catalogNames() {
+  return readdirSync(new URL("Resources/Icons.xcassets/", design))
+    .filter((entry) => entry.endsWith(".imageset"))
+    .map((entry) => entry.slice(0, -".imageset".length));
+}
+
+it("lists every icon in icons.json, Icon.swift and the asset catalog", () => {
+  const config = configNames().sort();
+  const swift = swiftNames().sort();
+  const catalog = catalogNames().sort();
+  expect(new Set(config).size).toBe(config.length);
+  expect(config.length).toBeGreaterThan(50);
+  expect(swift).toEqual(config);
+  expect(catalog).toEqual(config);
 });
