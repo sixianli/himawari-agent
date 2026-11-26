@@ -89,6 +89,16 @@
   3. ARM 只有 4 核，tooling 和 static 同时跑时每核负载已到 1.45；再加 integration 可能更挤，要先量。
 - 结果：待补。
 
+<a id="apple-scope"></a>
+### 7. 没碰 iPhone 客户端的 PR 不再占 Mac 机器（2026-11-26）
+
+- 发现（GitHub 接口取 2026-11-24 15:45 到 11-26 15:45 JST 的全部运行和作业）：CI 已搬到 GitHub 免费托管机器，免费账号同时最多 5 台 Mac（作业按有 runner 的时间叠起来，最高正好 5 台，满 5 台累计约 325 分钟）。11-26 12 点起 Mac 作业排队中位数 16 到 49 分钟、最长 83 分钟；在这之前大多不到 2 分钟。Linux 那边 CI 一整轮中位数 25 分钟、慢的一成 40 分钟，排队中位数不到 1 分钟。
+- 原因：`apple.yml` 没有按路径筛选，每个非草稿 PR 的每次推送都起 4 台 Mac（`apple/iphone` 约 9 分钟，三份无障碍审计各约 21 分钟，每份都自己从头编译一遍），main 的每次合并也一样。PR 上的 403 次 Apple 运行里 194 次来自一个 `clients/apple/` 文件都没改的 PR，占 PR 上 Mac 用时的一半（1311 / 2625 分钟）。
+- 做法：加一个几秒钟的 Linux 作业 `apple/changes`，用 `scripts/ci/apple-scope.mjs` 看改动有没有碰 `clients/apple/`、`apple.yml` 或这个脚本，没碰就跳过 Mac 作业；说不清时照跑。合并只要求 `ci/required`，跳过的 Mac 作业不卡合并。
+- 结果：待补（合并后看 Mac 排队时间）。
+- 可供参考：机器数量有硬上限时，先看“谁在占机器、它该不该跑”，再谈加速单个作业。
+- 还没做：三份无障碍审计各自从头编译，可以先编一次再分给几台跑（`build-for-testing` / `test-without-building`），能省 Mac 时间但要在作业之间传编译产物，没在这次做。
+
 <a id="pitfalls"></a>
 ## 踩过的坑
 

@@ -110,6 +110,6 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 - [ADR 0229](0229-native-apple-clients-and-device-api.md)：被本 ADR 修订决定第 3、4 条。
 - [详细设计](../execution/specs/2026-11-11-apple-device-body-design.md#ui-baseline)
-- [实施计划](../execution/plans/2026-11-11-apple-device-body-plan.md)
+- [实施计划（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/e51fe4363ed3e21ab6581e3563c652441f4e6b76/docs/execution/plans/2026-11-11-apple-device-body-plan.md#batches)
 
 [↑ 回到阅读导航](#contents)

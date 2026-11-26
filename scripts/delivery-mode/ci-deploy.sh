@@ -67,6 +67,9 @@ else
   echo "CI_DEPLOY_BACKUP_NOT_INSTALLED: no /etc/himawari-backup/settings.json on $host; install it with scripts/operations/backup/install-backup.sh" >&2
 fi
 
+echo "CI_DEPLOY_DB_PERMISSIONS"
+remote "cd /var/lib/himawari/state/data && for f in product.sqlite product.sqlite-wal product.sqlite-shm; do [ -e \"\$f\" ] && chmod 600 \"\$f\"; done; true" || refuse DB_PERMISSIONS_FAILED "cannot tighten the product database file modes on $host" 3
+
 echo "CI_DEPLOY_PREPARE $commit"
 prepare_log="$(mktemp)"
 trap 'rm -f "$prepare_log"' EXIT

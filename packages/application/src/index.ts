@@ -11,6 +11,7 @@ export {
 } from "./services/execution-live-feed.js";
 export { readThreadExecutionEnvironment } from "./services/thread-execution-environment.js";
 export {
+  DEVICE_VOICE_TIMING_EVENT,
   executionToolItemId,
   type ThreadExecutionObservation,
   ThreadExecutionProjection,

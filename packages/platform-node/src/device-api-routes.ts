@@ -25,8 +25,8 @@ import {
   PERCEPTION_TEXT_MAXIMUM,
   PERCEPTION_UTTERANCE_ID_PATTERN,
   PHONE_VOICE_PROOF_PREFIX,
-  TALK_PROOF_PREFIX,
   PORT_ERROR_CODES,
+  TALK_PROOF_PREFIX,
   type ThreadGatewayRequestMessage,
   type UploadGrantPurpose,
   type VaultService,
@@ -118,6 +118,7 @@ export const DEVICE_API_ROUTES = Object.freeze([
   { method: "GET", path: "threads/{threadId}/runs/{runId}/execution", signed: true },
   { method: "POST", path: "payloads/text", signed: true },
   { method: "POST", path: "attachments", signed: true },
+  { method: "POST", path: "voice-timing", signed: true },
   { method: "POST", path: "uploads/begin", signed: true },
   { method: "POST", path: "perception", signed: true, uploadPurpose: "perception" },
   { method: "POST", path: "perception/media", signed: false, uploadPurpose: "media" },
@@ -325,6 +326,13 @@ export interface DeviceApiRouteOptions {
     readonly contentType?: DevicePayloadContentType;
   }) => Promise<string>;
   readonly chatAttachments?: () => DeviceChatAttachments;
+  readonly recordVoiceTiming?: (input: {
+    readonly authentication: GatewayAuthenticationContext;
+    readonly runId: string;
+    readonly saidAt: string;
+    readonly firstTextAt: string;
+    readonly firstSoundAt: string | null;
+  }) => Promise<"recorded" | "unknown_run">;
   readonly streamThreadEvents: (input: {
     readonly gateway: AgentThreadGatewayPort;
     readonly authentication: GatewayAuthenticationContext;
@@ -1597,6 +1605,35 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
             body["utteranceId"],
           );
         return options.sendJson(reply, 200, accepted);
+      });
+
+      device.post("/voice-timing", async (request, reply) => {
+        const { device: paired, authentication } = await authenticate(request);
+        if (!options.recordVoiceTiming) return options.rejectNotAllowed();
+        const body = json(request);
+        only(body, ["messageId", "saidAt", "firstTextAt", "firstSoundAt"]);
+        const { messageId, saidAt, firstTextAt, firstSoundAt } = body;
+        const instant = (value: unknown): value is string =>
+          typeof value === "string" &&
+          ISO_MILLISECONDS.test(value) &&
+          !Number.isNaN(Date.parse(value));
+        if (
+          typeof messageId !== "string" ||
+          !MESSAGE_ID_PATTERN.test(messageId) ||
+          !instant(saidAt) ||
+          !instant(firstTextAt) ||
+          (firstSoundAt !== null && !instant(firstSoundAt))
+        )
+          return options.rejectBody(400);
+        const outcome = await options.recordVoiceTiming({
+          authentication,
+          runId: `run:${stableSuffix(paired.id, messageId)}`,
+          saidAt,
+          firstTextAt,
+          firstSoundAt,
+        });
+        if (outcome === "unknown_run") return options.rejectBody(404);
+        return options.sendJson(reply, 200, { recorded: true });
       });
 
       device.post("/attachments", async (request, reply) => {

@@ -6,7 +6,7 @@ supersedes: "https://github.com/sixianli/himawari-agent/blob/0c688f2bb200019bbdf
 superseded_by: ""
 date: "2026-11-26"
 covers: "apps/control-center/src/components/brand-seeds.ts, apps/control-center/src/components/brand.tsx, apps/control-center/test/brand.unit.test.ts, apps/control-center/public/favicon.svg, assets/brand/himawari/README.md, assets/brand/himawari/v4/logo-sunflower-disc.svg, clients/apple/Sources/HimawariDesign/SunflowerSeeds.swift, clients/apple/Sources/HimawariDesign/Sunflower.swift, clients/apple/Tests/HimawariManageTests/SunflowerSeedsTests.swift, clients/apple/Sources/HimawariChat/ChatPuck.swift, docs/assets/apple-clients/2026-11-25-v4/tokens.json, scripts/render-brand-assets.mjs, scripts/check-brand-assets.mjs, test/tooling/apple-app-icon.test.mjs, test/tooling/brand-asset.test.mjs"
-verified_at: "383003adb908eda96f097796905caaa5a4b705dd"
+verified_at: "8d78eb5496a9041e33f795ebed563af9ed4391b9"
 ---
 
 # ADR 0308：标志按显示大小取种子数，主对话顶部小圆例外用 89 粒

@@ -4,6 +4,7 @@ document_type: spec
 supersedes: ""
 superseded_by: ""
 date: "2026-11-25"
+implements: "docs/adr/0288-passwords-and-keys-live-in-a-vault-the-phone-unlocks.md"
 ---
 
 # 密钥保险箱
