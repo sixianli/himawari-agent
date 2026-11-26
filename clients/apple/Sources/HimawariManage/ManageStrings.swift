@@ -407,6 +407,9 @@ enum M {
     }
     static func connectionDenied(_ title: String) -> String { text("你没有同意，\(title) 没连上", ja: "許可されなかったため、\(title) に接続していません", en: "Access wasn’t granted, so \(title) isn’t connected") }
     static func connectionFailed(_ title: String) -> String { text("\(title) 没连上，再试一次", ja: "\(title) に接続できませんでした。もう一度お試しください", en: "\(title) didn’t connect. Try again") }
+    static var connectionsThisDevice: String { text("这台 iPhone", ja: "この iPhone", en: "This iPhone") }
+    static var connectionHealth: String { text("健康", ja: "ヘルスケア", en: "Health") }
+    static var connectionHealthInSenses: String { text("点这里打开感知设置，在里面开关", ja: "ここから感知の設定を開いてオン・オフします", en: "Opens sensing settings, where you turn it on or off") }
     static var connectionsNoneConnected: String { text("还没连接应用", ja: "まだアプリを接続していません", en: "No apps connected yet") }
     static var gmailDisconnect: String { text("断开 Gmail", ja: "Gmail の接続を解除", en: "Disconnect Gmail") }
     static var gmailDisconnectDetail: String {

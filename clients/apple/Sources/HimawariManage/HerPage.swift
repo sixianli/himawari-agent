@@ -165,7 +165,7 @@ public struct HerPage: View {
                         }
                     }
                     SettingsGroup(label: nil) {
-                        if connections.available {
+                        if connections.available || actions != nil {
                             Button { path.append(.connections) } label: {
                                 HerRow(icon: .puzzle, title: M.connectionsTitle, subtitle: connectionsSummary)
                             }
@@ -225,7 +225,7 @@ public struct HerPage: View {
                         sensesSummary: sensesOn().map(M.sensesOn)
                     ) { path.removeLast() }
                 case .connections:
-                    ConnectionsPage(store: connections, open: { connection in
+                    ConnectionsPage(store: connections, actions: actions, openSenses: senses == nil ? nil : { sensesOpen = true }, open: { connection in
                         path.append(connection.name == GmailStore.source ? .gmail : .app(connection.name))
                     }) { path.removeLast() }
                 case .gmail:
