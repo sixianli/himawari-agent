@@ -9,6 +9,7 @@ import UIKit
 struct AttachSheet: View {
     let limits: AttachmentLimits
     let chosen: [ChatAttachment]
+    var readsPhotoLibrary = true
     let add: ([ChatAttachment]) -> Void
     let remove: (String) -> Void
     let failed: (AttachFailure) -> Void
@@ -78,7 +79,7 @@ struct AttachSheet: View {
             }
         }
         .task {
-            if allowsImages { await recent.start() }
+            if allowsImages, readsPhotoLibrary { await recent.start() }
         }
         .onDisappear { recent.stop() }
         .fullScreenCover(isPresented: $cameraOpen) {

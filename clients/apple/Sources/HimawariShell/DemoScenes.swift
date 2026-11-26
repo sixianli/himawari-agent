@@ -211,6 +211,7 @@ struct DemoSceneView: View {
         case .chatAttach:
             chat(DemoChatFixtures.offline())
                 .environment(\.chatOpensAttachSheet, true)
+                .environment(\.chatReadsPhotoLibrary, false)
         case .chatTalkListening:
             chat(DemoChatFixtures.formatted())
                 .environment(\.chatTalk, DemoTalk(phase: .listening, heard: DemoChatFixtures.talkHeard))

@@ -32,6 +32,7 @@ public protocol ChatTalk: AnyObject, Sendable {
 extension EnvironmentValues {
     @Entry public var chatVoice: (any ChatVoiceInput)? = nil
     @Entry public var chatOpensAttachSheet = false
+    @Entry public var chatReadsPhotoLibrary = true
     @Entry public var chatOpensSelectText: String? = nil
     @Entry public var chatShowsCopied = false
     @Entry public var chatStartsReplyTo: String? = nil

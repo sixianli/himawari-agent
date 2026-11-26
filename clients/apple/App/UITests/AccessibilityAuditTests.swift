@@ -37,6 +37,8 @@ final class AccessibilityAuditTests: XCTestCase {
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 20), "\(scene) did not reach the foreground")
         _ = app.windows.firstMatch.waitForExistence(timeout: 10)
         Thread.sleep(forTimeInterval: 1)
+        let systemAlert = XCUIApplication(bundleIdentifier: "com.apple.springboard").alerts.firstMatch
+        XCTAssertFalse(systemAlert.exists, "\(scene) asked the system for a permission; demo scenes must not, or the alert stays up and blocks every later scene")
         return app
     }
 

@@ -13,6 +13,7 @@ public struct ChatView: View {
     @Environment(\.transcriptScrollsToTopAfter) private var scrollToTopAfter
     @Environment(\.chatVoice) private var voice
     @Environment(\.chatOpensAttachSheet) private var opensAttachSheet
+    @Environment(\.chatReadsPhotoLibrary) private var readsPhotoLibrary
     @Environment(\.chatOpensSelectText) private var opensSelectText
     @Environment(\.chatShowsCopied) private var showsCopied
     @Environment(\.chatStartsReplyTo) private var startsReplyTo
@@ -224,7 +225,7 @@ public struct ChatView: View {
     @ViewBuilder
     private var attachSheet: some View {
         if let attachLimits {
-            AttachSheet(limits: attachLimits, chosen: attachments) { picked in
+            AttachSheet(limits: attachLimits, chosen: attachments, readsPhotoLibrary: readsPhotoLibrary) { picked in
                 let known = Set(attachments.map(\.id))
                 let room = max(0, attachLimits.perMessage - attachments.count)
                 let fresh = picked.filter { !known.contains($0.id) }
