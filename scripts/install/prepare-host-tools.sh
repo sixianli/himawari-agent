@@ -78,6 +78,7 @@ echo "PREPARE_HOST_BWRAP system=$(/usr/bin/bwrap --version | awk '{print $2}') p
 
 step builder-layout
 builder_root=$build_home/packet-builder
+install -d -m 0755 -o "$build_user" -g "$build_user" "$builder_root"
 for directory in work scripts source evidence tools browsers pi-tools-bin materials; do
   install -d -m 0755 -o "$build_user" -g "$build_user" "$builder_root/$directory"
 done
