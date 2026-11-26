@@ -141,11 +141,7 @@ import {
 } from "./production-device-control.js";
 import { PRODUCTION_FILES_OPERATIONS, ProductionFilesControl } from "./production-files-control.js";
 import { type ProductionGapExport, registerGapExportRoute } from "./production-gap-export.js";
-import {
-  PRODUCTION_HOME_OPERATIONS,
-  ProductionHomeControl,
-  type ProductionHomeUrgencyOptions,
-} from "./production-home.js";
+import { PRODUCTION_HOME_OPERATIONS, ProductionHomeControl } from "./production-home.js";
 import { productionInbox } from "./production-inbox-composition.js";
 import { type InboxRunRegistry, ProductionInboxDelivery } from "./production-inbox-delivery.js";
 import {
@@ -309,7 +305,6 @@ export interface ProductionHttpCompositionOptions {
   readonly onDevicePushFailed?: (error: unknown) => void;
   readonly onHomeDiagnostic?: (event: Record<string, string>) => void;
   readonly onPerceptionLimitWarning?: (warning: PerceptionLimitWarning) => void;
-  readonly homeUrgency?: Omit<ProductionHomeUrgencyOptions, "scope" | "store" | "onFailure">;
   readonly health?: RuntimeHealthModel;
   readonly executionEnvironment?: {
     readonly mode: ThreadExecutionEnvironment["mode"];
@@ -394,7 +389,7 @@ export interface ProductionHttpComposition {
   readonly payloadAdmission: HttpGatewayPayloadAdmissionPort;
   readonly health: RuntimeHealthModel;
   readonly metrics: RuntimeMetricsRegistry;
-  readonly home: Pick<ProductionHomeControl, "awaitingCount" | "approvalCopy" | "score">;
+  readonly home: Pick<ProductionHomeControl, "awaitingCount">;
   readonly perception: Pick<PerceptionService, "reserveModelCost">;
   listen(): Promise<string>;
   close(): Promise<void>;
@@ -1581,20 +1576,6 @@ export async function createProductionHttpComposition(
               ? error.name
               : "unknown",
       }),
-    ...(options.homeUrgency
-      ? {
-          urgency: {
-            ...options.homeUrgency,
-            scope: { ownerId, agentId },
-            store: repository.homeUrgency(),
-            onFailure: (error) =>
-              options.onHomeDiagnostic?.({
-                event: "home.urgency_failed",
-                error: error instanceof Error ? error.message : String(error),
-              }),
-          },
-        }
-      : {}),
   });
   const mcpConnectionAddresses = new McpConnectionAddresses({ now: clock });
   const searchControl = options.memory?.search
@@ -2008,7 +1989,6 @@ export async function createProductionHttpComposition(
           port: httpConfiguration.listenPort,
         });
         searchIndexer.start();
-        home.startScoring();
         await ensureMainThread();
         inbox.loop?.start();
         memoryInbox?.start();
@@ -2025,7 +2005,6 @@ export async function createProductionHttpComposition(
         throw error;
       }
       searchIndexer.start();
-      home.startScoring();
       await ensureMainThread();
       inbox.loop?.start();
       memoryInbox?.start();
@@ -2037,7 +2016,6 @@ export async function createProductionHttpComposition(
       await memoryInbox?.stop();
       await inbox.loop?.stop();
       await threadDeletionRetry.stop();
-      await home.stopScoring();
       try {
         await app.close();
       } finally {

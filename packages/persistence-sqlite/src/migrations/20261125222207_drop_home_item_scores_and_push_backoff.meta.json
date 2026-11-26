@@ -1,0 +1,25 @@
+{
+  "alters": [
+    "home_item_scores",
+    "home_item_scores_approval_index",
+    "home_item_scores_done",
+    "home_item_scores_item_index",
+    "home_item_scores_no_delete",
+    "home_item_scores_no_update",
+    "home_item_scores_sentence_index",
+    "home_item_scores_time_index",
+    "proactive_push_backoff"
+  ],
+  "removes": [
+    "done",
+    "failed",
+    "*[^0-9a-f]*",
+    "public",
+    "private",
+    "sensitive",
+    "????-??-??T??:??:??.???Z",
+    "HOME_ITEM_SCORE_IMMUTABLE",
+    "[a-z]*",
+    "*[^a-z0-9_]*"
+  ]
+}

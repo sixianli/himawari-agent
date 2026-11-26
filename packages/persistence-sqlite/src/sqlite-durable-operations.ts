@@ -91,7 +91,6 @@ import { SqliteCorrectionReviewOperations } from "./sqlite-correction-review-ope
 import { SqliteDecisionLedgerOperations } from "./sqlite-decision-ledger-operations.ts";
 import { SqliteDeviceActionOperations } from "./sqlite-device-action-operations.ts";
 import { SqliteExternalMemoryProposalOperations } from "./sqlite-external-memory-proposal-operations.ts";
-import { SqliteHomeUrgencyOperations } from "./sqlite-home-urgency-operations.ts";
 import { SqliteInboxOperations } from "./sqlite-inbox-operations.ts";
 import { SqliteMcpConnectionOperations } from "./sqlite-mcp-connection-operations.ts";
 import { SqliteMcpMemorySyncOperations } from "./sqlite-mcp-memory-sync-operations.ts";
@@ -395,7 +394,6 @@ export class SqliteDurableOperations {
   private readonly memoryCheckup: SqliteMemoryCheckupOperations;
   private readonly memoryConversationReview: SqliteMemoryConversationReviewOperations;
   private readonly reviewPrereview: SqliteReviewPrereviewOperations;
-  private readonly homeUrgency: SqliteHomeUrgencyOperations;
   private readonly externalMemoryProposals: SqliteExternalMemoryProposalOperations;
   private readonly mcpConnections: SqliteMcpConnectionOperations;
   private readonly vault: SqliteVaultOperations;
@@ -510,7 +508,6 @@ export class SqliteDurableOperations {
       assertDiskHeadroom,
     );
     this.reviewPrereview = new SqliteReviewPrereviewOperations(database, fail, assertDiskHeadroom);
-    this.homeUrgency = new SqliteHomeUrgencyOperations(database, fail, assertDiskHeadroom);
     this.externalMemoryProposals = new SqliteExternalMemoryProposalOperations(
       database,
       fail,
@@ -711,7 +708,6 @@ export class SqliteDurableOperations {
       return this.memoryConversationReview.execute(operation, payload);
     if (operation.startsWith("reviewPrereview."))
       return this.reviewPrereview.execute(operation, payload);
-    if (operation.startsWith("homeUrgency.")) return this.homeUrgency.execute(operation, payload);
     if (operation.startsWith("externalMemoryProposal."))
       return this.externalMemoryProposals.execute(operation, payload);
     if (operation.startsWith("mcpConnection."))

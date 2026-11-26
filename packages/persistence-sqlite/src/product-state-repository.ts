@@ -31,7 +31,6 @@ import type {
   GapCaseMarkPort,
   GitHubIntegrationStatePort,
   GovernanceMutationReceiptStorePort,
-  HomeUrgencyStorePort,
   InboxStorePort,
   LedgerObservationPort,
   McpConnectionStorePort,
@@ -630,10 +629,6 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   reviewPrereview(): ReviewPrereviewStorePort {
     return this.durable.reviewPrereview();
-  }
-
-  homeUrgency(): HomeUrgencyStorePort {
-    return this.durable.homeUrgency();
   }
 
   externalMemoryProposals(): ExternalMemoryProposalStorePort {

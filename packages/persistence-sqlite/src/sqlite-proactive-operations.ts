@@ -25,12 +25,6 @@ import {
 } from "@himawari-agent/application/proactive-sources";
 import type Database from "better-sqlite3";
 import { recordDecisionSignal } from "./decision-signals.ts";
-import {
-  applyBackoffWrites,
-  listBackoff,
-  previewBackoff,
-  restoreBackoff,
-} from "./proactive-push-backoff.ts";
 import { insertLedgerRow } from "./sqlite-decision-ledger-operations.ts";
 import { summaryInputsValid } from "./sqlite-decision-summary-inputs.ts";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
@@ -196,25 +190,6 @@ export class SqliteProactiveOperations {
         return this.reviewedCount(payload as ProactiveScope);
       case "proactive.updateInsight":
         return this.updateInsight(payload as Input<"updateInsight">);
-      case "proactive.previewBackoff": {
-        const request = payload as Input<"previewBackoff">;
-        this.time(request.now);
-        return previewBackoff(
-          this.database,
-          request,
-          this.source(request.source).name,
-          request.classKeys,
-          request.settings,
-          request.now,
-        );
-      }
-      case "proactive.listBackoff":
-        return listBackoff(this.database, payload as ProactiveScope);
-      case "proactive.restoreBackoff": {
-        const request = payload as Input<"restoreBackoff">;
-        this.time(request.now);
-        return restoreBackoff(this.database, request, request.classKey, request.now);
-      }
       case "proactive.rateDecision":
         return this.rateDecision(payload as Input<"rateDecision">);
       case "proactive.rateProcessed":
@@ -697,11 +672,6 @@ export class SqliteProactiveOperations {
           "DELETE FROM proactive_connections WHERE owner_id = ? AND agent_id = ? AND source = ?",
         )
         .run(...scope);
-      this.database
-        .prepare(
-          "DELETE FROM proactive_push_backoff WHERE owner_id = ? AND agent_id = ? AND source = ?",
-        )
-        .run(...scope);
       this.dropInsightsFromPushes(input, removedInsights, "pending");
       if (connection)
         insertObservationEvent(this.database, {
@@ -753,11 +723,7 @@ export class SqliteProactiveOperations {
             .all(...scope) as { id: string }[]
         ).map(({ id }) => id),
       );
-      for (const table of [
-        "source_insights",
-        "proactive_processed_messages",
-        "proactive_push_backoff",
-      ])
+      for (const table of ["source_insights", "proactive_processed_messages"])
         this.database
           .prepare(`DELETE FROM ${table} WHERE owner_id = ? AND agent_id = ? AND source = ?`)
           .run(...scope);
@@ -1193,23 +1159,8 @@ export class SqliteProactiveOperations {
         const setKey = this.database.prepare(
           "UPDATE source_insights SET push_source_key = ? WHERE id = ?",
         );
-        const setClass = this.database.prepare(
-          "UPDATE source_insights SET push_class = ? WHERE id = ?",
-        );
-        input.insights.forEach((insight, index) => {
-          if (insight.push) setClass.run(insight.pushClass ?? null, insightIds[index] as string);
-        });
         for (const id of pushed) setKey.run(`proactive:${input.push.id}`, id);
       }
-      if (input.backoff && input.backoff.length > 0)
-        applyBackoffWrites(
-          this.database,
-          { ownerId: input.ownerId, agentId: input.agentId },
-          decision.scenario,
-          decision.id,
-          input.backoff,
-          decision.checkedAt,
-        );
       if (input.cursor !== null)
         this.database
           .prepare(

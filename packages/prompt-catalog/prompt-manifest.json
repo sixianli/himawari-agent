@@ -349,11 +349,6 @@
     "changedIn": "ADR 0219",
     "reason": "新增：真实记忆回忆评测的出题、作答、判分提示词"
   },
-  "home.urgency": {
-    "sha256": "845629e56803e841ec93a29ec735e1553db095888dc322f477f9e7b1375a2d62",
-    "changedIn": "ADR 0255",
-    "reason": "新增：首页上等主人定的事由模型打要紧度，审批另写一句话和同意按钮文字"
-  },
   "inbox.events.entry": {
     "sha256": "fdc03a3f74c899b3acf556a65a32d0bbb93a6c3dab1e1579f568ec09c5241d94",
     "changedIn": "ADR 0285",
@@ -839,36 +834,6 @@
   },
   "perception.now-header": {
     "sha256": "717130edd1cf2ec9b6ba5f1d0bdb3f20f86384e6745586712f1e053a7aa7918e",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
-  },
-  "perception.source.calendar": {
-    "sha256": "eb77d4cb7c6254e07b24aafb66a5b247f600d856bf75c97d628d87e01029830d",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
-  },
-  "perception.source.items-header": {
-    "sha256": "b372be4acbdf2e4cc1467754cce9833a87a067453438261807647c6d09de0273",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
-  },
-  "perception.source.location": {
-    "sha256": "1921f31349109f4d2929ea12df3f591fca857dca09cd1944790d92aae91c9412",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
-  },
-  "perception.source.message": {
-    "sha256": "dfad03d71a06d0c13e43356748558f0c8ddf4d3fa457e360b698677fcb3c6614",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
-  },
-  "perception.source.screen": {
-    "sha256": "387323bac164bef1cb6535cabca113c77892b5e40a981b3d474845457a04f743",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
-  },
-  "perception.source.speech": {
-    "sha256": "d17c642a7acbc011b22fcad50912d547c7a62b3b3e5029ce178e0d8b0db5a9c7",
     "changedIn": "ADR 0230",
     "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
   },

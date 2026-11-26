@@ -171,7 +171,6 @@ const proactiveConfiguration = (budgetSeconds: number): ProactiveConfiguration =
   reviewSilentSharePermille: 500,
   reviewMemoryUnusedDays: 90,
   reviewPrereview: DEFAULT_REVIEW_PREREVIEW,
-  backoffThreshold: 3,
   wholeThreadMailsPerMail: 50,
   wholeThreadCharactersPerMail: 60_000,
   ruleReplayDays: 30,

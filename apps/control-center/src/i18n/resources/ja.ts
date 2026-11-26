@@ -1116,11 +1116,6 @@ export const messages = {
   "proactive.reconnect.button": "再接続",
   "proactive.dailyLimit":
     "本日のメール確認が 1 日の費用上限に達しました。モデルは止めていますが、銀行・学校などのメールはルールで引き続き表示します。0:00 に自動再開し、チャットへの影響はありません。",
-  "proactive.backoff.stage1":
-    "{domain} からのリマインダーを {count} 回続けて開かなかったため、この種類の通知は 1 日 1 件までに減らしました。リマインダーはこのページに引き続き表示されます。",
-  "proactive.backoff.stage2":
-    "通知を減らした後も {domain} からのリマインダーを {count} 回続けて開かなかったため、この種類の通知を一時停止しました。リマインダーはこのページに引き続き表示されます。",
-  "proactive.backoff.restore": "通知を元に戻す",
   "proactive.paused": "自発的なリマインダーはオフです。メールの確認・記録・通知をしていません。",
   "proactive.foot": "期限が来たリマインダーと急ぎのメールは、通知をオンにした端末に届きます。",
   "dailyReview.title": "毎日の採点",
