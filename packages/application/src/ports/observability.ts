@@ -38,6 +38,12 @@ export interface TraceStorePort {
     afterRecordedAt: string | null,
     limit: number,
   ): Promise<readonly TraceEvent[]>;
+  readRecentByType(input: {
+    readonly ownerId: OwnerId;
+    readonly agentId: AgentId;
+    readonly eventType: string;
+    readonly limit: number;
+  }): Promise<readonly TraceEvent[]>;
 }
 
 export interface PayloadEncryptionMetadata {

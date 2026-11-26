@@ -208,6 +208,7 @@ function liveTrace(
     readRun: (runId, afterSequence, limit) => trace.readRun(runId, afterSequence, limit),
     readSession: (sessionId, afterRecordedAt, limit) =>
       trace.readSession(sessionId, afterRecordedAt, limit),
+    readRecentByType: (input) => trace.readRecentByType(input),
   };
 }
 
