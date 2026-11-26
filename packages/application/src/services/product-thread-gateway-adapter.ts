@@ -67,8 +67,17 @@ export interface ThreadMessageOptionsPort {
   }): Promise<ThreadCommandOutcome>;
 }
 
+export interface ThreadSpokenMessagesPort {
+  spoken(input: {
+    readonly ownerId: string;
+    readonly agentId: string;
+    readonly messages: readonly ProductThreadMessage[];
+  }): Promise<ReadonlySet<string>>;
+}
+
 export interface ProductThreadGatewayAdapterDependencies {
   readonly messageOptions?: ThreadMessageOptionsPort;
+  readonly spokenMessages?: ThreadSpokenMessagesPort;
   readonly execution?: {
     readState?(input: {
       ownerId: string;
@@ -441,6 +450,13 @@ export class ProductThreadGatewayAdapter
               messages: result.messages,
             })
           : new Map();
+        const spoken = this.#dependencies.spokenMessages
+          ? await this.#dependencies.spokenMessages.spoken({
+              ownerId,
+              agentId,
+              messages: result.messages,
+            })
+          : new Set<string>();
         return parseResult({
           ...responseEnvelope(query, "snapshot", "thread.detail_snapshot"),
           payload: {
@@ -457,6 +473,7 @@ export class ProductThreadGatewayAdapter
               committedAt: message.committedAt,
               options: decorations.get(message.id)?.options ?? null,
               chosenFrom: decorations.get(message.id)?.chosenFrom ?? null,
+              spoken: spoken.has(message.id),
             })),
             runs: result.runs.map((run) => ({ ...run, runId: run.runId })),
             nextSequence:

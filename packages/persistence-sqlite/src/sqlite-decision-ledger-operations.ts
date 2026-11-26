@@ -18,7 +18,10 @@ import {
   type MuseReferenceEntry,
   type MuseReferenceWrite,
   type RuleLastUse,
+  SPOKEN_REASON_CODES,
   SPOKEN_VERDICTS,
+  type SpokenDecisionRecord,
+  type SpokenStats,
 } from "@himawari-agent/application/decision-ledger";
 import { GMAIL_SOURCE } from "@himawari-agent/application/proactive-sources";
 import { parseRuleRef, type RuleBookVersion } from "@himawari-agent/application/rule-ref";
@@ -34,6 +37,9 @@ type Input<TName extends keyof DecisionLedgerPort> = Parameters<DecisionLedgerPo
 type MarkInput<TName extends keyof GapCaseMarkPort> = Parameters<GapCaseMarkPort[TName]>[0];
 
 const MAX_IDS = 200;
+const SPOKEN_REASONS = Object.values(SPOKEN_REASON_CODES)
+  .map((code) => `'${code}'`)
+  .join(", ");
 
 function validTime(value: string): boolean {
   const parsed = Date.parse(value);
@@ -308,6 +314,12 @@ export class SqliteDecisionLedgerOperations {
         return this.recordSpoken(payload as Input<"recordSpoken">);
       case "decisionLedger.appendIfChanged":
         return this.appendIfChanged(payload as Input<"appendIfChanged">);
+      case "decisionLedger.spokenMessages":
+        return this.spokenMessages(payload as Input<"spokenMessages">);
+      case "decisionLedger.readSpoken":
+        return this.readSpoken(payload as Input<"readSpoken">);
+      case "decisionLedger.spokenStats":
+        return this.spokenStats(payload as Input<"spokenStats">);
       case "decisionLedger.list":
         return this.list(payload as Input<"list">);
       case "decisionLedger.read":
@@ -426,6 +438,84 @@ export class SqliteDecisionLedgerOperations {
           write.durationMs,
         ).changes > 0
     );
+  }
+
+  private spokenMessages(input: Input<"spokenMessages">): readonly string[] {
+    if (!validTime(input.since) || !idList(input.messageIds))
+      this.fail("PORT_INVALID_OPERATION", "Spoken message lookup is invalid");
+    if (input.messageIds.length === 0) return [];
+    return this.database
+      .prepare(
+        `SELECT DISTINCT json_extract(inputs, '$.messageId') AS messageId FROM decision_ledger
+         WHERE owner_id = ? AND agent_id = ? AND kind = 'proactive' AND checked_at >= ?
+           AND reason_code IN (${SPOKEN_REASONS})
+           AND json_extract(inputs, '$.messageId') IN (SELECT value FROM json_each(?))
+         ORDER BY messageId`,
+      )
+      .all(input.ownerId, input.agentId, input.since, JSON.stringify(input.messageIds))
+      .map((row) => (row as { messageId: string }).messageId);
+  }
+
+  private readSpoken(input: Input<"readSpoken">): readonly SpokenDecisionRecord[] {
+    if (!text(input.messageId, 1, 256))
+      this.fail("PORT_INVALID_OPERATION", "Spoken message id is invalid");
+    return this.database
+      .prepare(
+        `SELECT id, scenario, checked_at AS decidedAt, verdict, subject_ref AS subjectRef,
+           json_extract(inputs, '$.sourceIds') AS sourceIds, reason_ref AS reasonRef,
+           owner_rating AS rating, duration_ms AS durationMs
+         FROM decision_ledger
+         WHERE owner_id = ? AND agent_id = ? AND kind = 'proactive'
+           AND reason_code IN (${SPOKEN_REASONS})
+           AND json_extract(inputs, '$.messageId') = ?
+         ORDER BY checked_at, id`,
+      )
+      .all(input.ownerId, input.agentId, input.messageId)
+      .map((row) => {
+        const value = row as Record<string, unknown>;
+        const sources = JSON.parse((value["sourceIds"] as string | null) ?? "[]") as unknown;
+        return Object.freeze({
+          id: value["id"] as string,
+          scenario: (value["scenario"] as string | null) ?? "",
+          decidedAt: value["decidedAt"] as string,
+          verdict: value["verdict"] as SpokenDecisionRecord["verdict"],
+          subjectRef: value["subjectRef"] as string,
+          sourceIds: Object.freeze(
+            Array.isArray(sources) ? sources.filter((id) => typeof id === "string") : [],
+          ),
+          reasonRef: (value["reasonRef"] as string | null) ?? null,
+          rating: (value["rating"] as SpokenDecisionRecord["rating"]) ?? null,
+          durationMs: Number(value["durationMs"] ?? 0),
+        });
+      });
+  }
+
+  private spokenStats(input: Input<"spokenStats">): SpokenStats {
+    if (!validTime(input.start) || !validTime(input.end) || input.start >= input.end)
+      this.fail("PORT_INVALID_OPERATION", "Spoken stats window is invalid");
+    const row = this.database
+      .prepare(
+        `SELECT COUNT(*) AS spoken,
+           COALESCE(SUM(CASE WHEN rating IN ('useful', 'unneeded') THEN 1 ELSE 0 END), 0) AS rated,
+           COALESCE(SUM(CASE WHEN rating = 'useful' THEN 1 ELSE 0 END), 0) AS useful,
+           COALESCE(SUM(CASE WHEN rating = 'unneeded' THEN 1 ELSE 0 END), 0) AS unneeded
+         FROM (
+           SELECT json_extract(inputs, '$.messageId') AS messageId, MAX(owner_rating) AS rating
+           FROM decision_ledger
+           WHERE owner_id = ? AND agent_id = ? AND kind = 'proactive'
+             AND checked_at >= ? AND checked_at < ?
+             AND reason_code IN (${SPOKEN_REASONS})
+             AND json_extract(inputs, '$.messageId') IS NOT NULL
+           GROUP BY messageId
+         )`,
+      )
+      .get(input.ownerId, input.agentId, input.start, input.end) as Record<string, number>;
+    return Object.freeze({
+      spoken: Number(row["spoken"] ?? 0),
+      rated: Number(row["rated"] ?? 0),
+      useful: Number(row["useful"] ?? 0),
+      unneeded: Number(row["unneeded"] ?? 0),
+    });
   }
 
   private appendIfChanged(input: Input<"appendIfChanged">): boolean {

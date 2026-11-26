@@ -314,6 +314,7 @@ const chatMessage = (
   committedAt: "2026-09-11T00:00:00Z",
   options: null,
   chosenFrom: null,
+  spoken: false,
 });
 
 it("[REPLY] shows the replied-to message above the owner's reply and hides the tag", () => {

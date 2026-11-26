@@ -129,7 +129,6 @@ import {
 } from "./production-approval-gateway.js";
 import { backgroundCommandRef } from "./production-background-commands.js";
 import { registerChatExportRoute } from "./production-chat-export.js";
-import { createProductionSpeech } from "./production-speech.js";
 import {
   DataExportJobs,
   deviceExportArchive,
@@ -216,6 +215,8 @@ import {
   PRODUCTION_SERVER_STATUS_OPERATIONS,
   ProductionServerStatusControl,
 } from "./production-server-status-control.js";
+import { createProductionSpeech } from "./production-speech.js";
+import { ProductionSpokenDecisions, spokenMessagesReader } from "./production-spoken-decisions.js";
 import {
   DEFAULT_TIMER_TIME_ZONE,
   localTime,
@@ -1117,6 +1118,7 @@ export async function createProductionHttpComposition(
   const threadAdapter = new ProductThreadGatewayAdapter({
     ...(backgroundWork ? { backgroundWork: { read: () => backgroundWork.backgroundWork() } } : {}),
     ...(options.messageOptions ? { messageOptions: options.messageOptions } : {}),
+    spokenMessages: spokenMessagesReader(repository.decisionLedger()),
     validateModelSelection: (selection, classification) => {
       const model = options.modelCatalog?.find((entry) => entry.ref === selection.modelRef);
       const descriptor = configuration.modelDescriptors.find(
@@ -1807,6 +1809,19 @@ export async function createProductionHttpComposition(
           }),
         }
       : {}),
+    spokenControl: new ProductionSpokenDecisions({
+      scope: { ownerId, agentId },
+      ledger: repository.decisionLedger(),
+      readText: async (ref) => {
+        const payload = await repository.payloadStore(ownerId, agentId).get(ref as never);
+        if (!payload || payload.contentType !== "text/plain") return null;
+        return new TextDecoder("utf-8", { fatal: true }).decode(
+          await payloadProtector.unprotect({ ownerId, agentId, payload }),
+        );
+      },
+      recallRuns: (limit) => repository.realEval().listRuns({ ownerId, agentId, limit }),
+      clock: { now: clock },
+    }),
     perceptionControl: new ProductionPerceptionControl({
       configuration,
       perception,

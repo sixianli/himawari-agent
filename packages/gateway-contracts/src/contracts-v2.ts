@@ -2,8 +2,8 @@ import {
   array,
   booleanValue,
   boundedString,
-  codePointString,
   ContractValidationError,
+  codePointString,
   enumeration,
   gmailMessageId,
   type InferSchema,
@@ -83,6 +83,11 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "decision.chain.snapshot",
   "decision.email.read",
   "decision.email.snapshot",
+  "decision.spoken.read",
+  "decision.spoken.snapshot",
+  "decision.spoken.rate",
+  "decision.stats.read",
+  "decision.stats.snapshot",
   "memory.approval.respond",
   "memory.tidy.undo",
   "memory.conversationReview.undo",
@@ -2406,6 +2411,66 @@ const decisionEmailSnapshotSchema = object({
     ]),
   }),
 });
+export const DECISION_STATS_SPANS = ["week", "four_weeks"] as const;
+const spokenRatingSchema = enumeration(["useful", "unneeded"]);
+const decisionSpokenQuerySchema = object({
+  ...envelope("query", "decision.spoken.read"),
+  payload: object({ messageId: machineString }),
+});
+const decisionSpokenSnapshotSchema = object({
+  ...envelope("snapshot", "decision.spoken.snapshot"),
+  payload: object({
+    messageId: machineString,
+    rating: nullable(spokenRatingSchema),
+    decisions: array(
+      object({
+        decisionId: machineString,
+        decidedAt: timestamp,
+        pushed: booleanValue,
+        reason: nullable(boundedString(1000)),
+        cause: object({
+          kind: boundedString(64),
+          at: timestamp,
+          summary: nullable(boundedString(4000)),
+          memoryId: nullable(machineString),
+        }),
+      }),
+    ),
+  }),
+});
+const decisionSpokenRateCommandSchema = object({
+  ...commandEnvelope("decision.spoken.rate"),
+  payload: object({ messageId: machineString, rating: nullable(spokenRatingSchema) }),
+});
+const decisionStatsPeriodSchema = object({
+  start: timestamp,
+  end: timestamp,
+  spoken: integer(0),
+  rated: integer(0),
+  useful: integer(0),
+  unneeded: integer(0),
+});
+const decisionStatsRecallSchema = object({
+  at: timestamp,
+  correct: integer(0),
+  asked: integer(0),
+});
+const decisionStatsQuerySchema = object({
+  ...envelope("query", "decision.stats.read"),
+  payload: object({ span: enumeration(DECISION_STATS_SPANS) }),
+});
+const decisionStatsSnapshotSchema = object({
+  ...envelope("snapshot", "decision.stats.snapshot"),
+  payload: object({
+    span: enumeration(DECISION_STATS_SPANS),
+    minimumSamples: integer(1),
+    current: decisionStatsPeriodSchema,
+    previous: decisionStatsPeriodSchema,
+    recall: nullable(decisionStatsRecallSchema),
+    previousRecall: nullable(decisionStatsRecallSchema),
+    generatedAt: timestamp,
+  }),
+});
 const memoryOverviewSnapshotSchema = object({
   ...envelope("snapshot", "memory.overview.snapshot"),
   payload: object({
@@ -3911,6 +3976,11 @@ const schemasByType = {
   "decision.chain.snapshot": decisionChainSnapshotSchema,
   "decision.email.read": decisionEmailQuerySchema,
   "decision.email.snapshot": decisionEmailSnapshotSchema,
+  "decision.spoken.read": decisionSpokenQuerySchema,
+  "decision.spoken.snapshot": decisionSpokenSnapshotSchema,
+  "decision.spoken.rate": decisionSpokenRateCommandSchema,
+  "decision.stats.read": decisionStatsQuerySchema,
+  "decision.stats.snapshot": decisionStatsSnapshotSchema,
   "memory.approval.respond": memoryApprovalRespondCommandSchema,
   "memory.tidy.undo": memoryTidyUndoCommandSchema,
   "memory.conversationReview.undo": memoryConversationReviewUndoCommandSchema,
