@@ -31,7 +31,7 @@ jobs:
           export PATH=$PWD/.ci-output/tools/bin:/usr/bin:/bin HIMAWARI_CI_TOOLS=$PWD/.ci-output/tools HIMAWARI_CI_PYTHON=$PWD/.ci-output/tools/python/python/bin/python3
           scratch=$(mktemp -d /tmp/hXXXX); chmod 700 "$scratch"
           set +e
-          TMPDIR=$scratch HIMAWARI_TEST_TEMP_ROOT=$scratch node scripts/ci/local.mjs --check build --tools "$HIMAWARI_CI_TOOLS" --output ".ci-output/$run" > build.log 2>&1
+          env -u GITHUB_ACTIONS TMPDIR=$scratch HIMAWARI_TEST_TEMP_ROOT=$scratch node scripts/ci/local.mjs --check build --tools "$HIMAWARI_CI_TOOLS" --output ".ci-output/$run" > build.log 2>&1
           echo "build-rc=$?"
           set -e
           tail -n 60 build.log
@@ -62,7 +62,7 @@ jobs:
           scratch=$(mktemp -d /tmp/hXXXX); chmod 700 "$scratch"
           export PATH=$PWD/.ci-output/tools/bin:/usr/bin:/bin HIMAWARI_CI_TOOLS=$PWD/.ci-output/tools HIMAWARI_CI_PYTHON=$PWD/.ci-output/tools/python/python/bin/python3 HIMAWARI_TEST_PI_TOOLBIN=$RUNNER_TEMP/pitools
           set +e
-          TMPDIR=$scratch HIMAWARI_TEST_TEMP_ROOT=$scratch HIMAWARI_PRODUCT_PATH_E2E=1 HIMAWARI_PRODUCT_PATH_BROWSER_CHANNEL=chromium \
+          env -u GITHUB_ACTIONS -u CI TMPDIR=$scratch HIMAWARI_TEST_TEMP_ROOT=$scratch HIMAWARI_PRODUCT_PATH_E2E=1 HIMAWARI_PRODUCT_PATH_BROWSER_CHANNEL=chromium \
             HIMAWARI_PRODUCT_PATH_OUTPUT="$walk/product-path" HIMAWARI_TEST_ARTIFACT="$PWD/$artifact" HIMAWARI_TEST_CONTEXT="$PWD/rehearsal/materials/context.json" \
             node node_modules/vitest/vitest.mjs run --config vitest.workspace.ts --project qualification-product-path test/integration/product-path-browser.test.ts \
             -t 'release acceptance in a real browser' --reporter=default > "$walk/vitest.log" 2>&1
