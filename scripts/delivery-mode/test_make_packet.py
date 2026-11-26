@@ -400,6 +400,7 @@ class TemplateTest(RenderedPacket):
         self.assertEqual(packet_maker.next_label('twelfth'), 'thirteenth')
         self.assertEqual(packet_maker.next_label('nineteenth'), 'twentieth')
         self.assertEqual(packet_maker.next_label('twentieth'), 'twentyfirst')
+        self.assertEqual(packet_maker.next_label('firstinstall'), 'first')
         with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_LABEL_NOT_DERIVABLE'):
             packet_maker.next_label('hotfix')
 
@@ -521,8 +522,7 @@ class TemplateTest(RenderedPacket):
         )
         derived = packet_maker.interpret_discovery(facts, INSTANCE, 'twelfth')
         self.assertEqual((derived['OLD_LABEL'], derived['OLD_PREFIX'], derived['OLD_OPERATIONS']), ('firstinstall', prefix, '/opt/himawari/operations/first-install'))
-        with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_LABEL_NOT_DERIVABLE'):
-            packet_maker.interpret_discovery(facts, INSTANCE)
+        self.assertEqual(packet_maker.interpret_discovery(facts, INSTANCE)['LABEL'], 'first')
 
     def test_an_expected_hostname_pinned_in_the_instance_is_still_enforced(self):
         pinned = {**INSTANCE, 'host': {**INSTANCE['host'], 'expectedHostname': 'hermes-home'}}

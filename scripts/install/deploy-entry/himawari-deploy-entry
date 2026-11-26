@@ -35,7 +35,13 @@ git -C "$checkout" merge-base --is-ancestor "$commit" origin/main || refuse COMM
 git -C "$checkout" checkout --quiet --force --detach "$commit" || refuse CHECKOUT_FAILED "$commit" 70
 git -C "$checkout" clean -qfdx -e production/
 
-export PATH="$here/shim:/usr/sbin:/usr/bin:/sbin:/bin"
+build_account="${HIMAWARI_DEPLOY_BUILD_ACCOUNT:-himawari-build}"
+tools="${HIMAWARI_DEPLOY_TOOLS:-$(getent passwd "$build_account" | cut -d: -f6)/packet-builder/tools}"
+[[ -x "$tools/bin/node" ]] || refuse TOOLS_MISSING "no node under $tools/bin; run scripts/install/prepare-host-tools.sh first" 70
+mkdir -p "$base/evidence"
+(cd "$checkout" && PATH="$tools/bin:/usr/sbin:/usr/bin:/sbin:/bin" bash scripts/delivery-mode/hermes/install-dependencies-if-changed.sh "$checkout" "$tools" "$base/evidence/dependencies-$commit") || refuse DEPENDENCIES_FAILED "see $base/evidence/dependencies-$commit.log" 70
+
+export PATH="$here/shim:$tools/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 export HIMAWARI_PACKET_HOST="${HIMAWARI_DEPLOY_LOCAL_HOST:-127.0.0.1}"
 export HIMAWARI_DEPLOY_COMMIT="$commit"
 export HIMAWARI_DEPLOY_SINCE="$since"

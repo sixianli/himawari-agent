@@ -82,6 +82,12 @@ install -d -m 0755 -o "$build_user" -g "$build_user" "$builder_root"
 for directory in work scripts source evidence tools browsers pi-tools-bin materials; do
   install -d -m 0755 -o "$build_user" -g "$build_user" "$builder_root/$directory"
 done
+if [[ ! -d "$builder_root/source/.git" ]]; then
+  origin_url="$(runuser -u "$build_user" -- git -C "$source_dir" remote get-url origin)"
+  runuser -u "$build_user" -- git clone -q "$origin_url" "$builder_root/source"
+fi
+runuser -u "$build_user" -- git -C "$builder_root/source" fetch -q origin
+runuser -u "$build_user" -- git -C "$builder_root/source" checkout -q --force --detach "$revision"
 
 step builder-python
 read -r python_url python_sha python_version < <(python3 -I - "$lock" "$platform" <<'PYTHON'
