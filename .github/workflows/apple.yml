@@ -40,3 +40,42 @@ jobs:
           -configuration Debug
           -destination 'generic/platform=iOS Simulator'
           CODE_SIGNING_ALLOWED=NO
+  scroll:
+    name: apple/scroll
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft != true }}
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: 编译开了优化的调试版 iPhone App（模拟器）
+        run: >-
+          xcodebuild build
+          -project clients/apple/App/Himawari.xcodeproj
+          -scheme Himawari
+          -configuration Debug
+          -destination 'generic/platform=iOS Simulator'
+          -derivedDataPath "$RUNNER_TEMP/dd"
+          ARCHS=arm64
+          ONLY_ACTIVE_ARCH=YES
+          SWIFT_OPTIMIZATION_LEVEL=-O
+          COMPILER_INDEX_STORE_ENABLE=NO
+          CODE_SIGNING_ALLOWED=NO
+          -quiet
+      - name: 长对话上下滚动，量掉帧
+        run: >-
+          bash clients/apple/scripts/scroll-bench.sh
+          --app "$RUNNER_TEMP/dd/Build/Products/Debug-iphonesimulator/Himawari.app"
+          --loads realistic,plain
+          --runs 3
+          --profile realistic
+          --out "$RUNNER_TEMP/scroll-bench"
+      - if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: scroll-bench
+          path: |
+            ${{ runner.temp }}/scroll-bench/*.json
+            ${{ runner.temp }}/scroll-bench/*.txt
+          if-no-files-found: ignore

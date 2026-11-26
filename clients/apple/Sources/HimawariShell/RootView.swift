@@ -16,7 +16,15 @@ public struct HimawariRootView: View {
 
     public var body: some View {
         Group {
-            #if DEBUG
+            #if DEBUG && os(iOS)
+            if let load = ScrollBench.requested {
+                ScrollBenchView(load: load)
+            } else if let scene = DemoScene.requested {
+                DemoSceneView(scene: scene)
+            } else {
+                app
+            }
+            #elseif DEBUG
             if let scene = DemoScene.requested {
                 DemoSceneView(scene: scene)
             } else {
