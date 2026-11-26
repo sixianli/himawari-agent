@@ -9,6 +9,12 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      only:
+        description: 只跑哪一组作业
+        type: choice
+        default: all
+        options: [all, iphone-e2e]
 permissions:
   contents: read
 concurrency:
@@ -20,7 +26,7 @@ defaults:
 jobs:
   iphone:
     name: apple/iphone
-    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft != true }}
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.draft != true) && inputs.only != 'iphone-e2e' }}
     runs-on: macos-26
     timeout-minutes: 60
     steps:
@@ -76,7 +82,7 @@ jobs:
           retention-days: 7
   iphone-accessibility:
     name: apple/iphone-accessibility ${{ matrix.shard }}
-    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft != true }}
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.draft != true) && inputs.only != 'iphone-e2e' }}
     runs-on: macos-26
     timeout-minutes: 60
     strategy:

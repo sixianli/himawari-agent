@@ -70,7 +70,7 @@ swift test
 
 测试覆盖：配对；回答在推流途中就显示；连点两下发送只存一条、只显示一条；空闲 20 秒不误报“没连上”；断网时写的话恢复后发出且只发一次；长按消息出菜单；长对话能滚回开头；她的页面每一行点右侧都有反应、能从屏幕左边缘右滑返回；记忆页的搜索框能输入。界面上的文字从 `Sources/*/Resources/zh-Hans.lproj/Localizable.strings` 和 `ManageStrings.swift` 动态读，改了文案不用改测试。
 
-只在 CI 上跑：`apple.yml` 的 `apple/iphone-e2e` 作业（只改文档的 PR 跳过），以及 `testflight.yml` 的 `testflight/e2e`，上传 TestFlight 要等它通过。两处都调用 `clients/apple/scripts/e2e.sh`：先编译，再起后端、把测试用的根证书装进模拟器，然后只跑 `EndToEndTests`，没找到后端导致全部跳过也判失败。按[测试主机规则](../../.agents/instructions/test-and-production-hosts.md)，这个脚本会起服务器端的进程，不在 Andy 的 Mac 上运行。后端本身另有 `test/integration/ios-e2e-backend.test.ts` 在 Linux 上验证。
+只在 CI 上跑：`apple.yml` 的 `apple/iphone-e2e` 作业（只改文档的 PR 跳过），以及 `testflight.yml` 的 `testflight/e2e`，上传 TestFlight 要等它通过。两处都调用 `clients/apple/scripts/e2e.sh`：先编译，再起后端、把测试用的根证书装进模拟器，然后只跑 `EndToEndTests`，没找到后端导致全部跳过也判失败。按[测试主机规则](../../.agents/instructions/test-and-production-hosts.md)，这个脚本会起服务器端的进程，不在 Andy 的 Mac 上运行。后端本身另有 `test/integration/ios-e2e-backend.test.ts` 在 Linux 上验证。调试端到端测试时，可以手动触发 `apple.yml` 并把输入 `only` 选成 `iphone-e2e`，只占一台 Mac 机器，不跑编译和无障碍审计作业。
 
 修好一个用户看得见的 iPhone 问题，就在这里补一条会在旧代码上失败的测试。
 
