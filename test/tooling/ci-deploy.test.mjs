@@ -63,7 +63,7 @@ function workspace() {
     fakeSsh,
     [
       "#!/bin/bash",
-      'for command; do :; done',
+      "for command; do :; done",
       '[ -n "$FAKE_BACKUP_INSTALLED" ] || FAKE_BACKUP_INSTALLED=1',
       '[ -n "$FAKE_BACKUP_EXIT" ] || FAKE_BACKUP_EXIT=0',
       `echo "$command" >> ${repo}-remote.log`,

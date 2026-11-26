@@ -694,7 +694,7 @@ describe("installable Node services and admin CLI", { timeout: 60_000 }, () => {
     const backupTool = path.join(repositoryRoot, "scripts/operations/backup/himawari-backup.py");
     const runBackup = (...arguments_: string[]) =>
       spawnSync(
-        process.env.HIMAWARI_CI_PYTHON ?? "python3",
+        process.env["HIMAWARI_CI_PYTHON"] ?? "python3",
         ["-I", backupTool, "--settings", settingsPath, ...arguments_],
         {
           cwd: work,
