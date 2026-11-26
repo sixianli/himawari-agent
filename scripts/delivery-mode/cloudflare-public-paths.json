@@ -3,6 +3,12 @@
   "hostname": "himawari.siyi.win",
   "applicationName": "Himawari app entry (bypass)",
   "policyName": "Himawari app entry: everyone",
-  "paths": ["/.well-known/apple-app-site-association"],
+  "paths": [
+    "/.well-known/apple-app-site-association",
+    "/.well-known/oauth-protected-resource",
+    "/.well-known/oauth-authorization-server",
+    "/api/mcp-auth/v1",
+    "/api/mcp/v1"
+  ],
   "retireApplications": []
 }
