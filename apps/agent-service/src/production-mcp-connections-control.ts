@@ -3,10 +3,12 @@ import {
   type ClockPort,
   type GatewayAuthenticationContext,
   type GatewayV2QueryContext,
+  MCP_CONNECTION_DEFAULT_READ_CEILING,
   MCP_CONNECTION_MAXIMUM,
   MCP_CONNECTION_NAME_MAXIMUM,
   type McpConnectionChange,
   type McpConnectionStorePort,
+  type McpOAuthRegistration,
   PORT_ERROR_CODES,
   type ProductConfiguration,
 } from "@himawari-agent/application";
@@ -16,35 +18,25 @@ import type {
   GatewayV2Query,
   GatewayV2Snapshot,
 } from "@himawari-agent/gateway-contracts";
-import {
-  authenticateHttpRequest,
-  type HttpGatewayAuthenticationPort,
-} from "@himawari-agent/platform-node";
-import type { FastifyInstance } from "fastify";
 import { AUTHORIZED_PER_MINUTE } from "./bearer-admission.js";
 import {
-  mcpConnectionIdFor,
-  mcpConnectionSecretDigest,
-  mcpConnectionView,
-  mcpUsageDay,
-  newMcpConnectionSecret,
-} from "./production-mcp-connections.js";
+  MCP_DEFAULT_PUSH_POLICY,
+  type ProductionMcpAuthorization,
+} from "./production-mcp-authorization.js";
+import { mcpConnectionView, mcpUsageDay } from "./production-mcp-connections.js";
 import {
   MCP_READ_BODY_LIMIT,
-  MCP_READ_PATH,
   MCP_READ_TOOL_NAMES,
   MCP_WRITE_TOOL_NAMES,
 } from "./production-mcp-read.js";
 
 export const PRODUCTION_MCP_CONNECTION_OPERATIONS = Object.freeze([
   "mcp.connections.read",
-  "mcp.connection.create",
   "mcp.connection.change",
-  "mcp.connection.rotate",
+  "mcp.grants.read",
+  "mcp.grant.approve",
+  "mcp.grant.deny",
 ] as const);
-
-export const MCP_CONNECTION_ADDRESS_PATH = "/api/mcp-connections/address";
-export const MCP_CONNECTION_ADDRESS_TTL_MS = 10 * 60_000;
 
 export const MCP_TOOL_KINDS = Object.freeze({
   reads: MCP_READ_TOOL_NAMES,
@@ -52,44 +44,10 @@ export const MCP_TOOL_KINDS = Object.freeze({
   ruleProposals: MCP_WRITE_TOOL_NAMES.filter((name) => name === "propose_rule"),
 });
 
-export class McpConnectionAddresses {
-  readonly #clock: ClockPort;
-  readonly #pending = new Map<string, { readonly secret: string; readonly until: number }>();
-
-  constructor(clock: ClockPort) {
-    this.#clock = clock;
-  }
-
-  hold(connectionId: string, secret: string): void {
-    this.#sweep();
-    this.#pending.set(connectionId, {
-      secret,
-      until: Date.parse(this.#clock.now()) + MCP_CONNECTION_ADDRESS_TTL_MS,
-    });
-  }
-
-  drop(connectionId: string): void {
-    this.#pending.delete(connectionId);
-  }
-
-  take(connectionId: string): string | null {
-    this.#sweep();
-    const held = this.#pending.get(connectionId);
-    this.#pending.delete(connectionId);
-    return held?.secret ?? null;
-  }
-
-  #sweep(): void {
-    const now = Date.parse(this.#clock.now());
-    for (const [connectionId, { until }] of this.#pending)
-      if (until <= now) this.#pending.delete(connectionId);
-  }
-}
-
 export interface ProductionMcpConnectionsControlOptions {
   readonly configuration: Pick<ProductConfiguration, "ownerId" | "agentId">;
   readonly store: McpConnectionStorePort;
-  readonly addresses: McpConnectionAddresses;
+  readonly authorization: Pick<ProductionMcpAuthorization, "pendingGrants" | "approve" | "deny">;
   readonly minute: (connectionId: string) => {
     readonly reads: number;
     readonly hookReads: number;
@@ -125,6 +83,35 @@ export class ProductionMcpConnectionsControl {
   }
 
   async query(query: GatewayV2Query, context?: GatewayV2QueryContext): Promise<GatewayV2Snapshot> {
+    if (query.type === "mcp.grants.read") {
+      this.#scope(context?.authentication, query.scope);
+      const grants = await this.#options.authorization.pendingGrants();
+      return {
+        ...query,
+        kind: "snapshot",
+        type: "mcp.grants.snapshot",
+        actor: { actorType: "system", actorId: "agent-service" },
+        payload: {
+          grants: grants.map((grant) => ({
+            id: grant.id,
+            clientName: grant.clientName,
+            registration: grant.registration,
+            clientHost: grant.clientHost,
+            redirectHost: grant.redirectHost,
+            localRedirect: grant.localRedirect,
+            wantsWrite: grant.wantsWrite,
+            existingConnection: grant.existingConnection ? { ...grant.existingConnection } : null,
+            createdAt: grant.createdAt,
+            expiresAt: grant.expiresAt,
+          })),
+          defaults: {
+            readCeiling: MCP_CONNECTION_DEFAULT_READ_CEILING,
+            pushPolicy: MCP_DEFAULT_PUSH_POLICY,
+          },
+          generatedAt: this.#options.clock.now(),
+        },
+      };
+    }
     if (query.type !== "mcp.connections.read")
       throw new Error("MCP_CONNECTIONS_OPERATION_NOT_INSTALLED");
     const scope = this.#scope(context?.authentication, query.scope);
@@ -162,7 +149,8 @@ export class ProductionMcpConnectionsControl {
             reportedClient: view.reportedClient,
             createdAt: view.createdAt,
             updatedAt: view.updatedAt,
-            secretRotatedAt: view.secretRotatedAt,
+            registration: registrationOf(view.oauthClientId),
+            clientHost: clientHostOf(view.oauthClientId),
             lastSeenAt: view.lastSeenAt,
             minute: minutes[index] ?? { reads: 0, hookReads: 0 },
             usage: { ...counts, readsByTool: counts.readsByTool.map((entry) => ({ ...entry })) },
@@ -197,7 +185,6 @@ export class ProductionMcpConnectionsControl {
             used: Math.max(0, ...minutes.map(({ hookReads }) => hookReads)),
           },
         ],
-        addressPath: MCP_CONNECTION_ADDRESS_PATH,
         generatedAt: now,
       },
     };
@@ -209,31 +196,22 @@ export class ProductionMcpConnectionsControl {
   }): Promise<{ resultRef: string; replayed: boolean }> {
     const { authentication, command } = input;
     const now = this.#options.clock.now();
-    if (command.type === "mcp.connection.create") {
-      const scope = this.#scope(authentication, command.scope);
-      const id = mcpConnectionIdFor(scope, command.idempotencyKey);
-      const created = async () =>
-        (await this.#options.store.list(scope)).some((connection) => connection.id === id);
-      if (await created()) return { resultRef: id, replayed: true };
-      const secret = newMcpConnectionSecret();
-      const record = await this.#options.store
-        .create({
-          ...scope,
-          id,
-          name: command.payload.name,
-          secretSha256: mcpConnectionSecretDigest(secret),
-          capabilities: command.payload.capabilities,
-          readCeiling: command.payload.readCeiling,
-          pushPolicy: command.payload.pushPolicy,
-          createdAt: now,
-        })
-        .catch(async (error: unknown) => {
-          if (await created()) return null;
-          throw error;
-        });
-      if (record === null) return { resultRef: id, replayed: true };
-      this.#options.addresses.hold(record.id, secret);
-      return { resultRef: record.id, replayed: false };
+    if (command.type === "mcp.grant.approve") {
+      this.#scope(authentication, command.scope);
+      const { grantId, name, readCeiling, pushPolicy, write } = command.payload;
+      const connectionId = await this.#options.authorization.approve({
+        grantId,
+        name,
+        readCeiling,
+        pushPolicy,
+        write,
+      });
+      return { resultRef: connectionId, replayed: false };
+    }
+    if (command.type === "mcp.grant.deny") {
+      this.#scope(authentication, command.scope);
+      this.#options.authorization.deny(command.payload.grantId);
+      return { resultRef: command.payload.grantId, replayed: false };
     }
     if (command.type === "mcp.connection.change") {
       const scope = this.#scope(authentication, command.scope);
@@ -262,57 +240,18 @@ export class ProductionMcpConnectionsControl {
       const changed = await this.#options.store.change(change);
       if (!changed)
         throw new ApplicationPortError(PORT_ERROR_CODES.NOT_FOUND, "MCP_CONNECTION_NOT_FOUND");
-      if (changed.status === "revoked") this.#options.addresses.drop(changed.id);
       return { resultRef: changed.id, replayed: false };
-    }
-    if (command.type === "mcp.connection.rotate") {
-      const scope = this.#scope(authentication, command.scope);
-      const secret = newMcpConnectionSecret();
-      const rotated = await this.#options.store.rotateSecret({
-        ...scope,
-        id: command.payload.connectionId,
-        secretSha256: mcpConnectionSecretDigest(secret),
-        rotatedAt: now,
-      });
-      if (!rotated)
-        throw new ApplicationPortError(PORT_ERROR_CODES.NOT_FOUND, "MCP_CONNECTION_NOT_FOUND");
-      this.#options.addresses.hold(rotated.id, secret);
-      return { resultRef: rotated.id, replayed: false };
     }
     throw new Error("MCP_CONNECTIONS_OPERATION_NOT_INSTALLED");
   }
 }
 
-export interface McpConnectionAddressRouteOptions {
-  readonly authentication: HttpGatewayAuthenticationPort;
-  readonly sessionCookieName: string;
-  readonly ownerId: ProductConfiguration["ownerId"];
-  readonly addresses: McpConnectionAddresses;
+function registrationOf(clientId: string | null): McpOAuthRegistration | null {
+  if (clientId === null) return null;
+  return clientId.startsWith("https://") ? "metadata_document" : "dynamic";
 }
 
-const CONNECTION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
-
-export function registerMcpConnectionAddressRoute(
-  app: FastifyInstance,
-  options: McpConnectionAddressRouteOptions,
-): void {
-  app.get(
-    MCP_CONNECTION_ADDRESS_PATH,
-    { exposeHeadRoute: false, logLevel: "silent" },
-    async (request, reply) => {
-      reply.header("cache-control", "no-store").header("referrer-policy", "no-referrer");
-      const site = request.headers["sec-fetch-site"];
-      if (site !== undefined && site !== "same-origin" && site !== "none")
-        return reply.code(403).send();
-      const authentication = await authenticateHttpRequest(request, options).catch(() => undefined);
-      if (!authentication || authentication.ownerId !== options.ownerId)
-        return reply.code(401).send();
-      const connectionId = (request.query as Record<string, unknown> | null)?.["connectionId"];
-      if (typeof connectionId !== "string" || !CONNECTION_ID_PATTERN.test(connectionId))
-        return reply.code(400).send();
-      const secret = options.addresses.take(connectionId);
-      if (secret === null) return reply.code(404).send();
-      return reply.code(200).send({ connectionId, path: `${MCP_READ_PATH}/${secret}` });
-    },
-  );
+function clientHostOf(clientId: string | null): string | null {
+  if (clientId === null || !clientId.startsWith("https://") || !URL.canParse(clientId)) return null;
+  return new URL(clientId).host;
 }

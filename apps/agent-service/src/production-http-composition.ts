@@ -157,11 +157,11 @@ import {
   ProductionLoginDevicesControl,
 } from "./production-login-devices-control.js";
 import { ProductionMainThread } from "./production-main-thread.js";
+import type { ProductionMcpAuthorization } from "./production-mcp-authorization.js";
+import { registerMcpAuthorizationRoutes } from "./production-mcp-authorization-routes.js";
 import {
-  McpConnectionAddresses,
   PRODUCTION_MCP_CONNECTION_OPERATIONS,
   ProductionMcpConnectionsControl,
-  registerMcpConnectionAddressRoute,
 } from "./production-mcp-connections-control.js";
 import type { ProductionMcpMemoryWriter } from "./production-mcp-memory-writer.js";
 import { type ProductionMcpRead, registerMcpReadRoute } from "./production-mcp-read.js";
@@ -364,7 +364,11 @@ export interface ProductionHttpCompositionOptions {
   };
   readonly threadDeletionDiagnostic?: (event: Record<string, string>) => void;
   readonly queryPrefetch?: ProductionQueryPrefetch;
-  readonly mcpRead?: ProductionMcpRead;
+  readonly mcpRead?: {
+    readonly read: ProductionMcpRead;
+    readonly authorization: ProductionMcpAuthorization;
+    readonly onAuthorizationFailure: (error: unknown) => void;
+  };
   readonly observation?: ProductionObservation;
   readonly configuration: ProductConfiguration;
   readonly repository: SqliteProductStateRepository;
@@ -1642,7 +1646,6 @@ export async function createProductionHttpComposition(
               : "unknown",
       }),
   });
-  const mcpConnectionAddresses = new McpConnectionAddresses({ now: clock });
   const searchControl = options.memory?.search
     ? new ProductionSearchControl({
         ownerId,
@@ -1913,13 +1916,13 @@ export async function createProductionHttpComposition(
           mcpConnectionsControl: new ProductionMcpConnectionsControl({
             configuration,
             store: repository.mcpConnections(),
-            addresses: mcpConnectionAddresses,
+            authorization: options.mcpRead.authorization,
             minute: (connectionId) =>
-              options.mcpRead?.minuteUsage(connectionId) ?? {
+              options.mcpRead?.read.minuteUsage(connectionId) ?? {
                 reads: 0,
                 hookReads: 0,
               },
-            hookReadsPerMinute: options.mcpRead.hookReadsPerMinute,
+            hookReadsPerMinute: options.mcpRead.read.hookReadsPerMinute,
             timeZone: configuration.runPolicy?.timeZone ?? "UTC",
             clock: { now: clock },
           }),
@@ -2053,12 +2056,10 @@ export async function createProductionHttpComposition(
     now: clock,
   });
   if (options.mcpRead) {
-    registerMcpReadRoute(app, options.mcpRead);
-    registerMcpConnectionAddressRoute(app, {
-      authentication,
-      sessionCookieName: httpConfiguration.sessionCookieName,
-      ownerId,
-      addresses: mcpConnectionAddresses,
+    registerMcpReadRoute(app, options.mcpRead.read);
+    registerMcpAuthorizationRoutes(app, options.mcpRead.authorization, {
+      clock: { now: clock },
+      onFailure: options.mcpRead.onAuthorizationFailure,
     });
   }
   registerAuthentication(app, csrf, recentAuthentication);

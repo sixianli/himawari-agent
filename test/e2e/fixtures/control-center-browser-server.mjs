@@ -553,11 +553,8 @@ const MCP_ZERO_USAGE = {
   failed: 0,
   rateLimited: 0,
 };
-const mcpFixtureState = { connections: [], held: new Map(), commands: [], sequence: 0 };
+const mcpFixtureState = { connections: [] };
 function mcpReset(mode) {
-  mcpFixtureState.held = new Map();
-  mcpFixtureState.commands = [];
-  mcpFixtureState.sequence = 0;
   mcpFixtureState.connections =
     mode === "one"
       ? [
@@ -571,7 +568,8 @@ function mcpReset(mode) {
             reportedClient: "codex",
             createdAt: "2026-08-24T01:00:00.000Z",
             updatedAt: "2026-08-24T01:00:00.000Z",
-            secretRotatedAt: null,
+            registration: "dynamic",
+            clientHost: null,
             lastSeenAt: "2026-08-30T01:00:00.000Z",
             minute: { reads: 2, hookReads: 5 },
             usage: {
@@ -621,56 +619,9 @@ function mcpSnapshot() {
         used: Math.max(0, ...minutes.map(({ hookReads }) => hookReads)),
       },
     ],
-    addressPath: "/api/mcp-connections/address",
     generatedAt: now,
   };
 }
-function handleMcpCommand(message) {
-  if (!message.type.startsWith("mcp.connection.")) return null;
-  mcpFixtureState.commands.push({
-    type: message.type,
-    risk: message.risk,
-    payload: message.payload,
-  });
-  if (message.type === "mcp.connection.create") {
-    mcpFixtureState.sequence += 1;
-    const id = `conn-fixture-${mcpFixtureState.sequence}`;
-    mcpFixtureState.connections.push({
-      id,
-      name: message.payload.name,
-      capabilities: message.payload.capabilities,
-      readCeiling: message.payload.readCeiling,
-      pushPolicy: message.payload.pushPolicy,
-      status: "active",
-      reportedClient: null,
-      createdAt: now,
-      updatedAt: now,
-      secretRotatedAt: null,
-      lastSeenAt: null,
-      minute: { reads: 0, hookReads: 0 },
-      usage: MCP_ZERO_USAGE,
-    });
-    mcpFixtureState.held.set(id, `fixture-key-${mcpFixtureState.sequence}-${"x".repeat(24)}`);
-    return { status: 200, body: { resultRef: id, replayed: false } };
-  }
-  const connection = mcpFixtureState.connections.find(
-    ({ id }) => id === message.payload.connectionId,
-  );
-  if (!connection) return { status: 404, body: { error: { code: "PORT_NOT_FOUND" } } };
-  if (message.type === "mcp.connection.rotate") {
-    if (connection.status === "revoked")
-      return { status: 409, body: { error: { code: "PORT_CONFLICT" } } };
-    mcpFixtureState.sequence += 1;
-    mcpFixtureState.held.set(connection.id, `fixture-key-rotated-${mcpFixtureState.sequence}`);
-    connection.secretRotatedAt = now;
-    return { status: 200, body: { resultRef: connection.id, replayed: false } };
-  }
-  for (const key of ["name", "readCeiling", "status"])
-    if (message.payload[key] !== null) connection[key] = message.payload[key];
-  if (connection.status === "revoked") mcpFixtureState.held.delete(connection.id);
-  return { status: 200, body: { resultRef: connection.id, replayed: false } };
-}
-
 function handleExternalCommand(message) {
   if (!["memory.external.respond", "memory.external.undo"].includes(message.type)) return null;
   externalFixtureState.commands.push({ type: message.type, payload: message.payload });
@@ -2279,9 +2230,6 @@ async function handleRequest(request, response) {
               "decision.chain.read",
               "decision.email.read",
               "mcp.connections.read",
-              "mcp.connection.create",
-              "mcp.connection.change",
-              "mcp.connection.rotate",
             ]
           : []),
       ],
@@ -2321,23 +2269,7 @@ async function handleRequest(request, response) {
       const { mode } = await body(request);
       if (mode !== undefined) mcpReset(mode);
     }
-    json(response, 200, {
-      connections: mcpFixtureState.connections,
-      held: [...mcpFixtureState.held.keys()],
-      commands: mcpFixtureState.commands,
-    });
-    return;
-  }
-  if (memoryFixture && url.pathname === "/api/mcp-connections/address") {
-    const connectionId = url.searchParams.get("connectionId") ?? "";
-    const secret = mcpFixtureState.held.get(connectionId);
-    mcpFixtureState.held.delete(connectionId);
-    if (!secret) {
-      response.writeHead(404, { "cache-control": "no-store" });
-      response.end();
-      return;
-    }
-    json(response, 200, { connectionId, path: `/api/mcp/v1/${secret}` });
+    json(response, 200, { connections: mcpFixtureState.connections });
     return;
   }
   if (executionQualification && url.pathname === "/__fixture/run-approvals") {
@@ -2728,11 +2660,6 @@ async function handleRequest(request, response) {
         reviewFixtureState.commands.push({ type: message.type, payload: message.payload });
         reviewFixtureState.undone = true;
         json(response, 200, { resultRef: "memory-review-undone", replayed: false });
-        return;
-      }
-      const mcp = memoryFixture ? handleMcpCommand(message) : null;
-      if (mcp) {
-        json(response, mcp.status, mcp.body);
         return;
       }
       const external = memoryFixture ? handleExternalCommand(message) : null;
