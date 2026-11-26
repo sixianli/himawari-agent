@@ -2,14 +2,14 @@ import HimawariCore
 import HimawariDesign
 import SwiftUI
 
-struct HerWorkPage: View {
+struct EvaluationPage: View {
     let store: DecisionStatsStore
     @State private var span: StatsSpan = .week
 
     var body: some View {
         List {
             Section {
-                Picker(M.herWorkTitle, selection: $span) {
+                Picker(M.evalTitle, selection: $span) {
                     ForEach(StatsSpan.allCases) { span in
                         Text(M.statsSpan(span)).tag(span)
                     }
@@ -58,7 +58,7 @@ struct HerWorkPage: View {
         #if os(iOS)
         .listStyle(.insetGrouped)
         #endif
-        .navigationTitle(M.herWorkTitle)
+        .navigationTitle(M.evalTitle)
         .refreshable { await store.load(span) }
         .task(id: span) { await store.load(span) }
     }
@@ -77,7 +77,7 @@ struct HerWorkPage: View {
         case .tooFew(let rated):
             StatRow(
                 title: M.rating(rating),
-                value: nil,
+                value: "—",
                 detail: M.statsTooFew(rated),
                 trend: nil,
                 definition: M.statsRateDefinition(rating)

@@ -163,11 +163,11 @@ struct MainShell: View {
         }
     }
 
-    private var explainSpoken: (ThreadMessage, @escaping () -> Void) -> AnyView {
+    private var explainSpoken: (ThreadMessage) -> AnyView {
         let api = model.api
         let confirmKey = model.confirmKey
-        return { message, close in
-            AnyView(SpokenExplanationSheet(api: api, confirmKey: confirmKey, messageId: message.messageId, close: close))
+        return { message in
+            AnyView(SpokenExplanationCard(api: api, confirmKey: confirmKey, messageId: message.messageId))
         }
     }
 

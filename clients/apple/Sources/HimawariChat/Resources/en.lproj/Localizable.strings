@@ -52,7 +52,11 @@
 "chat.menu.reply" = "Reply";
 "chat.menu.copy" = "Copy";
 "chat.menu.select" = "Select Text";
-"chat.menu.why" = "Why She Said This";
+"chat.menu.why" = "Why Himawari Said This";
+"chat.why" = "Why";
+"chat.why.hide" = "Hide";
+"chat.why.open" = "Shown";
+"chat.why.closed" = "Hidden";
 "chat.reply.toAgent" = "Replying to her";
 "chat.reply.toOwner" = "Replying to yourself";
 "chat.reply.missing" = "Original message is gone";

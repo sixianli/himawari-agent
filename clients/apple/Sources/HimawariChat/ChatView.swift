@@ -19,7 +19,7 @@ public struct ChatView: View {
     @Environment(\.chatCanAttach) private var canAttach
     @Environment(\.chatStopRun) private var stopRun
     @Environment(\.chatChooseOption) private var chooseOption
-    @State private var explaining: ThreadMessage?
+    @State private var explained: Set<String> = []
     @Environment(\.chatTalk) private var talk
     @Environment(\.chatOwnerAwaited) private var ownerAwaited
     @Environment(\.chatOpensTalk) private var opensTalk
@@ -46,7 +46,7 @@ public struct ChatView: View {
     @State private var safari: SafariLink?
     #endif
 
-    private let explainSpoken: ((ThreadMessage, @escaping () -> Void) -> AnyView)?
+    private let explainSpoken: ((ThreadMessage) -> AnyView)?
 
     public init(
         store: ChatStore,
@@ -54,7 +54,7 @@ public struct ChatView: View {
         draft: String = "",
         openHerPage: (() -> Void)? = nil,
         close: (() -> Void)? = nil,
-        explainSpoken: ((ThreadMessage, @escaping () -> Void) -> AnyView)? = nil
+        explainSpoken: ((ThreadMessage) -> AnyView)? = nil
     ) {
         self.store = store
         self.close = close
@@ -265,9 +265,6 @@ public struct ChatView: View {
             .sheet(item: $selecting) { message in
                 SelectTextSheet(message: message) { selecting = nil }
             }
-            .sheet(item: $explaining) { message in
-                explainSpoken?(message) { explaining = nil }
-            }
             .fullScreenCover(item: $safari) { link in
                 SafariView(url: link.url).ignoresSafeArea()
             }
@@ -295,8 +292,41 @@ public struct ChatView: View {
             reply: close == nil ? { startReply(to: message) } : nil,
             copy: { copyToPasteboard(MessageCopy.text(raw, fromAgent: fromAgent)) },
             select: { selecting = SelectableMessage(id: message.messageId, text: raw, fromAgent: fromAgent) },
-            why: fromAgent && message.spoken && explainSpoken != nil ? { explaining = message } : nil
+            why: explains(message) ? { toggleWhy(message) } : nil
         )
+    }
+
+    private func explains(_ message: ThreadMessage) -> Bool {
+        message.role == .agent && message.spoken && explainSpoken != nil
+    }
+
+    private func toggleWhy(_ message: ThreadMessage) {
+        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) {
+            if explained.contains(message.messageId) {
+                explained.remove(message.messageId)
+            } else {
+                explained.insert(message.messageId)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func why(for message: ThreadMessage) -> some View {
+        let open = explained.contains(message.messageId)
+        Button {
+            toggleWhy(message)
+        } label: {
+            Label(L.text(open ? "chat.why.hide" : "chat.why"), systemImage: "questionmark.circle")
+                .font(.subheadline)
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .tint(Color.hmSun)
+        .accessibilityValue(L.text(open ? "chat.why.open" : "chat.why.closed"))
+        if open, let explainSpoken {
+            explainSpoken(message)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+        }
     }
 
     private func startReply(to message: ThreadMessage) {
@@ -402,11 +432,16 @@ public struct ChatView: View {
                     switch item {
                     case let .message(message):
                         Group {
-                            if message.role == .agent, let options = message.options {
+                            if message.role == .agent, message.options != nil || explains(message) {
                                 VStack(alignment: .leading, spacing: DesignTokens.Options.afterMessage) {
-                                    MessageRow(role: message.role, text: store.texts[message.contentRef], failed: message.status == .failed, codeMenu: codeMenu(for: message), copyCode: copyCode)
+                                    MessageRow(role: message.role, text: store.texts[message.contentRef], failed: message.status == .failed, codeMenu: codeMenu(for: message), copyCode: copyCode, jump: jump)
                                         .messageMenu(menu(for: message))
-                                    MessageOptionsView(options: options, choose: choose(for: message))
+                                    if let options = message.options {
+                                        MessageOptionsView(options: options, choose: choose(for: message))
+                                    }
+                                    if explains(message) {
+                                        why(for: message)
+                                    }
                                 }
                             } else if message.role == .owner, message.chosenFrom != nil {
                                 ChosenOptionBubble(text: store.texts[message.contentRef] ?? "")

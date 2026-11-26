@@ -53,6 +53,10 @@
 "chat.menu.copy" = "コピー";
 "chat.menu.select" = "テキストを選択";
 "chat.menu.why" = "なぜ伝えたか";
+"chat.why" = "なぜ";
+"chat.why.hide" = "閉じる";
+"chat.why.open" = "表示中";
+"chat.why.closed" = "非表示";
 "chat.reply.toAgent" = "彼女への返信";
 "chat.reply.toOwner" = "自分への返信";
 "chat.reply.missing" = "元のメッセージはありません";

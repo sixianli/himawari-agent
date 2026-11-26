@@ -27,7 +27,7 @@ public struct HerPage: View {
         case timer(String)
         case about
         case files
-        case herWork
+        case evaluation
     }
 
     @State private var settings: SettingsStore
@@ -141,12 +141,18 @@ public struct HerPage: View {
                     }
                     SettingsGroup(label: nil) {
                         Button { path.append(.memory) } label: {
-                            HerRow(icon: .affiliate, title: M.herMemory, subtitle: memory.summary(categoryLabel: M.category).map(M.memorySummary), last: files.phase == .unsupported)
+                            HerRow(icon: .affiliate, title: M.herMemory, subtitle: memory.summary(categoryLabel: M.category).map(M.memorySummary), last: files.phase == .unsupported && stats.phase == .unsupported)
                         }
                         .buttonStyle(.pressable)
                         if files.phase != .unsupported {
                             Button { path.append(.files) } label: {
-                                HerRow(icon: .folder, title: M.filesTitle, systemSymbol: "folder", last: true)
+                                HerRow(icon: .folder, title: M.filesTitle, systemSymbol: "folder", last: stats.phase == .unsupported)
+                            }
+                            .buttonStyle(.pressable)
+                        }
+                        if stats.phase != .unsupported {
+                            Button { path.append(.evaluation) } label: {
+                                HerRow(icon: .listCheck, title: M.evalTitle, systemSymbol: "chart.bar", last: true)
                             }
                             .buttonStyle(.pressable)
                         }
@@ -159,15 +165,9 @@ public struct HerPage: View {
                             .buttonStyle(.pressable)
                         }
                         Button { path.append(.allowances) } label: {
-                            HerRow(icon: .shieldCheck, title: M.allowancesTitle, subtitle: M.allowancesSummary(memory.allowances.count), last: vaultCount == .unsupported && stats.phase == .unsupported)
+                            HerRow(icon: .shieldCheck, title: M.allowancesTitle, subtitle: M.allowancesSummary(memory.allowances.count), last: vaultCount == .unsupported)
                         }
                         .buttonStyle(.pressable)
-                        if stats.phase != .unsupported {
-                            Button { path.append(.herWork) } label: {
-                                HerRow(icon: .listCheck, title: M.herWorkTitle, systemSymbol: "chart.bar", last: vaultCount == .unsupported)
-                            }
-                            .buttonStyle(.pressable)
-                        }
                         if vaultCount != .unsupported {
                             Button { vaultOpen = true } label: {
                                 HerRow(icon: .key, title: M.vaultTitle, subtitle: M.vaultSummary(vaultCount), last: true)
@@ -243,8 +243,8 @@ public struct HerPage: View {
                     AboutPage(server: server) { path.removeLast() }
                 case .files:
                     FilesPage(store: files)
-                case .herWork:
-                    HerWorkPage(store: stats)
+                case .evaluation:
+                    EvaluationPage(store: stats)
                 case .approvals:
                     if let actions {
                         ApprovalsView(model: actions, openThread: { _ in close() }) { path.removeLast() }
