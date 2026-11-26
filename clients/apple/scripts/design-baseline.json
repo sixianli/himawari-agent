@@ -1,0 +1,116 @@
+[
+  {
+    "file": "Sources/HimawariChat/AnswerCode.swift",
+    "code": "fixed-font",
+    "count": 1,
+    "why": "写死字号，不跟动态字体放大；交给 iPhone 编码线程改成 hmType 或 @ScaledMetric（设计规范第 73 条）"
+  },
+  {
+    "file": "Sources/HimawariChat/BackgroundWorkView.swift",
+    "code": "fixed-font",
+    "count": 1,
+    "why": "写死字号，不跟动态字体放大；交给 iPhone 编码线程改成 hmType 或 @ScaledMetric（设计规范第 73 条）"
+  },
+  {
+    "file": "Sources/HimawariChat/ProcessRowView.swift",
+    "code": "fixed-font",
+    "count": 2,
+    "why": "写死字号，不跟动态字体放大；交给 iPhone 编码线程改成 hmType 或 @ScaledMetric（设计规范第 73 条）"
+  },
+  {
+    "file": "Sources/HimawariListen/ListenEntry.swift",
+    "code": "color-literal",
+    "count": 1,
+    "why": "收听功能的界面早于 2026-11-12 的设计令牌，颜色和尺寸还是写死的；收听界面重做时一并清掉"
+  },
+  {
+    "file": "Sources/HimawariListen/ListenEntry.swift",
+    "code": "number-literal",
+    "count": 1,
+    "why": "收听功能的界面早于 2026-11-12 的设计令牌，颜色和尺寸还是写死的；收听界面重做时一并清掉"
+  },
+  {
+    "file": "Sources/HimawariListen/ListenEvalKitView.swift",
+    "code": "color-literal",
+    "count": 1,
+    "why": "收听功能的界面早于 2026-11-12 的设计令牌，颜色和尺寸还是写死的；收听界面重做时一并清掉"
+  },
+  {
+    "file": "Sources/HimawariListen/ListenEvalKitView.swift",
+    "code": "fixed-font",
+    "count": 14,
+    "why": "收听功能的界面早于 2026-11-12 的设计令牌，颜色和尺寸还是写死的；收听界面重做时一并清掉"
+  },
+  {
+    "file": "Sources/HimawariListen/ListenEvalKitView.swift",
+    "code": "gesture-without-button",
+    "count": 1,
+    "why": "收听评测工具页（只给开发用）的出错提示点一下就关，没有按钮也没有无障碍操作；收听界面重做时改成 Button"
+  },
+  {
+    "file": "Sources/HimawariListen/ListenEvalKitView.swift",
+    "code": "number-literal",
+    "count": 19,
+    "why": "收听功能的界面早于 2026-11-12 的设计令牌，颜色和尺寸还是写死的；收听界面重做时一并清掉"
+  },
+  {
+    "file": "Sources/HimawariListenUI/ListenActivityWidget.swift",
+    "code": "color-literal",
+    "count": 1,
+    "why": "收听功能的界面早于 2026-11-12 的设计令牌，颜色和尺寸还是写死的；收听界面重做时一并清掉"
+  },
+  {
+    "file": "Sources/HimawariListenUI/ListenActivityWidget.swift",
+    "code": "fixed-font",
+    "count": 2,
+    "why": "收听功能的界面早于 2026-11-12 的设计令牌，颜色和尺寸还是写死的；收听界面重做时一并清掉"
+  },
+  {
+    "file": "Sources/HimawariListenUI/ListenActivityWidget.swift",
+    "code": "number-literal",
+    "count": 7,
+    "why": "收听功能的界面早于 2026-11-12 的设计令牌，颜色和尺寸还是写死的；收听界面重做时一并清掉"
+  },
+  {
+    "file": "Sources/HimawariListenUI/ListenLiveViews.swift",
+    "code": "color-literal",
+    "count": 26,
+    "why": "收听功能的界面早于 2026-11-12 的设计令牌，颜色和尺寸还是写死的；收听界面重做时一并清掉"
+  },
+  {
+    "file": "Sources/HimawariListenUI/ListenLiveViews.swift",
+    "code": "fixed-font",
+    "count": 14,
+    "why": "收听功能的界面早于 2026-11-12 的设计令牌，颜色和尺寸还是写死的；收听界面重做时一并清掉"
+  },
+  {
+    "file": "Sources/HimawariListenUI/ListenLiveViews.swift",
+    "code": "number-literal",
+    "count": 44,
+    "why": "收听功能的界面早于 2026-11-12 的设计令牌，颜色和尺寸还是写死的；收听界面重做时一并清掉"
+  },
+  {
+    "file": "Sources/HimawariListenUI/ListenSheets.swift",
+    "code": "fixed-font",
+    "count": 6,
+    "why": "收听功能的界面早于 2026-11-12 的设计令牌，颜色和尺寸还是写死的；收听界面重做时一并清掉"
+  },
+  {
+    "file": "Sources/HimawariListenUI/ListenSheets.swift",
+    "code": "number-literal",
+    "count": 19,
+    "why": "收听功能的界面早于 2026-11-12 的设计令牌，颜色和尺寸还是写死的；收听界面重做时一并清掉"
+  },
+  {
+    "file": "Sources/HimawariSenses/SensesView.swift",
+    "code": "hidden-navigation-bar",
+    "count": 1,
+    "why": "感知各页仍是自绘玻璃返回钮加隐藏系统导航栏，边缘右滑返回失效；交给 iPhone 编码线程照第 70 条改成系统导航栏"
+  },
+  {
+    "file": "Sources/HimawariShell/PairingView.swift",
+    "code": "fixed-font",
+    "count": 2,
+    "why": "配对页标题写死字号，不跟动态字体放大；交给 iPhone 编码线程改（第 73 条）"
+  }
+]

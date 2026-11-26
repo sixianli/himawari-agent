@@ -3,7 +3,10 @@ import os from "node:os";
 import path from "node:path";
 import { expect, it } from "vitest";
 import {
+  applyBaseline,
   checkDesign,
+  contrastRatio,
+  findContrastProblems,
   findViolations,
   findWebViolations,
 } from "../../clients/apple/scripts/check-design.mjs";
@@ -82,10 +85,25 @@ it("accepts token-based code", () => {
   }
 });
 
+const readable = (bg, fg) =>
+  Object.fromEntries(
+    [
+      "surface",
+      "text",
+      "muted",
+      "sun",
+      "danger",
+      "success",
+      "glyph",
+      "onSpeak",
+      "onText",
+      "speak",
+    ].map((name) => [name, ["surface", "onSpeak", "onText"].includes(name) ? bg : fg]),
+  );
 const tokens = {
   color: {
-    light: { bg: "#fcfcfb", fill: "rgba(37,41,33,0.06)" },
-    dark: { bg: "#1e1e1e", fill: "rgba(228,228,225,0.08)" },
+    light: { bg: "#fcfcfb", fill: "rgba(37,41,33,0.06)", ...readable("#fcfcfb", "#252921") },
+    dark: { bg: "#1e1e1e", fill: "rgba(228,228,225,0.08)", ...readable("#1e1e1e", "#e4e4e1") },
   },
   shadow: { light: { lift: "0 2 10 rgba(0,0,0,0.07)" }, dark: { lift: "0 2 10 rgba(0,0,0,0.35)" } },
   glass: { blur: 22 },
@@ -161,7 +179,10 @@ it("fails when page code has a literal and when generated tokens are stale", asy
       path.join(apple, "Sources/HimawariChat/Bad.swift"),
       ".font(.system(size: 17))\n",
     );
-    expect(checkDesign(apple, repo).problems.map((p) => p.code)).toEqual(["number-literal"]);
+    expect(checkDesign(apple, repo).problems.map((p) => p.code)).toEqual([
+      "fixed-font",
+      "number-literal",
+    ]);
 
     await rm(path.join(apple, "Sources/HimawariChat/Bad.swift"));
     await writeFile(
@@ -223,4 +244,101 @@ it("rejects literal colors and sizes in the Safari panel and keeps its token CSS
   } finally {
     await rm(repo, { recursive: true, force: true });
   }
+});
+
+it("rejects tap and long-press gestures that VoiceOver cannot reach", () => {
+  expect(
+    findViolations(".contentShape(Rectangle())\n.onTapGesture(perform: open)\n", "X.swift").map(
+      (v) => v.code,
+    ),
+  ).toEqual(["gesture-without-button"]);
+  expect(findViolations(".onLongPressGesture { start() }", "X.swift").map((v) => v.code)).toEqual([
+    "gesture-without-button",
+  ]);
+  for (const source of [
+    ".onTapGesture(perform: open)\n.accessibilityAction(named: Text(label), open)",
+    ".onTapGesture { open() }\n.accessibilityAddTraits(.isButton)",
+    ".onTapGesture { focus() }\n.gesture(\n  LongPressGesture()\n    .onEnded { _ in end() }\n)\n.accessibilityHidden(true)",
+  ]) {
+    expect(findViolations(source, "X.swift")).toEqual([]);
+  }
+  expect(
+    findViolations(
+      ".onTapGesture { open() }\n}\nText(a).accessibilityAddTraits(.isButton)",
+      "X.swift",
+    ).map((v) => v.code),
+  ).toEqual(["gesture-without-button"]);
+});
+
+it("rejects a hidden system navigation bar, an app-only appearance and fixed font sizes", () => {
+  for (const [line, code] of [
+    ["toolbar(.hidden, for: .navigationBar)", "hidden-navigation-bar"],
+    [".navigationBarHidden(true)", "hidden-navigation-bar"],
+    [".toolbarVisibility(.hidden, for: .navigationBar)", "hidden-navigation-bar"],
+    [".preferredColorScheme(.dark)", "app-color-scheme"],
+    [".font(.system(size: DesignTokens.ProcessRow.fontSize))", "fixed-font"],
+    [".font(.custom(name, size: DesignTokens.TypeScale.body.size))", "fixed-font"],
+  ]) {
+    expect(findViolations(line, "X.swift").map((v) => v.code)).toEqual([code]);
+  }
+  for (const line of [
+    ".font(.custom(name, size: DesignTokens.TypeScale.body.size, relativeTo: .body))",
+    ".font(.body)",
+    ".toolbar(.hidden, for: .tabBar)",
+  ]) {
+    expect(findViolations(line, "X.swift")).toEqual([]);
+  }
+});
+
+it("measures text contrast of the approved tokens in light and dark", () => {
+  expect(contrastRatio([0, 0, 0], [255, 255, 255])).toBeCloseTo(21, 5);
+  const palette = {
+    bg: "#ffffff",
+    surface: "#ffffff",
+    text: "#000000",
+    muted: "#767676",
+    sun: "#000000",
+    danger: "#000000",
+    success: "#000000",
+    glyph: "#000000",
+    onSpeak: "#ffffff",
+    speak: "#000000",
+    onText: "#ffffff",
+  };
+  expect(findContrastProblems({ color: { light: palette } })).toEqual([]);
+  const low = findContrastProblems({ color: { light: { ...palette, muted: "#999999" } } });
+  expect(low.map((p) => [p.appearance, p.fg, p.bg])).toEqual([
+    ["light", "muted", "bg"],
+    ["light", "muted", "surface"],
+  ]);
+  expect(low[0].ratio).toBeLessThan(4.5);
+  expect(
+    findContrastProblems({ color: { dark: { ...palette, glyph: "rgba(0,0,0,0.2)" } } }).map(
+      (p) => p.fg,
+    ),
+  ).toEqual(["glyph", "glyph"]);
+});
+
+it("lets the baseline hold known debt but never more, and flags entries that went stale", () => {
+  const found = [
+    { file: "A.swift", line: 1, code: "fixed-font" },
+    { file: "A.swift", line: 2, code: "fixed-font" },
+    { file: "B.swift", line: 1, code: "fixed-font" },
+  ];
+  expect(
+    applyBaseline(found, [{ file: "A.swift", code: "fixed-font", count: 2, why: "x" }]),
+  ).toEqual([found[2]]);
+  expect(
+    applyBaseline(found, [{ file: "A.swift", code: "fixed-font", count: 1, why: "x" }]).length,
+  ).toBe(3);
+  expect(
+    applyBaseline(found.slice(2), [
+      { file: "A.swift", code: "fixed-font", count: 2, why: "x" },
+    ]).map((p) => p.code),
+  ).toEqual(["fixed-font", "baseline-stale"]);
+  expect(
+    applyBaseline(found.slice(0, 2), [{ file: "A.swift", code: "fixed-font", count: 2 }]).map(
+      (p) => p.code,
+    ),
+  ).toEqual(["baseline-without-reason"]);
 });
