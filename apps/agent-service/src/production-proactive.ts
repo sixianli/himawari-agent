@@ -199,9 +199,10 @@ export interface ProductionProactiveOptions {
 
 export type ProactiveAuthorizationOutcome = "connected" | "denied" | "failed";
 
-export type ProactiveAppAuthorizationStart =
-  | { readonly kind: "browser"; readonly authorizationUrl: string }
-  | { readonly kind: "demo" };
+export interface ProactiveAppAuthorizationStart {
+  readonly kind: "browser";
+  readonly authorizationUrl: string;
+}
 
 export const PROACTIVE_APP_CALLBACK_HOST = "gmail-authorization";
 
@@ -420,15 +421,10 @@ export class ProductionProactive {
     return this.#issueState({ owner });
   }
 
-  async beginAppAuthorization(input: {
+  beginAppAuthorization(input: {
     readonly deviceId: string;
     readonly callbackScheme: string;
-  }): Promise<ProactiveAppAuthorizationStart> {
-    if (this.#options.configuration.demoInbox) {
-      await this.seedDemoInbox({ restore: true });
-      void this.tick();
-      return { kind: "demo" };
-    }
+  }): ProactiveAppAuthorizationStart {
     return {
       kind: "browser",
       authorizationUrl: this.#issueState({

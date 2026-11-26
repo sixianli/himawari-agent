@@ -101,19 +101,6 @@ final class GmailStoreTests: XCTestCase {
         XCTAssertEqual(gmail.status, .disconnected)
     }
 
-    func testDemoMailboxConnectsWithoutOpeningGoogle() async {
-        let server = GmailServer()
-        await server.set(start: #"{"kind":"demo"}"#)
-        let gmail = store(server)
-        var opened = false
-        let outcome = await gmail.connect { _, _ in
-            opened = true
-            return nil
-        }
-        XCTAssertEqual(outcome, .connected)
-        XCTAssertFalse(opened)
-    }
-
     func testExpiredAccessShowsWhenMailStoppedBeingRead() async {
         let server = GmailServer()
         await server.set(

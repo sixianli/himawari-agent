@@ -135,7 +135,6 @@ public final class GmailStore {
         do {
             let startedData = try await gateway.post(Self.startPath, body: ["connection": .string(Self.source), "callbackScheme": .string(callbackScheme)])
             let started = try JSONDecoder().decode(Started.self, from: startedData)
-            if started.kind == "demo" { return .connected }
             guard started.kind == "browser", let page = started.authorizationUrl.flatMap(URL.init(string:)) else { return .failed }
             guard let returned = try await signIn(page, callbackScheme) else { return .cancelled }
             guard let state = Self.state(in: returned, scheme: callbackScheme) else { return .failed }

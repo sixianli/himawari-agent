@@ -291,9 +291,10 @@ export interface DeviceDownload {
   readonly fileName: string;
 }
 
-export type DeviceConnectionAuthorizationStart =
-  | { readonly kind: "browser"; readonly authorizationUrl: string }
-  | { readonly kind: "demo" };
+export interface DeviceConnectionAuthorizationStart {
+  readonly kind: "browser";
+  readonly authorizationUrl: string;
+}
 
 export interface DeviceConnectionsPort {
   begin(input: {

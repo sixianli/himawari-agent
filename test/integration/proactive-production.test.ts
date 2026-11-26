@@ -677,7 +677,6 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
       deviceId,
       callbackScheme: APP_SCHEME,
     });
-    if (started.kind !== "browser") throw new Error("expected a Google sign-in page");
     const google = new URL(started.authorizationUrl);
     expect(google.origin + google.pathname).toBe("https://accounts.google.com/o/oauth2/v2/auth");
     expect(google.searchParams.get("redirect_uri")).toBe(
@@ -767,16 +766,6 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
     expect(
       h.google.calls.filter(({ url }) => url === "https://oauth2.googleapis.com/token"),
     ).toEqual([]);
-  });
-
-  it("[PG-12] on the demo mailbox the app connects without opening Google", async () => {
-    const h = await setup({ demoInbox: "ja" });
-    expect(
-      await h.proactive.beginAppAuthorization({ deviceId: "device-a", callbackScheme: APP_SCHEME }),
-    ).toEqual({ kind: "demo" });
-    await h.proactive.stop();
-    expect((await h.overview()).connection.status).toBe("connected");
-    expect(h.google.calls).toEqual([]);
   });
 
   const smbcRule = {
