@@ -90,10 +90,8 @@ struct DeviceRow: View {
                 Text(device.name).foregroundStyle(Color.hmText)
                 HStack(spacing: DesignTokens.Size.rowGap / 2) {
                     if online {
-                        Image(systemName: "circle.fill")
-                            .imageScale(.small)
+                        Icon(.point, size: DesignTokens.IconSize.chevron / 2)
                             .foregroundStyle(Color.hmSuccess)
-                            .accessibilityHidden(true)
                     }
                     Text(subtitle).foregroundStyle(subtitleColor)
                 }
@@ -112,9 +110,9 @@ struct DeviceKindIcon: View {
         Group {
             switch kind {
             case "iphone": Icon(.deviceMobilePlain, size: DesignTokens.Her.rowIcon)
-            case "mac": Image(systemName: "laptopcomputer")
-            case "watch": Image(systemName: "applewatch")
-            default: Image(systemName: "questionmark.app")
+            case "mac": Icon(.deviceLaptop, size: DesignTokens.Her.rowIcon)
+            case "watch": Icon(.deviceWatch, size: DesignTokens.Her.rowIcon)
+            default: Icon(.infoCircle, size: DesignTokens.Her.rowIcon)
             }
         }
         .foregroundStyle(Color.hmSun)
