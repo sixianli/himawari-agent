@@ -35,7 +35,6 @@ public struct HimawariRootView: View {
             #endif
         }
         .dismissesKeyboardOnOutsideTap()
-        .dynamicTypeSize(...DynamicTypeSize.accessibility2)
     }
 
     @State private var handoverEntry: HandoverEntryLink?

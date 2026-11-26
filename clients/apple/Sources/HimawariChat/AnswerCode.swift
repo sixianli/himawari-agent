@@ -75,7 +75,7 @@ struct AnswerCodeBlock: View {
                     showingCheck = true
                 } label: {
                     Image(systemName: showingCheck ? "checkmark" : "doc.on.doc")
-                        .font(.system(size: Self.label.size))
+                        .hmType(Self.label)
                         .foregroundStyle(Color.hmMuted)
                         .frame(minWidth: DesignTokens.Size.minTapTarget, minHeight: DesignTokens.Size.minTapTarget, alignment: .trailing)
                         .contentShape(Rectangle())

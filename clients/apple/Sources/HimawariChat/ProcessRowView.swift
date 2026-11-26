@@ -79,7 +79,7 @@ public struct ProcessRowView: View {
             HStack(spacing: DesignTokens.ProcessRow.gap) {
                 Icon(icon, size: DesignTokens.IconSize.processRow)
                 Text(text)
-                    .font(.system(size: DesignTokens.ProcessRow.fontSize))
+                    .hmType(ProcessRowText.type)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Text(L.format("process.seconds", seconds))
                     .hmType(DesignTokens.TypeScale.caption)
@@ -176,7 +176,7 @@ struct ProcessLineLabel: View {
                 ShimmerText(text: text)
             } else {
                 Text(text)
-                    .font(.system(size: DesignTokens.ProcessRow.fontSize))
+                    .hmType(ProcessRowText.type)
                     .foregroundStyle(tint)
             }
         }
@@ -226,4 +226,8 @@ extension EnvironmentValues {
     @Entry public var processStepsOpenAfter: Double? = nil
     @Entry public var transcriptScrollsToTopAfter: Double? = nil
     @Entry public var listClock: Date? = nil
+}
+
+enum ProcessRowText {
+    static let type = TypeToken(size: DesignTokens.ProcessRow.fontSize, weight: 400, lineHeight: nil, face: .system, tracking: 0)
 }

@@ -23,7 +23,7 @@ struct BackgroundWorkCapsule: View {
                 Icon(.chevronRight, size: DesignTokens.IconSize.chevron)
                     .foregroundStyle(Color.hmMuted)
             }
-            .font(.system(size: DesignTokens.Avatar.backgroundPillFontSize))
+            .hmType(TypeToken(size: DesignTokens.Avatar.backgroundPillFontSize, weight: 400, lineHeight: nil, face: .system, tracking: 0))
             .padding(.leading, DesignTokens.Avatar.backgroundPillPaddingLeft)
             .padding(.trailing, DesignTokens.Avatar.backgroundPillPaddingRight)
             .frame(height: DesignTokens.Avatar.backgroundPillHeight)

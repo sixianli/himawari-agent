@@ -903,9 +903,14 @@ struct QueuedMessageRow: View {
                     HStack(spacing: 12) {
                         Text(L.text("chat.queued.offline"))
                             .foregroundStyle(Color.hmDanger)
-                        Button(L.text("chat.queued.retryNow"), action: retry)
-                            .fontWeight(.semibold)
-                            .foregroundStyle(Color.hmSun)
+                        Button(action: retry) {
+                            Text(L.text("chat.queued.retryNow"))
+                                .fontWeight(.semibold)
+                                .foregroundStyle(Color.hmSun)
+                                .frame(minWidth: DesignTokens.Size.minTapTarget, minHeight: DesignTokens.Size.minTapTarget)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.pressable)
                     }
                 case .waiting, .sending:
                     Text(L.text("chat.queued.sending"))
