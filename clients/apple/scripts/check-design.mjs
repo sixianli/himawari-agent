@@ -96,7 +96,7 @@ const RULES = [
   },
   {
     code: "fixed-font",
-    pattern: /\.font\(\s*\.system\(\s*size:|(?:\bFont)?\.custom\((?![^)]*relativeTo:)[^)]*\bsize:/u,
+    pattern: /\.font\(\s*\.system\(\s*size:/u,
   },
   {
     code: "number-literal",
@@ -123,6 +123,23 @@ function modifierChain(lines, start) {
     if (depth < 0) break;
   }
   return text;
+}
+
+export const FONT_DIRECTORIES = ["Sources", "App"];
+
+const FONT_RULE = {
+  code: "custom-font",
+  pattern:
+    /(?:Font)?\.custom\([^)]*\b(?:size|fixedSize):|design:\s*\.serif\b|\.withDesign\(\s*\.serif\s*\)|\b(?:UIFont|NSFont)\(\s*name:|\bCTFontCreateWithName\b/u,
+};
+
+export function findFontViolations(source, file) {
+  const violations = [];
+  source.split("\n").forEach((line, index) => {
+    if (FONT_RULE.pattern.test(line))
+      violations.push({ file, line: index + 1, code: FONT_RULE.code, text: line.trim() });
+  });
+  return violations;
 }
 
 export function findViolations(source, file) {
@@ -216,6 +233,11 @@ export function checkDesign(root = appleRoot, repo = repositoryRoot) {
   for (const directory of PAGE_DIRECTORIES) {
     for (const file of swiftFiles(path.join(root, directory))) {
       problems.push(...findViolations(readFileSync(file, "utf8"), path.relative(root, file)));
+    }
+  }
+  for (const directory of FONT_DIRECTORIES) {
+    for (const file of swiftFiles(path.join(root, directory))) {
+      problems.push(...findFontViolations(readFileSync(file, "utf8"), path.relative(root, file)));
     }
   }
   const web = path.join(root, WEB_DIRECTORY);

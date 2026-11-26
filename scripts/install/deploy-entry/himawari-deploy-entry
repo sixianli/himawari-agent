@@ -1,0 +1,45 @@
+#!/bin/bash
+set -uo pipefail
+umask 077
+base="${HIMAWARI_DEPLOY_BASE:-/var/lib/himawari-deploy}"
+repo_url="${HIMAWARI_DEPLOY_REPO_URL:-https://github.com/sixianli/himawari-agent.git}"
+here="$(cd "$(dirname "$0")" && pwd)"
+
+refuse() {
+  echo "DEPLOY_ENTRY_REFUSED $1: $2" >&2
+  exit "${3:-64}"
+}
+
+request="${SSH_ORIGINAL_COMMAND:-}"
+if [[ ! "$request" =~ ^deploy\ ([0-9a-f]{40})\ (-|[0-9a-f]{40})\ ([01])$ ]]; then
+  refuse REQUEST_INVALID "only 'deploy <40-hex commit> <40-hex since or -> <0|1 force>' is accepted"
+fi
+commit="${BASH_REMATCH[1]}"
+since="${BASH_REMATCH[2]}"
+force="${BASH_REMATCH[3]}"
+[[ "$since" != - ]] || since=""
+
+mkdir -p "$base"
+exec 9> "$base/deploy.lock"
+flock -n 9 || refuse ALREADY_RUNNING "another deploy holds $base/deploy.lock" 75
+
+checkout="$base/checkout"
+if [[ ! -d "$checkout/.git" ]]; then
+  rm -rf "$checkout"
+  git clone --quiet --no-checkout "$repo_url" "$checkout" || refuse CLONE_FAILED "$repo_url" 70
+fi
+git -C "$checkout" fetch --quiet origin main || refuse FETCH_FAILED "$repo_url main" 70
+git -C "$checkout" cat-file -e "$commit^{commit}" 2>/dev/null || refuse COMMIT_UNKNOWN "$commit is not in main of $repo_url" 65
+git -C "$checkout" merge-base --is-ancestor "$commit" origin/main || refuse COMMIT_NOT_ON_MAIN "$commit is not on main of $repo_url" 65
+[[ -z "$since" ]] || git -C "$checkout" cat-file -e "$since^{commit}" 2>/dev/null || refuse SINCE_UNKNOWN "$since" 65
+git -C "$checkout" checkout --quiet --force --detach "$commit" || refuse CHECKOUT_FAILED "$commit" 70
+git -C "$checkout" clean -qfdx -e production/
+
+export PATH="$here/shim:/usr/sbin:/usr/bin:/sbin:/bin"
+export HIMAWARI_PACKET_HOST="${HIMAWARI_DEPLOY_LOCAL_HOST:-127.0.0.1}"
+export HIMAWARI_DEPLOY_COMMIT="$commit"
+export HIMAWARI_DEPLOY_SINCE="$since"
+export HIMAWARI_DEPLOY_FORCE="$force"
+export HIMAWARI_DEPLOY_OUTPUT_ROOT="$base/production"
+cd "$checkout" || exit 70
+exec bash scripts/delivery-mode/ci-deploy.sh

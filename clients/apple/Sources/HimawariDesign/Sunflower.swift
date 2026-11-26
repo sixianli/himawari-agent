@@ -9,15 +9,18 @@ public struct SunflowerMark: View {
     }
 
     private let motion: Motion
+    private let seeds: Int?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.stillFrames) private var stillFrames
 
     public init(growing: Bool = false) {
         motion = growing ? .growing : .still
+        seeds = nil
     }
 
-    public init(motion: Motion) {
+    public init(motion: Motion, seeds: Int? = nil) {
         self.motion = motion
+        self.seeds = seeds
     }
 
     public var body: some View {
@@ -54,7 +57,7 @@ public struct SunflowerMark: View {
     private func disc(startsEmpty: Bool, growth growthFor: @escaping (Int) -> Double) -> some View {
         Canvas { context, size in
             let side = min(size.width, size.height)
-            let seeds = SunflowerSeeds.seedCount(forDiameter: side)
+            let seeds = self.seeds ?? SunflowerSeeds.seedCount(forDiameter: side)
             let growth = growthFor(seeds)
             let scale = side * SunflowerSeeds.frameShare / (2 * SunflowerSeeds.reach(seeds: seeds))
             let dx = size.width / 2 - SunflowerSeeds.center * scale
