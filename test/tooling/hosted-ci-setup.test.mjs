@@ -60,7 +60,12 @@ describe("iPhone 工作流", () => {
     readFileSync(path.join(repositoryRoot, ".github/workflows/apple.yml"), "utf8"),
   );
   it("只在免费的标准机器上跑，只读权限，跳过草稿，没碰 iPhone 客户端时不占 Mac 机器", () => {
-    expect(Object.keys(workflow.jobs)).toEqual(["changes", "iphone", "iphone-accessibility"]);
+    expect(Object.keys(workflow.jobs)).toEqual([
+      "changes",
+      "iphone",
+      "mac",
+      "iphone-accessibility",
+    ]);
     const { changes, ...macJobs } = workflow.jobs;
     expect(changes["runs-on"]).toBe("ubuntu-24.04");
     expect(changes.if).toContain("github.event.pull_request.draft != true");
@@ -95,6 +100,23 @@ describe("iPhone 工作流", () => {
         "utf8",
       ).length,
     ).toBeGreaterThan(0);
+  });
+  it("不签名编译原生 Mac App 的 HimawariMac scheme", () => {
+    const build =
+      workflow.jobs.mac.steps.find((step) => step.run?.startsWith("xcodebuild build"))?.run ?? "";
+    expect(workflow.jobs.mac.name).toBe("apple/mac");
+    expect(build).toContain("-scheme HimawariMac");
+    expect(build).toContain("generic/platform=macOS");
+    expect(build).toContain("CODE_SIGNING_ALLOWED=NO");
+    expect(
+      readFileSync(
+        path.join(
+          repositoryRoot,
+          "clients/apple/App/Himawari.xcodeproj/xcshareddata/xcschemes/HimawariMac.xcscheme",
+        ),
+        "utf8",
+      ),
+    ).toContain('BlueprintName = "HimawariMac"');
   });
   it("每个示例场景都跑苹果的无障碍审计，审计测试在 Himawari scheme 里", () => {
     const job = workflow.jobs["iphone-accessibility"];

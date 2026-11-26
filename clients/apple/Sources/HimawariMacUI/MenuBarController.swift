@@ -14,12 +14,14 @@ final class MenuBarController: NSObject, NSWindowDelegate, NSDraggingDestination
     private let inputBar: InputBarWindow
     private let notices = ResultNotices()
     private var shortcut: GlobalShortcut?
-    private var settingsWindow: NSWindow?
     private var pairingWindow: NSWindow?
     private var observation: Task<Void, Never>?
     private let messages: MessagesSensor
     private let presence: PresenceSensor
     private let pairingInbox = PairingInbox()
+    private var wasSignedIn = false
+    var openMain: () -> Void = {}
+    var openSettingsWindow: () -> Void = {}
 
     init(model: MenuBarModel) {
         self.model = model
@@ -86,7 +88,10 @@ final class MenuBarController: NSObject, NSWindowDelegate, NSDraggingDestination
             while !Task.isCancelled {
                 guard let self else { return }
                 updateBadge(model.awaitingCount)
-                if model.app.phase == .active { pairingWindow?.close() }
+                let signedIn = model.app.phase == .active
+                if signedIn { pairingWindow?.close() }
+                if signedIn && !wasSignedIn { openMain() }
+                wasSignedIn = signedIn
                 await withCheckedContinuation { continuation in
                     withObservationTracking {
                         _ = self.model.awaitingCount
@@ -100,6 +105,7 @@ final class MenuBarController: NSObject, NSWindowDelegate, NSDraggingDestination
     }
 
     private func updateBadge(_ count: Int) {
+        NSApp.dockTile.badgeLabel = count > 0 ? String(count) : nil
         guard let button = statusItem.button else { return }
         if count > 0 {
             button.attributedTitle = NSAttributedString(string: String(count), attributes: [
@@ -156,16 +162,7 @@ final class MenuBarController: NSObject, NSWindowDelegate, NSDraggingDestination
     }
 
     @objc func openSettings() {
-        if settingsWindow == nil {
-            let window = NSWindow(contentViewController: NSHostingController(rootView: SettingsHost(model: model)))
-            window.title = L.text("settings.title")
-            window.styleMask = [.titled, .closable]
-            window.isReleasedWhenClosed = false
-            settingsWindow = window
-        }
-        NSApp.activate()
-        settingsWindow?.center()
-        settingsWindow?.makeKeyAndOrderFront(nil)
+        openSettingsWindow()
     }
 
     func receivePairingLink(_ url: URL) {
@@ -209,14 +206,6 @@ final class MenuBarController: NSObject, NSWindowDelegate, NSDraggingDestination
     static func fileURLs(_ info: NSDraggingInfo) -> [URL] {
         let options: [NSPasteboard.ReadingOptionKey: Any] = [.urlReadingFileURLsOnly: true]
         return (info.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: options) as? [URL]) ?? []
-    }
-}
-
-struct SettingsHost: View {
-    let model: MenuBarModel
-
-    var body: some View {
-        MacSettingsView(store: model.settings, shortcutState: model.shortcutState)
     }
 }
 

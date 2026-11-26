@@ -200,6 +200,7 @@ public enum DesignTokens {
         public static let buttonPaddingX: CGFloat = 16
         public static let cardButtonGap: CGFloat = 6
         public static let cardButtonHeight: CGFloat = 32
+        public static let chatColumnMaxWidth: CGFloat = 760
         public static let checklistGap: CGFloat = 14
         public static let checklistIcon: CGFloat = 20
         public static let checklistPadding: CGFloat = 24
@@ -246,10 +247,16 @@ public enum DesignTokens {
         public static let settingsPaddingX: CGFloat = 18
         public static let settingsRowPadding: CGFloat = 8
         public static let settingsWidth: CGFloat = 500
+        public static let settingsWindowWidth: CGFloat = 520
+        public static let sidebarMaxWidth: CGFloat = 280
+        public static let sidebarMinWidth: CGFloat = 200
+        public static let sidebarWidth: CGFloat = 220
         public static let smallButtonHeight: CGFloat = 28
         public static let statusBadgeGap: CGFloat = 5
         public static let statusIcon: CGFloat = 17
         public static let talkRowHeight: CGFloat = 38
+        public static let windowMinHeight: CGFloat = 520
+        public static let windowMinWidth: CGFloat = 760
     }
 
     public enum Watch {

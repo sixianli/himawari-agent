@@ -65,7 +65,6 @@
 "settings.shortcut.taken" = "Another app is using it. Pick another";
 "settings.shortcut.record" = "Press the new shortcut";
 "settings.shortcut.needsModifier" = "Include ⌥, ⌘ or ⌃";
-"settings.elsewhere" = "Memories, rules and reminders are managed on your iPhone.";
 "key.space" = "Space";
 "pairing.title" = "Connect this Mac to Himawari";
 "pairing.step1" = "In Himawari on iPhone, open Settings → Devices → Add device, tap “Mac can’t scan: send a pairing link”, and send the link to this Mac";
@@ -77,3 +76,13 @@
 "pairing.cancel" = "Cancel";
 "pairing.retry" = "Try again";
 "pairing.problem" = "Couldn’t connect. Add the device again on iPhone and send the new pairing link";
+"sidebar.chat" = "Chat";
+"sidebar.her" = "Her";
+"menu.go" = "Go";
+"settings.tab.general" = "General";
+"settings.tab.mac" = "This Mac";
+"settings.launchAtLogin" = "Open at Login";
+"settings.launchAtLogin.detail" = "When on, Himawari runs in the background after you log in, so work on this Mac and things waiting for you aren't interrupted.";
+"settings.launchAtLogin.needsApproval" = "Allow Himawari in Login Items in System Settings.";
+"settings.launchAtLogin.openLoginItems" = "Open Login Items";
+"settings.launchAtLogin.failed" = "Couldn't change this. Try again.";

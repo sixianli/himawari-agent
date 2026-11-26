@@ -65,7 +65,6 @@
 "settings.shortcut.taken" = "被别的 App 占用了，换一个";
 "settings.shortcut.record" = "按下新的快捷键";
 "settings.shortcut.needsModifier" = "要带 ⌥、⌘ 或 ⌃";
-"settings.elsewhere" = "记忆、规则、提醒这些在 iPhone 上管。";
 "key.space" = "空格";
 "pairing.title" = "把这台 Mac 交给 Himawari";
 "pairing.step1" = "在 iPhone 的 Himawari 里打开 设置 → 设备 → 添加设备，点“Mac 不方便扫：发配对链接过去”，把链接发到这台 Mac 上";
@@ -77,3 +76,13 @@
 "pairing.cancel" = "取消";
 "pairing.retry" = "再试一次";
 "pairing.problem" = "没连上。在 iPhone 上再添加一次设备，把新的配对链接发过来";
+"sidebar.chat" = "对话";
+"sidebar.her" = "她";
+"menu.go" = "前往";
+"settings.tab.general" = "通用";
+"settings.tab.mac" = "这台 Mac";
+"settings.launchAtLogin" = "登录时打开";
+"settings.launchAtLogin.detail" = "打开后，开机登录就在后台运行，她在这台 Mac 上做事、等你定都不会断。";
+"settings.launchAtLogin.needsApproval" = "要在系统设置的“登录项”里允许 Himawari。";
+"settings.launchAtLogin.openLoginItems" = "打开登录项";
+"settings.launchAtLogin.failed" = "没改成，再试一次";
