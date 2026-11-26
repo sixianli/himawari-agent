@@ -281,7 +281,7 @@ struct DemoSceneView: View {
             DemoPerceptionDeletionHost(segment: .episodes, episode: "episode:00000000000000000000000000000002")
         case .listenIntro, .listenEnroll, .listenLive, .listenInterrupted, .listenCalling, .listenAsking, .listenStopped:
             ListenDemoScene(scene: scene)
-        case .memory, .memoryDetail, .memoryEdit, .rules, .ruleDetail, .deviceAbilities, .her, .herApprovals, .herPrivacy, .herDevices, .herNotifications, .herAllowances, .herAllowancesEmpty, .herAllowanceDays, .memoryVersions, .memoryTrash, .herAbout, .herTimers, .herTimersEmpty, .herTimersReminders, .herTimerRecurring, .herTimerReminder, .herTimerPaused, .herNoTimers:
+        case .memory, .memoryDetail, .memoryEdit, .rules, .ruleDetail, .deviceAbilities, .her, .herApprovals, .herPrivacy, .herDevices, .herNotifications, .herAllowances, .herAllowancesEmpty, .herAllowanceDays, .memoryVersions, .memoryTrash, .herAbout, .herTimers, .herTimersEmpty, .herTimersReminders, .herTimerRecurring, .herTimerReminder, .herTimerPaused, .herNoTimers, .herTransfer, .herImportPreview, .herServerStatus:
             EmptyView()
         }
     }
