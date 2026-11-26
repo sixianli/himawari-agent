@@ -178,24 +178,22 @@ public struct HerPage: View {
                         .buttonStyle(.pressable)
                     }
                 }
-                .padding(.top, DesignTokens.Her.pagePaddingTop)
+                .padding(.top, 8)
                 .padding(.horizontal, DesignTokens.Size.pagePaddingX)
                 .padding(.bottom, DesignTokens.Size.sheetPaddingBottom)
             }
             .scrollIndicators(.hidden)
             .refreshable { await load() }
-            .overlay(alignment: .topLeading) {
-                GlassCircleButton(Text(M.collapse), action: close) {
-                    Icon(.chevronDown, size: DesignTokens.IconSize.glassButton)
-                }
-                .padding(.leading, DesignTokens.Size.pagePaddingX)
-                .padding(.top, DesignTokens.Size.sheetPaddingTop)
-            }
             .himawariScreenBackground()
             .navigationTitle(M.herPage)
             #if os(iOS)
-            .toolbar(.hidden, for: .navigationBar)
+            .navigationBarTitleDisplayMode(.inline)
             #endif
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(M.done, action: close)
+                }
+            }
             .navigationDestination(for: Page.self) { page in
                 switch page {
                 case .memory:
