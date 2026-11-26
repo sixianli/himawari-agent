@@ -15,7 +15,7 @@
 ## MacBook
 
 - 绝不在 Andy 的 MacBook 上运行 Himawari 服务器端的构建和测试：不跑 `npm run check`、`npm test`、任何 Vitest 项目或产品路径资格验证，也不在 Mac 上起 Himawari 服务。发现那里有这类进程在运行时要停止它。
-- 例外只有苹果客户端（`clients/apple/` 下的 iPhone、Apple Watch、Mac App 和它们的扩展）：它们的构建、单元测试和装到 Andy 的设备上，在 Andy 的 Mac 上用 Xcode（苹果的开发工具，只能在 Mac 上运行）做；CI 里另有 `macos-26` 机器编译和跑客户端测试。这个例外不包括任何服务器端的命令。依据 [ADR 0229](../../docs/adr/0229-native-apple-clients-and-device-api.md#decision) 决定第 8 条。
+- 苹果客户端（`clients/apple/` 下的 iPhone、Apple Watch、Mac App 和它们的扩展）的构建、单元测试和打包，在 GitHub 的 macOS 机器（GitHub Actions 提供的、装好 Xcode 的云端 Mac）上做，iPhone 和 Mac 版都经 TestFlight（苹果的测试版分发服务）装到 Andy 的设备上，不依赖 Andy 的 Mac。依据 [ADR 0309](../../docs/adr/0309-apps-sign-in-with-passkeys-and-the-web-is-removed.md#decision) 决定第 14 条（Andy 2026-11-26 定：不再依赖他的 Mac）。客户端测试不在任何 Mac 上起 Himawari 服务。
 
 <a id="production"></a>
 ## 生产机

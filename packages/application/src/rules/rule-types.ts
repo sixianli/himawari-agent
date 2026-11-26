@@ -315,7 +315,7 @@ function pushQuietExpression(parameters: PushQuietParameters): string {
 function pushQuietExamples(parameters: PushQuietParameters): readonly RuleExample[] {
   const covered = new Set<string>(pushQuietClassesOf(parameters));
   const examples: RuleExample[] = [];
-  for (const pushClass of [...PUSH_QUIET_CLASSES, "approval", "muse_outage"] as const)
+  for (const pushClass of [...PUSH_QUIET_CLASSES, "approval"] as const)
     examples.push(
       ...quietHoursExamples(parameters.periods, { push_class: pushClass }, (extra) =>
         covered.has(String(extra["push_class"])),

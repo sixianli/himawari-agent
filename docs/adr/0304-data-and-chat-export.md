@@ -6,7 +6,7 @@ supersedes: "https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941
 superseded_by: ""
 date: "2026-11-26"
 covers: "packages/persistence-sqlite/src/data-export/export.ts, apps/admin-cli/src/data-command.ts"
-verified_at: "7c8521fe5f55e7dd57c5bd52badd16eef647502e"
+verified_at: "25bf70417f1e982afea4a04437b43ca13dbf8d11"
 ---
 
 # ADR 0304：记忆、规则和聊天记录的导出
@@ -37,7 +37,7 @@ verified_at: "7c8521fe5f55e7dd57c5bd52badd16eef647502e"
 
 ### 记忆、规则和决策记录：能导出也能导入
 
-- 格式 `himawari.data-export.v5`，一个文件夹：`manifest.json`（格式、迁移序号、每个文件的字节数、行数、SHA-256、各类条数、扣留数和没导出的项）；`data/*.jsonl`（键排序的规范 JSON，一行一条：记忆连同它的历史、来源、人物和置顶，人物，导入批次，整理记录，决策记录，规则和规则的全部历史版本）；`schema/*.schema.json`；给人读的 `MEMORY.md`、`memory/<类别>.md` 和 `RULES.md`。
+- 格式 `himawari.data-export.v6`（v6 起不再含 Muse 对照条目），一个文件夹：`manifest.json`（格式、迁移序号、每个文件的字节数、行数、SHA-256、各类条数、扣留数和没导出的项）；`data/*.jsonl`（键排序的规范 JSON，一行一条：记忆连同它的历史、来源、人物和置顶，人物，导入批次，整理记录，决策记录，规则和规则的全部历史版本）；`schema/*.schema.json`；给人读的 `MEMORY.md`、`memory/<类别>.md` 和 `RULES.md`。
 - 导出范围：在用、已归档、回收站里的记忆；正在删除和已验证删除的不导出，只在清单里计数。
 - 导入只往空库里导：目标库的记忆和规则表必须为空，全部在同一个事务里原样写入。旧版本格式的文件整份拒绝（`DATA_IMPORT_FORMAT_UNSUPPORTED`），不做半套导入。
 - 导入前校验清单、字节数、哈希、每行对照 JSON Schema、规则编号不重复、历史修订号递增等。
