@@ -71,7 +71,7 @@ struct TalkTimingPage: View {
                 }
             }
         }
-        .listStyle(.insetGrouped)
+        .timersListStyle()
         .scrollContentBackground(.hidden)
         .himawariScreenBackground()
         .refreshable { await refresh() }
