@@ -38,7 +38,7 @@ jobs:
           mkdir -p out
           for look in light dark; do
             xcrun simctl ui "$udid" appearance "$look"
-            for scene in next-3-her 16-chat-states-6-steps next-2-chat-attach next-8-background-sheet; do
+            for scene in next-2-chat-attach; do
               xcrun simctl launch --terminate-running-process "$udid" "$bundle" -HimawariDemoScene "$scene" -AppleLanguages "(zh-Hans)" -AppleLocale zh_CN >/dev/null
               sleep 12
               xcrun simctl io "$udid" screenshot "out/$scene-$look.png"

@@ -47,9 +47,7 @@ struct AttachSheet: View {
             Button(action: locate) {
                 HStack(spacing: DesignTokens.Size.rowGap) {
                     Icon(.mapPin, size: DesignTokens.Chat.attachRowIcon)
-                        .foregroundStyle(Color.hmGlyph)
-                        .frame(width: DesignTokens.Chat.attachRowTile, height: DesignTokens.Chat.attachRowTile)
-                        .background(Color.hmTile, in: RoundedRectangle(cornerRadius: DesignTokens.Her.rowTileRadius, style: .continuous))
+                        .frame(width: DesignTokens.Chat.attachRowTile)
                     Text(L.text("attach.location"))
                         .hmType(DesignTokens.TypeScale.body)
                     Spacer()
