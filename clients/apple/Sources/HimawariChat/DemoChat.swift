@@ -360,6 +360,9 @@ public enum DemoChatFixtures {
     public enum ScrollLoad: String, CaseIterable, Sendable {
         case realistic
         case plain
+        case long
+        case table
+        case code
     }
 
     static let longAnswer = """
@@ -394,7 +397,13 @@ public enum DemoChatFixtures {
             messages.append(message("q\(index)", index * 2 + 1, role: "owner", at: at))
             messages.append(message("a\(index)", index * 2 + 2, role: "agent", runId: runId, at: at.addingTimeInterval(13)))
             texts["text:q\(index)"] = questions[index % questions.count]
-            texts["text:a\(index)"] = load == .plain ? plainAnswer : answers[index % answers.count]
+            texts["text:a\(index)"] = switch load {
+            case .realistic: answers[index % answers.count]
+            case .plain: plainAnswer
+            case .long: longAnswer
+            case .table: answerFormatted
+            case .code: richAnswer
+            }
             runs.append((runId, "completed"))
             state.executions[runId] = steps(runId: runId, start: at)
         }

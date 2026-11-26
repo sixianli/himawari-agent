@@ -57,6 +57,7 @@ bench() {
     rm -rf "$trace"
     xcrun xctrace record --template 'Time Profiler' --device "$udid" --attach "$pid" --time-limit 25s --output "$trace" >/dev/null 2>&1 &
     recorder=$!
+    ( sleep 60; kill -INT "$recorder" 2>/dev/null; sleep 15; kill -KILL "$recorder" 2>/dev/null ) &
   fi
   local waited=0
   until [ -f "$result" ]; do

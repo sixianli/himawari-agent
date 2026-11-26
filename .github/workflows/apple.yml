@@ -132,8 +132,8 @@ jobs:
         run: >-
           bash clients/apple/scripts/scroll-bench.sh
           --app "$RUNNER_TEMP/dd/Build/Products/Debug-iphonesimulator/Himawari.app"
-          --loads realistic,plain
-          --runs 3
+          --loads realistic,plain,long,table,code
+          --runs 2
           --profile realistic
           --out "$RUNNER_TEMP/scroll-bench"
       - if: ${{ always() }}
