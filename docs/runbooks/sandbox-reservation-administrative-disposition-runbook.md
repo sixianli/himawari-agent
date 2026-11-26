@@ -2,178 +2,151 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:e14ca5ee2948b3fdd53d5e4f3cb90b01ccaa2f3a04e58405d2d6d13e511ece04"
 supersedes: ""
 superseded_by: ""
-date: "2026-10-08"
-covers: "packages/runtime-sandbox/src/sandbox-sdk-worker.ts, packages/runtime-sandbox/src/sandbox-sdk.ts, test/integration/sandbox-reservation-administration.test.ts"
-verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
+date: "2026-11-26"
+covers: "apps/admin-cli/src/sandbox-command.ts, packages/persistence-sqlite/src/sqlite-sandbox-reservation-administration.ts, scripts/delivery-mode/packet-template/maintenance/run-maintenance.mjs, test/integration/sandbox-reservation-administration.test.ts"
+verified_at: "7c8521fe5f55e7dd57c5bd52badd16eef647502e"
 ---
 
-# 未绑定沙箱预约的离线管理员处置
+# 卡住的沙箱预约：核对和管理员处置
 
-执行前必须通过本 Runbook 的静态合同检查与本次现场预检。本文及功能实现批准均不授权生产停服、迁移、数据库处置或服务启动。
+本手册处理一种少见情况：一次性沙箱（SRT，产品在 Linux 上跑工具用的隔离环境）给某次工具调用登记了“预约”，但还没真正启动就停了，又没有留下自动释放的证明。这样的预约会一直占着工作目录，上线时维护步骤也会因为它停下。处置的办法是由管理员人工确认现场干净后，用管理命令写一条“管理员确认已清理”的记录。
 
-阅读导航：[范围](#scope) · [前提](#safety-and-preconditions) · [现场核查](#live-state-preflight) · [Schema 49 离线路线](#schema-49-offline-route) · [处置步骤](#procedure) · [独立读回](#verification) · [停止条件](#stop-conditions)。
+<a id="contents"></a>
 
-<!-- runbook-contract:
-- packages/runtime-sandbox/src/job-host-main.ts
-- packages/runtime-sandbox/src/sandbox-sdk.ts
-- packages/runtime-sandbox/src/sandbox-sdk-worker.ts
-- packages/runtime-sandbox/src/policy.ts
-- packages/runtime-sandbox/test/job-host-main.unit.test.ts
-- packages/runtime-sandbox/test/sandbox-sdk.unit.test.ts
-- test/integration/sandbox-preparation-control.test.ts
-- packages/application/src/ports/sandbox-execution-journal.ts
-- packages/application/src/services/sandbox-execution-projection.ts
-- packages/persistence-sqlite/src/sqlite-sandbox-reservation-never-started.ts
-- packages/persistence-sqlite/src/sqlite-sandbox-reservation-administration.ts
-- packages/persistence-sqlite/src/sqlite-sandbox-reservation-release.ts
-- packages/persistence-sqlite/src/migration-engine.ts
-- packages/persistence-sqlite/src/sqlite-recovery-point.ts
-- packages/persistence-sqlite/src/schema-catalog.ts
-- packages/persistence-sqlite/src/index.ts
-- packages/persistence-sqlite/src/migrations/0050_sandbox_reservation_administration.sql
-- packages/persistence-sqlite/src/state-root-lock.ts
-- packages/persistence-sqlite/src/migrations
-- apps/admin-cli/src/index.ts
-- apps/admin-cli/src/sandbox-command.ts
-- scripts/install-node-runtime.mjs
-- apps/agent-service/src/production-tool-result-recovery.ts
-- test/integration/sandbox-reservation-administration.test.ts
-- test/integration/product-path-browser.test.ts
-- test/fixtures/product-path-harness.ts
--->
+## 阅读导航
+
+- [Scope](#scope)
+- [Authoritative Sources](#authoritative-sources)
+- [Safety and Preconditions](#safety-and-preconditions)
+- [Live-State Preflight](#live-state-preflight)
+- [Procedure](#procedure)
+- [Verification](#verification)
+- [Evidence](#evidence)
+- [Rollback](#rollback)
+- [Stop Conditions](#stop-conditions)
+- [Troubleshooting](#troubleshooting)
+
+<a id="scope"></a>
 
 ## Scope
 
-只处置当前配置 Owner/Agent/deployment 下，单个前台 SRT Run 的一个已停止、未绑定预约。目标须为 `reserved`、`started_at` 为空且有原停止标记；空 started 不证明从未启动。bound、container、托管后台任务、跨主体目标及其他未处置资源不在范围内。
+- 适用：当前配置的 Owner 和 Agent 下，单个前台一次性 SRT 调用留下的预约，状态是 `reserved`、`started_at` 为空、已有停止标记，且没有自动释放回执。
+- 不适用：已启动（`bound`）的任务、后台任务、容器，以及同一轮复用的常驻沙箱（计划后端是 `srt-task-environment`，Linux 默认走这条路）。常驻沙箱的预约靠任务环境的释放回执自动释放，本命令对它们报 `SANDBOX_RESERVATION_ADMIN_NOT_ELIGIBLE`。
+- 处置只写“资源已释放”和“这一轮失败”，不重放工具、不调用模型；原工具结果和外部效果仍是“未确认”。
 
-该操作保存管理员确认的资源释放，明确结束 Run；原工具结果和外部效果仍未确认，不重放工具、不调用模型、不交付 `SANDBOX_TOOL_NOT_STARTED`。它不删除原计划、facts、observations、控制 Payload 或执行历史。
-
-目标还须有仍为 `open` 的所属 Thread、原执行租约和恢复记录；Run 与 checkpoint 都处于 `reconciling_external_result`，checkpoint 尚无终态、output 或最终答案。其他未释放资源、未决保护或未确认意图会使本次处置被拒绝。
-
-同一轮复用本机沙箱（SRT 常驻环境，见[安装启停 Runbook](install-start-stop-runbook.md)）的工具调用也会写预约，但计划后端是 `srt-task-environment`，没有准备控制目录和 Host final；本工具只处置计划后端为 `srt` 的预约，对它们以 `SANDBOX_RESERVATION_ADMIN_NOT_ELIGIBLE` 拒绝。这些环境的释放走任务执行环境的释放回执（`process_group_gone` 等证明）；其中未绑定的预约由自动恢复按环境释放证明，或在 Run 没有结束时按“绑定已被停止标记挡住”的证明（`task_environment_bind_fenced`，见 [ADR 0298 第 4 层发现的缺口](../adr/0298-where-tools-run.md)）释放；Worker 在绑定之前就失败的调用，Agent 收到结果时还会立即按同一依据释放（D-52）。这些都不能用本 Runbook 的管理员声明代替。[2026-09-24-isolated-tool-execution-design.md「srt-resident-job-host」（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#srt-resident-job-host)
+<a id="authoritative-sources"></a>
 
 ## Authoritative Sources
 
-- [管理员处置合同](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#admin-reservation-disposition)。[2026-09-28-sandbox-preparation-control-recovery-design.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md)
-- [停止证明与结果分开](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#lifecycle)。[2026-09-24-isolated-tool-execution-design.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-24-isolated-tool-execution-design.md)
-- [永久释放与结果交接](../adr/0298-where-tools-run.md)。[SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0030-durable-workspace-release-facts.md]
-- [安装启停](install-start-stop-runbook.md)、[同机备份恢复](backup-restore-runbook.md)。[SOURCE: docs/runbooks/install-start-stop-runbook.md] [SOURCE: docs/runbooks/backup-restore-runbook.md]
-- [只读历史清单](workspace-lifecycle-audit-runbook.md)不是实际宿主证明，也不是管理员处置授权。
+- 命令入口：`apps/admin-cli/src/sandbox-command.ts`（`sandbox inspect-reservation`、`sandbox confirm-reservation-cleanup`）。
+- 资格、摘要和写入：`packages/persistence-sqlite/src/sqlite-sandbox-reservation-administration.ts`。
+- 上线时的同一项检查：`scripts/delivery-mode/packet-template/maintenance/run-maintenance.mjs`，未解决的预约数不是 0 就停下。
+- 回归测试：`test/integration/sandbox-reservation-administration.test.ts`，其中一组用例直接运行下面[统计未解决预约](#count)那段脚本。
+
+<a id="safety-and-preconditions"></a>
 
 ## Safety and Preconditions
 
-确认处置使用本次受验证的完整安装、匹配配置与当前 Schema 51（2026-10-18 起；此前为 Schema 50。Schema 51 由迁移 `0051_srt_task_environment_release.sql` 只给任务执行环境释放回执加了 `process_group_gone` 一种证明，管理员回执的结构和规则不变）。只读预览接受 Schema 49–51，不自动迁移；Schema 49 旧库须先完成下述独立离线路线，生产还需覆盖完整候选安装、备份、迁移和管理员处置的具体授权。Schema 49 及更旧 writer 不得接管新库；不得直接修改数据库列或补造 Host final。Agent 与 Worker 必须停止，确认命令自行取得原 state-root 独占锁；存活锁取得失败时停止，不删除或绕过它。
+- 确认命令要求服务已停（命令自己取状态目录的独占锁，取不到就失败），并且数据库是当前程序的版本。只读预览不需要停服。
+- 管理员要独立确认三件事：原沙箱进程组已经不在、原控制目录里没有最终结果文件、没有相关进程在跑。命令不检查进程和文件，只记下管理员的声明、现场报告的 SHA-256 和实际执行的本机账号；声明不是机器证明，管理员对它负责。
+- 停服属于生产操作，按[交付模式](../../.agents/instructions/delivery-mode.md#fast-mode)先备份；处置写入的记录不可撤销，执行前把目标任务号和影响报告给 Andy。
 
-新候选完整安装须包含 `sandbox-sdk.js` 与固定的 `sandbox-sdk-worker.js`。Job Host 把同一个 SRT `SandboxManager` 的策略编译、依赖检查、初始化、启动参数生成、cleanup 和 reset 放入私有 SDK 工作线程；主线程仍负责原 IPC、心跳、控制、authority、任务进程和期限，2026-10-12 起不再加载 SRT（[主线程只管心跳](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#main-thread-heartbeat-only)）。同日起 Job Host 在准备第一步就打开控制通道，控制步骤之后的准备失败会写出签名终态并按原 `host_never_started` 依据自动释放；只有控制通道打开失败、SDK 线程从未创建（`srtReset=false`）或终态写出前被强制结束的预约，以及此前旧版本留下的预约（例如 S10 的 `run:c1284750-de9d-43dd-aee1-5474dc27539c`），仍需本 Runbook 的管理员处置，见[控制通道在准备第一步打开](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#control-opened-first)。原 1500ms 消息年龄（2026-10-22 起从 Job Host 第一次回复开始计算；回复之前另有最长 10 秒、且不超过任务剩余期限的启动期限，一次性路径超时诊断为 `JOB_HOST_STARTUP_TIMEOUT`，常驻会话路径按 `host_failure` 结束会话、父进程不生成诊断（BL-20261022-004），见[Job Host 启动单独计时](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#startup-window)）、30 秒准备上限、任务期限和协议不变。正常清理必须取得 cleanup/reset 成功回复与 SDK 线程自然退出码 0，异常退出或强制终止不产生 `srtReset=true`。这不替代下述三项管理员独立现场核查，也不把“SDK 线程已退出”变成 Host 释放证明，详见[Job Host SDK 线程与停止证明](install-start-stop-runbook.md#sdk-thread-supervision)。[2026-09-28-sandbox-preparation-control-recovery-design.md「startup-supervision」（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#startup-supervision) [SDK 线程适配器](../../packages/runtime-sandbox/src/sandbox-sdk.ts) [SDK 固定线程入口](../../packages/runtime-sandbox/src/sandbox-sdk-worker.ts)
-
-执行账号须有目标配置与数据库的合法访问权。命令记录实际本机 UID/account/hostname，并分别保存 `--administrator` 声明引用；声明引用不证明具体自然人身份。准备本次独立现场报告、SHA-256、已经验证的完整恢复点及项目批准的受保护证据目录。
-
-在任何停服、迁移或处置之前，报告具体主机、安装、state root、Owner/Agent、Run/Job、拟修改记录和副作用，取得覆盖这些动作的授权。生产还须对应本次冻结操作包的具体授权。本文不包含服务管理、系统设置或生产变更脚本。
+<a id="live-state-preflight"></a>
 
 ## Live-State Preflight
 
-1. 运行本 Runbook 静态检查，核对当前 Git/worktree、安装摘要、运行账号、配置归属、真实数据库位置和 Schema。只读预览只接受 Schema 49–51；未知版本或不匹配安装停止，Schema 49 不得执行确认处置。
-2. 以只读 `sandbox inspect-reservation` 核对 Job/Run/Thread/环境身份、停止标记与四个 revision，保存摘要和固定 `confirmation`。摘要绑定其他相关资源的数据库快照，但预览不输出资源统计；confirmation 列明三项必须由运维独立确认的声明。该命令不解密 control、不读取 secret 或工具正文，不检查任何进程或 final。
-3. 运维独立确认原宿主进程组已不存在、原控制目录内没有 final、没有相关运行进程。将原任务身份、检查时间、依据、权限可见范围及结论保存在本次受保护现场报告；独立计算其 SHA-256。
-4. 旧记录缺少可信 PID/PGID 时，运维必须另行核对系统现场，不能从数据库空值、目录名、不可连接 socket 或普通进程列表为空推导结论。不能确认三项中的任何一项，停止。
-5. 核对 Agent/Worker 已停止、恢复点可用、证据目录隔离及空间可用。若停服或迁移尚未得到具体授权，不执行这些动作。
+1. 用下面[统计未解决预约](#count)的脚本只读查一遍，记下数量。
+2. 对每个目标任务号只读预览：`himawari sandbox inspect-reservation --config /etc/himawari/config.json --job <任务号>`。记下返回的 `digest` 和 `confirmation`。不符合资格时返回 `SANDBOX_RESERVATION_ADMIN_NOT_ELIGIBLE`，停下。
+3. 在生产机上核对上面三件事，把核对的时间、依据和结论写成现场报告，算出它的 SHA-256。任何一件确认不了就停下。
 
-三项运维声明和报告 SHA 都不是认证 Host proof。CLI 不读取现场报告正文，也不自动核验这些声明；管理员承担本次确认责任。
+<a id="procedure"></a>
 
 ## Procedure
 
-<a id="schema-49-offline-route"></a>
+<a id="count"></a>
 
-### Schema 49 的独立离线路线
+### 统计未解决预约
 
-安装/升级 Runbook 只统计没有产品已接受有效释放回执的 SRT `reserved`、空 `started_at` 预约。非零或查询失败仍停止服务切换和新版启动并报告。这里为已经批准的离线数据库维护提供独立路线；迁移和处置完成后重新执行该统计，已处置历史保留，其他未解决预约继续阻断服务切换。统计为零不授权切换或启动服务。
+把路径换成 `<stateRoot>/data/product.sqlite`，以服务账号运行。它只读，数量不为 0 时以非零退出码结束：
 
-2026-10-18 起新候选的数据库版本是 Schema 51。下面的路线写于 Schema 50 时期，照做时把“新候选迁移后的版本”按 51 读：从 Schema 49 起步时 `db migrate` 连续应用 50 和 51；从 Schema 50 起步时只应用 51；第 4 步核对的 schema sequence 和 minimum writer 都应为 51，新建并核验的是 Schema 51 完整恢复点；新 CLI 的 recovery adapter 要求恢复点版本精确为 51。旧版本的完整恢复点照旧要用匹配旧版本的安装创建和核验。
+~~~sh
+python3 - /absolute/path/product.sqlite <<'PYTHON'
+import pathlib, sqlite3, sys
+uri = pathlib.Path(sys.argv[1]).resolve(strict=True).as_uri() + "?mode=ro"
+with sqlite3.connect(uri, uri=True) as database:
+    database.execute("PRAGMA query_only = ON")
+    count = database.execute("""
+        SELECT count(*) FROM sandbox_execution_records reservation
+        WHERE json_extract(reservation.plan_json, '$.backendRef') = 'srt'
+          AND reservation.preparation_state = 'reserved' AND reservation.started_at IS NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM sandbox_reservation_release_receipts released
+            WHERE released.job_id = reservation.job_id
+              AND json_extract(released.verification_json, '$.identity.jobId') = reservation.job_id
+              AND json_extract(released.verification_json, '$.stopRequestedAt') = reservation.reservation_stopped_at
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM sandbox_release_receipts released
+            WHERE released.job_id = reservation.job_id
+              AND json_extract(released.verification_json, '$.identity.jobId') = reservation.job_id
+          )
+    """).fetchone()[0]
+print("尚未启动的 SRT 预约数：", count)
+if count:
+    raise SystemExit("停止升级：仍有尚未解决的 SRT 预约，须报告用户并独立核查释放回执。")
+PYTHON
+~~~
 
-1. 先核对受支持的 Schema 49 完整旧安装、原配置、完整新候选及独立新前缀。新候选按[安装流程](install-start-stop-runbook.md#procedure)校验并复制到独立前缀，只产生该前缀的 runtime 与三个 wrapper；安装脚本不读产品 state、不迁移数据库、不启动服务，也不改现有服务的安装指向。安装该候选仍须属于本次具体授权。
-2. 按已授权的停服步骤停止 Agent/Worker，确认 state-root 锁释放。在 Schema 49 仍完整时，用匹配 Schema 49 的旧完整安装绝对路径，按[同机备份流程](backup-restore-runbook.md#procedure)执行 `backup create` 与 `backup verify`，保存完整恢复点、核验结果及恢复所需的旧安装。`backup create` 会写恢复点登记和加密文件，`backup verify` 会创建并删除临时明文副本；本次授权须覆盖两者的目标、磁盘增量和清理。新 Schema 50 CLI 的 recovery adapter 要求恢复点 schema 精确为 50，不能用它替代这一旧库备份或核验。
-3. 完整 Schema 49 恢复点核验成功后，使用受验证新候选的绝对路径执行以下接口。公共 `db migrate` 独立取得停服 state-root 锁，使用 SQLite backup API 创建并核验同机迁移前数据库快照，再应用迁移；它不执行服务升级前的预约统计。这个数据库快照不替代步骤 2 的完整恢复点。迁移只推进数据库合同，原未确认预约与历史仍须保留。
+### 单个预约的处置
 
-```text
-<absolute-new-prefix>/bin/himawari db migrate --config PATH --confirm APPLY_MIGRATIONS
-<absolute-new-prefix>/bin/himawari db status --config PATH
-```
+1. 停服务，再预览一次（停服前的摘要不能用）。
+2. 执行一次：
 
-4. 独立核对 schema sequence 和 minimum writer 均为 50、迁移账本及数据库检查成功，原目标、未确认预约、计划和观察未被删除或改写。用该完整 Schema 50 新候选按[同机备份流程](backup-restore-runbook.md#procedure)创建并核验 Schema 50 完整恢复点，保留迁移前的 Schema 49 恢复点。任一步失败均停止，不让旧 Schema 49 writer 再写新库。
-5. 仍在停服状态，用新候选执行下述 Schema 51 资格预览、现场确认与单目标管理员处置。此时才能取得确认所需的最新 digest。完成独立回执、审计、占用与 Run/checkpoint 读回后，按[升级前预约统计](install-start-stop-runbook.md#live-state-preflight)重新查询。目标的有效管理员回执使该历史预约不再计入；其他未解决预约仍计入。数量非零、查询失败或完整性不符时不切换或启动服务；数量为零后仍须通过其余检查并具备服务切换与启动授权。
+   ```text
+   himawari sandbox confirm-reservation-cleanup --config /etc/himawari/config.json --job <任务号> --digest sha256:<预览返回的摘要> --administrator <管理员标识> --evidence sha256:<现场报告摘要> --confirm HOST_GROUP_ABSENT_FINAL_ABSENT_RELATED_PROCESSES_ABSENT
+   ```
 
-迁移、管理员处置与服务切换是不同动作。源代码存在上述入口不等于 Schema 49 到 50 再处置的安装场景已经通过；执行前还须取得匹配本次候选字节的实际验证证据与目标现场预检。
+   命令在独占锁里重新核对资格和摘要，同一事务写入管理员回执、审计、释放占用、把这一轮和它的检查点标成失败、结算执行租约，并给对话写一条“这一轮失败”的事件。
+3. 再跑一次[统计](#count)，确认这一条不再计入，然后启动服务。
 
-### Schema 51 的单目标处置
-
-以下为接口示例，所有占位值必须来自已经核对的目标。它们不是可直接运行的生产操作包。
-
-```text
-<absolute-prefix>/bin/himawari sandbox inspect-reservation --config PATH --job JOB
-```
-
-1. 完成静态检查、现场只读核查及有效风险判断。在首次目标变更前取得所需授权；Schema 49 目标先完成[独立离线路线](#schema-49-offline-route)，停服或安装分别遵循相应 Runbook，不由处置命令自动完成。
-2. Agent/Worker 停止且 Schema 51 就绪后，再读一次预览；停服前的摘要不能替代这次读回。
-3. 仅在三项现场条件已由运维确认、报告已保留且摘要已独立计算时执行一次确认命令：
-
-```text
-<absolute-prefix>/bin/himawari sandbox confirm-reservation-cleanup --config PATH --job JOB --digest sha256:64hex --administrator MACHINE_REF --evidence sha256:64hex --confirm HOST_GROUP_ABSENT_FINAL_ABSENT_RELATED_PROCESSES_ABSENT
-```
-
-4. 命令在独占锁内重新比较配置归属、目标资格、版本和摘要。同事务保存管理员回执、审计、占用释放、Run/checkpoint 失败、执行租约结算及 Thread 持久事件。
-5. 保存实际命令、退出码和固定结果。任一拒绝均停止；摘要变化重新预览和核查，不通过改参数或删历史重试。
+<a id="verification"></a>
 
 ## Verification
 
-命令成功退出后，以处置命令返回的回执、匹配版本的只读 workspace inventory 和独立受保护数据库读回共同确认。`inspect-reservation` 只做处置资格预览；成功后 Run 已 failed 且回执已存在，再执行 inspect 会返回 `SANDBOX_RESERVATION_ADMIN_NOT_ELIGIBLE`，不能把这个拒绝当作处置失败。独立读回要求：
+- 命令返回的 `receipt.verification.basis` 是 `administrator_confirmed_cleanup`。
+- 再预览同一任务号返回 `SANDBOX_RESERVATION_ADMIN_NOT_ELIGIBLE`，这是预期的：它已经处置过了。
+- 统计数量比处置前少一，并且 `node scripts/operations/workspace-lifecycle-audit.mjs` 的 `executions` 分区里这一条带 `ADMINISTRATOR_CONFIRMED_CLEANUP`（见[工作区占用只读核查](workspace-lifecycle-audit-runbook.md)）。
 
-- 只有目标 Job 有一条独立管理员回执，`schemaVersion=sandbox-admin-reservation-release.v1`、`basis=administrator_confirmed_cleanup`，身份、摘要、实际执行账号与管理员声明匹配。
-- 对应占用已释放，后续核查安排结束；Run 与 checkpoint 均为 `failed`，原执行租约已结算。
-- 所属 Thread 的持久事件与审计指向同一次处置；相同处置不会重复事件、审计或版本变化。
-- checkpoint 诊断为 `SANDBOX_ADMINISTRATOR_CONFIRMED_CLEANUP`，审计 action 为 `sandbox.reservation_cleanup_confirmed`，Thread 事件为 `run.failed`。管理员回执为永久历史，不套用 Host verification 的 `validUntil`。
-- 历史回执仍通过原计划身份、authority 摘要和审计关联的完整性检查；关联缺失或不匹配时停止，不把损坏记录作为释放依据。
-- 原计划、facts、observations、started、控制材料和工具结果保持原样；工具及外部效果仍未确认，没有新工具结果交付、模型继续执行意图或工具派发。
-
-刷新后保留同一行政失败事实。Run `failed`、管理员回执存在或进程列表为空，均不能作为工具从未启动、工作区未改动、外部副作用已核实或当前整个主机安全的证明。服务启动另按已授权的启停流程执行，不能作为本命令的隐含步骤。
+<a id="evidence"></a>
 
 ## Evidence
 
-使用项目批准的受保护证据根和唯一处置编号；根目录未确认则停止。保存静态检查、旧/新完整安装摘要与绝对前缀、目标身份与版本、迁移前后的完整恢复点及核验结果、迁移快照与独立读回、两次预览、现场报告及摘要、授权引用、实际命令与退出码、管理员回执、事务结果的独立读回、停止或回退结论。
+交付报告写：任务号、两次预览的摘要、现场报告的 SHA-256、实际命令和退出码、处置前后的统计数量。现场报告正文放在生产机上只有 root 能读的目录，不贴进对话或仓库。
 
-保留原失败证据和本次新证据，不覆盖历史。正文、控制密钥、环境变量、secret 值和未经筛选的配置输出不进入公开文档或聊天。生产报告不能用 Hermes 夹具报告代替。
-
-Run 进入 `reconciling_external_result` 不表示停止记录和恢复记录已经持久化。管理员安装场景（产品路径测试 `[prod-sandbox-admin]`）须在原期限内等待公共只读 `inspect-reservation` 接受目标，再保存处置前读回；该等待不替代独立进程组和 final 核查，也不放宽原状态断言。
-
-2026-10-22 起（提交 `36df1cb9`），这个安装场景只在非 Linux 平台运行：Linux 默认安装的前台 bash 改走 SRT 常驻环境，这个场景用来制造目标的一次性前台预约在 Linux 上不再出现，所以 Hermes 上的第 4 层把它标为跳过，原因写在测试常量 `oneShotForegroundSrtIsNonLinuxOnly` 里。Linux 上的处置规则仍由第 2 层集成测试 `test/integration/sandbox-reservation-administration.test.ts` 覆盖（候选 `4126f4f3` 的第 3 层里全部通过）。升级前留下的 `srt` 预约照常按本 Runbook 处置；Mac 的产品路径验证按用户 2026-09-30 的决定暂停，目前未验证。
-
-该安装夹具失败时保留原错误和独立读回。只有目标尚无释放回执、原签名 final 的摘要和长度匹配且原宿主与进程组已不存在，才恢复夹具保存的原 final 并等待正常证明释放；已有管理员回执时不恢复 final。失败收尾始终继续报告失败，不能计作管理员场景通过；这也不是生产处置步骤。
-
-Hermes 安装权限回归若超时，保留完整报告，并使用既有 `HIMAWARI_TEST_INSTALLATION_REPORT` 与 `HIMAWARI_TEST_DIAGNOSTIC_OUTPUT` 在本次受保护输出目录记录安装耗时、全量权限清单和安装、核验、断言、清理阶段。继续使用默认 30 秒期限；单独运行通过不证明原超时原因已解决。诊断输出失败也必须执行原安装目录清理，并同时保留原核验、清理和诊断写入错误；不得用观测错误覆盖原失败。
+<a id="rollback"></a>
 
 ## Rollback
 
-提交前失败会回滚事务，保持原占用和 Run；先检查固定错误与预览变化，不直接修改 SQL。提交后不撤销或覆盖管理员回执，不复活 failed Run。出现相反现场证据时停止新的冲突操作，保留处置历史并按既有风险保护流程处理。
+- 提交前任何检查失败，事务整体回滚，什么都没写。
+- 提交后不撤销：管理员回执是永久记录。如果之后发现原进程其实还在，停下，保留记录，另行处理；要整体退回只能按[机外备份 Runbook](production-offsite-backup-runbook.md#restore-to-production) 恢复到处置前的恢复点，恢复点之后的数据会丢。
 
-只有经过独立验证的完整恢复点、对应版本和重新取得的具体恢复授权，才可进入[备份恢复流程](backup-restore-runbook.md)。恢复处置前快照会恢复当时的未确认状态及占用，不自动重放管理员确认；不承诺恢复能撤销已经发生的工具或外部效果。
+<a id="stop-conditions"></a>
 
 ## Stop Conditions
 
-- `runbook.py check` 未通过或步骤与 `Authoritative Sources` 列出的文件不一致、安装或 Schema 不匹配、目标归属不明、缺少恢复点或受保护证据目录。
-- Agent/Worker 未停止、存活或未知 state-root 锁、无法确认三项现场条件、现场报告缺失。
-- 不是单个前台 SRT 已停止 reserved、存在其他未处置资源或保护、预览摘要或版本改变。
-- 参数、确认串、报告 SHA 或管理员声明不符合接口；已有不同处置回执；任一事务或独立读回失败。
-- 生产或服务动作没有具体授权。不得通过删除记录、删除活锁、改身份或改写 final 继续。
+- 预览不符合资格、摘要在两次预览之间变了，或有其他未释放的资源。
+- 三件事任何一件确认不了，或现场报告缺失。
+- 服务没停、锁取不到：不删锁文件。
+
+<a id="troubleshooting"></a>
 
 ## Troubleshooting
 
-| 现象 | 核查与处理 |
+| 现象 | 处理 |
 | --- | --- |
-| socket 不可连接、没有 final | 只说明机器证明不足；自动恢复保持占用。运维另行核查，不能确认则不处置 |
-| started 为空、原 PID/PGID 未保存 | 只读预览不能判断是否启动或是否消失；不要按当前相似 PID 猜测 |
-| 独占锁取得失败 | 核对原服务与锁持有者；不删除存活或未知锁 |
-| 摘要变化或存在其他资源 | 停止本次窄范围处置，重新核对目标和现场；不批量删除 |
-| 管理员回执存在，工具仍显示未确认 | 这是资源责任与工具结果分开的预期状态；不补造工具失败或交回模型 |
-| 原安装/升级统计仍非零 | 保留原保守升级门禁，按安装 Runbook 停止并报告；不删除已处置历史使计数归零 |
+| `SANDBOX_RESERVATION_ADMIN_SCHEMA_UNSUPPORTED` | 程序和数据库版本不一致；先完成上线让两者一致，不改数据库版本 |
+| `SANDBOX_RESERVATION_ADMIN_NOT_ELIGIBLE` | 不是本手册管的那种预约，或已经处置过；用工作区占用核查看它属于哪类 |
+| 摘要变了 | 重新预览、重新核对现场，不改参数重试 |
+| 上线停在维护步骤、提示未解决预约 | 按本手册逐条处置后重新上线；不删记录让数量归零 |
