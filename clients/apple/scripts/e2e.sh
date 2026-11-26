@@ -53,13 +53,6 @@ if ! xcodebuild build-for-testing \
   exit 1
 fi
 
-app_bundle="$(find "$derived/Build/Products" -maxdepth 2 -name Himawari.app -path '*iphonesimulator*' | head -1)"
-bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app_bundle/Info.plist")"
-for service in microphone speech-recognition; do
-  xcrun simctl privacy "$udid" grant "$service" "$bundle_id"
-done
-echo "IOS_E2E_GRANTED $bundle_id microphone speech-recognition"
-
 cleanup() {
   touch "$stop"
   if [ -n "${backend_pid:-}" ]; then

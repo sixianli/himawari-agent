@@ -12,9 +12,15 @@ final class EndToEndTests: XCTestCase {
         backend = try EndToEndBackend.fromEnvironment()
         answers = try await backend.answers()
         try await backend.goOnline()
+        addUIInterruptionMonitor(withDescription: "system permission alert") { alert in
+            guard let allow = alert.buttons.allElementsBoundByIndex.last else { return false }
+            allow.tap()
+            return true
+        }
         app = XCUIApplication.himawari()
         app.launch()
         try await pairIfNeeded()
+        SystemAlerts.allow(within: 5)
     }
 
     override func tearDown() async throws {

@@ -153,6 +153,19 @@ extension XCUIApplication {
     }
 }
 
+enum SystemAlerts {
+    static func allow(within timeout: TimeInterval) {
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let alert = springboard.alerts.firstMatch
+        guard alert.waitForExistence(timeout: timeout) else { return }
+        for _ in 0..<3 {
+            guard alert.exists, let allow = alert.buttons.allElementsBoundByIndex.last else { return }
+            allow.tap()
+            _ = alert.waitForExistence(timeout: 2)
+        }
+    }
+}
+
 extension XCTestCase {
     func attachScreenshot(_ name: String, app: XCUIApplication) {
         let attachment = XCTAttachment(screenshot: app.screenshot())
