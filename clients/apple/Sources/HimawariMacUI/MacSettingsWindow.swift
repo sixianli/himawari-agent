@@ -47,7 +47,7 @@ struct MacGeneralSettings: View {
     var body: some View {
         Form {
             Section {
-                Toggle(L.text("settings.launchAtLogin"), isOn: Binding(get: { launchAtLogin }, set: setLaunchAtLogin))
+                Toggle(L.text("settings.launchAtLogin"), isOn: Binding(get: { launchAtLogin }, set: { setLaunchAtLogin($0) }))
                 if SMAppService.mainApp.status == .requiresApproval {
                     Text(L.text("settings.launchAtLogin.needsApproval"))
                         .foregroundStyle(.secondary)
