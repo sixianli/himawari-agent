@@ -59,11 +59,21 @@ describe("iPhone 工作流", () => {
   const workflow = parse(
     readFileSync(path.join(repositoryRoot, ".github/workflows/apple.yml"), "utf8"),
   );
-  it("只在免费的 macOS 标准机器上跑，只读权限，跳过草稿", () => {
-    expect(Object.keys(workflow.jobs)).toEqual(["iphone", "iphone-accessibility", "scroll"]);
-    for (const job of Object.values(workflow.jobs)) {
+  it("只在免费的标准机器上跑，只读权限，跳过草稿，没碰 iPhone 客户端时不占 Mac 机器", () => {
+    expect(Object.keys(workflow.jobs)).toEqual([
+      "changes",
+      "iphone",
+      "iphone-accessibility",
+      "scroll",
+    ]);
+    const { changes, ...macJobs } = workflow.jobs;
+    expect(changes["runs-on"]).toBe("ubuntu-24.04");
+    expect(changes.if).toContain("github.event.pull_request.draft != true");
+    expect(changes.steps.at(-1).run).toContain("scripts/ci/apple-scope.mjs");
+    for (const job of Object.values(macJobs)) {
       expect(job["runs-on"]).toBe(macRunnerLabel);
-      expect(job.if).toContain("github.event.pull_request.draft != true");
+      expect(job.needs).toBe("changes");
+      expect(job.if).toContain("needs.changes.outputs.client == 'true'");
     }
     expect(workflow.permissions).toEqual({ contents: "read" });
     expect(() =>
