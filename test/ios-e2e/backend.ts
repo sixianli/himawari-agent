@@ -1,11 +1,12 @@
+import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
 import { connect, createServer as createTcpServer, type Server, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { connect as tlsConnect, createServer as createTlsServer } from "node:tls";
-import { spawnSync } from "node:child_process";
+import { createServer as createTlsServer, connect as tlsConnect } from "node:tls";
 import { ExecutionLiveFeed } from "@himawari-agent/application";
 import type { PiModelBindingPort } from "@himawari-agent/runtime-pi";
 import {
@@ -277,12 +278,14 @@ export async function startE2eBackend(): Promise<E2eBackend> {
   const live = new ExecutionLiveFeed();
   const h = await harness({ origin, clock, live, mainThread: true });
   h.configuration.current = { ...h.configuration.current, heartbeatSeconds: 15 };
-  h.app.addHook("onResponse", async (request, reply) => {
-    process.stdout.write(
-      `IOS_E2E_REQUEST ${request.method} ${request.url.split("?")[0]} ${reply.statusCode}\n`,
+  await h.app.listen({ host: "127.0.0.1", port: appPort });
+  h.app.server.on("request", (request: IncomingMessage, response: ServerResponse) => {
+    response.on("finish", () =>
+      process.stdout.write(
+        `IOS_E2E_REQUEST ${request.method} ${request.url?.split("?")[0]} ${response.statusCode}\n`,
+      ),
     );
   });
-  await h.app.listen({ host: "127.0.0.1", port: appPort });
   const payloads = h.repository.payloadStore(ownerId, agentId);
   await payloads.put(
     await h.protector.protect({
