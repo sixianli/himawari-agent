@@ -233,9 +233,9 @@ struct DemoSceneView: View {
         case .signInCode:
             SignInView(model: .demo(.signedOut(nil), host: DemoScene.demoHost), path: [.setupCode], quietAttempt: false)
         case .signInCodeInvalid:
-            SignInView(model: .demo(.signedOut(nil), host: DemoScene.demoHost, setupProblem: .codeInvalid), path: [.setupCode], quietAttempt: false)
+            SignInView(model: .demo(.signedOut(nil), host: DemoScene.demoHost, setupProblem: .codeInvalid), path: [.setupCode], quietAttempt: false, typedCode: "K7QM-4XHP")
         case .signInCodeExpired:
-            SignInView(model: .demo(.signedOut(nil), host: DemoScene.demoHost, setupProblem: .codeExpired), path: [.setupCode], quietAttempt: false)
+            SignInView(model: .demo(.signedOut(nil), host: DemoScene.demoHost, setupProblem: .codeExpired), path: [.setupCode], quietAttempt: false, typedCode: "K7QM-4XHP")
         case .signInServer:
             SignInView(model: .demo(.signedOut(nil), host: DemoScene.demoHost), path: [], serverOpen: true, quietAttempt: false)
         case .signInNoPasskey:

@@ -40,7 +40,32 @@
     "why": "放大字号后文字可能被截断；交 iPhone 编码线程按第 73 条改（挤不下就换行或竖排）"
   },
   {
+    "key": "11-sign-in|light|dynamicType",
+    "count": 4,
+    "why": "文字不完全跟动态字体放大（多半是 RootView 把字号封顶在 accessibility2，以及固定行高）；交 iPhone 编码线程按第 73 条改"
+  },
+  {
+    "key": "15-sign-in-1-code|dark|contrast",
+    "count": 2,
+    "why": "系统表单脚注是系统次要文字色（接近通过）；还没输完设置码时导航栏“继续”按系统规矩是灰的停用状态，不改色"
+  },
+  {
+    "key": "15-sign-in-1-code|light|contrast",
+    "count": 2,
+    "why": "系统表单脚注是系统次要文字色（接近通过）；还没输完设置码时导航栏“继续”按系统规矩是灰的停用状态，不改色"
+  },
+  {
+    "key": "15-sign-in-1-code|light|dynamicType",
+    "count": 3,
+    "why": "文字不完全跟动态字体放大（多半是 RootView 把字号封顶在 accessibility2，以及固定行高）；交 iPhone 编码线程按第 73 条改"
+  },
+  {
     "key": "15-sign-in-2-code-invalid|dark|contrast",
+    "count": 1,
+    "why": "系统表单、系统列表的分组标题和脚注用系统次要文字色，系统红色按钮在深色下也只是“接近通过”；照第 70 条用系统组件，不自己改色"
+  },
+  {
+    "key": "15-sign-in-2-code-invalid|light|contrast",
     "count": 1,
     "why": "系统表单、系统列表的分组标题和脚注用系统次要文字色，系统红色按钮在深色下也只是“接近通过”；照第 70 条用系统组件，不自己改色"
   },
@@ -50,8 +75,48 @@
     "why": "文字不完全跟动态字体放大（多半是 RootView 把字号封顶在 accessibility2，以及固定行高）；交 iPhone 编码线程按第 73 条改"
   },
   {
+    "key": "15-sign-in-3-code-expired|dark|contrast",
+    "count": 1,
+    "why": "系统表单、系统列表的分组标题和脚注用系统次要文字色，系统红色按钮在深色下也只是“接近通过”；照第 70 条用系统组件，不自己改色"
+  },
+  {
+    "key": "15-sign-in-3-code-expired|light|contrast",
+    "count": 1,
+    "why": "系统表单、系统列表的分组标题和脚注用系统次要文字色，系统红色按钮在深色下也只是“接近通过”；照第 70 条用系统组件，不自己改色"
+  },
+  {
+    "key": "15-sign-in-3-code-expired|light|dynamicType",
+    "count": 3,
+    "why": "文字不完全跟动态字体放大（多半是 RootView 把字号封顶在 accessibility2，以及固定行高）；交 iPhone 编码线程按第 73 条改"
+  },
+  {
+    "key": "15-sign-in-4-server|dark|contrast",
+    "count": 2,
+    "why": "系统表单、系统列表的分组标题和脚注用系统次要文字色，系统红色按钮在深色下也只是“接近通过”；照第 70 条用系统组件，不自己改色"
+  },
+  {
+    "key": "15-sign-in-4-server|light|contrast",
+    "count": 2,
+    "why": "系统表单、系统列表的分组标题和脚注用系统次要文字色，系统红色按钮在深色下也只是“接近通过”；照第 70 条用系统组件，不自己改色"
+  },
+  {
+    "key": "15-sign-in-4-server|light|dynamicType",
+    "count": 2,
+    "why": "文字不完全跟动态字体放大（多半是 RootView 把字号封顶在 accessibility2，以及固定行高）；交 iPhone 编码线程按第 73 条改"
+  },
+  {
+    "key": "15-sign-in-4-server|light|textClipped",
+    "count": 1,
+    "why": "系统表单里的网址输入框，审计认为最大字号下可能被截断；照第 70 条用系统 TextField，交 iPhone 编码线程复查"
+  },
+  {
     "key": "15-sign-in-5-no-passkey|light|dynamicType",
     "count": 6,
+    "why": "文字不完全跟动态字体放大（多半是 RootView 把字号封顶在 accessibility2，以及固定行高）；交 iPhone 编码线程按第 73 条改"
+  },
+  {
+    "key": "15-sign-in-6-removed|light|dynamicType",
+    "count": 5,
     "why": "文字不完全跟动态字体放大（多半是 RootView 把字号封顶在 accessibility2，以及固定行高）；交 iPhone 编码线程按第 73 条改"
   },
   {
@@ -816,7 +881,7 @@
   },
   {
     "key": "next-3-her-notifications|light|contrast",
-    "count": 1,
+    "count": 2,
     "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
   },
   {

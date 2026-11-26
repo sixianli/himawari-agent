@@ -12,13 +12,15 @@ public struct SignInView: View {
     @State private var serverOpen: Bool
     @State private var confirmingStartOver = false
     private let quietAttempt: Bool
+    private let typedCode: String
 
     public init(model: AppModel) {
         self.init(model: model, path: [], serverOpen: false, quietAttempt: true)
     }
 
-    init(model: AppModel, path: [SignInRoute], serverOpen: Bool = false, quietAttempt: Bool) {
+    init(model: AppModel, path: [SignInRoute], serverOpen: Bool = false, quietAttempt: Bool, typedCode: String = "") {
         self.model = model
+        self.typedCode = typedCode
         _path = State(initialValue: path)
         _serverOpen = State(initialValue: serverOpen)
         self.quietAttempt = quietAttempt
@@ -28,7 +30,7 @@ public struct SignInView: View {
         NavigationStack(path: $path) {
             content
                 .navigationDestination(for: SignInRoute.self) { _ in
-                    SetupCodePage(model: model)
+                    SetupCodePage(model: model, code: typedCode)
                 }
         }
         .sheet(isPresented: $serverOpen) {
@@ -142,7 +144,9 @@ public struct SignInView: View {
             Button {
                 path.append(.setupCode)
             } label: {
-                Text(L.text("signIn.firstTime")).frame(maxWidth: .infinity)
+                Text(L.text("signIn.firstTime"))
+                    .foregroundStyle(Color.hmText)
+                    .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
             .controlSize(.large)
