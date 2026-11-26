@@ -14,14 +14,17 @@ final class AccessibilityAuditTests: XCTestCase {
 
     func testEveryDemoScene() throws {
         var found: [AuditFinding] = []
+        let modes: [(name: String, appearance: XCUIDevice.Appearance, types: XCUIAccessibilityAuditType)] = [
+            ("light", .light, .all),
+            ("dark", .dark, .contrast),
+        ]
         for scene in try Self.scenes() {
-            XCUIDevice.shared.appearance = .light
-            let app = launch(scene)
-            found += audit(app, scene: scene, mode: "light", types: .all)
-            XCUIDevice.shared.appearance = .dark
-            Thread.sleep(forTimeInterval: Self.appearanceSettle)
-            found += audit(app, scene: scene, mode: "dark", types: .contrast)
-            app.terminate()
+            for mode in modes {
+                XCUIDevice.shared.appearance = mode.appearance
+                let app = launch(scene)
+                found += audit(app, scene: scene, mode: mode.name, types: mode.types)
+                app.terminate()
+            }
         }
         XCUIDevice.shared.appearance = .light
         try judge(found)
@@ -60,7 +63,6 @@ final class AccessibilityAuditTests: XCTestCase {
     }
 
     private static let auditAttempts = 2
-    private static let appearanceSettle: TimeInterval = 1
 
     private func judge(_ found: [AuditFinding]) throws {
         let baseline = try AuditBaseline.load(from: Self.appleRoot.appendingPathComponent(AuditBaseline.path))
