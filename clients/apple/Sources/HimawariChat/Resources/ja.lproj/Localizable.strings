@@ -47,6 +47,7 @@
 "chat.talk.herTurn" = "話しています · 話しかければ止まります";
 "chat.talk.muted" = "ミュート中";
 "chat.talk.failed" = "音声で話せませんでした。もう一度お試しください";
+"chat.talk.voiceHint" = "設定 > アクセシビリティ > 読み上げコンテンツ > 声 で高品質の音声をダウンロードすると、彼女の話し方がもっと自然になります";
 "chat.option.chosen" = "選んだ";
 "chat.copyCode" = "コードをコピー";
 "chat.menu.reply" = "返信";

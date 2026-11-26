@@ -96,10 +96,13 @@ public final class DemoTalk: ChatTalk {
     public let muted = false
     public let heard: String
     public let levels: [Double]
+    public let suggestsVoiceDownload: Bool
+    public let running = true
 
-    public init(phase: TalkPhase, heard: String = "") {
+    public init(phase: TalkPhase, heard: String = "", suggestsVoiceDownload: Bool = false) {
         self.phase = phase
         self.heard = heard
+        self.suggestsVoiceDownload = suggestsVoiceDownload
         levels = phase == .listening ? [0.2, 0.4, 0.6, 0.85, 0.5, 0.3, 0.65, 0.95, 0.75, 0.4, 0.25, 0.55, 0.8] : Array(repeating: 0.1, count: 13)
     }
 

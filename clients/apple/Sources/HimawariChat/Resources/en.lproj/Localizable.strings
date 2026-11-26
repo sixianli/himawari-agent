@@ -47,6 +47,7 @@
 "chat.talk.herTurn" = "She’s talking · just speak to cut in";
 "chat.talk.muted" = "Muted";
 "chat.talk.failed" = "Couldn’t start talking. Try again";
+"chat.talk.voiceHint" = "Download a Premium voice in Settings > Accessibility > Spoken Content > Voices and she will sound more natural";
 "chat.option.chosen" = "You chose";
 "chat.copyCode" = "Copy code";
 "chat.menu.reply" = "Reply";

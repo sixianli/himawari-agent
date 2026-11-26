@@ -47,6 +47,7 @@
 "chat.talk.herTurn" = "她在说 · 开口就能打断";
 "chat.talk.muted" = "静音了";
 "chat.talk.failed" = "没能开始语音对话，再试一次";
+"chat.talk.voiceHint" = "在 设置 > 辅助功能 > 朗读内容 > 声音 里下载“高品质”中文语音，她说话会更自然";
 "chat.option.chosen" = "选了";
 "chat.copyCode" = "复制代码";
 "chat.menu.reply" = "回复";

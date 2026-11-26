@@ -341,6 +341,10 @@ public enum DesignTokens {
         public static let listGap: CGFloat = 4
         public static let listIndent: CGFloat = 4
         public static let listMarkerGap: CGFloat = 6
+        public static let liveActivityButton: CGFloat = 44
+        public static let liveActivityIslandMark: CGFloat = 18
+        public static let liveActivityIslandTrailing: CGFloat = 52
+        public static let liveActivityMark: CGFloat = 40
         public static let puckBannerGap: CGFloat = 8
         public static let puckBusyLow: CGFloat = 0.7
         public static let puckContentGap: CGFloat = 12

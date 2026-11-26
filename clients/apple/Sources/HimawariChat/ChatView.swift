@@ -120,8 +120,17 @@ public struct ChatView: View {
     @ViewBuilder
     private var composer: some View {
         if let activeTalk {
-            ChatTalkBar(talk: activeTalk, end: endTalk)
-                .transition(.opacity)
+            VStack(spacing: DesignTokens.Chat.listMarkerGap) {
+                if activeTalk.suggestsVoiceDownload {
+                    Text(L.text("chat.talk.voiceHint"))
+                        .font(.footnote)
+                        .foregroundStyle(Color.hmMuted)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
+                }
+                ChatTalkBar(talk: activeTalk, end: endTalk)
+            }
+            .transition(.opacity)
         } else {
             ChatInputBar(
                 text: $draft,
@@ -242,6 +251,10 @@ public struct ChatView: View {
             .onChange(of: lastAgentReply) { _, reply in
                 guard talking, let reply, reply.id != talkStartedAfter else { return }
                 talk?.herReply(reply.text, finished: true)
+            }
+            .onChange(of: talk?.running ?? false) { wasRunning, running in
+                guard wasRunning, !running, talking else { return }
+                withAnimation(.easeInOut(duration: 0.15)) { talking = false }
             }
             .onChange(of: attachmentIds) { _, _ in
                 sendRequestId = OutgoingMessage.newId()

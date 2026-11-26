@@ -115,6 +115,7 @@ public final class AppModel {
         )
         #if os(iOS)
         PushBridge.sync = pushSync
+        BackgroundWorkActivityTokens.watch(pushSync)
         NotificationRouter.shared.transport = api
         #endif
         if restoring { restore() }

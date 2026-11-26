@@ -4,6 +4,7 @@ import Foundation
 import HimawariChat
 import HimawariCore
 import HimawariListenEngine
+import HimawariListenUI
 import Observation
 
 @MainActor
@@ -13,6 +14,8 @@ public final class ChatTalkSession: ChatTalk {
     public private(set) var heard = ""
     public private(set) var levels: [Double] = []
     public private(set) var muted = false
+    public private(set) var running = false
+    public private(set) var suggestsVoiceDownload = false
 
     @ObservationIgnored private var audio: TalkAudio?
     @ObservationIgnored private var pipeline: SpeechPipeline?
@@ -25,11 +28,17 @@ public final class ChatTalkSession: ChatTalk {
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var speech = 0
     @ObservationIgnored private var onSaid: (@MainActor (String) -> Void)?
-    @ObservationIgnored private var language: String?
+    @ObservationIgnored private var voice: AVSpeechSynthesisVoice?
+    @ObservationIgnored private let defaults: UserDefaults
+    @ObservationIgnored private let activity = TalkActivityController()
+    @ObservationIgnored private var startedAt = Date()
 
     private static let levelsKept = 32
+    static let voiceHintShownKey = "talk.voiceHintShown"
 
-    public init() {}
+    public init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+    }
 
     public func begin(onSaid: @escaping @MainActor (String) -> Void) async throws {
         await end()
@@ -38,7 +47,7 @@ public final class ChatTalkSession: ChatTalk {
         phase = .starting
         guard await AVAudioApplication.requestRecordPermission() else { throw ChatDictationError.microphoneDenied }
         let locale = Locale(identifier: Locale.preferredLanguages.first ?? "zh-Hans")
-        language = locale.identifier
+        chooseVoice(for: locale.identifier)
         let pipeline = try await SpeechPipeline.make(preferred: locale, sensitivity: .medium, engine: .dictation)
         guard started == generation else { return }
         try await pipeline.start { [weak self] piece in
@@ -57,7 +66,13 @@ public final class ChatTalkSession: ChatTalk {
         turn = TalkTurn()
         heard = ""
         muted = false
+        startedAt = Date()
+        running = true
+        TalkCommandCenter.shared.handler = { [weak self] command in
+            await self?.perform(command)
+        }
         phase = .listening
+        showActivity()
         feeding = Task { [weak self] in
             for await captured in audio.buffers {
                 self?.feed(captured, generation: started)
@@ -98,9 +113,55 @@ public final class ChatTalkSession: ChatTalk {
         reply = HerReply()
         heard = ""
         levels = []
+        suggestsVoiceDownload = false
+        let wasRunning = running
+        running = false
         phase = .starting
+        activity.end()
+        if wasRunning { TalkCommandCenter.shared.handler = nil }
         await pipeline?.cancel()
         if !said.isEmpty { onSaid?(said) }
+    }
+
+    private func perform(_ command: TalkCommand) async {
+        guard running else { return }
+        switch command {
+        case .toggleMute: setMuted(!muted)
+        case .end: await end()
+        }
+    }
+
+    private func showActivity() {
+        guard running else { return }
+        let shown: TalkLivePhase = switch phase {
+        case .herTurn: .speaking
+        case .muted: .muted
+        case .listening, .starting: muted ? .muted : .listening
+        }
+        activity.show(TalkLiveState(phase: shown, startedAt: startedAt))
+    }
+
+    private func chooseVoice(for language: String) {
+        let installed = AVSpeechSynthesisVoice.speechVoices()
+        let options = installed.map { voice in
+            TalkVoiceOption(identifier: voice.identifier, language: voice.language, quality: Self.quality(voice.quality))
+        }
+        let pick = TalkVoices.pick(from: options, preferred: language)
+        voice = pick.voice.flatMap { AVSpeechSynthesisVoice(identifier: $0.identifier) } ?? AVSpeechSynthesisVoice(language: language)
+        if pick.suggestsDownload, !defaults.bool(forKey: Self.voiceHintShownKey) {
+            defaults.set(true, forKey: Self.voiceHintShownKey)
+            suggestsVoiceDownload = true
+        } else {
+            suggestsVoiceDownload = false
+        }
+    }
+
+    private static func quality(_ quality: AVSpeechSynthesisVoiceQuality) -> TalkVoiceQuality {
+        switch quality {
+        case .premium: .premium
+        case .enhanced: .enhanced
+        default: .standard
+        }
     }
 
     private func feed(_ captured: CapturedBuffer, generation started: Int) {
@@ -135,10 +196,11 @@ public final class ChatTalkSession: ChatTalk {
 
     private func say(_ sentence: String) {
         let utterance = AVSpeechUtterance(string: sentence)
-        utterance.voice = AVSpeechSynthesisVoice(language: language)
+        utterance.voice = voice
         let current = speech
         sentencesRendering += 1
         phase = .herTurn
+        showActivity()
         synthesizer.write(utterance) { [weak self] buffer in
             guard let pcm = buffer as? AVAudioPCMBuffer else { return }
             let captured = CapturedBuffer(buffer: pcm, hostTime: Date())
@@ -172,6 +234,7 @@ public final class ChatTalkSession: ChatTalk {
         } else {
             phase = muted ? .muted : .listening
         }
+        showActivity()
     }
 }
 #endif
