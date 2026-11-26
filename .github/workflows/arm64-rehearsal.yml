@@ -36,6 +36,27 @@ jobs:
           set -e
           tail -n 60 build.log
           ls -la .ci-output/$run .ci-output/$run/build-linux-arm64 || true
+          if grep -q PUBLIC_ARTIFACT_CONTAINS_SECRET build.log; then
+            mkdir -p "$RUNNER_TEMP/unpacked" && tar -xzf .ci-output/$run/build-linux-arm64/linux-arm64-abi*-1.tar.gz -C "$RUNNER_TEMP/unpacked"
+            node --input-type=module -e '
+            import { readdirSync, readFileSync, lstatSync } from "node:fs";
+            import { join, relative } from "node:path";
+            import { gunzipSync } from "node:zlib";
+            import { findBuildSecrets } from "./scripts/ci/security-source.mjs";
+            import { redactText } from "./scripts/ci/redact-text.mjs";
+            const root = process.argv[1];
+            const walk = (dir) => { for (const name of readdirSync(dir)) { const full = join(dir, name); const stat = lstatSync(full); if (stat.isDirectory()) walk(full); else if (stat.isFile()) { const rel = relative(root, full); if (redactText(rel, { sentinels: [] }) !== rel) console.log("REHEARSAL_SECRET_NAME", rel); check(rel, readFileSync(full)); } } };
+            const check = (name, bytes) => {
+              const findings = findBuildSecrets({ name, bytes });
+              const text = bytes.toString("utf8");
+              const redacted = redactText(text, { sentinels: [] }) !== text;
+              if (findings.length || redacted) console.log("REHEARSAL_SECRET_HIT", name, JSON.stringify(findings.map((f) => [f.rule, f.line])), "redactText=" + redacted);
+              if (bytes.length > 2 && bytes[0] === 0x1f && bytes[1] === 0x8b) { try { check(name + "!gunzip", gunzipSync(bytes)); } catch {} }
+            };
+            check("NAME_CHECK", Buffer.from(""));
+            walk(root);
+            ' "$RUNNER_TEMP/unpacked" | head -50
+          fi
           /usr/bin/python3 -I scripts/delivery-mode/hermes/layer3-verdict.py ".ci-output/$run/local-summary.json" "$(git rev-parse HEAD)" build
           mkdir -p rehearsal/materials
           cp .ci-output/$run/build-linux-arm64/linux-arm64-abi*-1.tar.gz rehearsal/materials/
