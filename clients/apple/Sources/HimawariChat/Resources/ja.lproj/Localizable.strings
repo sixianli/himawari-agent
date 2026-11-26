@@ -68,6 +68,8 @@
 "background.dollars.tiny" = "0.01 ドル未満";
 "background.spent" = "%@ 使用";
 "background.budgetLine" = "%@ 使用、予算 %@";
+"background.spent.tiny" = "0.01 ドル未満使用";
+"background.budgetLine.tiny" = "0.01 ドル未満使用、予算 %@";
 "background.step" = "%d / %d ステップ";
 "background.untitled" = "サブスレッド";
 "background.tag.working" = "作業中";

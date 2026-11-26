@@ -82,11 +82,5 @@
     "code": "number-literal",
     "count": 19,
     "why": "收听功能的界面早于 2026-11-12 的设计令牌，颜色和尺寸还是写死的；收听界面重做时一并清掉"
-  },
-  {
-    "file": "Sources/HimawariSenses/SensesView.swift",
-    "code": "hidden-navigation-bar",
-    "count": 1,
-    "why": "感知各页仍是自绘玻璃返回钮加隐藏系统导航栏，边缘右滑返回失效；交给 iPhone 编码线程照第 70 条改成系统导航栏"
   }
 ]

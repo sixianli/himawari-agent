@@ -41,6 +41,16 @@ enum BackgroundWorkText {
         MicroDollars.dollars(micros).map { L.format("background.dollars", $0) } ?? L.text("background.dollars.tiny")
     }
 
+    static func spent(_ micros: Int) -> String {
+        MicroDollars.dollars(micros) == nil ? L.text("background.spent.tiny") : L.format("background.spent", money(micros))
+    }
+
+    static func budgetLine(spent: Int, budget: Int) -> String {
+        MicroDollars.dollars(spent) == nil
+            ? L.format("background.budgetLine.tiny", money(budget))
+            : L.format("background.budgetLine", money(spent), money(budget))
+    }
+
     static func name(_ subthread: BackgroundWork.Subthread) -> String {
         subthread.title ?? L.text("background.untitled")
     }
@@ -153,7 +163,7 @@ private struct MatterCard: View {
                     .hmType(DesignTokens.TypeScale.rowAction)
                     .foregroundStyle(matter.isOpen ? Color.hmText : Color.hmMuted)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                Text(L.format("background.spent", BackgroundWorkText.money(matter.spentMicros)))
+                Text(BackgroundWorkText.spent(matter.spentMicros))
                     .hmType(DesignTokens.TypeScale.caption)
                     .foregroundStyle(Color.hmMuted)
                     .monospacedDigit()
@@ -304,7 +314,7 @@ public struct SubthreadPage: View {
         HStack(spacing: 0) {
             Text(route.matter + " · ")
                 .foregroundStyle(Color.hmMuted)
-            Text(L.format("background.budgetLine", BackgroundWorkText.money(subthread.spentMicros), BackgroundWorkText.money(subthread.budgetMicros)))
+            Text(BackgroundWorkText.budgetLine(spent: subthread.spentMicros, budget: subthread.budgetMicros))
                 .foregroundStyle(subthread.nearBudget ? Color.hmSun : Color.hmMuted)
                 .monospacedDigit()
         }

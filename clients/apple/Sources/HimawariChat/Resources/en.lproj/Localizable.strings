@@ -68,6 +68,8 @@
 "background.dollars.tiny" = "under $0.01";
 "background.spent" = "%@ spent";
 "background.budgetLine" = "%@ spent of %@";
+"background.spent.tiny" = "under $0.01 spent";
+"background.budgetLine.tiny" = "under $0.01 spent of %@";
 "background.step" = "step %d of %d";
 "background.untitled" = "Subthread";
 "background.tag.working" = "Working";

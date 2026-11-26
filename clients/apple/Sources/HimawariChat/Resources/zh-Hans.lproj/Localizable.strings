@@ -68,6 +68,8 @@
 "background.dollars.tiny" = "不到 0.01 美元";
 "background.spent" = "花了 %@";
 "background.budgetLine" = "花了 %@，预算 %@";
+"background.spent.tiny" = "花了不到 0.01 美元";
+"background.budgetLine.tiny" = "花了不到 0.01 美元，预算 %@";
 "background.step" = "第 %d 步，共 %d 步";
 "background.untitled" = "子线程";
 "background.tag.working" = "在做";
