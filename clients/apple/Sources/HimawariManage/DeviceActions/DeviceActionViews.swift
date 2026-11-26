@@ -67,19 +67,7 @@ struct NavigationHeader: View {
     let back: () -> Void
 
     var body: some View {
-        ZStack {
-            title
-                .hmType(DesignTokens.TypeScale.navTitle)
-                .foregroundStyle(Color.hmText)
-            HStack {
-                GlassCircleButton(Text(L.text("common.back")), action: back) {
-                    Icon(.chevronLeft, size: DesignTokens.IconSize.glassButton)
-                }
-                Spacer()
-            }
-        }
-        .frame(minHeight: DesignTokens.Size.navBarHeight)
-        .padding(.horizontal, 16)
+        SystemNavigationTitle(title)
     }
 }
 
@@ -169,7 +157,7 @@ public struct ApprovalsView: View {
                                     .padding(.bottom, 4)
                             }
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
                     if index < model.handled.count - 1 { RowSeparator() }
                 }
             }
@@ -271,7 +259,7 @@ public struct ApprovalDetailView: View {
             Button { openThread(origin.threadId) } label: {
                 infoRow(L.text("approval.from"), text, chevron: true)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
         } else {
             infoRow(L.text("approval.from"), text, chevron: false)
         }
@@ -337,7 +325,7 @@ public struct DeviceAbilitiesSection: View {
                                 Text(L.text("permission.status.\(permission.status.rawValue)"))
                             }
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.pressable)
                         if index < model.permissions.count - 1 { RowSeparator() }
                     }
                 }

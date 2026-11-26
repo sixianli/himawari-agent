@@ -1,11 +1,7 @@
 import { DEFAULT_VOICE_GATES } from "@himawari-agent/application";
-import { VOICE_ADDRESSEE_QUESTION } from "@himawari-agent/prompt-catalog";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   agentId,
-  DECISION_GATEWAY_KEY,
-  DECISION_MODEL,
-  decisionAnswer,
   type Harness,
   harness,
   ownerId,
@@ -57,15 +53,6 @@ function named(voice: unknown): unknown {
 
 const say = (h: Harness, client: PairedClient, voice: unknown, threadId: string) =>
   send(h, client, named(voice), threadId);
-
-const askedSentences = (h: Harness) =>
-  h.decisions.requests.map(
-    (request) =>
-      (
-        (request.body["input"] as { content: { data: { heardSentence: string } }[] }[])[0]
-          ?.content[0]?.data as { heardSentence: string }
-      ).heardSentence,
-  );
 
 const commands = (h: Harness) =>
   h.repository.perception().commandUtterances({
@@ -182,213 +169,109 @@ describe("[iOS-8] the server decides whether a spoken sentence is the owner's co
 
 const airpods = { trigger: "airpods_name", inputRoute: "airpods", inEar: true, loudnessScore: 820 };
 
-describe("[iOS-8] the decision model decides whether a name call is meant for Himawari", () => {
-  it("carries out a call to Himawari, wherever the name sits, and sends the model nothing else", async () => {
+async function latestRunSource(h: Harness, threadId: string) {
+  const runs = await h.repository.threadRepository().listRuns(ownerId, agentId, threadId as never);
+  const latest = [...runs]
+    .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+    .at(-1);
+  if (!latest) throw new Error("NO_RUN_FOR_MESSAGE");
+  return h.repository.runExecutionSource(ownerId, agentId).read(latest.runId);
+}
+
+describe("[iOS-8] a name call is the owner's own voice; whether it was meant for her is left to her", () => {
+  it("accepts a name call whatever the sentence says, with no other model deciding first", async () => {
     const { h, client, threadId } = await setup();
-    for (const text of ["Himawari，帮我把明天的会改到下午", "把明天的会改到下午三点，Himawari"]) {
+    for (const text of [
+      "Himawari，帮我把明天的会改到下午",
+      "我跟你说，Himawari 昨天提醒我交房租了",
+    ]) {
       const sent = await send(h, client, { ...airpods, heardName: "Himawari" }, threadId, { text });
       expect(sent.status, JSON.stringify(sent.body)).toBe(200);
     }
     expect(await commands(h)).toHaveLength(2);
-    expect(h.decisions.requests).toHaveLength(2);
-    const request = h.decisions.requests[0];
-    expect(request?.authorization).toBe(`Bearer ${DECISION_GATEWAY_KEY}`);
-    expect(request?.body).toEqual({
-      model: DECISION_MODEL,
-      input: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "input_json",
-              data: {
-                assistantName: "Himawari",
-                heardSentence: "Himawari，帮我把明天的会改到下午",
-              },
-            },
-          ],
-        },
-      ],
-      questions: [
-        { type: "predicate", name: "addressed", instructions: VOICE_ADDRESSEE_QUESTION.text },
-      ],
-      providerOptions: { gateway: { zeroDataRetention: true } },
-    });
   });
 
-  it("does nothing, and stays quiet, when the owner only mentions Himawari to someone else", async () => {
+  it("marks a name call as heard by the phone so she judges it, and leaves a touch unmarked", async () => {
     const { h, client, threadId } = await setup();
-    h.decisions.answer = () => decisionAnswer(0.05);
-    const refused = await send(h, client, { ...airpods, heardName: "Himawari" }, threadId, {
-      text: "我跟你说，Himawari 昨天帮我订了会议室",
-    });
+    h.voiceGates.current = {
+      ...DEFAULT_VOICE_GATES,
+      ambientCommand: { ...DEFAULT_VOICE_GATES.ambientCommand, defaultThreshold: 900 },
+    };
+    const named = await send(h, client, { ...airpods, heardName: "Himawari" }, threadId);
+    expect(named.status).toBe(200);
+    expect((await latestRunSource(h, threadId))?.viaPhoneVoice).toBe(true);
+    const nearby = await send(
+      h,
+      client,
+      { trigger: "ambient_name", speakerScore: 950, heardName: "Himawari" },
+      threadId,
+      { id: "ambient" },
+    );
+    expect(nearby.status).toBe(200);
+    expect((await latestRunSource(h, threadId))?.viaPhoneVoice).toBe(true);
+    const touched = await send(h, client, { trigger: "hands_on" }, threadId);
+    expect(touched.status).toBe(200);
+    expect((await latestRunSource(h, threadId))?.viaPhoneVoice).toBeUndefined();
+  });
+
+  it("still turns away a voice that is not the owner's, without reaching her at all", async () => {
+    const { h, client, threadId } = await setup();
+    h.voiceGates.current = {
+      ...DEFAULT_VOICE_GATES,
+      ambientCommand: { ...DEFAULT_VOICE_GATES.ambientCommand, defaultThreshold: 900 },
+    };
+    const refused = await send(
+      h,
+      client,
+      { trigger: "ambient_name", speakerScore: 100, heardName: "Himawari" },
+      threadId,
+    );
     expect(refused.status).toBe(409);
     expect(refused.body).toEqual({
-      error: { code: "VOICE_COMMAND_UNCONFIRMED", reason: "not_addressed" },
+      error: { code: "VOICE_COMMAND_UNCONFIRMED", reason: "speaker_unconfirmed" },
     });
     expect(await commands(h)).toEqual([]);
   });
+});
 
-  it("asks first when the model is not sure, fails, times out or answers for another model", async () => {
-    const { h, client, threadId } = await setup();
-    for (const answer of [
-      () => decisionAnswer(0.5),
-      () => ({ status: 500, body: { error: { type: "internal" } } }),
-      () => decisionAnswer(0.97, "typesafe-ai/other"),
-      () => ({ status: 200, body: { model: DECISION_MODEL, answers: [] } }),
-    ]) {
-      h.decisions.answer = answer;
-      const refused = await say(h, client, airpods, threadId);
-      expect(refused.status).toBe(409);
-      expect(refused.body).toEqual({
-        error: { code: "VOICE_COMMAND_UNCONFIRMED", reason: "addressed_unsure" },
-      });
-    }
-    h.addressee.current = { ...h.addressee.current, timeoutMs: 200 };
-    h.decisions.answer = () => ({ ...decisionAnswer(0.97), delayMs: 1000 });
-    const late = await say(h, client, airpods, threadId);
-    expect(late.body).toEqual({
-      error: { code: "VOICE_COMMAND_UNCONFIRMED", reason: "addressed_unsure" },
-    });
-    expect(await commands(h)).toEqual([]);
-  });
-
-  it("asks first without calling the model when the phone did not say which name it heard", async () => {
-    const { h, client, threadId } = await setup();
-    const refused = await send(h, client, airpods, threadId);
-    expect(refused.body).toEqual({
-      error: { code: "VOICE_COMMAND_UNCONFIRMED", reason: "addressed_unsure" },
-    });
-    expect(h.decisions.requests).toEqual([]);
-  });
-
-  it("never asks the model about a sentence said after touching the phone", async () => {
-    const { h, client, threadId } = await setup();
-    expect((await send(h, client, { trigger: "hands_on" }, threadId)).status).toBe(200);
-    expect(h.decisions.requests).toEqual([]);
-  });
-
-  it("keeps its first answer when the phone sends the same sentence again", async () => {
-    const { h, client, threadId } = await setup();
-    h.decisions.answer = () => decisionAnswer(0.05);
-    const first = await say(h, client, airpods, threadId);
-    expect(first.status).toBe(409);
-    h.decisions.answer = () => decisionAnswer(0.97);
-    const again = await send(h, client, named(airpods), threadId, {
-      id: String(sequence).padStart(4, "0"),
-      text: "帮我把明天的会改到下午。",
-    });
-    expect(again.body).toEqual({
-      error: { code: "VOICE_COMMAND_UNCONFIRMED", reason: "not_addressed" },
-    });
-    expect(h.decisions.requests).toHaveLength(1);
-    expect(await commands(h)).toEqual([]);
-  });
-
-  it("masks a code before the sentence leaves for the decision model", async () => {
-    const { h, client, threadId } = await setup();
-    await send(h, client, named(airpods), threadId, {
-      text: "Himawari，验证码是 482910，帮我填上",
-    });
-    expect(askedSentences(h)).toHaveLength(1);
-    expect(askedSentences(h)[0]).not.toContain("482910");
-  });
-
-  it("asks first instead of calling the model once the day's perception model cost limit is used up", async () => {
-    const { h, client, threadId } = await setup();
-    const settings = await h.perception.settings({ ownerId, agentId });
-    await h.perception.changeSettings({ ownerId, agentId }, settings.revision, {
-      kind: "limit",
-      key: "perception.model_cost.daily",
-      value: 0,
-    });
-    const refused = await say(h, client, airpods, threadId);
-    expect(refused.body).toEqual({
-      error: { code: "VOICE_COMMAND_UNCONFIRMED", reason: "addressed_budget" },
-    });
-    expect(h.decisions.requests).toEqual([]);
-  });
-
-  it("asks first once a phone sends more name calls in a minute than allowed", async () => {
-    const { h, client, threadId } = await setup();
-    h.addressee.current = { ...h.addressee.current, perDevicePerMinute: 1 };
-    expect((await say(h, client, airpods, threadId)).status).toBe(200);
-    const refused = await say(h, client, airpods, threadId);
-    expect(refused.body).toEqual({
-      error: { code: "VOICE_COMMAND_UNCONFIRMED", reason: "addressed_unsure" },
-    });
-    expect(h.decisions.requests).toHaveLength(1);
-  });
-
-  it("asks the model once when the same sentence arrives twice at the same time", async () => {
-    const { h, client, threadId } = await setup();
-    h.decisions.answer = () => ({ ...decisionAnswer(0.97), delayMs: 300 });
+describe("the phone's talk mode tells her this turn was spoken, without any voice proof", () => {
+  const talk = (
+    h: Harness,
+    client: PairedClient,
+    threadId: string,
+    body: Record<string, unknown>,
+  ) => {
     sequence += 1;
-    const id = String(sequence).padStart(4, "0");
-    const post = (messageId: string) =>
-      devicePost(h, client, "messages", {
-        messageId,
-        threadId,
-        expectedRevision: 1,
-        text: "帮我把明天的会改到下午",
-        utteranceId: `utterance-voice-${id}`,
-        voice: named(airpods),
-      });
-    const [first, second] = await Promise.all([
-      post(`device-message-voice-${id}-a`),
-      post(`device-message-voice-${id}-b`),
-    ]);
-    expect(first.status).toBe(second.status);
-    expect(h.decisions.requests).toHaveLength(1);
+    return devicePost(h, client, "messages", {
+      messageId: `device-message-talk-${String(sequence).padStart(4, "0")}`,
+      threadId,
+      expectedRevision: 1,
+      text: "今天东京天气怎么样",
+      ...body,
+    });
+  };
+
+  it("marks a spoken turn as spoken, and a typed turn never", async () => {
+    const { h, client, threadId } = await setup();
+    const spoken = await talk(h, client, threadId, { spoken: true });
+    expect(spoken.status, JSON.stringify(spoken.body)).toBe(200);
+    const source = await latestRunSource(h, threadId);
+    expect(source?.viaTalk).toBe(true);
+    expect(source?.viaPhoneVoice).toBeUndefined();
+    const typed = await talk(h, client, threadId, {});
+    expect(typed.status).toBe(200);
+    const typedSource = await latestRunSource(h, threadId);
+    expect(typedSource?.viaTalk).toBeUndefined();
   });
 
-  it("asks first when the decision model's answer is larger than the limit", async () => {
+  it("turns away a spoken flag that is not true, or that arrives with a voice proof", async () => {
     const { h, client, threadId } = await setup();
-    h.decisions.answer = () => ({
-      status: 200,
-      body: { ...decisionAnswer(0.97).body, padding: "x".repeat(70_000) },
-    });
-    const refused = await say(h, client, airpods, threadId);
-    expect(refused.body).toEqual({
-      error: { code: "VOICE_COMMAND_UNCONFIRMED", reason: "addressed_unsure" },
-    });
+    for (const body of [
+      { spoken: false },
+      { spoken: "yes" },
+      { spoken: true, utteranceId: "utterance-talk-1", voice: { trigger: "hands_on" } },
+    ])
+      expect((await talk(h, client, threadId, body)).status).toBe(400);
     expect(await commands(h)).toEqual([]);
-  });
-
-  it("stops reading an oversize answer without waiting for it to finish", async () => {
-    const { h, client, threadId } = await setup();
-    h.decisions.answer = () => ({
-      status: 200,
-      body: { ...decisionAnswer(0.97).body, padding: "x".repeat(70_000) },
-      unfinished: true,
-    });
-    const started = Date.now();
-    const refused = await say(h, client, airpods, threadId);
-    expect(Date.now() - started).toBeLessThan(1000);
-    expect(refused.body).toEqual({
-      error: { code: "VOICE_COMMAND_UNCONFIRMED", reason: "addressed_unsure" },
-    });
-  });
-
-  it("asks first on a name call and still carries out a touch when no addressee check is wired", async () => {
-    const { h, client, threadId } = await setup({ withoutAddressee: true });
-    const refused = await say(h, client, airpods, threadId);
-    expect(refused.body).toEqual({
-      error: { code: "VOICE_COMMAND_UNCONFIRMED", reason: "addressed_unsure" },
-    });
-    expect(h.decisions.requests).toHaveLength(0);
-    const touched = await say(h, client, { trigger: "hands_on" }, threadId);
-    expect(touched.status, JSON.stringify(touched.body)).toBe(200);
-  });
-
-  it("puts the fixed question before the sentence in the request to the decision model", async () => {
-    const { h, client, threadId } = await setup();
-    await say(h, client, airpods, threadId);
-    expect(Object.keys(h.decisions.requests[0]?.body ?? {})).toEqual([
-      "model",
-      "questions",
-      "input",
-      "providerOptions",
-    ]);
   });
 });

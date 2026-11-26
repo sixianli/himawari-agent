@@ -154,7 +154,7 @@ public struct PerceptionDeletionView: View {
                                 .hmType(DesignTokens.TypeScale.body)
                                 .foregroundStyle(Color.hmLink)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.pressable)
                     }
                 }
             }
@@ -172,7 +172,7 @@ public struct PerceptionDeletionView: View {
                     } label: {
                         SenseRow(icon: item.icon, title: item.name, detail: item.text("records"), status: "", statusColor: Color.hmMuted, showsChevron: false)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                         deleteButton { confirmingKind = item }
                     }
@@ -232,7 +232,7 @@ struct PerceptionEpisodeDeletionView: View {
                                     .foregroundStyle(Color.hmDanger)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(.pressable)
                             .disabled(model.working)
                         }
                     }

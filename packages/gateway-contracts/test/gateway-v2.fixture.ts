@@ -100,15 +100,6 @@ export const governanceMessages = [
     quietHours: [{ days: [0, 1, 2, 3, 4, 5, 6], start: "23:00", end: "07:00" }],
     importantSenders: ["smbc.co.jp", "teacher@example.com"],
     dailyLimitReached: false,
-    backoff: [
-      {
-        classKey: "due:service.example.com",
-        domain: "service.example.com",
-        stage: 1,
-        ignoredCount: 3,
-        changedAt: "2026-11-02T00:00:00.000Z",
-      },
-    ],
     insights: [
       {
         id: "proactive-insight-01",
@@ -244,7 +235,6 @@ export const governanceMessages = [
     keep: "memory-02",
   }),
   fixture("command", "proactive.source.manage", { source: "gmail", action: "disconnect" }),
-  fixture("command", "proactive.backoff.restore", { classKey: "due:service.example.com" }),
   fixture("query", "proactive.sources.read", {}),
   fixture("snapshot", "proactive.sources.snapshot", {
     sources: [
@@ -335,19 +325,6 @@ export const governanceMessages = [
           },
         },
       ],
-      muse: {
-        entries: 2,
-        reminded: 1,
-        silent: 1,
-        unpaired: 0,
-        pairedMails: 2,
-        timing: null,
-        content: null,
-        pairing: null,
-        buckets: { both: 1, museOnly: 0, himawariOnly: 0, bothSilent: 1, noHimawariRecord: 0 },
-      },
-      gap: null,
-      gapCases: [],
       implicit: {
         pushedDecisions: 0,
         otherDecisionEvents: 0,
@@ -389,40 +366,6 @@ export const governanceMessages = [
     startDay: "2026-11-02",
     recentAuthenticationRef: null,
   }),
-  fixture("command", "proactive.gapcase.mark", {
-    caseId: "gap_0123456789abcdef0123",
-    endDay: "2026-11-09",
-    marked: true,
-  }),
-  fixture("query", "muse.overview.read", {}),
-  fixture("snapshot", "muse.overview.snapshot", {
-    channel: { state: "ok", lastBatchAt: "2026-11-01T08:00:00.000Z", gapCount: 0 },
-    receivedWeek: 21,
-    suppressedWeek: 2,
-    pending: 1,
-    delay: { medianMinutes: 300, samples: 12 },
-    items: [
-      {
-        kind: "proactive",
-        naturalKey: "submission-01",
-        occurredAt: "2026-11-01T08:20:08.200Z",
-        title: "GitHub 存储已满",
-        text: "GitHub 存储 100%，今天处理。",
-        withheld: false,
-        timingOk: null,
-        contentOk: null,
-      },
-    ],
-    generatedAt: "2026-11-01T09:00:00.000Z",
-  }),
-  fixture("command", "muse.item.rate", {
-    kind: "proactive",
-    naturalKey: "submission-01",
-    timingOk: true,
-    contentOk: false,
-  }),
-  fixture("command", "muse.intake.set", { paused: true }),
-  fixture("command", "muse.data.clear", {}),
   fixture("query", "owner.preferences.read", {}),
   fixture("snapshot", "owner.preferences.snapshot", {
     name: "Andy",
@@ -959,24 +902,6 @@ export const governanceMessages = [
       memoryIds: ["memory-01"],
       relatedMessages: 2,
     },
-    muse: {
-      entries: [
-        {
-          entryId: "muse-entry-01",
-          museAt: "2026-11-09T00:01:00.000Z",
-          reminded: true,
-          kind: "proactive",
-          state: "delivered",
-          title: "Muse 的标题",
-          text: null,
-          textWithheld: false,
-          timingOk: true,
-          contentOk: null,
-        },
-      ],
-      truncated: false,
-    },
-    comparison: "both",
   }),
   fixture("query", "memory.overview.read", {}),
   fixture("query", "decision.chain.read", { decisionId: "proactive-decision:abc" }),

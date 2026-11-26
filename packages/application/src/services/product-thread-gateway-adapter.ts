@@ -130,6 +130,14 @@ export interface ProductThreadGatewayAdapterDependencies {
   readonly live?: Pick<ExecutionLiveFeed, "subscribe" | "current">;
 }
 
+interface PendingText {
+  readonly runId: string;
+  readonly itemId: string;
+  readonly offset: number;
+  text: string;
+  emittedAt?: string;
+}
+
 interface WatchedExecutionRun {
   readonly runRevision: number;
   readonly token: string;
@@ -636,7 +644,7 @@ export class ProductThreadGatewayAdapter
     const agentId = createAgentId(input.subscription.scope.agentId);
     const threadId = createThreadId(input.subscription.payload.threadId);
     const live = this.#dependencies.live;
-    const pendingTexts: { runId: string; itemId: string; offset: number; text: string }[] = [];
+    const pendingTexts: PendingText[] = [];
     let changedRuns = false;
     let wake: (() => void) | undefined;
     const signalled = () => {
@@ -644,10 +652,14 @@ export class ProductThreadGatewayAdapter
       wake = undefined;
       resolve?.();
     };
-    const queueText = (text: { runId: string; itemId: string; offset: number; text: string }) => {
+    const queueText = (text: PendingText) => {
       const last = pendingTexts.at(-1);
       if (last && last.runId === text.runId && last.itemId === text.itemId) {
-        if (text.offset === 0) pendingTexts[pendingTexts.length - 1] = { ...text };
+        if (text.offset === 0)
+          pendingTexts[pendingTexts.length - 1] = {
+            ...text,
+            ...(last.emittedAt ? { emittedAt: last.emittedAt } : {}),
+          };
         else if (text.offset === last.offset + last.text.length) last.text += text.text;
         else pendingTexts.push({ ...text });
       } else pendingTexts.push({ ...text });
@@ -714,6 +726,7 @@ export class ProductThreadGatewayAdapter
                 itemId: text.itemId,
                 offset: text.offset + start,
                 text: text.text.slice(start, start + 60000),
+                emittedAt: text.emittedAt ?? null,
                 observedAt: this.#dependencies.clock.now(),
               },
               "thread.execution_text",

@@ -13,13 +13,11 @@ import {
   classificationRank,
   createProactiveSeal,
   type DataClassification,
-  DEFAULT_HOME_URGENCY,
   DEVICE_CONFIGURATION_DEFAULTS,
   DurableMemoryService,
   defaultDeviceHardLimits,
   ExecutionLiveFeed,
   enforceableOwnerRule,
-  type HomeUrgencyRunResult,
   type IdGeneratorPort,
   INBOX_LOOP_DEFAULTS,
   MemoryCheckupService,
@@ -68,8 +66,6 @@ import {
   BoundedJwksFetcher,
   CloudflareAccessJwtVerifier,
   createApplePushSender,
-  createDemoGoogleOAuth,
-  createDemoMailReader,
   createGmailReader,
   createGoogleOAuth,
   createWebPushSender,
@@ -83,13 +79,11 @@ import {
   ExecutionAdmissionUdsServer,
   ExecutionUdsError,
   failureReason,
-  GAP_EXPORT_SECRET_PURPOSE,
   GOOGLE_OAUTH_CLIENT_SECRET_PURPOSE,
   initializeStateRoot,
   JsonFileConfigurationPort,
   MacOsKeychainProviderSecretSource,
   MacOsKeychainSecretSource,
-  MUSE_INTAKE_SECRET_PURPOSE,
   NodeVaultCrypto,
   PayloadUdsServer,
   parseServiceArguments,
@@ -104,7 +98,6 @@ import {
   SystemdProviderSecretSource,
   stableErrorCode,
   TypeSafeJevTransport,
-  type VoiceAddresseeDecision,
   writeAgentServiceBootBinding,
   writeAuthorityFile,
   writeServiceDiagnostic,
@@ -128,6 +121,7 @@ import { createProductionAuthorityLifecycle } from "./production-authority-lifec
 import { createProductionAutomaticReview } from "./production-automatic-review.js";
 import { backgroundCommandLimits } from "./production-background-commands.js";
 import { createProductionCapabilityReactivationVerifier } from "./production-capability-reactivation.js";
+import { createConfiguredComputerTools } from "./production-computer-tools.js";
 import {
   DEFAULT_TOOL_RESULT_SHARE,
   MEMORY_SNAPSHOT_WINDOW_SHARE,
@@ -141,8 +135,6 @@ import { ProductionExecutionAdmissionHandler } from "./production-execution-admi
 import { AgentServiceExecutionClient } from "./production-execution-client.js";
 import { strictModeUnavailableTools } from "./production-execution-environment.js";
 import { createProductionFileReadServices } from "./production-file-read-services.js";
-import { ProductionGapExport } from "./production-gap-export.js";
-import { HOME_URGENCY_MAX_OUTPUT_TOKENS } from "./production-home.js";
 import { createConfiguredHostWeb } from "./production-host-web.js";
 import {
   createProductionHttpComposition,
@@ -188,8 +180,6 @@ import {
   productionEgressThreadOf,
   productionSensitiveInterceptionRecorder,
 } from "./production-model-egress.js";
-import { createMuseChannelPushSource, ProductionMuseIntake } from "./production-muse-intake.js";
-import { ProductionMuseControl } from "./production-muse-intake-control.js";
 import { ProductionObservation, readServiceRevision } from "./production-observation.js";
 import { productionOwnerIntentGate } from "./production-owner-intent.js";
 import { ProductionOwnerRuleTools, ProductionOwnerRuleWriter } from "./production-owner-rules.js";
@@ -235,7 +225,6 @@ import { ProductionThreadTasks } from "./production-thread-tasks.js";
 import { productionToolActionRegistry } from "./production-tool-actions.js";
 import { toolCallSandboxPrewarm } from "./production-tool-call-prewarm.js";
 import { ProductionVaultTools } from "./production-vault-tools.js";
-import { productionVoiceAddressee } from "./production-voice-addressee.js";
 import { ProductionWebPush, WebPushPresence } from "./production-web-push.js";
 import { createProductionWorkerParentBindingRegistry } from "./production-worker-parent-binding-registry.js";
 import {
@@ -303,14 +292,6 @@ let sandboxCommandInventoryOnce: Promise<SandboxCommandInventory> | undefined;
 function sandboxCommandInventory(): Promise<SandboxCommandInventory> {
   sandboxCommandInventoryOnce ??= inspectSandboxCommands();
   return sandboxCommandInventoryOnce;
-}
-
-function voiceAddresseeOption(
-  configuration: ProductConfiguration,
-  secretSource: ReturnType<typeof hostModelSources>["provider"],
-): { readonly voiceAddressee?: VoiceAddresseeDecision } {
-  const voiceAddressee = productionVoiceAddressee(configuration, secretSource);
-  return voiceAddressee ? { voiceAddressee } : {};
 }
 
 function productionClock(): ClockPort {
@@ -774,10 +755,7 @@ export async function startTenantRuntime(
   let proactive: ProductionProactive | undefined;
   let memoryClassifier: ProductionMemoryClassifier | undefined;
   let memoryImportDuplicates: ReturnType<typeof productionImportDuplicateChecker>;
-  let museIntake: ProductionMuseIntake | undefined;
-  let gapExport: ProductionGapExport | undefined;
   let mcpRead: ProductionMcpRead | undefined;
-  let museControl: ProductionMuseControl | undefined;
   let observation: ProductionObservation | undefined;
   let realEval: ProductionRealEval | RealEvalSampleExpiry | undefined;
   let perceptionExtraction: ProductionPerceptionExtraction | undefined;
@@ -1183,6 +1161,7 @@ export async function startTenantRuntime(
       secrets: sources.provider,
     });
     const hostReadOnlyPort = new DescriptorRelativeReadOnly();
+    const computer = await createConfiguredComputerTools(configuration, clock);
     let externalEgress: ReturnType<typeof createProductionModelEgress> | undefined;
     let approvalThreadTitle: ((threadId: string) => Promise<string | null>) | undefined;
     const fileReadServices = createProductionFileReadServices({
@@ -1195,6 +1174,7 @@ export async function startTenantRuntime(
       hostReadOnlyPort,
       workspaceSnapshotPort: hostReadOnlyPort,
       ...(hostWeb ? { hostWeb } : {}),
+      ...(computer ? { computer } : {}),
       externalTag: async () => {
         externalEgress ??= createProductionModelEgress(configuration, sources);
         try {
@@ -1909,6 +1889,9 @@ export async function startTenantRuntime(
         }),
         ledger: repository.decisionLedger(),
         push: { enqueue: (input) => requireValue(repository).webPush().enqueue(input) },
+        urgency: {
+          recordUrgency: (input) => requireValue(repository).inbox().recordUrgency(input),
+        },
         payloads,
         protector,
         clock: { now: () => clock.now() },
@@ -2307,9 +2290,7 @@ export async function startTenantRuntime(
         agentId: configuration.agentId,
       };
       const proactiveStore =
-        proactiveConfiguration &&
-        (proactiveSecret || proactiveConfiguration.demoInbox) &&
-        proactiveDescriptor
+        proactiveConfiguration && proactiveSecret && proactiveDescriptor
           ? repository.proactive()
           : undefined;
       const proactiveSeal =
@@ -2360,22 +2341,19 @@ export async function startTenantRuntime(
         });
       if (
         proactiveConfiguration &&
-        (proactiveSecret || proactiveConfiguration.demoInbox) &&
+        proactiveSecret &&
         proactiveDescriptor &&
         proactiveStore &&
         proactiveSeal
       ) {
-        const demoInbox = proactiveConfiguration.demoInbox;
-        const oauth = demoInbox
-          ? createDemoGoogleOAuth()
-          : createGoogleOAuth({
-              clientId: requireValue(proactiveGmail).clientId,
-              clientSecret: await hostModelSources(configuration).provider.resolve(
-                requireValue(proactiveSecret).ref,
-                requireValue(proactiveSecret).version,
-              ),
-              redirectUri: proactiveRedirectUri(configuration.publicOrigin),
-            });
+        const oauth = createGoogleOAuth({
+          clientId: proactiveConfiguration.gmail.clientId,
+          clientSecret: await hostModelSources(configuration).provider.resolve(
+            proactiveSecret.ref,
+            proactiveSecret.version,
+          ),
+          redirectUri: proactiveRedirectUri(configuration.publicOrigin),
+        });
         const feedbackStore = repository.webPush();
         const reviewPayloads = repository.payloadStore(
           configuration.ownerId,
@@ -2453,9 +2431,7 @@ export async function startTenantRuntime(
           ownerRules: repository.ownerRules(),
           seal: proactiveSeal,
           oauth,
-          reader: demoInbox
-            ? createDemoMailReader({ now: () => clock.now(), timeZone: proactiveTimeZone })
-            : createGmailReader({ oauth }),
+          reader: createGmailReader({ oauth }),
           readAccount: (accessToken) => readGmailAccount({ accessToken }),
           ledger: repository.decisionLedger(),
           readMemoryText: readReviewText,
@@ -2574,62 +2550,6 @@ export async function startTenantRuntime(
             }),
         });
       }
-      const homeUrgencyConfiguration = configuration.runPolicy?.homeUrgency ?? DEFAULT_HOME_URGENCY;
-      const homeUrgencyRef = homeUrgencyConfiguration.modelRef ?? proactiveConfiguration?.modelRef;
-      const homeUrgencyDescriptor = modelComposition.descriptors.generation.find(
-        ({ ref }) => ref === homeUrgencyRef,
-      );
-      if (homeUrgencyConfiguration.modelRef !== undefined && !homeUrgencyDescriptor)
-        throw new Error("HOME_URGENCY_MODEL_UNAVAILABLE");
-      const homeUrgencyRepository = repository;
-      const homeUrgency =
-        homeUrgencyConfiguration.enabled &&
-        homeUrgencyDescriptor &&
-        protector &&
-        homeUrgencyRepository
-          ? {
-              settings: homeUrgencyConfiguration,
-              seal: createProactiveSeal({
-                payloads: homeUrgencyRepository.payloadStore(
-                  configuration.ownerId,
-                  configuration.agentId,
-                ),
-                protector,
-                ids,
-              }),
-              model: modelComposition.composition.proactiveModel(homeUrgencyDescriptor.ref, {
-                maxOutputTokens: HOME_URGENCY_MAX_OUTPUT_TOKENS,
-                requestTimeoutMs: homeUrgencyConfiguration.requestTimeoutMs,
-                purpose: "home-urgency",
-              }),
-              modelAllows: (classification: DataClassification) =>
-                homeUrgencyDescriptor.allowedDataClassifications.includes(classification),
-              timeZone: configuration.runPolicy?.timeZone ?? "UTC",
-              estimateCostMicros: proactiveCostEstimator(
-                homeUrgencyDescriptor.cost,
-                HOME_URGENCY_MAX_OUTPUT_TOKENS,
-              ),
-              readLocale: async () =>
-                (
-                  await homeUrgencyRepository.ownerPreferences().read({
-                    ownerId: configuration.ownerId,
-                    agentId: configuration.agentId,
-                  })
-                ).locale,
-              onScored: (result: HomeUrgencyRunResult) => {
-                if (result.attempted > 0 || result.failures.length > 0)
-                  writeServiceDiagnostic(errorOutput, {
-                    component: "agent-service",
-                    event: "home.urgency_scored",
-                    attempted: result.attempted,
-                    recorded: result.recorded,
-                    failed: result.failures.length,
-                    stoppedBy: result.stoppedBy,
-                    ...(result.failures[0] ? { code: result.failures[0].slice(0, 120) } : {}),
-                  });
-              },
-            }
-          : undefined;
       const realEvalConfiguration = configuration.runPolicy?.realEval;
       const realEvalDescriptor = realEvalConfiguration
         ? modelComposition.descriptors.generation.find(
@@ -2810,69 +2730,6 @@ export async function startTenantRuntime(
               code: stableErrorCode(error),
             }),
         });
-      }
-      const museIntakeConfiguration = configuration.runPolicy?.museIntake;
-      const museIntakeSecret =
-        museIntakeConfiguration?.enabled === true
-          ? configuration.secretReferences.find(
-              ({ ref, purpose }) =>
-                ref === museIntakeConfiguration.secretRef && purpose === MUSE_INTAKE_SECRET_PURPOSE,
-            )
-          : undefined;
-      if (museIntakeSecret && protector) {
-        const museSeal = createProactiveSeal({
-          payloads: repository.payloadStore(configuration.ownerId, configuration.agentId),
-          protector,
-          ids,
-        });
-        museControl = new ProductionMuseControl({
-          scope: proactiveScope,
-          store: repository.museIntake(),
-          seal: museSeal,
-          ids,
-          clock,
-        });
-        museIntake = new ProductionMuseIntake({
-          scope: proactiveScope,
-          store: repository.museIntake(),
-          seal: museSeal,
-          ids,
-          clock,
-          secret: await hostModelSources(configuration).provider.resolve(
-            museIntakeSecret.ref,
-            museIntakeSecret.version,
-          ),
-        });
-      } else if (museIntakeConfiguration?.enabled === true) {
-        throw new Error("MUSE_INTAKE_RUNTIME_UNAVAILABLE");
-      }
-      const gapExportRef = museIntakeConfiguration?.gapExportSecretRef;
-      const gapExportSecret =
-        museIntakeConfiguration?.enabled === true && gapExportRef !== undefined
-          ? configuration.secretReferences.find(
-              ({ ref, purpose }) => ref === gapExportRef && purpose === GAP_EXPORT_SECRET_PURPOSE,
-            )
-          : undefined;
-      if (gapExportSecret && protector) {
-        gapExport = new ProductionGapExport({
-          scope: {
-            ownerId: configuration.ownerId,
-            agentId: configuration.agentId,
-          },
-          marks: repository.gapCaseMarks(),
-          seal: createProactiveSeal({
-            payloads: repository.payloadStore(configuration.ownerId, configuration.agentId),
-            protector,
-            ids,
-          }),
-          clock,
-          secret: await hostModelSources(configuration).provider.resolve(
-            gapExportSecret.ref,
-            gapExportSecret.version,
-          ),
-        });
-      } else if (gapExportRef !== undefined && museIntakeConfiguration?.enabled === true) {
-        throw new Error("GAP_EXPORT_RUNTIME_UNAVAILABLE");
       }
       const mcpSyncStore = repository.mcpMemorySync();
       const externalProposals = new ProductionMcpMemoryWriter({
@@ -3072,6 +2929,14 @@ export async function startTenantRuntime(
         : undefined;
       if (webPushConfiguration && webPushSecret && episodeProtector) {
         const pushRepository = repository;
+        const messageUrgency = async (messageId: string) =>
+          (
+            await pushRepository.inbox().readUrgency({
+              ownerId: configuration.ownerId,
+              agentId: configuration.agentId,
+              messageIds: [messageId],
+            })
+          )[messageId];
         const pushSources = hostModelSources(configuration);
         const readPlain = async (ref: string) => {
           const payload = await consolidationPayloads.get(ref);
@@ -3116,15 +2981,13 @@ export async function startTenantRuntime(
           applePush = new ProductionApplePush({
             ownerId: configuration.ownerId,
             agentId: configuration.agentId,
+            messageUrgency,
             store: pushRepository.applePush(),
             sender: applePushSender,
             configuration: () => applePushConfiguration,
             threadTitle,
             publicOrigin: configuration.publicOrigin,
             now: () => clock.now(),
-            approvalCopy: async (input) => ({
-              affirmLabel: (await http?.home.approvalCopy(input))?.affirmLabel ?? null,
-            }),
             onDelivery: (outcome) =>
               writeServiceDiagnostic(errorOutput, {
                 component: "agent-service",
@@ -3145,6 +3008,7 @@ export async function startTenantRuntime(
           placement: macPlacement,
           ownerId: configuration.ownerId,
           agentId: configuration.agentId,
+          messageUrgency,
           store: pushRepository.webPush(),
           sender: createWebPushSender({
             privateKey: await pushSources.keys.resolve(webPushSecret.ref, webPushSecret.version),
@@ -3169,14 +3033,6 @@ export async function startTenantRuntime(
                 status: "pending",
               }),
           awaitingCount: async () => http?.home.awaitingCount(),
-          ...(museIntake
-            ? {
-                museChannel: createMuseChannelPushSource({
-                  scope: proactiveScope,
-                  store: repository.museIntake(),
-                }),
-              }
-            : {}),
           ...(proactive && proactiveStore && proactiveSeal
             ? {
                 proactive: createProactivePushSource({
@@ -3266,18 +3122,8 @@ export async function startTenantRuntime(
         },
         observation: repository.ledgerObservation(),
         ledger: repository.decisionLedger(),
-        marks: repository.gapCaseMarks(),
         ...(configuration.runPolicy?.mcpRead
           ? { mcpConnections: repository.mcpConnections() }
-          : {}),
-        ...(protector
-          ? {
-              seal: createProactiveSeal({
-                payloads: repository.payloadStore(configuration.ownerId, configuration.agentId),
-                protector,
-                ids,
-              }),
-            }
           : {}),
         clock,
         schedule: {
@@ -3659,12 +3505,7 @@ export async function startTenantRuntime(
               ),
             }
           : {}),
-        ...voiceAddresseeOption(configuration, sources.provider),
-        ...(homeUrgency ? { homeUrgency } : {}),
-        ...(museIntake ? { museIntake } : {}),
-        ...(gapExport ? { gapExport } : {}),
         ...(mcpRead ? { mcpRead } : {}),
-        ...(museControl ? { museControl } : {}),
         ...(observation ? { observation } : {}),
         memory: {
           ...(memoryComposition

@@ -28,7 +28,7 @@ struct AboutPage: View {
                     } label: {
                         SettingsRow(icon: nil, title: item.name, value: item.license, chevron: true, last: index == ThirdPartyLicenses.all.count - 1)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
                 }
             }
         }

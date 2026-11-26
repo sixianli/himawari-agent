@@ -1116,11 +1116,6 @@ export const messages = {
   "proactive.reconnect.button": "再接続",
   "proactive.dailyLimit":
     "本日のメール確認が 1 日の費用上限に達しました。モデルは止めていますが、銀行・学校などのメールはルールで引き続き表示します。0:00 に自動再開し、チャットへの影響はありません。",
-  "proactive.backoff.stage1":
-    "{domain} からのリマインダーを {count} 回続けて開かなかったため、この種類の通知は 1 日 1 件までに減らしました。リマインダーはこのページに引き続き表示されます。",
-  "proactive.backoff.stage2":
-    "通知を減らした後も {domain} からのリマインダーを {count} 回続けて開かなかったため、この種類の通知を一時停止しました。リマインダーはこのページに引き続き表示されます。",
-  "proactive.backoff.restore": "通知を元に戻す",
   "proactive.paused": "自発的なリマインダーはオフです。メールの確認・記録・通知をしていません。",
   "proactive.foot": "期限が来たリマインダーと急ぎのメールは、通知をオンにした端末に届きます。",
   "dailyReview.title": "毎日の採点",
@@ -1240,35 +1235,7 @@ export const messages = {
     "{a, select, merge {統合} supersede {置き換え} archive {アーカイブ} reflect {要約} hold {食い違いを発見} other {整理}}",
   "decision.chain.repeated": "重複",
   "decision.chain.nodeCut": "この先にもあります",
-  "decision.email.open": "このメールを見る",
-  "decision.email.title": "メールの判断の詳細",
-  "decision.email.back": "戻る",
-  "decision.email.failed":
-    "このメールの判断の詳細を読み込めませんでした。後でもう一度お試しください。",
   "decision.email.thisMail": "このメールで使用",
-  "decision.email.thisMailUsed": "このメールで使ったもの",
-  "decision.email.mailTitle": "このメールの判断",
-  "decision.email.noMail": "このメールの判断記録はありません。",
-  "decision.email.outcome":
-    "{o, select, act {対応が必要} know {知っておく価値あり} check {重要かもしれません。原文を確認} ignore {対応不要} skipped {このメールは読みませんでした} other {記録なし}}",
-  "decision.email.skip":
-    "{r, select, category {理由：メールの分類によりスキップ} sensitive {理由：機密メールのためスキップ} own_mail {理由：自分が送ったメールのためスキップ} other {理由：記録なし}}",
-  "decision.email.counts":
-    "該当ルール {rules} 件 · 使用した記憶 {memories} 件 · 関連メール {related} 通",
-  "decision.email.sameJudgment":
-    "以下の根拠は、このメールが含まれていた判断のものです（1回の判断で複数のメールを読むことがあります）。「このメールで使用」と付いたものは、このメール自身が使ったものです。",
-  "decision.email.week": "このメールが属する観察期間の補正数値",
-  "decision.email.weekWithheld": "この観察期間はまだ終わっていないため、割合は表示しません。",
-  "decision.email.muse": "Muse がこのメールにしたこと",
-  "decision.email.museNone": "Muse にこのメールの記録はありません。",
-  "decision.email.museReminded":
-    "{v, select, yes {Muse は通知しました} other {Muse は通知しませんでした}}",
-  "decision.email.museJudged": "{v, select, ok {適切} bad {不適切} other {未評価}}",
-  "decision.email.museRating": "あなたの評価：タイミング{timing}、内容{content}",
-  "decision.email.museCut": "Muse の記録が多いため、先頭の 20 件のみ表示します。",
-  "decision.email.compareTitle": "両者の比較",
-  "decision.email.compare":
-    "{c, select, both {両方が通知しました} museOnly {Muse だけが通知し、Himawari は通知しませんでした} himawariOnly {Himawari だけが通知し、Muse は通知しませんでした} bothSilent {どちらも通知しませんでした} noMuseEntry {Muse にこのメールの記録がないため比較できません} other {Himawari にこのメールの判断記録がないため比較できません}}",
   "proactive.metric.spoke": "自発的なリマインダーの総数",
   "proactive.metric.hits": "適切なリマインダー",
   "proactive.metric.misfires": "余計なリマインダー",
@@ -1345,45 +1312,6 @@ export const messages = {
   "proactive.data.confirm":
     "リマインダー確認の記録・メールから抜き出した結果・確認の記録をすべて削除します。Gmail の接続は残ります。削除しますか？",
   "proactive.data.cleared": "すべて削除しました。",
-  "muse.title": "Muse との比較",
-  "muse.note":
-    "Muse が定期的に Himawari へ送るリマインダーです。それぞれについて、タイミングと内容が適切だったかを判断してください。サンプルが十分になるまで的中率は表示しません。",
-  "muse.channel.never": "Muse からのデータはまだありません。",
-  "muse.channel.ok": "連携は正常です。最新のバッチ {time}",
-  "muse.channel.stale": "連携が止まっている可能性があります。最新のバッチ {time}",
-  "muse.channel.down": "連携が止まっています。最新のバッチ {time}",
-  "muse.channel.paused": "受信を一時停止中です。Muse からの新しいデータは拒否されます",
-  "muse.channel.gaps":
-    "バッチ番号が {count} 回飛びました。1 件届いていない可能性があり、再送するかどうかは Muse が決めます",
-  "muse.received": "直近 7 日で {count} 件受信",
-  "muse.suppressed": "ほかに {count} 件は Muse が見送り、あなたには届いていません",
-  "muse.pending": "評価待ち {count} 件",
-  "muse.delay": "出来事からリマインダーまでの遅延の中央値は約 {duration}（{count} 件）",
-  "muse.duration.minutes": "{value} 分",
-  "muse.duration.hours": "{value} 時間",
-  "muse.kind.proactive": "自発メッセージ",
-  "muse.kind.scheduled": "定期タスク",
-  "muse.withheld": "機微な内容の 1 件",
-  "muse.noText": "本文なし",
-  "muse.timing": "タイミング",
-  "muse.content": "内容",
-  "muse.right": "適切",
-  "muse.wrong": "不適切",
-  "muse.undo": "評価を取り消す",
-  "muse.empty": "直近 30 日に評価できる項目はありません。",
-  "muse.failed": "Muse との比較を今は読み込めません。まもなく再試行します。",
-  "muse.settings.title": "Muse のデータを受信",
-  "muse.settings.hint":
-    "一時停止中は Muse からの新しいデータを拒否します。受信済みのデータは残ります。",
-  "muse.settings.pause": "受信を一時停止",
-  "muse.settings.resume": "受信を再開",
-  "muse.settings.paused": "一時停止中",
-  "muse.settings.clear": "Muse のデータを消去",
-  "muse.settings.clearHint":
-    "自動で受信した Muse の項目、それらへの評価、Backlog に追加した事例の印を削除します。手入力した Muse の比較記録は残ります。",
-  "muse.settings.clearConfirm":
-    "自動で受信した Muse の項目、それらへの評価、Backlog に追加した事例の印をすべて削除しますか？元に戻せません。",
-  "muse.settings.cleared": "消去しました。",
   "proactive.when.dueToday": "本日 {time} 締切",
   "proactive.line.allSkipped":
     "新着 {count} 通。すべて迷惑メールのためルールでスキップし、モデルには送っていません",
@@ -1507,48 +1435,6 @@ export const messages = {
   "weekly.stats.title": "自発的なリマインダー · リマインダー確認の記録の 4 つの集計",
   "weekly.stats.note":
     "この 4 つの数は直近 30 日分で、上の割合と数え方が違います。ここでは 24 時間以内に開いたものも適切、閉じたものや 24 時間開かなかったものは余計と数えます。上の割合は採点したものだけです。",
-  "weekly.muse.title": "Muse との対照",
-  "weekly.muse.empty": "件数不足：今週は Muse との対照の項目がありません。",
-  "weekly.muse.bucket":
-    "{b, select, both {両方がリマインド} museOnly {Muse だけがリマインド} himawariOnly {Himawari だけがリマインド} bothSilent {どちらもリマインドしなかった} other {Himawari にこのメールの記録がない}}",
-  "weekly.muse.unpaired": "対応づけできなかった件数",
-  "weekly.muse.rate": "対応づけ率",
-  "weekly.muse.def":
-    "対応づけ率 = 同じメールに対応づけできた項目 ÷ 今週の Muse との対照の項目すべて。",
-  "weekly.gap.title": "Muse との差",
-  "weekly.gap.notFull": "今週はまだ終わっていません。終了後に差の線が出ます。",
-  "weekly.gap.empty":
-    "今週は、対応づけできて、かつあなたが評価したメールがなく、どちらの線にも件数がありません。",
-  "weekly.gap.note":
-    "同じメールに対応づけできて、Himawari の判断をあなたが評価したメールだけを使います。「通知すべき」は「適切」と評価した通知か「見逃し」と評価した無通知、「通知すべきでない」は「余計」と評価した通知か「適切」と評価した無通知です。差 = Muse − Himawari、区間は同じメールでの対応のある差の 95% 区間です。あなたが評価したいメールに偏ります。記憶は Muse と比べません。",
-  "weekly.gap.line":
-    "{l, select, hitRate {的中率（通知すべきメールのうち通知した割合）} other {余計なリマインダー率（通知すべきでないメールのうち通知した割合）}}",
-  "weekly.gap.mails": "対応づけできて評価済みのメール {n} 件",
-  "weekly.gap.few": "件数不足（{n} 件）。下の事例だけを見て、結論は出しません。",
-  "weekly.gap.rates": "Muse {muse}、Himawari {himawari}",
-  "weekly.gap.diff": "差 {d}（区間 {low} から {high}）",
-  "weekly.gap.verdict":
-    "{v, select, museHigher {この割合は Muse のほうが高いです。} himawariHigher {この割合は Himawari のほうが高いです。} other {区間が 0 をまたぐため、違いは分かりません。}}",
-  "weekly.cases.title": "Muse はできて Himawari はできなかった事例",
-  "weekly.cases.empty": "今週はこうした事例がありません。",
-  "weekly.cases.muse": "Muse がしたこと",
-  "weekly.cases.himawari": "そのとき Himawari がしたこと",
-  "weekly.cases.outcome":
-    "{o, select, ignore {対応不要と判断し、通知しませんでした。} skipped {このメールは読み飛ばされ、判断していません。} other {通知しませんでした。}}",
-  "weekly.cases.attr":
-    "{a, select, notRemembered {覚えていなかった} notRetrieved {取得できなかった} notReadFully {読み切れなかった} other {判断の誤り}}",
-  "weekly.cases.rating":
-    "{r, select, missed {あなたの評価：見逃し} useful {あなたの評価：適切} unneeded {あなたの評価：余計} other {まだ評価していません}}",
-  "weekly.cases.memory":
-    "このメールで取得した関連する記憶は {m} 件、読んだ過去のやり取りは {r} 件です。",
-  "weekly.cases.withheld": "Muse の文章は規則により保存していません。",
-  "weekly.cases.noText": "保存された文章がありません。",
-  "weekly.cases.noReason": "保存された理由がありません。",
-  "weekly.cases.note":
-    "ラベルはそのメールを含む検査の読み取り記録からプログラムが判定したもので、モデルの推測ではありません。「覚えていなかった」は、検索は正常だったのに 1 件も取得できなかったという意味で、未保存か不一致かは区別できません。",
-  "weekly.cases.mark":
-    "{on, select, yes {Backlog に追加済み。もう一度押すと取り消します} other {Backlog に追加}}",
-  "weekly.cases.markFailed": "うまくいきませんでした。もう一度押してください。",
   "weekly.implicit.title": "観察シグナル・評価ではありません",
   "weekly.implicit.notFull": "今週はまだ終わっていません",
   "weekly.implicit.empty": "今週、通知を送った判断はありません。",

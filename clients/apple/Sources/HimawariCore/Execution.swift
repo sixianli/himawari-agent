@@ -175,3 +175,10 @@ public extension ProcessLine {
         return false
     }
 }
+
+public enum ExecutionRefresh {
+    public static func needed(loaded: Bool, runStatus: String?) -> Bool {
+        guard loaded, let runStatus else { return true }
+        return !ProcessLine.terminalRunStatuses.contains(runStatus)
+    }
+}

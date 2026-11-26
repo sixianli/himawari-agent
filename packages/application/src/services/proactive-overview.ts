@@ -49,14 +49,6 @@ export interface ProactiveOverviewInsight {
   readonly dataClassification: DataClassification;
 }
 
-export interface ProactiveOverviewBackoff {
-  readonly classKey: string;
-  readonly domain: string;
-  readonly stage: 1 | 2;
-  readonly ignoredCount: number;
-  readonly changedAt: string;
-}
-
 export interface ProactiveOverviewAuditItem {
   readonly messageId: string;
   readonly decidedAt: string;
@@ -89,7 +81,6 @@ export interface ProactiveOverview {
   readonly quietHours: readonly ProactiveQuietPeriod[];
   readonly importantSenders: readonly string[];
   readonly dailyLimitReached: boolean;
-  readonly backoff: readonly ProactiveOverviewBackoff[];
   readonly insights: readonly ProactiveOverviewInsight[];
   readonly insightsCapped: boolean;
   readonly audit: {
@@ -299,19 +290,6 @@ export async function readProactiveOverview(options: {
     quietHours: settings.quietHours,
     importantSenders: settings.importantSenders,
     dailyLimitReached,
-    backoff: Object.freeze(
-      (await store.listBackoff(scope))
-        .filter(({ stage }) => stage > 0)
-        .map(({ classKey, stage, ignoredCount, stageChangedAt, updatedAt }) =>
-          Object.freeze({
-            classKey,
-            domain: classKey.slice(classKey.indexOf(":") + 1),
-            stage: stage as 1 | 2,
-            ignoredCount,
-            changedAt: stageChangedAt ?? updatedAt,
-          }),
-        ),
-    ),
     insights: Object.freeze(insights),
     insightsCapped,
     audit: Object.freeze({

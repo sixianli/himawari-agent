@@ -17,6 +17,8 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 ## 决策
 
+[ADR 0309](0309-apps-sign-in-with-passkeys-and-the-web-is-removed.md) 决定改为 App 只用通行密钥登录、网页整体删除；那一步做完时删掉本 ADR。在那之前现行代码仍按下面，不再在网页登录上加功能。
+
 Himawari 提供单一 Owner 的内置账号：密码与 TOTP 验证器，验证器不可用时以一次性恢复码完成第二因素。账号由活动主机上的受保护停机管理命令创建和恢复，不开放公众注册或团队权限。公网继续要求 HTTPS 和 MFA；明确配置的 loopback HTTP 使用相同的账号、会话、CSRF、近期认证与工具授权规则。
 
 内置与 Cloudflare 登录是配置中明确区分的身份适配器，共用已有 Owner/Device/ProductSession 与 GatewayAuthenticationContext。原有配置不声明 kind 时保持 Cloudflare 语义；已有外部 Owner 不自动迁移到内置账号。内置账号验证记录新增来源 `built_in_mfa`，不冒充外部提供商证明，不以普通页面刷新产生新的近期认证时间。

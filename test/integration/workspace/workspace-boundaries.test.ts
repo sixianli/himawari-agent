@@ -157,6 +157,27 @@ it("[NL-2] lets the Agent share only the sandbox's public address rule", async (
   expect(Object.keys(publicAddress)).toEqual(["isPublicEgressAddress"]);
 });
 
+it("lets the Agent reach each owner's computer only through the computer client", async () => {
+  expect(
+    isSandboxImportAllowed(
+      "@himawari-agent/agent-service",
+      "@himawari-agent/runtime-sandbox/computers",
+    ),
+  ).toBe(true);
+  expect(
+    isSandboxImportAllowed("@himawari-agent/agent-service", "@himawari-agent/runtime-sandbox"),
+  ).toBe(false);
+  const computers = await import("@himawari-agent/runtime-sandbox/computers");
+  expect(Object.keys(computers).sort()).toEqual([
+    "COMPUTER_HOME",
+    "COMPUTER_RUNTIME",
+    "COMPUTER_WORKSPACE",
+    "UserComputerClient",
+    "UserComputerError",
+    "readLine",
+  ]);
+});
+
 it("[BG-10] lets the Agent share only the job host's session length limit", async () => {
   expect(
     isSandboxImportAllowed(

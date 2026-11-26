@@ -1,5 +1,4 @@
 export * from "./authority.ts";
-export * from "./demo-persona.ts";
 export * from "./durable-state.ts";
 export * from "./entities.ts";
 export * from "./errors.ts";

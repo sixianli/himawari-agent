@@ -62,7 +62,7 @@ public struct ListenEvalKitView: View {
                     .frame(width: 48, height: 48)
                     .background(Color.hmFill, in: Circle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
             .accessibilityLabel(Text(EvalText.text("eval.close")))
             Spacer()
             Text(EvalText.text("eval.title"))
@@ -178,7 +178,7 @@ struct ListenEvalKitContent: View {
                         .foregroundStyle(Color.white)
                 }
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
             .frame(maxWidth: .infinity)
             HStack {
                 Button(EvalText.text("eval.previous")) { recorder.previous() }

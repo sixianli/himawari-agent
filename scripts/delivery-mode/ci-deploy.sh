@@ -59,6 +59,17 @@ if [[ "${HIMAWARI_DEPLOY_FORCE:-0}" != 1 ]]; then
   fi
 fi
 
+if remote "test -f /etc/himawari-backup/settings.json"; then
+  remote "cat > /usr/local/sbin/himawari-backup.new && chmod 0755 /usr/local/sbin/himawari-backup.new && mv /usr/local/sbin/himawari-backup.new /usr/local/sbin/himawari-backup" < "$repo/scripts/operations/backup/himawari-backup.py" || refuse BACKUP_REFRESH_FAILED "could not update /usr/local/sbin/himawari-backup on $host" 6
+  echo "CI_DEPLOY_BACKUP_START"
+  remote "/usr/bin/python3 -I /usr/local/sbin/himawari-backup run --reason pre-deploy" || refuse BACKUP_FAILED "the backup before deploying failed, so nothing was deployed; see journalctl -t himawari-backup or run himawari-backup run --reason pre-deploy on $host" 6
+else
+  echo "CI_DEPLOY_BACKUP_NOT_INSTALLED: no /etc/himawari-backup/settings.json on $host; install it with scripts/operations/backup/install-backup.sh" >&2
+fi
+
+echo "CI_DEPLOY_DB_PERMISSIONS"
+remote "cd /var/lib/himawari/state/data && for f in product.sqlite product.sqlite-wal product.sqlite-shm; do [ -e \"\$f\" ] && chmod 600 \"\$f\"; done; true" || refuse DB_PERMISSIONS_FAILED "cannot tighten the product database file modes on $host" 3
+
 echo "CI_DEPLOY_PREPARE $commit"
 prepare_log="$(mktemp)"
 trap 'rm -f "$prepare_log"' EXIT

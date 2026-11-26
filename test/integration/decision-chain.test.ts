@@ -166,7 +166,7 @@ describe.each(["worker", "direct"] as const)("decision chain through %s", (execu
     );
     const ledger = repository.decisionLedger();
     const spy =
-      <TName extends "append" | "rate" | "rateMany" | "recordMuse">(name: TName) =>
+      <TName extends "append" | "rate" | "rateMany">(name: TName) =>
       (...args: Parameters<typeof ledger.append>) => {
         writes.push(`ledger.${name}`);
         return (ledger[name] as (...input: unknown[]) => unknown)(...args);
@@ -176,7 +176,6 @@ describe.each(["worker", "direct"] as const)("decision chain through %s", (execu
       append: spy("append"),
       rate: spy("rate"),
       rateMany: spy("rateMany"),
-      recordMuse: spy("recordMuse"),
     } as unknown as typeof ledger;
     const control = new ProductionMemoryControl({
       configuration: scope,

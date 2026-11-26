@@ -10,7 +10,6 @@ import {
   PERCEPTION_CONFIGURATION_DEFAULTS,
   PERCEPTION_CONFIGURATION_RANGES,
   type PerceptionConfiguration,
-  VOICE_ADDRESSEE_DEFAULTS,
 } from "@himawari-agent/application";
 import { createAgentId, createDeploymentId, createOwnerId } from "@himawari-agent/domain";
 import { afterEach, describe, expect, it } from "vitest";
@@ -290,47 +289,21 @@ describe("strict product configuration", () => {
       expect(() => parseProductConfiguration(withRetrieval(invalid), at)).toThrow();
   });
 
-  it("[iOS-8] accepts the name-call decision model only with a model, a key, a price and sane thresholds", () => {
-    const withAddressee = (voiceAddressee: unknown) => {
-      const input = config(path.join(tmpdir(), "himawari-voice-addressee"));
-      input["runPolicy"] = {
-        version: "policy-voice-addressee",
-        systemInstruction: "test",
-        memoryLimit: 10,
-        voiceAddressee,
-      };
-      return input;
+  it("accepts the retired voiceAddressee key and drops it from the run policy", () => {
+    const input = config(path.join(tmpdir(), "himawari-voice-addressee"));
+    input["runPolicy"] = {
+      version: "policy-voice-addressee",
+      systemInstruction: "test",
+      memoryLimit: 10,
+      voiceAddressee: {
+        model: "typesafe-ai/jev",
+        secretRef: "vercel-ai-gateway-api-key",
+        inputMicrosPerMillionTokens: 42_000,
+      },
     };
-    const at = "2026-11-13T00:00:00.000Z";
-    const base = {
-      model: "typesafe-ai/jev",
-      secretRef: "vercel-ai-gateway-api-key",
-      inputMicrosPerMillionTokens: 42_000,
-    };
-    expect(parseProductConfiguration(withAddressee(base), at).runPolicy?.voiceAddressee).toEqual({
-      ...VOICE_ADDRESSEE_DEFAULTS,
-      ...base,
-    });
-    expect(
-      parseProductConfiguration(
-        withAddressee({ ...base, yesAtLeastPermille: 850, noAtMostPermille: 150, timeoutMs: 800 }),
-        at,
-      ).runPolicy?.voiceAddressee,
-    ).toMatchObject({ yesAtLeastPermille: 850, noAtMostPermille: 150, timeoutMs: 800 });
-    const { model: _model, ...withoutModel } = base;
-    const { secretRef: _secret, ...withoutSecret } = base;
-    for (const invalid of [
-      withoutModel,
-      withoutSecret,
-      { ...base, inputMicrosPerMillionTokens: 0 },
-      { ...base, yesAtLeastPermille: 400 },
-      { ...base, noAtMostPermille: 600 },
-      { ...base, yesAtLeastPermille: 500, noAtMostPermille: 500 },
-      { ...base, timeoutMs: 50 },
-      { ...base, baseUrl: "https://example.test" },
-      "on",
-    ])
-      expect(() => parseProductConfiguration(withAddressee(invalid), at)).toThrow();
+    const policy = parseProductConfiguration(input, "2026-11-26T00:00:00.000Z").runPolicy;
+    expect(policy?.retiredKeys).toEqual(["voiceAddressee"]);
+    expect(policy && "voiceAddressee" in policy).toBe(false);
   });
 
   it("accepts the retired deliveryTiming key and drops it from the run policy", () => {
@@ -392,6 +365,68 @@ describe("strict product configuration", () => {
       models[1],
     ];
     expect(() => parseProductConfiguration(input, "2026-10-29T00:00:00.000Z")).toThrow();
+  });
+
+  describe("speech", () => {
+    const speech = {
+      adapter: "dashscope-qwen-tts",
+      magpieModelRef: "primary",
+      provider: "dashscope-intl",
+      model: "qwen3-tts-flash",
+      voice: "Serena",
+      languageType: "Chinese",
+      firstAudioTimeoutMs: 1500,
+      maximumCharacters: 600,
+    };
+    const withSpeech = (change: Record<string, unknown>, magpie = true) => {
+      const input = config(path.join(tmpdir(), "himawari-speech"));
+      const models = input["modelDescriptors"] as Record<string, unknown>[];
+      const { providerRouting: _routing, ...primary } = models[0] ?? {};
+      if (magpie)
+        input["modelDescriptors"] = [
+          { ...primary, provider: "magpie", baseUrl: "http://127.0.0.1:3425/v1" },
+          models[1],
+        ];
+      input["speech"] = { ...speech, magpieModelRef: models[0]?.["ref"], ...change };
+      return input;
+    };
+
+    it("accepts a speech voice routed through the configured Magpie primary", () => {
+      const parsed = parseProductConfiguration(withSpeech({}), "2026-11-26T00:00:00.000Z");
+      expect(parsed.speech).toMatchObject({
+        adapter: "dashscope-qwen-tts",
+        provider: "dashscope-intl",
+        model: "qwen3-tts-flash",
+        voice: "Serena",
+        languageType: "Chinese",
+        firstAudioTimeoutMs: 1500,
+        maximumCharacters: 600,
+      });
+    });
+
+    it("leaves speech off when it is not configured", () => {
+      const input = config(path.join(tmpdir(), "himawari-no-speech"));
+      expect(parseProductConfiguration(input, "2026-11-26T00:00:00.000Z").speech).toBeUndefined();
+    });
+
+    it.each([
+      { name: "an unknown adapter", change: { adapter: "openai-tts" } },
+      { name: "an unknown field", change: { endpoint: "https://example.com" } },
+      { name: "an unknown Magpie model", change: { magpieModelRef: "missing" } },
+      { name: "a provider id with a path", change: { provider: "dashscope/../x" } },
+      { name: "a first-audio limit below 200 ms", change: { firstAudioTimeoutMs: 100 } },
+      { name: "more than 600 characters a sentence", change: { maximumCharacters: 601 } },
+    ])("refuses $name", ({ change }) => {
+      expect(() =>
+        parseProductConfiguration(withSpeech(change), "2026-11-26T00:00:00.000Z"),
+      ).toThrow();
+    });
+
+    it("refuses speech whose model is not a Magpie route", () => {
+      expect(() =>
+        parseProductConfiguration(withSpeech({}, false), "2026-11-26T00:00:00.000Z"),
+      ).toThrow();
+    });
   });
 
   it("refuses a base URL on an AI Gateway primary", () => {
@@ -1530,6 +1565,58 @@ describe("[R2-T2] coding route approval mode", () => {
   });
 });
 
+describe("每人一台电脑的配置", () => {
+  const AT = "2026-11-26T00:00:00.000Z";
+  function withComputers(
+    userComputers: unknown,
+    enabledTools: readonly string[] = ["read", "write", "edit", "bash", "find", "grep", "ls"],
+  ): Record<string, unknown> {
+    const raw = config(path.join(tmpdir(), "himawari-user-computers"));
+    raw["runPolicy"] = {
+      version: "policy-v1",
+      systemInstruction: "test",
+      memoryLimit: 10,
+      userComputers,
+      coding: {
+        hostId: "host",
+        workerInstanceId: "worker",
+        grantId: "directory:grant",
+        capabilityRef: "himawari.pi-coding",
+        capabilityVersion: "1.0.0",
+        maximumBytes: 4096,
+        enabledTools,
+      },
+    };
+    return raw;
+  }
+
+  it("读出电脑管理的 socket 路径", () => {
+    expect(
+      parseProductConfiguration(
+        withComputers({ socketPath: "/run/himawari-computers/computers.sock" }),
+        AT,
+      ).runPolicy?.userComputers,
+    ).toEqual({ socketPath: "/run/himawari-computers/computers.sock" });
+  });
+
+  it.each([
+    ["相对路径", { socketPath: "computers.sock" }],
+    ["多出字段", { socketPath: "/run/computers.sock", host: "x" }],
+    ["缺 socket", {}],
+  ])("拒绝：%s", (_name, value) => {
+    expect(() => parseProductConfiguration(withComputers(value), AT)).toThrow();
+  });
+
+  it("工具在电脑里跑时不能开改原目录的 move_directory 和 save_copy", () => {
+    for (const tool of ["move_directory", "save_copy"]) {
+      const raw = withComputers({ socketPath: "/run/computers.sock" }, ["read", "bash", tool]);
+      expect(() => parseProductConfiguration(raw, AT)).toThrow();
+      delete (raw["runPolicy"] as Record<string, unknown>)["userComputers"];
+      expect(parseProductConfiguration(raw, AT).runPolicy?.coding?.enabledTools).toContain(tool);
+    }
+  });
+});
+
 it("[WP-7] accepts web push only with a web-push secret and an https or mailto subject", () => {
   const raw = config("/tmp/himawari-web-push-config");
   const policy = {
@@ -1742,7 +1829,6 @@ it("[PG-12] accepts proactive Gmail checks only with a Google client secret and 
       },
     },
     reviewMemoryUnusedDays: 90,
-    backoffThreshold: 3,
   });
   raw["runPolicy"] = {
     ...policy,
@@ -1770,7 +1856,6 @@ it("[PG-12] accepts proactive Gmail checks only with a Google client secret and 
       reviewSecondsPerItem: 10,
       reviewSilentSharePermille: 200,
       reviewMemoryUnusedDays: 30,
-      backoffThreshold: 5,
     },
   };
   expect(
@@ -1780,7 +1865,6 @@ it("[PG-12] accepts proactive Gmail checks only with a Google client secret and 
     reviewSecondsPerItem: 10,
     reviewSilentSharePermille: 200,
     reviewMemoryUnusedDays: 30,
-    backoffThreshold: 5,
   });
   raw["runPolicy"] = {
     ...policy,
@@ -1815,8 +1899,6 @@ it("[PG-12] accepts proactive Gmail checks only with a Google client secret and 
     { ...proactive, reviewPrereview: { reduction: { threshold: 900 } } },
     { ...proactive, reviewMemoryUnusedDays: 6 },
     { ...proactive, reviewMemoryUnusedDays: 3_651 },
-    { ...proactive, backoffThreshold: 11 },
-    { ...proactive, backoffThreshold: -1 },
     { ...proactive, relatedMailsPerMail: 51 },
     { ...proactive, relatedRequestsPerCheck: 0 },
     { ...proactive, wholeThreadMailsPerMail: 0 },
@@ -1869,8 +1951,8 @@ it("[PG-12][reverse] rejects a proactive model that the mail check cannot call, 
   );
 });
 
-it("[P6-demo] accepts a fake inbox in place of Gmail, in one of the offered languages, and never both at once", () => {
-  const raw = config("/tmp/himawari-demo-inbox-config");
+it("requires the proactive check to name a Gmail client and rejects the removed fake inbox", () => {
+  const raw = config("/tmp/himawari-proactive-gmail-config");
   const policy = {
     version: "1",
     systemInstruction: "test",
@@ -1885,18 +1967,13 @@ it("[P6-demo] accepts a fake inbox in place of Gmail, in one of the offered lang
     clientId: "123-abc.apps.googleusercontent.com",
     clientSecretRef: "google-oauth",
   };
-  for (const locale of ["ja", "en"]) {
-    raw["runPolicy"] = { ...policy, proactive: { modelRef: "model-primary", demoInbox: locale } };
-    const parsed = parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.proactive;
-    expect(parsed?.demoInbox).toBe(locale);
-    expect(parsed).not.toHaveProperty("gmail");
-  }
+  raw["runPolicy"] = { ...policy, proactive: { modelRef: "model-primary", gmail } };
+  const parsed = parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.proactive;
+  expect(parsed?.gmail).toEqual(gmail);
   for (const invalid of [
     { modelRef: "model-primary" },
     { modelRef: "model-primary", gmail, demoInbox: "ja" },
-    { modelRef: "model-primary", demoInbox: "zh-CN" },
-    { modelRef: "model-primary", demoInbox: "" },
-    { modelRef: "model-primary", demoInbox: true },
+    { modelRef: "model-primary", demoInbox: "ja" },
   ]) {
     raw["runPolicy"] = { ...policy, proactive: invalid };
     expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
@@ -2046,142 +2123,30 @@ it("[P5-3] accepts the MCP entry only behind Cloudflare Access, with its own aud
   );
 });
 
-it("accepts Muse intake only with a boolean switch and one secret whose purpose is muse-intake", () => {
+it("refuses the removed Muse intake settings as an unknown runPolicy key", () => {
   const raw = config("/tmp/himawari-muse-intake-config");
-  const policy = {
-    version: "1",
-    systemInstruction: "test",
-    memoryLimit: 10,
-  };
-  const references = raw["secretReferences"] as unknown[];
-  raw["secretReferences"] = [
-    ...references,
-    { ref: "muse-intake-secret", version: "v1", purpose: "muse-intake", scope: "agent" },
-    { ref: "other-secret", version: "v1", purpose: "google-oauth-client", scope: "agent" },
-    { ref: "gap-export-secret", version: "v1", purpose: "gap-export", scope: "agent" },
-  ];
-  const museIntake = { enabled: true, secretRef: "muse-intake-secret" };
-  raw["runPolicy"] = { ...policy, museIntake };
-  expect(parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.museIntake).toEqual(
-    museIntake,
-  );
-  const withGapExport = { ...museIntake, gapExportSecretRef: "gap-export-secret" };
-  raw["runPolicy"] = { ...policy, museIntake: withGapExport };
-  expect(parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.museIntake).toEqual(
-    withGapExport,
-  );
+  const policy = { version: "1", systemInstruction: "test", memoryLimit: 10 };
   raw["runPolicy"] = { ...policy };
-  expect(
-    parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.museIntake,
-  ).toBeUndefined();
-  for (const invalid of [
-    { ...museIntake, enabled: "yes" },
-    { secretRef: "muse-intake-secret" },
-    { ...museIntake, secretRef: "other-secret" },
-    { ...museIntake, secretRef: "missing-secret" },
-    { ...museIntake, secret: "inline" },
-    { ...museIntake, gapExportSecretRef: "muse-intake-secret" },
-    { ...museIntake, gapExportSecretRef: "missing-secret" },
-  ]) {
-    raw["runPolicy"] = { ...policy, museIntake: invalid };
-    expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
-  }
+  expect(parseProductConfiguration(raw, "2026-11-26T00:00:00.000Z").runPolicy).not.toHaveProperty(
+    "museIntake",
+  );
+  raw["runPolicy"] = { ...policy, museIntake: { enabled: true, secretRef: "muse-intake-secret" } };
+  expect(() => parseProductConfiguration(raw, "2026-11-26T00:00:00.000Z")).toThrow();
 });
 
-it("accepts home urgency scoring settings, fills in the defaults, and refuses values out of range", () => {
+it("refuses the removed home urgency scoring settings as an unknown runPolicy key", () => {
   const raw = config("/tmp/himawari-home-urgency-config");
-  const policy = {
+  raw["runPolicy"] = { version: "1", systemInstruction: "test", memoryLimit: 10 };
+  expect(parseProductConfiguration(raw, "2026-11-12T00:00:00.000Z").runPolicy).not.toHaveProperty(
+    "homeUrgency",
+  );
+  raw["runPolicy"] = {
     version: "1",
     systemInstruction: "test",
     memoryLimit: 10,
+    homeUrgency: { enabled: true },
   };
-  raw["runPolicy"] = { ...policy, homeUrgency: {} };
-  expect(parseProductConfiguration(raw, "2026-11-12T00:00:00.000Z").runPolicy?.homeUrgency).toEqual(
-    {
-      enabled: true,
-      dailyLimit: 1_000,
-      dailyCostMicros: 1_000_000,
-      perCall: 20,
-      referenceLimit: 30,
-      requestTimeoutMs: 30_000,
-      checkIntervalSeconds: 60,
-      retryAfterHours: 24,
-      affirmLabelMax: { "zh-CN": 6, ja: 8, en: 16 },
-    },
-  );
-  raw["runPolicy"] = {
-    ...policy,
-    homeUrgency: {
-      enabled: false,
-      modelRef: "model-primary",
-      dailyLimit: 0,
-      perCall: 5,
-      affirmLabelMax: { "zh-CN": 4, fr: 12 },
-    },
-  };
-  expect(
-    parseProductConfiguration(raw, "2026-11-12T00:00:00.000Z").runPolicy?.homeUrgency,
-  ).toMatchObject({
-    enabled: false,
-    modelRef: "model-primary",
-    dailyLimit: 0,
-    perCall: 5,
-    referenceLimit: 30,
-    affirmLabelMax: { "zh-CN": 4, fr: 12 },
-  });
-  raw["runPolicy"] = policy;
-  expect(
-    parseProductConfiguration(raw, "2026-11-12T00:00:00.000Z").runPolicy?.homeUrgency,
-  ).toBeUndefined();
-  for (const invalid of [
-    { enabled: "yes" },
-    { unknown: 1 },
-    { modelRef: "model-embedding" },
-    { modelRef: "model-missing" },
-    { dailyLimit: -1 },
-    { dailyLimit: 100_001 },
-    { perCall: 0 },
-    { perCall: 51 },
-    { referenceLimit: 201 },
-    { requestTimeoutMs: 10 },
-    { checkIntervalSeconds: 5 },
-    { retryAfterHours: 0 },
-    { affirmLabelMax: { "zh-CN": 0 } },
-    { affirmLabelMax: { "zh-CN": 65 } },
-    { affirmLabelMax: { "not a tag": 6 } },
-    { affirmLabelMax: [6] },
-  ]) {
-    raw["runPolicy"] = { ...policy, homeUrgency: invalid };
-    expect(() => parseProductConfiguration(raw, "2026-11-12T00:00:00.000Z")).toThrow();
-  }
-  (raw["modelDescriptors"] as Record<string, unknown>[]).push({
-    ref: "model-specialist",
-    role: "specialist",
-    provider: "typesafe",
-    model: "jev-latest",
-    modelVersion: "jev-1.13.0",
-    version: "snapshot-1",
-    priority: 2,
-    name: "Jev reviewer",
-    api: "typesafe-systemone",
-    capabilities: ["text"],
-    cost: { input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0 },
-    allowedDataClassifications: ["private", "sensitive"],
-    disclosure: "external_remote",
-    secretRef: "provider-specialist",
-  });
-  (raw["secretReferences"] as Record<string, unknown>[]).push({
-    ref: "provider-specialist",
-    version: "v1",
-    purpose: "model-auth",
-    scope: "model-specialist",
-  });
-  raw["runPolicy"] = { ...policy, homeUrgency: { modelRef: "model-specialist" } };
-  expect(() => parseProductConfiguration(raw, "2026-11-12T00:00:00.000Z")).toThrow(
-    expect.objectContaining({
-      details: expect.objectContaining({ field: "configuration.runPolicy.homeUrgency.modelRef" }),
-    }),
-  );
+  expect(() => parseProductConfiguration(raw, "2026-11-12T00:00:00.000Z")).toThrow();
 });
 
 it("[A4] accepts a duplicate-judgement route that names a model-auth secret, fills the defaults and rejects bad values", () => {

@@ -8,7 +8,7 @@ struct ChatPuck: View {
     var body: some View {
         if let open {
             Button(action: open) { disc }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
                 .contentShape(Circle())
                 .accessibilityLabel(Text(L.text("chat.herPage")))
                 .accessibilityAddTraits(.isHeader)
@@ -20,7 +20,7 @@ struct ChatPuck: View {
     }
 
     private var disc: some View {
-        SunflowerMark(motion: busy ? .breathing(low: Double(DesignTokens.Chat.puckBusyLow)) : .still)
+        SunflowerMark(motion: busy ? .breathing(low: Double(DesignTokens.Chat.puckBusyLow)) : .still, seeds: Int(DesignTokens.Chat.puckSeeds))
             .frame(width: DesignTokens.Chat.puckMark, height: DesignTokens.Chat.puckMark)
             .frame(width: DesignTokens.Chat.puckSize, height: DesignTokens.Chat.puckSize)
             .background(.ultraThinMaterial, in: Circle())

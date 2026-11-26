@@ -1,5 +1,13 @@
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -35,6 +43,11 @@ function source() {
     path.join(repo, "scripts/delivery-mode/ci-deploy.sh"),
     '#!/bin/bash\necho "STUB commit=$HIMAWARI_DEPLOY_COMMIT since=$HIMAWARI_DEPLOY_SINCE force=$HIMAWARI_DEPLOY_FORCE host=$HIMAWARI_PACKET_HOST path=$PATH"\n',
   );
+  mkdirSync(path.join(repo, "scripts/delivery-mode/hermes"), { recursive: true });
+  writeFileSync(
+    path.join(repo, "scripts/delivery-mode/hermes/install-dependencies-if-changed.sh"),
+    '#!/bin/bash\nmkdir "$3" || exit 5\n[[ -f node_modules/kept ]] && echo "dependencies=kept"\nmkdir -p node_modules .ci-output && touch node_modules/kept .ci-output/marker\necho "dependencies=stub evidence=$3"\n',
+  );
   git(repo, "add", "-A");
   git(repo, "commit", "-q", "-m", "main");
   const main = git(repo, "rev-parse", "HEAD");
@@ -47,15 +60,23 @@ function source() {
   return { repo, main, side };
 }
 
-function runEntry(request, repo) {
+function fakeTools() {
+  const tools = temporary();
+  mkdirSync(path.join(tools, "bin"));
+  symlinkSync(process.execPath, path.join(tools, "bin/node"));
+  return tools;
+}
+
+function runEntry(request, repo, tools = fakeTools(), base = temporary()) {
   return spawnSync("bash", [entry], {
     encoding: "utf8",
     env: {
       PATH: process.env.PATH,
       HOME: process.env.HOME,
       SSH_ORIGINAL_COMMAND: request,
-      HIMAWARI_DEPLOY_BASE: temporary(),
+      HIMAWARI_DEPLOY_BASE: base,
       HIMAWARI_DEPLOY_REPO_URL: repo,
+      HIMAWARI_DEPLOY_TOOLS: tools,
     },
   });
 }
@@ -86,6 +107,27 @@ describe("himawari-deploy-entry", () => {
     const child = runEntry(`deploy ${side} - 0`, repo);
     expect(child.status).toBe(65);
     expect(child.stderr).toContain("COMMIT_NOT_ON_MAIN");
+  });
+
+  it("deploys the same commit again after an earlier attempt and keeps installed dependencies", () => {
+    const { repo, main } = source();
+    const tools = fakeTools();
+    const base = temporary();
+    const first = runEntry(`deploy ${main} - 1`, repo, tools, base);
+    expect(first.status).toBe(0);
+    expect(first.stdout).not.toContain("dependencies=kept");
+    const second = runEntry(`deploy ${main} - 1`, repo, tools, base);
+    expect(second.status).toBe(0);
+    expect(second.stdout).toContain("dependencies=kept");
+    const evidence = (output) => output.match(/evidence=(\S+)/)[1];
+    expect(evidence(second.stdout)).not.toBe(evidence(first.stdout));
+  });
+
+  it("stops before building when the build account has no node tools", () => {
+    const { repo, main } = source();
+    const child = runEntry(`deploy ${main} - 0`, repo, path.join(temporary(), "none"));
+    expect(child.status).toBe(70);
+    expect(child.stderr).toContain("TOOLS_MISSING");
   });
 
   it("checks out a main commit and runs its own ci-deploy.sh against the local machine", () => {

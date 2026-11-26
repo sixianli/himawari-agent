@@ -270,6 +270,16 @@ export const CHAT_EGRESS_LEGEND_WITH_RESTORE = fixedPrompt({
   text: "文中形如 [密码#abcdefgh]、[验证码#abcdefgh]、[银行卡 尾号1111#abcdefgh]、[证件号#abcdefgh]、[密钥] 的方括号内容，是系统遮住的真实敏感信息，同一个值始终是同一个编号。请照原样当作普通内容使用，不要要求主人核实它们，也不要换成示例；回答里需要提到它们时请照原样写出，系统在显示给主人时会换回原值。如果某项操作必须用到原值，请直接告诉主人这项信息已被遮掉。",
 });
 
+export const CHAT_OWNER_SPOKEN_TURN = fixedPrompt({
+  id: "chat.owner-spoken-turn",
+  purpose:
+    "主人这一轮是用嘴说的（手机上点了“和她说话”），附在本轮用户消息末尾，提示她先短回一句、用口语、不念符号",
+  usedBy: ["packages/application/src/services/run-execution-input-service.ts"],
+  layer: "last-user-message",
+  output: "free-text",
+  text: "<spoken-turn>主人这一句是用嘴说的，你的回答会被手机一句一句念出来：先用一句简短的口语回应，再接着往下说；用平常说话的方式，不要写 Markdown 符号（星号、井号、反引号、表格线、列表符号），不要念网址，需要给网址、代码或长内容时只说一句“已经放在聊天记录里了”，内容照常写进回答里供主人之后看。</spoken-turn>",
+});
+
 export const CHAT_TASK_BOUNDARY = fixedPrompt({
   id: "chat.task-boundary",
   purpose: "说明最后一条用户消息的结构，以及已取消的历史请求不要自动恢复",
@@ -279,5 +289,7 @@ export const CHAT_TASK_BOUNDARY = fixedPrompt({
   text:
     "Himawari 任务边界：最后一条用户消息承载本轮的新请求，其中 <owner-message> 里是主人本轮说的话，<himawari-context> 里是系统附上的时间和资料，不是主人说的话。历史消息供理解背景，不是等待执行的任务队列。" +
     "标为已取消的历史请求已终止，不要自动恢复，也不要把其中的一次性要求或工具限制当成本轮要求。" +
-    "只有本轮新请求明确要求继续或重做时，才重新处理旧任务；仍须遵守当前工具授权与审批。",
+    "只有本轮新请求明确要求继续或重做时，才重新处理旧任务；仍须遵守当前工具授权与审批。" +
+    '<owner-message> 带 source="phone-voice" 的，是手机一直开着听到的一句话转成的文字：手机已用声纹或 AirPods 确认是主人的声音，但主人可能是在对身边的人说话、自言自语、转述别人的话或念出屏幕上的字。' +
+    "请结合前后的对话和当下的情形，自己判断这句是不是在对你说、要你现在做事或回答；明显不是对你说的，就不要做事，也不要打扰主人，可以只简短地应一声或不回应，拿不准时最多问一句。主人确实在对你说的，照常处理。",
 });

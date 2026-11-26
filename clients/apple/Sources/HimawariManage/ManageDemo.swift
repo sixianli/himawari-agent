@@ -41,15 +41,15 @@ public struct ManageDemoView: View {
     public var body: some View {
         switch screen {
         case .memory:
-            MemoryRootView(store: ManageDemo.memoryStore())
+            NavigationStack { MemoryRootView(store: ManageDemo.memoryStore()) }
         case .memoryDetail:
-            MemoryRootView(store: ManageDemo.memoryStore(), opening: .memory("m1"))
+            NavigationStack { MemoryRootView(store: ManageDemo.memoryStore(), opening: .memory("m1")) }
         case .memoryEdit:
-            MemoryRootView(store: ManageDemo.memoryStore(), opening: .edit("m5"))
+            NavigationStack { MemoryRootView(store: ManageDemo.memoryStore(), opening: .edit("m5")) }
         case .rules:
-            MemoryRootView(store: ManageDemo.memoryStore(), tab: .rules)
+            NavigationStack { MemoryRootView(store: ManageDemo.memoryStore(), tab: .rules) }
         case .ruleDetail:
-            MemoryRootView(store: ManageDemo.memoryStore(), tab: .rules, opening: .rule("r1"))
+            NavigationStack { MemoryRootView(store: ManageDemo.memoryStore(), tab: .rules, opening: .rule("r1")) }
         case .deviceAbilities:
             her([.devices, .device(ManageDemo.phoneId)])
         case .her:
@@ -69,7 +69,7 @@ public struct ManageDemoView: View {
         case .herAllowancesEmpty:
             her([.allowances], allowances: false)
         case .memoryVersions:
-            MemoryRootView(store: ManageDemo.memoryStore(), opening: .memory("m5"))
+            NavigationStack { MemoryRootView(store: ManageDemo.memoryStore(), opening: .memory("m5")) }
         case .memoryTrash:
             NavigationStack {
                 MemoryTrashPage(store: ManageDemo.loadedMemoryStore()) {}

@@ -119,6 +119,20 @@ jobs:
           [ "$FORCE" = 1 ] && force=1
           ssh -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=20 "himawari-deploy@$PROD_HOST" "deploy $COMMIT ${since:--} $force" 2>&1 | tee deploy.log
           exit "${PIPESTATUS[0]}"
+      - name: 把 App 用的路径从 Cloudflare 门禁放行
+        if: ${{ steps.keys.outputs.ready == 'true' }}
+        env:
+          CLOUDFLARE_ACCESS_TOKEN: ${{ secrets.CLOUDFLARE_ACCESS_TOKEN }}
+        run: |
+          if [ -z "$CLOUDFLARE_ACCESS_TOKEN" ]; then
+            echo "::warning::production 环境还缺 CLOUDFLARE_ACCESS_TOKEN(secret)，这次不改 Cloudflare 门禁"
+            echo "Cloudflare 门禁令牌还没放好，这次没有放行 App 用的路径" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          node scripts/delivery-mode/sync-cloudflare-public-paths.mjs | tee access-sync.log
+          status="${PIPESTATUS[0]}"
+          { echo '```'; grep -E '^PUBLIC_PATHS_' access-sync.log | cut -c1-400 || true; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
       - name: 写运行摘要
         if: ${{ always() && steps.keys.outputs.ready == 'true' }}
         run: |

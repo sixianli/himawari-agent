@@ -20,6 +20,8 @@ import {
   DEVICE_CONFIGURATION_DEFAULTS,
   type DeviceActionService,
   defaultDeviceHardLimits,
+  deviceVoiceTimingLister,
+  deviceVoiceTimingRecorder,
   type ExecutionLiveFeed,
   type GatewayAccessDecision,
   type GatewayAuthenticationContext,
@@ -50,11 +52,6 @@ import {
   ThreadQueryService,
   threadCommandFingerprint,
   type VaultService,
-  type VoiceAddresseeConfiguration,
-  VoiceAddresseeJudge,
-  type VoiceAddresseeModel,
-  type VoiceAddresseeOutcome,
-  type VoiceAddresseeRequest,
 } from "@himawari-agent/application";
 import {
   isDeviceAccessText,
@@ -133,6 +130,7 @@ import {
 } from "./production-approval-gateway.js";
 import { backgroundCommandRef } from "./production-background-commands.js";
 import { registerChatExportRoute } from "./production-chat-export.js";
+import { createProductionSpeech } from "./production-speech.js";
 import {
   DataExportJobs,
   deviceExportArchive,
@@ -145,12 +143,7 @@ import {
   ProductionDeviceControl,
 } from "./production-device-control.js";
 import { PRODUCTION_FILES_OPERATIONS, ProductionFilesControl } from "./production-files-control.js";
-import { type ProductionGapExport, registerGapExportRoute } from "./production-gap-export.js";
-import {
-  PRODUCTION_HOME_OPERATIONS,
-  ProductionHomeControl,
-  type ProductionHomeUrgencyOptions,
-} from "./production-home.js";
+import { PRODUCTION_HOME_OPERATIONS, ProductionHomeControl } from "./production-home.js";
 import { productionInbox } from "./production-inbox-composition.js";
 import { type InboxRunRegistry, ProductionInboxDelivery } from "./production-inbox-delivery.js";
 import {
@@ -185,11 +178,6 @@ import {
   type ProductionMemorySearchOptions,
 } from "./production-memory-search.js";
 import { flushSensitiveInterceptions } from "./production-model-egress.js";
-import { type ProductionMuseIntake, registerMuseIntakeRoute } from "./production-muse-intake.js";
-import {
-  PRODUCTION_MUSE_OPERATIONS,
-  type ProductionMuseControl,
-} from "./production-muse-intake-control.js";
 import {
   PRODUCTION_OBSERVATION_OPERATIONS,
   type ProductionObservation,
@@ -297,7 +285,7 @@ export interface ProductionHttpCompositionOptions {
     price?: { input: number; output: number };
     priceTier?: "low" | "mid" | "high";
   }[];
-  readonly live?: Pick<ExecutionLiveFeed, "subscribe" | "current">;
+  readonly live?: Pick<ExecutionLiveFeed, "subscribe" | "current" | "firstEmittedAt">;
   readonly cancelRun?: (
     input: Pick<CancelCoordinatedRunInput, "runId" | "command">,
   ) => Promise<void>;
@@ -319,7 +307,6 @@ export interface ProductionHttpCompositionOptions {
   readonly onDevicePushFailed?: (error: unknown) => void;
   readonly onHomeDiagnostic?: (event: Record<string, string>) => void;
   readonly onPerceptionLimitWarning?: (warning: PerceptionLimitWarning) => void;
-  readonly homeUrgency?: Omit<ProductionHomeUrgencyOptions, "scope" | "store" | "onFailure">;
   readonly health?: RuntimeHealthModel;
   readonly executionEnvironment?: {
     readonly mode: ThreadExecutionEnvironment["mode"];
@@ -375,11 +362,7 @@ export interface ProductionHttpCompositionOptions {
   };
   readonly threadDeletionDiagnostic?: (event: Record<string, string>) => void;
   readonly queryPrefetch?: ProductionQueryPrefetch;
-  readonly voiceAddressee?: VoiceAddresseeModel;
-  readonly museIntake?: ProductionMuseIntake;
-  readonly gapExport?: ProductionGapExport;
   readonly mcpRead?: ProductionMcpRead;
-  readonly museControl?: ProductionMuseControl;
   readonly observation?: ProductionObservation;
   readonly configuration: ProductConfiguration;
   readonly repository: SqliteProductStateRepository;
@@ -406,7 +389,7 @@ export interface ProductionHttpComposition {
   readonly payloadAdmission: HttpGatewayPayloadAdmissionPort;
   readonly health: RuntimeHealthModel;
   readonly metrics: RuntimeMetricsRegistry;
-  readonly home: Pick<ProductionHomeControl, "awaitingCount" | "approvalCopy" | "score">;
+  readonly home: Pick<ProductionHomeControl, "awaitingCount">;
   readonly perception: Pick<PerceptionService, "reserveModelCost">;
   listen(): Promise<string>;
   close(): Promise<void>;
@@ -781,7 +764,7 @@ export function registerProactiveRoutes(
     return reply
       .header("cache-control", "no-store")
       .header("referrer-policy", "no-referrer")
-      .redirect(await proactive.authorizationRedirect(subject), 303);
+      .redirect(proactive.beginAuthorization(subject), 303);
   });
   app.get(PROACTIVE_GOOGLE_CALLBACK_PATH, async (request, reply) => {
     const query = request.query as Record<string, unknown>;
@@ -836,7 +819,6 @@ function routeOptions(
   executionEnvironmentAvailable: boolean,
   memoryAvailable: boolean,
   proactiveAvailable: boolean,
-  museAvailable: boolean,
   observationAvailable: boolean,
   mcpConnectionsAvailable: boolean,
   searchAvailable: boolean,
@@ -874,7 +856,6 @@ function routeOptions(
         ...(memoryAvailable ? PRODUCTION_MEMORY_OPERATIONS : []),
         ...PRODUCTION_WEB_PUSH_OPERATIONS,
         ...(proactiveAvailable ? PRODUCTION_PROACTIVE_OPERATIONS : []),
-        ...(museAvailable ? PRODUCTION_MUSE_OPERATIONS : []),
         ...(observationAvailable ? PRODUCTION_OBSERVATION_OPERATIONS : []),
         ...PRODUCTION_OWNER_PREFERENCE_OPERATIONS,
         ...(memoryAvailable ? PRODUCTION_QUIET_HOURS_OPERATIONS : []),
@@ -951,14 +932,44 @@ export async function createProductionHttpComposition(
     ...DEVICE_CONFIGURATION_DEFAULTS,
     limits: defaultDeviceHardLimits(),
   };
+  const chatModel = configuration.modelDescriptors.find(
+    (descriptor) => descriptor.role === "primary",
+  );
+  const chatAttachments = Object.freeze({
+    images:
+      options.modelCatalog?.find((entry) => entry.ref === chatModel?.ref)?.images ??
+      chatModel?.input.includes("image") ??
+      false,
+  });
   const devicePairingAccess = await resolveDevicePairingAccess(
     configuration.secretReferences,
     (ref, version) => secretSources.provider.resolve(ref, version),
+  );
+  const speech = createProductionSpeech(configuration, (ref, version) =>
+    secretSources.provider.resolve(ref, version),
   );
   const payloadKey = soleSecret(configuration, "payload-encryption");
   const payloadProtector = new EnvelopePayloadProtector({
     keys: secretSources.keys,
     activeKey: { keyRef: payloadKey.ref, kekVersion: payloadKey.version, dekVersion: "dek-v1" },
+  });
+  const recordVoiceTiming = deviceVoiceTimingRecorder({
+    ownerId,
+    agentId,
+    trace: repository.traceStore(),
+    payloads: repository.payloadStore(ownerId, agentId),
+    protector: payloadProtector,
+    now: clock,
+    ...(options.live
+      ? { firstTextEmittedAt: (runId: string) => options.live?.firstEmittedAt(runId) ?? null }
+      : {}),
+  });
+  const listVoiceTiming = deviceVoiceTimingLister({
+    ownerId,
+    agentId,
+    trace: repository.traceStore(),
+    payloads: repository.payloadStore(ownerId, agentId),
+    protector: payloadProtector,
   });
   const csrfKeyRef = configuredSecret(
     configuration,
@@ -1594,20 +1605,6 @@ export async function createProductionHttpComposition(
               ? error.name
               : "unknown",
       }),
-    ...(options.homeUrgency
-      ? {
-          urgency: {
-            ...options.homeUrgency,
-            scope: { ownerId, agentId },
-            store: repository.homeUrgency(),
-            onFailure: (error) =>
-              options.onHomeDiagnostic?.({
-                event: "home.urgency_failed",
-                error: error instanceof Error ? error.message : String(error),
-              }),
-          },
-        }
-      : {}),
   });
   const mcpConnectionAddresses = new McpConnectionAddresses({ now: clock });
   const searchControl = options.memory?.search
@@ -1788,7 +1785,6 @@ export async function createProductionHttpComposition(
       clock: { now: clock },
     }),
     ...(options.proactive ? { proactiveControl: options.proactive } : {}),
-    ...(options.museControl ? { museControl: options.museControl } : {}),
     ...(options.observation ? { observationControl: options.observation } : {}),
     ...(ownerRuleWriter
       ? {
@@ -1913,7 +1909,6 @@ export async function createProductionHttpComposition(
       Boolean(options.executionEnvironment),
       Boolean(memoryControl),
       Boolean(options.proactive),
-      Boolean(options.museControl),
       Boolean(options.observation),
       Boolean(options.mcpRead),
       Boolean(searchControl),
@@ -1927,6 +1922,9 @@ export async function createProductionHttpComposition(
       service: pairedDevices,
       home: { resolveAction: (input) => home.resolveAction(input) },
       configuration: () => deviceConfiguration,
+      chatAttachments: () => chatAttachments,
+      recordVoiceTiming: (input) => recordVoiceTiming(input),
+      listVoiceTiming: (limit) => listVoiceTiming(limit),
       audit: repository.auditLedger(),
       push: devicePush,
       ...(options.onDeviceAuditFailed ? { onAuditFailed: options.onDeviceAuditFailed } : {}),
@@ -1963,16 +1961,10 @@ export async function createProductionHttpComposition(
           }
         : {}),
       voiceGates: () => DEFAULT_VOICE_GATES,
+      ...(speech ? { speech } : {}),
       ...(options.queryPrefetch
         ? { prefetch: utterancePrefetch(options.queryPrefetch, perception, agentId) }
         : {}),
-      addressee: voiceAddressee(
-        options.voiceAddressee,
-        voiceAddresseeConfiguration(configuration),
-        perception,
-        agentId,
-        () => now().getTime(),
-      ),
     },
     ...(httpConfiguration.previewOrigin ? { previewOrigin: httpConfiguration.previewOrigin } : {}),
     ...(options.onSlowRequest ? { onSlowRequest: options.onSlowRequest } : {}),
@@ -2003,8 +1995,6 @@ export async function createProductionHttpComposition(
     protector: payloadProtector,
     now: clock,
   });
-  if (options.museIntake) registerMuseIntakeRoute(app, options.museIntake);
-  if (options.gapExport) registerGapExportRoute(app, options.gapExport);
   if (options.mcpRead) {
     registerMcpReadRoute(app, options.mcpRead);
     registerMcpConnectionAddressRoute(app, {
@@ -2048,7 +2038,6 @@ export async function createProductionHttpComposition(
           port: httpConfiguration.listenPort,
         });
         searchIndexer.start();
-        home.startScoring();
         await ensureMainThread();
         inbox.loop?.start();
         memoryInbox?.start();
@@ -2065,7 +2054,6 @@ export async function createProductionHttpComposition(
         throw error;
       }
       searchIndexer.start();
-      home.startScoring();
       await ensureMainThread();
       inbox.loop?.start();
       memoryInbox?.start();
@@ -2077,7 +2065,6 @@ export async function createProductionHttpComposition(
       await memoryInbox?.stop();
       await inbox.loop?.stop();
       await threadDeletionRetry.stop();
-      await home.stopScoring();
       try {
         await app.close();
       } finally {
@@ -2091,43 +2078,6 @@ export async function createProductionHttpComposition(
       }
     },
   });
-}
-
-function voiceAddresseeConfiguration(
-  configuration: ProductConfiguration,
-): (() => VoiceAddresseeConfiguration) | undefined {
-  const route = configuration.runPolicy?.voiceAddressee;
-  return route ? () => route : undefined;
-}
-
-export function voiceAddressee(
-  model: VoiceAddresseeModel | undefined,
-  configuration: (() => VoiceAddresseeConfiguration) | undefined,
-  perception: PerceptionService,
-  agentId: AgentId,
-  now: () => number,
-): (input: {
-  readonly authentication: GatewayAuthenticationContext;
-  readonly request: VoiceAddresseeRequest;
-}) => Promise<VoiceAddresseeOutcome> {
-  if (!model || !configuration)
-    return async ({ request }) =>
-      request.trigger === "hands_on" ? "addressed" : "addressed_unsure";
-  const judges = new Map<string, VoiceAddresseeJudge>();
-  return ({ authentication, request }) => {
-    const scope = { ownerId: authentication.ownerId as OwnerId, agentId };
-    let judge = judges.get(scope.ownerId);
-    if (!judge) {
-      judge = new VoiceAddresseeJudge({
-        model,
-        configuration,
-        reserve: (micros) => perception.reserveModelCost(scope, micros),
-        now,
-      });
-      judges.set(scope.ownerId, judge);
-    }
-    return judge.decide(request);
-  };
 }
 
 export function utterancePrefetch(

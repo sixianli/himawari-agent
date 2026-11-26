@@ -35,9 +35,19 @@
       },
       "dimensions": 1024,
       "artifactSha256": "dcf55698530d735cf4ab00ddd4406e88ff74b09de204a6a4c1e2c7078e753366"
+    },
+    "speech": {
+      "adapter": "dashscope-qwen-tts",
+      "magpieModelRef": "deepseek-primary",
+      "provider": "qwen",
+      "model": "qwen3-tts-flash",
+      "voice": "Serena",
+      "languageType": "Chinese",
+      "firstAudioTimeoutMs": 1500,
+      "maximumCharacters": 600
     }
   },
-  "onDeployFailure": "keep",
+  "onDeployFailure": "rollback",
   "materialCache": {
     "minBytes": 16777216,
     "maxBytes": 1073741824

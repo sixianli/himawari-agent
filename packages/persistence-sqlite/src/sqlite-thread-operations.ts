@@ -46,6 +46,9 @@ import type {
 import type Database from "better-sqlite3";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
 
+const PHONE_VOICE_PROOF_PREFIX = "device-voice:";
+const TALK_PROOF_PREFIX = "device-talk:";
+
 interface ThreadRow {
   readonly id: string;
   readonly ownerId: string;
@@ -1399,16 +1402,28 @@ export class SqliteThreadOperations {
     agentId: AgentId,
     runId: RunId,
   ): readonly FoldedOwnerMessage[] {
-    return this.database
+    const rows = this.database
       .prepare(
         `SELECT f.folded_run_id AS runId, f.message_id AS messageId, f.position AS position,
-          m.content_ref AS contentRef, m.classification AS dataClassification
+          m.content_ref AS contentRef, m.classification AS dataClassification,
+          (SELECT t.source_proof_ref FROM triggers t
+            WHERE t.source_id = f.message_id AND t.source_type = 'user_message'
+              AND t.owner_id = f.owner_id AND t.agent_id = f.agent_id) AS sourceProofRef
          FROM run_message_folds f
          JOIN thread_messages m ON m.id = f.message_id
          WHERE f.run_id = ? AND f.owner_id = ? AND f.agent_id = ?
          ORDER BY f.position`,
       )
-      .all(runId, ownerId, agentId) as FoldedOwnerMessage[];
+      .all(runId, ownerId, agentId) as (Omit<FoldedOwnerMessage, "viaPhoneVoice" | "viaTalk"> & {
+      sourceProofRef: string | null;
+    })[];
+    return rows.map(({ sourceProofRef, ...message }) => ({
+      ...message,
+      ...(sourceProofRef?.startsWith(PHONE_VOICE_PROOF_PREFIX)
+        ? { viaPhoneVoice: true as const }
+        : {}),
+      ...(sourceProofRef?.startsWith(TALK_PROOF_PREFIX) ? { viaTalk: true as const } : {}),
+    }));
   }
 
   private unfoldOwnerRun(input: {
@@ -1873,7 +1888,8 @@ export class SqliteThreadOperations {
       SELECT r.owner_id AS ownerId, r.agent_id AS agentId, r.id AS runId,
         r.session_id AS sessionId, r.thread_id AS threadId, r.trigger_id AS triggerId,
         t.source_type AS sourceType, t.source_id AS sourceId, t.payload_ref AS payloadRef,
-        p.classification AS dataClassification, t.occurred_at AS occurredAt, r.model_selection_json AS modelSelectionJson
+        p.classification AS dataClassification, t.occurred_at AS occurredAt, r.model_selection_json AS modelSelectionJson,
+        t.source_proof_ref AS sourceProofRef
       FROM runs r
       JOIN triggers t ON t.id = r.trigger_id AND t.owner_id = r.owner_id
         AND t.agent_id = r.agent_id AND t.thread_id IS r.thread_id
@@ -1894,13 +1910,21 @@ export class SqliteThreadOperations {
         ))
     `)
       .get(input.runId, input.ownerId, input.agentId) as
-      | (RunExecutionSource & { modelSelectionJson: string | null })
+      | (Omit<RunExecutionSource, "viaPhoneVoice" | "viaTalk"> & {
+          modelSelectionJson: string | null;
+          sourceProofRef: string;
+        })
       | undefined;
     if (!row) return undefined;
-    const { modelSelectionJson, ...source } = row;
-    return modelSelectionJson
-      ? { ...source, modelSelection: JSON.parse(modelSelectionJson) }
-      : source;
+    const { modelSelectionJson, sourceProofRef, ...source } = row;
+    return {
+      ...source,
+      ...(sourceProofRef.startsWith(PHONE_VOICE_PROOF_PREFIX)
+        ? { viaPhoneVoice: true as const }
+        : {}),
+      ...(sourceProofRef.startsWith(TALK_PROOF_PREFIX) ? { viaTalk: true as const } : {}),
+      ...(modelSelectionJson ? { modelSelection: JSON.parse(modelSelectionJson) } : {}),
+    };
   }
 
   private readContextSnapshot(

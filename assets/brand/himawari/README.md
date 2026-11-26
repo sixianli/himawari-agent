@@ -1,6 +1,6 @@
 # Himawari Agent Logo
 
-当前界面使用 `v4/` 的“生长”葵盘标志，种子数按显示大小取 21、34、55、89 或 144 粒（2026-11-25 Andy 定，[ADR 0291](../../../docs/adr/0291-sunflower-mark-seed-count-follows-its-size.md)）；`v4/` 的 SVG 文件是 55 粒那一档；`v3/` 是 2026-10-30 选定的 233 粒版本（[ADR 0126](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0126-sunflower-mark-grows-233-seeds.md)），保留作历史参照；`v2/` 是 2026-10-26 选定的 96 粒葵盘，保留作历史参照；`v1/` 是 2026-09-10 确认的原始 PNG，保留作历史参照，不再被界面引用。
+当前界面使用 `v4/` 的“生长”葵盘标志，种子数按显示大小取 21、34、55、89 或 144 粒（2026-11-25 Andy 定，[ADR 0308](../../../docs/adr/0308-sunflower-mark-seed-count-follows-its-size-except-the-chat-puck.md)）；`v4/` 的 SVG 文件是 55 粒那一档；`v3/` 是 2026-10-30 选定的 233 粒版本（[ADR 0126](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0126-sunflower-mark-grows-233-seeds.md)），保留作历史参照；`v2/` 是 2026-10-26 选定的 96 粒葵盘，保留作历史参照；`v1/` 是 2026-09-10 确认的原始 PNG，保留作历史参照，不再被界面引用。
 
 ## v4 生长葵盘（当前）
 
@@ -35,4 +35,4 @@
 
 以上文件逐字节保留已确认的生成结果。展示图中的不同应用方式仍是整张图片的一部分，尚未拆成独立透明图标或 SVG。不要将棋盘格背景的失败生成稿、旧稿或重新生成的近似图形加入此版本。
 
-完整外观、交互和版本维护说明见 [Web 与 Logo 设计基准](../../../docs/execution/specs/2026-09-10-control-center-visual-baseline-design.md)。品牌金色与聊天界面可切换的主题色分别管理；`v1/` 留作原始参照，后续衍生资源另存并说明用途。
+完整外观、交互和版本维护说明见 [Web 与 Logo 设计基准](../../../docs/assets/control-center/2026-09-10-visual-baseline.md)。品牌金色与聊天界面可切换的主题色分别管理；`v1/` 留作原始参照，后续衍生资源另存并说明用途。
