@@ -6,7 +6,7 @@ supersedes: ""
 superseded_by: ""
 date: "2026-11-09"
 covers: "ci/operations-pending.json, ci/operations-removed.json, packages/gateway-contracts/src/contracts-v2.ts, packages/persistence-sqlite/test/memory-reminder-cancelled-migration.contract.test.ts, packages/persistence-sqlite/test/migration-engine.contract.test.ts, scripts/check-operations.mjs, test/integration/production-memory-capture.test.ts, test/tooling/operations-check.test.mjs"
-verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
+verified_at: "7c8521fe5f55e7dd57c5bd52badd16eef647502e"
 ---
 
 # ADR 0192：删除没人实现、没人调用的网关操作，并加检查拦住新的空壳

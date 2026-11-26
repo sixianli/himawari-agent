@@ -74,6 +74,7 @@ import type {
   TraceQuery,
 } from "@himawari-agent/gateway-contracts";
 import type Database from "better-sqlite3";
+import { SqliteAppConnectionOperations } from "./sqlite-app-connection-operations.ts";
 import {
   disablePushForRevokedDevices,
   SqliteApplePushOperations,
@@ -398,6 +399,7 @@ export class SqliteDurableOperations {
   private readonly vault: SqliteVaultOperations;
   private readonly mcpMemorySync: SqliteMcpMemorySyncOperations;
   private readonly proactive: SqliteProactiveOperations;
+  private readonly appConnections: SqliteAppConnectionOperations;
   private readonly decisionLedger: SqliteDecisionLedgerOperations;
   private readonly ledgerObservation: SqliteLedgerObservationOperations;
   private readonly ownerPreferences: SqliteOwnerPreferencesOperations;
@@ -520,6 +522,7 @@ export class SqliteDurableOperations {
       assertDiskHeadroom,
       proactiveSources,
     );
+    this.appConnections = new SqliteAppConnectionOperations(database, fail, assertDiskHeadroom);
     this.decisionLedger = new SqliteDecisionLedgerOperations(database, fail, assertDiskHeadroom);
     this.ledgerObservation = new SqliteLedgerObservationOperations(
       database,
@@ -713,6 +716,8 @@ export class SqliteDurableOperations {
     if (operation.startsWith("mcpMemorySync."))
       return this.mcpMemorySync.execute(operation, payload);
     if (operation.startsWith("proactive.")) return this.proactive.execute(operation, payload);
+    if (operation.startsWith("appConnections."))
+      return this.appConnections.execute(operation, payload);
     if (operation.startsWith("ownerRule.")) return this.ownerRules.execute(operation, payload);
     if (operation.startsWith("inbox.")) return this.inbox.execute(operation, payload);
     if (operation.startsWith("subthread.")) return this.subthreads.execute(operation, payload);

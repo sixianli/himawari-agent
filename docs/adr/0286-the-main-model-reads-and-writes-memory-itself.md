@@ -7,7 +7,7 @@ superseded_by: ""
 amends: "https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0193-memory-is-visible-to-the-model.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0196-index-sensitive-memory-after-masking-and-stop-idle-archiving.md"
 date: "2026-11-24"
 covers: "apps/agent-service/src/production-memory-recall.ts, packages/application/src/services/owner-profile-service.ts, packages/prompt-catalog/src/chat.ts, scripts/delivery-mode/packet-template/maintenance/production-shape-config-template.json"
-verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
+verified_at: "7c8521fe5f55e7dd57c5bd52badd16eef647502e"
 implementation: in_progress
 ---
 
