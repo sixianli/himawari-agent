@@ -54,10 +54,6 @@ import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/cli
 import Fastify from "fastify";
 import { afterEach, describe, expect, it } from "vitest";
 import {
-  mcpConnectionSecretDigest,
-  newMcpConnectionSecret,
-} from "../../apps/agent-service/src/production-mcp-connections.ts";
-import {
   EXTERNAL_PROPOSAL_MEMORY_PREFIX,
   EXTERNAL_PROPOSAL_TEXT_MAXIMUM,
   externalProposalBatchId,
@@ -84,7 +80,7 @@ import { ProductionMemoryControl } from "../../apps/agent-service/src/production
 import { ProductionMemoryRecall } from "../../apps/agent-service/src/production-memory-recall.ts";
 import { ProductionOwnerRuleWriter } from "../../apps/agent-service/src/production-owner-rules.ts";
 import { ProductionReminderWriter } from "../../apps/agent-service/src/production-reminder-writer.ts";
-import { createMcpAccess } from "../../apps/agent-service/test/fixtures/mcp-access.ts";
+import { createMcpOAuth } from "../../apps/agent-service/test/fixtures/mcp-oauth.ts";
 import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
 
 const READ_TOOL_NAMES = ["start_here", "find_memories", "today_context", "rule_book"];
@@ -361,18 +357,16 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       clock,
       timeZone: TIME_ZONE,
     });
-    const access = await createMcpAccess(() => new Date(clock.now()));
-    const owners = repository.ownerIdentityState();
-    await owners.bindFirstOwner({
-      ownerId: OWNER_ID,
-      externalSubjectRef: await access.ownerSubjectRef(),
-      boundAt: clock.now(),
+    const oauth = createMcpOAuth({
+      scope,
+      clock,
+      store: repository.mcpOAuth(),
+      connections: repository.mcpConnections(),
     });
     const mcp = new ProductionMcpRead({
       scope,
       clock,
-      access: access.verifier,
-      owners,
+      tokens: oauth.authorization,
       ...(options.readOnly
         ? {}
         : {
@@ -399,19 +393,13 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     registerMcpReadRoute(app, mcp);
     closers.push(() => app.close());
     await app.listen({ host: "127.0.0.1", port: 0 });
-    const secret = newMcpConnectionSecret();
-    await repository.mcpConnections().create({
-      ...scope,
+    await oauth.connect({
       id: CONNECTION_ID,
-      name: CONNECTION_ID,
-      secretSha256: mcpConnectionSecretDigest(secret),
-      capabilities: ["mcp"],
       readCeiling: "private",
       pushPolicy: options.direct ? "direct" : "ask",
-      createdAt: clock.now(),
     });
     const url = new URL(
-      `http://127.0.0.1:${(app.server.address() as AddressInfo).port}${MCP_READ_PATH}/${secret}`,
+      `http://127.0.0.1:${(app.server.address() as AddressInfo).port}${MCP_READ_PATH}`,
     );
     const usage = async () =>
       repository.mcpConnections().usage({ ...scope, fromDay: "2000-01-01", toDay: "2100-01-01" });
@@ -454,7 +442,9 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       await client.connect(
         new StreamableHTTPClientTransport(url, {
           requestInit: {
-            headers: { "cf-access-jwt-assertion": await access.sign() },
+            headers: {
+              authorization: `Bearer ${await oauth.issue(CONNECTION_ID, `client-${CONNECTION_ID}`)}`,
+            },
           },
         }),
       );

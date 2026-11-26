@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import type {
   McpConnectionEntry,
   McpConnectionRecord,
@@ -7,30 +7,10 @@ import type {
   McpUsageCounter,
 } from "@himawari-agent/application";
 
-export const MCP_CONNECTION_SECRET_BYTES = 32;
-export const MCP_CONNECTION_SECRET_PATTERN = /^[A-Za-z0-9_-]{43}$/u;
 export const MCP_CONNECTION_SUBJECT_PREFIX = "mcp-connection:";
-
-export function newMcpConnectionSecret(): string {
-  return randomBytes(MCP_CONNECTION_SECRET_BYTES).toString("base64url");
-}
-
-export function mcpConnectionSecretDigest(secret: string): string {
-  return createHash("sha256").update(secret, "utf8").digest("hex");
-}
 
 export function newMcpConnectionId(): string {
   return `conn-${randomBytes(12).toString("hex")}`;
-}
-
-export function mcpConnectionIdFor(
-  scope: { readonly ownerId: string; readonly agentId: string },
-  idempotencyKey: string,
-): string {
-  const digest = createHash("sha256")
-    .update(`${scope.ownerId}\u0000${scope.agentId}\u0000${idempotencyKey}`)
-    .digest("hex");
-  return `conn-${digest.slice(0, 24)}`;
 }
 
 export function mcpConnectionSubject(connectionId: string): string {

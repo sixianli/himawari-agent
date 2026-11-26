@@ -708,7 +708,8 @@ export const governanceMessages = [
         reportedClient: "claude-code",
         createdAt: "2026-11-12T03:00:00.000Z",
         updatedAt: "2026-11-12T03:00:00.000Z",
-        secretRotatedAt: null,
+        registration: "metadata_document",
+        clientHost: "claude.ai",
         lastSeenAt: "2026-11-12T03:05:00.000Z",
         minute: { reads: 1, hookReads: 3 },
         usage: {
@@ -729,14 +730,7 @@ export const governanceMessages = [
     ],
     window: { fromDay: "2026-11-06", toDay: "2026-11-12", days: 7 },
     limits: [{ key: "mcp.connections", value: 200, used: 1 }],
-    addressPath: "/api/mcp-connections/address",
     generatedAt: "2026-11-12T03:06:30.000Z",
-  }),
-  fixture("command", "mcp.connection.create", {
-    name: "Claude Code",
-    capabilities: ["mcp"],
-    readCeiling: "private",
-    pushPolicy: "ask",
   }),
   fixture("command", "mcp.connection.change", {
     connectionId: "conn-0123456789abcdef01234567",
@@ -746,9 +740,33 @@ export const governanceMessages = [
     pushPolicy: null,
     status: "paused",
   }),
-  fixture("command", "mcp.connection.rotate", {
-    connectionId: "conn-0123456789abcdef01234567",
+  fixture("query", "mcp.grants.read", {}),
+  fixture("snapshot", "mcp.grants.snapshot", {
+    grants: [
+      {
+        id: "grant-AAAAAAAAAAAAAAAAAAAAAA",
+        clientName: "Claude Code",
+        registration: "metadata_document",
+        clientHost: "claude.ai",
+        redirectHost: "localhost:33418",
+        localRedirect: true,
+        wantsWrite: true,
+        existingConnection: null,
+        createdAt: "2026-11-12T03:00:00.000Z",
+        expiresAt: "2026-11-12T03:10:00.000Z",
+      },
+    ],
+    defaults: { readCeiling: "private", pushPolicy: "direct" },
+    generatedAt: "2026-11-12T03:00:01.000Z",
   }),
+  fixture("command", "mcp.grant.approve", {
+    grantId: "grant-AAAAAAAAAAAAAAAAAAAAAA",
+    name: null,
+    readCeiling: "private",
+    pushPolicy: "direct",
+    write: true,
+  }),
+  fixture("command", "mcp.grant.deny", { grantId: "grant-AAAAAAAAAAAAAAAAAAAAAA" }),
   fixture("command", "login.devices.revoke_others", { recentAuthenticationRef: "auth-ref-01" }),
   fixture("query", "search.ask.read", { query: "我对什么过敏", locale: "zh-CN" }),
   fixture("snapshot", "search.ask.snapshot", {

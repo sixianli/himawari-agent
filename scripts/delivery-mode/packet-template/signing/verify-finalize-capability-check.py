@@ -21,8 +21,9 @@ draft = json.loads((packet / 'inputs/bindings.draft.json').read_text())
 frozen = {'paths': {'oldPrefix': draft['paths']['oldPrefix']}}
 host_id = s0['identity']['hostId']
 production = s0['authorization']['capabilities']
-if {entry['capabilityRef'] for entry in production} != {'himawari.pi-coding', 'himawari.public-search', 'himawari.public-fetch'}:
-    raise SystemExit('FINALIZE_CAPABILITY_FIXTURE_PRODUCTION_SET_CHANGED')
+production_refs = sorted(entry['capabilityRef'] for entry in production)
+if production_refs not in ([], ['himawari.pi-coding', 'himawari.public-fetch', 'himawari.public-search']):
+    raise SystemExit('FINALIZE_CAPABILITY_FIXTURE_PRODUCTION_SET_CHANGED ' + json.dumps(production_refs))
 
 def check(capabilities):
     try:
