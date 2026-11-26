@@ -7,14 +7,11 @@ enum BubbleSide {
     case owner
 }
 
-struct BubbleShape: Shape {
+struct BubbleTail: Shape {
     let side: BubbleSide
-    let tail: Bool
     var radius: CGFloat = DesignTokens.Chat.bubbleRadius
 
     func path(in rect: CGRect) -> Path {
-        let body = RoundedRectangle(cornerRadius: min(radius, rect.height / 2), style: .continuous).path(in: rect)
-        guard tail else { return body }
         let width = DesignTokens.Chat.bubbleTailWidth
         let height = min(DesignTokens.Chat.bubbleTailHeight, rect.height / 2)
         let x = rect.maxX
@@ -33,10 +30,8 @@ struct BubbleShape: Shape {
         )
         hook.addLine(to: CGPoint(x: x - radius, y: y - height))
         hook.closeSubpath()
-        if side == .her {
-            hook = hook.applying(CGAffineTransform(translationX: rect.minX + rect.maxX, y: 0).scaledBy(x: -1, y: 1))
-        }
-        return body.union(hook)
+        guard side == .her else { return hook }
+        return hook.applying(CGAffineTransform(translationX: rect.minX + rect.maxX, y: 0).scaledBy(x: -1, y: 1))
     }
 }
 
@@ -49,18 +44,22 @@ struct BubbleBackground: ViewModifier {
     @ScaledMetric(relativeTo: .body) private var radius = DesignTokens.Chat.bubbleRadius
 
     func body(content: Content) -> some View {
-        let shape = BubbleShape(side: side, tail: tail, radius: radius)
+        let fill = side == .her ? Color.hmBubble : Color.hmText
+        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
         content
             .padding(.horizontal, paddingX)
             .padding(.vertical, paddingY)
-            .background(side == .her ? Color.hmBubble : Color.hmText, in: shape)
+            .background {
+                if tail { BubbleTail(side: side, radius: radius).fill(fill) }
+            }
+            .background(fill, in: shape)
             .menuPreviewShape(shape)
     }
 }
 
 extension View {
     @ViewBuilder
-    fileprivate func menuPreviewShape(_ shape: BubbleShape) -> some View {
+    fileprivate func menuPreviewShape(_ shape: some Shape) -> some View {
         #if os(iOS)
         contentShape(.contextMenuPreview, shape)
         #else
