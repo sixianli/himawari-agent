@@ -25,6 +25,7 @@ import {
   PERCEPTION_TEXT_MAXIMUM,
   PERCEPTION_UTTERANCE_ID_PATTERN,
   PHONE_VOICE_PROOF_PREFIX,
+  TALK_PROOF_PREFIX,
   PORT_ERROR_CODES,
   type ThreadGatewayRequestMessage,
   type UploadGrantPurpose,
@@ -1394,8 +1395,11 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
                 "text",
                 "utteranceId",
                 "voice",
+                "spoken",
               ].includes(key),
           ) ||
+          (body["spoken"] !== undefined &&
+            (body["spoken"] !== true || body["voice"] !== undefined)) ||
           (body["voice"] !== undefined &&
             (body["utteranceId"] === undefined || parseVoiceEvidence(body["voice"]) === null)) ||
           (body["utteranceId"] !== undefined &&
@@ -1463,7 +1467,7 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
             runId: `run:${suffix}`,
             sessionId: authentication.sessionId,
             contentRef,
-            sourceProofRef: `${heardByPhone ? PHONE_VOICE_PROOF_PREFIX : "device:"}${authenticated.device.id}`,
+            sourceProofRef: `${heardByPhone ? PHONE_VOICE_PROOF_PREFIX : body["spoken"] === true ? TALK_PROOF_PREFIX : "device:"}${authenticated.device.id}`,
             dataClassification: "private",
             occurredAt: now().toISOString(),
             resultRef,
