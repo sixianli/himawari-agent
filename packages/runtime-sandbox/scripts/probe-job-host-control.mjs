@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import childProcess, { fork } from "node:child_process";
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { syncBuiltinESMExports } from "node:module";
 import path from "node:path";
@@ -97,7 +98,7 @@ if (process.argv.includes("--worker")) {
                 "/bin",
                 "/usr",
                 "/lib",
-                "/lib64",
+                ...["/lib64"].filter(existsSync),
                 "/dev",
                 process.env.HIMAWARI_R4_HELPERS,
                 fileURLToPath(
