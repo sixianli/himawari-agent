@@ -10,7 +10,6 @@ import {
   PERCEPTION_CONFIGURATION_DEFAULTS,
   PERCEPTION_CONFIGURATION_RANGES,
   type PerceptionConfiguration,
-  VOICE_ADDRESSEE_DEFAULTS,
 } from "@himawari-agent/application";
 import { createAgentId, createDeploymentId, createOwnerId } from "@himawari-agent/domain";
 import { afterEach, describe, expect, it } from "vitest";
@@ -290,47 +289,21 @@ describe("strict product configuration", () => {
       expect(() => parseProductConfiguration(withRetrieval(invalid), at)).toThrow();
   });
 
-  it("[iOS-8] accepts the name-call decision model only with a model, a key, a price and sane thresholds", () => {
-    const withAddressee = (voiceAddressee: unknown) => {
-      const input = config(path.join(tmpdir(), "himawari-voice-addressee"));
-      input["runPolicy"] = {
-        version: "policy-voice-addressee",
-        systemInstruction: "test",
-        memoryLimit: 10,
-        voiceAddressee,
-      };
-      return input;
+  it("accepts the retired voiceAddressee key and drops it from the run policy", () => {
+    const input = config(path.join(tmpdir(), "himawari-voice-addressee"));
+    input["runPolicy"] = {
+      version: "policy-voice-addressee",
+      systemInstruction: "test",
+      memoryLimit: 10,
+      voiceAddressee: {
+        model: "typesafe-ai/jev",
+        secretRef: "vercel-ai-gateway-api-key",
+        inputMicrosPerMillionTokens: 42_000,
+      },
     };
-    const at = "2026-11-13T00:00:00.000Z";
-    const base = {
-      model: "typesafe-ai/jev",
-      secretRef: "vercel-ai-gateway-api-key",
-      inputMicrosPerMillionTokens: 42_000,
-    };
-    expect(parseProductConfiguration(withAddressee(base), at).runPolicy?.voiceAddressee).toEqual({
-      ...VOICE_ADDRESSEE_DEFAULTS,
-      ...base,
-    });
-    expect(
-      parseProductConfiguration(
-        withAddressee({ ...base, yesAtLeastPermille: 850, noAtMostPermille: 150, timeoutMs: 800 }),
-        at,
-      ).runPolicy?.voiceAddressee,
-    ).toMatchObject({ yesAtLeastPermille: 850, noAtMostPermille: 150, timeoutMs: 800 });
-    const { model: _model, ...withoutModel } = base;
-    const { secretRef: _secret, ...withoutSecret } = base;
-    for (const invalid of [
-      withoutModel,
-      withoutSecret,
-      { ...base, inputMicrosPerMillionTokens: 0 },
-      { ...base, yesAtLeastPermille: 400 },
-      { ...base, noAtMostPermille: 600 },
-      { ...base, yesAtLeastPermille: 500, noAtMostPermille: 500 },
-      { ...base, timeoutMs: 50 },
-      { ...base, baseUrl: "https://example.test" },
-      "on",
-    ])
-      expect(() => parseProductConfiguration(withAddressee(invalid), at)).toThrow();
+    const policy = parseProductConfiguration(input, "2026-11-26T00:00:00.000Z").runPolicy;
+    expect(policy?.retiredKeys).toEqual(["voiceAddressee"]);
+    expect(policy && "voiceAddressee" in policy).toBe(false);
   });
 
   it("accepts the retired deliveryTiming key and drops it from the run policy", () => {
