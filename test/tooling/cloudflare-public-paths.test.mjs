@@ -31,14 +31,11 @@ function listen(handler) {
   });
 }
 
-function readBody(request) {
-  return new Promise((resolve) => {
-    let text = "";
-    request.on("data", (chunk) => {
-      text += chunk;
-    });
-    request.on("end", () => resolve(text ? JSON.parse(text) : undefined));
-  });
+async function readBody(request) {
+  const chunks = [];
+  for await (const chunk of request) chunks.push(chunk);
+  const text = Buffer.concat(chunks).toString("utf8");
+  return text ? JSON.parse(text) : undefined;
 }
 
 function cloudflare(initialApps = [], options = {}) {
