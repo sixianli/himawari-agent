@@ -94,9 +94,14 @@ TEST_RUNNER_HIMAWARI_E2E_CONTROL="$control" xcodebuild test-without-building \
   >"$work/test.log" 2>&1
 status=$?
 grep -E 'error:|Test Case .* (passed|failed|skipped)|\*\* TEST' "$work/test.log"
+xcrun simctl spawn "$udid" log show --last 60m --style compact \
+  --predicate 'process == "Himawari" AND (messageType == error OR messageType == fault OR eventMessage CONTAINS[c] "error" OR eventMessage CONTAINS[c] "fail")' \
+  >"$work/app.log" 2>&1
 set -e
 echo "IOS_E2E_BACKEND_LOG"
-grep -E 'IOS_E2E_|Error|error' "$log" | head -50 || true
+grep -E 'IOS_E2E_|Error|error' "$log" | head -80 || true
+echo "IOS_E2E_APP_LOG"
+tail -40 "$work/app.log" || true
 if grep -q "skipped" "$work/test.log" && ! grep -q "passed" "$work/test.log"; then
   echo "IOS_E2E_ALL_SKIPPED the end-to-end tests did not find the backend"
   exit 1

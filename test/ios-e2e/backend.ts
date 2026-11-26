@@ -222,6 +222,7 @@ class SwitchableFront {
       upstream.on("error", forget).on("close", forget);
       client.pipe(upstream).pipe(client);
     });
+    server.on("tlsClientError", (error) => process.stdout.write(`IOS_E2E_TLS_ERROR ${error.message}\n`));
     await new Promise<void>((resolve, reject) => {
       server.once("error", reject);
       server.listen(this.#port, "127.0.0.1", () => resolve());
@@ -274,6 +275,9 @@ export async function startE2eBackend(): Promise<E2eBackend> {
   const live = new ExecutionLiveFeed();
   const h = await harness({ origin, clock, live, mainThread: true });
   h.configuration.current = { ...h.configuration.current, heartbeatSeconds: 15 };
+  h.app.addHook("onResponse", async (request, reply) => {
+    process.stdout.write(`IOS_E2E_REQUEST ${request.method} ${request.url.split("?")[0]} ${reply.statusCode}\n`);
+  });
   await h.app.listen({ host: "127.0.0.1", port: appPort });
   const payloads = h.repository.payloadStore(ownerId, agentId);
   await payloads.put(
