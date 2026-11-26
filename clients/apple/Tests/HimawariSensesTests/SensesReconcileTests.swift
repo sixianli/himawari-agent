@@ -119,8 +119,8 @@ struct SenseTurnOnFeedbackTests {
         service.server = SenseServerView(state: "active", enabledSenses: [], knownTypes: ["location.visit"])
         service.serverAfterRefresh = service.server
         let model = SensesModel(service: service, store: MemoryLocalStore())
-        await model.turnOn(.calendar)
-        #expect(model.state(.calendar) == .serverUnsupported)
+        await model.turnOn(.photos)
+        #expect(model.state(.photos) == .serverUnsupported)
         #expect(model.notice != nil)
     }
 
