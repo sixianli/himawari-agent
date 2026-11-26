@@ -770,7 +770,7 @@ export function registerProactiveRoutes(
     return reply
       .header("cache-control", "no-store")
       .header("referrer-policy", "no-referrer")
-      .redirect(await proactive.authorizationRedirect(subject), 303);
+      .redirect(proactive.beginAuthorization(subject), 303);
   });
   app.get(PROACTIVE_GOOGLE_CALLBACK_PATH, async (request, reply) => {
     const query = request.query as Record<string, unknown>;

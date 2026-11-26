@@ -5,7 +5,6 @@ import {
   type ProactiveMail,
   type ProactiveMailReader,
 } from "@himawari-agent/application";
-import { isDemoMailboxToken } from "./demo-mailbox-token.js";
 import { extractGmailBody, type GmailPart } from "./gmail-body.js";
 
 export const GMAIL_READONLY_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
@@ -129,7 +128,6 @@ export function createGoogleOAuth(options: GoogleOAuthOptions): GoogleOAuth {
       return { refreshToken, accessToken, scopes };
     },
     async accessToken(refreshToken, signal) {
-      if (isDemoMailboxToken(refreshToken)) throw new GoogleUnauthorizedError();
       const json = await token(
         [
           ["refresh_token", refreshToken],
@@ -144,7 +142,6 @@ export function createGoogleOAuth(options: GoogleOAuthOptions): GoogleOAuth {
       return access;
     },
     async revoke(value) {
-      if (isDemoMailboxToken(value)) return true;
       const response = await send(GOOGLE_REVOKE_ENDPOINT, {
         method: "POST",
         headers: { "content-type": "application/x-www-form-urlencoded" },

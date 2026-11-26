@@ -1899,8 +1899,8 @@ it("[PG-12][reverse] rejects a proactive model that the mail check cannot call, 
   );
 });
 
-it("[P6-demo] accepts a fake inbox in place of Gmail, in one of the offered languages, and never both at once", () => {
-  const raw = config("/tmp/himawari-demo-inbox-config");
+it("requires the proactive check to name a Gmail client and rejects the removed fake inbox", () => {
+  const raw = config("/tmp/himawari-proactive-gmail-config");
   const policy = {
     version: "1",
     systemInstruction: "test",
@@ -1915,18 +1915,13 @@ it("[P6-demo] accepts a fake inbox in place of Gmail, in one of the offered lang
     clientId: "123-abc.apps.googleusercontent.com",
     clientSecretRef: "google-oauth",
   };
-  for (const locale of ["ja", "en"]) {
-    raw["runPolicy"] = { ...policy, proactive: { modelRef: "model-primary", demoInbox: locale } };
-    const parsed = parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.proactive;
-    expect(parsed?.demoInbox).toBe(locale);
-    expect(parsed).not.toHaveProperty("gmail");
-  }
+  raw["runPolicy"] = { ...policy, proactive: { modelRef: "model-primary", gmail } };
+  const parsed = parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.proactive;
+  expect(parsed?.gmail).toEqual(gmail);
   for (const invalid of [
     { modelRef: "model-primary" },
     { modelRef: "model-primary", gmail, demoInbox: "ja" },
-    { modelRef: "model-primary", demoInbox: "zh-CN" },
-    { modelRef: "model-primary", demoInbox: "" },
-    { modelRef: "model-primary", demoInbox: true },
+    { modelRef: "model-primary", demoInbox: "ja" },
   ]) {
     raw["runPolicy"] = { ...policy, proactive: invalid };
     expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
