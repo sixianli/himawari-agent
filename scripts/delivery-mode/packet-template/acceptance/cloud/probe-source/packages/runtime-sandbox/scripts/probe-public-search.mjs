@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 // Explicit installed-runtime qualification. Only synthetic public queries; no keys.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
@@ -36,7 +37,7 @@ try {
       writable: false,
       protectedPaths: [],
       readOnlyToolchainPaths: await Promise.all(
-        [runtime, "/usr/bin", "/usr/lib", "/lib64", "/dev", "/proc", "/etc/ssl", "/etc/hosts"].map(
+        [runtime, "/usr/bin", "/usr/lib", ...["/lib64"].filter(existsSync), "/dev", "/proc", "/etc/ssl", "/etc/hosts"].map(
           (p) => realpath(p),
         ),
       ),

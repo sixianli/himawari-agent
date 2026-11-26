@@ -74,18 +74,8 @@ export interface McpConnectionRecord extends McpConnectionScope {
   readonly reportedClient: string | null;
   readonly createdAt: string;
   readonly updatedAt: string;
-  readonly secretRotatedAt: string | null;
+  readonly oauthClientId: string | null;
   readonly lastSeenAt: string | null;
-}
-
-export interface McpConnectionCreate extends McpConnectionScope {
-  readonly id: string;
-  readonly name: string;
-  readonly secretSha256: string;
-  readonly capabilities: readonly McpConnectionCapability[];
-  readonly readCeiling: McpConnectionReadCeiling;
-  readonly pushPolicy: McpConnectionPushPolicy;
-  readonly createdAt: string;
 }
 
 export interface McpConnectionChange extends McpConnectionScope {
@@ -116,20 +106,9 @@ export interface McpConnectionUsageRow extends McpConnectionUsageKey {
 }
 
 export interface McpConnectionStorePort {
-  create(input: McpConnectionCreate): Promise<McpConnectionRecord>;
   list(scope: McpConnectionScope): Promise<readonly McpConnectionRecord[]>;
   read(input: McpConnectionScope & { readonly id: string }): Promise<McpConnectionRecord | null>;
-  findBySecret(
-    input: McpConnectionScope & { readonly secretSha256: string },
-  ): Promise<McpConnectionRecord | null>;
   change(input: McpConnectionChange): Promise<McpConnectionRecord | null>;
-  rotateSecret(
-    input: McpConnectionScope & {
-      readonly id: string;
-      readonly secretSha256: string;
-      readonly rotatedAt: string;
-    },
-  ): Promise<McpConnectionRecord | null>;
   touch(
     input: McpConnectionScope & {
       readonly id: string;

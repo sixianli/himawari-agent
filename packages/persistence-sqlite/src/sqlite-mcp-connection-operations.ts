@@ -1,7 +1,6 @@
 import {
   MCP_CONNECTION_CAPABILITIES,
   MCP_CONNECTION_ENTRIES,
-  MCP_CONNECTION_MAXIMUM,
   MCP_CONNECTION_NAME_MAXIMUM,
   MCP_CONNECTION_PUSH_POLICIES,
   MCP_CONNECTION_READ_CEILINGS,
@@ -9,7 +8,6 @@ import {
   MCP_CONNECTION_STATUSES,
   MCP_USAGE_COUNTERS,
   type McpConnectionChange,
-  type McpConnectionCreate,
   type McpConnectionRecord,
   type McpConnectionScope,
   type McpConnectionUsageAdd,
@@ -21,7 +19,7 @@ import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
 
 type Scope = McpConnectionScope;
 
-interface Row {
+export interface McpConnectionRow {
   readonly id: string;
   readonly ownerId: McpConnectionRecord["ownerId"];
   readonly agentId: McpConnectionRecord["agentId"];
@@ -33,37 +31,39 @@ interface Row {
   readonly reportedClient: string | null;
   readonly createdAt: string;
   readonly updatedAt: string;
-  readonly secretRotatedAt: string | null;
+  readonly oauthClientId: string | null;
   readonly lastSeenAt: string | null;
 }
 
-const select = `SELECT id, owner_id AS ownerId, agent_id AS agentId, name, capabilities,
-  read_ceiling AS readCeiling, push_policy AS pushPolicy, status,
-  reported_client AS reportedClient, created_at AS createdAt, updated_at AS updatedAt,
-  secret_rotated_at AS secretRotatedAt, last_seen_at AS lastSeenAt
-  FROM mcp_connections`;
+export const MCP_CONNECTION_SELECT = `SELECT c.id AS id, c.owner_id AS ownerId,
+  c.agent_id AS agentId, c.name AS name, c.capabilities AS capabilities,
+  c.read_ceiling AS readCeiling, c.push_policy AS pushPolicy, c.status AS status,
+  c.reported_client AS reportedClient, c.created_at AS createdAt, c.updated_at AS updatedAt,
+  o.client_id AS oauthClientId, c.last_seen_at AS lastSeenAt
+  FROM mcp_connections c LEFT JOIN mcp_oauth_clients o ON o.connection_id = c.id`;
 
-const CONNECTION_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
-const DIGEST = /^[0-9a-f]{64}$/u;
+export const MCP_CONNECTION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const DAY = /^\d{4}-\d{2}-\d{2}$/u;
 
-function instant(value: unknown): value is string {
+export function validInstant(value: unknown): value is string {
   if (typeof value !== "string") return false;
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) && new Date(parsed).toISOString() === value;
 }
 
-function name(value: unknown): value is string {
-  return text(value, MCP_CONNECTION_NAME_MAXIMUM) && !mcpConnectionNameHasHiddenCharacter(value);
+export function validConnectionName(value: unknown): value is string {
+  return (
+    boundedText(value, MCP_CONNECTION_NAME_MAXIMUM) && !mcpConnectionNameHasHiddenCharacter(value)
+  );
 }
 
-function text(value: unknown, maximum: number): value is string {
+export function boundedText(value: unknown, maximum: number): value is string {
   if (typeof value !== "string" || value.trim() !== value) return false;
   const length = [...value].length;
   return length >= 1 && length <= maximum;
 }
 
-function oneOf<T extends string>(values: readonly T[], value: unknown): value is T {
+export function oneOf<T extends string>(values: readonly T[], value: unknown): value is T {
   return typeof value === "string" && (values as readonly string[]).includes(value);
 }
 
@@ -75,13 +75,13 @@ function capabilitiesValid(value: unknown): value is readonly string[] {
   );
 }
 
-function sortedCapabilities(value: readonly string[]): string {
+export function sortedCapabilities(value: readonly string[]): string {
   return JSON.stringify(
     MCP_CONNECTION_CAPABILITIES.filter((capability) => value.includes(capability)),
   );
 }
 
-function record(row: Row): McpConnectionRecord {
+export function mcpConnectionRecord(row: McpConnectionRow): McpConnectionRecord {
   return Object.freeze({
     ...row,
     capabilities: Object.freeze(
@@ -107,20 +107,12 @@ export class SqliteMcpConnectionOperations {
 
   execute(operation: string, payload: unknown): unknown {
     switch (operation) {
-      case "mcpConnection.create":
-        return this.create(payload as McpConnectionCreate);
       case "mcpConnection.list":
         return this.list(payload as Scope);
       case "mcpConnection.read":
         return this.read(payload as Scope & { id: string });
-      case "mcpConnection.findBySecret":
-        return this.findBySecret(payload as Scope & { secretSha256: string });
       case "mcpConnection.change":
         return this.change(payload as McpConnectionChange);
-      case "mcpConnection.rotateSecret":
-        return this.rotateSecret(
-          payload as Scope & { id: string; secretSha256: string; rotatedAt: string },
-        );
       case "mcpConnection.touch":
         return this.touch(
           payload as Scope & { id: string; seenAt: string; reportedClient: string | null },
@@ -138,83 +130,27 @@ export class SqliteMcpConnectionOperations {
     return this.fail("PORT_INVALID_OPERATION", "MCP_CONNECTION_INPUT_INVALID");
   }
 
-  private create(input: McpConnectionCreate): McpConnectionRecord {
-    this.assertDiskHeadroom();
-    if (
-      typeof input.id !== "string" ||
-      !CONNECTION_ID.test(input.id) ||
-      !name(input.name) ||
-      typeof input.secretSha256 !== "string" ||
-      !DIGEST.test(input.secretSha256) ||
-      !capabilitiesValid(input.capabilities) ||
-      !oneOf(MCP_CONNECTION_READ_CEILINGS, input.readCeiling) ||
-      !oneOf(MCP_CONNECTION_PUSH_POLICIES, input.pushPolicy) ||
-      !instant(input.createdAt)
-    )
-      return this.invalid();
-    return this.database.transaction(() => {
-      const count = this.database
-        .prepare(
-          "SELECT COUNT(*) FROM mcp_connections WHERE owner_id = ? AND agent_id = ? AND status <> 'revoked'",
-        )
-        .pluck()
-        .get(input.ownerId, input.agentId) as number;
-      if (count >= MCP_CONNECTION_MAXIMUM)
-        return this.fail("PORT_CONFLICT", "MCP_CONNECTION_LIMIT_REACHED");
-      this.database
-        .prepare(
-          `INSERT INTO mcp_connections (
-            id, owner_id, agent_id, name, secret_sha256, capabilities, read_ceiling, push_policy,
-            status, reported_client, created_at, updated_at, secret_rotated_at, last_seen_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', NULL, ?, ?, NULL, NULL)`,
-        )
-        .run(
-          input.id,
-          input.ownerId,
-          input.agentId,
-          input.name,
-          input.secretSha256,
-          sortedCapabilities(input.capabilities),
-          input.readCeiling,
-          input.pushPolicy,
-          input.createdAt,
-          input.createdAt,
-        );
-      return this.read({
-        ownerId: input.ownerId,
-        agentId: input.agentId,
-        id: input.id,
-      }) as McpConnectionRecord;
-    })();
-  }
-
   private list(scope: Scope): readonly McpConnectionRecord[] {
     const rows = this.database
-      .prepare(`${select} WHERE owner_id = ? AND agent_id = ? ORDER BY created_at, id`)
-      .all(scope.ownerId, scope.agentId) as Row[];
-    return Object.freeze(rows.map(record));
+      .prepare(
+        `${MCP_CONNECTION_SELECT} WHERE c.owner_id = ? AND c.agent_id = ? ORDER BY c.created_at, c.id`,
+      )
+      .all(scope.ownerId, scope.agentId) as McpConnectionRow[];
+    return Object.freeze(rows.map(mcpConnectionRecord));
   }
 
   private read(input: Scope & { id: string }): McpConnectionRecord | null {
     const row = this.database
-      .prepare(`${select} WHERE owner_id = ? AND agent_id = ? AND id = ?`)
-      .get(input.ownerId, input.agentId, input.id) as Row | undefined;
-    return row ? record(row) : null;
-  }
-
-  private findBySecret(input: Scope & { secretSha256: string }): McpConnectionRecord | null {
-    if (typeof input.secretSha256 !== "string" || !DIGEST.test(input.secretSha256)) return null;
-    const row = this.database
-      .prepare(`${select} WHERE owner_id = ? AND agent_id = ? AND secret_sha256 = ?`)
-      .get(input.ownerId, input.agentId, input.secretSha256) as Row | undefined;
-    return row ? record(row) : null;
+      .prepare(`${MCP_CONNECTION_SELECT} WHERE c.owner_id = ? AND c.agent_id = ? AND c.id = ?`)
+      .get(input.ownerId, input.agentId, input.id) as McpConnectionRow | undefined;
+    return row ? mcpConnectionRecord(row) : null;
   }
 
   private change(input: McpConnectionChange): McpConnectionRecord | null {
     this.assertDiskHeadroom();
     if (
-      !instant(input.updatedAt) ||
-      (input.name !== undefined && !name(input.name)) ||
+      !validInstant(input.updatedAt) ||
+      (input.name !== undefined && !validConnectionName(input.name)) ||
       (input.capabilities !== undefined && !capabilitiesValid(input.capabilities)) ||
       (input.readCeiling !== undefined &&
         !oneOf(MCP_CONNECTION_READ_CEILINGS, input.readCeiling)) ||
@@ -247,44 +183,13 @@ export class SqliteMcpConnectionOperations {
     })();
   }
 
-  private rotateSecret(
-    input: Scope & { id: string; secretSha256: string; rotatedAt: string },
-  ): McpConnectionRecord | null {
-    this.assertDiskHeadroom();
-    if (
-      typeof input.secretSha256 !== "string" ||
-      !DIGEST.test(input.secretSha256) ||
-      !instant(input.rotatedAt)
-    )
-      return this.invalid();
-    return this.database.transaction(() => {
-      const current = this.read(input);
-      if (!current) return null;
-      if (current.status === "revoked") return this.fail("PORT_CONFLICT", "MCP_CONNECTION_REVOKED");
-      this.database
-        .prepare(
-          `UPDATE mcp_connections SET secret_sha256 = ?, secret_rotated_at = ?, updated_at = ?
-           WHERE owner_id = ? AND agent_id = ? AND id = ?`,
-        )
-        .run(
-          input.secretSha256,
-          input.rotatedAt,
-          input.rotatedAt,
-          input.ownerId,
-          input.agentId,
-          input.id,
-        );
-      return this.read(input);
-    })();
-  }
-
   private touch(
     input: Scope & { id: string; seenAt: string; reportedClient: string | null },
   ): void {
     if (
-      !instant(input.seenAt) ||
+      !validInstant(input.seenAt) ||
       (input.reportedClient !== null &&
-        !text(input.reportedClient, MCP_CONNECTION_REPORTED_CLIENT_MAXIMUM))
+        !boundedText(input.reportedClient, MCP_CONNECTION_REPORTED_CLIENT_MAXIMUM))
     )
       this.invalid();
     this.database
@@ -311,7 +216,7 @@ export class SqliteMcpConnectionOperations {
       typeof input.connectionId !== "string" ||
       typeof input.day !== "string" ||
       !DAY.test(input.day) ||
-      !text(input.tool, 64) ||
+      !boundedText(input.tool, 64) ||
       !oneOf(MCP_CONNECTION_ENTRIES, input.entry) ||
       typeof input.auto !== "boolean" ||
       counts.length === 0 ||

@@ -38,6 +38,11 @@
     "login.devices.read": "iPhone 只留一个主对话（2026-11-24 iPhone 新清单），网页登录管理页随旧设置页一起删掉，网页也没有页面（缺：调用方）。后端和测试留着；新版“她的页面”要用时再接，是否删除这个操作由 Andy 另行决定",
     "login.device.revoke": "iPhone 只留一个主对话（2026-11-24 iPhone 新清单），网页登录管理页随旧设置页一起删掉，网页也没有页面（缺：调用方）。后端和测试留着；新版“她的页面”要用时再接，是否删除这个操作由 Andy 另行决定",
     "login.devices.revoke_others": "iPhone 只留一个主对话（2026-11-24 iPhone 新清单），网页登录管理页随旧设置页一起删掉，网页也没有页面（缺：调用方）。后端和测试留着；新版“她的页面”要用时再接，是否删除这个操作由 Andy 另行决定",
+    "mcp.connections.read": "外部 agent 改标准 OAuth（ADR 0309 第 12 条）：网页的接入设置页已删，iPhone 的批准页和“接入的 agent”页在下一个 PR 里做（缺：调用方）。做完移出名单",
+    "mcp.connection.change": "外部 agent 改标准 OAuth（ADR 0309 第 12 条）：网页的接入设置页已删，iPhone 的批准页和“接入的 agent”页在下一个 PR 里做（缺：调用方）。做完移出名单",
+    "mcp.grants.read": "外部 agent 改标准 OAuth（ADR 0309 第 12 条）：网页的接入设置页已删，iPhone 的批准页和“接入的 agent”页在下一个 PR 里做（缺：调用方）。做完移出名单",
+    "mcp.grant.approve": "外部 agent 改标准 OAuth（ADR 0309 第 12 条）：网页的接入设置页已删，iPhone 的批准页和“接入的 agent”页在下一个 PR 里做（缺：调用方）。做完移出名单",
+    "mcp.grant.deny": "外部 agent 改标准 OAuth（ADR 0309 第 12 条）：网页的接入设置页已删，iPhone 的批准页和“接入的 agent”页在下一个 PR 里做（缺：调用方）。做完移出名单",
     "decision.email.read": "一封邮件的判断和依据链：后端和测试都在，网页上的邮件判断页已随 Muse 对照按 ADR 0309 决定第 10 条删除，iPhone App 还没有页面调用它（缺：调用方）。iPhone 做邮件判断详情页时移出名单"
   },
   "notInstalled": {
