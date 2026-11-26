@@ -218,6 +218,7 @@ import {
 } from "./production-run-memory.js";
 import { configuredWorkspaceRoot, createProductionRunPolicy } from "./production-run-policy.js";
 import { recordInCurrentRun } from "./production-run-timing.js";
+import { createConfiguredBrowserTools } from "./production-browser-tools.js";
 import { ProductionRuntimeTools } from "./production-runtime-tools.js";
 import {
   createProductionSandboxServices,
@@ -1970,7 +1971,22 @@ export async function startTenantRuntime(
             code: stableErrorCode(error),
           }),
       });
+      const browser = createConfiguredBrowserTools(configuration, {
+        now: () => Date.parse(clock.now()),
+        acceptsImages: async (modelRef) => {
+          const models = modelComposition?.composition.piModels;
+          if (!models || modelRef.length === 0) return false;
+          return (await models.resolve(modelRef)).model.input.includes("image");
+        },
+        readLocale: async () =>
+          (
+            await requireValue(repository)
+              .ownerPreferences()
+              .read({ ownerId: configuration.ownerId, agentId: configuration.agentId })
+          ).locale,
+      });
       const tools = new ProductionRuntimeTools({
+        ...(browser ? { browser } : {}),
         steering,
         memoryRecall,
         tellOwner,

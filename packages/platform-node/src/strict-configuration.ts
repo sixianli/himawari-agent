@@ -1409,6 +1409,17 @@ function parseUserComputers(value: unknown): NonNullable<RunPolicyConfiguration[
   return Object.freeze({ socketPath: absolutePath(input["socketPath"], `${field}.socketPath`) });
 }
 
+function parseBrowser(value: unknown): NonNullable<RunPolicyConfiguration["browser"]> {
+  const field = "configuration.runPolicy.browser";
+  const input = record(value, field);
+  rejectUnknown(input, ["maxOutputBytes", "maxTextChars", "responseReserveMs"], field);
+  return Object.freeze({
+    maxOutputBytes: integer(input["maxOutputBytes"], `${field}.maxOutputBytes`, 1024, 67_108_864),
+    maxTextChars: integer(input["maxTextChars"], `${field}.maxTextChars`, 100, 1_000_000),
+    responseReserveMs: integer(input["responseReserveMs"], `${field}.responseReserveMs`, 0, 60_000),
+  });
+}
+
 function parseWebPush(value: unknown): NonNullable<RunPolicyConfiguration["webPush"]> {
   const field = "configuration.runPolicy.webPush";
   const input = record(value, field);
@@ -1711,6 +1722,7 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       "mcpRead",
       "inbox",
       "userComputers",
+      "browser",
     ],
     "configuration.runPolicy",
   );
@@ -1779,6 +1791,7 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
     ...(input["userComputers"] === undefined
       ? {}
       : { userComputers: parseUserComputers(input["userComputers"]) }),
+    ...(input["browser"] === undefined ? {} : { browser: parseBrowser(input["browser"]) }),
     ...(input["importDuplicates"] === undefined
       ? {}
       : { importDuplicates: parseImportDuplicates(input["importDuplicates"]) }),
@@ -2096,6 +2109,11 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
     throw invalid(
       "configuration.runPolicy.coding.enabledTools",
       "move_directory and save_copy work on the original host directory, so they cannot be enabled while tools run in each user's computer",
+    );
+  if (runPolicy?.browser && !runPolicy.userComputers)
+    throw invalid(
+      "configuration.runPolicy.browser",
+      "requires configuration.runPolicy.userComputers, because the browser runs in each user's computer",
     );
   if (runPolicy?.applePush && !runPolicy.webPush)
     throw invalid(

@@ -442,9 +442,16 @@ export interface UserComputersConfiguration {
   readonly socketPath: string;
 }
 
+export interface BrowserConfiguration {
+  readonly maxOutputBytes: number;
+  readonly maxTextChars: number;
+  readonly responseReserveMs: number;
+}
+
 export interface RunPolicyConfiguration {
   readonly timeZone?: string;
   readonly userComputers?: UserComputersConfiguration;
+  readonly browser?: BrowserConfiguration;
   readonly inbox?: InboxConfiguration;
   readonly approvalBodyPreviewCharacters?: number;
   readonly toolRefusals?: ToolRefusalConfiguration;
