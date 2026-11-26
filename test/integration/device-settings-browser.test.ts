@@ -3,15 +3,13 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { devicePairingNumber } from "@himawari-agent/platform-node";
-import { generateDeviceTestKeyPair } from "@himawari-agent/testing";
 import { type Browser, chromium, type Page, expect as uiExpect } from "@playwright/test";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { launchChromium } from "../fixtures/chromium-launch.ts";
 import {
   type Harness,
   harness,
-  pairingCode,
+  pairAndConfirm,
   removeDeviceHarnessDirectories,
   send,
   signedRequest,
@@ -89,45 +87,14 @@ async function openDevices(h: Harness, locale = "zh-CN"): Promise<Page> {
   return page;
 }
 
-async function pairFromPage(h: Harness, page: Page, name: string) {
-  const qr = page.getByRole("img", { name: "配对二维码" });
-  const previous = (await qr.count()) > 0 ? await qr.getAttribute("data-pairing-uri") : null;
-  await page.getByRole("button", { name: "添加设备", exact: true }).click();
-  await uiExpect(qr).toBeVisible();
-  if (previous) await uiExpect(qr).not.toHaveAttribute("data-pairing-uri", previous);
-  expect(await qr.locator("path").getAttribute("d")).toMatch(/^M\d/u);
-  const uri = await qr.getAttribute("data-pairing-uri");
-  const keys = generateDeviceTestKeyPair();
-  const confirmPublicKey = generateDeviceTestKeyPair().publicKeySpkiBase64;
-  const response = await h.app.inject({
-    method: "POST",
-    url: "/api/device/v1/pair",
-    headers: { host: new URL(h.origin).host, "content-type": "application/json" },
-    payload: JSON.stringify({
-      pairingCode: pairingCode(uri),
-      kind: "iphone",
-      name,
-      releaseChannel: "direct",
-      devicePublicKey: keys.publicKeySpkiBase64,
-      confirmPublicKey,
-    }),
-  });
-  expect(response.statusCode).toBe(201);
-  const device = (response.json() as { device: { id: string } }).device;
-  return {
-    deviceId: device.id,
-    keys,
-    confirmKeys: keys,
-    revision: 0,
-    pairingNumber: devicePairingNumber({
-      devicePublicKey: keys.publicKeySpkiBase64,
-      confirmPublicKey,
-    }),
-    row: page.locator(`.device-row[data-device-id="${device.id}"]`),
-  };
+async function signInFromApp(h: Harness, page: Page, name: string) {
+  const client = await pairAndConfirm(h, name);
+  await page.reload();
+  await page.locator(".device-settings").waitFor();
+  return { ...client, row: page.locator(`.device-row[data-device-id="${client.deviceId}"]`) };
 }
 
-async function deviceConfigStatus(h: Harness, client: Awaited<ReturnType<typeof pairFromPage>>) {
+async function deviceConfigStatus(h: Harness, client: Awaited<ReturnType<typeof signInFromApp>>) {
   return (await send(h, signedRequest(h, client, { method: "GET", path: "/api/device/v1/config" })))
     .statusCode;
 }
@@ -152,24 +119,16 @@ describe("[P1-1] 设置里的“设备”页（真实网页验收）", () => {
     if (staticRoot) await rm(staticRoot, { recursive: true, force: true });
   });
 
-  it("shows the QR code, the pending device, and after confirming lists it and lets the device in", async () => {
+  it("lists a device signed in from the App, renames it, and offers no QR pairing", async () => {
     const h = await serve();
     const page = await openDevices(h);
     await uiExpect(page.getByText("还没有配对的设备。")).toBeVisible();
-    const client = await pairFromPage(h, page, "Andy iPhone");
-    await uiExpect(client.row).toHaveAttribute("data-status", "pending", { timeout: 10_000 });
-    await uiExpect(client.row).toContainText("有一台叫“Andy iPhone”的iPhone想配对");
-    await uiExpect(client.row).toContainText(
-      `核对数字 ${client.pairingNumber.slice(0, 3)} ${client.pairingNumber.slice(3)}：`,
-    );
-    const shots = process.env["HIMAWARI_DEVICE_SHOTS"];
-    if (shots) await page.screenshot({ path: path.join(shots, "devices-pending.png") });
-    expect(await deviceConfigStatus(h, client)).toBe(403);
-
-    await client.row.getByRole("button", { name: "确认", exact: true }).click();
-    await uiExpect(client.row).toHaveAttribute("data-status", "active");
-    await uiExpect(client.row).not.toContainText("核对数字");
+    await uiExpect(page.getByText("设备在 Himawari App 里用通行密钥登录")).toBeVisible();
+    const client = await signInFromApp(h, page, "Andy iPhone");
+    await uiExpect(client.row).toHaveAttribute("data-status", "active", { timeout: 10_000 });
     await uiExpect(page.getByRole("img", { name: "配对二维码" })).toHaveCount(0);
+    await uiExpect(page.getByRole("button", { name: "添加设备", exact: true })).toHaveCount(0);
+    await uiExpect(client.row.getByRole("button", { name: "确认", exact: true })).toHaveCount(0);
     expect(await deviceConfigStatus(h, client)).toBe(200);
 
     await client.row.getByRole("button", { name: "改名", exact: true }).click();
@@ -185,40 +144,33 @@ describe("[P1-1] 设置里的“设备”页（真实网页验收）", () => {
     await uiExpect(page.locator('[data-limit-key="device.nonce.retained"] dd')).toHaveText(
       "10,000",
     );
+    const shots = process.env["HIMAWARI_DEVICE_SHOTS"];
     if (shots) await page.screenshot({ path: path.join(shots, "devices-active.png") });
     await page.context().close();
   }, 60_000);
 
-  it("[reverse] a device removed from the page is marked removed and can no longer connect, and an unconfirmed one never could", async () => {
+  it("[reverse] a device removed from the page is marked removed and can no longer connect", async () => {
     const h = await serve();
     const page = await openDevices(h);
-    const stranger = await pairFromPage(h, page, "陌生设备");
-    await uiExpect(stranger.row).toHaveAttribute("data-status", "pending", { timeout: 10_000 });
-    await stranger.row.getByRole("button", { name: "移除", exact: true }).click();
-    await uiExpect(stranger.row).toHaveAttribute("data-status", "revoked");
-    await uiExpect(stranger.row).toContainText("已移除");
-    await uiExpect(stranger.row.getByRole("button")).toHaveCount(0);
-    expect(await deviceConfigStatus(h, stranger)).toBe(403);
-
-    const phone = await pairFromPage(h, page, "Andy iPhone");
-    await uiExpect(phone.row).toHaveAttribute("data-status", "pending", { timeout: 10_000 });
-    await phone.row.getByRole("button", { name: "确认", exact: true }).click();
-    await uiExpect(phone.row).toHaveAttribute("data-status", "active");
+    const phone = await signInFromApp(h, page, "Andy iPhone");
+    await uiExpect(phone.row).toHaveAttribute("data-status", "active", { timeout: 10_000 });
     expect(await deviceConfigStatus(h, phone)).toBe(200);
     await phone.row.getByRole("button", { name: "移除", exact: true }).click();
     await uiExpect(phone.row).toHaveAttribute("data-status", "revoked");
+    await uiExpect(phone.row).toContainText("已移除");
+    await uiExpect(phone.row.getByRole("button")).toHaveCount(0);
     expect(await deviceConfigStatus(h, phone)).toBe(403);
     await page.context().close();
   }, 60_000);
 
   it("labels the page in English and Japanese", async () => {
     const h = await serve();
-    for (const [locale, add, limits] of [
-      ["en", "Add device", "Device limits"],
-      ["ja", "デバイスを追加", "デバイスの上限"],
+    for (const [locale, help, limits] of [
+      ["en", "Devices sign in from the Himawari App with a passkey", "Device limits"],
+      ["ja", "デバイスは Himawari アプリからパスキーでログインします", "デバイスの上限"],
     ] as const) {
       const page = await openDevices(h, locale);
-      await uiExpect(page.getByRole("button", { name: add, exact: true })).toBeVisible();
+      await uiExpect(page.getByText(help)).toBeVisible();
       await uiExpect(page.getByRole("heading", { name: limits })).toBeVisible();
       await page.context().close();
     }
