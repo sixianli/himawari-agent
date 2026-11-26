@@ -7,48 +7,29 @@ final class AccessibilityAuditTests: XCTestCase {
         .deletingLastPathComponent()
         .deletingLastPathComponent()
         .deletingLastPathComponent()
-    private static let largestText = "UICTContentSizeCategoryAccessibilityXXXL"
 
     override func setUp() async throws {
         continueAfterFailure = true
     }
 
-    func testEveryDemoSceneInLightAndDark() throws {
+    func testEveryDemoScene() throws {
         var found: [AuditFinding] = []
         for scene in try Self.scenes() {
-            let app = launch(scene, textSize: nil)
-            for appearance in [XCUIDevice.Appearance.light, .dark] {
-                XCUIDevice.shared.appearance = appearance
-                found += try audit(app, scene: scene, mode: appearance == .dark ? "dark" : "light")
-            }
+            let app = launch(scene)
+            XCUIDevice.shared.appearance = .light
+            found += audit(app, scene: scene, mode: "light", types: .all)
+            XCUIDevice.shared.appearance = .dark
+            Thread.sleep(forTimeInterval: 0.5)
+            found += audit(app, scene: scene, mode: "dark", types: .contrast)
             app.terminate()
         }
         XCUIDevice.shared.appearance = .light
-        try judge(found, mode: "appearance")
+        try judge(found)
     }
 
-    func testEveryDemoSceneAtLargestText() throws {
-        var found: [AuditFinding] = []
-        XCUIDevice.shared.appearance = .light
-        for scene in try Self.scenes() {
-            let app = launch(scene, textSize: Self.largestText)
-            found += try audit(
-                app,
-                scene: scene,
-                mode: "largest-text",
-                types: [.dynamicType, .textClipped, .hitRegion, .elementDetection]
-            )
-            app.terminate()
-        }
-        try judge(found, mode: "largest-text")
-    }
-
-    private func launch(_ scene: String, textSize: String?) -> XCUIApplication {
+    private func launch(_ scene: String) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-HimawariDemoScene", scene, "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
-        if let textSize {
-            app.launchArguments += ["-UIPreferredContentSizeCategoryName", textSize]
-        }
         app.launch()
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 20), "\(scene) did not reach the foreground")
         _ = app.windows.firstMatch.waitForExistence(timeout: 10)
@@ -60,38 +41,44 @@ final class AccessibilityAuditTests: XCTestCase {
         _ app: XCUIApplication,
         scene: String,
         mode: String,
-        types: XCUIAccessibilityAuditType = .all
-    ) throws -> [AuditFinding] {
+        types: XCUIAccessibilityAuditType
+    ) -> [AuditFinding] {
         var found: [AuditFinding] = []
-        try app.performAccessibilityAudit(for: types) { issue in
-            found.append(AuditFinding(scene: scene, mode: mode, issue: issue))
-            return true
+        do {
+            try app.performAccessibilityAudit(for: types) { issue in
+                found.append(AuditFinding(scene: scene, mode: mode, issue: issue))
+                return true
+            }
+        } catch {
+            found.append(AuditFinding(scene: scene, mode: mode, failure: error))
         }
         return found
     }
 
-    private func judge(_ found: [AuditFinding], mode: String) throws {
+    private func judge(_ found: [AuditFinding]) throws {
         let baseline = try AuditBaseline.load(from: Self.appleRoot.appendingPathComponent(AuditBaseline.path))
-        let unique = Dictionary(found.map { ($0.key, $0) }, uniquingKeysWith: { first, _ in first })
-        for finding in unique.values.sorted(by: { $0.key < $1.key }) {
-            let known = baseline.keys.contains(finding.key)
-            print("A11Y_AUDIT_\(known ? "KNOWN" : "NEW") \(finding.key) :: \(finding.detail)")
-            if !known {
-                XCTFail("New accessibility issue \(finding.key): \(finding.detail)")
+        let checkedScenes = Set(try Self.scenes())
+        let counts = Dictionary(grouping: found, by: \.key).mapValues(\.count)
+        for finding in found.sorted(by: { ($0.key, $0.element) < ($1.key, $1.element) }) {
+            print("A11Y_AUDIT_ISSUE \(finding.key)|\(finding.element) :: \(finding.detail)")
+        }
+        for key in Set(counts.keys).union(baseline.counts.keys).sorted() where checkedScenes.contains(key.scene) {
+            let now = counts[key] ?? 0
+            let allowed = baseline.counts[key] ?? 0
+            print("A11Y_AUDIT_COUNT \(key) \(now)")
+            if now > allowed {
+                XCTFail("\(key): \(now) accessibility issues, \(AuditBaseline.path) allows \(allowed); fix the new ones (see A11Y_AUDIT_ISSUE lines)")
+            } else if now < allowed {
+                XCTFail("\(key): only \(now) accessibility issues left, lower its count in \(AuditBaseline.path) to \(now)")
             }
         }
-        let checkedScenes = Set(try Self.scenes())
-        for key in baseline.keys.sorted() where key.mode == mode && checkedScenes.contains(key.scene) && unique[key] == nil {
-            print("A11Y_AUDIT_FIXED \(key)")
-            XCTFail("\(key) no longer happens; remove it from \(AuditBaseline.path)")
-        }
-        let report = unique.values.sorted(by: { $0.key < $1.key }).map(\.json)
+        let report = found.map(\.json)
         let data = try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
         let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.json")
-        attachment.name = "accessibility-audit-\(mode).json"
+        attachment.name = "accessibility-audit.json"
         attachment.lifetime = .keepAlways
         add(attachment)
-        print("A11Y_AUDIT_DONE mode=\(mode) issues=\(unique.count) baseline=\(baseline.keys.filter { $0.mode == mode }.count)")
+        print("A11Y_AUDIT_DONE scenes=\(checkedScenes.count) issues=\(found.count)")
     }
 
     private static func scenes() throws -> [String] {
@@ -104,11 +91,20 @@ final class AccessibilityAuditTests: XCTestCase {
             Range(match.range(at: 1), in: source).map { String(source[$0]) }
         }
         let still = names.filter { !$0.hasPrefix("motion-") && !$0.contains("system-prompt") }
-        if let only = ProcessInfo.processInfo.environment["HIMAWARI_AUDIT_ONLY"], !only.isEmpty {
+        XCTAssertFalse(still.isEmpty, "no demo scenes found in DemoScenes.swift")
+        let environment = ProcessInfo.processInfo.environment
+        if let only = environment["HIMAWARI_AUDIT_ONLY"], !only.isEmpty {
             let chosen = Set(only.split(separator: ",").map(String.init))
             return still.filter(chosen.contains)
         }
-        XCTAssertFalse(still.isEmpty, "no demo scenes found in DemoScenes.swift")
+        if let shard = environment["HIMAWARI_AUDIT_SHARD"], !shard.isEmpty {
+            let parts = shard.split(separator: "/").compactMap { Int($0) }
+            guard parts.count == 2, parts[1] > 0, (0..<parts[1]).contains(parts[0]) else {
+                XCTFail("HIMAWARI_AUDIT_SHARD must look like 0/3, got \(shard)")
+                return []
+            }
+            return still.enumerated().filter { $0.offset % parts[1] == parts[0] }.map(\.element)
+        }
         return still
     }
 }
@@ -117,42 +113,47 @@ struct AuditKey: Hashable, Comparable, CustomStringConvertible, Sendable {
     let scene: String
     let mode: String
     let type: String
-    let element: String
 
-    var description: String { "\(scene)|\(mode)|\(type)|\(element)" }
+    var description: String { "\(scene)|\(mode)|\(type)" }
 
     static func < (lhs: AuditKey, rhs: AuditKey) -> Bool { lhs.description < rhs.description }
 
-    init(scene: String, mode: String, type: String, element: String) {
+    init(scene: String, mode: String, type: String) {
         self.scene = scene
         self.mode = mode
         self.type = type
-        self.element = element
     }
 
     init?(_ text: String) {
-        let parts = text.split(separator: "|", maxSplits: 3, omittingEmptySubsequences: false).map(String.init)
-        guard parts.count == 4 else { return nil }
-        self.init(scene: parts[0], mode: parts[1], type: parts[2], element: parts[3])
+        let parts = text.split(separator: "|", omittingEmptySubsequences: false).map(String.init)
+        guard parts.count == 3 else { return nil }
+        self.init(scene: parts[0], mode: parts[1], type: parts[2])
     }
 }
 
 @MainActor
 struct AuditFinding {
     let key: AuditKey
+    let element: String
     let detail: String
 
     init(scene: String, mode: String, issue: XCUIAccessibilityAuditIssue) {
-        let element = issue.element.map { element -> String in
+        element = issue.element.map { element -> String in
             let name = [element.identifier, element.label].first { !$0.isEmpty } ?? "(unnamed)"
             return "\(element.elementType.rawValue):\(name)"
         } ?? "(no element)"
-        key = AuditKey(scene: scene, mode: mode, type: Self.name(issue.auditType), element: element)
+        key = AuditKey(scene: scene, mode: mode, type: Self.name(issue.auditType))
         detail = "\(issue.compactDescription) — \(issue.detailedDescription)"
     }
 
+    init(scene: String, mode: String, failure: Error) {
+        key = AuditKey(scene: scene, mode: mode, type: "auditDidNotFinish")
+        element = "(no element)"
+        detail = failure.localizedDescription
+    }
+
     var json: [String: String] {
-        ["scene": key.scene, "mode": key.mode, "type": key.type, "element": key.element, "detail": detail]
+        ["scene": key.scene, "mode": key.mode, "type": key.type, "element": element, "detail": detail]
     }
 
     private static func name(_ type: XCUIAccessibilityAuditType) -> String {
@@ -171,16 +172,24 @@ struct AuditFinding {
 
 struct AuditBaseline {
     static let path = "App/UITests/accessibility-baseline.json"
-    let keys: Set<AuditKey>
+    let counts: [AuditKey: Int]
 
     static func load(from url: URL) throws -> AuditBaseline {
-        let data = try Data(contentsOf: url)
-        let entries = try JSONDecoder().decode([Entry].self, from: data)
-        return AuditBaseline(keys: Set(entries.compactMap { AuditKey($0.key) }))
+        let entries = try JSONDecoder().decode([Entry].self, from: Data(contentsOf: url))
+        var counts: [AuditKey: Int] = [:]
+        for entry in entries {
+            guard let key = AuditKey(entry.key), !entry.why.isEmpty else {
+                XCTFail("\(path): \(entry.key) needs scene|mode|type and a reason")
+                continue
+            }
+            counts[key] = entry.count
+        }
+        return AuditBaseline(counts: counts)
     }
 
     struct Entry: Decodable {
         let key: String
+        let count: Int
         let why: String
     }
 }

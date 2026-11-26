@@ -93,7 +93,10 @@ describe("iPhone 工作流", () => {
   });
   it("每个示例场景都跑苹果的无障碍审计，审计测试在 Himawari scheme 里", () => {
     const job = workflow.jobs["iphone-accessibility"];
-    expect(job.name).toBe("apple/iphone-accessibility");
+    expect(job.name).toContain("apple/iphone-accessibility");
+    expect(job.strategy.matrix.shard.length).toBeGreaterThan(1);
+    const shard = job.steps.find((step) => step.run?.includes("xcodebuild test"));
+    expect(shard.env.TEST_RUNNER_HIMAWARI_AUDIT_SHARD).toBe("${{ matrix.shard }}");
     const audit = job.steps.find((step) => step.run?.includes("xcodebuild test"))?.run ?? "";
     expect(audit).toContain("-scheme Himawari");
     expect(audit).toContain("-only-testing:HimawariUITests");

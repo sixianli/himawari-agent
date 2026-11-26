@@ -41,10 +41,14 @@ jobs:
           -destination 'generic/platform=iOS Simulator'
           CODE_SIGNING_ALLOWED=NO
   iphone-accessibility:
-    name: apple/iphone-accessibility
+    name: apple/iphone-accessibility ${{ matrix.shard }}
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft != true }}
     runs-on: macos-26
-    timeout-minutes: 90
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ["0/3", "1/3", "2/3"]
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -63,7 +67,9 @@ jobs:
           ')"
           echo "udid=$udid" >> "$GITHUB_OUTPUT"
           xcrun simctl list devices | grep "$udid"
-      - name: 每个示例场景跑苹果的无障碍审计（浅色、深色、最大字号）
+      - name: 每个示例场景跑苹果的无障碍审计（浅色全部审计项，深色对比度）
+        env:
+          TEST_RUNNER_HIMAWARI_AUDIT_SHARD: ${{ matrix.shard }}
         run: >-
           set -o pipefail;
           xcodebuild test
