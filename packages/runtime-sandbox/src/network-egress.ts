@@ -29,7 +29,7 @@ function endToEnd(headers: IncomingMessage["headers"]) {
 }
 
 export async function openNetworkEgress(
-  allowedDomains: readonly string[],
+  allowedDomains: readonly string[] | ((target: string) => boolean),
   assertCurrent: () => Promise<void>,
   listen: { readonly host: string; readonly port: number; readonly token: string } = {
     host: "127.0.0.1",
@@ -39,7 +39,9 @@ export async function openNetworkEgress(
 ) {
   if (typeof assertCurrent !== "function") throw new Error("EGRESS_AUTHORITY_REQUIRED");
   if (!/^[a-f0-9]{64}$/.test(listen.token)) throw new Error("EGRESS_TOKEN_INVALID");
-  const allowed = new Set(allowedDomains);
+  const listed = typeof allowedDomains === "function" ? null : new Set(allowedDomains);
+  const allows = (target: string) =>
+    listed ? listed.has(target) : (allowedDomains as (target: string) => boolean)(target);
   const token = listen.token;
   const expectedAuth = Buffer.from(`Basic ${Buffer.from(`job:${token}`).toString("base64")}`);
   const sockets = new Set<Socket>();
@@ -60,7 +62,7 @@ export async function openNetworkEgress(
   }
   async function resolve(host: string, port: number, client: Socket) {
     if (stopped || client.destroyed) throw new Error("stopped");
-    if (!allowed.has(`${host}:${port}`)) {
+    if (!allows(`${host}:${port}`)) {
       deniedTargets++;
       throw new Error("denied");
     }
