@@ -157,6 +157,51 @@ with open(settings_path, "w") as handle:
     handle.write("\n")
 PY
 chmod 0600 "$settings_path"
+/usr/bin/python3 -I - "$settings_path" "$prefix" <<'PY'
+import json, os, pwd, secrets, sys
+settings_path, prefix = sys.argv[1:]
+settings = json.load(open(settings_path))
+config_path = prefix + settings["config"]
+secret_dir = prefix + (settings.get("secretDirectory") or os.path.join(settings["stateRoot"], "secrets"))
+config = json.load(open(config_path))
+references = config.get("secretReferences", [])
+if any(entry.get("purpose") == "backup-encryption" for entry in references):
+    sys.exit(0)
+payload = [entry for entry in references if entry.get("purpose") == "payload-encryption"]
+if len(payload) != 1:
+    print("BACKUP_INSTALL_REFUSED PAYLOAD_KEY_UNKNOWN: the config must declare exactly one payload-encryption secret", file=sys.stderr)
+    sys.exit(2)
+names = {entry.get("ref") for entry in references}
+ref = "backup-key"
+if ref in names:
+    print("BACKUP_INSTALL_REFUSED BACKUP_KEY_NAME_TAKEN: " + ref, file=sys.stderr)
+    sys.exit(2)
+key_path = os.path.join(secret_dir, ref + ".v1")
+payload_stat = os.stat(os.path.join(secret_dir, payload[0]["ref"] + "." + payload[0]["version"]))
+if not os.path.exists(key_path):
+    descriptor = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(descriptor, "w") as handle:
+        handle.write(secrets.token_hex(32))
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.chown(key_path, payload_stat.st_uid, payload_stat.st_gid)
+entry = {"ref": ref, "version": "v1", "purpose": "backup-encryption"}
+if "scope" in payload[0]:
+    entry["scope"] = payload[0]["scope"]
+references.append(entry)
+config["secretReferences"] = references
+config_stat = os.stat(config_path)
+staged = config_path + ".backup-key.new"
+with open(staged, "w") as handle:
+    json.dump(config, handle, indent=2)
+    handle.write("\n")
+    handle.flush()
+    os.fsync(handle.fileno())
+os.chmod(staged, config_stat.st_mode & 0o7777)
+os.chown(staged, config_stat.st_uid, config_stat.st_gid)
+os.replace(staged, config_path)
+print("BACKUP_KEY_CREATED " + ref + ".v1 in " + secret_dir.removeprefix(prefix) + " (owner " + pwd.getpwuid(payload_stat.st_uid).pw_name + ")")
+PY
 install_script
 
 backup_schedule="$(pin schedule.backup)"

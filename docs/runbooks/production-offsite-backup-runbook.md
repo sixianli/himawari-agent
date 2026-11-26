@@ -94,7 +94,7 @@ python3 -I /usr/local/sbin/himawari-backup run --reason manual
 python3 -I /usr/local/sbin/himawari-backup drill
 ```
 
-生产机上 Magpie（模型路由程序）的设置和用量记录也要一起备份，安装时加上 `--extra-path /var/lib/magpie/.config/magpie --extra-path /etc/magpie`。区域和区间号由脚本从实例元数据读出，不用手填。安装后把 restic 密码交给 Andy 存进密码管理器。
+生产机上 Magpie（模型路由程序）的设置和用量记录也要一起备份，安装时加上 `--extra-path /var/lib/magpie/.config/magpie --extra-path /etc/magpie`。区域和区间号由脚本从实例元数据读出，不用手填。如果 `/etc/himawari/config.json` 里还没有“备份加密”用途的钥匙（生产配置模板原本没有），安装脚本会在密钥目录生成 `backup-key.v1`（属主和数据加密钥匙相同，权限 600），并把它登记进配置；已有就不动。安装后把 restic 密码交给 Andy 存进密码管理器。
 
 <a id="update"></a>
 ### 更新
