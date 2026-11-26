@@ -20,6 +20,7 @@ export * from "./daily-review.js";
 export * from "./delegation-service.js";
 export * from "./device-action-registry.js";
 export * from "./device-action-service.js";
+export * from "./device-voice-timing.js";
 export * from "./durable-autonomy-state-adapter.js";
 export * from "./durable-schedule.js";
 export * from "./durable-host-workspace-state-adapter.js";
