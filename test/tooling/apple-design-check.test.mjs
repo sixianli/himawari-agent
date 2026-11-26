@@ -4,6 +4,7 @@ import path from "node:path";
 import { expect, it } from "vitest";
 import {
   checkDesign,
+  findFontViolations,
   findViolations,
   findWebViolations,
 } from "../../clients/apple/scripts/check-design.mjs";
@@ -66,6 +67,27 @@ it("rejects plain buttons whose empty space cannot be tapped", () => {
     expect(findViolations(line, "X.swift").map((v) => v.code)).toEqual(["plain-button"]);
   }
   expect(findViolations(".buttonStyle(.pressable)", "X.swift")).toEqual([]);
+});
+
+it("rejects custom and serif fonts so text stays on the system font", () => {
+  for (const line of [
+    '.font(.custom("STSongti-SC-Regular", size: 18, relativeTo: .body))',
+    "Font.custom(name, fixedSize: size)",
+    ".font(.system(size: 17, weight: .medium, design: .serif))",
+    "system.fontDescriptor.withDesign(.serif)",
+    'UIFont(name: "STSongti-SC-Bold", size: 18)',
+    "CTFontCreateWithName(name as CFString, 12, nil)",
+  ]) {
+    expect(findFontViolations(line, "X.swift").map((v) => v.code)).toEqual(["custom-font"]);
+  }
+  for (const line of [
+    ".font(.system(.body, weight: .semibold))",
+    ".font(.system(size: 13, weight: .regular, design: .rounded))",
+    "decoder.dateDecodingStrategy = .custom(Self.timestamp)",
+    "UIFont.systemFont(ofSize: size, weight: .semibold)",
+  ]) {
+    expect(findFontViolations(line, "X.swift")).toEqual([]);
+  }
 });
 
 it("accepts token-based code", () => {

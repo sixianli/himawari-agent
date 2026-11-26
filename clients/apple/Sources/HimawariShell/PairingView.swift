@@ -187,8 +187,7 @@ struct PairingView: View {
                         .foregroundStyle(Color.hmText)
                         .accessibilityLabel(Text(number.replacingOccurrences(of: " ", with: "")))
                     Text(L.text("pairing.waiting"))
-                        .font(.himawari(DesignTokens.Pairing.waitingTextSize, weight: .semibold))
-                        .hmLineHeight(DesignTokens.Pairing.waitingTextSize * 1.5)
+                        .font(.system(.title2, weight: .semibold))
                         .foregroundStyle(Color.hmText)
                         .multilineTextAlignment(.center)
                 }
@@ -208,7 +207,7 @@ struct PairingView: View {
                 Icon(icon, size: DesignTokens.Pairing.errorIcon)
                     .foregroundStyle(tint)
                 Text(L.text("pairing.problem.\(Self.key(problem)).title"))
-                    .font(.himawari(DesignTokens.Pairing.errorTitleSize, weight: .semibold))
+                    .font(.system(.title, weight: .semibold))
                     .foregroundStyle(Color.hmText)
                     .multilineTextAlignment(.center)
                 Text(Self.detail(problem))

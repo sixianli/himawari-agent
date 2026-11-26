@@ -124,8 +124,9 @@ enum SelectableText {
     @MainActor
     static func attributed(_ message: SelectableMessage) -> NSAttributedString {
         let result = NSMutableAttributedString()
-        let body = message.fromAgent ? voiceFont(weight: .regular) : scaled(UIFont.systemFont(ofSize: DesignTokens.TypeScale.bubble.size))
-        let bold = message.fromAgent ? voiceFont(weight: .bold) : scaled(UIFont.systemFont(ofSize: DesignTokens.TypeScale.bubble.size, weight: .semibold))
+        let size = message.fromAgent ? DesignTokens.TypeScale.answer.size : DesignTokens.TypeScale.bubble.size
+        let body = scaled(UIFont.systemFont(ofSize: size))
+        let bold = scaled(UIFont.systemFont(ofSize: size, weight: .semibold))
         let mono = scaled(UIFont.monospacedSystemFont(ofSize: DesignTokens.TypeScale.secondary.size, weight: .regular))
         let text = UIColor(Color.hmText)
         let muted = UIColor(Color.hmMuted)
@@ -205,18 +206,6 @@ enum SelectableText {
 
     private static func scaled(_ font: UIFont) -> UIFont {
         UIFontMetrics(forTextStyle: .body).scaledFont(for: font)
-    }
-
-    @MainActor
-    private static func voiceFont(weight: UIFont.Weight) -> UIFont {
-        let size = DesignTokens.TypeScale.answer.size
-        let name = weight == .bold ? SerifFace.boldName : SerifFace.regularName
-        if SerifFace.shared.installed, let font = UIFont(name: name, size: size) {
-            return scaled(font)
-        }
-        let system = UIFont.systemFont(ofSize: size, weight: weight == .bold ? .semibold : .medium)
-        let serif = system.fontDescriptor.withDesign(.serif).map { UIFont(descriptor: $0, size: size) } ?? system
-        return scaled(serif)
     }
 }
 #endif
