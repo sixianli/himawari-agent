@@ -4,6 +4,7 @@ document_type: spec
 supersedes: ""
 superseded_by: ""
 date: "2026-11-24"
+implements: "docs/adr/0285-one-main-thread-subthreads-and-one-inbox.md"
 ---
 
 <a id="event-inbox-wiring-plan"></a>

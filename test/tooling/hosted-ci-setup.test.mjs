@@ -3,9 +3,9 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
+import { needsIphoneEndToEnd } from "../../scripts/ci/apple-scope.mjs";
 import { validateHostedRunners } from "../../scripts/ci/check-policy.mjs";
 import { macRunnerLabel, repositoryRoot } from "../../scripts/ci/contracts.mjs";
-import { needsIphoneEndToEnd } from "../../scripts/ci/ios-e2e-scope.mjs";
 
 const script = path.join(repositoryRoot, "scripts/ci/prepare-hosted.sh");
 const run = (args, env = {}) =>
@@ -60,11 +60,25 @@ describe("iPhone 工作流", () => {
   const workflow = parse(
     readFileSync(path.join(repositoryRoot, ".github/workflows/apple.yml"), "utf8"),
   );
-  it("只在免费的 macOS 标准机器上跑，只读权限，跳过草稿", () => {
-    expect(Object.keys(workflow.jobs)).toEqual(["iphone", "iphone-e2e", "iphone-accessibility"]);
-    for (const job of Object.values(workflow.jobs)) {
+  it("只在免费的标准机器上跑，只读权限，跳过草稿，没碰 iPhone 客户端时不占 Mac 机器", () => {
+    expect(Object.keys(workflow.jobs)).toEqual([
+      "changes",
+      "iphone",
+      "iphone-e2e",
+      "iphone-accessibility",
+    ]);
+    const { changes, ...macJobs } = workflow.jobs;
+    expect(changes["runs-on"]).toBe("ubuntu-24.04");
+    expect(changes.if).toContain("github.event.pull_request.draft != true");
+    expect(changes.steps.at(-1).run).toContain("scripts/ci/apple-scope.mjs");
+    for (const [name, job] of Object.entries(macJobs)) {
       expect(job["runs-on"]).toBe(macRunnerLabel);
-      expect(job.if).toContain("github.event.pull_request.draft != true");
+      expect(job.needs).toBe("changes");
+      expect(job.if).toContain(
+        name === "iphone-e2e"
+          ? "needs.changes.outputs.e2e == 'true'"
+          : "needs.changes.outputs.client == 'true'",
+      );
     }
     expect(workflow.permissions).toEqual({ contents: "read" });
     expect(() =>
@@ -100,7 +114,7 @@ describe("iPhone 工作流", () => {
     expect(shard.env.TEST_RUNNER_HIMAWARI_AUDIT_SHARD).toContain("matrix.shard");
     const audit = job.steps.find((step) => step.run?.includes("xcodebuild test"))?.run ?? "";
     expect(audit).toContain("-scheme Himawari");
-    expect(audit).toContain("-only-testing:HimawariUITests/AccessibilityAuditTests");
+    expect(audit).toContain("-only-testing:HimawariUITests");
     expect(audit).toContain("set -o pipefail");
     const scheme = readFileSync(
       path.join(
@@ -123,6 +137,7 @@ describe("iPhone 工作流", () => {
     const runs = job.steps.map((step) => step.run ?? "");
     expect(runs).toContain("clients/apple/scripts/e2e.sh");
     expect(runs.some((run) => run.startsWith("npm ci"))).toBe(true);
+    expect(workflow.jobs.changes.outputs.e2e).toContain("steps.scope.outputs.e2e");
     expect(needsIphoneEndToEnd(["docs/adr/0001-x.md", "README.md"])).toBe(false);
     expect(
       needsIphoneEndToEnd(["docs/a.md", "clients/apple/Sources/HimawariChat/ChatView.swift"]),

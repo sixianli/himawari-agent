@@ -1,7 +1,7 @@
 <a id="apple-clients"></a>
 # Himawari 苹果客户端
 
-这里是 Himawari 的 iPhone App 和 Mac 菜单栏 App（以后还有 Apple Watch）。设计和分批见[详细设计](../../docs/execution/specs/2026-11-11-apple-device-body-design.md)和[实施计划](../../docs/execution/plans/2026-11-11-apple-device-body-plan.md)；界面照 2026-11-25 定下的原型第 4 版 `docs/assets/apple-clients/2026-11-25-v4/` 做（颜色、尺寸、字号由其中的 `tokens.json` 生成；Mac 和手表暂停，它们的数值在这份文件里照抄第 2 版）。现在做到第 2 批（配对、主对话）、第 6 批（分享面板、Safari 扩展）和第 10B 批（Mac 菜单栏 App）。
+这里是 Himawari 的 iPhone App 和 Mac 菜单栏 App（以后还有 Apple Watch）。设计和建造顺序见[详细设计](../../docs/execution/specs/2026-11-11-apple-device-body-design.md)；界面照 2026-11-25 定下的原型第 4 版 `docs/assets/apple-clients/2026-11-25-v4/` 做（颜色、尺寸、字号由其中的 `tokens.json` 生成；Mac 和手表暂停，它们的数值在这份文件里照抄第 2 版）。现在做到第 2 批（配对、主对话）、第 6 批（分享面板、Safari 扩展）和第 10B 批（Mac 菜单栏 App）。
 
 - [代码怎么分](#layout)
 - [在 Mac 上构建、测试、装到 iPhone](#on-the-mac)

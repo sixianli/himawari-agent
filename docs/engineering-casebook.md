@@ -2425,7 +2425,7 @@ Andy 定后台命令最长 30 分钟（原话“30 分钟”），随后要求�
 
 **相关 ADR/PR**
 
-[ADR 0100](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0100-conversation-more-panel-files-and-background-commands.md)、[控制中心 Spec 的 v8 增补](execution/specs/2026-09-15-control-center-v4-design.md#v8-more-panel)、[实施计划](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-10-28-file-delivery-and-more-panel-plan.md)、[ADR 0091](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0091-chat-ui-v6-file-preview-and-sidebar.md)、[ADR 0097](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0097-bash-writes-workspace-with-change-ledger.md)；PR #63（后台命令）、本设计的文档 PR 见分支 `claude/project-thread-3hdzxk`。
+[ADR 0100](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0100-conversation-more-panel-files-and-background-commands.md)、[控制中心 Spec 的 v8 增补](assets/control-center/2026-09-15-v4-design.md#v8-more-panel)、[实施计划](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-10-28-file-delivery-and-more-panel-plan.md)、[ADR 0091](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0091-chat-ui-v6-file-preview-and-sidebar.md)、[ADR 0097](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0097-bash-writes-workspace-with-change-ledger.md)；PR #63（后台命令）、本设计的文档 PR 见分支 `claude/project-thread-3hdzxk`。
 
 **面试 30 秒版**
 
@@ -2979,7 +2979,7 @@ PR #82（2026-10-28 合并）。只改了返回格式、没改模型和数据，
 
 **相关 ADR/PR**
 
-[ADR 0105](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0105-ui-batch-2026-10-28-show-what-the-owner-needs.md)（部分替换 [ADR 0087](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0087-chat-ui-v6-process-timeline.md) 和 [ADR 0096](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0096-phone-chat-page-safe-area-and-quiet-answer-line.md)）；[v4 设计说明 · v9 增补](execution/specs/2026-09-15-control-center-v4-design.md#v9-ui-batch)；PR #80（分支 `claude/project-thread-di5x9h`）。
+[ADR 0105](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0105-ui-batch-2026-10-28-show-what-the-owner-needs.md)（部分替换 [ADR 0087](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0087-chat-ui-v6-process-timeline.md) 和 [ADR 0096](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0096-phone-chat-page-safe-area-and-quiet-answer-line.md)）；[v4 设计说明 · v9 增补](assets/control-center/2026-09-15-v4-design.md#v9-ui-batch)；PR #80（分支 `claude/project-thread-di5x9h`）。
 
 **面试 30 秒版**
 

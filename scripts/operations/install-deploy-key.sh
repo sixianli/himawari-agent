@@ -22,7 +22,7 @@ public="$(cut -d' ' -f1,2 "$work/key.pub")"
 
 tar -C "$here/../install/deploy-entry" -cf - . | ssh -o BatchMode=yes "root@$host" "set -e; rm -rf '$library'; mkdir -p '$library'; tar -C '$library' --no-same-owner -xf -; chown -R root:root '$library'; chmod -R go-w '$library'; chmod 755 '$library' '$library/himawari-deploy-entry' '$library/shim/ssh' '$library/shim/scp'"
 
-ssh -o BatchMode=yes "root@$host" /bin/bash -s -- "$account" "$library" "$public" <<'REMOTE'
+installed="$(ssh -o BatchMode=yes "root@$host" "/bin/bash -s -- $(printf '%q %q %q' "$account" "$library" "$public")" <<'REMOTE'
 set -euo pipefail
 account="$1"; library="$2"; public="$3"
 id "$account" >/dev/null 2>&1 || useradd --create-home --shell /bin/bash --comment "GitHub deploy, forced command only" "$account"
@@ -37,7 +37,11 @@ printf 'Defaults:%s env_keep += "SSH_ORIGINAL_COMMAND"\nDefaults:%s !requiretty\
 chmod 440 "$sudoers.new"
 /usr/sbin/visudo -cf "$sudoers.new" >/dev/null
 mv "$sudoers.new" "$sudoers"
+awk '{print $(NF-1) " " $NF}' "$home/.ssh/authorized_keys" | ssh-keygen -lf /dev/stdin | awk '{print "INSTALLED_FINGERPRINT=" $2}'
 REMOTE
+)"
+local_fingerprint="$(ssh-keygen -lf "$work/key.pub" | awk '{print $2}')"
+[[ "$installed" == "INSTALLED_FINGERPRINT=$local_fingerprint" ]] || refuse "the key written on $host (${installed:-none}) is not the key generated here ($local_fingerprint); nothing was sent to GitHub" 67
 
 gh api --method PUT "repos/$repo/environments/$environment" --input - >/dev/null <<JSON
 {"deployment_branch_policy":{"protected_branches":false,"custom_branch_policies":true}}

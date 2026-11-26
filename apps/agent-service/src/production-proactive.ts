@@ -76,7 +76,6 @@ export const PRODUCTION_PROACTIVE_OPERATIONS = Object.freeze([
   "proactive.review.rate",
   "proactive.review.checkup",
   "proactive.source.manage",
-  "proactive.backoff.restore",
   "proactive.sources.read",
   "proactive.source.settings.set",
   "proactive.source.switch_off",
@@ -682,11 +681,6 @@ export class ProductionProactive {
         })),
         importantSenders: [...overview.importantSenders],
         dailyLimitReached: overview.dailyLimitReached,
-        backoff: overview.backoff.map((entry) => ({
-          ...entry,
-          classKey: clean(entry.classKey, 128),
-          domain: clean(entry.domain, 128),
-        })),
         insights: overview.insights.map((insight) => ({
           id: insight.id,
           result: insight.result,
@@ -891,15 +885,6 @@ export class ProductionProactive {
           keep: keep as Parameters<MemoryCheckupService["act"]>[0]["keep"],
         });
         return { resultRef: key, replayed: false };
-      }
-      case "proactive.backoff.restore": {
-        const restored = await store.restoreBackoff({
-          ...scope,
-          classKey: command.payload.classKey,
-          now,
-        });
-        if (restored === 0) throw missing();
-        return { resultRef: `proactive-backoff-restored:${restored}`, replayed: false };
       }
       case "proactive.source.settings.set": {
         const { source, enabled, perDay, perCheck } = command.payload;

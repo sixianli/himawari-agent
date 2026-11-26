@@ -102,7 +102,6 @@ public enum ClientCapabilities {
         ClientCapability(gateway: .v2, type: "proactive.sources.read", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "proactive.source.settings.set", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "proactive.source.switch_off", kind: .command, tier: .tighten, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
-        ClientCapability(gateway: .v2, type: "proactive.backoff.restore", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "muse.overview.read", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "muse.item.rate", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "muse.intake.set", kind: .command, tier: .change, tightenPayload: ["paused": true], tightenOpenKeys: [], tightenEveryItem: nil),

@@ -371,6 +371,7 @@ export const approvedModelLimits = Object.freeze({ contextWindow: __PKT_TARGET_C
 export const originalPublicFetchBytes = __PKT_ORIGINAL_PUBLIC_FETCH_BYTES__;
 export const approvedPublicFetchBytes = __PKT_TARGET_PUBLIC_FETCH_BYTES__;
 export const approvedEmbeddingDescriptor = Object.freeze(__PKT_TARGET_EMBEDDING_JSON__);
+export const approvedSpeech = Object.freeze(__PKT_TARGET_SPEECH_JSON__);
 
 function applyApprovedEmbedding(configuration) {
   if (approvedEmbeddingDescriptor === null) return;
@@ -393,6 +394,7 @@ export function staticRootConfiguration(original) {
   Object.assign(configuration.modelDescriptors.find((entry) => entry?.ref === approvedModelRef), approvedModelLimits);
   configuration.runPolicy.publicFetch.maximumBytes = approvedPublicFetchBytes;
   applyApprovedEmbedding(configuration);
+  if (approvedSpeech !== null) configuration.speech = structuredClone(approvedSpeech);
   return configuration;
 }
 

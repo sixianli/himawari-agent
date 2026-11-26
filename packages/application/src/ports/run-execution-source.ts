@@ -28,6 +28,7 @@ export interface RunExecutionSource {
   readonly dataClassification: DataClassification;
   readonly occurredAt: string;
   readonly viaPhoneVoice?: true;
+  readonly viaTalk?: true;
 }
 
 export interface RunExecutionSourcePort {

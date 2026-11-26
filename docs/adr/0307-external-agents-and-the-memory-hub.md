@@ -50,7 +50,7 @@ Andy 要 Himawari 当他的记忆中心：别的 AI agent（Claude Code、Codex�
 ### 入口和登录
 
 1. 路径是 `/api/mcp/v1`（`MCP_READ_PATH`），另有带接入密钥的 `/api/mcp/v1/:secret`，挂在现有的 Fastify 上，用官方 SDK 的 `createMcpHandler`，按 2026-07-28 版规范服务。请求体上限 64 KiB（`MCP_READ_BODY_LIMIT`）。
-2. 登录只认 Cloudflare Access 凭证（请求头 `cf-access-jwt-assertion`），用 `CloudflareAccessJwtVerifier` 校验，再核对凭证主体就是 Himawari 已绑定、状态为 active 的主人；没有凭证、签名或 audience 不对、过期、不是主人，一律 401，不写决策记录。不再接受固定令牌。
+2. 登录只认 Cloudflare Access 凭证（请求头 `cf-access-jwt-assertion`），用 `CloudflareAccessJwtVerifier` 校验，再核对凭证主体就是 Himawari 已绑定、状态为 active 的主人；没有凭证、签名或 audience 不对、过期、不是主人，一律 401，不写决策记录。不再接受固定令牌。（[ADR 0309](0309-apps-sign-in-with-passkeys-and-the-web-is-removed.md) 第 12 条改为 MCP 规范的标准 OAuth：同一个网址，接入时 iPhone 推送、面容 ID 同意；第 2、3、6、9 条在那次改动里换掉。）
 3. 配置是 `runPolicy.mcpRead: { audience, proposals? }`。`audience` 必须和网页登录的 `configuration.identity.audience` 不同（两个入口各用一个 Access 应用）；`identity` 不是 Cloudflare Access 时启动拒绝。`proposals: true` 才出现写工具（`MCP_WRITE_TOOL_NAMES`），接入上的设置只能在它之内再收窄，不能放宽。
 4. 限流：全入口有效请求每分钟 30 次、无效请求 60 次（`AdmissionWindows`）；每个接入另有自己的一份，钩子的自动搜索单独每分钟 60 次（`MCP_HOOK_READS_PER_MINUTE`）。公钥集遇到不认识的 `kid` 时 30 秒内不重复下载，和 jose 库的 `cooldownDuration` 同样做法。
 5. 确认框的状态（`requestState`）用 SDK 的 `createRequestStateCodec` 加 HMAC 签名，有效期 10 分钟（`MCP_PROPOSAL_STATE_TTL_SECONDS`），签名密钥在进程启动时随机生成，服务重启后旧状态全部失效。

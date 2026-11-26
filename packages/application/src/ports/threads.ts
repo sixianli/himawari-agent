@@ -63,6 +63,7 @@ export interface FoldedOwnerMessage {
   readonly dataClassification: DataClassification;
   readonly position: number;
   readonly viaPhoneVoice?: true;
+  readonly viaTalk?: true;
 }
 
 export interface AdmitOwnerMessageInput {

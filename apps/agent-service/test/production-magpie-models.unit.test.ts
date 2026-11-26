@@ -175,6 +175,35 @@ describe("Magpie model discovery", () => {
     expect([...expansion.automaticRefs]).toEqual(["model-primary"]);
   });
 
+  it("[ATTACH-IMAGES] takes the configured chat model's image input from what Magpie lists for it", async () => {
+    const primaryOf = async (modalities: string[]) =>
+      (
+        await expandConfigurationWithMagpieModels(configuration(), {
+          resolveSecret: async () => "k",
+          fetch: jsonFetch({
+            object: "list",
+            data: [entry("group/himawari-main", { modalities: { input: modalities } })],
+          }),
+        })
+      ).configuration.modelDescriptors.find(({ role }) => role === "primary");
+    expect(await primaryOf(["text", "image"])).toMatchObject({ input: ["text", "image"] });
+    const configured = configuration() as { modelDescriptors: Record<string, unknown>[] };
+    configured.modelDescriptors[0] = {
+      ...configured.modelDescriptors[0],
+      input: ["text", "image"],
+    };
+    const narrowed = await expandConfigurationWithMagpieModels(configured as never, {
+      resolveSecret: async () => "k",
+      fetch: jsonFetch({
+        object: "list",
+        data: [entry("group/himawari-main", { modalities: { input: ["text"] } })],
+      }),
+    });
+    expect(
+      narrowed.configuration.modelDescriptors.find(({ role }) => role === "primary"),
+    ).toMatchObject({ input: ["text"] });
+  });
+
   it("falls back to the configured model when Magpie cannot be read", async () => {
     const events: Record<string, string | number>[] = [];
     const original = configuration();

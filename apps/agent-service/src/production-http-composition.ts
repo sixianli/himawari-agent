@@ -20,6 +20,7 @@ import {
   DEVICE_CONFIGURATION_DEFAULTS,
   type DeviceActionService,
   defaultDeviceHardLimits,
+  deviceVoiceTimingRecorder,
   type ExecutionLiveFeed,
   type GatewayAccessDecision,
   type GatewayAuthenticationContext,
@@ -128,6 +129,7 @@ import {
 } from "./production-approval-gateway.js";
 import { backgroundCommandRef } from "./production-background-commands.js";
 import { registerChatExportRoute } from "./production-chat-export.js";
+import { createProductionSpeech } from "./production-speech.js";
 import {
   DataExportJobs,
   deviceExportArchive,
@@ -141,11 +143,7 @@ import {
 } from "./production-device-control.js";
 import { PRODUCTION_FILES_OPERATIONS, ProductionFilesControl } from "./production-files-control.js";
 import { type ProductionGapExport, registerGapExportRoute } from "./production-gap-export.js";
-import {
-  PRODUCTION_HOME_OPERATIONS,
-  ProductionHomeControl,
-  type ProductionHomeUrgencyOptions,
-} from "./production-home.js";
+import { PRODUCTION_HOME_OPERATIONS, ProductionHomeControl } from "./production-home.js";
 import { productionInbox } from "./production-inbox-composition.js";
 import { type InboxRunRegistry, ProductionInboxDelivery } from "./production-inbox-delivery.js";
 import {
@@ -309,7 +307,6 @@ export interface ProductionHttpCompositionOptions {
   readonly onDevicePushFailed?: (error: unknown) => void;
   readonly onHomeDiagnostic?: (event: Record<string, string>) => void;
   readonly onPerceptionLimitWarning?: (warning: PerceptionLimitWarning) => void;
-  readonly homeUrgency?: Omit<ProductionHomeUrgencyOptions, "scope" | "store" | "onFailure">;
   readonly health?: RuntimeHealthModel;
   readonly executionEnvironment?: {
     readonly mode: ThreadExecutionEnvironment["mode"];
@@ -394,7 +391,7 @@ export interface ProductionHttpComposition {
   readonly payloadAdmission: HttpGatewayPayloadAdmissionPort;
   readonly health: RuntimeHealthModel;
   readonly metrics: RuntimeMetricsRegistry;
-  readonly home: Pick<ProductionHomeControl, "awaitingCount" | "approvalCopy" | "score">;
+  readonly home: Pick<ProductionHomeControl, "awaitingCount">;
   readonly perception: Pick<PerceptionService, "reserveModelCost">;
   listen(): Promise<string>;
   close(): Promise<void>;
@@ -938,14 +935,34 @@ export async function createProductionHttpComposition(
     ...DEVICE_CONFIGURATION_DEFAULTS,
     limits: defaultDeviceHardLimits(),
   };
+  const chatModel = configuration.modelDescriptors.find(
+    (descriptor) => descriptor.role === "primary",
+  );
+  const chatAttachments = Object.freeze({
+    images:
+      options.modelCatalog?.find((entry) => entry.ref === chatModel?.ref)?.images ??
+      chatModel?.input.includes("image") ??
+      false,
+  });
   const devicePairingAccess = await resolveDevicePairingAccess(
     configuration.secretReferences,
     (ref, version) => secretSources.provider.resolve(ref, version),
+  );
+  const speech = createProductionSpeech(configuration, (ref, version) =>
+    secretSources.provider.resolve(ref, version),
   );
   const payloadKey = soleSecret(configuration, "payload-encryption");
   const payloadProtector = new EnvelopePayloadProtector({
     keys: secretSources.keys,
     activeKey: { keyRef: payloadKey.ref, kekVersion: payloadKey.version, dekVersion: "dek-v1" },
+  });
+  const recordVoiceTiming = deviceVoiceTimingRecorder({
+    ownerId,
+    agentId,
+    trace: repository.traceStore(),
+    payloads: repository.payloadStore(ownerId, agentId),
+    protector: payloadProtector,
+    now: clock,
   });
   const csrfKeyRef = configuredSecret(
     configuration,
@@ -1581,20 +1598,6 @@ export async function createProductionHttpComposition(
               ? error.name
               : "unknown",
       }),
-    ...(options.homeUrgency
-      ? {
-          urgency: {
-            ...options.homeUrgency,
-            scope: { ownerId, agentId },
-            store: repository.homeUrgency(),
-            onFailure: (error) =>
-              options.onHomeDiagnostic?.({
-                event: "home.urgency_failed",
-                error: error instanceof Error ? error.message : String(error),
-              }),
-          },
-        }
-      : {}),
   });
   const mcpConnectionAddresses = new McpConnectionAddresses({ now: clock });
   const searchControl = options.memory?.search
@@ -1894,6 +1897,8 @@ export async function createProductionHttpComposition(
       service: pairedDevices,
       home: { resolveAction: (input) => home.resolveAction(input) },
       configuration: () => deviceConfiguration,
+      chatAttachments: () => chatAttachments,
+      recordVoiceTiming: (input) => recordVoiceTiming(input),
       audit: repository.auditLedger(),
       push: devicePush,
       ...(options.onDeviceAuditFailed ? { onAuditFailed: options.onDeviceAuditFailed } : {}),
@@ -1930,6 +1935,7 @@ export async function createProductionHttpComposition(
           }
         : {}),
       voiceGates: () => DEFAULT_VOICE_GATES,
+      ...(speech ? { speech } : {}),
       ...(options.queryPrefetch
         ? { prefetch: utterancePrefetch(options.queryPrefetch, perception, agentId) }
         : {}),
@@ -2008,7 +2014,6 @@ export async function createProductionHttpComposition(
           port: httpConfiguration.listenPort,
         });
         searchIndexer.start();
-        home.startScoring();
         await ensureMainThread();
         inbox.loop?.start();
         memoryInbox?.start();
@@ -2025,7 +2030,6 @@ export async function createProductionHttpComposition(
         throw error;
       }
       searchIndexer.start();
-      home.startScoring();
       await ensureMainThread();
       inbox.loop?.start();
       memoryInbox?.start();
@@ -2037,7 +2041,6 @@ export async function createProductionHttpComposition(
       await memoryInbox?.stop();
       await inbox.loop?.stop();
       await threadDeletionRetry.stop();
-      await home.stopScoring();
       try {
         await app.close();
       } finally {

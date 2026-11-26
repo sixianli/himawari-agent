@@ -45,7 +45,7 @@ Himawari 每做一个判断（提醒不提醒、记不记、整理时改不改�
 - 决策记录和它对应的改动写在同一个数据库事务里：记录写不进，改动也不生效。
 - 上下文截断（包括档案块放不下）和检索降级只在真正发生时写；同一组被挤掉的记忆只记一次（`appendIfChanged`）。主人打开“每次对话都带上”的记忆不会因为字数被挤掉。
 - Gmail 检查每次调用模型的提示词和回答的加密引用记在 `decision_ledger_payloads`，和决策同一事务写入；其他不需要回看的模型调用，结束就删掉留下的加密内容。
-- 决策记录的种类和结果写在表的检查约束里，新加种类要用迁移重建这张表。写法约定见[决策记录写入约定](../execution/specs/2026-11-09-decision-record-write-convention.md)。
+- 决策记录的种类和结果写在表的检查约束里，新加种类要用迁移重建这张表。写法约定见[决策记录写入约定](../decision-record-write-convention.md)。
 
 <a id="chain"></a>
 
@@ -81,6 +81,8 @@ Himawari 每做一个判断（提醒不提醒、记不记、整理时改不改�
 <a id="muse-intake"></a>
 
 ### Muse 数据怎样收进来
+
+[ADR 0309](0309-apps-sign-in-with-passkeys-and-the-web-is-removed.md) 决定第 10 条：不再对标 Muse，这条接收通道连同存储、周报对照和网页 Muse 页整条删除；删除前现行代码仍按下面。
 
 - Muse 的提醒记录经 `POST /api/muse-intake/v1/batch` 自动送来，两层认证：边缘层用 Cloudflare Access 的服务令牌，应用层再要求单独的应用密钥。配置 `runPolicy.museIntake.enabled` 为真才注册这条路径，否则是 404。
 - 只有 Muse 自己能证明的来源（系统记录、聊天记录、由它们推出的）参与数字，其他只存档。含机密的文字不存正文。

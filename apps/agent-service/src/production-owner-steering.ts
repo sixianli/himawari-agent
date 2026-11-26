@@ -87,6 +87,7 @@ export class ProductionOwnerSteering {
           id: message.messageId,
           text: await this.#text(message.contentRef),
           viaPhoneVoice: message.viaPhoneVoice === true,
+          viaTalk: message.viaTalk === true,
         });
       delivered =
         this.#listeners.get(runId) === listener &&

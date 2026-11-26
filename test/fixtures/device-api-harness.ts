@@ -15,6 +15,7 @@ import {
   type DeviceActionRegistry,
   type DeviceConfiguration,
   defaultDeviceHardLimits,
+  deviceVoiceTimingRecorder,
   type ExecutionLiveFeed,
   type GatewayAuthenticationContext,
   PERCEPTION_CONFIGURATION_DEFAULTS,
@@ -186,6 +187,10 @@ export async function harness(
     readonly exportArchive?: NonNullable<
       Parameters<typeof buildHttpGatewayServer>[0]["devices"]
     >["exportArchive"];
+    readonly speech?: NonNullable<
+      Parameters<typeof buildHttpGatewayServer>[0]["devices"]
+    >["speech"];
+    readonly chatAttachments?: { readonly images: boolean };
   } = {},
 ): Promise<Harness> {
   const publicOrigin = options.origin ?? origin;
@@ -604,6 +609,18 @@ export async function harness(
         agentId,
       ),
       ...(options.exportArchive ? { exportArchive: options.exportArchive } : {}),
+      ...(options.speech ? { speech: options.speech } : {}),
+      ...(options.chatAttachments
+        ? { chatAttachments: () => options.chatAttachments as { readonly images: boolean } }
+        : {}),
+      recordVoiceTiming: deviceVoiceTimingRecorder({
+        ownerId,
+        agentId,
+        trace: repository.traceStore(),
+        payloads: repository.payloadStore(ownerId, agentId),
+        protector,
+        now: () => clock.now(),
+      }),
     },
   });
   options.beforeReady?.(app);
