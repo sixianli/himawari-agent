@@ -1,7 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createProactiveSeal } from "@himawari-agent/application";
@@ -22,8 +19,8 @@ import {
   DeterministicPayloadProtector,
   ManualClock,
 } from "@himawari-agent/testing";
-import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 import { afterEach, describe, expect, it } from "vitest";
+import { loopbackMcpApp } from "../fixtures/loopback-mcp-app.ts";
 import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
 
 const OWNER_ID = createOwnerId("owner-app-connections");
@@ -35,150 +32,6 @@ const CLIENT_ID = "Iv1.github-app";
 const SECRET = "fixture";
 const SCHEME = "win.example.himawari";
 const NOW = "2026-11-26T08:00:00.000Z";
-
-interface Grant {
-  readonly challenge: string;
-  readonly redirect: string;
-  readonly resource: string;
-}
-
-function loopbackApp() {
-  const grants = new Map<string, Grant>();
-  const access = new Map<string, number>();
-  const refresh = new Set<string>();
-  const tokenRequests: URLSearchParams[] = [];
-  const calls: string[] = [];
-  let origin = "";
-  const mcp = createMcpHandler(() => {
-    const server = new McpServer({ name: "loopback-github", version: "1.0.0" });
-    server.registerTool(
-      "get_me",
-      { description: "Who is signed in", annotations: { readOnlyHint: true } },
-      async () => {
-        calls.push("get_me");
-        return { content: [{ type: "text", text: "andy" }] };
-      },
-    );
-    return server;
-  });
-  const issue = () => {
-    const token = randomBytes(12).toString("hex");
-    const renewal = randomBytes(12).toString("hex");
-    access.set(token, Date.now() + 3_600_000);
-    refresh.add(renewal);
-    return { access_token: token, refresh_token: renewal, token_type: "Bearer", expires_in: 3600 };
-  };
-  const body = async (request: IncomingMessage) => {
-    const chunks: Buffer[] = [];
-    for await (const chunk of request) chunks.push(chunk as Buffer);
-    return Buffer.concat(chunks).toString("utf8");
-  };
-  const json = (response: ServerResponse, status: number, value: unknown) => {
-    response.writeHead(status, { "content-type": "application/json" });
-    response.end(JSON.stringify(value));
-  };
-  const server = createServer(async (request, response) => {
-    const url = new URL(request.url ?? "/", origin);
-    if (url.pathname === "/.well-known/oauth-protected-resource/mcp")
-      return json(response, 200, { resource: `${origin}/mcp`, authorization_servers: [origin] });
-    if (url.pathname === "/.well-known/oauth-authorization-server")
-      return json(response, 200, {
-        issuer: origin,
-        authorization_endpoint: `${origin}/authorize`,
-        token_endpoint: `${origin}/token`,
-        response_types_supported: ["code"],
-        grant_types_supported: ["authorization_code", "refresh_token"],
-        code_challenge_methods_supported: ["S256"],
-        token_endpoint_auth_methods_supported: ["client_secret_post"],
-        authorization_response_iss_parameter_supported: true,
-      });
-    if (url.pathname === "/authorize") {
-      const query = url.searchParams;
-      const target = new URL(query.get("redirect_uri") ?? "");
-      if (query.get("client_id") !== CLIENT_ID || query.get("code_challenge_method") !== "S256") {
-        target.searchParams.set("error", "invalid_request");
-      } else if (url.searchParams.get("deny") === "1") {
-        target.searchParams.set("error", "access_denied");
-      } else {
-        const code = randomBytes(12).toString("hex");
-        grants.set(code, {
-          challenge: query.get("code_challenge") ?? "",
-          redirect: query.get("redirect_uri") ?? "",
-          resource: query.get("resource") ?? "",
-        });
-        target.searchParams.set("code", code);
-      }
-      target.searchParams.set("state", query.get("state") ?? "");
-      target.searchParams.set("iss", origin);
-      response.writeHead(302, { location: target.href });
-      return response.end();
-    }
-    if (url.pathname === "/token") {
-      const form = new URLSearchParams(await body(request));
-      tokenRequests.push(form);
-      if (form.get("client_id") !== CLIENT_ID || form.get("client_secret") !== SECRET)
-        return json(response, 401, { error: "invalid_client" });
-      if (form.get("grant_type") === "refresh_token") {
-        const renewal = form.get("refresh_token") ?? "";
-        if (!refresh.delete(renewal)) return json(response, 400, { error: "invalid_grant" });
-        return json(response, 200, issue());
-      }
-      const grant = grants.get(form.get("code") ?? "");
-      grants.delete(form.get("code") ?? "");
-      const verifier = form.get("code_verifier") ?? "";
-      const challenge = createHash("sha256").update(verifier).digest("base64url");
-      if (
-        !grant ||
-        grant.challenge !== challenge ||
-        grant.redirect !== form.get("redirect_uri") ||
-        grant.resource !== `${origin}/mcp` ||
-        form.get("resource") !== `${origin}/mcp`
-      )
-        return json(response, 400, { error: "invalid_grant" });
-      return json(response, 200, issue());
-    }
-    if (url.pathname === "/mcp") {
-      const bearer = /^Bearer (.+)$/u.exec(request.headers.authorization ?? "")?.[1];
-      const expires = bearer === undefined ? undefined : access.get(bearer);
-      if (expires === undefined || expires <= Date.now()) {
-        response.writeHead(401, {
-          "www-authenticate": `Bearer realm="mcp", resource_metadata="${origin}/.well-known/oauth-protected-resource/mcp"`,
-        });
-        return response.end();
-      }
-      const text = request.method === "POST" ? await body(request) : undefined;
-      const headers = new Headers();
-      for (const [key, value] of Object.entries(request.headers))
-        if (typeof value === "string") headers.set(key, value);
-      const answer = await mcp.fetch(
-        new Request(url, {
-          method: request.method ?? "GET",
-          headers,
-          ...(text === undefined ? {} : { body: text }),
-        }),
-        text === undefined ? {} : { parsedBody: JSON.parse(text) },
-      );
-      response.writeHead(answer.status, Object.fromEntries(answer.headers.entries()));
-      return response.end(Buffer.from(await answer.arrayBuffer()));
-    }
-    response.writeHead(404);
-    response.end();
-  });
-  return {
-    grants,
-    access,
-    tokenRequests,
-    calls,
-    get origin() {
-      return origin;
-    },
-    async start() {
-      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-      origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-    },
-    stop: () => new Promise<void>((resolve) => server.close(() => resolve())),
-  };
-}
 
 describe("[CONN-1] an app is connected through its remote MCP server with the owner's sign-in", () => {
   useSqliteContractExecution("direct");
@@ -206,7 +59,7 @@ describe("[CONN-1] an app is connected through its remote MCP server with the ow
       now: () => clock.now(),
     });
     closers.push(() => repository.close());
-    const app = loopbackApp();
+    const app = loopbackMcpApp({ id: CLIENT_ID, secret: SECRET });
     await app.start();
     closers.push(() => app.stop());
     const store = repository.appConnections();
@@ -279,7 +132,7 @@ describe("[CONN-1] an app is connected through its remote MCP server with the ow
 
     const client = await h.connections.open("github");
     const tools = await client?.listTools();
-    expect(tools?.tools.map(({ name }) => name)).toEqual(["get_me"]);
+    expect(tools?.tools.map(({ name }) => name)).toEqual(["get_me", "create_issue"]);
     expect(await client?.callTool({ name: "get_me", arguments: {} })).toMatchObject({
       content: [{ type: "text", text: "andy" }],
     });
@@ -288,7 +141,10 @@ describe("[CONN-1] an app is connected through its remote MCP server with the ow
 
     h.app.access.clear();
     const renewed = await h.connections.open("github");
-    expect((await renewed?.listTools())?.tools.map(({ name }) => name)).toEqual(["get_me"]);
+    expect((await renewed?.listTools())?.tools.map(({ name }) => name)).toEqual([
+      "get_me",
+      "create_issue",
+    ]);
     await renewed?.close();
     expect(h.app.tokenRequests.map((form) => form.get("grant_type"))).toEqual([
       "authorization_code",

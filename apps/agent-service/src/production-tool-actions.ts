@@ -6,6 +6,7 @@ import {
   ToolActionRegistry,
   type ToolActionRow,
 } from "@himawari-agent/application";
+import { APP_ACTION_CAPABILITY_REF } from "./production-app-tools.js";
 import {
   RUNTIME_CONTEXT_EXECUTOR,
   TOOL_RESULT_RECALL_CAPABILITY_REF,
@@ -642,6 +643,28 @@ export const PRODUCTION_TOOL_ACTION_ROWS: readonly ToolActionRow[] = Object.free
     detail: detail(
       { zh: "让设备做一件事", en: "Ask a device to act", ja: "デバイスに操作を依頼" },
       "action",
+    ),
+  },
+  {
+    tool: "app_action",
+    family: "builtin",
+    capabilityRef: APP_ACTION_CAPABILITY_REF,
+    operation: "call",
+    actionKind: "CREATE_OR_UPDATE",
+    reversible: false,
+    sideEffect: "irreversible",
+    targetType: "owner-app",
+    disclosure: "same_owner",
+    ownerPresenceRequired: false,
+    standingRuleChange: false,
+    resultOrigin: "owner_data",
+    mayFollowExternalContent: true,
+    authorization: "owner_scope",
+    executor: "owner_scoped",
+    deduplication: "run_and_tool_call",
+    detail: detail(
+      { zh: "用连接的应用做事", en: "Use a connected app", ja: "連携したアプリを使う" },
+      "tool",
     ),
   },
   {

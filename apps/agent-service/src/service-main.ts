@@ -147,6 +147,7 @@ import {
 } from "./production-http-composition.js";
 import { InboxRunRegistry } from "./production-inbox-delivery.js";
 import { expandConfigurationWithMagpieModels, priceTiers } from "./production-magpie-models.js";
+import { ProductionAppTools } from "./production-app-tools.js";
 import { ProductionMailRead } from "./production-mail-read.js";
 import { ProductionMcpMemoryWriter } from "./production-mcp-memory-writer.js";
 import { ProductionMcpRead } from "./production-mcp-read.js";
@@ -1986,6 +1987,14 @@ export async function startTenantRuntime(
         ownerScope,
         externalContent,
         perception: perceptionTools,
+        apps: new ProductionAppTools({
+          connections: {
+            list: async () => (await appConnections?.list()) ?? [],
+            definition: (name) => appConnections?.definition(name),
+            tools: async (name) => appConnections?.tools(name),
+            call: async (name, tool, input) => appConnections?.call(name, tool, input),
+          },
+        }),
         vault: new ProductionVaultTools({
           scope: perceptionScope,
           list: (scope) => activeVault.listForModel(scope),

@@ -19,6 +19,19 @@ export const APP_CONNECTION_CALLBACK_HOST = "connection-authorization";
 const STATE_TTL_MS = 10 * 60_000;
 const MAX_PENDING_STATES = 20;
 const CLIENT_NAME = "Himawari";
+const MAX_TOOL_PAGES = 20;
+
+export interface AppTool {
+  readonly name: string;
+  readonly description: string;
+  readonly inputSchema: Readonly<Record<string, unknown>>;
+  readonly readOnly: boolean;
+}
+
+export interface AppToolResult {
+  readonly content: readonly unknown[];
+  readonly isError: boolean;
+}
 
 export interface AppConnectionDefinition {
   readonly name: string;
@@ -221,6 +234,50 @@ export class ProductionAppConnections {
       }),
     );
     return client;
+  }
+
+  async tools(name: string): Promise<readonly AppTool[] | undefined> {
+    const client = await this.open(name);
+    if (!client) return undefined;
+    try {
+      const found: AppTool[] = [];
+      let cursor: string | undefined;
+      for (let page = 0; page < MAX_TOOL_PAGES; page += 1) {
+        const listed = await client.listTools(cursor === undefined ? {} : { cursor });
+        for (const tool of listed.tools)
+          found.push({
+            name: tool.name,
+            description: tool.description ?? "",
+            inputSchema: tool.inputSchema as Readonly<Record<string, unknown>>,
+            readOnly: tool.annotations?.readOnlyHint === true,
+          });
+        cursor = listed.nextCursor;
+        if (cursor === undefined) break;
+      }
+      return found.sort((left, right) =>
+        left.name < right.name ? -1 : left.name > right.name ? 1 : 0,
+      );
+    } finally {
+      await client.close();
+    }
+  }
+
+  async call(
+    name: string,
+    tool: string,
+    input: Readonly<Record<string, unknown>>,
+  ): Promise<AppToolResult | undefined> {
+    const client = await this.open(name);
+    if (!client) return undefined;
+    try {
+      const result = await client.callTool({ name: tool, arguments: { ...input } });
+      return {
+        content: Array.isArray(result.content) ? result.content : [],
+        isError: result.isError === true,
+      };
+    } finally {
+      await client.close();
+    }
   }
 
   async #saveGrant(name: string, grant: SavedGrant, reason: "connect" | "refresh") {

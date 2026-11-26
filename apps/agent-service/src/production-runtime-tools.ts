@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import {
+  APPROVAL_BODY_PREVIEW_DEFAULT_CHARACTERS,
   ApplicationPortError,
+  approvalBodyPreview,
   type CapabilityExecutionHandleStorePort,
   type CapabilityInvocationAuthority,
   type CapabilityInvocationReceiptPort,
@@ -51,6 +53,7 @@ import {
   renderPrompt,
   TOOL_AUTHORIZED,
   TOOL_MOVE_DIRECTORY,
+  TOOL_RESULT_APP_ACTION_FAILED,
   TOOL_RESULT_CONVERSATION_INPUT_INVALID,
   TOOL_RESULT_CONVERSATION_UNAVAILABLE,
   TOOL_RESULT_DEVICE_ACTION_UNAVAILABLE,
@@ -82,7 +85,17 @@ import {
   RECALLED_EXTERNAL_CONVERSATION_ORIGIN,
   RECALLED_EXTERNAL_RECORD_ORIGIN,
 } from "./context-external-content.js";
-import type { OwnerScopeAuthorization } from "./owner-scope-authorization.js";
+import type {
+  OwnerScopeAuthorization,
+  OwnerScopeIntentExtras,
+} from "./owner-scope-authorization.js";
+import {
+  APP_ACTION_EXTERNAL_ORIGIN,
+  type AppCallAccess,
+  AppToolError,
+  appToolDescriptors,
+  type ProductionAppTools,
+} from "./production-app-tools.js";
 import {
   type BackgroundCommandLimits,
   ProductionBackgroundCommands,
@@ -294,6 +307,23 @@ async function nextWithAuthority<T>(
   }
 }
 
+function appApproval(access: AppCallAccess): OwnerScopeIntentExtras {
+  return {
+    targets: [
+      { type: "app", ref: access.app },
+      { type: "app-tool", ref: access.tool },
+    ],
+    display: async () => ({
+      displayTitle: `${access.title} · ${access.tool}`,
+      bodyPreview: approvalBodyPreview(
+        JSON.stringify(access.arguments),
+        APPROVAL_BODY_PREVIEW_DEFAULT_CHARACTERS,
+      ),
+      origin: null,
+    }),
+  };
+}
+
 function reject(): never {
   throw new ApplicationPortError(PORT_ERROR_CODES.HANDLE_REVOKED, "Runtime tool is not authorized");
 }
@@ -423,6 +453,7 @@ export interface ProductionRuntimeToolsOptions {
   readonly ownerRules?: Pick<ProductionOwnerRuleTools, "run">;
   readonly perception?: Pick<ProductionPerceptionTools, "run">;
   readonly vault?: Pick<ProductionVaultTools, "run">;
+  readonly apps?: Pick<ProductionAppTools, "run">;
   readonly toolActions?: ToolActionRegistry;
   readonly readOnlyRun?: (runId: RuntimeRequest["runId"]) => Promise<boolean>;
   readonly ownerScope?: Pick<OwnerScopeAuthorization, "authorize">;
@@ -696,6 +727,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     if (this.#options.ownerRules) descriptors.push(...ownerRuleToolDescriptors());
     if (this.#options.perception) descriptors.push(...perceptionToolDescriptors());
     if (this.#options.vault) descriptors.push(...vaultToolDescriptors());
+    if (this.#options.apps) descriptors.push(...appToolDescriptors());
     this.#exposed.set(runId, new Set(refs));
     const readOnly = (await this.#options.readOnlyRun?.(runId)) === true;
     const offered = this.#registry.offer(descriptors, { readOnly });
@@ -772,6 +804,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     | ((
         invocation: RuntimeToolInvocation,
         gate: OwnerScopeGate,
+        signal?: AbortSignal,
       ) => Promise<RuntimeToolExecutionResult>)
     | undefined {
     if (row.executor !== "owner_scoped") return undefined;
@@ -799,12 +832,15 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       return (invocation, gate) => this.#perception(invocation, gate);
     if (row.targetType === "owner-vault" && this.#options.vault)
       return (invocation, gate) => this.#vault(invocation, gate);
+    if (row.targetType === "owner-app" && this.#options.apps)
+      return (invocation, _gate, signal) => this.#app(invocation, row, signal);
     return undefined;
   }
   #ownerScopeGate(
     invocation: RuntimeToolInvocation,
     row: ToolActionRow,
     signal: AbortSignal | undefined,
+    extras?: OwnerScopeIntentExtras,
   ): OwnerScopeGate {
     if (row.authorization !== "owner_scope") return undefined;
     const ownerScope = this.#options.ownerScope;
@@ -826,6 +862,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
             );
           },
           signal,
+          extras,
         );
       } catch (error) {
         await this.#options.assertRunActive(invocation.runId);
@@ -884,6 +921,38 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
                 errorCode: "DEVICE_ACTION_UNAVAILABLE",
                 note: TOOL_RESULT_DEVICE_ACTION_UNAVAILABLE.text,
               },
+    );
+  }
+  async #app(
+    invocation: RuntimeToolInvocation,
+    row: ToolActionRow,
+    signal: AbortSignal | undefined,
+  ): Promise<RuntimeToolExecutionResult> {
+    const apps = this.#options.apps;
+    return this.#ownerScoped(
+      invocation,
+      "app",
+      undefined,
+      apps
+        ? async (call) => ({
+            value: await apps.run(call, {
+              authorize: async (access) => {
+                const gate = this.#ownerScopeGate(call, row, signal, appApproval(access));
+                if (!gate) reject();
+                const stopped = await gate();
+                if (stopped) throw new OwnerScopeStop(stopped);
+              },
+              markExternalContent: async () => {
+                await this.#options.externalContent?.mark(call.runId, APP_ACTION_EXTERNAL_ORIGIN);
+              },
+            }),
+            contentClassification: "private",
+          })
+        : undefined,
+      (error) =>
+        error instanceof AppToolError
+          ? { errorCode: error.code, note: error.note }
+          : { errorCode: "APP_ACTION_FAILED", note: TOOL_RESULT_APP_ACTION_FAILED.text },
     );
   }
   async #ownerRule(
@@ -1143,7 +1212,8 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       | "options"
       | "subthread"
       | "plan"
-      | "vault",
+      | "vault"
+      | "app",
     gate: OwnerScopeGate,
     run:
       | ((call: RuntimeToolInvocation) => Promise<{
@@ -1182,7 +1252,8 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       | "options"
       | "subthread"
       | "plan"
-      | "vault",
+      | "vault"
+      | "app",
     gate: OwnerScopeGate,
     run: (call: RuntimeToolInvocation) => Promise<{
       readonly value: unknown;
@@ -1656,7 +1727,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     if (row) {
       const run = this.#builtinExecutor(row);
       if (!run) reject();
-      return run(invocation, this.#ownerScopeGate(invocation, row, signal));
+      return run(invocation, this.#ownerScopeGate(invocation, row, signal), signal);
     }
     if (this.#background && this.#codingTool(invocation) === "bash") {
       const key = digest([invocation.runId, invocation.toolCallId]);

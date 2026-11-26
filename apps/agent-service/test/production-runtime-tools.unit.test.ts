@@ -2345,6 +2345,7 @@ it("[ADR-0257] only the listing, recall, conversation, mail, perception and vaul
       .map(({ tool }) => tool)
       .sort(),
   ).toEqual([
+    "app_action",
     "device_action",
     "offer_options",
     "open_subthread",
@@ -2363,7 +2364,7 @@ it("[ADR-0257] only the listing, recall, conversation, mail, perception and vaul
     "tell_owner",
     "wait_result",
   ]);
-  expect(builtin).toHaveLength(31);
+  expect(builtin).toHaveLength(32);
 });
 
 it("[ADR-0285] gives the main conversation the subthread tools and a subthread its own, without tell_owner", async () => {
