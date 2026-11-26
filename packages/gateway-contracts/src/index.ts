@@ -1,5 +1,9 @@
+export * from "./chat-attachments.js";
+export * from "./client-capabilities.js";
 export * from "./contracts.js";
 export * from "./contracts-v2.js";
+export * from "./memory-source.js";
+export * from "./process-step.js";
 export type { ThreadExecutionRecord } from "./thread-contracts-v3.js";
 export * from "./thread-contracts-v3.js";
 export {
@@ -10,6 +14,3 @@ export {
   machineString,
   modelRefString,
 } from "./validation.js";
-export * from "./memory-source.js";
-export * from "./process-step.js";
-export * from "./client-capabilities.js";
