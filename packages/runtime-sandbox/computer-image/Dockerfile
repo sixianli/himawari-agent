@@ -44,6 +44,7 @@ ENV HOME=/home/himawari \
     PIP_USER=1 \
     PIP_BREAK_SYSTEM_PACKAGES=1 \
     NPM_CONFIG_PREFIX=/home/himawari/.local \
-    PATH=/home/himawari/.local/bin:/home/himawari/.micromamba/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    PATH=/home/himawari/.local/bin:/home/himawari/.micromamba/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    HIMAWARI_COMMAND_PATH=/home/himawari/.local/bin:/home/himawari/.micromamba/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 WORKDIR /home/himawari

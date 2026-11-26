@@ -438,8 +438,13 @@ export interface OwnerIntentCheckConfiguration {
   readonly secretRef: string;
 }
 
+export interface UserComputersConfiguration {
+  readonly socketPath: string;
+}
+
 export interface RunPolicyConfiguration {
   readonly timeZone?: string;
+  readonly userComputers?: UserComputersConfiguration;
   readonly inbox?: InboxConfiguration;
   readonly approvalBodyPreviewCharacters?: number;
   readonly toolRefusals?: ToolRefusalConfiguration;

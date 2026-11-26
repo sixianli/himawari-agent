@@ -212,7 +212,6 @@
         "test/integration/container-runtime-restart-qualification.test.ts",
         "test/integration/container-browser-qualification.test.ts",
         "test/integration/container-pi-runner-qualification.test.ts",
-        "test/integration/user-computer-qualification.test.ts",
         "test/integration/product-path-browser.test.ts"
       ],
       "fileParallelism": true,
@@ -310,13 +309,6 @@
       "kind": "qualification",
       "project": "qualification-container-runner",
       "reason": "容器内 Pi runner 需要已构建的 runtime 和本机构建的 runner 镜像，只能单独 opt-in",
-      "allowedModifiers": ["skip"]
-    },
-    {
-      "path": "test/integration/user-computer-qualification.test.ts",
-      "kind": "qualification",
-      "project": "qualification-user-computer",
-      "reason": "每人一台电脑要真实 Docker（生产用 gVisor 的 runsc）和挂载磁盘文件的 root 权限，只能单独 opt-in",
       "allowedModifiers": ["skip"]
     },
     {

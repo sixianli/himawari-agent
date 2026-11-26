@@ -1,3 +1,5 @@
+import { PI_COMPUTER_WORKSPACE } from "@himawari-agent/execution-contracts";
+
 export interface UserComputerExecInput {
   readonly ownerId: string;
   readonly argv: readonly string[];
@@ -7,6 +9,7 @@ export interface UserComputerExecInput {
   readonly allowedDomains: readonly string[];
   readonly deadlineAt: string;
   readonly maxOutputBytes: number;
+  readonly runtime?: string;
 }
 
 export interface UserComputerExecResult {
@@ -29,12 +32,28 @@ export interface UserComputers {
   exec(input: UserComputerExecInput): Promise<UserComputerExecResult>;
 }
 
+export interface UserComputerSeedInput {
+  readonly ownerId: string;
+  readonly source: string;
+}
+
+export interface UserComputerSeedResult {
+  readonly copied: boolean;
+  readonly seededFrom: string | null;
+  readonly seededAt: string | null;
+}
+
+export interface UserComputerWorkspaces {
+  seedWorkspace(input: UserComputerSeedInput): Promise<UserComputerSeedResult>;
+}
+
 export const USER_COMPUTER_ERROR_CODES = [
   "COMPUTER_START_FAILED",
   "COMPUTER_WAITING_FOR_MEMORY",
   "COMPUTER_UNAVAILABLE",
   "COMPUTER_DEADLINE_PASSED",
   "COMPUTER_REQUEST_INVALID",
+  "COMPUTER_SEED_FAILED",
 ] as const;
 
 export type UserComputerErrorCode = (typeof USER_COMPUTER_ERROR_CODES)[number];
@@ -52,3 +71,5 @@ export class UserComputerError extends Error {
 }
 
 export const COMPUTER_HOME = "/home/himawari";
+export const COMPUTER_WORKSPACE = PI_COMPUTER_WORKSPACE;
+export const COMPUTER_RUNTIME = "/opt/himawari";

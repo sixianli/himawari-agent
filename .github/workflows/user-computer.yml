@@ -5,7 +5,11 @@ on:
       - packages/runtime-sandbox/computer-image/**
       - packages/runtime-sandbox/src/user-computer/**
       - packages/runtime-sandbox/src/network-egress.ts
-      - test/integration/user-computer-qualification.test.ts
+      - test/qualification/user-computer-qualification.ts
+      - test/qualification/vitest.user-computer.config.ts
+      - apps/agent-service/src/production-computer-tools.ts
+      - apps/agent-service/src/capability-programs/container-pi-main.ts
+      - packages/execution-contracts/src/pi-container-runner-v1.ts
       - .github/workflows/user-computer.yml
   push:
     branches: [main]
@@ -13,7 +17,11 @@ on:
       - packages/runtime-sandbox/computer-image/**
       - packages/runtime-sandbox/src/user-computer/**
       - packages/runtime-sandbox/src/network-egress.ts
-      - test/integration/user-computer-qualification.test.ts
+      - test/qualification/user-computer-qualification.ts
+      - test/qualification/vitest.user-computer.config.ts
+      - apps/agent-service/src/production-computer-tools.ts
+      - apps/agent-service/src/capability-programs/container-pi-main.ts
+      - packages/execution-contracts/src/pi-container-runner-v1.ts
       - .github/workflows/user-computer.yml
   workflow_dispatch:
 permissions:
@@ -69,12 +77,15 @@ jobs:
             "$HIMAWARI_BROWSER_EXECUTABLE" --headless=new --no-sandbox --disable-gpu --screenshot=/tmp/shot.png "data:text/html,<h1>himawari</h1>" >/dev/null 2>&1
             test -s /tmp/shot.png && echo "chromium screenshot ok"
           '
-      - name: 安装依赖
-        run: npm ci --no-audit --no-fund
+      - name: 安装依赖并打包 Himawari 程序目录
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build:node
       - name: 真实 Docker + gVisor 跑每人一台电脑的资格测试
         run: |
           sudo -E env "PATH=$PATH" \
             HIMAWARI_COMPUTER_QUALIFICATION=1 \
             HIMAWARI_COMPUTER_RUNTIME=runsc \
+            HIMAWARI_COMPUTER_TOOLS_IMAGE="$HIMAWARI_COMPUTER_IMAGE_ID" \
             HIMAWARI_CONTAINER_DOCKER_CLI=/usr/bin/docker \
-            npx vitest run --config vitest.workspace.ts --project qualification-user-computer
+            npx vitest run --config test/qualification/vitest.user-computer.config.ts

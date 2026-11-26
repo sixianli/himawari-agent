@@ -4,8 +4,8 @@ import {
   ContextFormationService,
   ContextProjectionService,
   type ExecutionLiveFeed,
-  INBOX_LOOP_DEFAULTS,
   type IdGeneratorPort,
+  INBOX_LOOP_DEFAULTS,
   type MemoryPort,
   type ModelEgress,
   type ModelInvocationAdmissionDescriptor,
@@ -136,7 +136,7 @@ export interface ProductionRunCompositionOptions {
   > & {
     readonly runPolicy?: Pick<
       NonNullable<ProductConfiguration["runPolicy"]>,
-      "freezeThreadPrompts"
+      "freezeThreadPrompts" | "userComputers"
     >;
   };
   readonly onHandleTools?: (
@@ -486,6 +486,7 @@ export function createProductionRunComposition(options: ProductionRunComposition
     ),
     models: options.models,
     cwd: options.cwd,
+    ...(configuration.runPolicy?.userComputers ? { toolsRunInComputer: true } : {}),
     agentDir: options.agentDir,
     ...(options.timeZone ? { timeZone: options.timeZone } : {}),
     admission,

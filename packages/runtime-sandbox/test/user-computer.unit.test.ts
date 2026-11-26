@@ -24,6 +24,7 @@ function validConfig(): Record<string, unknown> {
     commandTimeoutMs: 60_000,
     stopGraceSeconds: 5,
     beforeStop: { argv: ["himawari-browser", "stop"], timeoutSeconds: 10 },
+    hostPaths: { runtimeRoots: ["/opt/himawari-agent"], seedRoots: ["/srv/himawari"] },
   };
 }
 
@@ -40,6 +41,10 @@ describe("电脑配置", () => {
     ["缺字段", { ...validConfig(), idle: { stopAfterMs: 1, checkIntervalMs: 1 } }],
     ["镜像没锁摘要", { ...validConfig(), image: { reference: "x", digest: "latest" } }],
     ["相对路径", { ...validConfig(), stateDirectory: "state" }],
+    [
+      "程序目录不是绝对路径",
+      { ...validConfig(), hostPaths: { runtimeRoots: ["releases"], seedRoots: [] } },
+    ],
     ["未知磁盘方式", { ...validConfig(), disk: { mode: "tmpfs", sizeBytes: 1 } }],
     [
       "空闲时长为 0",

@@ -174,6 +174,16 @@ export const TOOL_BUILTIN_BASH = fixedPrompt({
   text: "在工作目录里运行一条 bash 命令，返回标准输出和错误输出。命令在没有外网的隔离沙箱里运行。输出太长时只保留结尾一段；输出特别多时命令会被直接结束，所以先用 head、grep、wc 等缩小输出。运行较久的命令会自动转入后台，结束后结果会自动发给你。临时文件放 $TMPDIR。",
 });
 
+export const TOOL_BUILTIN_BASH_COMPUTER = fixedPrompt({
+  id: "tools.builtin.bash.computer",
+  purpose:
+    "工具在每个用户自己的电脑（gVisor 容器）里跑时，替换 Pi 自带 bash 工具的描述，说明哪些东西关机后还在",
+  usedBy: ["packages/runtime-pi/src/pi-builtin-tool-text.ts"],
+  layer: "tools",
+  output: "free-text",
+  text: "在主人自己的电脑（一台只属于主人的隔离 Linux 容器）里运行一条 bash 命令，工作目录是 ~/workspace，返回标准输出和错误输出。电脑空闲一段时间会自动关机，下次用时再开：家目录 ~ 里的文件会留下来，用 pip install --user、npm install -g 或 micromamba 装的软件也在家目录里，会留下来；用 apt 装进系统目录的软件关机就没了，要长期用的软件请用 micromamba 装。网络只能访问部署配置放行的网址。输出太长时只保留结尾一段；输出特别多时命令会被直接结束，所以先用 head、grep、wc 等缩小输出。运行较久的命令会自动转入后台，结束后结果会自动发给你。临时文件放 $TMPDIR。",
+});
+
 export const TOOL_BUILTIN_BASH_TIMEOUT = fixedPrompt({
   id: "tools.builtin.bash.timeout",
   purpose: "替换 Pi 自带 bash 工具 timeout 参数的说明（Pi 原文说没有默认时限）",

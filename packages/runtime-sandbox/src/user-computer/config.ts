@@ -28,6 +28,10 @@ export interface UserComputerConfig {
   readonly commandTimeoutMs: number;
   readonly stopGraceSeconds: number;
   readonly beforeStop: { readonly argv: readonly string[]; readonly timeoutSeconds: number } | null;
+  readonly hostPaths: {
+    readonly runtimeRoots: readonly string[];
+    readonly seedRoots: readonly string[];
+  };
 }
 
 function fail(field: string): never {
@@ -78,6 +82,7 @@ export function parseUserComputerConfig(input: unknown): UserComputerConfig {
     "commandTimeoutMs",
     "stopGraceSeconds",
     "beforeStop",
+    "hostPaths",
   ]);
   if (root["schemaVersion"] !== "user-computers.v1") fail("schemaVersion");
   const docker = record(root["docker"], "docker", ["executable", "host"]);
@@ -111,6 +116,11 @@ export function parseUserComputerConfig(input: unknown): UserComputerConfig {
       timeoutSeconds: whole(hook["timeoutSeconds"], "beforeStop.timeoutSeconds"),
     });
   }
+  const hostPaths = record(root["hostPaths"], "hostPaths", ["runtimeRoots", "seedRoots"]);
+  const roots = (value: unknown, field: string) => {
+    if (!Array.isArray(value)) fail(field);
+    return Object.freeze(value.map((entry, index) => absolute(entry, `${field}.${index}`)));
+  };
   return Object.freeze({
     schemaVersion: "user-computers.v1",
     docker: Object.freeze({
@@ -150,6 +160,10 @@ export function parseUserComputerConfig(input: unknown): UserComputerConfig {
     commandTimeoutMs: positive(root["commandTimeoutMs"], "commandTimeoutMs"),
     stopGraceSeconds: whole(root["stopGraceSeconds"], "stopGraceSeconds"),
     beforeStop,
+    hostPaths: Object.freeze({
+      runtimeRoots: roots(hostPaths["runtimeRoots"], "hostPaths.runtimeRoots"),
+      seedRoots: roots(hostPaths["seedRoots"], "hostPaths.seedRoots"),
+    }),
   });
 }
 

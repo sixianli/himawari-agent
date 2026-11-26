@@ -1,23 +1,29 @@
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { type DockerCommand, dockerCli } from "../execution-backend/docker-command.ts";
 import type { UserComputerConfig } from "./config.ts";
-import { prepareComputerDisk, removeComputerDisk } from "./disk.ts";
+import { type ComputerDisk, prepareComputerDisk, removeComputerDisk } from "./disk.ts";
 import { type ComputerEgress, normalizeAllowedDomains, openComputerEgress } from "./egress.ts";
 import { computerMemoryBytes, decideAdmission, hostAvailableMemoryBytes } from "./memory.ts";
 import {
   COMPUTER_HOME,
+  COMPUTER_RUNTIME,
+  UserComputerError,
   type UserComputerExecInput,
   type UserComputerExecResult,
-  UserComputerError,
-  type UserComputers,
+  type UserComputerSeedInput,
+  type UserComputerSeedResult,
   type UserComputerStatus,
+  type UserComputers,
+  type UserComputerWorkspaces,
 } from "./types.ts";
 
 const LABEL = "io.himawari.computer";
 const POLICY_LABEL = `${LABEL}.policy`;
+const RUNTIME_LABEL = `${LABEL}.runtime`;
+const WORKSPACE_DIRECTORY = "workspace";
 const RESERVED_VARIABLES = new Set([
   "HOME",
   "HTTP_PROXY",
@@ -56,6 +62,21 @@ interface ComputerState {
   readonly ownerKey: string;
   readonly lastStartedAt: string | null;
   readonly lastActivityAt: string | null;
+  readonly seededFrom?: string | null;
+  readonly seededAt?: string | null;
+}
+
+async function resolveUnder(roots: readonly string[], candidate: string): Promise<string | null> {
+  if (!path.isAbsolute(candidate) || candidate.includes("\0")) return null;
+  const resolved = await realpath(candidate).catch(() => null);
+  if (!resolved) return null;
+  const info = await stat(resolved).catch(() => null);
+  if (!info?.isDirectory()) return null;
+  for (const root of roots) {
+    const base = await realpath(root).catch(() => null);
+    if (base && (resolved === base || resolved.startsWith(`${base}/`))) return resolved;
+  }
+  return null;
 }
 
 interface Inspected {
@@ -69,7 +90,7 @@ export interface UserComputerManagerOptions {
   readonly availableMemoryBytes?: () => Promise<number>;
 }
 
-export class UserComputerManager implements UserComputers {
+export class UserComputerManager implements UserComputers, UserComputerWorkspaces {
   private readonly config: UserComputerConfig;
   private readonly docker: DockerCommand;
   private readonly now: () => number;
@@ -129,13 +150,19 @@ export class UserComputerManager implements UserComputers {
   async exec(input: UserComputerExecInput): Promise<UserComputerExecResult> {
     if (this.closed) throw new UserComputerError("COMPUTER_UNAVAILABLE", "电脑管理已关闭");
     const request = this.validate(input);
+    const runtime =
+      input.runtime === undefined
+        ? null
+        : await resolveUnder(this.config.hostPaths.runtimeRoots, input.runtime);
+    if (input.runtime !== undefined && !runtime)
+      throw new UserComputerError("COMPUTER_REQUEST_INVALID", "runtime");
     const ownerKey = computerOwnerKey(input.ownerId);
     const entry = this.entry(ownerKey);
     entry.activeCalls++;
     entry.lastActivityMs = this.now();
     try {
       const running = await this.withLock(entry, () =>
-        this.ensureRunning(ownerKey, entry, request.deadlineMs),
+        this.ensureRunning(ownerKey, entry, request.deadlineMs, runtime),
       );
       if (!entry.egress) throw new UserComputerError("COMPUTER_UNAVAILABLE", "出口代理没有准备好");
       const release = entry.egress.allowlist.open(request.targets);
@@ -151,6 +178,46 @@ export class UserComputerManager implements UserComputers {
         () => undefined,
       );
     }
+  }
+
+  async seedWorkspace(input: UserComputerSeedInput): Promise<UserComputerSeedResult> {
+    if (this.closed) throw new UserComputerError("COMPUTER_UNAVAILABLE", "电脑管理已关闭");
+    if (typeof input.ownerId !== "string" || input.ownerId.trim() === "")
+      throw new UserComputerError("COMPUTER_REQUEST_INVALID", "ownerId");
+    const source = await resolveUnder(this.config.hostPaths.seedRoots, input.source);
+    if (!source) throw new UserComputerError("COMPUTER_REQUEST_INVALID", "source");
+    const ownerKey = computerOwnerKey(input.ownerId);
+    const entry = this.entry(ownerKey);
+    return this.withLock(entry, async () => {
+      const disk = await this.prepareDisk(ownerKey);
+      const target = path.join(disk.home, WORKSPACE_DIRECTORY);
+      if (
+        await lstat(target).then(
+          () => true,
+          () => false,
+        )
+      ) {
+        const state = await this.readState(ownerKey);
+        return {
+          copied: false,
+          seededFrom: state?.seededFrom ?? null,
+          seededAt: state?.seededAt ?? null,
+        };
+      }
+      const partial = path.join(disk.home, `.${WORKSPACE_DIRECTORY}.seed-partial`);
+      await rm(partial, { recursive: true, force: true });
+      await this.host("cp", ["-a", "--", `${source}/.`, partial]).catch(async (cause: unknown) => {
+        await rm(partial, { recursive: true, force: true }).catch(() => undefined);
+        throw new UserComputerError(
+          "COMPUTER_SEED_FAILED",
+          `把 ${source} 复制进电脑失败：${cause instanceof Error ? cause.message : String(cause)}`,
+        );
+      });
+      await rename(partial, target);
+      const seededAt = new Date(this.now());
+      await this.writeState(ownerKey, { seededFrom: source, seededAt });
+      return { copied: true, seededFrom: source, seededAt: seededAt.toISOString() };
+    });
   }
 
   async status(): Promise<readonly UserComputerStatus[]> {
@@ -301,9 +368,8 @@ export class UserComputerManager implements UserComputers {
     }
   }
 
-  private async ensureRunning(ownerKey: string, entry: Entry, deadlineMs: number) {
-    const names = computerNames(ownerKey);
-    const disk = await prepareComputerDisk({
+  private prepareDisk(ownerKey: string): Promise<ComputerDisk> {
+    return prepareComputerDisk({
       stateDirectory: this.config.stateDirectory,
       ownerKey,
       mode: this.config.disk.mode,
@@ -315,12 +381,30 @@ export class UserComputerManager implements UserComputers {
         `准备磁盘失败：${cause instanceof Error ? cause.message : String(cause)}`,
       );
     });
+  }
+
+  private async ensureRunning(
+    ownerKey: string,
+    entry: Entry,
+    deadlineMs: number,
+    runtime: string | null,
+  ) {
+    const names = computerNames(ownerKey);
+    const disk = await this.prepareDisk(ownerKey);
     const gateway = await this.ensureNetwork(ownerKey, names.network);
     let container = await this.inspect(names.container);
-    if (container && container.Config.Labels?.[POLICY_LABEL] !== this.policyDigest) {
+    const labels = container?.Config.Labels ?? {};
+    const runtimeChanged = runtime !== null && labels[RUNTIME_LABEL] !== runtime;
+    if (container && (labels[POLICY_LABEL] !== this.policyDigest || runtimeChanged)) {
       if (container.State.Running && entry.activeCalls > 1) {
+        if (runtimeChanged)
+          throw new UserComputerError(
+            "COMPUTER_UNAVAILABLE",
+            "电脑里还有上一版程序发起的调用在跑，等它结束后再试",
+          );
         return { containerId: container.Id, gateway };
       }
+      if (container.State.Running) await this.stopComputer(ownerKey, entry);
       await this.command(["container", "rm", "--force", container.Id]);
       container = null;
     }
@@ -329,7 +413,12 @@ export class UserComputerManager implements UserComputers {
       const created = await this.command([
         "container",
         "create",
-        ...this.createArguments(ownerKey, names, disk.home),
+        ...this.createArguments(
+          ownerKey,
+          names,
+          disk.home,
+          runtime ?? labels[RUNTIME_LABEL] ?? null,
+        ),
       ]);
       if (created.exitCode !== 0)
         throw new UserComputerError("COMPUTER_START_FAILED", created.stderr.trim().slice(0, 500));
@@ -432,6 +521,7 @@ export class UserComputerManager implements UserComputers {
     ownerKey: string,
     names: ReturnType<typeof computerNames>,
     home: string,
+    runtime: string | null,
   ): string[] {
     const { resources } = this.config;
     return [
@@ -462,6 +552,14 @@ export class UserComputerManager implements UserComputers {
       "no-new-privileges",
       "--mount",
       `type=bind,source=${home},target=${COMPUTER_HOME}`,
+      ...(runtime
+        ? [
+            "--label",
+            `${RUNTIME_LABEL}=${runtime}`,
+            "--mount",
+            `type=bind,source=${runtime},target=${COMPUTER_RUNTIME},readonly`,
+          ]
+        : []),
       "--env",
       `HOME=${COMPUTER_HOME}`,
       "--workdir",
@@ -547,6 +645,20 @@ export class UserComputerManager implements UserComputers {
     const ids = listed.stdout.split("\n").filter(Boolean);
     const found = await Promise.all(ids.map((id) => this.inspect(id)));
     return found.filter((item): item is Inspected => item !== null);
+  }
+
+  private host(executable: string, args: readonly string[]) {
+    return new Promise<void>((resolve, reject) => {
+      execFile(
+        executable,
+        [...args],
+        { timeout: 30 * 60 * 1000, maxBuffer: 1024 * 1024 },
+        (error, _stdout, stderr) => {
+          if (error) reject(new Error(String(stderr).trim().slice(0, 500) || error.message));
+          else resolve();
+        },
+      );
+    });
   }
 
   private async command(args: readonly string[], timeoutMs = this.config.commandTimeoutMs) {
@@ -657,13 +769,20 @@ export class UserComputerManager implements UserComputers {
 
   private async writeState(
     ownerKey: string,
-    change: { readonly lastStartedAt?: Date; readonly lastActivityAt?: Date },
+    change: {
+      readonly lastStartedAt?: Date;
+      readonly lastActivityAt?: Date;
+      readonly seededFrom?: string;
+      readonly seededAt?: Date;
+    },
   ) {
     const current = await this.readState(ownerKey);
     const next: ComputerState = {
       ownerKey,
       lastStartedAt: change.lastStartedAt?.toISOString() ?? current?.lastStartedAt ?? null,
       lastActivityAt: change.lastActivityAt?.toISOString() ?? current?.lastActivityAt ?? null,
+      seededFrom: change.seededFrom ?? current?.seededFrom ?? null,
+      seededAt: change.seededAt?.toISOString() ?? current?.seededAt ?? null,
     };
     const file = this.stateFile(ownerKey);
     await mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
