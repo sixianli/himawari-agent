@@ -40,6 +40,21 @@
     "why": "放大字号后文字可能被截断；交 iPhone 编码线程按第 73 条改（挤不下就换行或竖排）"
   },
   {
+    "key": "15-sign-in-2-code-invalid|dark|contrast",
+    "count": 1,
+    "why": "系统表单、系统列表的分组标题和脚注用系统次要文字色，系统红色按钮在深色下也只是“接近通过”；照第 70 条用系统组件，不自己改色"
+  },
+  {
+    "key": "15-sign-in-2-code-invalid|light|dynamicType",
+    "count": 3,
+    "why": "文字不完全跟动态字体放大（多半是 RootView 把字号封顶在 accessibility2，以及固定行高）；交 iPhone 编码线程按第 73 条改"
+  },
+  {
+    "key": "15-sign-in-5-no-passkey|light|dynamicType",
+    "count": 6,
+    "why": "文字不完全跟动态字体放大（多半是 RootView 把字号封顶在 accessibility2，以及固定行高）；交 iPhone 编码线程按第 73 条改"
+  },
+  {
     "key": "16-chat-states-1-empty|light|sufficientElementDescription",
     "count": 1,
     "why": "有能点或能读的元素没有名字；交 iPhone 编码线程按第 76 条补 accessibilityLabel"
@@ -766,8 +781,8 @@
   },
   {
     "key": "next-3-her-devices|dark|contrast",
-    "count": 3,
-    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+    "count": 4,
+    "why": "系统表单、系统列表的分组标题和脚注用系统次要文字色，系统红色按钮在深色下也只是“接近通过”；照第 70 条用系统组件，不自己改色"
   },
   {
     "key": "next-3-her-devices|light|contrast",
@@ -783,6 +798,11 @@
     "key": "next-3-her-devices|light|sufficientElementDescription",
     "count": 1,
     "why": "有能点或能读的元素没有名字；交 iPhone 编码线程按第 76 条补 accessibilityLabel"
+  },
+  {
+    "key": "next-3-her-devices|light|textClipped",
+    "count": 1,
+    "why": "设备名放在系统列表行里，审计认为最大字号下可能被截断；系统 List 行会自动换行，交 iPhone 编码线程复查"
   },
   {
     "key": "next-3-her-notifications|dark|contrast",
