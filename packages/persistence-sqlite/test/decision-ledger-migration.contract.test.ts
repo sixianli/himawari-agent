@@ -212,107 +212,46 @@ describe("decision ledger migration 0069", () => {
     }
   });
 
-  it("keeps Muse entries in the two allowed shapes and makes intake keys unique", async () => {
-    const directory = await mkdtemp(path.join(tmpdir(), "himawari-decision-ledger-"));
+  it("drops the Muse comparison tables and their pushes and keeps every other push", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "himawari-drop-muse-"));
     directories.push(directory);
     const database = openQualifiedDatabase(path.join(directory, "product.sqlite"));
     try {
-      applyMigrations(database, await loadBundledMigrations());
-      database.prepare("INSERT INTO owners (id, revision) VALUES ('o', 0), ('o2', 0)").run();
+      const migrations = await loadBundledMigrations();
+      const sequence = migrations.findIndex(({ name }) => name === "drop_muse_comparison");
+      expect(sequence).toBeGreaterThan(0);
+      applyMigrations(database, migrations.slice(0, sequence));
+      database.prepare("INSERT INTO owners (id, revision) VALUES ('o', 0)").run();
+      database.prepare("INSERT INTO agents (id, owner_id, revision) VALUES ('a', 'o', 0)").run();
       database
         .prepare(
-          "INSERT INTO agents (id, owner_id, revision) VALUES ('a', 'o', 0), ('a2', 'o2', 0)",
+          `INSERT INTO muse_reference_entries (id, owner_id, agent_id, muse_at, muse_reminded, recorded_at)
+           VALUES ('muse-1', 'o', 'a', ?, 0, ?)`,
         )
-        .run();
-      database
+        .run(T0, T0);
+      const insertOutbox = database.prepare(
+        `INSERT INTO web_push_outbox (
+          owner_id, agent_id, source_key, kind, source_ref, thread_id, created_at, expires_at
+        ) VALUES ('o', 'a', ?, 'reminder', ?, NULL, ?, ?)`,
+      );
+      insertOutbox.run("muse-channel:down:1", "muse-channel", T0, T0);
+      insertOutbox.run("reminder:r1", "r1", T0, T0);
+      database.pragma("foreign_keys = ON");
+      const snapshot = await createVerifiedMigrationSnapshot(
+        database,
+        path.join(directory, "snapshot.sqlite"),
+      );
+      applyMigrations(database, migrations, { snapshot });
+      const left = database
         .prepare(
-          `INSERT INTO payloads (
-            ref, owner_id, agent_id, classification, storage_kind, ciphertext, content_digest,
-            encryption_algorithm, key_ref, lifecycle_state, created_at, content_type
-          ) VALUES ('p1', 'o', 'a', 'private', 'sqlite_blob', X'00', 'sha256:p1', 'fixture',
-            'fixture-key', 'active', ?, 'text/plain')`,
+          `SELECT name FROM sqlite_master
+           WHERE name LIKE 'muse%' OR name LIKE 'gap_case%' ORDER BY name`,
         )
-        .run(T0);
-      database
-        .prepare(
-          `INSERT INTO decision_ledger (
-            id, owner_id, agent_id, kind, checked_at, counts, outcome, reason_code, inputs,
-            cost_micros, duration_ms
-          ) VALUES ('d1', 'o', 'a', 'consolidation', ?, '{}', 'merge', 'r', '{}', 0, 0)`,
-        )
-        .run(T0);
-      let counter = 0;
-      const nextCounter = () => {
-        counter += 1;
-        return counter;
-      };
-      const insert = (input: {
-        owner?: string;
-        agent?: string;
-        reminded: number;
-        timing?: number | null;
-        content?: number | null;
-        contentRef?: string | null;
-        paired?: string | null;
-        key?: string | null;
-      }) =>
-        database
-          .prepare(
-            `INSERT INTO muse_reference_entries (
-              id, owner_id, agent_id, muse_at, muse_reminded, timing_ok, content_ok, content_ref,
-              paired_decision_id, intake_item_key, recorded_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          )
-          .run(
-            `muse-${nextCounter()}`,
-            input.owner ?? "o",
-            input.agent ?? "a",
-            T0,
-            input.reminded,
-            input.timing ?? null,
-            input.content ?? null,
-            input.contentRef ?? null,
-            input.paired ?? null,
-            input.key ?? null,
-            T0,
-          );
-      expect(() =>
-        insert({ reminded: 1, timing: 1, content: 0, contentRef: "p1", paired: "d1" }),
-      ).not.toThrow();
-      expect(() => insert({ reminded: 0, paired: "d1" })).not.toThrow();
-      expect(() => insert({ reminded: 1, timing: 1, content: 1 })).toThrow();
-      expect(() => insert({ reminded: 1, timing: null, content: 1, contentRef: "p1" })).toThrow();
-      expect(() => insert({ reminded: 1, timing: 1, content: null, contentRef: "p1" })).toThrow();
-      expect(() => insert({ reminded: 0, paired: "d1", timing: 1 })).toThrow();
-      expect(() => insert({ reminded: 0, paired: "d1", content: 1 })).toThrow();
-      expect(() => insert({ reminded: 0, paired: "d1", contentRef: "p1" })).toThrow();
-      expect(() =>
-        insert({ reminded: 1, timing: 1, content: 1, contentRef: "p-missing" }),
-      ).toThrow();
-
-      expect(() =>
-        insert({ reminded: 1, timing: 1, content: 1, key: "proactive:s1" }),
-      ).not.toThrow();
-      expect(() => insert({ reminded: 1, timing: 0, content: 1, key: "proactive:s1" })).toThrow();
-      expect(() =>
-        insert({
-          owner: "o2",
-          agent: "a2",
-          reminded: 1,
-          timing: 1,
-          content: 1,
-          key: "proactive:s1",
-        }),
-      ).not.toThrow();
-      expect(() => insert({ reminded: 1, timing: 1, content: 1, key: "ab" })).toThrow();
-      expect(() => insert({ reminded: 1, timing: 1, content: 1, contentRef: "p1" })).not.toThrow();
-      expect(() => insert({ reminded: 1, timing: 1, content: 1, contentRef: "p1" })).not.toThrow();
-
-      database.prepare("DELETE FROM decision_ledger WHERE id = 'd1'").run();
-      const orphan = database
-        .prepare("SELECT count(*) AS n FROM muse_reference_entries WHERE muse_reminded = 0")
-        .get() as { n: number };
-      expect(orphan.n).toBe(1);
+        .all();
+      expect(left).toEqual([]);
+      expect(
+        database.prepare("SELECT source_key AS key FROM web_push_outbox ORDER BY key").all(),
+      ).toEqual([{ key: "reminder:r1" }]);
     } finally {
       database.close();
     }

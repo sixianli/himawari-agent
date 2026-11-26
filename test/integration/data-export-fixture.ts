@@ -392,11 +392,6 @@ export async function seedEverything(side: Side): Promise<void> {
     `INSERT INTO proactive_processed_messages (owner_id, agent_id, source, message_id, thread_id, decision_id, outcome, header_ref, processed_at)
     VALUES (?, ?, 'gmail', 'gmsg-1', 'gthread-1', 'd-proactive', 'act', ?, ?)`,
   ).run(side.ownerId, side.agentId, header, T0);
-  const museContent = await putPayload(side, "payload-muse", "Muse 当时提醒了合同");
-  db.prepare(
-    `INSERT INTO muse_reference_entries (id, owner_id, agent_id, muse_at, muse_reminded, timing_ok, content_ok, content_ref, paired_decision_id, recorded_at)
-    VALUES ('muse-1', ?, ?, ?, 1, 1, 1, ?, 'd-proactive', ?)`,
-  ).run(side.ownerId, side.agentId, T0, museContent, T0);
   const prereview = db.prepare(
     `INSERT INTO decision_prereviews (id, owner_id, agent_id, decision_id, mail_source, message_id, calibration_group, category, status, rating, confidence_permille, history_conflict, failure_code, model_ref, prompt_id, text_digest, data_classification, cost_micros, duration_ms, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'model-a', 'review.prereview@0123456789ab', ?, 'private', ?, 40, ?)`,

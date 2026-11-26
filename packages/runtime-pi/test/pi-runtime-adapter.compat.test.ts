@@ -5333,3 +5333,39 @@ it("[D7] pins Pi cache warming to streaming so a Pi upgrade cannot turn on idle 
   expect(events.at(-1)).toMatchObject({ type: "runtime.completed" });
   expect(modes).toEqual(["streaming", "streaming"]);
 });
+
+it("hands tool images to the model next to the tool text", async () => {
+  const model = await createFauxModelFixture("The screenshot shows the page", {
+    name: "restaurant_search",
+    id: "image-call",
+    arguments: { query: "screenshot" },
+  });
+  const tools = new RecordingRuntimeTools();
+  tools.execute.mockImplementation(async () => ({
+    outcome: "succeeded" as const,
+    resultRef: "payload-image",
+    errorCode: null,
+    externalActionId: null,
+    modelContent: "Screenshot taken.",
+    modelImages: [{ mimeType: "image/png", data: "iVBORw0KGgo=" }],
+  }));
+  const adapter = new PiAgentRuntimeAdapter({
+    egress: testModelEgress(),
+    projection: new RecordingProjection(),
+    tools,
+    models: model.models,
+    cwd: process.cwd(),
+    now: () => NOW,
+    admission: async (scope) => allowAdmission(scope),
+    logicalSlot: (_request, ordinal) => `image:${ordinal}`,
+  });
+  await collect(adapter.run({ ...request, modelRef: model.descriptor.ref }));
+  const finalContext = model.observed.at(-1) as { messages: unknown[] };
+  const toolResult = finalContext.messages.find(
+    (m) => (m as { role: string }).role === "toolResult",
+  ) as { content: unknown[] };
+  expect(toolResult.content).toEqual([
+    { type: "text", text: expect.stringContaining("Screenshot taken.") },
+    { type: "image", mimeType: "image/png", data: "iVBORw0KGgo=" },
+  ]);
+});
