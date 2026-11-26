@@ -48,11 +48,9 @@ ADAPTATION_MANIFEST = 'acceptance/cloud/adaptation-manifest.json'
 SOURCE_CACHE_NAME = 'source-cache.git'
 PARAMETERS = 'packet-parameters.json'
 CHECKS_RECORD = 'packet-checks.json'
-PYTHON_ARCHIVE = 'python-3.12.10.tar.gz'
-PYTHON_VERSION = '3.12.10'
 TOOLCHAIN_LOCK = 'ci/toolchain-lock.json'
 NODE_ARCHITECTURES = {'x86_64': 'x64', 'aarch64': 'arm64'}
-MATERIAL_FILES = ('context.json', 'source-build-inputs.json', 'node-modules.tar.gz', 'node-modules.json', 'npm-ls.json', PYTHON_ARCHIVE)
+MATERIAL_FILES = ('context.json', 'source-build-inputs.json', 'node-modules.tar.gz', 'node-modules.json', 'npm-ls.json')
 EXECUTION_NOTE = 'G180'
 DISCOVERED_KEYS = ('OLD_PREFIX', 'OLD_OPERATIONS', 'OLD_QUALIFICATION', 'ORIGINAL_CONTEXT_WINDOW', 'ORIGINAL_MAX_TOKENS', 'ORIGINAL_PUBLIC_FETCH_BYTES', 'HOSTNAME', 'SERVICE_UID', 'SERVICE_GID', 'NODE_SHA256', 'NODE_ARCH', 'FIRST_SIGNER_KEY_PATH')
 FAST_MODE_NOTE = 'skipped in fast delivery mode (DELIVERY_MODE=fast, ADR 0073, approved by Andy 2026-10-25T10:07Z; G180)'
@@ -609,14 +607,19 @@ def render(target, parameters, only=None):
     return written
 
 
-def describe_materials(materials, commit, python_sha256):
+def python_archive_name(version):
+    return 'python-' + version + '.tar.gz'
+
+
+def describe_materials(materials, commit, python_sha256, python_version):
     artifacts = sorted(materials.glob('linux-*-abi[0-9]*-' + commit + '-*-1.tar.gz'))
     if len(artifacts) != 1:
         refuse('PACKET_ARTIFACT_COUNT', len(artifacts))
-    for name in MATERIAL_FILES + ('source-' + commit[:7] + '.bundle',):
+    python_archive = python_archive_name(python_version)
+    for name in MATERIAL_FILES + (python_archive, 'source-' + commit[:7] + '.bundle'):
         if not (materials / name).is_file():
             refuse('PACKET_MATERIAL_MISSING', name)
-    if file_sha(materials / PYTHON_ARCHIVE) != python_sha256:
+    if file_sha(materials / python_archive) != python_sha256:
         refuse('PACKET_PYTHON_MATERIAL_CHANGED')
     if json.loads((materials / 'context.json').read_text()).get('testedSha') != commit:
         refuse('PACKET_CONTEXT_OTHER_COMMIT')
@@ -630,7 +633,7 @@ def describe_materials(materials, commit, python_sha256):
     regression = git('show', commit + ':' + REGRESSION_SOURCE, binary=True)
     artifact = artifacts[0]
     return {
-        'PYTHON_BYTES': (materials / PYTHON_ARCHIVE).stat().st_size,
+        'PYTHON_BYTES': (materials / python_archive).stat().st_size,
         'ARTIFACT_NAME': artifact.name,
         'ARTIFACT_SHA256': file_sha(artifact),
         'ARTIFACT_BYTES': artifact.stat().st_size,
@@ -837,11 +840,16 @@ def load_builder(arch, target_hostname, address):
     return settings
 
 
+def python_material_version(commit):
+    version = json.loads(git('show', commit + ':' + TOOLCHAIN_LOCK))['python'].get('version')
+    if re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', str(version)) is None:
+        refuse('PACKET_PYTHON_VERSION_UNSUPPORTED', str(version))
+    return version
+
+
 def python_material_sha(commit, arch):
     lock = json.loads(git('show', commit + ':' + TOOLCHAIN_LOCK))
     python = lock['python']
-    if python.get('version') != PYTHON_VERSION:
-        refuse('PACKET_PYTHON_VERSION_UNSUPPORTED', str(python.get('version')))
     artifact = python['artifacts'].get('linux-' + arch)
     if not isinstance(artifact, dict) or re.fullmatch(r'[0-9a-f]{64}', str(artifact.get('sha256'))) is None:
         refuse('PACKET_PYTHON_MATERIAL_NOT_LOCKED', arch)
@@ -863,6 +871,8 @@ def builder_parameters(commit, discovered, settings):
     separate = builder_hostname != discovered['HOSTNAME']
     return {
         'PYTHON_SHA256': python_material_sha(commit, discovered['NODE_ARCH']),
+        'PYTHON_VERSION': python_material_version(commit),
+        'PYTHON_ARCHIVE_NAME': python_archive_name(python_material_version(commit)),
         **fd_parameters(discovered['NODE_ARCH']),
         'BUILDER_HOSTNAME': builder_hostname,
         'REHEARSAL_HOSTNAME': builder_hostname if separate else '',
@@ -964,7 +974,7 @@ class Hermes:
         for name, digest in expected.items():
             if '/' in name or name.startswith('.'):
                 refuse('PACKET_HERMES_MATERIAL_NAME', name)
-            if name == PYTHON_ARCHIVE and (materials / name).is_file() and file_sha(materials / name) == digest:
+            if re.fullmatch(r'python-[0-9]+\.[0-9]+\.[0-9]+\.tar\.gz', name) and (materials / name).is_file() and file_sha(materials / name) == digest:
                 continue
             self.fetch(self.work + '/materials/' + name, materials / name, digest)
 
@@ -1235,7 +1245,7 @@ def build_packet(arguments, instance, commit, date, parameters, hermes, work, st
         hermes.start_walkthrough()
         hermes.fetch_materials(materials)
         step('fetch-materials', started)
-    parameters.update(describe_materials(materials, commit, parameters['PYTHON_SHA256']))
+    parameters.update(describe_materials(materials, commit, parameters['PYTHON_SHA256'], parameters['PYTHON_VERSION']))
     packet.mkdir(parents=True)
     shutil.move(str(materials), str(packet / 'materials'))
     refreshed = assemble(packet, parameters, packet / 'materials')
