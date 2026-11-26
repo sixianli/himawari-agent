@@ -21,25 +21,32 @@ public final class ConnectionsStore {
     }
 
     static let listPath = "connections/list"
-    static let pagesInThisApp: Set<String> = [GmailStore.source]
+    static let disconnectPath = "connections/disconnect"
+    static let callbackHost = "connection-authorization"
 
     public private(set) var phase: Phase = .loading
     public private(set) var connections: [AppConnection] = []
+    public private(set) var connecting: String?
 
     @ObservationIgnored private let gateway: ManageGateway?
+    @ObservationIgnored private let callbackScheme: String?
 
-    public init(gateway: ManageGateway) {
+    public init(gateway: ManageGateway, callbackScheme: String? = GmailStore.appCallbackScheme) {
         self.gateway = gateway
+        self.callbackScheme = callbackScheme
     }
 
     init(connections: [AppConnection]?) {
         gateway = nil
+        callbackScheme = nil
         self.connections = connections ?? []
         phase = connections == nil ? .unavailable : .loaded
     }
 
-    public var shown: [AppConnection] {
-        connections.filter { Self.pagesInThisApp.contains($0.name) }
+    public var shown: [AppConnection] { connections }
+
+    public func connection(named name: String) -> AppConnection? {
+        connections.first { $0.name == name }
     }
 
     public var available: Bool { phase == .loaded && !shown.isEmpty }
@@ -64,5 +71,26 @@ public final class ConnectionsStore {
         } catch {
             if phase != .loaded { phase = .unavailable }
         }
+    }
+
+    public func connect(_ name: String, signIn: @MainActor (URL, String) async throws -> URL?) async -> ConnectionOutcome {
+        guard let gateway, let callbackScheme, connecting == nil else { return .failed }
+        connecting = name
+        defer { connecting = nil }
+        let outcome = await ConnectionAuthorization.run(
+            gateway: gateway,
+            connection: name,
+            callbackScheme: callbackScheme,
+            callbackHost: Self.callbackHost,
+            signIn: signIn
+        )
+        await load()
+        return outcome
+    }
+
+    public func disconnect(_ name: String) async throws {
+        guard let gateway else { return }
+        _ = try await gateway.post(Self.disconnectPath, body: ["connection": .string(name)])
+        await load()
     }
 }

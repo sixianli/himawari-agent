@@ -32,9 +32,9 @@ private actor GmailServer: DeviceTransport {
         posts.append((path, body))
         if let confirm { confirmed.append(confirm) }
         switch path {
-        case GmailStore.startPath:
+        case ConnectionAuthorization.startPath:
             return DeviceResponse(status: 200, body: Data(start.utf8))
-        case GmailStore.completePath:
+        case ConnectionAuthorization.completePath:
             if outcome == "connected" {
                 connection = #"{"status":"connected","account":"andy@example.com","connectedAt":"2026-11-26T08:00:00.000Z"}"#
             }
@@ -84,7 +84,7 @@ final class GmailStoreTests: XCTestCase {
         XCTAssertEqual(opened.first?.0.host(), "accounts.google.com")
         XCTAssertEqual(opened.first?.1, scheme)
         let posts = await server.posts.filter { $0.path != ManageGateway.gatewayPath }
-        XCTAssertEqual(posts.map(\.path), [GmailStore.startPath, GmailStore.completePath])
+        XCTAssertEqual(posts.map(\.path), [ConnectionAuthorization.startPath, ConnectionAuthorization.completePath])
         XCTAssertEqual(posts.first?.body, ["connection": .string("gmail"), "callbackScheme": .string(scheme)])
         XCTAssertEqual(posts.last?.body, ["state": .string("abc123")])
         guard case .connected(let account, let since, _) = gmail.status else { return XCTFail("not connected") }
@@ -102,7 +102,7 @@ final class GmailStoreTests: XCTestCase {
         XCTAssertEqual(foreign, .failed)
         let noState = await gmail.connect { _, callback in URL(string: "\(callback)://gmail-authorization") }
         XCTAssertEqual(noState, .failed)
-        let finishing = await server.posts.filter { $0.path == GmailStore.completePath }
+        let finishing = await server.posts.filter { $0.path == ConnectionAuthorization.completePath }
         XCTAssertTrue(finishing.isEmpty)
         XCTAssertEqual(gmail.status, .disconnected)
     }

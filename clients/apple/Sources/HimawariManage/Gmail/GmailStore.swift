@@ -25,13 +25,6 @@ public struct GmailWatching: Equatable, Sendable {
     let perCheck: Int
 }
 
-public enum GmailConnectOutcome: Equatable, Sendable {
-    case connected
-    case denied
-    case failed
-    case cancelled
-}
-
 @MainActor
 @Observable
 public final class GmailStore {
@@ -48,8 +41,6 @@ public final class GmailStore {
     }
 
     public static let source = "gmail"
-    static let startPath = "connections/authorization"
-    static let completePath = "connections/authorization/complete"
     static let callbackHost = "gmail-authorization"
     private static let notReadVerdicts: Set<String> = ["needs_owner", "failed"]
 
@@ -118,7 +109,7 @@ public final class GmailStore {
         }
     }
 
-    public func connect(signIn: @MainActor (URL, String) async throws -> URL?) async -> GmailConnectOutcome {
+    public func connect(signIn: @MainActor (URL, String) async throws -> URL?) async -> ConnectionOutcome {
         guard let callbackScheme, !connecting else { return .failed }
         connecting = true
         defer { connecting = false }
@@ -184,38 +175,18 @@ public final class GmailStore {
         await load()
     }
 
-    private func run(callbackScheme: String, signIn: @MainActor (URL, String) async throws -> URL?) async -> GmailConnectOutcome {
-        struct Started: Decodable {
-            let kind: String
-            let authorizationUrl: String?
-        }
-        struct Finished: Decodable {
-            let outcome: String
-        }
-        do {
-            let startedData = try await gateway.post(Self.startPath, body: ["connection": .string(Self.source), "callbackScheme": .string(callbackScheme)])
-            let started = try JSONDecoder().decode(Started.self, from: startedData)
-            guard started.kind == "browser", let page = started.authorizationUrl.flatMap(URL.init(string:)) else { return .failed }
-            guard let returned = try await signIn(page, callbackScheme) else { return .cancelled }
-            guard let state = Self.state(in: returned, scheme: callbackScheme) else { return .failed }
-            let finishedData = try await gateway.post(Self.completePath, body: ["state": .string(state)])
-            switch try JSONDecoder().decode(Finished.self, from: finishedData).outcome {
-            case "connected": return .connected
-            case "denied": return .denied
-            default: return .failed
-            }
-        } catch is CancellationError {
-            return .cancelled
-        } catch {
-            return .failed
-        }
+    private func run(callbackScheme: String, signIn: @MainActor (URL, String) async throws -> URL?) async -> ConnectionOutcome {
+        await ConnectionAuthorization.run(
+            gateway: gateway,
+            connection: Self.source,
+            callbackScheme: callbackScheme,
+            callbackHost: Self.callbackHost,
+            signIn: signIn
+        )
     }
 
     static func state(in url: URL, scheme: String) -> String? {
-        guard url.scheme?.lowercased() == scheme, url.host() == callbackHost,
-              let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems
-        else { return nil }
-        return items.first { $0.name == "state" }?.value.flatMap { $0.isEmpty ? nil : $0 }
+        ConnectionAuthorization.state(in: url, scheme: scheme, host: callbackHost)
     }
 }
 

@@ -7,7 +7,7 @@ struct GmailPage: View {
     let back: () -> Void
     @Environment(\.webAuthenticationSession) private var webAuthenticationSession
     @State private var disconnecting = false
-    @State private var problem: GmailConnectOutcome?
+    @State private var problem: ConnectionOutcome?
 
     var body: some View {
         SettingsPage(gap: SL.pageGap) {
