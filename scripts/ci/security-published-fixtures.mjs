@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse } from "yaml";
+import { keepsNativeBinary } from "../package-node-runtime.mjs";
 import { verifyContext } from "./context.mjs";
 import { enumerateLockDependencies, loadReviewedExceptions } from "./security-exceptions.mjs";
 
@@ -10,7 +11,13 @@ const assert = (condition, code) => {
   if (!condition) throw new Error(code);
 };
 
-export function createPublishedFixtureReview({ root, context, now } = {}) {
+export function createPublishedFixtureReview({
+  root,
+  context,
+  now,
+  platform = process.platform,
+  arch = process.arch,
+} = {}) {
   if (!context) return null;
   verifyContext(context, { root });
   const lock = JSON.parse(readFileSync(join(root, "package-lock.json"), "utf8"));
@@ -25,7 +32,10 @@ export function createPublishedFixtureReview({ root, context, now } = {}) {
   });
   const removed = new Set(reviewed.removedPublishedPaths);
   const entries = reviewed.exceptions.filter(
-    (entry) => entry.kind === "published-synthetic-fixture" && !removed.has(entry.path),
+    (entry) =>
+      entry.kind === "published-synthetic-fixture" &&
+      !removed.has(entry.path) &&
+      keepsNativeBinary(entry.package, entry.archiveMember.slice(8), platform, arch),
   );
   const expected = new Map();
   for (const entry of entries) {
