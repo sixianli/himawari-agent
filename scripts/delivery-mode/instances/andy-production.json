@@ -45,6 +45,13 @@
       "languageType": "Chinese",
       "firstAudioTimeoutMs": 1500,
       "maximumCharacters": 600
+    },
+    "computers": {
+      "browser": {
+        "maxOutputBytes": 8388608,
+        "maxTextChars": 20000,
+        "responseReserveMs": 5000
+      }
     }
   },
   "onDeployFailure": "rollback",

@@ -1618,19 +1618,11 @@ export const messages = {
   "agents.weekly.window": "{from} to {to}",
   "agents.weekly.empty": "No connections this week.",
   "review.settings.devices": "Devices",
-  "devices.help": "Pair Himawari on an iPhone, Apple Watch or Mac by scanning a QR code.",
-  "devices.add": "Add device",
-  "devices.qrLabel": "Pairing QR code",
-  "devices.qrHelp":
-    "Scan this code in Himawari on the device. It works once, until {time}. The device then appears below and works only after you confirm it.",
+  "devices.help":
+    "Devices sign in from the Himawari App with a passkey. To add one, open the App on it.",
   "devices.empty": "No paired devices yet.",
   "devices.listLabel": "Paired devices",
-  "devices.pendingNotice":
-    "A {kind} named “{name}” wants to pair. If you don't recognize it, remove it.",
   "devices.revoked": "{kind}, removed",
-  "devices.pairingNumber":
-    "Check number {number}. Confirm only if your device shows the same number.",
-  "devices.confirm": "Confirm",
   "devices.rename": "Rename",
   "devices.name": "Device name",
   "devices.save": "Save",

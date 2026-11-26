@@ -162,3 +162,11 @@ targetRules = ["generic-api-key"]
 paths = ['''(?:^|/)clients/apple/Tests/HimawariCoreTests/Fixtures/vault-contract\.json$''']
 regexTarget = "secret"
 regexes = ['''^(?:OJcMhbm3WDiSpM1vIJuD1qnNNVIJ0hTf75YUIS9f/c6Qo98Y9w4CnxSW0UGHkewWlVHlFpwsGvui/nsG|tByJMmanrteJYrzRyAz6eC7I\+9mY5n5XMjMmS01n940gxxayiFeZE/6q|XGIcgad/HQpwhhB3ypIea5eB2sEm5ufBGncMjFIZKSwR44rKumK8mSkH|uZP0fC70wm4e\+scCIDFNsUTSMXyWlwzXpo70DxbK9KJ6kd4XjfSuZN9OQSvjdn9coV0ImLS4JBvMBl2U)$''']
+
+[[allowlists]]
+description = "安全例外清单里 arm64 onnxruntime 原生库那条的旧版审阅说明（PR 737 的一个提交），原文引了 OpenSSL 内置的 PEM 开头、结尾标记常量，两两相连，中间没有密钥内容；只认这一个文件里这一段原文，现行文件已改成不含标记的说法"
+condition = "AND"
+targetRules = ["private-key"]
+paths = ['''(?:^|/)ci/security-exceptions\.json$''']
+regexTarget = "secret"
+regexes = ['''^-{5}BEGIN RSA PRIVATE KEY-{5}\\" 与 \\"-{5}END EC PRIVATE KEY-{5}\\"、\\"-{5}BEGIN EC PRIVATE KEY-{5}\\" 与 \\"-{5}END PRIVATE KEY-{5}$''']
