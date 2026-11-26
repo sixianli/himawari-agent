@@ -296,7 +296,7 @@ struct DemoSceneView: View {
 
     private func chat(_ state: DemoChatState) -> some View {
         ChatView(store: .demo(state), threadId: DemoChatFixtures.osakaThreadId)
-            .environment(\.chatCanAttach, true)
+            .environment(\.chatAttachLimits, AttachmentLimits(textCharacters: 200_000, imageCharacters: 2_000_000, perMessage: 10, messageCharacters: 400_000))
     }
 }
 

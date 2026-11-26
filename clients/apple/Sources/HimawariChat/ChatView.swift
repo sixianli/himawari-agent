@@ -16,7 +16,7 @@ public struct ChatView: View {
     @Environment(\.chatOpensSelectText) private var opensSelectText
     @Environment(\.chatShowsCopied) private var showsCopied
     @Environment(\.chatStartsReplyTo) private var startsReplyTo
-    @Environment(\.chatCanAttach) private var canAttach
+    @Environment(\.chatAttachLimits) private var attachLimits
     @Environment(\.chatStopRun) private var stopRun
     @Environment(\.chatChooseOption) private var chooseOption
     @Environment(\.chatTalk) private var talk
@@ -27,8 +27,8 @@ public struct ChatView: View {
     @State private var stopping = false
     @State private var attachments: [ChatAttachment] = []
     @State private var attachOpen = false
-    @State private var attachSheetHeight: CGFloat = 0
     @State private var attachProblem: String?
+    @State private var uploadFailed = false
     @State private var sendRequestId = OutgoingMessage.newId()
     @State private var hold: HoldPhase?
     @State private var heard = ""
@@ -100,7 +100,10 @@ public struct ChatView: View {
             }
             #if os(iOS)
             if !attachments.isEmpty {
-                AttachmentChips(attachments: attachments) { id in attachments.removeAll { $0.id == id } }
+                AttachmentChips(attachments: attachments, retry: uploadFailed ? { deliver(draft, clearDraft: true) } : nil) { id in
+                    attachments.removeAll { $0.id == id }
+                    uploadFailed = false
+                }
                     .padding(.bottom, DesignTokens.Chat.listMarkerGap)
             }
             #endif
@@ -172,7 +175,7 @@ public struct ChatView: View {
     }
 
     private var attachAction: (() -> Void)? {
-        guard Self.attachAvailable, canAttach else { return nil }
+        guard Self.attachAvailable, attachLimits != nil else { return nil }
         return {
             inputFocused = false
             attachOpen = true
@@ -193,7 +196,7 @@ public struct ChatView: View {
                 if talking { endTalk() }
             }
             .onAppear {
-                if opensAttachSheet, canAttach { attachOpen = true }
+                if opensAttachSheet, attachLimits != nil { attachOpen = true }
                 if showsCopied { copiedShown = true }
                 if let startsReplyTo { replyingTo = store.messages(in: threadId).first { $0.messageId == startsReplyTo } }
                 if let opensSelectText, let message = store.messages(in: threadId).first(where: { $0.messageId == opensSelectText }) {
@@ -218,19 +221,25 @@ public struct ChatView: View {
     }
 
     #if os(iOS)
+    @ViewBuilder
     private var attachSheet: some View {
-        AttachSheet(room: max(0, Self.attachRoom - attachments.count)) { picked in
-            attachments += picked
-            attachOpen = false
-        } failed: { failure in
-            attachProblem = Self.describe(failure)
-        } close: {
-            attachOpen = false
+        if let attachLimits {
+            AttachSheet(limits: attachLimits, chosen: attachments) { picked in
+                let known = Set(attachments.map(\.id))
+                let room = max(0, attachLimits.perMessage - attachments.count)
+                let fresh = picked.filter { !known.contains($0.id) }
+                attachments += fresh.prefix(room)
+                if fresh.count > room { attachProblem = L.format("attach.problem.tooMany", attachLimits.perMessage) }
+            } remove: { id in
+                attachments.removeAll { $0.id == id }
+            } failed: { failure in
+                attachProblem = Self.describe(failure)
+            } close: {
+                attachOpen = false
+            }
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
         }
-        .fixedSize(horizontal: false, vertical: true)
-        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { attachSheetHeight = $0 }
-        .presentationDetents([attachSheetHeight > 0 ? .height(attachSheetHeight) : .medium])
-        .presentationCornerRadius(DesignTokens.Radius.sheetTop)
     }
     #endif
 
@@ -333,7 +342,6 @@ public struct ChatView: View {
     #else
     private static let attachAvailable = false
     #endif
-    private static let attachRoom = 10
 
     private var header: some View {
         ZStack(alignment: .top) {
@@ -567,10 +575,13 @@ public struct ChatView: View {
                 try await store.send(text, attachments: carried, requestId: sendRequestId, in: threadId, spoken: spoken)
                 attachments.removeAll { item in carried.contains { $0.id == item.id } }
                 sendRequestId = OutgoingMessage.newId()
+                uploadFailed = false
                 if clearDraft { draft = "" }
             } catch let problem as ChatAttachmentProblem {
+                uploadFailed = problem == .uploadFailed
                 attachProblem = Self.describe(problem)
             } catch {
+                uploadFailed = true
                 attachProblem = L.text("attach.problem.upload")
             }
         }
@@ -582,6 +593,7 @@ public struct ChatView: View {
         case let .tooMany(limit): L.format("attach.problem.tooMany", limit)
         case .tooLarge: L.text("attach.problem.tooLarge")
         case .uploadFailed: L.text("attach.problem.upload")
+        case .imagesUnsupported: L.text("attach.problem.images")
         }
     }
 
@@ -589,8 +601,9 @@ public struct ChatView: View {
     static func describe(_ failure: AttachFailure) -> String {
         switch failure {
         case .noLocation: L.text("attach.problem.location")
-        case .tooLarge: L.text("attach.problem.tooLarge")
+        case .tooLarge: L.format("attach.problem.fileTooLarge", ChatAttachmentPlanner.maxFileBytes / ChatAttachmentPlanner.bytesPerMegabyte)
         case .unreadable: L.text("attach.problem.unreadable")
+        case .imagesUnsupported: L.text("attach.problem.images")
         }
     }
     #endif

@@ -120,7 +120,7 @@ struct MainShell: View {
                     .environment(\.chatStopRun, stopRun)
                     .environment(\.chatChooseOption, chooseOption)
                     .environment(\.chatOwnerAwaited, (actions?.waitingCount ?? 0) > 0)
-                    .environment(\.chatCanAttach, model.configuration?.acceptsChatAttachments == true)
+                    .environment(\.chatAttachLimits, model.configuration?.attachments)
                     #if os(iOS)
                     .environment(\.chatVoice, dictation)
                     .environment(\.chatTalk, talkSession)

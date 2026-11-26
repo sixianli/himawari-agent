@@ -284,6 +284,11 @@ public enum DesignTokens {
     public enum Chat {
         public static let answerBlockGap: CGFloat = 10
         public static let attachCloseButton: CGFloat = 48
+        public static let attachRecentCheck: CGFloat = 24
+        public static let attachRecentCount: CGFloat = 30
+        public static let attachRecentHeight: CGFloat = 120
+        public static let attachRecentMaxWidth: CGFloat = 160
+        public static let attachRecentRadius: CGFloat = 12
         public static let attachRowIcon: CGFloat = 19
         public static let attachRowIconStroke: CGFloat = 1.7
         public static let attachRowTile: CGFloat = 34

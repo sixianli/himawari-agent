@@ -35,7 +35,7 @@ extension EnvironmentValues {
     @Entry public var chatOpensSelectText: String? = nil
     @Entry public var chatShowsCopied = false
     @Entry public var chatStartsReplyTo: String? = nil
-    @Entry public var chatCanAttach = false
+    @Entry public var chatAttachLimits: AttachmentLimits? = nil
     @Entry public var chatTalk: (any ChatTalk)? = nil
     @Entry public var chatOpensTalk = false
     @Entry public var chatOwnerAwaited = false
