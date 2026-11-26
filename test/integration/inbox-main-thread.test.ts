@@ -195,6 +195,7 @@ describe("outside events in the main conversation", () => {
       commands,
       ledger,
       push: repository.webPush(),
+      urgency: repository.inbox(),
       payloads,
       protector,
       clock: { now },
@@ -371,9 +372,25 @@ describe("outside events in the main conversation", () => {
       toolCallId: "call-1",
       capabilityRef: "owner.tell",
       capabilityHandleRef: null,
-      arguments: { text: "学校周四开家长会，要我记进日历吗？", push: true, reason: "要你拿主意" },
+      arguments: {
+        text: "学校周四开家长会，要我记进日历吗？",
+        push: true,
+        urgency: "high",
+        reason: "要你拿主意",
+      },
     } as never)) as { messageId: string; pushed: boolean };
     expect(said.pushed).toBe(true);
+    expect(
+      f.query<{ urgency: string }>(
+        "SELECT urgency FROM message_urgency WHERE message_id = ?",
+        said.messageId,
+      ),
+    ).toEqual([{ urgency: "high" }]);
+    expect(
+      await f.repository
+        .inbox()
+        .readUrgency({ ownerId: OWNER_ID, agentId: AGENT_ID, messageIds: [said.messageId] }),
+    ).toEqual({ [said.messageId]: "high" });
     await f.finish(runId, "这封要告诉主人");
     expect(await handled).toEqual({
       status: "done",
@@ -498,9 +515,37 @@ describe("outside events in the main conversation", () => {
         toolCallId: "call-1",
         capabilityRef: "owner.tell",
         capabilityHandleRef: null,
-        arguments: { text: "你好", push: false, reason: "测试" },
+        arguments: { text: "你好", push: false, urgency: "normal", reason: "测试" },
       } as never),
     ).rejects.toBeInstanceOf(TellOwnerInputError);
+  });
+
+  it("REVERSE: refuses tell_owner without an urgency she chose, and writes nothing", async () => {
+    const f = await fixture();
+    await f.mail("gmail:urgency", "发件人 a@example.com：周五前回复");
+    const claim = await f.worker.claim();
+    if (!claim) throw new Error("no claim");
+    const handled = f.worker.handle(claim);
+    const runId = await f.admitted();
+    for (const urgency of [undefined, "urgent"])
+      await expect(
+        f.tellOwner.run({
+          runId,
+          toolCallId: `call-${String(urgency)}`,
+          capabilityRef: "owner.tell",
+          capabilityHandleRef: null,
+          arguments: {
+            text: "周五前要回这封",
+            push: true,
+            ...(urgency ? { urgency } : {}),
+            reason: "有期限",
+          },
+        } as never),
+      ).rejects.toBeInstanceOf(TellOwnerInputError);
+    await f.finish(runId, "不说了");
+    await handled;
+    expect(f.query("SELECT 1 FROM message_urgency")).toEqual([]);
+    expect(f.query("SELECT 1 FROM web_push_outbox")).toEqual([]);
   });
 
   it("waits while the owner's own reply is still running", async () => {
@@ -626,6 +671,7 @@ describe("outside events in the main conversation", () => {
       arguments: {
         text: "交房租的提醒到了，你上午说已经交了，所以没推手机。",
         push: false,
+        urgency: "low",
         reason: "主人说过已经交了",
       },
     } as never)) as { messageId: string; pushed: boolean };
@@ -691,7 +737,7 @@ describe("outside events in the main conversation", () => {
       toolCallId: "call-late",
       capabilityRef: "owner.tell",
       capabilityHandleRef: null,
-      arguments: { text: "该交房租了", push: true, reason: "到点了" },
+      arguments: { text: "该交房租了", push: true, urgency: "normal", reason: "到点了" },
     } as never)) as { alreadyTold?: boolean };
     expect(late.alreadyTold).toBe(true);
     await f.finish(runId, "到点提醒");

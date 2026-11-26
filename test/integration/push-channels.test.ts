@@ -514,6 +514,77 @@ describe("[IOS-4] push channels", () => {
     expect(context.failures).toEqual([]);
   });
 
+  it("[ADR-0285] rings her words on the iPhone at the urgency she chose, and leaves words without one at the plain level", async () => {
+    const levels: Record<string, string> = {};
+    for (const urgency of ["low", "normal", "high", undefined] as const) {
+      const context = await setup({}, {}, { messageUrgency: async () => urgency });
+      context.device(IPHONE, "iphone");
+      await context.register(IPHONE, "alert");
+      context.setClock(T0);
+      await context.store.enqueue({
+        ...scope,
+        items: [
+          {
+            ...scope,
+            sourceKey: await herWordsPushKey({ messageId: "assistant:said" }),
+            kind: "reminder",
+            sourceRef: "assistant:said",
+            threadId: "thread-1",
+            createdAt: T0,
+            expiresAt: at(T0, 3_600),
+          },
+        ],
+        cursor: null,
+        now: T0,
+      });
+      await context.push.tick();
+      await context.push.tick();
+      const [alert] = context.apns.ofType("alert");
+      levels[String(urgency)] =
+        `${String((alert?.json as { aps: Record<string, unknown> }).aps["interruption-level"])}/${String(alert?.headers["apns-priority"])}`;
+    }
+    expect(levels).toEqual({
+      low: "passive/5",
+      normal: "active/10",
+      high: "time-sensitive/10",
+      undefined: "active/10",
+    });
+  });
+
+  it("[ADR-0285] sends her words by web push with the matching Urgency header, and keeps reminders at high", async () => {
+    const sent: Record<string, readonly string[]> = {};
+    for (const urgency of ["low", "normal", "high"] as const) {
+      const context = await setup({}, { messageUrgency: async () => urgency });
+      await context.subscribe("laptop");
+      context.setClock(T0);
+      await context.store.enqueue({
+        ...scope,
+        items: [
+          {
+            ...scope,
+            sourceKey: await herWordsPushKey({ messageId: "assistant:said" }),
+            kind: "reminder",
+            sourceRef: "assistant:said",
+            threadId: "thread-1",
+            createdAt: T0,
+            expiresAt: at(T0, 3_600),
+          },
+        ],
+        cursor: null,
+        now: T0,
+      });
+      context.reminder("r1");
+      await context.push.tick();
+      await context.push.tick();
+      sent[urgency] = [...context.webUrgencies].sort();
+    }
+    expect(sent).toEqual({
+      low: ["high", "low"],
+      normal: ["high", "normal"],
+      high: ["high", "high"],
+    });
+  });
+
   it("[SAID-1] REVERSE: her words that fail to read are retried on the iPhone and do not hold back the pushes behind them", async () => {
     let brokenReads = 0;
     const unreadable = new Error("payload cannot be decrypted");

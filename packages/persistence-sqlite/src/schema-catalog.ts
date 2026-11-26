@@ -958,6 +958,13 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "cascade with Owner, Agent or its conversation; the summary link clears with its payload",
   ),
   entry(
+    "message_urgency",
+    "InboxStorePort",
+    "one row per message Himawari chose to tell the owner through tell_owner, holding how urgent she judged it (low, normal or high) and when; the push for that message uses it for the phone's interruption level and the web push urgency, and the conversation does not colour, badge or reorder by it",
+    "metadata_only",
+    "cascade with its message, its conversation, or Owner or Agent deletion",
+  ),
+  entry(
     "inbox_settings",
     "InboxStorePort",
     "one row per Owner and Agent holding the inbox settings the owner changed in the app (for example how many events one run takes), as a small object of whole numbers, and a revision so two edits cannot overwrite each other; values the owner did not change are not stored",

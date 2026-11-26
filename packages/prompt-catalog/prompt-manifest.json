@@ -1441,9 +1441,9 @@
     "reason": "W-15a：新增参数说明"
   },
   "tools.tell-owner": {
-    "sha256": "331ad9c65b7a1ec36fd4a59e9e725263c31021d2ad35a45e022019f579a08581",
+    "sha256": "b1f2b11ef0f9c7aa08d3ae42e8ad94eb29e9e423ddd2e9a2bfb60111c6f9cbbe",
     "changedIn": "ADR 0285",
-    "reason": "Always On 第 1 步：外来的事进主对话（内部的系统消息、最后写的话主人看不到），她用 tell_owner 开口并自己决定推不推"
+    "reason": "Always On 第 5 步：tell_owner 加必填的 urgency（low、normal、high），她自己判断多要紧，推送按它定手机的提醒级别；推不推仍由她定"
   },
   "tools.tool-result-recall": {
     "sha256": "4c4ed3364e748ad46829c470f233a04b402584e8c3889aa44c8b3f5260aba589",

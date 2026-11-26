@@ -1896,6 +1896,9 @@ export async function startTenantRuntime(
         }),
         ledger: repository.decisionLedger(),
         push: { enqueue: (input) => requireValue(repository).webPush().enqueue(input) },
+        urgency: {
+          recordUrgency: (input) => requireValue(repository).inbox().recordUrgency(input),
+        },
         payloads,
         protector,
         clock: { now: () => clock.now() },
@@ -3003,6 +3006,14 @@ export async function startTenantRuntime(
         : undefined;
       if (webPushConfiguration && webPushSecret && episodeProtector) {
         const pushRepository = repository;
+        const messageUrgency = async (messageId: string) =>
+          (
+            await pushRepository.inbox().readUrgency({
+              ownerId: configuration.ownerId,
+              agentId: configuration.agentId,
+              messageIds: [messageId],
+            })
+          )[messageId];
         const pushSources = hostModelSources(configuration);
         const readPlain = async (ref: string) => {
           const payload = await consolidationPayloads.get(ref);
@@ -3047,6 +3058,7 @@ export async function startTenantRuntime(
           applePush = new ProductionApplePush({
             ownerId: configuration.ownerId,
             agentId: configuration.agentId,
+            messageUrgency,
             store: pushRepository.applePush(),
             sender: applePushSender,
             configuration: () => applePushConfiguration,
@@ -3073,6 +3085,7 @@ export async function startTenantRuntime(
           placement: macPlacement,
           ownerId: configuration.ownerId,
           agentId: configuration.agentId,
+          messageUrgency,
           store: pushRepository.webPush(),
           sender: createWebPushSender({
             privateKey: await pushSources.keys.resolve(webPushSecret.ref, webPushSecret.version),
