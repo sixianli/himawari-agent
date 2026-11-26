@@ -262,6 +262,15 @@ export const DEFAULT_SEARCH_ASK: SearchAskConfiguration = Object.freeze({
   indexRebuildBatch: 200,
 });
 
+export interface AppConnectionConfiguration {
+  readonly name: string;
+  readonly title: string;
+  readonly serverUrl: string;
+  readonly clientId: string;
+  readonly clientSecretRef: string;
+  readonly trustsReadOnlyLabels: boolean;
+}
+
 export interface ProactiveGmailConfiguration {
   readonly clientId: string;
   readonly clientSecretRef: string;
@@ -460,6 +469,7 @@ export interface RunPolicyConfiguration {
   readonly searchAsk?: SearchAskConfiguration;
   readonly perception?: PerceptionConfiguration;
   readonly proactive?: ProactiveConfiguration;
+  readonly appConnections?: readonly AppConnectionConfiguration[];
   readonly coding?: CodingRouteConfiguration;
   readonly publicSearch?: PublicSearchRouteConfiguration;
   readonly publicFetch?: PublicFetchRouteConfiguration;

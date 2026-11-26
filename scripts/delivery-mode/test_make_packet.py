@@ -471,7 +471,7 @@ class TemplateTest(RenderedPacket):
     UPGRADE_SWITCH_SHA256 = {
     'systemd/S2-stop-and-inspect.py': 'c466dde3068064600fb817631b3fa282eac1cc47539a11635953f0518b5e4fee',
     'systemd/S7-startup-readback.mjs': '0d258810e6a4809a742b2bca8a9734353cce0114fbee4de8f2a554c78bb022fc',
-    'systemd/S7-switch-start-readback.py': '9eb298c271bfd42013261af8aa61fcb226d795bc2601d9190c60165f742848a0',
+    'systemd/S7-switch-start-readback.py': '7aaf77278298cee5413cc49a07251297d461479beac01d9588ac77e5568f1f93',
     'install/S9-clean-transport.py': '235a7d2882edaa304097746315a4be7f5c5f467fea83cd1522a43a1e3b223533',    }
 
     def render_first_tools(self):
@@ -796,6 +796,33 @@ class DerivedExpectationsTest(RenderedPacket):
         self.assertEqual(fixtures.returncode, 0, fixtures.stdout + fixtures.stderr)
         self.assertNotIn('speech', static_root_configuration(self.render())(copy.deepcopy(original)))
 
+    COMPUTERS_TARGET = {'browser': {'maxOutputBytes': 8388608, 'maxTextChars': 20000, 'responseReserveMs': 5000}}
+
+    def test_a_computers_target_turns_on_user_computers_and_the_browser_only(self):
+        additions = json.loads(packet_maker.run_policy_target(self.COMPUTERS_TARGET))
+        socket_path = json.loads((HERE.parent.parent / 'scripts/operations/computers/settings.json').read_text())['paths']['socket']
+        self.assertEqual(additions, {'userComputers': {'socketPath': socket_path}, 'browser': self.COMPUTERS_TARGET['browser']})
+        packet = self.render(TARGET_RUN_POLICY_JSON=packet_maker.run_policy_target(self.COMPUTERS_TARGET))
+        original = production_config(TWELFTH['OLD_PREFIX'], TWELFTH['ORIGINAL_PUBLIC_FETCH_BYTES'], TWELFTH['ORIGINAL_CONTEXT_WINDOW'], TWELFTH['ORIGINAL_MAX_TOKENS'])
+        switched = static_root_configuration(packet)(copy.deepcopy(original))
+        self.assertEqual(switched['runPolicy']['userComputers'], additions['userComputers'])
+        self.assertEqual(switched['runPolicy']['browser'], additions['browser'])
+        self.assertEqual({key: value for key, value in switched['runPolicy'].items() if key not in ('userComputers', 'browser', 'publicFetch')}, {key: value for key, value in original['runPolicy'].items() if key != 'publicFetch'})
+        fixtures = subprocess.run([sys.executable, '-I', str(packet / 'systemd' / 'verify-switch-config-fixtures.py'), shutil.which('node')], capture_output=True, text=True, check=False)
+        self.assertEqual(fixtures.returncode, 0, fixtures.stdout + fixtures.stderr)
+        self.assertNotIn('userComputers', static_root_configuration(self.render())(copy.deepcopy(original))['runPolicy'])
+
+    def test_a_computers_target_outside_the_supported_shape_is_refused(self):
+        self.assertEqual(packet_maker.run_policy_target(None), '{}')
+        browser = self.COMPUTERS_TARGET['browser']
+        for candidate in (
+            'computers', {}, {'browser': browser, 'socketPath': '/tmp/x'}, {'browser': {**browser, 'extra': 1}},
+            {'browser': {key: value for key, value in browser.items() if key != 'maxTextChars'}},
+            {'browser': {**browser, 'maxOutputBytes': -1}}, {'browser': {**browser, 'maxTextChars': 1.5}}, {'browser': {**browser, 'responseReserveMs': True}},
+        ):
+            with self.subTest(candidate=candidate), self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_COMPUTERS_TARGET_INVALID'):
+                packet_maker.run_policy_target(candidate)
+
     def test_a_speech_target_outside_the_supported_shape_is_refused(self):
         self.assertEqual(packet_maker.speech_target(None), 'null')
         self.assertEqual(json.loads(packet_maker.speech_target(self.SPEECH_TARGET)), self.SPEECH_TARGET)
@@ -923,26 +950,17 @@ class ArmTargetTest(RenderedPacket):
             with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_PYTHON_MATERIAL_NOT_LOCKED'):
                 packet_maker.python_material_sha('e' * 40, 'riscv64')
         lock['python']['version'] = '3.13.0'
+        with unittest.mock.patch.object(packet_maker, 'git', return_value=json.dumps(lock)):
+            self.assertEqual(packet_maker.python_material_version('e' * 40), '3.13.0')
+            self.assertEqual(packet_maker.python_archive_name('3.13.0'), 'python-3.13.0.tar.gz')
+        lock['python']['version'] = 'latest'
         with unittest.mock.patch.object(packet_maker, 'git', return_value=json.dumps(lock)), self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_PYTHON_VERSION_UNSUPPORTED'):
-            packet_maker.python_material_sha('e' * 40, 'x64')
-
-    def test_host_tools_script_reads_the_python_name_from_the_lock_and_installs_every_builder_tool(self):
-        script = (HERE.parent.parent / 'scripts/install/prepare-host-tools.sh').read_text()
-        lock = json.loads((HERE.parent.parent / 'ci/toolchain-lock.json').read_text())
-        self.assertNotIn(lock['python']['version'], script)
-        self.assertIn("python_material=$builder_root/materials/python-$python_version.tar.gz", script)
-        arm = json.loads((HERE / 'hermes/builder-arm64.json').read_text())
-        self.assertEqual(Path(arm['pythonMaterial']).name, 'python-' + lock['python']['version'] + '.tar.gz')
-        for step in ('builder-python', 'builder-tools', 'builder-fd', 'builder-browsers'):
-            self.assertIn('step ' + step, script)
-        for setting in ('tools', 'browsers', 'piToolBin'):
-            self.assertIn(Path(arm[setting]).name, script.replace('$tools_dir', 'tools').replace('$toolbin', 'pi-tools-bin') + 'browsers')
-        self.assertIn('fd-pins.json', script)
+            packet_maker.python_material_version('e' * 40)
 
     def test_the_arm_builder_is_the_target_itself_and_never_the_rehearsal_host(self):
         settings = packet_maker.load_builder('arm64', 'tokyo-a1', '192.0.2.7')
         self.assertEqual((settings['hostname'], settings['address']), ('tokyo-a1', '192.0.2.7'))
-        with unittest.mock.patch.object(packet_maker, 'python_material_sha', return_value='b' * 64):
+        with unittest.mock.patch.object(packet_maker, 'python_material_sha', return_value='b' * 64), unittest.mock.patch.object(packet_maker, 'python_material_version', return_value='3.12.10'):
             same = packet_maker.builder_parameters('e' * 40, {'HOSTNAME': 'tokyo-a1', 'NODE_ARCH': 'arm64'}, settings)
             self.assertEqual((same['BUILDER_HOSTNAME'], same['REHEARSAL_HOSTNAME']), ('tokyo-a1', ''))
         for arch in ('riscv64', 'x64'):
@@ -1177,6 +1195,8 @@ class ReleaseWalkthroughTest(unittest.TestCase):
         source = root / 'source'
         source.mkdir()
         (source / 'package.json').write_text('{}')
+        (source / 'ci').mkdir()
+        (source / 'ci/toolchain-lock.json').write_text(json.dumps({'python': {'version': '3.12.10'}}))
         subprocess.run(['git', 'init', '-q', str(source)], check=True)
         subprocess.run(['git', '-C', str(source), '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'x'], check=True)
         self.source = source

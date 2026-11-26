@@ -149,14 +149,8 @@
     "test/qualification/evidence/runtime-history/prepare-legacy-candidate.py": 1
   },
   "python-3.12.10-archive": {
-    "scripts/delivery-mode/hermes/build-candidate.sh": 1,
+    "scripts/delivery-mode/fixtures/twelfth-parameters.json": 1,
     "scripts/delivery-mode/hermes/builder-arm64.json": 1,
-    "scripts/delivery-mode/make-packet.py": 1,
-    "scripts/delivery-mode/packet-template/inputs/finalize-bindings.py": 1,
-    "scripts/delivery-mode/packet-template/inputs/verify-finalize-bindings.py": 2,
-    "scripts/delivery-mode/packet-template/install/S9-clean-transport.py": 1,
-    "scripts/delivery-mode/packet-template/install/__PKT_LABEL__-artifact-install.mjs": 2,
-    "scripts/delivery-mode/packet-template/install/p5-materials.json": 1,
     "scripts/disk-hygiene/test_prune_rebuildable.py": 4
   }
 }

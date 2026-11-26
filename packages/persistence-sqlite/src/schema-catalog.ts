@@ -1065,16 +1065,23 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
   entry(
     "paired_devices",
     "PairedDeviceStorePort",
-    "one row per paired iPhone, Apple Watch or Mac: kind, name, release channel, the two public keys, pending, active or revoked, and which browser device row its embedded web sessions use",
+    "one row per paired iPhone, Apple Watch or Mac: kind, name, release channel, the two public keys, active or revoked, and which session device row its embedded web sessions use",
     "metadata_only",
     "cascade with Owner or Agent deletion; a revoked device stays as revoked until the owner is deleted",
   ),
   entry(
-    "device_pairing_codes",
+    "owner_passkeys",
     "PairedDeviceStorePort",
-    "one row per pairing code the owner generated: only the SHA-256 of the code, who started it, when it expires and which device used it; never exported",
+    "one row per passkey the owner created in an App: the credential id, its public key, the signature counter, transports, whether it is synced, when it was created and last used; never exported",
     "metadata_only",
-    "kept after use so a retried pairing request gets the same device; removed when the Owner starts another pairing, and with Owner or Agent deletion",
+    "cascade with Owner or Agent deletion",
+  ),
+  entry(
+    "sign_in_setup_code_uses",
+    "PairedDeviceStorePort",
+    "one row per one-time setup code that created a passkey: only the SHA-256 of the code, which passkey it created and when; never exported",
+    "metadata_only",
+    "cascade with the passkey, Owner or Agent deletion",
   ),
   entry(
     "device_request_nonces",
@@ -1313,6 +1320,13 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "one row per connected source; the account and the refresh token live only in protected payloads",
     "payload_reference",
     "removed with its payloads when the owner disconnects the source",
+  ),
+  entry(
+    "app_connections",
+    "AppConnectionStorePort",
+    "one row per app the owner connected through its remote MCP server (for example GitHub): the connection name, whether it is connected or needs the owner to sign in again, and when it was connected; the OAuth tokens live only in a protected payload",
+    "payload_reference",
+    "removed with its payload when the owner disconnects the app",
   ),
   entry(
     "decision_ledger",

@@ -71,6 +71,8 @@ struct MessageOptionsView: View {
 
 struct ChosenOptionBubble: View {
     let text: String
+    var tail = true
+    var maxWidth: CGFloat = DesignTokens.Size.bubbleMaxWidth
 
     var body: some View {
         VStack(alignment: .trailing, spacing: DesignTokens.Options.chosenCaptionGap) {
@@ -78,7 +80,7 @@ struct ChosenOptionBubble: View {
                 .hmType(DesignTokens.TypeScale.caption)
                 .foregroundStyle(Color.hmMuted)
                 .padding(.trailing, DesignTokens.Options.chosenCaptionInset)
-            OwnerBubble(text: text)
+            OwnerBubble(text: text, tail: tail, maxWidth: maxWidth)
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
     }

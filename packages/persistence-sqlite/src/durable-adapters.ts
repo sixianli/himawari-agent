@@ -1,4 +1,5 @@
 import type {
+  AppConnectionStorePort,
   ApplePushStorePort,
   AttentionStatePort,
   AuditLedgerPort,
@@ -1224,6 +1225,15 @@ export class SqliteDurableAdapters {
       processedSince: (input) => this.context.read("proactive.processedSince", input),
     });
   }
+  appConnections(): AppConnectionStorePort {
+    return Object.freeze<AppConnectionStorePort>({
+      read: (input) => this.context.read("appConnections.read", input),
+      list: (input) => this.context.read("appConnections.list", input),
+      save: (input) => this.context.write("appConnections.save", input),
+      mark: (input) => this.context.write("appConnections.mark", input),
+      remove: (input) => this.context.write("appConnections.remove", input),
+    });
+  }
   ownerPreferences(): OwnerPreferencesStorePort {
     return Object.freeze<OwnerPreferencesStorePort>({
       read: (input) => this.context.read("ownerPreferences.read", input),
@@ -1301,12 +1311,11 @@ export class SqliteDurableAdapters {
 
   pairedDevices(): PairedDeviceStorePort {
     return Object.freeze<PairedDeviceStorePort>({
-      createPairingCode: (input) => this.context.write("pairedDevices.createPairingCode", input),
-      redeemPairingCode: (input) => this.context.write("pairedDevices.redeemPairingCode", input),
+      listPasskeys: (input) => this.context.read("pairedDevices.listPasskeys", input),
+      readPasskey: (credentialId) => this.context.read("pairedDevices.readPasskey", credentialId),
+      signInDevice: (input) => this.context.write("pairedDevices.signInDevice", input),
       readDevice: (deviceId) => this.context.read("pairedDevices.readDevice", deviceId),
       listDevices: (input) => this.context.read("pairedDevices.listDevices", input),
-      readOpenPairingCode: (input) => this.context.read("pairedDevices.readOpenPairingCode", input),
-      confirmDevice: (input) => this.context.write("pairedDevices.confirmDevice", input),
       renameDevice: (input) => this.context.write("pairedDevices.renameDevice", input),
       revokeDevice: (input) => this.context.write("pairedDevices.revokeDevice", input),
       recordNonce: (input) => this.context.write("pairedDevices.recordNonce", input),

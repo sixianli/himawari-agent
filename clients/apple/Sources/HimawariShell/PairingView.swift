@@ -92,7 +92,7 @@ struct PairingView: View {
                     .frame(width: DesignTokens.Size.pairingMark, height: DesignTokens.Size.pairingMark)
                 VStack(spacing: 10) {
                     Text(L.text("pairing.hello"))
-                        .font(.system(size: removed ? DesignTokens.Pairing.removedTitleSize : DesignTokens.TypeScale.title1.size, weight: .bold, design: .rounded))
+                        .hmType(TypeToken(size: removed ? DesignTokens.Pairing.removedTitleSize : DesignTokens.TypeScale.title1.size, weight: 700, lineHeight: nil, face: .rounded, tracking: 0))
                         .foregroundStyle(Color.hmText)
                         .multilineTextAlignment(.center)
                         .lineLimit(1)
@@ -149,7 +149,7 @@ struct PairingView: View {
                     .frame(width: DesignTokens.Pairing.waitingMark, height: DesignTokens.Pairing.waitingMark)
                 VStack(spacing: 12) {
                     Text(host)
-                        .font(.system(size: DesignTokens.TypeScale.title1.size, weight: .bold))
+                        .hmType(TypeToken(size: DesignTokens.TypeScale.title1.size, weight: 700, lineHeight: nil, face: .system, tracking: 0))
                         .foregroundStyle(Color.hmText)
                         .multilineTextAlignment(.center)
                         .lineLimit(1)

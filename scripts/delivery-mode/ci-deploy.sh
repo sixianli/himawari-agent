@@ -70,6 +70,9 @@ fi
 echo "CI_DEPLOY_DB_PERMISSIONS"
 remote "cd /var/lib/himawari/state/data && for f in product.sqlite product.sqlite-wal product.sqlite-shm; do [ -e \"\$f\" ] && chmod 600 \"\$f\"; done; true" || refuse DB_PERMISSIONS_FAILED "cannot tighten the product database file modes on $host" 3
 
+echo "CI_DEPLOY_BUILDER_HOME_OWNERSHIP"
+remote 'tools="$(getent passwd himawari-build | cut -d: -f6)/packet-builder/tools"; for d in "$tools/home" "$tools/tmp"; do [ -d "$d" ] && chown -R himawari-build:himawari-build "$d"; done; true' || refuse BUILDER_HOME_OWNERSHIP_FAILED "cannot give the packet builder its own tool home back on $host" 3
+
 echo "CI_DEPLOY_NODE_OWNERSHIP"
 remote "chown -R root:root /opt/himawari/node && chmod -R go-w /opt/himawari/node" || refuse NODE_OWNERSHIP_FAILED "cannot make /opt/himawari/node root-owned on $host" 3
 
@@ -93,6 +96,9 @@ echo "CI_DEPLOY_READBACK"
 for attempt in $(seq 1 24); do
   if [[ "$(remote "/usr/bin/systemctl is-active '$unit_name'" 2>/dev/null)" == active ]] && remote "curl -fsS -o /dev/null --max-time 5 http://127.0.0.1:8400/health/ready" 2>/dev/null; then
     echo "CI_DEPLOY_READY $commit"
+    running_release="$(remote "grep -o -m1 -E '$releases_root/[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9a-f]{7,40}' '$unit_path'")" || refuse COMPUTERS_RELEASE_UNREADABLE "cannot read the running release from $unit_path on $host" 7
+    echo "CI_DEPLOY_COMPUTERS $running_release"
+    remote "bash '$repo/scripts/operations/computers/install-computers.sh' ensure --release '$running_release'" || refuse COMPUTERS_FAILED "the service is up, but each user's computer service did not install or start; see journalctl -u himawari-computers on $host" 7
     exit 0
   fi
   sleep 5

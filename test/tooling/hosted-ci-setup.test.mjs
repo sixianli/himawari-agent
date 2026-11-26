@@ -66,6 +66,7 @@ describe("iPhone 工作流", () => {
       "iphone",
       "iphone-e2e",
       "iphone-accessibility",
+      "scroll",
     ]);
     const { changes, ...macJobs } = workflow.jobs;
     expect(changes["runs-on"]).toBe("ubuntu-24.04");
@@ -86,6 +87,18 @@ describe("iPhone 工作流", () => {
         "apple.yml": readFileSync(path.join(repositoryRoot, ".github/workflows/apple.yml"), "utf8"),
       }),
     ).not.toThrow();
+  });
+  it("滚动测速作业用开了优化的调试版跑长对话滚动脚本，并上传结果", () => {
+    const steps = workflow.jobs.scroll.steps;
+    const build = steps.find((step) => step.run?.startsWith("xcodebuild build"))?.run ?? "";
+    expect(build).toContain("-scheme Himawari ");
+    expect(build).toContain("SWIFT_OPTIMIZATION_LEVEL=-O");
+    expect(build).toContain("CODE_SIGNING_ALLOWED=NO");
+    const bench =
+      steps.find((step) => step.run?.startsWith("bash clients/apple/scripts/scroll-bench.sh"))
+        ?.run ?? "";
+    expect(bench).toContain("--loads realistic,plain");
+    expect(steps.some((step) => step.with?.name === "scroll-bench")).toBe(true);
   });
   it("跑 HimawariCore 单元测试，并不签名编译 iPhone 的 Himawari scheme", () => {
     const steps = workflow.jobs.iphone.steps;

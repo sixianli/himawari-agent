@@ -1,16 +1,11 @@
-import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import {
-  type DeviceConfiguration,
-  type GatewayAuthenticationContext,
-  PAIRED_DEVICE_KINDS,
-  PAIRED_DEVICE_RELEASE_CHANNELS,
-  PAIRING_CODE_LIFETIME_MILLISECONDS,
-  type PairedDevice,
-  type PairedDeviceKind,
-  type PairedDeviceReleaseChannel,
-  type PairedDeviceScope,
-  type PairedDeviceStorePort,
-  type SessionDeviceStatePort,
+import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import type {
+  DeviceConfiguration,
+  GatewayAuthenticationContext,
+  PairedDevice,
+  PairedDeviceScope,
+  PairedDeviceStorePort,
+  SessionDeviceStatePort,
 } from "@himawari-agent/application";
 import { normalizeDeviceName } from "@himawari-agent/gateway-contracts";
 import {
@@ -23,9 +18,12 @@ import {
 
 export const PAIRED_DEVICE_ERROR_CODES = Object.freeze({
   PAIRING_REQUEST_INVALID: "DEVICE_PAIRING_REQUEST_INVALID",
-  PAIRING_CODE_INVALID: "DEVICE_PAIRING_CODE_INVALID",
-  PAIRING_CODE_EXPIRED: "DEVICE_PAIRING_CODE_EXPIRED",
-  PAIRING_CODE_USED: "DEVICE_PAIRING_CODE_USED",
+  SETUP_CODE_INVALID: "DEVICE_SETUP_CODE_INVALID",
+  SETUP_CODE_EXPIRED: "DEVICE_SETUP_CODE_EXPIRED",
+  SETUP_CODE_ATTEMPTS: "DEVICE_SETUP_CODE_ATTEMPTS",
+  SIGN_IN_FLOW_EXPIRED: "DEVICE_SIGN_IN_FLOW_EXPIRED",
+  PASSKEY_REJECTED: "DEVICE_PASSKEY_REJECTED",
+  CONFIRMATION_REQUIRED: "DEVICE_CONFIRMATION_REQUIRED",
   DEVICE_PENDING: "DEVICE_PENDING",
   DEVICE_REVOKED: "DEVICE_REVOKED",
   OWNER_INACTIVE: "DEVICE_OWNER_INACTIVE",
@@ -115,28 +113,9 @@ export interface AuthenticatedDeviceRequest {
   readonly authentication: GatewayAuthenticationContext;
 }
 
-const PAIRING_CODE_PATTERN = /^[A-Za-z0-9_-]{22}$/u;
-const SPKI_PATTERN = /^[A-Za-z0-9+/]{80,200}={0,2}$/u;
-
-function hashCode(code: string): string {
-  return createHash("sha256").update(code).digest("hex");
-}
-
-function sha256Ref(value: string): string {
-  return `sha256:${createHash("sha256").update(value).digest("hex")}`;
-}
-
-function hasOnlyKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
-  return Object.keys(value).every((key) => keys.includes(key));
-}
-
 const CHALLENGE_RANDOM_BYTES = 12;
 const CHALLENGE_MAC_BYTES = 18;
 const CHALLENGE_BYTES = 4 + CHALLENGE_RANDOM_BYTES + CHALLENGE_MAC_BYTES;
-
-function canonicalSpki(value: string): string {
-  return publicKeyFromSpkiBase64(value).export({ format: "der", type: "spki" }).toString("base64");
-}
 
 export class PairedDeviceService {
   readonly #options: PairedDeviceServiceOptions;
@@ -167,122 +146,8 @@ export class PairedDeviceService {
     return (this.#options.randomBytes ?? randomBytes)(size);
   }
 
-  async startPairing(
-    scope: PairedDeviceScope & { readonly sessionId: string },
-  ): Promise<{ readonly code: string; readonly expiresAt: string }> {
-    return this.startPairingWithCode({
-      ...scope,
-      code: this.#random(16).toString("base64url"),
-    });
-  }
-
-  async startPairingWithCode(
-    input: PairedDeviceScope & { readonly sessionId: string; readonly code: string },
-  ): Promise<{ readonly code: string; readonly expiresAt: string }> {
-    if (!PAIRING_CODE_PATTERN.test(input.code) || !/[AQgw]$/u.test(input.code))
-      throw new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.PAIRING_REQUEST_INVALID, 400);
-    const { code } = input;
-    const scope = input;
-    const now = this.#now();
-    const expiresAt = new Date(now.getTime() + PAIRING_CODE_LIFETIME_MILLISECONDS).toISOString();
-    const created = await this.#options.store.createPairingCode({
-      ownerId: scope.ownerId,
-      agentId: scope.agentId,
-      sessionId: scope.sessionId,
-      codeHash: hashCode(code),
-      now: now.toISOString(),
-      expiresAt,
-    });
-    return Object.freeze({ code, expiresAt: created.expiresAt });
-  }
-
-  async pair(
-    body: unknown,
-  ): Promise<{ readonly device: PairedDevice; readonly replayed: boolean }> {
-    if (!body || typeof body !== "object" || Array.isArray(body))
-      throw new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.PAIRING_REQUEST_INVALID, 400);
-    const input = body as Record<string, unknown>;
-    const keys = [
-      "pairingCode",
-      "kind",
-      "name",
-      "releaseChannel",
-      "devicePublicKey",
-      "confirmPublicKey",
-    ];
-    const name = normalizeDeviceName(input["name"]);
-    if (
-      !hasOnlyKeys(input, keys) ||
-      typeof input["pairingCode"] !== "string" ||
-      !PAIRING_CODE_PATTERN.test(input["pairingCode"]) ||
-      !(PAIRED_DEVICE_KINDS as readonly unknown[]).includes(input["kind"]) ||
-      !(PAIRED_DEVICE_RELEASE_CHANNELS as readonly unknown[]).includes(input["releaseChannel"]) ||
-      name === null ||
-      typeof input["devicePublicKey"] !== "string" ||
-      typeof input["confirmPublicKey"] !== "string" ||
-      !SPKI_PATTERN.test(input["devicePublicKey"]) ||
-      !SPKI_PATTERN.test(input["confirmPublicKey"]) ||
-      input["devicePublicKey"] === input["confirmPublicKey"]
-    )
-      throw new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.PAIRING_REQUEST_INVALID, 400);
-    let devicePublicKey: string;
-    let confirmPublicKey: string;
-    try {
-      devicePublicKey = canonicalSpki(input["devicePublicKey"]);
-      confirmPublicKey = canonicalSpki(input["confirmPublicKey"]);
-    } catch {
-      throw new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.PAIRING_REQUEST_INVALID, 400);
-    }
-    if (devicePublicKey === confirmPublicKey)
-      throw new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.PAIRING_REQUEST_INVALID, 400);
-    const result = await this.#options.store.redeemPairingCode({
-      codeHash: hashCode(input["pairingCode"]),
-      now: this.#now().toISOString(),
-      device: {
-        id: `dev_${this.#random(16).toString("base64url")}`,
-        kind: input["kind"] as PairedDeviceKind,
-        name,
-        releaseChannel: input["releaseChannel"] as PairedDeviceReleaseChannel,
-        devicePublicKey,
-        confirmPublicKey,
-      },
-    });
-    switch (result.kind) {
-      case "paired":
-        return { device: result.device, replayed: false };
-      case "replayed":
-        if (result.device.status === "revoked")
-          throw new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.DEVICE_REVOKED, 403);
-        return { device: result.device, replayed: true };
-      case "code_expired":
-        throw new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.PAIRING_CODE_EXPIRED, 410, {
-          pairingCodeTtlSeconds: PAIRING_CODE_LIFETIME_MILLISECONDS / 1000,
-        });
-      case "code_used":
-        throw new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.PAIRING_CODE_USED, 409);
-      default:
-        throw new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.PAIRING_CODE_INVALID, 404);
-    }
-  }
-
-  openPairing(scope: PairedDeviceScope): Promise<{ readonly expiresAt: string } | undefined> {
-    return this.#options.store.readOpenPairingCode({ ...scope, now: this.#now().toISOString() });
-  }
-
   list(scope: PairedDeviceScope): Promise<readonly PairedDevice[]> {
     return this.#options.store.listDevices(scope);
-  }
-
-  confirm(
-    scope: PairedDeviceScope & { readonly deviceId: string; readonly expectedRevision: number },
-  ): Promise<PairedDevice> {
-    return this.#options.store.confirmDevice({
-      ...scope,
-      now: this.#now().toISOString(),
-      webDeviceId: `device:${this.#random(16).toString("hex")}`,
-      webSessionId: `session:${this.#random(16).toString("hex")}`,
-      webAuthenticationRef: sha256Ref(this.#random(32).toString("base64url")),
-    });
   }
 
   rename(

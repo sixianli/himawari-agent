@@ -23,7 +23,7 @@
       "sha256": "__PKT_CONTEXT_SHA256__"
     },
     {
-      "name": "python-3.12.10.tar.gz",
+      "name": "__PKT_PYTHON_ARCHIVE_NAME__",
       "bytes": __PKT_PYTHON_BYTES__,
       "sha256": "__PKT_PYTHON_SHA256__"
     },

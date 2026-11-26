@@ -67,7 +67,7 @@ describe("[I-gitleaks-allowlist] Gitleaks 白名单只放行已审阅的形式",
   });
 
   it("其余每条白名单都同时限定规则、文件路径和值的形状", () => {
-    expect(scoped).toHaveLength(17);
+    expect(scoped).toHaveLength(18);
     for (const block of scoped) {
       expect(block.condition).toBe("AND");
       expect(block.regexTarget).toBe("secret");

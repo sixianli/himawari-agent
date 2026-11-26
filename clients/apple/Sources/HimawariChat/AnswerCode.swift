@@ -24,6 +24,27 @@ enum CodeColors {
     }
 }
 
+final class HighlightCache: @unchecked Sendable {
+    private final class Box {
+        let value: AttributedString?
+        init(_ value: AttributedString?) { self.value = value }
+    }
+
+    private let cache = NSCache<NSString, Box>()
+
+    init() {
+        cache.countLimit = 300
+    }
+
+    func cached(_ key: String) -> AttributedString?? {
+        cache.object(forKey: key as NSString).map(\.value)
+    }
+
+    func store(_ key: String, _ value: AttributedString?) {
+        cache.setObject(Box(value), forKey: key as NSString)
+    }
+}
+
 struct AnswerCodeBlock: View {
     let language: String?
     let code: String
@@ -31,6 +52,7 @@ struct AnswerCodeBlock: View {
 
     @Environment(\.colorScheme) private var colorScheme
     @State private var highlighted: AttributedString?
+    @State private var highlightedDark: Bool?
     @State private var copied = 0
     @State private var showingCheck = false
 
@@ -53,7 +75,7 @@ struct AnswerCodeBlock: View {
                     showingCheck = true
                 } label: {
                     Image(systemName: showingCheck ? "checkmark" : "doc.on.doc")
-                        .font(.system(size: Self.label.size))
+                        .hmType(Self.label)
                         .foregroundStyle(Color.hmMuted)
                         .frame(minWidth: DesignTokens.Size.minTapTarget, minHeight: DesignTokens.Size.minTapTarget, alignment: .trailing)
                         .contentShape(Rectangle())
@@ -70,7 +92,7 @@ struct AnswerCodeBlock: View {
             .padding(.trailing, DesignTokens.Chat.codePadding - (DesignTokens.Size.minTapTarget - Self.label.size) / 2)
             .frame(height: DesignTokens.Size.minTapTarget)
             ScrollView(.horizontal) {
-                Text(highlighted ?? AttributedString(code))
+                Text(shownCode)
                     .hmType(Self.small, design: .monospaced)
                     .foregroundStyle(Color.hmText)
                     .fixedSize(horizontal: true, vertical: false)
@@ -78,10 +100,28 @@ struct AnswerCodeBlock: View {
             }
             .scrollIndicators(.hidden)
         }
-        .background(Color.hmFill, in: RoundedRectangle(cornerRadius: DesignTokens.Chat.codeRadius, style: .continuous))
+        .background(Color.hmBubbleCode, in: RoundedRectangle(cornerRadius: DesignTokens.Chat.codeRadius, style: .continuous))
         .task(id: HighlightKey(code: code, language: language, dark: colorScheme == .dark)) {
-            highlighted = await Self.highlight(code, language: language, dark: colorScheme == .dark)
+            let dark = colorScheme == .dark
+            guard Self.done.cached(Self.key(code, language, dark)) == nil else { return }
+            let result = await Self.highlight(code, language: language, dark: dark)
+            Self.done.store(Self.key(code, language, dark), result)
+            highlighted = result
+            highlightedDark = dark
         }
+    }
+
+    private var shownCode: AttributedString {
+        let dark = colorScheme == .dark
+        if let cached = Self.done.cached(Self.key(code, language, dark)), let cached { return cached }
+        if highlightedDark == dark, let highlighted { return highlighted }
+        return AttributedString(code)
+    }
+
+    private static let done = HighlightCache()
+
+    private static func key(_ code: String, _ language: String?, _ dark: Bool) -> String {
+        "\(dark ? 1 : 0)|\(language ?? "")|\(code)"
     }
 
     private struct HighlightKey: Hashable {

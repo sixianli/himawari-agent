@@ -11,9 +11,8 @@ import {
 import { afterEach, describe, expect, it } from "vitest";
 import {
   harness,
-  pairingCode,
   removeDeviceHarnessDirectories,
-  web,
+  signInWithPasskey,
 } from "../fixtures/device-api-harness.ts";
 import { addRun, perceptionScope } from "../fixtures/perception-test-client.ts";
 
@@ -126,22 +125,13 @@ describe("[iOS-9B] the iPhone executor runs against the real device-action serve
         const url = new URL(request.url ?? "/", "http://control");
         const input = request.method === "POST" ? await body(request) : {};
         if (url.pathname === "/pair") {
-          const started = await web(h, "pairing-codes");
-          const paired = await h.app.inject({
-            method: "POST",
-            url: "/api/device/v1/pair",
-            headers: { host: new URL(origin).host, "content-type": "application/json" },
-            payload: JSON.stringify({
-              pairingCode: pairingCode(started.body["pairingUri"]),
-              kind: "iphone",
-              name: "Swift client",
-              releaseChannel: "direct",
-              devicePublicKey: input["devicePublicKey"],
-              confirmPublicKey: input["confirmPublicKey"],
-            }),
+          const device = await signInWithPasskey(h, {
+            kind: "iphone",
+            name: "Swift client",
+            releaseChannel: "direct",
+            devicePublicKey: input["devicePublicKey"],
+            confirmPublicKey: input["confirmPublicKey"],
           });
-          const device = (paired.json() as { device: { id: string; revision: number } }).device;
-          await web(h, "confirm", { deviceId: device.id, expectedRevision: device.revision });
           return reply(response, 200, { deviceId: device.id, origin });
         }
         if (url.pathname === "/clock") return reply(response, 200, { now: h.clock.now() });

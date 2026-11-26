@@ -1,3 +1,4 @@
+import type { DeviceSignInService } from "./device-sign-in.js";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { Readable } from "node:stream";
@@ -47,12 +48,10 @@ import type { DeviceActionHub } from "./device-action-hub.js";
 import {
   type DeviceApiRouteOptions,
   type DeviceHomePort,
-  type DevicePairingAccess,
   registerDeviceApiRoutes,
   type UtterancePrefetchPort,
 } from "./device-api-routes.js";
 import { type DeviceGatewayAuditFailure, DeviceGatewayError } from "./device-gateway.js";
-import type { SpeechSynthesisPort } from "./speech-synthesis.js";
 import { DevicePushError, type DevicePushPort } from "./device-push.js";
 import { DeviceSignatureError } from "./device-request-signature.js";
 import {
@@ -63,6 +62,7 @@ import {
 import type { PerceptionService } from "./perception-service.js";
 import { withPreviewStorage } from "./preview-page-storage.js";
 import type { RuntimeMetricsSnapshot } from "./runtime-observability.js";
+import type { SpeechSynthesisPort } from "./speech-synthesis.js";
 import { PLAIN_TEXT_MAXIMUM_CHARACTERS, parseTextAdmission } from "./text-admission.js";
 
 export const HTTP_GATEWAY_ERROR_CODES = Object.freeze({
@@ -147,9 +147,11 @@ export interface HttpGatewayServerOptions {
     readonly audit: AuditLedgerPort;
     readonly onAuditFailed?: (failure: DeviceGatewayAuditFailure) => void;
     readonly push?: DevicePushPort;
-    readonly pairingAccess?: DevicePairingAccess;
+    readonly signIn?: DeviceSignInService;
+    readonly appleAppIds?: () => readonly string[];
     readonly perception?: PerceptionService;
     readonly vault?: (scope: PairedDeviceScope) => VaultService | undefined;
+    readonly connections?: DeviceApiRouteOptions["connections"];
     readonly actions?: {
       readonly service: (scope: PairedDeviceScope) => DeviceActionService | undefined;
       readonly hub: DeviceActionHub;
@@ -938,6 +940,8 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
 
   app.setErrorHandler((error, _request, reply) => {
     if (error instanceof PairedDeviceError) {
+      const retryAfter = error.details["retryAfterSeconds"];
+      if (typeof retryAfter === "number") reply.header("retry-after", String(retryAfter));
       sendJson(reply, error.statusCode, { error: { ...error.details, code: error.code } });
       return;
     }
@@ -998,6 +1002,12 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
             : HTTP_GATEWAY_ERROR_CODES.REQUEST_INVALID,
       },
     });
+  });
+
+  app.get("/.well-known/apple-app-site-association", async (_request, reply) => {
+    const apps = options.devices?.appleAppIds?.() ?? [];
+    if (apps.length === 0) return sendJson(reply, 404, { error: { code: "NOT_FOUND" } });
+    return sendJson(reply, 200, { webcredentials: { apps: [...apps] } });
   });
 
   app.get("/health/live", async (_request, reply) => {
@@ -1334,10 +1344,11 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
       ...(options.devices.home ? { home: options.devices.home } : {}),
       devices: options.devices.service,
       configuration: options.devices.configuration,
-      ...(options.devices.pairingAccess ? { pairingAccess: options.devices.pairingAccess } : {}),
+      ...(options.devices.signIn ? { signIn: options.devices.signIn } : {}),
       ...(options.devices.perception ? { perception: options.devices.perception } : {}),
       ...(options.devices.actions ? { actions: options.devices.actions } : {}),
       ...(options.devices.vault ? { vault: options.devices.vault } : {}),
+      ...(options.devices.connections ? { connections: options.devices.connections } : {}),
       ...(options.devices.notifications ? { notifications: options.devices.notifications } : {}),
       ...(options.devices.voiceGates ? { voiceGates: options.devices.voiceGates } : {}),
       ...(options.devices.prefetch ? { prefetch: options.devices.prefetch } : {}),

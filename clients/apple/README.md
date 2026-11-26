@@ -43,7 +43,7 @@
 
 1. 在 Xcode 里打开 `clients/apple/App/Himawari.xcodeproj`。第一次打开会自动下载依赖的 `swift-crypto` 包，等左边栏不再转圈。
 2. 左边栏点最上面的 Himawari 工程 → 中间 TARGETS 下的 Himawari、HimawariShareExtension、HimawariSafariExtension 三个目标（用灵动岛时还有 HimawariListenActivity；要装手表 App 时还有 HimawariWatch、HimawariWatchWidgets 两个目标），各自在 Signing & Capabilities 里把 Team 选成你的 Apple ID。iPhone 这组目标的 Bundle Identifier（App 在苹果系统里的唯一编号）现在是 `win.siyi.himawari.app`，分享扩展、Safari 扩展、灵动岛和手表的编号都由工程级的 `HIMAWARI_BUNDLE_PREFIX` 拼出来。Personal Team 登记过的 ID 付费团队用不了，改工程级的 HIMAWARI_BUNDLE_PREFIX 这一处即可；如果提示被占用，把它改成别的（例如末尾加你的名字）。Mac 目标 `win.siyi.himawari.mac` 不跟着这个前缀变。这几个目标共用一个 App Group（`HIMAWARI_APP_GROUP`，让 App 和扩展共用一块存储）和一个钥匙串分组（`HIMAWARI_KEYCHAIN_GROUP`，让扩展能用 App 配对时存的设备密钥），这两个值在工程级的构建设置里，改了 Bundle Identifier 时最好一起改。
-   免费的 Apple ID 不支持 App Group，带 App Group 的目标都签不过（iPhone 的三个目标，以及要装手表时的手表和手表小组件两个目标）。这时在 Xcode 里把工程级构建设置 `HIMAWARI_APP_GROUP` 清空，并把 `HIMAWARI_ENTITLEMENTS_SUFFIX` 设成 `.keychain-only`（命令行是 `xcodebuild HIMAWARI_APP_GROUP= HIMAWARI_ENTITLEMENTS_SUFFIX=.keychain-only`），iPhone 的三个目标就只用钥匙串分组，手表和手表小组件两个目标改用空权限文件（不含任何分组）。代价是扩展和 App 不再共用存储：分享面板和 Safari 扩展传不上去时不会排队，会显示“没能确认传上，稍后再分享一次”（可能已经传上，只是没收到回复），要重新分享一次，同一内容可能因此收到两份；App 里“开或关”的开关只写进 App 自己的存储，扩展看不到；Safari 的“已用过”记录由扩展写进扩展自己的存储，App 看不到。所以扩展一直按默认开着，App 里关掉分享或 Safari 并不会让扩展停下，Safari 引导页也不会因为扩展用过而前进。付费账号用默认设置，不用改。苹果推送（锁屏上的通知、从通知打开 App）要付费账号：权限 `aps-environment` 只写在 `Himawari.entitlements` 里，免费签名用的 `Himawari.keychain-only.entitlements` 没有它，所以免费签名照样能装，只是 iPhone 拿不到推送令牌，没有锁屏推送，其余功能不受影响；换成付费账号并用默认设置重装后，App 回到前台时会自己申请通知权限、拿令牌并向服务器登记，不用改任何代码。开发构建（Xcode 直接运行）登记成 `development` 环境，发布构建登记成 `production`（发布签名时 Xcode 会把权限里的 `aps-environment` 换成 `production`）；登记的环境按构建配置决定，所以不要用 Release 配置配开发签名装到真机上，否则登记的环境和令牌的环境相反，服务器发不出推送。登记时带的 topic 就是 Bundle Identifier，服务器配置里的推送 topic 清单必须包含它，改过 Bundle Identifier 时要同步改服务器配置；服务器的推送环境清单也要包含 `development`（开发构建）和 `production`（发布构建）里实际用到的那个。两者缺一，服务器都会一直拒绝登记（403），App 按设计静默重试，不会提示。
+   免费的 Apple ID 不支持 App Group，带 App Group 的目标都签不过（iPhone 的三个目标，以及要装手表时的手表和手表小组件两个目标）。这时在 Xcode 里把工程级构建设置 `HIMAWARI_APP_GROUP` 清空，并把 `HIMAWARI_ENTITLEMENTS_SUFFIX` 设成 `.keychain-only`（命令行是 `xcodebuild HIMAWARI_APP_GROUP= HIMAWARI_ENTITLEMENTS_SUFFIX=.keychain-only`），iPhone 的三个目标就只用钥匙串分组，手表和手表小组件两个目标改用空权限文件（不含任何分组）。代价是扩展和 App 不再共用存储：分享面板和 Safari 扩展传不上去时不会排队，会显示“没能确认传上，稍后再分享一次”（可能已经传上，只是没收到回复），要重新分享一次，同一内容可能因此收到两份；App 里“开或关”的开关只写进 App 自己的存储，扩展看不到；Safari 的“已用过”记录由扩展写进扩展自己的存储，App 看不到。所以扩展一直按默认开着，App 里关掉分享或 Safari 并不会让扩展停下，Safari 引导页也不会因为扩展用过而前进。付费账号用默认设置，不用改。苹果推送（锁屏上的通知、从通知打开 App）要付费账号：权限 `aps-environment` 只写在 `Himawari.entitlements` 里，免费签名用的 `Himawari.keychain-only.entitlements` 没有它，所以免费签名照样能装，只是 iPhone 拿不到推送令牌，没有锁屏推送，其余功能不受影响；她标成“紧急”的提醒以时效性通知（Time Sensitive，能穿过专注模式）送达，所需权限 `com.apple.developer.usernotifications.time-sensitive` 同样只写在 `Himawari.entitlements` 里；换成付费账号并用默认设置重装后，App 回到前台时会自己申请通知权限、拿令牌并向服务器登记，不用改任何代码。开发构建（Xcode 直接运行）登记成 `development` 环境，发布构建登记成 `production`（发布签名时 Xcode 会把权限里的 `aps-environment` 换成 `production`）；登记的环境按构建配置决定，所以不要用 Release 配置配开发签名装到真机上，否则登记的环境和令牌的环境相反，服务器发不出推送。登记时带的 topic 就是 Bundle Identifier，服务器配置里的推送 topic 清单必须包含它，改过 Bundle Identifier 时要同步改服务器配置；服务器的推送环境清单也要包含 `development`（开发构建）和 `production`（发布构建）里实际用到的那个。两者缺一，服务器都会一直拒绝登记（403），App 按设计静默重试，不会提示。
 3. 用数据线连上 iPhone，窗口顶部的设备选你的 iPhone，按 ⌘R。第一次装完，在手机“设置 → 通用 → VPN 与设备管理”里信任你的开发者证书，再点开 App。
 4. 跑单元测试：在 Xcode 里另外打开 `clients/apple/Package.swift`，顶部设备选 “My Mac”，按 ⌘U。全部通过是绿色对勾。
 
@@ -92,16 +92,9 @@ node clients/apple/scripts/make-signature-fixture.mjs clients/apple/Tests/Himawa
 <a id="icons"></a>
 ## 图标
 
-图标用 Tabler Icons（一套开源线条图标，MIT 许可证）的 outline 款，不用苹果自带的 SF Symbols。代码里只写名字，例如 `Icon(.message)`；颜色跟着文字色走。用到哪些图标、每个的线宽，写在 `scripts/icons.json`：常规的 1.6，返回、关闭、加号、小箭头 2.2。
+图标一律是线条，大多数用苹果自带的 SF Symbols，Andy 2026-11-26 圈中的几个用 Tabler 线条款（规则见设计规范第 54 条）。代码里只写名字，例如 `Icon(.message)`；`Sources/HimawariDesign/Icon.swift` 的 `IconName.symbol` 写着每个名字对应的 SF Symbol，`IconName.tabler` 列出改用 Tabler 的那几个（图片用 `node scripts/make-icons.mjs <@tabler/icons 包目录> Sources/HimawariDesign/Resources` 按 `scripts/icons.json` 生成），`IconName.weight` 写着哪几个（小箭头、发送、关闭）用半粗。颜色跟着文字色走。图标大小跟着动态字体放大，最多放到 xxxLarge，免得撑破固定大小的圆钮。
 
-要加图标：先在 `scripts/icons.json` 里加一行，再在 `Sources/HimawariDesign/Icon.swift` 的 `IconName` 里加同名的一项，然后重新生成：
-
-```bash
-mkdir -p /tmp/tabler && cd /tmp/tabler && npm pack @tabler/icons@3.35.0 && tar xzf tabler-icons-3.35.0.tgz && cd -
-node clients/apple/scripts/make-icons.mjs /tmp/tabler/package clients/apple/Sources/HimawariDesign/Resources
-```
-
-脚本把每个 SVG 改好线宽后放进 `Icons.xcassets`（Xcode 的图片资源目录），按模板图片处理；许可证原文和版本号放进 `Licenses/`，以后的致谢页（第 11 批设置页）用 `ThirdPartyLicense.all` 读出来显示，第 2 批还没有界面用它。
+要加图标：在 `IconName` 里加一项，并在 `symbol` 里写上它的 SF Symbol 名字（编译器会要求每一项都写）。服务端发来的过程行图标名（`activityIcon`）不变，名字认不出时用 `puzzlepiece`。
 
 [返回目录](#apple-clients)
 
