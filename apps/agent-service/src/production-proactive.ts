@@ -55,14 +55,7 @@ import type {
   GatewayV2Query,
   GatewayV2Snapshot,
 } from "@himawari-agent/gateway-contracts";
-import {
-  DEMO_MAILBOX_ACCOUNT,
-  DEMO_MAILBOX_SETTINGS_RETURN,
-  demoMailboxToken,
-  demoMailboxTokenLocale,
-  type GoogleOAuth,
-  isDemoMailboxToken,
-} from "@himawari-agent/platform-node";
+import type { GoogleOAuth } from "@himawari-agent/platform-node";
 import type { ProactivePushSource } from "./production-web-push.js";
 
 export const PRODUCTION_PROACTIVE_OPERATIONS = Object.freeze([
@@ -298,68 +291,7 @@ export class ProductionProactive {
     if (this.#timer) return;
     this.#timer = setInterval(() => void this.tick(), this.#options.configuration.intervalMs);
     this.#timer.unref?.();
-    if (!this.#options.configuration.demoInbox) {
-      void this.tick();
-      return;
-    }
-    void this.seedDemoInbox()
-      .catch(this.#options.onFailure)
-      .then(() => this.tick());
-  }
-
-  async seedDemoInbox(options: { readonly restore?: boolean } = {}): Promise<void> {
-    const { scope, store, seal, clock } = this.#options;
-    const demoInbox = this.#options.configuration.demoInbox;
-    if (!demoInbox) return;
-    const existing = await store.readConnection({ ...scope, source: GMAIL_SOURCE.name });
-    const settings = await store.readSettings(scope);
-    if (existing) {
-      const token = await seal.open({ ...scope, ref: existing.tokenRef });
-      if (token === undefined) {
-        if (!options.restore) return;
-      } else if (!isDemoMailboxToken(token)) return;
-      else if (existing.status === "connected" && demoMailboxTokenLocale(token) === demoInbox)
-        return;
-    } else if (!options.restore && settings.updatedAt !== null) return;
-    const now = clock.now();
-    const sealed: string[] = [];
-    let released: readonly string[];
-    try {
-      const accountRef = await seal.seal({ ...scope, text: DEMO_MAILBOX_ACCOUNT, at: now });
-      sealed.push(accountRef);
-      const tokenRef = await seal.seal({
-        ...scope,
-        text: demoMailboxToken(demoInbox, now),
-        at: now,
-      });
-      sealed.push(tokenRef);
-      released = await store.saveConnection({
-        ...scope,
-        connection: {
-          source: GMAIL_SOURCE.name,
-          accountRef,
-          tokenRef,
-          cursor: null,
-          status: "connected",
-          connectedAt: now,
-          updatedAt: now,
-        },
-      });
-    } catch (error) {
-      await seal.release({ ...scope, refs: sealed }).catch(() => undefined);
-      throw error;
-    }
-    if (released.length > 0) await seal.release({ ...scope, refs: released });
-    await store.writeSettings({ ...scope, ...settings, enabled: true, now });
-  }
-
-  async authorizationRedirect(owner: string): Promise<string> {
-    if (this.#options.configuration.demoInbox) {
-      await this.seedDemoInbox({ restore: true });
-      void this.tick();
-      return DEMO_MAILBOX_SETTINGS_RETURN;
-    }
-    return this.beginAuthorization(owner);
+    void this.tick();
   }
 
   async stop(): Promise<void> {
@@ -369,12 +301,7 @@ export class ProductionProactive {
   }
 
   tick(): Promise<void> {
-    this.#running ??= this.#checkable()
-      .then(async (checkable) => {
-        if (!checkable) return;
-        await this.reviewRules();
-        await this.#runSources();
-      })
+    this.#running ??= this.#reviewRulesThenRunSources()
       .catch(this.#options.onFailure)
       .then(async () => {
         await this.prereview();
@@ -383,6 +310,11 @@ export class ProductionProactive {
         this.#running = undefined;
       });
     return this.#running;
+  }
+
+  async #reviewRulesThenRunSources(): Promise<void> {
+    await this.reviewRules();
+    await this.#runSources();
   }
 
   async #runSources(): Promise<void> {
@@ -442,16 +374,6 @@ export class ProductionProactive {
       this.#options.onFailure(error);
       return undefined;
     }
-  }
-
-  async #checkable(): Promise<boolean> {
-    if (!this.#options.configuration.demoInbox) return true;
-    const { scope, store, seal } = this.#options;
-    if (!(await store.readSettings(scope)).enabled) return false;
-    const connection = await store.readConnection({ ...scope, source: GMAIL_SOURCE.name });
-    if (!connection) return true;
-    const token = await seal.open({ ...scope, ref: connection.tokenRef });
-    return token === undefined || isDemoMailboxToken(token);
   }
 
   async replayRule(rule: RuleRecord): Promise<OwnerRuleReplayResult> {
@@ -944,11 +866,6 @@ export class ProductionProactive {
         const connection = await store.readConnection({ ...scope, source: managed.name });
         if (connection && managed.name === GMAIL_SOURCE.name) {
           const token = await seal.open({ ...scope, ref: connection.tokenRef });
-          if (token && this.#options.configuration.demoInbox && !isDemoMailboxToken(token))
-            throw new ApplicationPortError(
-              PORT_ERROR_CODES.INVALID_OPERATION,
-              "PROACTIVE_DEMO_KEEPS_REAL_CONNECTION",
-            );
           if (token) await this.#options.oauth.revoke(token).catch(() => false);
         }
         const released = await store.removeSource({ ...scope, source: managed.name });
