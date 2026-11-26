@@ -10,6 +10,7 @@ public struct PairedDevice: Decodable, Sendable, Identifiable, Hashable {
     public let status: String
     public let pairedAt: String
     public let lastSeenAt: String?
+    public let online: Bool?
 }
 
 public struct DeviceRoster: Decodable, Sendable, Equatable {
@@ -30,7 +31,7 @@ public enum DevicePresence: Equatable, Sendable {
     case neverSeen
 
     static func of(_ device: PairedDevice, isThisDevice: Bool) -> DevicePresence {
-        if isThisDevice { return .connected }
+        if isThisDevice || device.online == true { return .connected }
         return of(lastSeenAt: device.lastSeenAt.flatMap(Timestamp.parse), now: Date())
     }
 

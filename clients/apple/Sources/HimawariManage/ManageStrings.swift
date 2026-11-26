@@ -334,7 +334,7 @@ enum M {
 
     static func presence(_ presence: DevicePresence) -> String {
         switch presence {
-        case .connected: text("连着", ja: "つながっています", en: "Connected")
+        case .connected: text("在线", ja: "オンライン", en: "Online")
         case .justNow: text("刚刚", ja: "たった今", en: "Just now")
         case .seen(let date):
             relative(date)

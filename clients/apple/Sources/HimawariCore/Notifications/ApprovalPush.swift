@@ -20,6 +20,7 @@ public struct HimawariPush: Sendable, Equatable {
     }
 
     public let kind: String
+    public let deviceId: String?
     public let actions: [Action]
 
     public init?(userInfo: [AnyHashable: Any]) {
@@ -28,6 +29,7 @@ public struct HimawariPush: Sendable, Equatable {
               let kind = body["kind"] as? String
         else { return nil }
         self.kind = kind
+        deviceId = body["deviceId"] as? String
         actions = (body["actions"] as? [[String: Any]] ?? []).compactMap { entry in
             guard let raw = entry["action"] as? String, let action = ActionKind(rawValue: raw),
                   let label = entry["label"] as? String, let token = entry["token"] as? String

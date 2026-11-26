@@ -47,6 +47,7 @@ public struct HerPage: View {
     private let close: () -> Void
     private let removedThisDevice: () -> Void
     private let unsentMessages: () -> Int?
+    private var highlightsDevice: String?
     private let countVault: () async -> HerVaultCount
     private let vault: ((@escaping () -> Void) -> AnyView)?
     private let server: String?
@@ -64,9 +65,11 @@ public struct HerPage: View {
         close: @escaping () -> Void,
         removedThisDevice: @escaping () -> Void,
         unsentMessages: @escaping () -> Int? = { nil },
-        opensDevices: Bool = false
+        opensDevices: Bool = false,
+        highlightsDevice: String? = nil
     ) {
         _path = State(initialValue: opensDevices ? [.devices] : [])
+        self.highlightsDevice = highlightsDevice
         let gateway = ManageGateway(transport: SignedDeviceTransport(http: api.http, confirmKey: confirmKey))
         server = api.http.currentCredentials?.origin.absoluteString
         _settings = State(initialValue: SettingsStore(directory: SignedDeviceDirectory(http: api.http, confirmKey: confirmKey)))
@@ -213,7 +216,7 @@ public struct HerPage: View {
                         sensesSummary: sensesOn().map(M.sensesOn)
                     ) { path.removeLast() }
                 case .devices:
-                    HerDevicesPage(store: settings, unsentMessages: unsentMessages, removedThisDevice: removedThisDevice)
+                    HerDevicesPage(store: settings, unsentMessages: unsentMessages, removedThisDevice: removedThisDevice, highlighted: highlightsDevice)
                 case .device(let id):
                     DevicePage(store: settings, deviceId: id, actions: actions, unsentMessages: unsentMessages, removedThisDevice: removedThisDevice) { path.removeLast() }
                 case .allowances:

@@ -6,6 +6,8 @@ struct HerDevicesPage: View {
     let store: SettingsStore
     let unsentMessages: () -> Int?
     let removedThisDevice: () -> Void
+    var highlighted: String?
+    @State private var flashing: String?
     @State private var removing: PairedDevice?
     @State private var signingOut = false
     @State private var failure: String?
@@ -23,8 +25,9 @@ struct HerDevicesPage: View {
                 Section(M.otherDevices) {
                     ForEach(store.otherDevices) { device in
                         NavigationLink(value: HerPage.Page.device(device.id)) {
-                            DeviceRow(device: device, subtitle: M.presence(store.presence(device)), subtitleColor: Color.hmMuted)
+                            DeviceRow(device: device, subtitle: M.presence(store.presence(device)), subtitleColor: Color.hmMuted, online: store.presence(device) == .connected)
                         }
+                        .listRowBackground(flashing == device.id ? Color.hmFill : nil)
                         .swipeActions {
                             Button(M.remove, role: .destructive) { removing = device }
                         }
@@ -53,7 +56,10 @@ struct HerDevicesPage: View {
         .deviceListStyle()
         .navigationTitle(M.devicesTitle)
         .refreshable { await store.reloadDevices() }
-        .task { if store.phase != .loaded { await store.load() } }
+        .task {
+            if store.phase != .loaded { await store.load() }
+            await flash(highlighted)
+        }
         .removeDeviceDialog(store: store, removing: $removing, failure: $failure)
         .signOutDialog(store: store, signingOut: $signingOut, failure: $failure, unsentMessages: unsentMessages, signedOut: removedThisDevice)
         .alert(failure ?? "", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
@@ -62,16 +68,36 @@ struct HerDevicesPage: View {
     }
 }
 
+extension HerDevicesPage {
+    @MainActor
+    func flash(_ deviceId: String?) async {
+        guard let deviceId, store.otherDevices.contains(where: { $0.id == deviceId }) else { return }
+        flashing = deviceId
+        try? await Task.sleep(for: .seconds(2))
+        withAnimation(.easeOut) { flashing = nil }
+    }
+}
+
 struct DeviceRow: View {
     let device: PairedDevice
     let subtitle: String
     let subtitleColor: Color
+    var online = false
 
     var body: some View {
         Label {
             VStack(alignment: .leading) {
                 Text(device.name).foregroundStyle(Color.hmText)
-                Text(subtitle).font(.footnote).foregroundStyle(subtitleColor)
+                HStack(spacing: DesignTokens.Size.rowGap / 2) {
+                    if online {
+                        Image(systemName: "circle.fill")
+                            .imageScale(.small)
+                            .foregroundStyle(Color.hmSuccess)
+                            .accessibilityHidden(true)
+                    }
+                    Text(subtitle).foregroundStyle(subtitleColor)
+                }
+                .font(.footnote)
             }
         } icon: {
             DeviceKindIcon(kind: device.kind)

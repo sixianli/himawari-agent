@@ -13,6 +13,7 @@ public final class NotificationRouter: NSObject, UNUserNotificationCenterDelegat
     @ObservationIgnored var mainChatOnScreen = false
     var approvalsRequested = false
     var devicesRequested = false
+    var signedInDeviceId: String?
 
     private static let approveAction = HimawariPush.ActionKind.approve.rawValue
     private static let denyAction = HimawariPush.ActionKind.deny.rawValue
@@ -67,7 +68,10 @@ public final class NotificationRouter: NSObject, UNUserNotificationCenterDelegat
     private func handle(push: HimawariPush, actionIdentifier: String) async {
         guard let kind = HimawariPush.ActionKind(rawValue: actionIdentifier) else {
             if push.kind == HimawariPush.approvalKind { approvalsRequested = true }
-            if push.kind == HimawariPush.deviceSignedInKind { devicesRequested = true }
+            if push.kind == HimawariPush.deviceSignedInKind {
+                signedInDeviceId = push.deviceId
+                devicesRequested = true
+            }
             return
         }
         guard let transport else {

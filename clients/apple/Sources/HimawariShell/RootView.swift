@@ -71,6 +71,7 @@ struct MainShell: View {
     @State private var herOpen: Bool
     @State private var herListenOpen = false
     @State private var herOpensDevices = false
+    @State private var herHighlightsDevice: String?
     #if os(iOS)
     @State private var dictation = ChatDictation()
     @State private var talkSession = ChatTalkSession()
@@ -144,6 +145,8 @@ struct MainShell: View {
         .onChange(of: NotificationRouter.shared.devicesRequested, initial: true) { _, requested in
             guard requested else { return }
             NotificationRouter.shared.devicesRequested = false
+            herHighlightsDevice = NotificationRouter.shared.signedInDeviceId
+            NotificationRouter.shared.signedInDeviceId = nil
             herOpensDevices = true
             herOpen = true
         }
@@ -196,9 +199,13 @@ struct MainShell: View {
                 model.removedThisDevice()
             },
             unsentMessages: { model.unsentMessages },
-            opensDevices: herOpensDevices
+            opensDevices: herOpensDevices,
+            highlightsDevice: herHighlightsDevice
         )
-        .onDisappear { herOpensDevices = false }
+        .onDisappear {
+            herOpensDevices = false
+            herHighlightsDevice = nil
+        }
         .sheet(isPresented: $herListenOpen) {
             if let listening {
                 ListenEntrySheet(controller: listening) { herListenOpen = false }

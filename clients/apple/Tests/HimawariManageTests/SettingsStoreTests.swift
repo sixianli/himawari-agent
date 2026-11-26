@@ -14,7 +14,7 @@ private final class DirectoryServer: HTTPExchange, @unchecked Sendable {
     {"thisDeviceId":"dev_phone","devices":[
       {"id":"dev_phone","revision":1,"kind":"iphone","name":"Andy 的 iPhone","releaseChannel":"testflight","status":"active","pairedAt":"2026-11-26T00:00:00.000Z","lastSeenAt":"2026-11-26T00:00:00.000Z"},
       {"id":"dev_watch","revision":2,"kind":"watch","name":"Apple Watch","releaseChannel":"direct","status":"active","pairedAt":"2026-11-02T00:00:00.000Z","lastSeenAt":null},
-      {"id":"dev_mac","revision":4,"kind":"mac","name":"MacBook Air","releaseChannel":"mac_direct","status":"active","pairedAt":"2026-11-25T00:00:00.000Z","lastSeenAt":"2026-11-26T01:00:00.000Z"},
+      {"id":"dev_mac","revision":4,"kind":"mac","name":"MacBook Air","releaseChannel":"mac_direct","status":"active","pairedAt":"2026-11-25T00:00:00.000Z","lastSeenAt":"2026-11-26T01:00:00.000Z","online":true},
       {"id":"dev_old","revision":5,"kind":"mac","name":"旧 Mac","releaseChannel":"mac_direct","status":"revoked","pairedAt":"2026-10-02T00:00:00.000Z","lastSeenAt":null}
     ],"server":{"origin":"https://h.example","since":"2026-11-26T00:00:00.000Z"}}
     """#
@@ -60,6 +60,7 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(settings.otherDevices.map(\.id), ["dev_mac", "dev_watch"])
         XCTAssertEqual(settings.server?.origin, "https://h.example")
         XCTAssertEqual(settings.presence(try XCTUnwrap(settings.thisDevice)), .connected)
+        XCTAssertEqual(settings.presence(settings.otherDevices[0]), .connected)
         XCTAssertEqual(settings.presence(settings.otherDevices[1]), .neverSeen)
     }
 
@@ -73,7 +74,7 @@ final class SettingsStoreTests: XCTestCase {
     func testUnknownKindsAndChannelsNeverShowMachineCodes() {
         let unknown = PairedDevice(
             id: "dev_x", revision: 0, kind: "glasses", name: "眼镜", releaseChannel: "side_load", status: "active",
-            pairedAt: "2026-11-12T00:00:00Z", lastSeenAt: nil
+            pairedAt: "2026-11-12T00:00:00Z", lastSeenAt: nil, online: nil
         )
         XCTAssertNil(M.channel(unknown.releaseChannel))
         XCTAssertEqual(DevicePresence.of(unknown, isThisDevice: false), .neverSeen)

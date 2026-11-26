@@ -208,7 +208,7 @@ enum ManageDemo {
     static let roster = #"""
     {"thisDeviceId":"dev_demoPhone000000000000","devices":[
       {"id":"dev_demoPhone000000000000","revision":1,"kind":"iphone","name":"Andy 的 iPhone","releaseChannel":"testflight","status":"active","pairedAt":"2026-11-26T00:00:00Z","lastSeenAt":"2026-11-26T00:00:00Z"},
-      {"id":"dev_demoMac00000000000000","revision":3,"kind":"mac","name":"Andy 的 MacBook Air","releaseChannel":"mac_direct","status":"active","pairedAt":"2026-11-26T01:00:00Z","lastSeenAt":"2026-11-26T02:00:00Z"},
+      {"id":"dev_demoMac00000000000000","revision":3,"kind":"mac","name":"Andy 的 MacBook Air","releaseChannel":"mac_direct","status":"active","pairedAt":"2026-11-26T01:00:00Z","lastSeenAt":"2026-11-26T02:00:00Z","online":true},
       {"id":"dev_demoWatch000000000000","revision":2,"kind":"watch","name":"Apple Watch","releaseChannel":"direct","status":"active","pairedAt":"2026-11-24T00:00:00Z","lastSeenAt":null}
     ],"server":{"origin":"https://himawari.example.com","since":"2026-11-26T00:00:00Z"}}
     """#

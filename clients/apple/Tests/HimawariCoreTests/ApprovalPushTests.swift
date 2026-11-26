@@ -67,4 +67,14 @@ final class FakeApprovalTransport: ApprovalPushTransport, @unchecked Sendable {
         #expect(HimawariPush(userInfo: ["aps": ["alert": "x"]]) == nil)
         #expect(HimawariPush(userInfo: ["himawari": ["v": 2, "kind": "approval", "actions": []]]) == nil)
     }
+
+    @Test func aNewDeviceSignInPushSaysWhichDeviceToShow() throws {
+        let json = #"{"aps":{"alert":{"title":"新设备已登录","body":"MacBook Air"},"interruption-level":"active"},"himawari":{"v":1,"kind":"device_signed_in","deviceId":"dev_mac","navigate":"/devices"}}"#
+        let userInfo = try #require(JSONSerialization.jsonObject(with: Data(json.utf8)) as? [AnyHashable: Any])
+        let push = try #require(HimawariPush(userInfo: userInfo))
+        #expect(push.kind == HimawariPush.deviceSignedInKind)
+        #expect(push.deviceId == "dev_mac")
+        #expect(push.actions.isEmpty)
+        #expect(try #require(HimawariPush(userInfo: try serverPayload(ownerPresence: false))).deviceId == nil)
+    }
 }

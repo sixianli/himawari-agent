@@ -31,7 +31,6 @@ public struct SignInView: View {
                     SetupCodePage(model: model)
                 }
         }
-        .tint(Color.hmSun)
         .sheet(isPresented: $serverOpen) {
             ServerSheet(model: model)
         }
@@ -68,6 +67,18 @@ public struct SignInView: View {
     }
 
     private var welcome: some View {
+        GeometryReader { proxy in
+            ScrollView {
+                welcomeContent
+                    .frame(maxWidth: .infinity, minHeight: proxy.size.height)
+            }
+            .scrollBounceBehavior(.basedOnSize)
+        }
+        .background { SignInGlow() }
+        .animation(.easeInOut(duration: 0.25), value: model.phase)
+    }
+
+    private var welcomeContent: some View {
         VStack(spacing: DesignTokens.Pairing.homeGap) {
             if model.signedOutProblem == .removed {
                 Text(L.text("signIn.removed"))
@@ -100,9 +111,6 @@ public struct SignInView: View {
         }
         .padding(.horizontal, DesignTokens.Pairing.paddingX)
         .padding(.bottom, DesignTokens.Size.rowGap)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background { SignInGlow() }
-        .animation(.easeInOut(duration: 0.25), value: model.phase)
     }
 
     private var buttons: some View {
@@ -112,6 +120,7 @@ public struct SignInView: View {
                     .font(.footnote)
                     .foregroundStyle(Color.hmMuted)
                     .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Button {
                 Task { await model.signInWithPasskey() }
@@ -127,6 +136,7 @@ public struct SignInView: View {
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
+            .tint(Color.hmSun)
             .foregroundStyle(Color.hmOnText)
             .disabled(model.phase == .signingIn || model.serverOrigin == nil)
             Button {
@@ -141,11 +151,14 @@ public struct SignInView: View {
                 serverOpen = true
             } label: {
                 Text(model.serverHost.map { L.format("signIn.server", $0) } ?? L.text("signIn.serverMissing"))
-                    .font(.caption)
-                    .foregroundStyle(Color.hmMuted)
+                    .font(.footnote)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
                     .frame(minHeight: DesignTokens.Size.minTapTarget)
                     .contentShape(Rectangle())
             }
+            .accessibilityLabel(Text(L.text("signIn.server.title")))
+            .accessibilityValue(Text(model.serverHost ?? L.text("signIn.serverMissing")))
             .accessibilityHint(Text(L.text("signIn.server.hint")))
         }
     }
