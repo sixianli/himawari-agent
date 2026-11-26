@@ -76,4 +76,4 @@ verified_at: "7c8521fe5f55e7dd57c5bd52badd16eef647502e"
 
 - 来源：用户 2026-10-21 提供的 Cindy 测试规则汇编（用户本机文件，不入库）；对照记录在 `.ci-output/handoff/2026-10-21-cindy-testing-rules-proposal.md`（本地，不入库）。
 - 分层与批次：[ADR 0057](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0057-batch-layers-one-two-for-small-defects.md)；硬约束：[ADR 0060](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0060-hard-constraint-on-third-repeat.md)；分工：[ADR 0062](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0062-claude-writes-complex-code-opencode-routine.md)。
-- 测试主机操作：[测试主机操作 Runbook](../runbooks/test-host-operations-runbook.md)。
+- 测试主机操作：[测试主机操作 Runbook](https://github.com/sixianli/himawari-agent/blob/7c8521fe5f55e7dd57c5bd52badd16eef647502e/docs/runbooks/test-host-operations-runbook.md)（Hermes 不再当测试机后已删除，见 [测试主机与生产主机](../../.agents/instructions/test-and-production-hosts.md)）。

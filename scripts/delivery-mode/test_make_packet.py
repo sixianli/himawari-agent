@@ -941,14 +941,13 @@ class ArmTargetTest(RenderedPacket):
 
     def test_the_arm_builder_is_the_target_itself_and_never_the_rehearsal_host(self):
         settings = packet_maker.load_builder('arm64', 'tokyo-a1', '192.0.2.7')
-        self.assertEqual((settings['hostname'], settings['transport'], settings['address']), ('tokyo-a1', 'target-ssh', '192.0.2.7'))
+        self.assertEqual((settings['hostname'], settings['address']), ('tokyo-a1', '192.0.2.7'))
         with unittest.mock.patch.object(packet_maker, 'python_material_sha', return_value='b' * 64):
             same = packet_maker.builder_parameters('e' * 40, {'HOSTNAME': 'tokyo-a1', 'NODE_ARCH': 'arm64'}, settings)
             self.assertEqual((same['BUILDER_HOSTNAME'], same['REHEARSAL_HOSTNAME']), ('tokyo-a1', ''))
-            elsewhere = packet_maker.builder_parameters('e' * 40, {'HOSTNAME': 'vmi3618928', 'NODE_ARCH': 'x64'}, packet_maker.load_builder('x64', 'vmi3618928', '192.0.2.1'))
-            self.assertEqual((elsewhere['BUILDER_HOSTNAME'], elsewhere['REHEARSAL_HOSTNAME']), ('hermes-home', 'hermes-home'))
-        with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_BUILDER_UNKNOWN_ARCHITECTURE'):
-            packet_maker.load_builder('riscv64', 'x', 'y')
+        for arch in ('riscv64', 'x64'):
+            with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_BUILDER_UNKNOWN_ARCHITECTURE'):
+                packet_maker.load_builder(arch, 'x', 'y')
 
     def test_the_arm_builder_reaches_the_target_over_ssh_as_the_build_account(self):
         hermes = packet_maker.Hermes('thirteenth-1234abcd-20261027t010203', packet_maker.load_builder('arm64', 'tokyo-a1', '192.0.2.7'))
@@ -958,21 +957,25 @@ class ArmTargetTest(RenderedPacket):
         self.assertEqual((upload[0], upload[-2], upload[-1]), ('scp', '/tmp/a', 'himawari-build@192.0.2.7:/remote/b'))
 
 
+FAKE_SSH = '#!/bin/bash\nexec bash -c "${@: -1}"\n'
+FAKE_SCP = '#!/bin/bash\nremote="${@: -1}"; remote="${remote#*:}"; local="${@: -2:1}"; cp "$local" "$remote.upload-tmp" && mv "$remote.upload-tmp" "$remote"\n'
+
+
 class HermesCommandTest(unittest.TestCase):
     TAG = '[PG-1]'
 
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.root = Path(self.directory.name)
-        wrapper = self.root / 'hermes-ssh.sh'
-        wrapper.write_text('#!/bin/bash\nexec bash -c "$1"\n')
-        wrapper.chmod(0o755)
-        upload = self.root / 'hermes-upload.sh'
-        upload.write_text('#!/bin/bash\ncp "$1" "$2.upload-tmp" && mv "$2.upload-tmp" "$2"\n')
-        upload.chmod(0o755)
-        self.environment = {'HIMAWARI_HERMES_SSH': str(wrapper), 'HIMAWARI_HERMES_UPLOAD': str(upload), 'HIMAWARI_HERMES_POLL_SECONDS': '0.05'}
+        ssh = self.root / 'ssh'
+        ssh.write_text(FAKE_SSH)
+        ssh.chmod(0o755)
+        self.scp = self.root / 'scp'
+        self.scp.write_text(FAKE_SCP)
+        self.scp.chmod(0o755)
+        self.environment = {'HIMAWARI_PACKET_SSH': str(ssh), 'HIMAWARI_PACKET_SCP': str(self.scp), 'HIMAWARI_HERMES_POLL_SECONDS': '0.05'}
         os.environ.update(self.environment)
-        self.hermes = packet_maker.Hermes('thirteenth-1234abcd-20261027t010203')
+        self.hermes = packet_maker.Hermes('thirteenth-1234abcd-20261027t010203', packet_maker.load_builder('arm64', 'tokyo-a1', '192.0.2.7'))
         self.hermes.work = str(self.root / 'work' / self.hermes.run_id)
         self.hermes.scripts = str(self.root / 'scripts' / self.hermes.run_id)
 
@@ -1014,14 +1017,13 @@ class HermesCommandTest(unittest.TestCase):
         with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_HERMES_PREFLIGHT_FAILED .*HERMES_WALKTHROUGH_FAILED HOST_UNEXPECTED'):
             self.hermes.preflight()
 
-    def test_an_upload_area_the_wrapper_refuses_is_found_before_any_build(self):
-        refusing = self.root / 'refusing-upload.sh'
-        refusing.write_text('#!/bin/bash\ncase "$2" in ' + str(self.root / 'scripts') + '/*) cp "$1" "$2.upload-tmp" && mv "$2.upload-tmp" "$2" ;; *) echo "HERMES_UPLOAD_REMOTE_OUTSIDE_TEST_AREA: $2" >&2; exit 3 ;; esac\n')
+    def test_an_upload_area_the_target_refuses_is_found_before_any_build(self):
+        refusing = self.root / 'refusing-scp'
+        refusing.write_text('#!/bin/bash\nremote="${@: -1}"; remote="${remote#*:}"; case "$remote" in ' + str(self.root / 'scripts') + '/*) exec ' + shlex.quote(str(self.scp)) + ' "$@" ;; *) echo "scp: $remote: Permission denied" >&2; exit 1 ;; esac\n')
         refusing.chmod(0o755)
-        self.hermes.upload_wrapper = str(refusing)
-        with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_HERMES_UPLOAD_AREA_REFUSED .*HERMES_UPLOAD_REMOTE_OUTSIDE_TEST_AREA'):
-            self.hermes.probe_uploads()
-        self.hermes.upload_wrapper = os.environ['HIMAWARI_HERMES_UPLOAD']
+        with unittest.mock.patch.dict(os.environ, {'HIMAWARI_PACKET_SCP': str(refusing)}):
+            with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_HERMES_UPLOAD_AREA_REFUSED .*Permission denied'):
+                self.hermes.probe_uploads()
         self.hermes.probe_uploads()
         self.assertEqual(list(Path(self.hermes.scripts).iterdir()), [])
         self.assertEqual(list(Path(self.hermes.work + '-inputs').iterdir()), [])
@@ -1040,13 +1042,6 @@ class HermesCommandTest(unittest.TestCase):
         self.hermes.upload_check_materials(packet)
         self.assertTrue((Path(self.hermes.work) / 'materials' / 'context.json').is_file())
         self.assertTrue((Path(self.hermes.work + '-inputs') / bundle.name).is_file())
-
-    def test_builder_uploads_go_where_the_hermes_upload_wrapper_allows(self):
-        settings = json.loads((HERE / 'hermes' / 'builder.json').read_text())
-        allowed = ('/home/andy/himawari-tests/', '/data/hermes/himawari/tool-audit-round2/')
-        for key in ('workRoot', 'scriptRoot'):
-            self.assertTrue(settings[key].startswith(allowed), key)
-        self.assertTrue(settings['workRoot'].startswith('/data/'))
 
     def test_materials_are_fetched_and_digests_checked(self):
         remote = Path(self.hermes.work) / 'materials'
@@ -1237,8 +1232,6 @@ class ReleaseWalkthroughTest(unittest.TestCase):
         self.assertIn('LOCKED_PYTHON_MISSING', run.stderr)
 
     def test_the_generator_runs_the_preflight_before_any_build(self):
-        settings = json.loads((HERE / 'hermes' / 'builder.json').read_text())
-        self.assertTrue(settings['piToolBin'].startswith('/home/andy/himawari-tests/'))
         source = (HERE / 'make-packet.py').read_text()
         body = source[source.index('def prepare(arguments):'):]
         self.assertLess(body.index('hermes.preflight()'), body.index("step('discover'"))
@@ -1278,11 +1271,11 @@ class HermesCleanupTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             calls = root / 'calls'
-            wrapper = root / 'hermes-ssh.sh'
-            wrapper.write_text('#!/bin/bash\necho "$1" >> ' + shlex.quote(str(calls)) + '\n')
-            wrapper.chmod(0o755)
-            with unittest.mock.patch.dict(os.environ, {'HIMAWARI_HERMES_SSH': str(wrapper)}):
-                hermes = packet_maker.Hermes('twentieth-e9d30b22-20261030t010000')
+            ssh = root / 'ssh'
+            ssh.write_text('#!/bin/bash\necho "${@: -1}" >> ' + shlex.quote(str(calls)) + '\n')
+            ssh.chmod(0o755)
+            with unittest.mock.patch.dict(os.environ, {'HIMAWARI_PACKET_SSH': str(ssh)}):
+                hermes = packet_maker.Hermes('twentieth-e9d30b22-20261030t010000', packet_maker.load_builder('arm64', 'target', '192.0.2.1'))
                 with unittest.mock.patch.object(packet_maker, 'build_packet', side_effect=SystemExit('PACKET_HERMES_STEP_FAILED')), \
                         unittest.mock.patch.object(packet_maker, 'Hermes', return_value=hermes), \
                         unittest.mock.patch.object(packet_maker, 'load_instance', return_value={'host': {'address': '192.0.2.1'}}), \
@@ -1518,13 +1511,13 @@ class SourceBundleTest(unittest.TestCase):
 
     def test_hermes_gets_its_own_whole_bundle_when_it_lacks_the_base(self):
         first, second, third, fourth = self.commits
-        wrapper = self.root / 'hermes-ssh.sh'
-        wrapper.write_text('#!/bin/bash\nexec bash -c "$1"\n')
-        wrapper.chmod(0o755)
+        ssh = self.root / 'ssh'
+        ssh.write_text(FAKE_SSH)
+        ssh.chmod(0o755)
         builder_repo = self.root / 'builder-repo'
         subprocess.run(['git', 'clone', '-q', '--no-checkout', str(self.repo), str(builder_repo)], check=True)
-        with unittest.mock.patch.dict(os.environ, {'HIMAWARI_HERMES_SSH': str(wrapper)}):
-            hermes = packet_maker.Hermes('twentyfourth-1234abcd-20261101t010203')
+        with unittest.mock.patch.dict(os.environ, {'HIMAWARI_PACKET_SSH': str(ssh)}):
+            hermes = packet_maker.Hermes('twentyfourth-1234abcd-20261101t010203', packet_maker.load_builder('arm64', 'target', '192.0.2.1'))
             hermes.settings = {**hermes.settings, 'source': str(builder_repo)}
             self.assertTrue(hermes.has_commit(third))
             self.assertFalse(hermes.has_commit('e' * 40))
