@@ -8,6 +8,7 @@ on:
       - test/qualification/user-computer-qualification.ts
       - test/qualification/vitest.user-computer.config.ts
       - apps/agent-service/src/production-computer-tools.ts
+      - apps/agent-service/src/production-browser-tools.ts
       - apps/agent-service/src/capability-programs/container-pi-main.ts
       - packages/execution-contracts/src/pi-container-runner-v1.ts
       - .github/workflows/user-computer.yml
@@ -20,6 +21,7 @@ on:
       - test/qualification/user-computer-qualification.ts
       - test/qualification/vitest.user-computer.config.ts
       - apps/agent-service/src/production-computer-tools.ts
+      - apps/agent-service/src/production-browser-tools.ts
       - apps/agent-service/src/capability-programs/container-pi-main.ts
       - packages/execution-contracts/src/pi-container-runner-v1.ts
       - .github/workflows/user-computer.yml
