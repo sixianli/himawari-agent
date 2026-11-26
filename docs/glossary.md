@@ -4,7 +4,7 @@ supersedes: ""
 superseded_by: ""
 date: "2026-11-02"
 covers: ".agents/instructions/prompt-prefix.md, scripts/check-glossary.mjs"
-verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
+verified_at: "7c8521fe5f55e7dd57c5bd52badd16eef647502e"
 ---
 
 # Himawari 词表
@@ -47,8 +47,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 | 11 | `待采纳的改进` `Improvements awaiting adoption` `採用待ちの改善` | `自我改进候选` `Self-improvement candidates` `自己改善候補` | 自我改进里等你决定采不采纳的那一项 | 仅界面 |
 | 12 | `草稿未发布` `the draft was not published` `下書きは公開されませんでした` | `候选未发布` `the candidate was not published` `候補は公開されませんでした` | 文件版本冲突时，已写好但没有发布的修改 | 仅界面 |
 | 13 | `拆成一条条` `Split into items` `項目に分ける` | `整理成一条条` | 记忆页里把一段话拆成多条记忆的按钮 | 全部 |
-| 14 | `Muse 对照` | | 与 Muse 的对照条目，没有旧叫法，只登记在这里 | 全部 |
-| 15 | `校准周报` | | 每周一页，按决策类型统计每类决策做对和做错的比例，并与 Muse 逐封邮件对照，没有旧叫法，只登记在这里 | 全部 |
+| 15 | `校准周报` | | 每周一页，按决策类型统计每类决策做对和做错的比例，没有旧叫法，只登记在这里 | 全部 |
 | 16 | `提醒得对` `不该提醒` `不提醒是对的` `该提醒没提醒` `不存是对的` `该存没存` `存对了` `不该存` `整理得对` `不该整理` `Right to remind` `Shouldn’t have reminded` `Right to stay silent` `Should have reminded` `Right not to save` `Should have saved` `Saved correctly` `Shouldn’t have saved` `Right tidy-up` `Shouldn’t have tidied` `通知は正しかった` `通知すべきではなかった` `通知しないのが正しかった` `通知すべきだった` `保存しないのが正しかった` `保存すべきだった` `正しく保存した` `保存すべきではなかった` `整理は正しかった` `整理すべきではなかった` | `做对了的比例` `不该做的比例` `该做没做的比例` | 校准周报里每一类决策用自己的说法写比例：读完邮件提醒了你是“提醒得对 / 不该提醒”，读完邮件没提醒是“不提醒是对的 / 该提醒没提醒”，系统没存下的记忆是“不存是对的 / 该存没存”，已存的记忆是“存对了 / 不该存”，整理记忆是“整理得对 / 不该整理”。分母都是你评过的条数，评过的少于 5 条写“样本不足” | 全部 |
 | 17 | `观察期` `数据起点` `Observation period` `Data start day` `観察期間` `データの起点` | | 数据起点是你在校准周报里选的那一天，选定后不能改；观察期是从这天起的 7 天，Himawari 每天检查决策记录有没有正常写入 | 全部 |
 | 18 | `读完邮件提醒了你` `读完邮件没提醒` `Read mail and reminded you` `Read mail, no reminder` `メールを読んで通知した` `メールを読んで通知しなかった` | `这次检查没提醒` `Check with no reminder` `リマインドしなかった確認` | Himawari 每 15 分钟读一次新邮件；读完后提醒了你的那几次，和读完觉得都不用提醒的那几次。用在每天打分的标签和校准周报的行名上，单位是“一次读邮件”，不是一封邮件 | 全部 |
@@ -69,7 +68,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 - 数据库列和存的值（例如 `discarded`、`memory_candidate`、`owner_rating`）、接口操作名、代码标识符：改它们要迁移，会让旧数据对不上，而且用户看不到。
 - 已经通过的 ADR 正文和归档文档：历史记录不重写，在这里记“旧叫法 → 新叫法”即可。
-- `docs/product-vision.md`：只有 Andy 能改愿景正文。v2.3（[ADR 0153](adr/0153-adopt-product-vision-v2-3.md)）已把“决策账本”改称“决策记录”；愿景里其余旧写法（例如附录里记录旧版改动的文字）不改，所以这个文件不在检查范围内。
+- `docs/product-vision.md`：只有 Andy 能改愿景正文。v2.3（[ADR 0153](https://github.com/sixianli/himawari-agent/blob/10dfa43248c29f0a958e92e4b9b2cffa3b48c056/docs/adr/0153-adopt-product-vision-v2-3.md)）已把“决策账本”改称“决策记录”；愿景里其余旧写法（例如附录里记录旧版改动的文字）不改，所以这个文件不在检查范围内。
 - 已冻结的设计原型（`docs/assets/`）、照着操作的 Runbook（`docs/runbooks/`）和已做完的实施计划（`docs/execution/plans/`）：原型是定稿截图的源文件，Runbook 改文字前要对照它的 `Authoritative Sources` 核对步骤，计划是还没删掉的旧任务清单，不再新建，做完就删除。
 - 发给模型的提示词和工具结果文字：已发出的内容只能往后追加（见 [prompt-prefix.md](../.agents/instructions/prompt-prefix.md)），不为改名而改动。
 

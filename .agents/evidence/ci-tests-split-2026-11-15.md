@@ -14,13 +14,13 @@
 
 同一次运行里，三个 browser 作业各用 6 到 7 分钟（另一次运行 run 43662602059：chromium 01:33:48Z–01:40:08Z，webkit 01:33:48Z–01:40:59Z）。
 
-CI 服务器有 8 个 vCPU、22 GB 内存，三个检查 runner `ci-vps-1`、`ci-vps-2`、`ci-vps-3` 共用这台机器，三个合计内存最多 16 GB（`docs/runbooks/ci-vps-runner-runbook.md` 第 17、38、67 行）。integration 每次最多开 3 个 worker（`scripts/ci/test-concurrency.mjs` 的 `maximum: 3`），unit 等其他项目只开 1 个，所以单个 tests 作业只用到这台机器的一部分。
+CI 服务器有 8 个 vCPU、22 GB 内存，三个检查 runner `ci-vps-1`、`ci-vps-2`、`ci-vps-3` 共用这台机器，三个合计内存最多 16 GB（[ci-vps-runner-runbook.md（已删除，固定链接）](https://github.com/sixianli/himawari-agent/blob/88e17c2430041266de223e41c4163c45d1a02369/docs/runbooks/ci-vps-runner-runbook.md) 第 17、38、67 行）。integration 每次最多开 3 个 worker（`scripts/ci/test-concurrency.mjs` 的 `maximum: 3`），unit 等其他项目只开 1 个，所以单个 tests 作业只用到这台机器的一部分。
 
 同一次运行里 browser 作业 6 到 7 分钟就跑完，而 tests 作业在 `ci-vps-2` 上单独跑了约 50 分钟；这台机器上没有别的作业要跑，另外两个检查 runner 在 browser 作业跑完后空着。
 
 ## ARM 上 tooling 测试超时（2026-11-15）
 
-ARM 机器是 4 核 24 GB（`docs/runbooks/ci-vps-runner-runbook.md` 第 180 行“4 核 24 GB”），static 和 tooling 都在这台机器上跑（同一行“policy、static、tooling、security 四项检查写 `runs-on: ci-arm`”）。
+ARM 机器是 4 核 24 GB（[ci-vps-runner-runbook.md（已删除，固定链接）](https://github.com/sixianli/himawari-agent/blob/88e17c2430041266de223e41c4163c45d1a02369/docs/runbooks/ci-vps-runner-runbook.md) 第 180 行“4 核 24 GB”），static 和 tooling 都在这台机器上跑（同一行“policy、static、tooling、security 四项检查写 `runs-on: ci-arm`”）。
 
 - 上一次：run 43657965830 的 `full / tooling` 作业，`artifact.test.mjs`、`prod-read.test.mjs` 各一条测试超过 vitest 的 5 秒默认超时而失败。
 - 这一次：run 43662602059 的 `full / tooling` 作业日志，失败的两条是 `prod-read.test.mjs > prod-read.sh lists capabilities as metadata only, running the script read-only` 和 `srt-version.test.mjs > SRT version single source passes the repository as checked in`，两条都是 `Error: STACK_TRACE_ERROR`。

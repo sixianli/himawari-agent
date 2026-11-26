@@ -1007,6 +1007,31 @@
     "changedIn": "ADR 0250",
     "reason": "新增：工具参数 activity、activityIcon 的说明和系统提示里的过程图标表"
   },
+  "tools.app-action": {
+    "sha256": "de76eb8f6f7f35473135d7afa0dd58eb7ba20155a6dce6215f1655602dc603a0",
+    "changedIn": "ADR 0311",
+    "reason": "新增：通用连接的 app_action 工具，Himawari 用主人连接的应用时看到的说明"
+  },
+  "tools.app-action.action": {
+    "sha256": "2ad4e5f37ff3b3f1a5ff3119c1a25b6cd14adefca8923175f62be459d12ad20b",
+    "changedIn": "ADR 0311",
+    "reason": "新增：通用连接的 app_action 工具，Himawari 用主人连接的应用时看到的说明"
+  },
+  "tools.app-action.app": {
+    "sha256": "d3c71c135425516d20134c5834fec81029536d3ed2af4f36156162d7bae87904",
+    "changedIn": "ADR 0311",
+    "reason": "新增：通用连接的 app_action 工具，Himawari 用主人连接的应用时看到的说明"
+  },
+  "tools.app-action.arguments": {
+    "sha256": "70cb0c7484042d74af01e6bc80e2a91fcdf64274706425790d2866905998a6c0",
+    "changedIn": "ADR 0311",
+    "reason": "新增：通用连接的 app_action 工具，Himawari 用主人连接的应用时看到的说明"
+  },
+  "tools.app-action.tool": {
+    "sha256": "45d7ce984bc4797793eb3dbc5aa675c2a27c5c90e3e754f587cbbf14ce3da17b",
+    "changedIn": "ADR 0311",
+    "reason": "新增：通用连接的 app_action 工具，Himawari 用主人连接的应用时看到的说明"
+  },
   "tools.authorized": {
     "sha256": "e2bf668e954070fb41a107317b84ba9f5fc433f2a1b9a37b148f62fc76787fab",
     "changedIn": "ADR 0166",
@@ -1016,6 +1041,11 @@
     "sha256": "e1c490299a52e9f2034e4de25f98fffbf7cc0c96ef5dc432c0efd454cd800d44",
     "changedIn": "ADR 0166",
     "reason": "W-04、Q1：替换 Pi 原文里“完整输出存进临时文件”的错话，按 sandboxed-coding-operations.ts、pi-host-publication.ts 的实际行为写（Andy 2026-11-05 定 Q1 选 B）"
+  },
+  "tools.builtin.bash.computer": {
+    "sha256": "2dfc7bdcc3aed62b0e0fc650f8b045e1c0b6c4e9873acddd14833196b98a6929",
+    "changedIn": "ADR 0298",
+    "reason": "每人一台电脑：bash 在主人自己的电脑里跑时，写明工作目录、家目录持久、apt 装的东西关机即失、只能连配置的域名"
   },
   "tools.builtin.bash.timeout": {
     "sha256": "19e3ed360fc2c25292325151780c74f5a629c4f3b8e02b4fe7d6cadb80254d7b",
@@ -1219,6 +1249,41 @@
     "sha256": "052bba8325aa7a15c5bfa6afce2e0085d2c1e198b68889285b05339f72690794",
     "changedIn": "ADR 0166",
     "reason": "W-09、W-13：写明有钟点的最多提前 1 小时、只有日期的当天 9 点（Andy 2026-11-05 定 D8）；失败时怎么说只留在身份说明里；复核第 2 轮：写明 yearly 的过去日期会顺延到下一次，不会被拒绝（reminderSchedule）"
+  },
+  "tools.result.app-action.describe": {
+    "sha256": "82aebe0fb75668124441d4bcf8d6f00c9a7dedc6dc212197e3a5a26cf53881bc",
+    "changedIn": "ADR 0311",
+    "reason": "新增：通用连接的 app_action 工具，Himawari 用主人连接的应用时看到的说明"
+  },
+  "tools.result.app-action.failed": {
+    "sha256": "db7b6ea1a08857f5aa57c6458a89e63337a51483a1f365a37c5f2eee084b85ec",
+    "changedIn": "ADR 0311",
+    "reason": "新增：通用连接的 app_action 工具，Himawari 用主人连接的应用时看到的说明"
+  },
+  "tools.result.app-action.invalid": {
+    "sha256": "e19f7d08a7148793a7470716b6a2728ccf6741dfb8800b666454108ba0ff90c4",
+    "changedIn": "ADR 0311",
+    "reason": "新增：通用连接的 app_action 工具，Himawari 用主人连接的应用时看到的说明"
+  },
+  "tools.result.app-action.no-app": {
+    "sha256": "bbee560f66ed816b5e54cd014f1cf69995f7191b00d249ba4581cfbaf6b6ec11",
+    "changedIn": "ADR 0311",
+    "reason": "新增：通用连接的 app_action 工具，Himawari 用主人连接的应用时看到的说明"
+  },
+  "tools.result.app-action.not-connected": {
+    "sha256": "8923b1a0773f966ab56589aa2dac6f4aee0c9c3af84236ac77387e2c6fd93de2",
+    "changedIn": "ADR 0311",
+    "reason": "新增：通用连接的 app_action 工具，Himawari 用主人连接的应用时看到的说明"
+  },
+  "tools.result.app-action.result": {
+    "sha256": "df0123cd17bc688091933f4996723c9d4d3611a06b3e73033e177e00078d8b82",
+    "changedIn": "ADR 0311",
+    "reason": "新增：通用连接的 app_action 工具，Himawari 用主人连接的应用时看到的说明"
+  },
+  "tools.result.app-action.unknown": {
+    "sha256": "da894b9af2111beb521cac3d24876769b0673d7c2eaf952a554f6574974e0ee9",
+    "changedIn": "ADR 0311",
+    "reason": "新增：通用连接的 app_action 工具，Himawari 用主人连接的应用时看到的说明"
   },
   "tools.result.device-action.describe": {
     "sha256": "23c31ae00ba70a34a1d2f83751f6de2c07a62d1d9e193ca9819e68508c1b4f7c",
@@ -1649,5 +1714,65 @@
     "sha256": "5ca05852512a3c73b2bc1791cf184bd987665849dcc4e0fc6a6f886bde66f15a",
     "changedIn": "ADR 0285",
     "reason": "Always On 第 3 步：接着做的原因之一，上一次运行结束时计划里还有没做完的待办"
+  },
+  "tool-result.browser-no-page": {
+    "sha256": "965e09677b87a9d0e89b999f8868c6217ad90121a8edcd5af4aac7cf41ab7662",
+    "changedIn": "浏览器工具",
+    "reason": "新增浏览器工具的定义和结果文字"
+  },
+  "tool-result.browser-screenshot-text-only": {
+    "sha256": "def9aa2d6934585a7262471cd29031968d659c59995cb5c28e5ab21c5d581173",
+    "changedIn": "浏览器工具",
+    "reason": "新增浏览器工具的定义和结果文字"
+  },
+  "tool-result.browser-site-not-allowed": {
+    "sha256": "bc53e3cf86b027883062d1876f01e8fc178523251077984a3fa4eb76f285010b",
+    "changedIn": "浏览器工具",
+    "reason": "新增浏览器工具的定义和结果文字"
+  },
+  "tool-result.browser-unavailable": {
+    "sha256": "d06ef336270b679c4fba8a8643f1b1f02e0875cde09ab7de2c9223f23220c03d",
+    "changedIn": "浏览器工具",
+    "reason": "新增浏览器工具的定义和结果文字"
+  },
+  "tools.browser": {
+    "sha256": "d67b9041524390f82b662b72161b2a4e7f3c6c80a50a3d562f370213ebd667f2",
+    "changedIn": "浏览器工具",
+    "reason": "新增浏览器工具的定义和结果文字"
+  },
+  "tools.browser.action": {
+    "sha256": "592cdbbc600e6dde06ec3298853dbb961c3e546dee51ae9f08172ae072b3681c",
+    "changedIn": "浏览器工具",
+    "reason": "新增浏览器工具的定义和结果文字"
+  },
+  "tools.browser.hosts": {
+    "sha256": "4290e52ae1c4c9cf8f874603c8b9899a0519d96ee43adb9a384be168bfb6b85d",
+    "changedIn": "浏览器工具",
+    "reason": "新增浏览器工具的定义和结果文字"
+  },
+  "tools.browser.key": {
+    "sha256": "42ff2eaff8b09e003a279148874acab112cef686bbdd340b23ba73131d9191c4",
+    "changedIn": "浏览器工具",
+    "reason": "新增浏览器工具的定义和结果文字"
+  },
+  "tools.browser.ref": {
+    "sha256": "46827838fef09744b75819b3a688d5f40a14c5d258f020ee269d15a525e7d0b3",
+    "changedIn": "浏览器工具",
+    "reason": "新增浏览器工具的定义和结果文字"
+  },
+  "tools.browser.submit": {
+    "sha256": "9bdfe217889f6c5b512333d2cce498de2d6893d807fc652ffd77ad3f6c6be601",
+    "changedIn": "浏览器工具",
+    "reason": "新增浏览器工具的定义和结果文字"
+  },
+  "tools.browser.text": {
+    "sha256": "f0e2ec1e37f66d4338c76132a69451e9da2dc1539c5124378055f8e9eb687dd8",
+    "changedIn": "浏览器工具",
+    "reason": "新增浏览器工具的定义和结果文字"
+  },
+  "tools.browser.url": {
+    "sha256": "b38deaf33509804d822ba74e561e96b773b08ce38e3c75a178c6e49eb2e5bd4e",
+    "changedIn": "浏览器工具",
+    "reason": "新增浏览器工具的定义和结果文字"
   }
 }

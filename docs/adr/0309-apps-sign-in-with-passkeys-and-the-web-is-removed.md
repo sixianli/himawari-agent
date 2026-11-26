@@ -7,7 +7,7 @@ superseded_by: ""
 date: "2026-11-26"
 implementation: in_progress
 covers: "packages/platform-node/src/device-api-routes.ts, apps/agent-service/src/production-http-composition.ts, apps/agent-service/src/production-mcp-connections-control.ts, apps/control-center/src/**, clients/apple/Sources/HimawariCore/Pairing.swift"
-verified_at: "54b438b2cbb11b5748e8b1ae187d014fe141200d"
+verified_at: "7c8521fe5f55e7dd57c5bd52badd16eef647502e"
 ---
 
 # ADR 0309：App 用通行密钥直接登录，网页整体删除
@@ -118,4 +118,3 @@ verified_at: "54b438b2cbb11b5748e8b1ae187d014fe141200d"
 - 好处：装 App 就能用，不需要电脑；没有密码可被猜或钓鱼；只维护 App 一套界面；外部 agent 按标准接入，Claude 等客户端直接认。
 - 代价：[ADR 0027](0027-built-in-owner-authentication.md) 的密码加验证器账号、网页会话和 Cloudflare 登录适配器在最后一步随网页一起删，那时删掉 ADR 0027 和 0295，并改掉引用它们的 Runbook 和架构文档；改 Cloudflare 门禁要 Andy 在后台操作一次或给线程一个有权限的令牌；设备全丢时找回要线程在服务器上跑管理命令。
 - 这次同时改的旧文档：[ADR 0229](0229-native-apple-clients-and-device-api.md#decision) 决定第 4 条的配对方式、[ADR 0258](0258-each-apple-device-plays-to-its-strength.md) 决定第 2 条“第一台设备的配对和手机丢了以后的移除都靠网页”、ADR 0302 的 Muse 接收一节、ADR 0307 第 2、3、6、9 条，各加一句指向本 ADR。
-- 要跟进：`.agents/instructions/test-and-production-hosts.md` 里“苹果客户端在 Andy 的 Mac 上用 Xcode 构建”一条与第 14 条冲突，由协调者附 Andy 原话后改。

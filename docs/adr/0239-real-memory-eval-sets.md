@@ -6,7 +6,7 @@ supersedes: ""
 superseded_by: ""
 date: "2026-11-11"
 covers: "apps/agent-service/src/production-memory-consolidation.ts, apps/agent-service/src/production-real-eval.ts, apps/agent-service/test/production-real-eval.unit.test.ts, evals/memory-retrieval/dataset.json, packages/application/src/services/real-memory-eval-service.ts, packages/application/src/services/real-memory-eval.ts, packages/calibration/src/index.ts, packages/persistence-sqlite/src/migrations/0054_memory_consolidation.sql, packages/persistence-sqlite/src/sqlite-governed-deletion.ts, packages/prompt-catalog/src/eval.ts, test/integration/memory-evaluation.test.ts, test/integration/real-memory-eval.test.ts"
-verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
+verified_at: "7c8521fe5f55e7dd57c5bd52badd16eef647502e"
 ---
 
 # ADR 0239：用主人的真实记忆每周评测记忆回忆，合成评测集降为对照

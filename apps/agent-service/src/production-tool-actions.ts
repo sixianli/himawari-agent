@@ -6,6 +6,7 @@ import {
   ToolActionRegistry,
   type ToolActionRow,
 } from "@himawari-agent/application";
+import { APP_ACTION_CAPABILITY_REF } from "./production-app-tools.js";
 import {
   RUNTIME_CONTEXT_EXECUTOR,
   TOOL_RESULT_RECALL_CAPABILITY_REF,
@@ -37,6 +38,7 @@ import { SUBTHREAD_CAPABILITY_PREFIX } from "./production-subthreads.js";
 import { TELL_OWNER_CAPABILITY_REF } from "./production-tell-owner.js";
 import { THREAD_TASK_CAPABILITY_PREFIX } from "./production-thread-tasks.js";
 import { VAULT_LIST_CAPABILITY_REF } from "./production-vault-tools.js";
+import { BROWSER_CAPABILITY_REF } from "./production-browser-tools.js";
 
 export const BUILT_IN_CAPABILITY_VERSION = "1.0.0";
 
@@ -645,6 +647,28 @@ export const PRODUCTION_TOOL_ACTION_ROWS: readonly ToolActionRow[] = Object.free
     ),
   },
   {
+    tool: "app_action",
+    family: "builtin",
+    capabilityRef: APP_ACTION_CAPABILITY_REF,
+    operation: "call",
+    actionKind: "CREATE_OR_UPDATE",
+    reversible: false,
+    sideEffect: "irreversible",
+    targetType: "owner-app",
+    disclosure: "same_owner",
+    ownerPresenceRequired: false,
+    standingRuleChange: false,
+    resultOrigin: "owner_data",
+    mayFollowExternalContent: true,
+    authorization: "owner_scope",
+    executor: "owner_scoped",
+    deduplication: "run_and_tool_call",
+    detail: detail(
+      { zh: "用连接的应用做事", en: "Use a connected app", ja: "連携したアプリを使う" },
+      "tool",
+    ),
+  },
+  {
     ...READ_DEFAULTS,
     tool: "vault_list",
     family: "builtin",
@@ -656,6 +680,23 @@ export const PRODUCTION_TOOL_ACTION_ROWS: readonly ToolActionRow[] = Object.free
     executor: "owner_scoped",
     deduplication: "run_and_tool_call",
     detail: detail({ zh: "看保险箱里有哪些项", en: "List vault items", ja: "保管庫の項目を一覧" }),
+  },
+  {
+    ...GOVERNED_DEFAULTS,
+    tool: "browser",
+    family: "builtin",
+    capabilityRef: BROWSER_CAPABILITY_REF,
+    operation: "use_site",
+    actionKind: "CREATE_OR_UPDATE",
+    reversible: false,
+    sideEffect: "irreversible",
+    targetType: "owner-browser",
+    disclosure: "none",
+    resultOrigin: "external",
+    authorization: "owner_scope",
+    executor: "owner_scoped",
+    deduplication: "run_and_tool_call",
+    detail: detail({ zh: "用浏览器", en: "Use the browser", ja: "ブラウザを使う" }, "url"),
   },
 ] satisfies ToolActionRow[]);
 

@@ -4,7 +4,7 @@ supersedes: ""
 superseded_by: ""
 date: "2026-11-10"
 covers: "apps/agent-service/src/production-memory-capture.ts, apps/agent-service/test/production-memory-evidence.unit.test.ts, apps/agent-service/test/prompt-rendering-golden.unit.test.ts, packages/application/src/services/proactive-rules.ts, packages/application/test/tentative-memory-capture.unit.test.ts, packages/calibration/src/thresholds.ts, packages/memory-engine/src/consolidation.ts, packages/platform-node/src/strict-configuration.ts, scripts/operations/prod-read.sh, test/integration/automatic-memory-golden.test.ts, test/integration/memory-consolidation.test.ts, test/integration/owner-settings-sync.test.ts"
-verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
+verified_at: "7c8521fe5f55e7dd57c5bd52badd16eef647502e"
 ---
 
 # Agent 规则清单（盘点）

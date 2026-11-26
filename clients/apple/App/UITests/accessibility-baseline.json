@@ -931,17 +931,17 @@
   },
   {
     "key": "next-3-her|dark|contrast",
-    "count": 7,
+    "count": 8,
     "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
   },
   {
     "key": "next-3-her|light|contrast",
-    "count": 7,
+    "count": 8,
     "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
   },
   {
     "key": "next-3-her|light|dynamicType",
-    "count": 14,
+    "count": 15,
     "why": "文字不完全跟动态字体放大（多半是 RootView 把字号封顶在 accessibility2，以及固定行高）；交 iPhone 编码线程按第 73 条改"
   },
   {

@@ -27,7 +27,6 @@ export interface PortableSnapshot {
   readonly decisionPayloads: readonly Row[];
   readonly sourceInsights: readonly Row[];
   readonly processedMessages: readonly Row[];
-  readonly museEntries: readonly Row[];
   readonly rules: readonly Row[];
   readonly ruleHistory: readonly Row[];
   readonly prereviews: readonly Row[];
@@ -270,14 +269,6 @@ export function readSnapshot(
             ORDER BY processed_at, message_id`,
           )
         : [];
-      const museEntries = withEvidence
-        ? all(
-            `SELECT id, muse_at, muse_reminded, timing_ok, content_ok, content_ref, note_ref,
-              paired_decision_id, intake_item_key, recorded_at, paired_message_id
-            FROM muse_reference_entries WHERE owner_id = @ownerId AND agent_id = @agentId
-            ORDER BY muse_at, id`,
-          )
-        : [];
       const rules = all(
         `SELECT rule_id, revision, parameters, status, source, source_memory_id, updated_at,
           suspend_reason, suggestion
@@ -307,7 +298,6 @@ export function readSnapshot(
         ...decisionPayloads,
         ...sourceInsights,
         ...processedMessages,
-        ...museEntries,
         ...externalProposals,
         ...restrictedMemoryTexts,
         ...perception.perceptionRecords,
@@ -400,7 +390,6 @@ export function readSnapshot(
         decisionPayloads,
         sourceInsights,
         processedMessages,
-        museEntries,
         rules,
         ruleHistory,
         prereviews,

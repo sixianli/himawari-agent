@@ -20,7 +20,7 @@ const rehearsal = hostname() === "__PKT_REHEARSAL_HOSTNAME__";
 fail((rehearsal && materials.purpose === "hermes-rehearsal" && materials.nonProduction === true && materials.nodeAlreadyInstalled === true) || (!rehearsal && hostname() === "__PKT_HOSTNAME__" && materials.purpose === "cloud-__PKT_LABEL__-install" && materials.nonProduction === false && materials.nodeAlreadyInstalled === true), "P5_MATERIAL_PURPOSE_INVALID");
 fail(materials.schemaVersion === 2 && materials.sourceHead === head && materials.files.length === 7, "P5_MATERIALS_INVALID");
 for (const item of materials.files) {
-  fail([ ...Object.keys(expected), "node-modules.tar.gz", "node-modules.json", "npm-ls.json", "python-3.12.10.tar.gz" ].includes(item.name), "P5_MATERIAL_NAME_INVALID");
+  fail([ ...Object.keys(expected), "node-modules.tar.gz", "node-modules.json", "npm-ls.json", "__PKT_PYTHON_ARCHIVE_NAME__" ].includes(item.name), "P5_MATERIAL_NAME_INVALID");
   const filename = path.join(input, item.name), info = lstatSync(filename);
   fail(info.isFile() && !info.isSymbolicLink() && info.size === item.bytes && hash(readFileSync(filename)) === item.sha256 && (!expected[item.name] || expected[item.name] === item.sha256), `P5_MATERIAL_CHANGED:${item.name}`);
 }
@@ -50,12 +50,12 @@ checkoutFromCache(cache, checkout, head, run);
 fail(run("git", ["-C", checkout, "rev-parse", "HEAD"]) === head && run("git", ["-C", checkout, "status", "--porcelain", "--untracked-files=all"]) === "", "P5_SOURCE_IDENTITY_INVALID");
 const pythonRoot = path.join(work, "python");
 mkdirSync(pythonRoot, { mode: 0o700 });
-const pythonArchive = path.join(input, "python-3.12.10.tar.gz");
+const pythonArchive = path.join(input, "__PKT_PYTHON_ARCHIVE_NAME__");
 const entries = run("tar", ["-tzf", pythonArchive], "python-entries").split("\n");
 fail(entries.length > 0 && entries.every((entry) => entry && !entry.startsWith("/") && !entry.split("/").includes("..")), "P5_PYTHON_ARCHIVE_PATH_INVALID");
 run("tar", ["-xzf", pythonArchive, "--no-same-owner", "-C", pythonRoot], "python-extract");
 const python = path.join(pythonRoot, "python/bin/python3");
-fail(run(python, ["--version"], "python-version") === "Python 3.12.10", "P5_PYTHON_VERSION_INVALID");
+fail(run(python, ["--version"], "python-version") === "Python __PKT_PYTHON_VERSION__", "P5_PYTHON_VERSION_INVALID");
 env.HIMAWARI_CI_PYTHON = python;
 const dependencies = JSON.parse(readFileSync(path.join(input, "node-modules.json")));
 fail(dependencies.schemaVersion === 2 && dependencies.scope === "whole-locked-node-modules" && dependencies.sourceHead === head && dependencies.node === "v22.22.3" && dependencies.lockCheck.exitCode === 0 && dependencies.packageLockSha256 === hash(readFileSync(path.join(checkout, "package-lock.json"))) && dependencies.archive.sha256 === materials.files.find((item) => item.name === "node-modules.tar.gz").sha256 && dependencies.lockCheck.outputSha256 === hash(readFileSync(path.join(input, "npm-ls.json"))), "P5_DEPENDENCIES_IDENTITY_INVALID");

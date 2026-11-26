@@ -319,7 +319,6 @@ describe("prod-read.sh", () => {
       rule_count: 2,
       memory_count: 1,
       related_count: 0,
-      muse_entries: 0,
     });
   });
 
