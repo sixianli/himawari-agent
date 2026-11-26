@@ -2362,7 +2362,16 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       if (result.contentClassification)
         this.#raiseVisible(request.runId, result.contentClassification, request.dataClassification);
       return {
-        content: [{ type: "text", text: result.modelContent }],
+        content: [
+          { type: "text", text: result.modelContent },
+          ...(result.modelImages
+            ? result.modelImages.map(({ mimeType, data }) => ({
+                type: "image" as const,
+                mimeType,
+                data,
+              }))
+            : []),
+        ],
         details: {
           ...(result.executionTiming ? { executionTiming: result.executionTiming } : {}),
           productOutcome: result.outcome,
