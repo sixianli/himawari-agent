@@ -40,3 +40,41 @@ jobs:
           -configuration Debug
           -destination 'generic/platform=iOS Simulator'
           CODE_SIGNING_ALLOWED=NO
+  iphone-accessibility:
+    name: apple/iphone-accessibility
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft != true }}
+    runs-on: macos-26
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: 选一台最新系统的 iPhone 模拟器
+        id: simulator
+        run: |
+          udid="$(xcrun simctl list devices available --json | python3 -c '
+          import json, re, sys
+          runtimes = json.load(sys.stdin)["devices"]
+          def version(key):
+              return [int(part) for part in re.findall(r"\d+", key.rsplit(".", 1)[-1])]
+          ios = sorted((key for key in runtimes if ".SimRuntime.iOS-" in key), key=version)
+          phones = [device for device in runtimes[ios[-1]] if device["name"].startswith("iPhone")]
+          print(phones[0]["udid"])
+          ')"
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+          xcrun simctl list devices | grep "$udid"
+      - name: 每个示例场景跑苹果的无障碍审计（浅色、深色、最大字号）
+        run: >-
+          set -o pipefail;
+          xcodebuild test
+          -project clients/apple/App/Himawari.xcodeproj
+          -scheme Himawari
+          -configuration Debug
+          -destination "id=${{ steps.simulator.outputs.udid }}"
+          -only-testing:HimawariUITests
+          CODE_SIGNING_ALLOWED=NO
+          | tee accessibility-audit.log
+          | grep -E 'A11Y_AUDIT_|error:|Test Case .* (passed|failed)|\*\* TEST'
+      - name: 列出这次审计发现的问题
+        if: ${{ always() }}
+        run: grep -E 'A11Y_AUDIT_' accessibility-audit.log | sort -u || true
