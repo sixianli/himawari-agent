@@ -6,6 +6,7 @@
 - [代码怎么分](#layout)
 - [在 Mac 上构建、测试、装到 iPhone](#on-the-mac)
 - [在云端跑单元测试](#in-the-cloud)
+- [端到端测试](#end-to-end)
 - [和服务器对齐的固定测试数据](#vectors)
 - [图标](#icons)
 - [himawari 字样](#wordmark)
@@ -59,6 +60,19 @@ swift test
 ```
 
 在 Linux 上包里只有 `HimawariCore` 和它的测试，界面目标只在苹果系统上编译（`Package.swift` 里按系统区分）。界面代码只能在 Mac 上的 Xcode 里编译和看。
+
+[返回目录](#apple-clients)
+
+<a id="end-to-end"></a>
+## 端到端测试
+
+端到端测试（end-to-end，像真人一样把 App 打开、点按钮、发消息、看回答）放在 UI 测试目标 `HimawariUITests` 的 `App/UITests/EndToEndTests.swift`。它连的是一个真后端：`test/ios-e2e/backend.ts` 起真的设备接口（配对、请求签名、推流）和真的 Pi 运行（Pi 是 Himawari 用的 Agent 运行库），只把模型换成 Pi 官方的 faux 替身（不联网、不花钱，按固定速度一个字一个字吐出回答）。后端前面有一层 TLS 转发（HTTPS 的加密层），测试可以随时把它断开、再接上，用来测断网。
+
+测试覆盖：配对；回答在推流途中就显示；连点两下发送只存一条、只显示一条；空闲 20 秒不误报“没连上”；断网时写的话恢复后发出且只发一次；长按消息出菜单；长对话能滚回开头；她的页面每一行点右侧都有反应、能从屏幕左边缘右滑返回；记忆页的搜索框能输入。界面上的文字从 `Sources/*/Resources/zh-Hans.lproj/Localizable.strings` 和 `ManageStrings.swift` 动态读，改了文案不用改测试。
+
+只在 CI 上跑：`apple.yml` 的 `apple/iphone-e2e` 作业（只改文档的 PR 跳过），以及 `testflight.yml` 的 `testflight/e2e`，上传 TestFlight 要等它通过。两处都调用 `clients/apple/scripts/e2e.sh`：先编译，再起后端、把测试用的根证书装进模拟器，然后只跑 `EndToEndTests`，没找到后端导致全部跳过也判失败。按[测试主机规则](../../.agents/instructions/test-and-production-hosts.md)，这个脚本会起服务器端的进程，不在 Andy 的 Mac 上运行。后端本身另有 `test/integration/ios-e2e-backend.test.ts` 在 Linux 上验证。
+
+修好一个用户看得见的 iPhone 问题，就在这里补一条会在旧代码上失败的测试。
 
 [返回目录](#apple-clients)
 
