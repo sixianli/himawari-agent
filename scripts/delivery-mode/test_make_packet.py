@@ -25,6 +25,8 @@ MEMORY_PAGE_COMMIT = '4ca2d24c4af3dba5868a1d18ea882b371462845b'
 ADDED_FILES = {'install/source-cache.mjs', 'install/verify-source-cache-fixtures.mjs', 'maintenance/verify-migrate-fixtures.mjs', 'measurement/verify-s6-report-contract.py', 'systemd/verify-startup-readiness-fixtures.mjs'}
 RENAMED_FILES = {'systemd/fixtures/verify-doctor-fixtures.mjs': 'systemd/fixtures/verify-doctor.test.mjs'}
 INTENDED_CHANGES = {
+    'measurement/probe/read-driver.mjs', 'signing/verify-finalize-capability-check.py', 'acceptance/cloud/adapters/probe-public-search.mjs', 'acceptance/cloud/adapters/probe-linux-worker-loss.mjs',
+    'acceptance/cloud/probe-source/packages/runtime-sandbox/scripts/probe-linux-worker-loss.mjs', 'acceptance/cloud/probe-source/packages/runtime-sandbox/scripts/probe-authorized-network.mjs', 'acceptance/cloud/probe-source/packages/runtime-sandbox/scripts/probe-network-boundary.mjs', 'acceptance/cloud/probe-source/packages/runtime-sandbox/scripts/probe-public-search.mjs',
     'acceptance/helpers/collect-installer-dependencies.mjs', 'install/collect-installer-dependencies.mjs', 'steps/transport-packet.py', 'steps/packet-common.py',
     'acceptance/OWNED-SHA256SUMS', 'acceptance/S6-limited-host-acceptance.sh', 'acceptance/cloud/adaptation-manifest.json',
     'acceptance/cloud/adapters/probe-authorized-network.mjs', 'acceptance/cloud/adapters/probe-foreground.mjs', 'acceptance/cloud/adapters/probe-network-boundary.mjs', 'acceptance/cloud/probe-source/packages/runtime-pi/scripts/probe-foreground.mjs', 'acceptance/cloud/cloud-inputs.draft.json',
@@ -973,6 +975,75 @@ class ArmTargetTest(RenderedPacket):
         self.assertEqual((command[0], command[-2], command[-1]), ('ssh', 'himawari-build@192.0.2.7', 'true'))
         upload = hermes.upload_argv('/tmp/a', '/remote/b')
         self.assertEqual((upload[0], upload[-2], upload[-1]), ('scp', '/tmp/a', 'himawari-build@192.0.2.7:/remote/b'))
+
+
+class ArmHostPathsTest(unittest.TestCase):
+    TAG = '[PG-6]'
+    OPTIONAL_LIB64 = '...["/lib64"].filter(existsSync)'
+
+    def test_sandbox_read_paths_leave_out_lib64_on_a_host_that_has_none(self):
+        template = HERE / 'packet-template'
+        carried = {'acceptance/cloud/' + copy for copy in re.findall(r'"packetCopy": "([^"]+)"', (template / 'acceptance/cloud/r2l6-source-manifest.json').read_text())}
+        executed = [path for path in sorted(template.rglob('*.mjs')) if not path.relative_to(template).as_posix().startswith('acceptance/cloud/basis-04/') and path.relative_to(template).as_posix() not in carried]
+        sources = executed + sorted((HERE.parents[1] / 'packages/runtime-sandbox/scripts').glob('probe-*.mjs')) + [HERE.parents[1] / 'packages/runtime-pi/scripts/probe-foreground.mjs', HERE.parents[1] / 'test/qualification/sandbox-install-restart-model.mjs']
+        bare = [str(path.relative_to(HERE.parents[1])) + ':' + str(number) for path in sources for number, line in enumerate(path.read_text().splitlines(), 1) if '"/lib64"' in line and self.OPTIONAL_LIB64 not in line]
+        self.assertEqual(bare, [])
+        seal = (HERE / 'packet-template/signing/cloud-seal.mjs').read_text()
+        self.assertIn(self.OPTIONAL_LIB64, seal.split('readOnlyToolchainPaths: [', 1)[1].split('protectedPaths: [', 1)[0])
+
+    def test_the_lib64_entry_resolves_on_hosts_with_it_and_disappears_on_hosts_without_it(self):
+        node = shutil.which('node')
+        if node is None:
+            self.skipTest('node is not installed')
+        script = 'import { existsSync } from "node:fs"; import { realpath } from "node:fs/promises"; const entries = ["/usr/lib", ' + self.OPTIONAL_LIB64 + ', "/proc"]; const resolved = await Promise.all(entries.map((p) => realpath(p))); process.stdout.write(JSON.stringify({ entries, resolved }));'
+        child = subprocess.run([node, '--input-type=module', '-e', script], capture_output=True, text=True, check=False)
+        self.assertEqual(child.returncode, 0, child.stderr)
+        listed = json.loads(child.stdout)['entries']
+        self.assertEqual('/lib64' in listed, os.path.lexists('/lib64'))
+
+
+class MigrateFixtureSeedTest(unittest.TestCase):
+    TAG = '[PG-6]'
+
+    def test_the_migrate_fixture_seeds_the_migrations_production_has_not_left_pending(self):
+        source = (HERE / 'packet-template/maintenance/verify-migrate-fixtures.mjs').read_text()
+        self.assertNotIn('migrations.slice(0, from)', source)
+        self.assertIn('const pendingNames = new Set(common.migrationExpectedLedger.map((row) => row.name));', source)
+        self.assertIn('persistence.applyMigrations(seeded, productionApplied);', source)
+
+
+class FinalizeCapabilityFixtureTest(unittest.TestCase):
+    TAG = '[PG-6]'
+    PRODUCTION_REFS = ['himawari.pi-coding', 'himawari.public-fetch', 'himawari.public-search']
+
+    def run_fixture(self, capabilities):
+        with tempfile.TemporaryDirectory() as directory:
+            packet = Path(directory)
+            (packet / 'signing').mkdir()
+            (packet / 'inputs').mkdir()
+            shutil.copy(HERE / 'packet-template/signing/verify-finalize-capability-check.py', packet / 'signing')
+            shutil.copy(HERE / 'packet-template/signing/finalize-binding-inputs.py', packet / 'signing')
+            (packet / 'inputs/s0-db-readback.json').write_text(json.dumps({'identity': {'hostId': 'host:fixture'}, 'authorization': {'capabilities': capabilities}}))
+            (packet / 'inputs/bindings.draft.json').write_text(json.dumps({'paths': {'oldPrefix': '/opt/himawari/releases/old'}}))
+            child = subprocess.run([sys.executable, '-I', str(packet / 'signing/verify-finalize-capability-check.py')], capture_output=True, text=True, check=False)
+            return child.returncode, child.stdout + child.stderr
+
+    def capability(self, ref):
+        fields = ['activeHealthy', 'versionMatchesSnapshot', 'operationsMatchSnapshot', 'scopesMatchSnapshot', 'costMatchesSnapshot', 'secretRefsMatchSnapshot', 'permissionRefsMatchSnapshot', 'declarationMatchesSnapshotExceptArtifact', 'snapshotIntegrityMatchesRunner', 'storedIntegrityMatchesDeclaration', 'runnerMatchesRecorded', 'integrityMatchesSnapshot', 'declarationInvariantMatchesSnapshot']
+        return {'capabilityRef': ref, 'version': '1.0.0', 'status': 'active', **{field: True for field in fields}, 'runnerSha256': 'a' * 64, 'actualRunnerSha256': 'a' * 64, 'hostId': 'host:fixture', 'runtimeRoot': '/opt/himawari/releases/old/lib/himawari-agent', 'workerInstanceId': 'worker:fixture'}
+
+    def test_a_production_without_tools_yet_passes_the_fixture(self):
+        self.assertEqual(self.run_fixture([])[0], 0)
+
+    def test_the_three_approved_tools_still_pass_and_every_tampered_field_is_refused(self):
+        code, output = self.run_fixture([self.capability(ref) for ref in self.PRODUCTION_REFS])
+        self.assertEqual(code, 0, output)
+        self.assertGreater(json.loads(output)['cases'], 1)
+
+    def test_any_other_production_tool_set_is_refused_and_named(self):
+        code, output = self.run_fixture([self.capability('himawari.pi-coding')])
+        self.assertNotEqual(code, 0)
+        self.assertIn('FINALIZE_CAPABILITY_FIXTURE_PRODUCTION_SET_CHANGED ["himawari.pi-coding"]', output)
 
 
 FAKE_SSH = '#!/bin/bash\nexec bash -c "${@: -1}"\n'

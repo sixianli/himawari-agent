@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { lookup } from "node:dns/promises";
+import { existsSync } from "node:fs";
 import { lstat, mkdir, mkdtemp, readFile, readlink, realpath, rm } from "node:fs/promises";
 import { createServer } from "node:http";
 import { release } from "node:os";
@@ -73,7 +74,7 @@ try {
             ? ["/System", "/private/etc/ssl/openssl.cnf"]
             : [
                 "/lib",
-                "/lib64",
+                ...["/lib64"].filter(existsSync),
                 "/proc",
                 "/etc/ssl",
                 path.join(runtimeRoot, "node_modules/@anthropic-ai/sandbox-runtime/vendor/seccomp"),

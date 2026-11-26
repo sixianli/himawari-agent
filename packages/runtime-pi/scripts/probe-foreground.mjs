@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import {
   copyFile,
   mkdir,
@@ -97,7 +98,7 @@ async function run(tool, parameters, writable = false, executionMode = "foregrou
         "/dev",
         ...(process.platform === "darwin"
           ? ["/System", "/opt/homebrew"]
-          : ["/lib", "/lib64", "/proc", "/etc/ssl", "/etc/hosts"]),
+          : ["/lib", ...["/lib64"].filter(existsSync), "/proc", "/etc/ssl", "/etc/hosts"]),
       ].map((p) => realpath(p)),
     ),
     allowedDomains: [],

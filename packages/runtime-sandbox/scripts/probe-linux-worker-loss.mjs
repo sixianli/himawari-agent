@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { fork } from "node:child_process";
+import { existsSync } from "node:fs";
 import { lstat, mkdir, mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -31,7 +32,7 @@ if (process.argv[2] === "worker") {
           "/usr/bin",
           "/usr/lib",
           "/lib",
-          "/lib64",
+          ...["/lib64"].filter(existsSync),
           "/dev",
           "/proc",
           path.dirname(process.execPath),

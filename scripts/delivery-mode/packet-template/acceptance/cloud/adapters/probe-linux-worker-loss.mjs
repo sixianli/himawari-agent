@@ -1,4 +1,5 @@
 import { validateScratchRoot } from "./scratch-root.mjs";
+import { existsSync } from "node:fs";
 import assert from "node:assert/strict";
 import { fork } from "node:child_process";
 import { lstat, mkdir, mkdtemp, readFile, realpath, rm } from "node:fs/promises";
@@ -32,7 +33,7 @@ if (process.argv[2] === "worker") {
           "/usr/bin",
           "/usr/lib",
           "/lib",
-          "/lib64",
+          ...["/lib64"].filter(existsSync),
           "/dev",
           "/proc",
           path.dirname(process.execPath),
