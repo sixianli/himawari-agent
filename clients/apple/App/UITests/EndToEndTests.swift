@@ -104,8 +104,12 @@ final class EndToEndTests: XCTestCase {
     func testLongPressOnAMessageOpensItsMenu() async throws {
         let text = "menu \(UUID().uuidString.prefix(6))"
         send(text)
+        XCTAssertTrue(
+            app.waitFor(60) { answerFinished(to: text) },
+            "no finished answer for \"\(text)\""
+        )
         let bubble = app.staticTexts.matching(NSPredicate(format: "label == %@", text)).firstMatch
-        XCTAssertTrue(bubble.waitForExistence(timeout: 15))
+        XCTAssertTrue(app.waitFor(15) { bubble.exists && bubble.isHittable }, "the sent message is not on screen to press")
         bubble.press(forDuration: 1.0)
         let copy = app.buttons[AppStrings.text("chat.menu.copy")]
         XCTAssertTrue(copy.waitForExistence(timeout: 5), "long press did not open the message menu")
@@ -121,13 +125,7 @@ final class EndToEndTests: XCTestCase {
         XCTAssertTrue(app.waitFor(60) { app.texts(containing: "\(answers.opening)“\(first)”").firstMatch.exists })
         let long = "\(answers.longRequest) \(UUID().uuidString.prefix(6))"
         send(long)
-        XCTAssertTrue(
-            app.waitFor(120) {
-                let answer = app.texts(containing: "\(answers.opening)“\(long)”").firstMatch
-                return answer.exists && [answer.label, answer.value as? String ?? ""].joined().contains(answers.ending)
-            },
-            "the long answer did not finish"
-        )
+        XCTAssertTrue(app.waitFor(120) { answerFinished(to: long) }, "the long answer did not finish")
         let start = app.staticTexts.matching(NSPredicate(format: "label == %@", first)).firstMatch
         let reachedStart = app.waitFor(30, poll: 0.1) {
             if start.exists && start.isHittable { return true }
@@ -189,6 +187,11 @@ final class EndToEndTests: XCTestCase {
             app.waitFor(5) { (search.value as? String)?.contains("e2e") == true },
             "the memory search field did not take typing"
         )
+    }
+
+    private func answerFinished(to text: String) -> Bool {
+        let answer = app.texts(containing: "\(answers.opening)“\(text)”").firstMatch
+        return answer.exists && [answer.label, answer.value as? String ?? ""].joined().contains(answers.ending)
     }
 
     private func send(_ text: String) {

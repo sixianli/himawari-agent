@@ -99,7 +99,8 @@ xcrun simctl spawn "$udid" log show --last 60m --style compact \
   >"$work/app.log" 2>&1
 set -e
 echo "IOS_E2E_BACKEND_LOG"
-grep -E 'IOS_E2E_|Error|error' "$log" | head -80 || true
+grep -E 'IOS_E2E_|Error|error' "$log" | grep -vE 'IOS_E2E_(REQUEST|LIVE_TEXT) ' | head -80 || true
+echo "IOS_E2E_LIVE_TEXT_EVENTS $(grep -c 'IOS_E2E_LIVE_TEXT ' "$log" || true)"
 echo "IOS_E2E_APP_LOG"
 tail -40 "$work/app.log" || true
 if grep -q "skipped" "$work/test.log" && ! grep -q "passed" "$work/test.log"; then

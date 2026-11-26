@@ -48,6 +48,10 @@ function openssl(args: readonly string[]) {
   if (result.status !== 0) throw new Error(`IOS_E2E_OPENSSL_FAILED ${result.stderr}`);
 }
 
+function note(line: string) {
+  process.stdout.write(`IOS_E2E_${line} at=${new Date().toISOString()}\n`);
+}
+
 function gatewayType(body: unknown): string {
   let parsed = body;
   if (Buffer.isBuffer(body) || typeof body === "string") {
@@ -243,9 +247,7 @@ class SwitchableFront {
       upstream.on("error", forget).on("close", forget);
       client.pipe(upstream).pipe(client);
     });
-    server.on("tlsClientError", (error) =>
-      process.stdout.write(`IOS_E2E_TLS_ERROR ${error.message}\n`),
-    );
+    server.on("tlsClientError", (error) => note(`TLS_ERROR front ${error.message}`));
     await new Promise<void>((resolve, reject) => {
       server.once("error", reject);
       server.listen(this.#port, "127.0.0.1", () => resolve());
@@ -301,14 +303,19 @@ export async function startE2eBackend(): Promise<E2eBackend> {
     clock,
     live,
     mainThread: true,
-    beforeReady: (app) =>
+    beforeReady: (app) => {
+      app.addHook("onRequest", async (request) => {
+        if (request.url.includes("-stream")) note(`STREAM_OPEN ${request.url.split("?")[0]}`);
+      });
       app.addHook("onResponse", async (request, reply) => {
         if (!request.url.startsWith("/api/device/")) return;
         const type = gatewayType(request.body);
-        process.stdout.write(
-          `IOS_E2E_REQUEST ${request.method} ${request.url.split("?")[0]}${type} ${reply.statusCode}\n`,
-        );
-      }),
+        note(`REQUEST ${request.method} ${request.url.split("?")[0]}${type} ${reply.statusCode}`);
+      });
+    },
+  });
+  live.subscribe((event) => {
+    if (event.kind === "text") note(`LIVE_TEXT ${event.runId} +${event.text.length}`);
   });
   h.configuration.current = { ...h.configuration.current, heartbeatSeconds: 15 };
   await h.app.listen({ host: "127.0.0.1", port: appPort });
@@ -392,6 +399,7 @@ export async function startE2eBackend(): Promise<E2eBackend> {
       response.end(JSON.stringify(body));
     };
     const route = `${request.method} ${request.url}`;
+    note(`CONTROL ${route}`);
     (async () => {
       if (route === "POST /pairing-link") {
         const started = await web(h, "pairing-codes");
@@ -418,10 +426,11 @@ export async function startE2eBackend(): Promise<E2eBackend> {
       return reply(404, { error: "not_found" });
     })().catch((error) => reply(500, { error: String(error) }));
   });
+  control.on("tlsClientError", (error) => note(`TLS_ERROR control ${error.message}`));
   await new Promise<void>((resolve) => control.listen(controlPort, "127.0.0.1", () => resolve()));
   return {
     origin,
-    controlOrigin: `https://localhost:${controlPort}`,
+    controlOrigin: `https://127.0.0.1:${controlPort}`,
     caPath: tls.caPath,
     close: async () => {
       clearInterval(confirming);
