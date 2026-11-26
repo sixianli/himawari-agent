@@ -6,7 +6,7 @@ supersedes: "https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941
 superseded_by: ""
 date: "2026-11-26"
 covers: "apps/control-center/src/execution-timeline.ts, apps/control-center/src/spreadsheet-model.ts, apps/control-center/src/components/glyphs.tsx, apps/control-center/src/rounded.css, apps/control-center/src/quiet-scrollbars.ts, packages/platform-node/src/http-gateway-server.ts, packages/platform-node/src/browser-thread-files.ts, packages/persistence-sqlite/src/sqlite-thread-artifact-operations.ts, scripts/check-layout-audit.mjs, scripts/check-control-center-build.mjs, scripts/render-brand-assets.mjs, docs/ui-ux-design-guide.md"
-verified_at: "7d0ffcd52cbb69d4941871cf9bf08d93f3843da8"
+verified_at: "7c8521fe5f55e7dd57c5bd52badd16eef647502e"
 ---
 
 # ADR 0295：网页对话界面的现行做法
@@ -41,6 +41,8 @@ verified_at: "7d0ffcd52cbb69d4941871cf9bf08d93f3843da8"
 
 ## 决定
 
+[ADR 0309](0309-apps-sign-in-with-passkeys-and-the-web-is-removed.md) 决定网页最后整体删除，从现在起不再给网页加功能；删除前现行代码仍按下面。
+
 <a id="process"></a>
 
 ### 过程区和回答下方
@@ -58,6 +60,7 @@ verified_at: "7d0ffcd52cbb69d4941871cf9bf08d93f3843da8"
 - 能加 PDF、Word、Excel、PowerPoint 和 UTF-8 文本文件，每个不超过 20 MB，一条消息最多 10 个；图片的做法见 [ADR 0093](0093-chat-attachments-images.md)。扫描件 PDF、旧版 Office 和其他二进制文件被拒绝并说明原因。
 - 文件在浏览器里转成文字（PDF 用 pdf.js，Office 文件用 `fflate` 解压后取文字），超过约 25 万字截断并写明。解析不受信任的文件格式的风险留在用户自己的浏览器标签页里，服务端不装解析库。
 - 文字经 `POST /api/payload/v1/attachment` 加密保存，登录、防伪造和幂等检查与消息正文相同。消息正文里每个文件只带一行 `<file name=… ref=… bytes=… kind=…/>` 引用，消息合同和数据库不改；标题生成和记忆提取也只看到这一行。
+- iPhone 输入条的附件走设备接口 `POST /api/device/v1/attachments`（设备密钥签名），存成同样的两种内容类型，消息里带同样的 `<file …/>` 引用；`GET /api/device/v1/config` 的 `attachments` 告诉手机上限，主对话模型不能读图（以 Magpie 报的能力为准）时 `imageCharacters` 为 0。
 - 发给模型时，上下文投影只展开内容类型是附件的加密内容，解密绑定所有者和 agent；读不到时写“[附件无法读取]”，这一轮照常进行。
 
 <a id="files"></a>
@@ -96,7 +99,7 @@ verified_at: "7d0ffcd52cbb69d4941871cf9bf08d93f3843da8"
 ### 造型和标志
 
 - 全站一套“圆润”造型：图标是半透明底形加实心细节的双色图标，全部放在 `glyphs.tsx` 一个文件里，每层填色写在图标自己身上；组件不描边，靠底色和阴影分层，按钮是胶囊形；圆角等尺寸写成 `rounded.css` 里的变量。新图标照同样画法放进同一个文件。
-- 标志是按黄金角排列的种子，种子数按显示大小取（小图点少、大图点多，见 [ADR 0291](0291-sunflower-mark-seed-count-follows-its-size.md)）；首页大图和正在回答的标志会长新种子，系统开了“减少动态效果”时一律静止。网页标志、PWA 图标和苹果端的桌面图标都由 `render-brand-assets.mjs` 从同一份种子数学生成。
+- 标志是按黄金角排列的种子，种子数按显示大小取（小图点少、大图点多，见 [ADR 0308](0308-sunflower-mark-seed-count-follows-its-size-except-the-chat-puck.md)）；首页大图和正在回答的标志会长新种子，系统开了“减少动态效果”时一律静止。网页标志、PWA 图标和苹果端的桌面图标都由 `render-brand-assets.mjs` 从同一份种子数学生成。
 - 界面文字一律有中文、英文、日文三份。
 
 <a id="session-exchange"></a>

@@ -1,4 +1,5 @@
 import type {
+  ApprovalDisplayOrigin,
   ApprovalRequest,
   AuthorizationStorePort,
   GovernedApprovalRequest,
@@ -210,6 +211,7 @@ export interface GovernanceGatewayV2ReadModelDependencies {
   readonly clock: ClockPort;
   readonly ownerId: OwnerId;
   readonly agentId: AgentId;
+  readonly approvalOrigin?: (threadId: string) => Promise<ApprovalDisplayOrigin | null>;
 }
 
 export class GovernanceGatewayV2ReadModel implements GatewayV2ReadModelPort {
@@ -370,6 +372,9 @@ export class GovernanceGatewayV2ReadModel implements GatewayV2ReadModelPort {
     const trueResultRef = await this.#dependencies.dependencies.trueResultRefForApproval(
       approval.id,
     );
+    const origin =
+      (approval.display && (await this.#dependencies.approvalOrigin?.(intent.threadId))) ||
+      approval.display?.origin;
     return parseSnapshot({
       ...this.#envelope(
         query,
@@ -402,7 +407,7 @@ export class GovernanceGatewayV2ReadModel implements GatewayV2ReadModelPort {
                       ruleText: approval.display.askedBecause.ruleText,
                     }
                   : { kind: "no_rule_allows", ruleId: null, ruleText: null },
-              origin: approval.display.origin,
+              origin: origin ?? null,
             }
           : null,
         intent: {

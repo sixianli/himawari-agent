@@ -95,6 +95,8 @@ function toolActivity(
   };
 }
 
+export const DEVICE_VOICE_TIMING_EVENT = "device.voice_timing";
+
 export function executionToolItemId(toolCallId: string): string {
   return identifier(toolCallId, toolCallId);
 }
@@ -213,9 +215,13 @@ export class ThreadExecutionProjection {
         );
       if (
         !event.eventType.startsWith("runtime.") &&
-        !["memory.query", "memory.candidates", "memory.selection", "context.formed"].includes(
-          event.eventType,
-        )
+        ![
+          "memory.query",
+          "memory.candidates",
+          "memory.selection",
+          "context.formed",
+          DEVICE_VOICE_TIMING_EVENT,
+        ].includes(event.eventType)
       )
         continue;
       const base = {
@@ -269,6 +275,8 @@ export class ThreadExecutionProjection {
             text: String(memoryIds.length),
             output: await this.memoryLines(event, memoryIds),
           });
+        } else if (event.eventType === DEVICE_VOICE_TIMING_EVENT) {
+          records.push({ ...base, phase: "updated", text: JSON.stringify(envelope) });
         } else if (
           [
             "memory.query",

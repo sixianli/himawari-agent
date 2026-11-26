@@ -22,7 +22,10 @@ public protocol SensesService: AnyObject {
     func setSense(_ sense: String, enabled: Bool, revision: Int, reason: String) async throws
     func refreshServer() async
     func setRetention(key: String, days: Int?, revision: Int, reason: String) async throws
-    func deleteRecords(_ item: SenseItem, reason: String) async throws -> PerceptionDeleteResult
+    func deleteRecords(_ item: SenseItem, reason: String) async throws -> PerceptionDeletionSnapshot
+    func dayPage(_ day: String?, cursor: String?) async throws -> PerceptionDaySnapshot
+    func episode(_ episodeId: String, cursor: String?) async throws -> PerceptionEpisodeSnapshot
+    func delete(_ target: PerceptionDeletionTarget, reason: String) async throws -> PerceptionDeletionSnapshot
     func mirrorCount(_ item: SenseItem) async -> Int?
     func clearMirror(_ item: SenseItem) async throws
 }
@@ -37,6 +40,7 @@ public protocol AlwaysCollecting: SenseCollector {
 public final class LiveSensesService: SensesService {
     private let gateway: SensesGateway
     private let sink: SenseSink
+    private let deletions: PerceptionDeletionSync
     private let collectors: [SenseItem: SenseCollector]
     private let configuration: () -> DeviceConfiguration?
     private let refreshConfiguration: () async -> Void
@@ -54,10 +58,13 @@ public final class LiveSensesService: SensesService {
         refreshConfiguration: @escaping () async -> Void
     ) {
         gateway = SensesGateway(api: api, confirmation: confirmation)
+        let queue = PerceptionQueue(store: store, transport: api)
+        deletions = PerceptionDeletionSync(store: store, source: api, queue: queue, thisDevice: deviceId)
         sink = SenseSink(
-            queue: PerceptionQueue(store: store, transport: api),
+            queue: queue,
             mirror: MirrorSync(store: store, transport: api),
             store: store,
+            deletions: deletions,
             configuration: configuration
         )
         collectors = SenseCollectors.all()
@@ -121,8 +128,22 @@ public final class LiveSensesService: SensesService {
         try await gateway.setRetention(key: key, days: days, expectedRevision: revision, reason: reason)
     }
 
-    public func deleteRecords(_ item: SenseItem, reason: String) async throws -> PerceptionDeleteResult {
-        try await gateway.deleteRecords(types: item.recordTypes, deviceId: deviceId, reason: reason)
+    public func deleteRecords(_ item: SenseItem, reason: String) async throws -> PerceptionDeletionSnapshot {
+        try await delete(.types(item.recordTypes, deviceId: deviceId), reason: reason)
+    }
+
+    public func dayPage(_ day: String?, cursor: String?) async throws -> PerceptionDaySnapshot {
+        try await gateway.day(day, cursor: cursor)
+    }
+
+    public func episode(_ episodeId: String, cursor: String?) async throws -> PerceptionEpisodeSnapshot {
+        try await gateway.episode(episodeId, cursor: cursor)
+    }
+
+    public func delete(_ target: PerceptionDeletionTarget, reason: String) async throws -> PerceptionDeletionSnapshot {
+        let result = try await gateway.delete(target, reason: reason)
+        await deletions.sync()
+        return result
     }
 
     public func mirrorCount(_ item: SenseItem) async -> Int? {

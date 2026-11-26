@@ -18,6 +18,7 @@ import {
 import { createReferenceAdapterSet } from "@himawari-agent/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import { ContextExternalContent } from "../../apps/agent-service/src/context-external-content.ts";
+import { ProductionApprovalAnswers } from "../../apps/agent-service/src/production-approval-answers.ts";
 import { ProductionInbox } from "../../apps/agent-service/src/production-inbox.ts";
 import {
   InboxRunRegistry,
@@ -26,6 +27,7 @@ import {
 import { ProductionInboxWorker } from "../../apps/agent-service/src/production-inbox-worker.ts";
 import { ProductionMainThread } from "../../apps/agent-service/src/production-main-thread.ts";
 import { ProductionSubthreads } from "../../apps/agent-service/src/production-subthreads.ts";
+import { ProductionTimerControl } from "../../apps/agent-service/src/production-timer-control.ts";
 import {
   ProductionThreadTasks,
   SubthreadToolError,
@@ -90,7 +92,11 @@ describe("subthreads opened by the main conversation", () => {
       )
       .run(LEASE_ID, OWNER_ID, AGENT_ID, DEPLOYMENT_ID, START);
     database.close();
-    const now = () => START;
+    let current = START;
+    const now = () => current;
+    const setNow = (value: string) => {
+      current = value;
+    };
     const repository = await SqliteProductStateRepository.open({
       stateRoot,
       databasePath: file,
@@ -369,8 +375,337 @@ describe("subthreads opened by the main conversation", () => {
       settle,
       lastMessage,
       cancelled,
+      setNow,
     };
   }
+
+  const timerEvents = (f: Awaited<ReturnType<typeof fixture>>) =>
+    f.query<{ source_ref: string; source_version: string; thread_id: string }>(
+      "SELECT source_ref, source_version, thread_id FROM inbox_events WHERE source_kind = 'timer' ORDER BY created_at, source_version",
+    );
+  const timers = (f: Awaited<ReturnType<typeof fixture>>) =>
+    f.query<{ status: string; next_at: string | null; run_count: number; created_by: string }>(
+      "SELECT status, next_at, run_count, created_by FROM subthread_timers ORDER BY id",
+    );
+
+  it("[ADR-0285] schedules a daily task in its own subthread and wakes it once per due time", async () => {
+    const f = await fixture();
+    const said = await f.ownerSays("umbrella", "每晚九点查一下明天要不要带伞");
+    const scheduled = (await f.call(said.runId, "schedule_task", {
+      task: "查东京明天会不会下雨，会下就提醒带伞",
+      schedule: { daily_at: "21:00" },
+      created_by: "owner",
+      matter: "带伞",
+      title: "查明天带伞",
+    })) as { value: { subthread: string; timer: string; next_at: string } };
+    expect(scheduled.value.next_at).toBe("2026-11-25T12:00:00.000Z");
+    expect(timers(f)).toEqual([
+      {
+        status: "active",
+        next_at: "2026-11-25T12:00:00.000Z",
+        run_count: 0,
+        created_by: "owner",
+      },
+    ]);
+    expect(f.query("SELECT COUNT(*) AS n FROM inbox_events")).toEqual([{ n: 0 }]);
+    f.setNow("2026-11-25T11:59:00.000Z");
+    await f.subthreads.tickTimers();
+    expect(timerEvents(f)).toEqual([]);
+    f.setNow("2026-11-25T12:00:05.000Z");
+    await f.subthreads.tickTimers();
+    await f.subthreads.tickTimers();
+    expect(timerEvents(f)).toEqual([
+      {
+        source_ref: scheduled.value.timer,
+        source_version: "2026-11-25T12:00:00.000Z",
+        thread_id: scheduled.value.subthread,
+      },
+    ]);
+    expect(timers(f)[0]).toMatchObject({
+      status: "active",
+      next_at: "2026-11-26T12:00:00.000Z",
+      run_count: 1,
+    });
+    const delivered = await f.started(scheduled.value.subthread);
+    const first = await f.lastMessage(delivered.runId);
+    expect(first).toContain("每次到点会叫醒你做一次");
+    expect(first).toContain("查东京明天会不会下雨，会下就提醒带伞");
+    expect(first).toContain("每天 21:00（Asia/Tokyo）");
+    expect(first).toContain("第 1 次，2026-11-25 21:00（Asia/Tokyo）");
+    await f.settle(delivered);
+    const views = await f.subthreads.listTimers();
+    expect(views).toHaveLength(1);
+    expect(views[0]).toMatchObject({ title: "查明天带伞", schedule: "每天 21:00（Asia/Tokyo）" });
+    expect(f.query("SELECT status FROM subthreads")).toEqual([{ status: "open" }]);
+  });
+
+  it("REVERSE: after the service was down a recurring task runs only its latest missed time, and a late follow-up runs once", async () => {
+    const f = await fixture();
+    const said = await f.ownerSays("watch", "每五分钟看一下那个页面，下午再跟进一次");
+    const every = (await f.call(said.runId, "schedule_task", {
+      task: "看一下那个页面有没有更新",
+      schedule: { every_minutes: 5 },
+      created_by: "agreed",
+      matter: "盯页面",
+      title: "盯页面",
+    })) as { value: { timer: string; next_at: string } };
+    expect(every.value.next_at).toBe("2026-11-25T00:05:00.000Z");
+    const once = (await f.call(said.runId, "schedule_task", {
+      task: "跟进那封信有没有回",
+      schedule: { once_at: "2026-11-25T09:10:00+09:00" },
+      created_by: "self",
+      matter: "跟进回信",
+      title: "跟进回信",
+    })) as { value: { timer: string; next_at: string } };
+    expect(once.value.next_at).toBe("2026-11-25T00:10:00.000Z");
+    f.setNow("2026-11-25T00:21:30.000Z");
+    await f.subthreads.tickTimers();
+    await f.subthreads.tickTimers();
+    expect(
+      timerEvents(f).map(({ source_ref, source_version }) => [source_ref, source_version]),
+    ).toEqual([
+      [once.value.timer, "2026-11-25T00:10:00.000Z"],
+      [every.value.timer, "2026-11-25T00:20:00.000Z"],
+    ]);
+    const rows = f.query<{ id: string; status: string; next_at: string | null; run_count: number }>(
+      "SELECT id, status, next_at, run_count FROM subthread_timers",
+    );
+    expect(rows.find((row) => row.id === every.value.timer)).toMatchObject({
+      status: "active",
+      next_at: "2026-11-25T00:25:00.000Z",
+      run_count: 1,
+    });
+    expect(rows.find((row) => row.id === once.value.timer)).toMatchObject({
+      status: "finished",
+      next_at: null,
+      run_count: 1,
+    });
+    f.setNow("2026-11-25T00:24:00.000Z");
+    await f.subthreads.tickTimers();
+    expect(timerEvents(f)).toHaveLength(2);
+  });
+
+  it("REVERSE: a paused, cancelled or stopped timer does not fire, and a resumed one does", async () => {
+    const f = await fixture();
+    const said = await f.ownerSays("three", "定三个每五分钟的检查");
+    const make = async (title: string) =>
+      (
+        (await f.call(said.runId, "schedule_task", {
+          task: `${title}的检查`,
+          schedule: { every_minutes: 5 },
+          created_by: "owner",
+          matter: title,
+          title,
+        })) as { value: { timer: string; subthread: string } }
+      ).value;
+    const paused = await make("暂停的");
+    const cancelled = await make("撤销的");
+    const stopped = await make("叫停的");
+    await f.subthreads.pauseTimer(paused.timer);
+    await f.subthreads.cancelTimer(cancelled.timer);
+    await f.call(said.runId, "stop_subthread", { subthread: stopped.subthread, reason: "不要了" });
+    f.setNow("2026-11-25T00:06:00.000Z");
+    await f.subthreads.tickTimers();
+    expect(timerEvents(f)).toEqual([]);
+    const status = () =>
+      Object.fromEntries(
+        f
+          .query<{ id: string; status: string }>("SELECT id, status FROM subthread_timers")
+          .map((row) => [row.id, row.status]),
+      );
+    expect(status()).toEqual({
+      [paused.timer]: "paused",
+      [cancelled.timer]: "cancelled",
+      [stopped.timer]: "cancelled",
+    });
+    expect(
+      f.query("SELECT status FROM subthreads WHERE thread_id = ?", cancelled.subthread),
+    ).toEqual([{ status: "stopped" }]);
+    await f.subthreads.resumeTimer(paused.timer);
+    await f.subthreads.tickTimers();
+    expect(timerEvents(f)).toEqual([]);
+    f.setNow("2026-11-25T00:10:30.000Z");
+    await f.subthreads.tickTimers();
+    expect(timerEvents(f).map((event) => event.source_ref)).toEqual([paused.timer]);
+  });
+
+  it("[ADR-0285] lists every timer for the owner's App and lets the owner pause, resume and cancel one", async () => {
+    const f = await fixture();
+    const said = await f.ownerSays("list", "每晚九点查一下明天要不要带伞");
+    const scheduled = (
+      (await f.call(said.runId, "schedule_task", {
+        task: "查东京明天会不会下雨",
+        schedule: { daily_at: "21:00" },
+        created_by: "owner",
+        owner_messages: [said.messageId],
+        matter: "带伞",
+        title: "查明天带伞",
+      })) as { value: { timer: string; subthread: string } }
+    ).value;
+    const rent = {
+      id: "reminder:memory-rent",
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      memoryId: "memory-rent",
+      status: "scheduled",
+      dueAt: "2026-11-27T23:00:00.000Z",
+      remindAt: "2026-11-27T23:00:00.000Z",
+      repeat: "none",
+      dismissedAt: null,
+      createdAt: START,
+      updatedAt: START,
+    } as const;
+    const reminderRows = new Map<string, typeof rent | (typeof rent & { status: "cancelled" })>([
+      [rent.id, rent],
+    ]);
+    const control = new ProductionTimerControl({
+      subthreads: f.subthreads,
+      scope,
+      clock: { now: () => START },
+      reminders: {
+        writer: {
+          list: async () => ({
+            reminders: [...reminderRows.values()]
+              .filter((row) => row.status === "scheduled")
+              .map((row) => ({
+                reminderId: row.id,
+                memoryId: row.memoryId,
+                text: "交房租",
+                dueAt: row.dueAt,
+                remindAt: row.remindAt,
+                repeat: row.repeat,
+              })),
+            more: false,
+          }),
+          cancel: async (id: string) => {
+            const row = reminderRows.get(id);
+            if (!row) throw new Error("REMINDER_NOT_FOUND");
+            reminderRows.set(id, { ...row, status: "cancelled" as never });
+            return row as never;
+          },
+        },
+        read: async (id: string) => reminderRows.get(id) as never,
+      },
+    });
+    const change = (action: string, actorType = "owner", timerId = scheduled.timer) =>
+      control.execute({
+        kind: "command",
+        type: "timers.change",
+        actor: { actorType, actorId: "owner" },
+        scope,
+        payload: { timerId, action },
+      } as never);
+    const read = async () =>
+      (
+        (await control.query({
+          kind: "query",
+          type: "timers.read",
+          payload: {},
+        } as never)) as unknown as {
+          payload: { timers: Record<string, unknown>[] };
+        }
+      ).payload.timers;
+    expect(await read()).toEqual([
+      {
+        timerId: scheduled.timer,
+        kind: "recurring",
+        title: "查明天带伞",
+        task: "查东京明天会不会下雨",
+        ownerWords: "- 每晚九点查一下明天要不要带伞",
+        schedule: "每天 21:00（Asia/Tokyo）",
+        createdBy: "owner",
+        status: "active",
+        nextAt: "2026-11-25T12:00:00.000Z",
+        lastAt: null,
+        runCount: 0,
+        spentMicros: 0,
+        runBudgetMicros: 500_000,
+        lastResult: null,
+        createdAt: START,
+      },
+      {
+        timerId: rent.id,
+        kind: "reminder",
+        title: null,
+        task: "交房租",
+        ownerWords: null,
+        schedule: "一次，2026-11-28 08:00（Asia/Tokyo）",
+        createdBy: "owner",
+        status: "active",
+        nextAt: rent.remindAt,
+        lastAt: null,
+        runCount: 0,
+        spentMicros: 0,
+        runBudgetMicros: null,
+        lastResult: null,
+        createdAt: START,
+      },
+    ]);
+    await expect(change("pause", "owner", rent.id)).rejects.toThrow("TIMER_ACTION_NOT_SUPPORTED");
+    await change("cancel", "owner", rent.id);
+    expect((await read()).map((row) => row["kind"])).toEqual(["recurring"]);
+    f.setNow("2026-11-25T12:00:05.000Z");
+    await f.subthreads.tickTimers();
+    const wake = await f.started(scheduled.subthread);
+    await f.call(wake.runId, "tell_main", { kind: "progress", text: "明天不下雨，不用带伞" });
+    await f.settle(wake);
+    expect((await read())[0]).toMatchObject({
+      lastAt: "2026-11-25T12:00:00.000Z",
+      runCount: 1,
+      lastResult: { text: "明天不下雨，不用带伞", at: "2026-11-25T12:00:05.000Z" },
+    });
+    await change("pause");
+    expect((await read())[0]).toMatchObject({ status: "paused" });
+    await change("pause");
+    expect((await read())[0]).toMatchObject({ status: "paused" });
+    await change("resume");
+    expect((await read())[0]).toMatchObject({
+      status: "active",
+      nextAt: "2026-11-26T12:00:00.000Z",
+    });
+    await expect(change("cancel", "client")).rejects.toThrow("TIMER_OWNER_REQUIRED");
+    await expect(change("cancel", "owner", "timer:missing")).rejects.toThrow("TIMER_NOT_FOUND");
+    expect((await read())[0]).toMatchObject({ status: "active" });
+    await change("cancel");
+    expect((await read())[0]).toMatchObject({ status: "cancelled", nextAt: null });
+    await expect(change("resume")).rejects.toThrow("TIMER_STATE_CHANGED");
+    expect(f.query("SELECT status FROM subthreads")).toEqual([{ status: "stopped" }]);
+    f.setNow("2026-11-26T12:00:05.000Z");
+    await f.subthreads.tickTimers();
+    expect(timerEvents(f)).toHaveLength(1);
+  });
+
+  it("REVERSE: refuses a schedule that is not exactly one of the three kinds and stores nothing", async () => {
+    const f = await fixture();
+    const said = await f.ownerSays("bad", "定个时");
+    for (const schedule of [
+      {},
+      { daily_at: "25:00" },
+      { every_minutes: 1 },
+      { once_at: "2026-11-25T21:00:00" },
+      { daily_at: "21:00", every_minutes: 5 },
+    ])
+      await expect(
+        f.call(said.runId, "schedule_task", {
+          task: "查天气",
+          schedule,
+          created_by: "owner",
+          matter: "天气",
+          title: "查天气",
+        }),
+      ).rejects.toBeInstanceOf(SubthreadToolError);
+    await expect(
+      f.call(said.runId, "schedule_task", {
+        task: "查天气",
+        schedule: { daily_at: "21:00" },
+        created_by: "someone",
+        matter: "天气",
+        title: "查天气",
+      }),
+    ).rejects.toBeInstanceOf(SubthreadToolError);
+    expect(f.query("SELECT COUNT(*) AS n FROM subthread_timers")).toEqual([{ n: 0 }]);
+    expect(f.query("SELECT COUNT(*) AS n FROM subthreads")).toEqual([{ n: 0 }]);
+  });
 
   it("opens a hidden subthread whose first run reads the brief and the owner's own words", async () => {
     const f = await fixture();
@@ -1229,5 +1564,149 @@ describe("subthreads opened by the main conversation", () => {
     expect(
       f.query("SELECT COUNT(*) AS n FROM inbox_events WHERE source_ref LIKE 'budget:%'"),
     ).toEqual([{ n: 1 }]);
+  });
+
+  it("[ADR-0285] parks a subthread run that waits for the owner's approval, tells the main conversation, and carries on once the approved run ends", async () => {
+    const f = await fixture();
+    const opened = await f.open();
+    await f.finish(await f.mainThread.ensure(), opened.runId);
+    const first = await f.started(opened.subthread);
+    await f.call(first.runId, "task_create", {
+      subject: "订票",
+      description: "订最便宜的一班",
+      active_form: "正在订票",
+    });
+    const setStatus = (status: string) => {
+      const handle = openQualifiedDatabase(f.file);
+      try {
+        handle.prepare("UPDATE runs SET status = ? WHERE id = ?").run(status, first.runId);
+      } finally {
+        handle.close();
+      }
+    };
+    setStatus("awaiting_approval");
+    expect(await first.handled).toMatchObject({ status: "done", result: "handled" });
+    expect(
+      f.query<{ outcome: string; reason_code: string }>(
+        "SELECT outcome, reason_code FROM inbox_events WHERE run_id = ?",
+        first.runId,
+      ),
+    ).toEqual([{ outcome: "awaiting_approval", reason_code: "subthread_awaiting_approval" }]);
+    expect(f.query("SELECT approval_run_id FROM subthreads")).toEqual([
+      { approval_run_id: first.runId },
+    ]);
+    const told = f.query<{ thread_id: string | null }>(
+      "SELECT thread_id FROM inbox_events WHERE source_ref LIKE 'approval:%'",
+    );
+    expect(told).toEqual([{ thread_id: null }]);
+    const work = await f.subthreads.backgroundWork();
+    expect(work.matters[0]?.subthreads[0]?.activity).toBe("running");
+    const continues = () =>
+      f.query("SELECT COUNT(*) AS n FROM inbox_events WHERE source_kind = 'subthread_continue'");
+    await f.worker.claim();
+    expect(continues()).toEqual([{ n: 0 }]);
+    setStatus("accepted");
+    await f.finish(opened.subthread, first.runId);
+    await f.worker.claim();
+    expect(f.query("SELECT approval_run_id FROM subthreads")).toEqual([{ approval_run_id: null }]);
+    expect(continues()).toEqual([{ n: 1 }]);
+  });
+
+  it("[ADR-0285] turns the owner's answer to an approval card into one inbox row, then carries the subthread on", async () => {
+    const f = await fixture();
+    const opened = await f.open();
+    await f.finish(await f.mainThread.ensure(), opened.runId);
+    const first = await f.started(opened.subthread);
+    await f.call(first.runId, "task_create", {
+      subject: "订票",
+      description: "订最便宜的一班",
+      active_form: "正在订票",
+    });
+    const setStatus = (status: string) => {
+      const handle = openQualifiedDatabase(f.file);
+      try {
+        handle.prepare("UPDATE runs SET status = ? WHERE id = ?").run(status, first.runId);
+      } finally {
+        handle.close();
+      }
+    };
+    setStatus("awaiting_approval");
+    await first.handled;
+    const answers = new ProductionApprovalAnswers({
+      threadOf: async (runId) =>
+        f.query<{ thread_id: string }>("SELECT thread_id FROM runs WHERE id = ?", runId)[0]
+          ?.thread_id,
+      mainThread: f.mainThread,
+    });
+    answers.registerSource(f.inbox.sources);
+    answers.attach(f.inbox);
+    const approval = {
+      id: "approval-ticket",
+      runId: first.runId,
+      status: "approved",
+    } as never;
+    await answers.answered(approval);
+    await answers.answered(approval);
+    await answers.answered({
+      id: "approval-ticket",
+      runId: first.runId,
+      status: "pending",
+    } as never);
+    const rows = () =>
+      f.query<{ thread_id: string; status: string; from_owner: number; priority: number }>(
+        "SELECT thread_id, status, from_owner, priority FROM inbox_events WHERE source_kind = 'approval_answer'",
+      );
+    expect(rows()).toEqual([
+      { thread_id: opened.subthread, status: "queued", from_owner: 1, priority: 1 },
+    ]);
+    const claim = await f.worker.claim();
+    expect(claim?.fromOwner).toBe(true);
+    const handled = f.worker.handle(claim as never);
+    setStatus("running");
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    setStatus("accepted");
+    await f.finish(opened.subthread, first.runId);
+    expect(await handled).toMatchObject({ status: "done", result: "handled" });
+    expect(
+      f.query(
+        "SELECT outcome, reason_code FROM inbox_events WHERE source_kind = 'approval_answer'",
+      ),
+    ).toEqual([{ outcome: "resumed", reason_code: "approval_answered" }]);
+    expect(f.query("SELECT approval_run_id FROM subthreads")).toEqual([{ approval_run_id: null }]);
+    expect(
+      f.query("SELECT COUNT(*) AS n FROM inbox_events WHERE source_kind = 'subthread_continue'"),
+    ).toEqual([{ n: 1 }]);
+    await answers.answered(approval);
+    expect(rows()).toHaveLength(1);
+  });
+
+  it("REVERSE: does not carry a subthread on after its approval run was cancelled", async () => {
+    const f = await fixture();
+    const opened = await f.open();
+    await f.finish(await f.mainThread.ensure(), opened.runId);
+    const first = await f.started(opened.subthread);
+    await f.call(first.runId, "task_create", {
+      subject: "订票",
+      description: "订最便宜的一班",
+      active_form: "正在订票",
+    });
+    const handle = openQualifiedDatabase(f.file);
+    try {
+      handle.prepare("UPDATE runs SET status = 'awaiting_approval' WHERE id = ?").run(first.runId);
+    } finally {
+      handle.close();
+    }
+    expect(await first.handled).toMatchObject({ status: "done", result: "handled" });
+    const again = openQualifiedDatabase(f.file);
+    try {
+      again.prepare("UPDATE runs SET status = 'cancelled' WHERE id = ?").run(first.runId);
+    } finally {
+      again.close();
+    }
+    await f.worker.claim();
+    expect(f.query("SELECT approval_run_id FROM subthreads")).toEqual([{ approval_run_id: null }]);
+    expect(
+      f.query("SELECT COUNT(*) AS n FROM inbox_events WHERE source_kind = 'subthread_continue'"),
+    ).toEqual([{ n: 0 }]);
   });
 });

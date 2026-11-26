@@ -6,7 +6,7 @@ supersedes: ""
 superseded_by: ""
 date: "2026-10-21"
 covers: "ci/coverage-policy.json, ci/policy.json, ci/test-hygiene-baseline.json, scripts/ci/check-policy.mjs, scripts/ci/run.mjs"
-verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
+verified_at: "7c8521fe5f55e7dd57c5bd52badd16eef647502e"
 ---
 
 # ADR 0063：新增测试先过价值门槛，测试有速度与隔离预算，测试卫生由门禁守住
@@ -38,10 +38,9 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 3. **测试卫生门禁，基线只降不升。** 门禁不另写脚本，而是扩展已有的 `scripts/ci/check-policy.mjs`（它已经用 TypeScript 语法树检查每个测试文件，`npm run check` 里的 `check:ci-policy` 每次提交前都跑）：在同一棵语法树上识别四类问题——逐用例模块重置（`vi.resetModules`，含命名空间导入和解构别名）、100ms 以上的真实等待（全局 `setTimeout`、`node:timers`、`node:timers/promises` 的延迟字面量）、固定端口（`listen` 的字面量端口）、普通单测（`*.unit.test.*`）用 `node:fs` 读 `src/` 下源码文本。存量记在 `ci/test-hygiene-baseline.json`（每个“文件×类别”一条计数），比较基准是基准提交里的那份基线（本地 `HEAD`，CI 里是目标分支），所以工作区手改基线无效：条目不能新增、计数不能调高、模式只能从 `report` 收紧到 `enforce`；现状少于基线也判失败并给出建议值，逼着顺手收紧。`report` 模式只把发现清单和偏差写到标准错误、退出 0；`enforce` 模式有偏差就失败，错误信息含文件、行号、类别和改法。先以 `report` 模式跑一轮核对误报，再把模式改成 `enforce`（[BL-20261021-001](../backlog/BL-20261021-001-测-试-卫-生-门-禁-拦-无.md)）。这是 [ADR 0060](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0060-hard-constraint-on-third-repeat.md) 所说的硬约束的一种。已知盲区：字符串里的命令、变量延迟、常量端口、`fs.promises` 以外的读法都不认。
 4. **测试文件不能悄悄不跑。** 这一条已由 `check-policy.mjs` 的 `planTestInventory` 实现，不新增代码；[BL-20261021-002](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261021-002-测-试-运-行-脚-本-自-检.md) 据此关闭。测试分层仍按 `ci/policy.json` 现有的 6 个项目（`unit`、`contracts`、`integration`、`e2e`、`pi-compat`、`tooling`），不改名。
 5. **覆盖率门禁保留，但不为数字补测试。** `ci/coverage-policy.json` 的改动行覆盖阈值照旧；不得为了凑覆盖率新增说不出价值的测试，评审可以要求删除。
-6. **界面改动看截图、报未覆盖。** 控制中心改动要在浅色和深色两种主题下实际渲染并看截图；没被任何检查加载的改动文件写“未验证”；不能用自己生成的截图批准自己的视觉改动，视觉改动仍按 AGENTS.md 的设计基线由用户确认（[BL-20261021-006](../backlog/BL-20261021-006-控-制-中-心-界-面-截-图.md)）。
-7. **派活简报与停止文件。** 给 opencode 的简报要求每个新测试附六项问答，停止文件按三态写结果、修 bug 附红绿记录；模板在 `opencode-orchestration` skill。
-8. **速度预算在测试主机上量。** 单测文件单独运行 5 秒内、超过 10 秒写原因，这个数在 Hermes 或云测试账号上测，不在 Mac 上测（Mac 不跑测试）。
-9. **不采纳的部分。** Cindy 把守则用 @docs/ai/AI_TESTING_RULES.md 挂进 CLAUDE.md，本项目不这样做，因为用户要求系统级指令精简、不重复；Cindy 的 8 层按文件名后缀分层，本项目保留现有 6 个项目；Cindy 的“完整结果以 CI 为准”在本项目对应第 3 层加 GitHub 必过检查，不变。
+6. **界面改动看截图、报未覆盖。** 控制中心改动要在浅色和深色两种主题下实际渲染并看截图；没被任何检查加载的改动文件写“未验证”；不能用自己生成的截图批准自己的视觉改动，视觉改动仍按 AGENTS.md 的设计基线由用户确认（[BL-20261021-006](https://github.com/sixianli/himawari-agent/blob/7c8521fe5f55e7dd57c5bd52badd16eef647502e/docs/backlog/BL-20261021-006-控-制-中-心-界-面-截-图.md)）。
+7. **速度预算在 CI 或测试主机上量。** 单测文件单独运行 5 秒内、超过 10 秒写原因，这个数不在 Mac 上测（Mac 不跑服务器测试）。
+8. **不采纳的部分。** Cindy 把守则用 @docs/ai/AI_TESTING_RULES.md 挂进 CLAUDE.md，本项目不这样做，因为用户要求系统级指令精简、不重复；Cindy 的 8 层按文件名后缀分层，本项目保留现有 6 个项目；Cindy 的“完整结果以 CI 为准”在本项目对应第 3 层加 GitHub 必过检查，不变。
 
 [↑ 返回阅读导航](#contents)
 
@@ -77,4 +76,4 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 - 来源：用户 2026-10-21 提供的 Cindy 测试规则汇编（用户本机文件，不入库）；对照记录在 `.ci-output/handoff/2026-10-21-cindy-testing-rules-proposal.md`（本地，不入库）。
 - 分层与批次：[ADR 0057](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0057-batch-layers-one-two-for-small-defects.md)；硬约束：[ADR 0060](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0060-hard-constraint-on-third-repeat.md)；分工：[ADR 0062](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0062-claude-writes-complex-code-opencode-routine.md)。
-- 测试主机操作：[测试主机操作 Runbook](../runbooks/test-host-operations-runbook.md)。
+- 测试主机操作：[测试主机操作 Runbook](https://github.com/sixianli/himawari-agent/blob/7c8521fe5f55e7dd57c5bd52badd16eef647502e/docs/runbooks/test-host-operations-runbook.md)（Hermes 不再当测试机后已删除，见 [测试主机与生产主机](../../.agents/instructions/test-and-production-hosts.md)）。

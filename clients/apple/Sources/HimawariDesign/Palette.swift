@@ -49,7 +49,6 @@ public struct ShadowToken: Sendable {
 
 public enum TypeFace: Sendable {
     case system
-    case himawari
     case rounded
 }
 
@@ -79,40 +78,70 @@ public struct TypeToken: Sendable {
         self.tracking = tracking
     }
 
-    public func with(face: TypeFace) -> TypeToken {
-        TypeToken(size: size, weight: weight, lineHeight: lineHeight, face: face, tracking: tracking)
+    public var textStyle: Font.TextStyle? {
+        #if os(iOS)
+        switch size {
+        case 34: .largeTitle
+        case 28: .title
+        case 22: .title2
+        case 20: .title3
+        case 17: .body
+        case 16: .callout
+        case 15: .subheadline
+        case 13: .footnote
+        case 12: .caption
+        case 11: .caption2
+        default: nil
+        }
+        #else
+        nil
+        #endif
     }
 
-    @MainActor
+    var design: Font.Design {
+        face == .rounded ? .rounded : .default
+    }
+
     public var font: Font {
         font(scale: 1)
     }
 
-    @MainActor
-    public func font(scale: CGFloat) -> Font {
-        let scaled = size * scale
-        switch face {
-        case .system: return .system(size: scaled, weight: fontWeight)
-        case .rounded: return .system(size: scaled, weight: fontWeight, design: .rounded)
-        case .himawari: return .himawari(scaled, weight: voiceWeight, fixed: true)
+    public func font(scale: CGFloat, design override: Font.Design? = nil) -> Font {
+        if let textStyle {
+            return .system(textStyle, design: override ?? design, weight: fontWeight)
         }
-    }
-
-    var voiceWeight: HimawariVoiceWeight {
-        weight >= 550 ? .semibold : (weight >= 450 ? .medium : .regular)
+        return .system(size: size * scale, weight: fontWeight, design: override ?? design)
     }
 }
 
 public enum TextScale {
     @MainActor
-    public static func ratio(for size: DynamicTypeSize) -> CGFloat {
+    public static func ratio(for size: DynamicTypeSize, style: Font.TextStyle? = nil) -> CGFloat {
         #if os(iOS)
         let traits = UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(size))
-        return UIFontMetrics(forTextStyle: .body).scaledValue(for: 100, compatibleWith: traits) / 100
+        return UIFontMetrics(forTextStyle: uiStyle(style ?? .body)).scaledValue(for: 100, compatibleWith: traits) / 100
         #else
         return 1
         #endif
     }
+
+    #if os(iOS)
+    static func uiStyle(_ style: Font.TextStyle) -> UIFont.TextStyle {
+        switch style {
+        case .largeTitle: .largeTitle
+        case .title: .title1
+        case .title2: .title2
+        case .title3: .title3
+        case .headline: .headline
+        case .callout: .callout
+        case .subheadline: .subheadline
+        case .footnote: .footnote
+        case .caption: .caption1
+        case .caption2: .caption2
+        default: .body
+        }
+    }
+    #endif
 }
 
 struct ScaledType: ViewModifier {
@@ -121,9 +150,9 @@ struct ScaledType: ViewModifier {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     func body(content: Content) -> some View {
-        let ratio = TextScale.ratio(for: dynamicTypeSize)
+        let ratio = TextScale.ratio(for: dynamicTypeSize, style: token.textStyle)
         content
-            .font(design.map { Font.system(size: token.size * ratio, weight: token.fontWeight, design: $0) } ?? token.font(scale: ratio))
+            .font(token.font(scale: ratio, design: design))
             .tracking(token.tracking)
             .hmLineHeight(token.lineHeight.map { $0 * ratio })
     }
@@ -175,6 +204,8 @@ extension Color {
     public static var hmSwitchOff: Color { DesignTokens.Colors.switchOff.color }
     public static var hmGlass: Color { DesignTokens.Colors.glass.color }
     public static var hmGlassLine: Color { DesignTokens.Colors.glassLine.color }
+    public static var hmLink: Color { DesignTokens.Colors.link.color }
+    public static var hmReplyBar: Color { DesignTokens.Colors.replyBar.color }
 }
 
 extension Text {

@@ -6,7 +6,7 @@ import type {
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import type { BackgroundCommandView } from "../background-commands.js";
 import type { DeliveredFile } from "../delivered-files.js";
-import { formatBytes, splitDraft } from "../draft-attachments.js";
+import { formatBytes, splitDraft, splitReply } from "../draft-attachments.js";
 import type { RunSummary } from "../execution-view.js";
 import { executionItems, isAnsweredRun, isNarration, isTerminalRun } from "../execution-view.js";
 import type { MessageId } from "../i18n/message-ids.js";
@@ -195,7 +195,12 @@ export function ChatHistory({
                       key={item.messageId}
                       data-message-id={item.messageId}
                     >
-                      <OwnerMessage content={contentByRef[item.contentRef]} readImage={readImage} />
+                      <OwnerMessage
+                        content={contentByRef[item.contentRef]}
+                        quote={replyQuote(contentByRef[item.contentRef], messages, contentByRef)}
+                        readImage={readImage}
+                        message={message}
+                      />
                       <OwnerMessageMeta
                         text={ownerCopyText(contentByRef[item.contentRef])}
                         committedAt={item.committedAt}
@@ -341,7 +346,12 @@ export function ChatHistory({
         {outgoing ? (
           <div className="chat-turn chat-turn-outgoing">
             <div className="owner-turn">
-              <OwnerMessage content={outgoing.content} readImage={readImage} />
+              <OwnerMessage
+                content={outgoing.content}
+                quote={replyQuote(outgoing.content, messages, contentByRef)}
+                readImage={readImage}
+                message={message}
+              />
               <OutgoingMessageMeta failed={outgoing.failed} onRetry={onRetry} message={message} />
             </div>
             {outgoing.failed ? null : (
@@ -415,7 +425,11 @@ function InheritedHistory({
             {inherited.messages.map((item) =>
               item.role === "owner" ? (
                 <div className="owner-turn" key={item.messageId}>
-                  <OwnerMessage content={contentByRef[item.contentRef]} readImage={readImage} />
+                  <OwnerMessage
+                    content={contentByRef[item.contentRef]}
+                    readImage={readImage}
+                    message={message}
+                  />
                 </div>
               ) : item.role === "agent" ? (
                 <article key={item.messageId} className="thread-message thread-message-agent">
@@ -431,21 +445,66 @@ function InheritedHistory({
   );
 }
 
-const ownerCopyText = (content: string | undefined) =>
-  content === undefined ? "" : splitDraft(content).text || content;
+const ownerCopyText = (content: string | undefined) => {
+  if (content === undefined) return "";
+  const body = splitReply(content).text;
+  return splitDraft(body).text || body;
+};
+
+export interface ReplyQuote {
+  readonly from: "owner" | "agent";
+  readonly text: string;
+}
+
+const quotedLine = (content: string) =>
+  splitDraft(splitReply(content).text)
+    .text.replace(/[#*_`>~[\]]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+function replyQuote(
+  content: string | undefined,
+  messages: readonly { messageId: string; role: string; contentRef: string }[],
+  contentByRef: Readonly<Record<string, string>>,
+): ReplyQuote | null | undefined {
+  const replyTo = content === undefined ? null : splitReply(content).replyTo;
+  if (!replyTo) return undefined;
+  const original = messages.find((item) => item.messageId === replyTo);
+  const text = original ? contentByRef[original.contentRef] : undefined;
+  if (!original || text === undefined || (original.role !== "owner" && original.role !== "agent"))
+    return null;
+  return { from: original.role, text: quotedLine(text) };
+}
 
 function OwnerMessage({
   content,
+  quote,
   readImage,
+  message,
 }: {
   readonly content: string | undefined;
+  readonly quote?: ReplyQuote | null | undefined;
   readonly readImage?: ((ref: string) => Promise<string>) | undefined;
+  readonly message: Message;
 }) {
-  const { text, files } = content === undefined ? { text: "…", files: [] } : splitDraft(content);
+  const { text, files } =
+    content === undefined ? { text: "…", files: [] } : splitDraft(splitReply(content).text);
   const images = files.filter((file) => file.kind === "image");
   const others = files.filter((file) => file.kind !== "image");
   return (
     <article className="thread-message thread-message-owner">
+      {quote === undefined ? null : (
+        <blockquote className="message-reply-quote" data-missing={quote ? undefined : "true"}>
+          {quote ? (
+            <>
+              <small>{message(quote.from === "agent" ? "reply.toAgent" : "reply.toOwner")}</small>
+              <span className="message-reply-quote-text">{quote.text}</span>
+            </>
+          ) : (
+            <span>{message("reply.missing")}</span>
+          )}
+        </blockquote>
+      )}
       {images.length ? (
         <ul className="message-images">
           {images.map((file, index) => (

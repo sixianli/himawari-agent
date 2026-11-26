@@ -1,13 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
-  addresseeKey,
-  addresseeQuestions,
   errorUnits,
-  parseAddresseeJudgments,
   parseObservations,
   renderReport,
   scoreCommand,
-  scoreListening,
   scorePrefetch,
   scoreSpeaker,
   scoreTranscription,
@@ -224,106 +220,5 @@ describe("listening evaluation scoring", () => {
     });
     for (const heading of ["## 认人", "## 口头指令", "## 转文字", "## 抢跑"])
       expect(report).toContain(heading);
-  });
-
-  it("[iOS-8] scores the decision model only on calls that pass the voice gate", () => {
-    const call = (request, heardName) => ({ nameHeard: true, request, prepared: [], heardName });
-    const observations = [
-      observation(
-        { id: "c1", purpose: "command", placement: "table" },
-        {
-          speakerScore: 900,
-          call: call("Himawari 帮我看天气", "Himawari"),
-          transcripts: [transcript("x", 1800)],
-        },
-      ),
-      observation(
-        { id: "c2", purpose: "command", placement: "table" },
-        { speakerScore: 880, call: call("我想想 Himawari", "Himawari") },
-      ),
-      observation(
-        { id: "c3", purpose: "command", placement: "table" },
-        { speakerScore: 870, call: call("几点了", null) },
-      ),
-      observation(
-        { id: "m1", purpose: "owner_mention", placement: "table" },
-        { speakerScore: 900, call: call("昨天 Himawari 帮我订了会议室", "Himawari") },
-      ),
-      observation(
-        { id: "m2", purpose: "owner_mention", placement: "table" },
-        { speakerScore: 900, call: call("Himawari 说的挺对", "Himawari") },
-      ),
-      observation(
-        {
-          id: "t1",
-          purpose: "tv_mention",
-          source: "synthetic",
-          speaker: "synthetic:a",
-          placement: "table",
-        },
-        { speakerScore: 200, call: call("Himawari 是今年最火的花", "Himawari") },
-      ),
-      observation(
-        {
-          id: "t2",
-          purpose: "tv_mention",
-          source: "synthetic",
-          speaker: "synthetic:a",
-          placement: "table",
-        },
-        { speakerScore: 200, call: call("Himawari 是今年最火的花", "Himawari") },
-      ),
-    ];
-    const questions = addresseeQuestions(observations);
-    expect(questions).toEqual([
-      { heardName: "Himawari", request: "Himawari 帮我看天气" },
-      { heardName: "Himawari", request: "我想想 Himawari" },
-      { heardName: "Himawari", request: "昨天 Himawari 帮我订了会议室" },
-      { heardName: "Himawari", request: "Himawari 说的挺对" },
-      { heardName: "Himawari", request: "Himawari 是今年最火的花" },
-    ]);
-    const answers = {
-      "Himawari 帮我看天气": { probability: 0.95, milliseconds: 180 },
-      "我想想 Himawari": { probability: 0.5, milliseconds: 220 },
-      "昨天 Himawari 帮我订了会议室": { probability: 0.05, milliseconds: 200 },
-      "Himawari 说的挺对": { probability: 0.65, milliseconds: 900 },
-      "Himawari 是今年最火的花": {
-        probability: null,
-        error: "VOICE_ADDRESSEE_HTTP_500",
-        milliseconds: 40,
-      },
-    };
-    const judgments = parseAddresseeJudgments(
-      questions
-        .map(({ heardName, request }) =>
-          JSON.stringify({ heardName, request, costMicros: 1, ...answers[request] }),
-        )
-        .join("\n"),
-    );
-    expect(judgments.get(addresseeKey("Himawari", "我想想 Himawari")).probability).toBe(0.5);
-    const score = scoreListening(observations, judgments);
-    const addressee = score.addressee;
-    expect(addressee.ownerCommands).toBe(3);
-    expect(addressee.unwanted).toBe(2);
-    expect(addressee.judged).toBe(5);
-    expect(addressee.failed).toBe(1);
-    expect(addressee.costMicros).toBe(5);
-    expect(addressee.medianMilliseconds).toBe(200);
-    expect(addressee.p95Milliseconds).toBe(900);
-    const at = (yes, no) => addressee.rows.find((row) => row.yes === yes && row.no === no);
-    expect(at(700, 300).executed.successes).toBe(1);
-    expect(at(700, 300).askedOwner.successes).toBe(2);
-    expect(at(700, 300).missed.successes).toBe(0);
-    expect(at(700, 300).wronglyExecuted).toBe(0);
-    expect(at(700, 300).askedOnUnwanted).toBe(1);
-    expect(at(600, 100).wronglyExecuted).toBe(1);
-    expect(at(600, 100).wronglyExecutedPerHour).toBe(2);
-    expect(at(900, 400).wronglyExecuted).toBe(0);
-    expect(at(800, 600)).toBeUndefined();
-    const withoutJudge = scoreListening(observations);
-    expect(withoutJudge.addressee).toBeNull();
-    expect(renderReport(withoutJudge)).not.toContain("## 判断模型");
-    expect(renderReport(score)).toContain("## 判断模型：是不是在叫它");
-    expect(renderReport(score)).toContain("| 700 | 300 |");
   });
 });

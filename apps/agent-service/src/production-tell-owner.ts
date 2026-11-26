@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type {
   ClockPort,
   DecisionLedgerPort,
+  InboxStorePort,
   PayloadProtectorPort,
   PayloadStorePort,
   RuntimeToolDescriptor,
@@ -9,7 +10,7 @@ import type {
   ThreadCommandService,
   WebPushStorePort,
 } from "@himawari-agent/application";
-import { herWordsPushKey } from "@himawari-agent/application";
+import { herWordsPushKey, isMessageUrgency, MESSAGE_URGENCIES } from "@himawari-agent/application";
 import { TOOL_TELL_OWNER } from "@himawari-agent/prompt-catalog";
 import { classificationWithIdentifiers } from "@himawari-agent/sensitive-capture";
 import {
@@ -17,13 +18,14 @@ import {
   type InboxRunRegistry,
   spokenDecisionId,
 } from "./production-inbox-delivery.js";
+import { isReminderEvent, reminderMessageId } from "./production-reminder-inbox.js";
 
 type Post = Parameters<ThreadCommandService["postAgentMessage"]>[0];
 
 export const TELL_OWNER_CAPABILITY_REF = "owner.tell";
 const TEXT_LIMIT = 4000;
 const REASON_LIMIT = 1000;
-const ARGUMENTS = ["text", "push", "about", "reason"];
+const ARGUMENTS = ["text", "push", "urgency", "about", "reason"];
 const PUSH_WINDOW_MS = 24 * 3_600_000;
 
 export class TellOwnerInputError extends Error {
@@ -47,6 +49,7 @@ export function tellOwnerDescriptor(): RuntimeToolDescriptor {
       properties: {
         text: { type: "string", minLength: 1, maxLength: TEXT_LIMIT },
         push: { type: "boolean" },
+        urgency: { type: "string", enum: [...MESSAGE_URGENCIES] },
         about: {
           type: "array",
           items: { type: "string", minLength: 1, maxLength: 128 },
@@ -54,7 +57,7 @@ export function tellOwnerDescriptor(): RuntimeToolDescriptor {
         },
         reason: { type: "string", minLength: 1, maxLength: REASON_LIMIT },
       },
-      required: ["text", "push", "reason"],
+      required: ["text", "push", "urgency", "reason"],
       additionalProperties: false,
     },
   };
@@ -67,9 +70,11 @@ export interface ProductionTellOwnerOptions {
   readonly commands: Pick<ThreadCommandService, "postAgentMessage">;
   readonly ledger: Pick<DecisionLedgerPort, "recordSpoken">;
   readonly push: Pick<WebPushStorePort, "enqueue">;
+  readonly urgency: Pick<InboxStorePort, "recordUrgency">;
   readonly payloads: PayloadStorePort;
   readonly protector: PayloadProtectorPort;
   readonly clock: ClockPort;
+  readonly messageExists?: (threadId: string, messageId: string) => Promise<boolean>;
 }
 
 export class ProductionTellOwner {
@@ -85,7 +90,9 @@ export class ProductionTellOwner {
     const push = args["push"];
     const reason = args["reason"];
     const about = args["about"];
+    const urgency = args["urgency"];
     if (
+      !isMessageUrgency(urgency) ||
       typeof text !== "string" ||
       text.trim().length === 0 ||
       [...text].length > TEXT_LIMIT ||
@@ -109,12 +116,18 @@ export class ProductionTellOwner {
       : run.events;
     if (named && targets.length !== named.length)
       throw new TellOwnerInputError("TELL_OWNER_INPUT_INVALID");
+    const reminder = targets.find(isReminderEvent);
+    if (reminder && targets.length !== 1) throw new TellOwnerInputError("TELL_OWNER_INPUT_INVALID");
     const { ownerId, agentId, clock, commands, ledger } = this.#options;
     const key = createHash("sha256")
       .update(JSON.stringify([invocation.runId, invocation.toolCallId]))
       .digest("hex")
       .slice(0, 32);
-    const messageId = `message:said:${key}`;
+    const messageId = reminder
+      ? reminderMessageId(reminder.sourceRef, reminder.sourceVersion)
+      : `message:said:${key}`;
+    if (reminder && (await this.#options.messageExists?.(run.threadId, messageId)))
+      return { said: false, messageId, pushed: false, alreadyTold: true };
     const contentRef = `said:${key}`;
     const dataClassification = await this.#write(contentRef, text.trim());
     await commands.postAgentMessage({
@@ -129,6 +142,13 @@ export class ProductionTellOwner {
       resultRef: contentRef as Post["resultRef"],
     });
     const now = clock.now();
+    await this.#options.urgency.recordUrgency({
+      ownerId: ownerId as Post["ownerId"],
+      agentId: agentId as Post["agentId"],
+      messageId,
+      urgency,
+      now,
+    });
     const only = targets.length === 1 ? targets[0] : undefined;
     const pushSourceKey = push
       ? await herWordsPushKey({
@@ -176,7 +196,7 @@ export class ProductionTellOwner {
         sourceIds: [event.sourceRef],
         durationMs: decisionDurationMs(event.createdAt, now),
       });
-    return { said: true, messageId, pushed: push };
+    return { said: true, messageId, pushed: push, urgency };
   }
 
   async #write(ref: string, text: string) {

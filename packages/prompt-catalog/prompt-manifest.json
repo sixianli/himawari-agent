@@ -239,10 +239,15 @@
     "changedIn": "ADR 0164",
     "reason": "第二步 PR-A：工作目录、沙箱命令清单、文档技能目录、联网搜索开关、搜索和抓取服务商名、抓取上限从系统提示和工具定义挪到最后一条消息的运行环境说明；系统提示只留不随这些值变化的规则，并写明运行环境说明的约束力和发送时机"
   },
+  "chat.owner-spoken-turn": {
+    "sha256": "6ba93fa2d2ff017e694ebc913594c84e73fd59ea55dd214b295b7e6b9969151d",
+    "changedIn": "ADR 0285",
+    "reason": "新增：手机上点“和她说话”发来的这一轮，在本轮用户消息末尾附上“这句是用嘴说的”，她先短回一句、用口语、不念符号"
+  },
   "chat.task-boundary": {
-    "sha256": "e7f8cf9f00ce8e82e3c33ae563998a5fb9f28355c68412281479770d494c0c7b",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
+    "sha256": "f3e726ae772ac26efa1eb3229284e8a6a747193b64ea51d0959f06de1f4685f0",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 5 步：手机听到的语音在 owner-message 上标 source=phone-voice，由她结合上下文判断是不是在对她说，不再另设小模型判断"
   },
   "chat.tool-guidelines-header": {
     "sha256": "0ef890121f71aa2b318b6292159fa3401d79e46d3c0fdd45d1ab768cd3851628",
@@ -349,15 +354,25 @@
     "changedIn": "ADR 0219",
     "reason": "新增：真实记忆回忆评测的出题、作答、判分提示词"
   },
-  "home.urgency": {
-    "sha256": "845629e56803e841ec93a29ec735e1553db095888dc322f477f9e7b1375a2d62",
-    "changedIn": "ADR 0255",
-    "reason": "新增：首页上等主人定的事由模型打要紧度，审批另写一句话和同意按钮文字"
-  },
   "inbox.events.entry": {
     "sha256": "fdc03a3f74c899b3acf556a65a32d0bbb93a6c3dab1e1579f568ec09c5241d94",
     "changedIn": "ADR 0285",
     "reason": "Always On 第 1 步：外来的事进主对话（内部的系统消息、最后写的话主人看不到），她用 tell_owner 开口并自己决定推不推"
+  },
+  "inbox.reminder-due": {
+    "sha256": "09aefd73ed2483202fc34b726c46f9cf05d41dd9a569ba8d5ecab1c3b5e9a7cc",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 4 步：主人定的提醒到点时进收件箱叫醒她，由她在主对话里提醒、决定推不推；她那一趟失败或太慢时程序按原话写进主对话并推送"
+  },
+  "inbox.memory-saved": {
+    "sha256": "8028cb0341e9759f6803fe8f604b8451b9b38ea935ce7e8830af0a26d1dc4ad4",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 5 步：主对话以外新存下或改了一条记忆时进收件箱叫醒她，只带编号和时间，内容她用 memory_open 打开，由她判断要不要告诉主人"
+  },
+  "inbox.perception-episode": {
+    "sha256": "5cbf490ddecfa9ab213ea787576183f6c06d092fca631d2412621a43f9795aee",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 5 步：手机感知的一段经历整理好时进收件箱叫醒她，只带编号、起止时间和记录种类，内容她用 perception_read 取回，感知暂停时不进"
   },
   "inbox.events.preface": {
     "sha256": "94d617cdfb83e5870cf7edc6eff624e1a998625223432e255462ea6c8dbc16fd",
@@ -827,36 +842,6 @@
     "changedIn": "ADR 0230",
     "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
   },
-  "perception.source.calendar": {
-    "sha256": "eb77d4cb7c6254e07b24aafb66a5b247f600d856bf75c97d628d87e01029830d",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
-  },
-  "perception.source.items-header": {
-    "sha256": "b372be4acbdf2e4cc1467754cce9833a87a067453438261807647c6d09de0273",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
-  },
-  "perception.source.location": {
-    "sha256": "1921f31349109f4d2929ea12df3f591fca857dca09cd1944790d92aae91c9412",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
-  },
-  "perception.source.message": {
-    "sha256": "dfad03d71a06d0c13e43356748558f0c8ddf4d3fa457e360b698677fcb3c6614",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
-  },
-  "perception.source.screen": {
-    "sha256": "387323bac164bef1cb6535cabca113c77892b5e40a981b3d474845457a04f743",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
-  },
-  "perception.source.speech": {
-    "sha256": "d17c642a7acbc011b22fcad50912d547c7a62b3b3e5029ce178e0d8b0db5a9c7",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
-  },
   "review.prereview": {
     "sha256": "b4a2529b91a91177aae2b4203f8fe4d23b8135bcc659b73c24ecc8e28a1ecda6",
     "changedIn": "P4-8",
@@ -1031,6 +1016,11 @@
     "sha256": "e1c490299a52e9f2034e4de25f98fffbf7cc0c96ef5dc432c0efd454cd800d44",
     "changedIn": "ADR 0166",
     "reason": "W-04、Q1：替换 Pi 原文里“完整输出存进临时文件”的错话，按 sandboxed-coding-operations.ts、pi-host-publication.ts 的实际行为写（Andy 2026-11-05 定 Q1 选 B）"
+  },
+  "tools.builtin.bash.computer": {
+    "sha256": "2dfc7bdcc3aed62b0e0fc650f8b045e1c0b6c4e9873acddd14833196b98a6929",
+    "changedIn": "ADR 0298",
+    "reason": "每人一台电脑：bash 在主人自己的电脑里跑时，写明工作目录、家目录持久、apt 装的东西关机即失、只能连配置的域名"
   },
   "tools.builtin.bash.timeout": {
     "sha256": "19e3ed360fc2c25292325151780c74f5a629c4f3b8e02b4fe7d6cadb80254d7b",
@@ -1456,9 +1446,9 @@
     "reason": "W-15a：新增参数说明"
   },
   "tools.tell-owner": {
-    "sha256": "331ad9c65b7a1ec36fd4a59e9e725263c31021d2ad35a45e022019f579a08581",
+    "sha256": "b1f2b11ef0f9c7aa08d3ae42e8ad94eb29e9e423ddd2e9a2bfb60111c6f9cbbe",
     "changedIn": "ADR 0285",
-    "reason": "Always On 第 1 步：外来的事进主对话（内部的系统消息、最后写的话主人看不到），她用 tell_owner 开口并自己决定推不推"
+    "reason": "Always On 第 5 步：tell_owner 加必填的 urgency（low、normal、high），她自己判断多要紧，推送按它定手机的提醒级别；推不推仍由她定"
   },
   "tools.tool-result-recall": {
     "sha256": "4c4ed3364e748ad46829c470f233a04b402584e8c3889aa44c8b3f5260aba589",
@@ -1484,11 +1474,6 @@
     "sha256": "a55c0eceeba5e2b024a12f881ccc8ccb7e9029e470da74d3aa09df7adff68f3d",
     "changedIn": "ADR 0166",
     "reason": "W-10、W-14：联网搜索默认打开、不逐次询问（ADR 0121），删掉“经用户确认”"
-  },
-  "voice.addressee-question": {
-    "sha256": "f2ff2cddd375550cb2cc3efa5c038b094f2d356fefae13dc3d09446e6b67887c",
-    "changedIn": "ADR 0264",
-    "reason": "第 8 批：手机认出名字的口头指令，提交前问判断模型是不是在叫 Himawari"
   },
   "subthreads.brief": {
     "sha256": "e3659fd05ac8eac5b15d446b2d2dcdc746e6b21f38f27d8da9ea2f3021fc5a0a",
@@ -1529,6 +1514,11 @@
     "sha256": "d56c3adec94ff2c6af6f8fca11e8722346edb8a03d9c7155ab6b1b8e25fe7578",
     "changedIn": "ADR 0285",
     "reason": "Always On 第 3 步：主对话开子线程在后台办事，子线程照 Claude Code 的待办工具列计划，做完交回结果、主对话验收"
+  },
+  "tools.schedule-task": {
+    "sha256": "1bcddffb969ccb77576e39935e200bb17270a2fd11ac7a900f9350f7ffdbe88e",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 4 步：主对话定一个跟进或周期任务，到点叫醒一个专门的子线程去做，做完告诉主对话"
   },
   "tools.task-create": {
     "sha256": "c0ac94cbaaefe81bbd667b9d67f7e3b8466ad4c1810d97e6c462cb70bb2d5474",
@@ -1606,14 +1596,49 @@
     "reason": "Always On 第 3 步：同一件大事的子线程用结果板共用结果，先看目录、要细节再取正文，等的结果到了或改版时叫醒"
   },
   "subthreads.status-board.header": {
-    "sha256": "83728f61c2762ce4647972e548d70ec84cc6088213b0b9963bbb90e80d1b3118",
+    "sha256": "434f359653017b17f95ba24af811dbb8ec3d5845a5c16cd179e519f3a9e239a5",
     "changedIn": "ADR 0285",
-    "reason": "Always On 第 3 步：状态板多一种 over_budget，花到预算停下、等主对话决定"
+    "reason": "Always On 第 3 步：状态板多 over_budget 和 waiting_approval 两种状态"
   },
   "subthreads.budget-reached": {
     "sha256": "bc8f2a2bb12a6ecd2948c33ad1a2efd91690a69e9ddc4ad7dbf075c865fb559f",
     "changedIn": "ADR 0285",
     "reason": "Always On 第 3 步：子线程花到预算停下时告诉主对话花了多少、预算多少、计划做到哪，由主对话决定加预算、改方向或叫停"
+  },
+  "subthreads.approval-waiting": {
+    "sha256": "562c492000bd45e22dae45e8d3ee1fa118f667cd2fae047bbb7d88c2e6e3053b",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 3 步：子线程要做的事在等主人同意时告诉主对话，同意卡片由程序按真实动作生成"
+  },
+  "subthreads.timer-brief": {
+    "sha256": "fdb577e2144ec4b9688b40ca8e792c5342a4316238b55666be82b3c70b5028e6",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 4 步：定时任务的子线程第一次到点时收到的身份、做法和任务"
+  },
+  "subthreads.timer-due": {
+    "sha256": "1e6f2ef7fae86ba18f55270d5b744125417b96dfdd2f31a4e85df8d093c10208",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 4 步：定时任务每次到点送进子线程的一行"
+  },
+  "subthreads.timer-schedule.once": {
+    "sha256": "9d57d14a1693a38b83a49a41a95170c36a2ee985c4c7aa5e9c2f8194d4aea1a9",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 4 步：定时任务的时间说明，一次性"
+  },
+  "subthreads.timer-schedule.daily": {
+    "sha256": "4ac5990450dd153378be5686e40e230f87ab6f3d132ac89eee87331e683b8544",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 4 步：定时任务的时间说明，每天几点"
+  },
+  "subthreads.timer-schedule.every": {
+    "sha256": "8e585173e8ec8601e9af73fd0007cec78cfe7861ff28ab04d97094793146694d",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 4 步：定时任务的时间说明，每隔几分钟"
+  },
+  "subthreads.timer-schedule.yearly": {
+    "sha256": "1d9fb95be75a5b9cb581f23435e698051504f6656b45ee9793a5f40b42d119a1",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 4 步：定时清单里每年一次的提醒的时间说明"
   },
   "subthreads.continue": {
     "sha256": "b4280ed0d7c94fb809c2d0a8b7b0bca425c48b67f39964987356a937a1b246c1",
@@ -1629,5 +1654,65 @@
     "sha256": "5ca05852512a3c73b2bc1791cf184bd987665849dcc4e0fc6a6f886bde66f15a",
     "changedIn": "ADR 0285",
     "reason": "Always On 第 3 步：接着做的原因之一，上一次运行结束时计划里还有没做完的待办"
+  },
+  "tool-result.browser-no-page": {
+    "sha256": "965e09677b87a9d0e89b999f8868c6217ad90121a8edcd5af4aac7cf41ab7662",
+    "changedIn": "浏览器工具",
+    "reason": "新增浏览器工具的定义和结果文字"
+  },
+  "tool-result.browser-screenshot-text-only": {
+    "sha256": "def9aa2d6934585a7262471cd29031968d659c59995cb5c28e5ab21c5d581173",
+    "changedIn": "浏览器工具",
+    "reason": "新增浏览器工具的定义和结果文字"
+  },
+  "tool-result.browser-site-not-allowed": {
+    "sha256": "bc53e3cf86b027883062d1876f01e8fc178523251077984a3fa4eb76f285010b",
+    "changedIn": "浏览器工具",
+    "reason": "新增浏览器工具的定义和结果文字"
+  },
+  "tool-result.browser-unavailable": {
+    "sha256": "d06ef336270b679c4fba8a8643f1b1f02e0875cde09ab7de2c9223f23220c03d",
+    "changedIn": "浏览器工具",
+    "reason": "新增浏览器工具的定义和结果文字"
+  },
+  "tools.browser": {
+    "sha256": "d67b9041524390f82b662b72161b2a4e7f3c6c80a50a3d562f370213ebd667f2",
+    "changedIn": "浏览器工具",
+    "reason": "新增浏览器工具的定义和结果文字"
+  },
+  "tools.browser.action": {
+    "sha256": "592cdbbc600e6dde06ec3298853dbb961c3e546dee51ae9f08172ae072b3681c",
+    "changedIn": "浏览器工具",
+    "reason": "新增浏览器工具的定义和结果文字"
+  },
+  "tools.browser.hosts": {
+    "sha256": "4290e52ae1c4c9cf8f874603c8b9899a0519d96ee43adb9a384be168bfb6b85d",
+    "changedIn": "浏览器工具",
+    "reason": "新增浏览器工具的定义和结果文字"
+  },
+  "tools.browser.key": {
+    "sha256": "42ff2eaff8b09e003a279148874acab112cef686bbdd340b23ba73131d9191c4",
+    "changedIn": "浏览器工具",
+    "reason": "新增浏览器工具的定义和结果文字"
+  },
+  "tools.browser.ref": {
+    "sha256": "46827838fef09744b75819b3a688d5f40a14c5d258f020ee269d15a525e7d0b3",
+    "changedIn": "浏览器工具",
+    "reason": "新增浏览器工具的定义和结果文字"
+  },
+  "tools.browser.submit": {
+    "sha256": "9bdfe217889f6c5b512333d2cce498de2d6893d807fc652ffd77ad3f6c6be601",
+    "changedIn": "浏览器工具",
+    "reason": "新增浏览器工具的定义和结果文字"
+  },
+  "tools.browser.text": {
+    "sha256": "f0e2ec1e37f66d4338c76132a69451e9da2dc1539c5124378055f8e9eb687dd8",
+    "changedIn": "浏览器工具",
+    "reason": "新增浏览器工具的定义和结果文字"
+  },
+  "tools.browser.url": {
+    "sha256": "b38deaf33509804d822ba74e561e96b773b08ce38e3c75a178c6e49eb2e5bd4e",
+    "changedIn": "浏览器工具",
+    "reason": "新增浏览器工具的定义和结果文字"
   }
 }

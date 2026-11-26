@@ -13,12 +13,15 @@ import type {
 import {
   AgentThreadGatewayService,
   ApplicationPortError,
+  approvalBodyPreview,
   DEFAULT_HOME_FEED,
   DEFAULT_SEARCH_ASK,
   DEFAULT_VOICE_GATES,
   DEVICE_CONFIGURATION_DEFAULTS,
   type DeviceActionService,
   defaultDeviceHardLimits,
+  deviceVoiceTimingLister,
+  deviceVoiceTimingRecorder,
   type ExecutionLiveFeed,
   type GatewayAccessDecision,
   type GatewayAuthenticationContext,
@@ -49,11 +52,6 @@ import {
   ThreadQueryService,
   threadCommandFingerprint,
   type VaultService,
-  type VoiceAddresseeConfiguration,
-  VoiceAddresseeJudge,
-  type VoiceAddresseeModel,
-  type VoiceAddresseeOutcome,
-  type VoiceAddresseeRequest,
 } from "@himawari-agent/application";
 import {
   isDeviceAccessText,
@@ -123,6 +121,7 @@ import { classifiedThreadTitleReader } from "./classified-thread-title.js";
 import type { ContextExternalContent } from "./context-external-content.js";
 import type { OwnerAllowances } from "./owner-allowances.js";
 import type { ProductionApplePush } from "./production-apple-push.js";
+import { ProductionApprovalAnswers } from "./production-approval-answers.js";
 import {
   createProductionApprovalGateway,
   PRODUCTION_APPROVAL_OPERATIONS,
@@ -131,6 +130,7 @@ import {
 } from "./production-approval-gateway.js";
 import { backgroundCommandRef } from "./production-background-commands.js";
 import { registerChatExportRoute } from "./production-chat-export.js";
+import { createProductionSpeech } from "./production-speech.js";
 import {
   DataExportJobs,
   deviceExportArchive,
@@ -143,12 +143,7 @@ import {
   ProductionDeviceControl,
 } from "./production-device-control.js";
 import { PRODUCTION_FILES_OPERATIONS, ProductionFilesControl } from "./production-files-control.js";
-import { type ProductionGapExport, registerGapExportRoute } from "./production-gap-export.js";
-import {
-  PRODUCTION_HOME_OPERATIONS,
-  ProductionHomeControl,
-  type ProductionHomeUrgencyOptions,
-} from "./production-home.js";
+import { PRODUCTION_HOME_OPERATIONS, ProductionHomeControl } from "./production-home.js";
 import { productionInbox } from "./production-inbox-composition.js";
 import { type InboxRunRegistry, ProductionInboxDelivery } from "./production-inbox-delivery.js";
 import {
@@ -176,12 +171,8 @@ import {
   PRODUCTION_MEMORY_OPERATIONS,
   ProductionMemoryControl,
 } from "./production-memory-control.js";
+import { ProductionMemoryInbox } from "./production-memory-inbox.js";
 import { flushSensitiveInterceptions } from "./production-model-egress.js";
-import { type ProductionMuseIntake, registerMuseIntakeRoute } from "./production-muse-intake.js";
-import {
-  PRODUCTION_MUSE_OPERATIONS,
-  type ProductionMuseControl,
-} from "./production-muse-intake-control.js";
 import {
   PRODUCTION_OBSERVATION_OPERATIONS,
   type ProductionObservation,
@@ -195,6 +186,7 @@ import {
   PRODUCTION_PERCEPTION_OPERATIONS,
   ProductionPerceptionControl,
 } from "./production-perception-control.js";
+import type { ProductionPerceptionInbox } from "./production-perception-inbox.js";
 import {
   PROACTIVE_GOOGLE_CALLBACK_PATH,
   PROACTIVE_GOOGLE_START_PATH,
@@ -205,6 +197,7 @@ import {
   PRODUCTION_QUIET_HOURS_OPERATIONS,
   ProductionQuietHoursControl,
 } from "./production-quiet-hours-control.js";
+import type { ProductionReminderInbox } from "./production-reminder-inbox.js";
 import {
   PRODUCTION_SEARCH_OPERATIONS,
   ProductionSearchControl,
@@ -218,8 +211,17 @@ import {
   PRODUCTION_SERVER_STATUS_OPERATIONS,
   ProductionServerStatusControl,
 } from "./production-server-status-control.js";
-import type { ProductionSubthreads } from "./production-subthreads.js";
+import {
+  DEFAULT_TIMER_TIME_ZONE,
+  localTime,
+  type ProductionSubthreads,
+} from "./production-subthreads.js";
 import { ThreadDeletionRetry } from "./production-thread-deletion-retry.js";
+import {
+  PRODUCTION_TIMER_OPERATIONS,
+  ProductionTimerControl,
+  type TimerReminders,
+} from "./production-timer-control.js";
 import { type ProductionWebPush, WebPushPresence } from "./production-web-push.js";
 import {
   PRODUCTION_WEB_PUSH_OPERATIONS,
@@ -278,7 +280,7 @@ export interface ProductionHttpCompositionOptions {
     price?: { input: number; output: number };
     priceTier?: "low" | "mid" | "high";
   }[];
-  readonly live?: Pick<ExecutionLiveFeed, "subscribe" | "current">;
+  readonly live?: Pick<ExecutionLiveFeed, "subscribe" | "current" | "firstEmittedAt">;
   readonly cancelRun?: (
     input: Pick<CancelCoordinatedRunInput, "runId" | "command">,
   ) => Promise<void>;
@@ -300,7 +302,6 @@ export interface ProductionHttpCompositionOptions {
   readonly onDevicePushFailed?: (error: unknown) => void;
   readonly onHomeDiagnostic?: (event: Record<string, string>) => void;
   readonly onPerceptionLimitWarning?: (warning: PerceptionLimitWarning) => void;
-  readonly homeUrgency?: Omit<ProductionHomeUrgencyOptions, "scope" | "store" | "onFailure">;
   readonly health?: RuntimeHealthModel;
   readonly executionEnvironment?: {
     readonly mode: ThreadExecutionEnvironment["mode"];
@@ -346,16 +347,16 @@ export interface ProductionHttpCompositionOptions {
       readonly registry: InboxRunRegistry;
       readonly externalContent: Pick<ContextExternalContent, "mark">;
       readonly subthreads?: ProductionSubthreads;
+      readonly reminders?: ProductionReminderInbox;
+      readonly perception?: ProductionPerceptionInbox;
+      readonly timerReminders?: TimerReminders;
+      readonly timeZone?: string;
     };
     readonly onDiagnostic?: (event: Record<string, string>) => void;
   };
   readonly threadDeletionDiagnostic?: (event: Record<string, string>) => void;
   readonly queryPrefetch?: ProductionQueryPrefetch;
-  readonly voiceAddressee?: VoiceAddresseeModel;
-  readonly museIntake?: ProductionMuseIntake;
-  readonly gapExport?: ProductionGapExport;
   readonly mcpRead?: ProductionMcpRead;
-  readonly museControl?: ProductionMuseControl;
   readonly observation?: ProductionObservation;
   readonly configuration: ProductConfiguration;
   readonly repository: SqliteProductStateRepository;
@@ -382,7 +383,7 @@ export interface ProductionHttpComposition {
   readonly payloadAdmission: HttpGatewayPayloadAdmissionPort;
   readonly health: RuntimeHealthModel;
   readonly metrics: RuntimeMetricsRegistry;
-  readonly home: Pick<ProductionHomeControl, "awaitingCount" | "approvalCopy" | "score">;
+  readonly home: Pick<ProductionHomeControl, "awaitingCount">;
   readonly perception: Pick<PerceptionService, "reserveModelCost">;
   listen(): Promise<string>;
   close(): Promise<void>;
@@ -757,7 +758,7 @@ export function registerProactiveRoutes(
     return reply
       .header("cache-control", "no-store")
       .header("referrer-policy", "no-referrer")
-      .redirect(await proactive.authorizationRedirect(subject), 303);
+      .redirect(proactive.beginAuthorization(subject), 303);
   });
   app.get(PROACTIVE_GOOGLE_CALLBACK_PATH, async (request, reply) => {
     const query = request.query as Record<string, unknown>;
@@ -812,11 +813,11 @@ function routeOptions(
   executionEnvironmentAvailable: boolean,
   memoryAvailable: boolean,
   proactiveAvailable: boolean,
-  museAvailable: boolean,
   observationAvailable: boolean,
   mcpConnectionsAvailable: boolean,
   searchAvailable: boolean,
   capabilityReactivationAvailable: boolean,
+  timersAvailable: boolean,
 ): HttpGatewayServerOptions {
   const http = configuration.http;
   if (!http || !configuration.identity) {
@@ -849,7 +850,6 @@ function routeOptions(
         ...(memoryAvailable ? PRODUCTION_MEMORY_OPERATIONS : []),
         ...PRODUCTION_WEB_PUSH_OPERATIONS,
         ...(proactiveAvailable ? PRODUCTION_PROACTIVE_OPERATIONS : []),
-        ...(museAvailable ? PRODUCTION_MUSE_OPERATIONS : []),
         ...(observationAvailable ? PRODUCTION_OBSERVATION_OPERATIONS : []),
         ...PRODUCTION_OWNER_PREFERENCE_OPERATIONS,
         ...(memoryAvailable ? PRODUCTION_QUIET_HOURS_OPERATIONS : []),
@@ -866,6 +866,7 @@ function routeOptions(
         ...(mcpConnectionsAvailable ? PRODUCTION_MCP_CONNECTION_OPERATIONS : []),
         ...PRODUCTION_PERCEPTION_OPERATIONS,
         ...PRODUCTION_INBOX_OPERATIONS,
+        ...(timersAvailable ? PRODUCTION_TIMER_OPERATIONS : []),
       ],
       agentId: configuration.agentId,
       deploymentId: configuration.deploymentId,
@@ -924,14 +925,44 @@ export async function createProductionHttpComposition(
     ...DEVICE_CONFIGURATION_DEFAULTS,
     limits: defaultDeviceHardLimits(),
   };
+  const chatModel = configuration.modelDescriptors.find(
+    (descriptor) => descriptor.role === "primary",
+  );
+  const chatAttachments = Object.freeze({
+    images:
+      options.modelCatalog?.find((entry) => entry.ref === chatModel?.ref)?.images ??
+      chatModel?.input.includes("image") ??
+      false,
+  });
   const devicePairingAccess = await resolveDevicePairingAccess(
     configuration.secretReferences,
     (ref, version) => secretSources.provider.resolve(ref, version),
+  );
+  const speech = createProductionSpeech(configuration, (ref, version) =>
+    secretSources.provider.resolve(ref, version),
   );
   const payloadKey = soleSecret(configuration, "payload-encryption");
   const payloadProtector = new EnvelopePayloadProtector({
     keys: secretSources.keys,
     activeKey: { keyRef: payloadKey.ref, kekVersion: payloadKey.version, dekVersion: "dek-v1" },
+  });
+  const recordVoiceTiming = deviceVoiceTimingRecorder({
+    ownerId,
+    agentId,
+    trace: repository.traceStore(),
+    payloads: repository.payloadStore(ownerId, agentId),
+    protector: payloadProtector,
+    now: clock,
+    ...(options.live
+      ? { firstTextEmittedAt: (runId: string) => options.live?.firstEmittedAt(runId) ?? null }
+      : {}),
+  });
+  const listVoiceTiming = deviceVoiceTimingLister({
+    ownerId,
+    agentId,
+    trace: repository.traceStore(),
+    payloads: repository.payloadStore(ownerId, agentId),
+    protector: payloadProtector,
   });
   const csrfKeyRef = configuredSecret(
     configuration,
@@ -1311,6 +1342,7 @@ export async function createProductionHttpComposition(
           ...(options.cancelRun ? { cancelRun: options.cancelRun } : {}),
           ...(mainThreadInbox.subthreads ? { subthreads: mainThreadInbox.subthreads } : {}),
           checkpoints: repository.runCheckpointStore(ownerId, agentId, authority),
+          ...(mainThreadInbox.reminders ? { reminders: mainThreadInbox.reminders } : {}),
         })
       : undefined);
   const inbox = productionInbox({
@@ -1323,6 +1355,48 @@ export async function createProductionHttpComposition(
     ...(inboxDelivery ? { delivery: inboxDelivery } : {}),
     ...(options.inbox?.onDiagnostic ? { onDiagnostic: options.inbox.onDiagnostic } : {}),
   });
+  const reminderInbox = mainThreadInbox?.reminders;
+  if (reminderInbox) {
+    reminderInbox.registerSource(inbox.inbox.sources);
+    reminderInbox.attach(inbox.inbox);
+    reminderInbox.start();
+  }
+  const approvalRuns = repository.runLifecycle(ownerId, agentId, authority);
+  const approvalAnswers = mainThreadInbox
+    ? new ProductionApprovalAnswers({
+        threadOf: async (runId) => (await approvalRuns.readRun(runId as never))?.run.threadId,
+        mainThread,
+      })
+    : undefined;
+  if (approvalAnswers) {
+    approvalAnswers.registerSource(inbox.inbox.sources);
+    approvalAnswers.attach(inbox.inbox);
+  }
+  const memoryInbox = mainThreadInbox
+    ? new ProductionMemoryInbox({
+        ownerId,
+        agentId,
+        state: repository.productMemoryState(),
+        mainThread,
+        formatTime: (iso) =>
+          localTime(iso, options.inbox?.mainThread?.timeZone ?? DEFAULT_TIMER_TIME_ZONE),
+        clock: { now: clock },
+        onFailure: (error: unknown) =>
+          options.inbox?.onDiagnostic?.({
+            event: "inbox.memory_source_failed",
+            error: error instanceof Error ? error.message.slice(0, 120) : "unknown",
+          }),
+      })
+    : undefined;
+  if (memoryInbox) {
+    memoryInbox.registerSource(inbox.inbox.sources);
+    memoryInbox.attach(inbox.inbox);
+  }
+  const perceptionInbox = mainThreadInbox?.perception;
+  if (perceptionInbox) {
+    perceptionInbox.registerSource(inbox.inbox.sources);
+    perceptionInbox.attach(inbox.inbox);
+  }
   const subthreads = mainThreadInbox?.subthreads;
   if (subthreads) {
     subthreads.registerSources(inbox.inbox.sources);
@@ -1350,6 +1424,7 @@ export async function createProductionHttpComposition(
           }
         : {}),
     });
+    subthreads.startTimers();
   }
   if (options.proactive) {
     inbox.inbox.sources.register({
@@ -1523,20 +1598,6 @@ export async function createProductionHttpComposition(
               ? error.name
               : "unknown",
       }),
-    ...(options.homeUrgency
-      ? {
-          urgency: {
-            ...options.homeUrgency,
-            scope: { ownerId, agentId },
-            store: repository.homeUrgency(),
-            onFailure: (error) =>
-              options.onHomeDiagnostic?.({
-                event: "home.urgency_failed",
-                error: error instanceof Error ? error.message : String(error),
-              }),
-          },
-        }
-      : {}),
   });
   const mcpConnectionAddresses = new McpConnectionAddresses({ now: clock });
   const searchControl = options.memory?.search
@@ -1647,6 +1708,12 @@ export async function createProductionHttpComposition(
   });
   await perception.prepareDirectories();
   await perception.resumeDeletions({ ownerId, agentId }).catch(() => undefined);
+  const approvalThreadTitle = classifiedThreadTitleReader({
+    configuration,
+    threads,
+    payloads: memoryPayloads,
+    protector: payloadProtector,
+  });
   const gatewayV2 = createProductionApprovalGateway({
     configuration,
     ...(options.capabilityReactivation
@@ -1659,10 +1726,24 @@ export async function createProductionHttpComposition(
     recentAuthentication,
     clock: { now: clock },
     authority: options.authority,
-    ...(options.deviceActions
+    ...(options.deviceActions || approvalAnswers
       ? {
           onApprovalResolved: async (approval) => {
+            await approvalAnswers?.answered(approval);
             await options.deviceActions?.service.reconcile(approval.id);
+          },
+        }
+      : {}),
+    ...(subthreads
+      ? {
+          approvalOrigin: async (threadId: string) => {
+            const parent = await subthreads.parentOf(threadId).catch(() => undefined);
+            if (!parent) return null;
+            const title = await approvalThreadTitle(parent).catch(() => null);
+            return {
+              threadId: parent,
+              threadTitle: title === null ? null : (approvalBodyPreview(title, 120) ?? null),
+            };
           },
         }
       : {}),
@@ -1677,7 +1758,6 @@ export async function createProductionHttpComposition(
       clock: { now: clock },
     }),
     ...(options.proactive ? { proactiveControl: options.proactive } : {}),
-    ...(options.museControl ? { museControl: options.museControl } : {}),
     ...(options.observation ? { observationControl: options.observation } : {}),
     ...(ownerRuleWriter
       ? {
@@ -1711,6 +1791,21 @@ export async function createProductionHttpComposition(
       scope: { ownerId, agentId },
       clock: { now: clock },
     }),
+    ...(options.inbox?.mainThread?.subthreads
+      ? {
+          timerControl: new ProductionTimerControl({
+            subthreads: options.inbox.mainThread.subthreads,
+            ...(options.inbox.mainThread.timerReminders
+              ? { reminders: options.inbox.mainThread.timerReminders }
+              : {}),
+            ...(options.inbox.mainThread.timeZone
+              ? { timeZone: options.inbox.mainThread.timeZone }
+              : {}),
+            scope: { ownerId, agentId },
+            clock: { now: clock },
+          }),
+        }
+      : {}),
     perceptionControl: new ProductionPerceptionControl({
       configuration,
       perception,
@@ -1787,11 +1882,11 @@ export async function createProductionHttpComposition(
       Boolean(options.executionEnvironment),
       Boolean(memoryControl),
       Boolean(options.proactive),
-      Boolean(options.museControl),
       Boolean(options.observation),
       Boolean(options.mcpRead),
       Boolean(searchControl),
       options.capabilityReactivation !== undefined,
+      Boolean(options.inbox?.mainThread?.subthreads),
     ),
     gatewayV2,
     threadSearch,
@@ -1800,6 +1895,9 @@ export async function createProductionHttpComposition(
       service: pairedDevices,
       home: { resolveAction: (input) => home.resolveAction(input) },
       configuration: () => deviceConfiguration,
+      chatAttachments: () => chatAttachments,
+      recordVoiceTiming: (input) => recordVoiceTiming(input),
+      listVoiceTiming: (limit) => listVoiceTiming(limit),
       audit: repository.auditLedger(),
       push: devicePush,
       ...(options.onDeviceAuditFailed ? { onAuditFailed: options.onDeviceAuditFailed } : {}),
@@ -1836,16 +1934,10 @@ export async function createProductionHttpComposition(
           }
         : {}),
       voiceGates: () => DEFAULT_VOICE_GATES,
+      ...(speech ? { speech } : {}),
       ...(options.queryPrefetch
         ? { prefetch: utterancePrefetch(options.queryPrefetch, perception, agentId) }
         : {}),
-      addressee: voiceAddressee(
-        options.voiceAddressee,
-        voiceAddresseeConfiguration(configuration),
-        perception,
-        agentId,
-        () => now().getTime(),
-      ),
     },
     ...(httpConfiguration.previewOrigin ? { previewOrigin: httpConfiguration.previewOrigin } : {}),
     ...(options.onSlowRequest ? { onSlowRequest: options.onSlowRequest } : {}),
@@ -1876,8 +1968,6 @@ export async function createProductionHttpComposition(
     protector: payloadProtector,
     now: clock,
   });
-  if (options.museIntake) registerMuseIntakeRoute(app, options.museIntake);
-  if (options.gapExport) registerGapExportRoute(app, options.gapExport);
   if (options.mcpRead) {
     registerMcpReadRoute(app, options.mcpRead);
     registerMcpConnectionAddressRoute(app, {
@@ -1921,9 +2011,9 @@ export async function createProductionHttpComposition(
           port: httpConfiguration.listenPort,
         });
         searchIndexer.start();
-        home.startScoring();
         await ensureMainThread();
         inbox.loop?.start();
+        memoryInbox?.start();
         threadDeletionRetry.start();
         return address;
       }
@@ -1937,17 +2027,17 @@ export async function createProductionHttpComposition(
         throw error;
       }
       searchIndexer.start();
-      home.startScoring();
       await ensureMainThread();
       inbox.loop?.start();
+      memoryInbox?.start();
       threadDeletionRetry.start();
       return unixSocketPath;
     },
     close: async () => {
       searchIndexer.stop();
+      await memoryInbox?.stop();
       await inbox.loop?.stop();
       await threadDeletionRetry.stop();
-      await home.stopScoring();
       try {
         await app.close();
       } finally {
@@ -1961,43 +2051,6 @@ export async function createProductionHttpComposition(
       }
     },
   });
-}
-
-function voiceAddresseeConfiguration(
-  configuration: ProductConfiguration,
-): (() => VoiceAddresseeConfiguration) | undefined {
-  const route = configuration.runPolicy?.voiceAddressee;
-  return route ? () => route : undefined;
-}
-
-export function voiceAddressee(
-  model: VoiceAddresseeModel | undefined,
-  configuration: (() => VoiceAddresseeConfiguration) | undefined,
-  perception: PerceptionService,
-  agentId: AgentId,
-  now: () => number,
-): (input: {
-  readonly authentication: GatewayAuthenticationContext;
-  readonly request: VoiceAddresseeRequest;
-}) => Promise<VoiceAddresseeOutcome> {
-  if (!model || !configuration)
-    return async ({ request }) =>
-      request.trigger === "hands_on" ? "addressed" : "addressed_unsure";
-  const judges = new Map<string, VoiceAddresseeJudge>();
-  return ({ authentication, request }) => {
-    const scope = { ownerId: authentication.ownerId as OwnerId, agentId };
-    let judge = judges.get(scope.ownerId);
-    if (!judge) {
-      judge = new VoiceAddresseeJudge({
-        model,
-        configuration,
-        reserve: (micros) => perception.reserveModelCost(scope, micros),
-        now,
-      });
-      judges.set(scope.ownerId, judge);
-    }
-    return judge.decide(request);
-  };
 }
 
 export function utterancePrefetch(

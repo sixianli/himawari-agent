@@ -31,7 +31,7 @@ struct MemoryDetailSheet: View {
                         .frame(width: L.closeSize, height: L.closeSize)
                         .background(Color.hmFill, in: Circle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
                 .accessibilityLabel(Text(M.close))
             }
             VStack(spacing: 0) {
@@ -65,7 +65,7 @@ struct MemoryDetailSheet: View {
                         .padding(.horizontal, L.destructivePadding)
                         .frame(minHeight: L.actionHeight)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
                 Spacer()
                 Button(action: edit) {
                     Text(M.edit)
@@ -75,7 +75,7 @@ struct MemoryDetailSheet: View {
                         .frame(minHeight: L.actionHeight)
                         .background(Color.hmFill, in: Capsule())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
             }
         }
         .padding(.top, L.paddingTop)
@@ -100,7 +100,7 @@ struct MemoryDetailSheet: View {
                     .frame(minHeight: DesignTokens.Size.minTapTarget)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
         }
         .padding(.vertical, L.fieldPaddingVertical)
     }

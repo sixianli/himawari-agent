@@ -5,8 +5,8 @@ decision_status: accepted
 supersedes: "https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0048-vercel-ai-gateway-replaces-openrouter.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0076-no-model-cost-budget-limits.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0109-paid-eval-runs-need-cost-cap-and-preflight.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0111-no-expensive-models-anywhere.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0117-magpie-routes-models-through-owned-subscriptions.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0124-unknown-model-call-blocks-only-its-own-resend.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0128-record-cache-usage-of-every-model-request.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0148-send-every-model-request-through-one-in-process-egress.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0245-retry-rate-limited-model-requests-at-the-request-layer.md"
 superseded_by: ""
 date: "2026-11-26"
-covers: "packages/platform-node/src/strict-configuration.ts, packages/runtime-pi/src/configured-model-binding.ts, packages/runtime-pi/src/pi-model-transport.ts, packages/runtime-pi/src/pi-runtime-adapter.ts, packages/runtime-pi/src/cache-usage-observation.ts, packages/application/src/services/model-egress.ts, packages/persistence-sqlite/src/sqlite-model-budget-operations.ts, apps/agent-service/src/production-model-composition.ts, scripts/check-expensive-models.mjs, scripts/operations/cache-hit-report.mjs, test/fixtures/jarvis-test/models.json"
-verified_at: "7d0ffcd52cbb69d4941871cf9bf08d93f3843da8"
+covers: "packages/platform-node/src/strict-configuration.ts, packages/runtime-pi/src/configured-model-binding.ts, packages/runtime-pi/src/pi-model-transport.ts, packages/runtime-pi/src/pi-runtime-adapter.ts, packages/runtime-pi/src/cache-usage-observation.ts, packages/application/src/services/model-egress.ts, packages/persistence-sqlite/src/sqlite-model-budget-operations.ts, apps/agent-service/src/production-model-composition.ts, scripts/check-expensive-models.mjs, scripts/operations/cache-hit-report.mjs, test/fixtures/jarvis-test/models.json, packages/platform-node/src/speech-synthesis.ts, apps/agent-service/src/production-speech.ts"
+verified_at: "7c8521fe5f55e7dd57c5bd52badd16eef647502e"
 ---
 
 # ADR 0297：模型调用的现行做法
@@ -22,6 +22,7 @@ verified_at: "7d0ffcd52cbb69d4941871cf9bf08d93f3843da8"
   - [花费：只记账，不设上限](#cost)
   - [结果不确定的调用](#unknown)
   - [唯一的出口和遮盖](#egress)
+  - [念出来的声音](#speech)
   - [限流时重试](#retry)
   - [记下每次请求的缓存命中](#cache)
 - [放弃的做法](#rejected)
@@ -79,6 +80,15 @@ verified_at: "7d0ffcd52cbb69d4941871cf9bf08d93f3843da8"
 - 拒绝发送而不是放行：路径不认识、请求体不是 JSON、嵌入输入是 token 编号数组、遮盖后仍检出机器密钥，都抛 `ModelEgressRefusedError`。
 - 占位符形如 `[验证码#kqzmdwrp]`，编号由 HMAC 取得、按值稳定，所以前缀不变；机器密钥固定写 `[密钥]`，不可还原。只在主对话的显示端把占位符换回原文（`restoreModelStream`），什么时候遮、内部存原文的做法见 [ADR 0183](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0183-mask-only-when-data-leaves-and-keep-the-original-inside.md)。
 - `npm run check:egress-redaction` 要求三个发送点都用 `exchange.wrapFetch(`，并拒绝出口模块之外直接遮盖或另开模型请求出口。
+
+<a id="speech"></a>
+
+### 念出来的声音
+
+- 手机要把她的回答念出来时，一句一句调用签名接口 `POST /api/device/v1/speech`（请求体只有 `{"text"}`）。服务端经 Magpie 的原样转发入口 `/v1/magpie/native/{服务方}/…` 调阿里云百炼国际站的 `qwen3-tts-flash`（HTTP 流式，SSE 即服务器一段段推送的事件流），把收到的 PCM 音频（未压缩的原始采样）原样流给手机。不用 WebSocket 版实时接口，因为 Magpie 的原样转发只转 HTTP。
+- 模型、声音、语言、首包等待上限和每句字数上限都写在配置的 `speech` 一节，由 `strict-configuration.ts` 严格校验，并经上线包的 `TARGET_SPEECH_JSON` 写入生产；不写这一节就不开这项功能，接口回 `503 SPEECH_UNAVAILABLE`。
+- 这条出口不经 `ModelEgress`：发出前用 `redactForExternalText` 检查，只要检出任何敏感内容就整句拒绝（`422 SPEECH_SENSITIVE_TEXT`），由手机用系统声音在本机念，原文不出机器。`npm run check:egress-redaction` 只允许 `speech-synthesis.ts` 发这种请求，且必须带这道检查。
+- 首包超过配置的上限回 `504`，服务方拒绝回 `502`；手机遇到任何错误都改用本机声音念这一句。每句的字数、首包毫秒数、流式时长和字节数写进 `speech.synthesized` 日志。
 
 <a id="retry"></a>
 

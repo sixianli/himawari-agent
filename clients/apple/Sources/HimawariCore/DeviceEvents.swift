@@ -70,6 +70,8 @@ public final class DeviceEventStream: @unchecked Sendable {
     private let lock = NSLock()
     private var task: Task<Void, Never>?
     private var wake: CheckedContinuation<Void, Never>?
+    private var pauseNumber = 0
+    private var wakePending = false
     private var restartRequested = false
     private var continuation: AsyncStream<DeviceStreamEvent>.Continuation?
 
@@ -115,6 +117,16 @@ public final class DeviceEventStream: @unchecked Sendable {
     public func reconnectNow() {
         let pending = lock.withLock { () -> CheckedContinuation<Void, Never>? in
             defer { wake = nil }
+            if wake == nil { wakePending = true }
+            return wake
+        }
+        pending?.resume()
+    }
+
+    private func endPause(_ number: Int) {
+        let pending = lock.withLock { () -> CheckedContinuation<Void, Never>? in
+            guard pauseNumber == number else { return nil }
+            defer { wake = nil }
             return wake
         }
         pending?.resume()
@@ -123,33 +135,43 @@ public final class DeviceEventStream: @unchecked Sendable {
     private func run(continuation: AsyncStream<DeviceStreamEvent>.Continuation) async {
         var failures = 0
         var droppedAt: Date?
+        var report: StreamDropReport?
         while !Task.isCancelled {
             var query: [URLQueryItem] = []
             if let cursor = cursors?.load() { query.append(URLQueryItem(name: "after", value: cursor)) }
+            if let report { query += report.query(at: Date()) }
             var ending: StreamEnding
             lock.withLock { restartRequested = false }
             do {
-                let chunks = try await http.openStream(DeviceRequest(method: "GET", path: path, query: query))
+                guard let chunks = try await open(DeviceRequest(method: "GET", path: path, query: query)) else {
+                    continue
+                }
+                lock.withLock { wakePending = false }
                 continuation.yield(.connected)
                 let openedAt = Date()
                 if let droppedAt {
                     StreamDiagnostics.shared.note(.recovered(path: path, offlineSeconds: openedAt.timeIntervalSince(droppedAt)))
                 }
                 droppedAt = nil
+                report = nil
                 let deadline = LivenessDeadline(window: { [heartbeat] in heartbeat() * 2 + Self.silenceAllowance })
                 ending = try await consume(chunks, deadline: deadline, continuation: continuation)
                 failures = deadline.heard ? 0 : failures + 1
                 if case let .reconnect(reason) = ending {
-                    StreamDiagnostics.shared.note(.dropped(path: path, reason: reason, connectedSeconds: Date().timeIntervalSince(openedAt)))
+                    let connected = Date().timeIntervalSince(openedAt)
+                    StreamDiagnostics.shared.note(.dropped(path: path, reason: reason, connectedSeconds: connected))
+                    report = StreamDropReport(reason: reason.rawValue, connectedSeconds: connected, droppedAt: Date())
                 }
             } catch let error as DeviceAPIError where error.isRevoked {
                 continuation.yield(.sessionInvalid)
                 ending = .stop
             } catch let DeviceAPIError.server(status, code, _, _) {
                 StreamDiagnostics.shared.note(.refused(path: path, status: status, code: code))
+                report = Self.retried(report, StreamDropReport(reason: "refused", status: status, droppedAt: Date()))
                 failures += 1
                 ending = .reconnect(.failed)
             } catch {
+                report = Self.retried(report, StreamDropReport(reason: StreamDropReason.failed.rawValue, networkError: (error as? URLError)?.code.rawValue, droppedAt: Date()))
                 failures += 1
                 ending = .reconnect(.failed)
             }
@@ -163,6 +185,15 @@ public final class DeviceEventStream: @unchecked Sendable {
             await pause(seconds: Self.backoff(failures: failures))
         }
         continuation.finish()
+    }
+
+    static func retried(_ earlier: StreamDropReport?, _ latest: StreamDropReport) -> StreamDropReport {
+        guard let earlier else { return latest }
+        var kept = earlier
+        kept.attempts += 1
+        kept.status = latest.status
+        kept.networkError = latest.networkError
+        return kept
     }
 
     private enum StreamEnding: Sendable {
@@ -215,12 +246,39 @@ public final class DeviceEventStream: @unchecked Sendable {
 
     static let checkNanoseconds: UInt64 = 250_000_000
 
+    private func open(_ request: DeviceRequest) async throws -> AsyncThrowingStream<String, Error>? {
+        try await withThrowingTaskGroup(of: AsyncThrowingStream<String, Error>?.self) { group in
+            group.addTask { try await self.http.openStream(request) }
+            group.addTask {
+                while !Task.isCancelled {
+                    try await Task.sleep(nanoseconds: Self.checkNanoseconds)
+                    if self.takeRestart() { return nil }
+                }
+                throw CancellationError()
+            }
+            defer { group.cancelAll() }
+            return try await group.next() ?? nil
+        }
+    }
+
     private func pause(seconds: TimeInterval) async {
         await withCheckedContinuation { (wakeUp: CheckedContinuation<Void, Never>) in
-            lock.withLock { wake = wakeUp }
+            let number = lock.withLock { () -> Int? in
+                if wakePending {
+                    wakePending = false
+                    return nil
+                }
+                pauseNumber += 1
+                wake = wakeUp
+                return pauseNumber
+            }
+            guard let number else {
+                wakeUp.resume()
+                return
+            }
             Task { [weak self] in
                 try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
-                self?.reconnectNow()
+                self?.endPause(number)
             }
         }
     }

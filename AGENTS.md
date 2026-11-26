@@ -97,7 +97,7 @@ Andy 的全局指令已复制到 [.claude/rules/owner-global-instructions.md](.c
 <a id="approved-web-design-baselines"></a>
 ## 已批准的网页设计基线
 
-设计或修改 Himawari 网页（视觉设计、聊天交互、品牌素材）之前，先读[网页设计基线](.agents/instructions/web-design-baselines.md)。
+设计或修改 Himawari 网页（视觉设计、聊天交互、品牌素材）之前，先读[网页设计基线](.agents/instructions/web-design-baselines.md)。iPhone、Apple Watch、Mac 三个 App 的界面和交互一律照苹果最新的《Human Interface Guidelines》（苹果官方界面设计规范）做，能用系统组件就用系统组件，见 [Andy 定的长期规则](.claude/rules/owner-standing-rules.md#apple-clients-follow-the-hig)。
 
 <a id="engineering-diagrams"></a>
 ## 工程图
@@ -119,11 +119,10 @@ Andy 的全局指令已复制到 [.claude/rules/owner-global-instructions.md](.c
 - 它适用于所有代理做的提交。
 - 已推送的提交不等于已充分测试的提交。提交说明仍必须写明实际运行了哪些测试层；第 3 层在 PR 或合并之前运行，而不是在每次推送之前。
 
-<a id="hermes-test-server-connectivity"></a>
 <a id="test-and-production-hosts"></a>
 ## 测试主机和生产主机
 
-在运行、安排或委派任何构建、测试、资格验证或上线之前，或者在连接 Hermes 测试服务器、登录生产机之前，先读 [.agents/instructions/test-and-production-hosts.md](.agents/instructions/test-and-production-hosts.md)。简要来说：服务器端的构建、检查和测试绝不在 MacBook 上运行；iPhone、Apple Watch、Mac 客户端的构建、单元测试和安装在 Andy 的 Mac 上用 Xcode 做。
+在运行、安排或委派任何构建、测试、资格验证或上线之前，或者在登录生产机之前，先读 [.agents/instructions/test-and-production-hosts.md](.agents/instructions/test-and-production-hosts.md)。简要来说：定向测试和提交前检查在云端线程的容器里跑，完整测试由 GitHub CI 跑，没有单独的测试服务器；服务器端的构建、检查和测试绝不在 MacBook 上运行；iPhone、Apple Watch、Mac 客户端的构建和单元测试在 GitHub 的 macOS 机器上做，经 TestFlight 安装，不依赖 Andy 的 Mac（ADR 0309 第 14 条）。
 
 <a id="test-trigger-timing"></a>
 ## 测试触发时机

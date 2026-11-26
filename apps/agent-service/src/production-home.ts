@@ -2,27 +2,15 @@ import { createHash } from "node:crypto";
 import {
   type ApprovalRequest,
   type ClockPort,
-  classificationRank,
   type DataClassification,
-  type GovernedActionIntent,
-  HOME_SCORING_LOCALE,
   type HomeAction,
   type HomeActionName,
-  type HomeApprovalCopy,
-  type HomeApprovalDetail,
   type HomeCandidate,
   type HomeFeedConfiguration,
   HomeFeedService,
   type HomeLocale,
   type HomeSource,
   type HomeSourceName,
-  type HomeUrgencyConfiguration,
-  type HomeUrgencyRunResult,
-  HomeUrgencyService,
-  type HomeUrgencyStorePort,
-  type ProactiveModelInvoker,
-  type ProactiveScope,
-  type ProactiveSealPort,
   type RunLifecyclePort,
 } from "@himawari-agent/application";
 import {
@@ -135,7 +123,6 @@ function action(
   polarity: HomeAction["polarity"],
   options: {
     readonly label?: string;
-    readonly modelLabel?: string | null;
     readonly ownerPresence?: boolean;
     readonly command?: HomeCommand;
   } = {},
@@ -143,8 +130,8 @@ function action(
   const ownerPresence = options.ownerPresence ?? false;
   return {
     action: name,
-    label: options.modelLabel ?? options.label ?? HOME_TEXT[locale].actions[name],
-    labelBasis: options.modelLabel ? "model" : "catalog",
+    label: options.label ?? HOME_TEXT[locale].actions[name],
+    labelBasis: "catalog",
     polarity,
     ownerPresence,
     reviewLabel: ownerPresence ? HOME_TEXT[locale].reviewFirst : null,
@@ -176,66 +163,10 @@ export interface ProductionHomeOptions {
   } | null>;
   readonly clock: ClockPort;
   readonly onSourceFailure: (source: HomeSourceName, error: unknown) => void;
-  readonly urgency?: ProductionHomeUrgencyOptions;
 }
 
-export interface ProductionHomeUrgencyOptions {
-  readonly scope: ProactiveScope;
-  readonly settings: HomeUrgencyConfiguration;
-  readonly store: HomeUrgencyStorePort;
-  readonly seal: ProactiveSealPort;
-  readonly model: ProactiveModelInvoker;
-  readonly modelAllows: (classification: DataClassification) => boolean;
-  readonly timeZone: string;
-  readonly estimateCostMicros: (prompt: string) => number;
-  readonly readLocale: () => Promise<HomeLocale | null>;
-  readonly onScored?: (result: HomeUrgencyRunResult) => void;
-  readonly onFailure: (error: unknown) => void;
-}
-
-export const HOME_URGENCY_MAX_OUTPUT_TOKENS = 2048;
 const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
 const approvalKey = (approvalRequestId: string) => `approval:${approvalRequestId}`;
-
-type ApprovalCopyReader = (input: {
-  readonly approvalRequestId: string;
-  readonly semanticSnapshotHash: string;
-  readonly locale: HomeLocale;
-}) => Promise<HomeApprovalCopy>;
-
-function approvalDetail(
-  approval: ApprovalRequest,
-  conversation: string | null,
-): HomeApprovalDetail {
-  const intent = approval.intentSnapshot;
-  const governed = "contractVersion" in intent ? (intent as GovernedActionIntent) : undefined;
-  return {
-    id: approval.id,
-    semanticSnapshotHash: approval.semanticSnapshotHash,
-    facts: JSON.parse(
-      JSON.stringify({
-        capability: intent.capabilityRef,
-        operation: intent.operation,
-        resource: intent.resourceRef,
-        sideEffect: intent.sideEffect,
-        reversible: intent.reversible,
-        frequency: intent.frequency,
-        estimatedCostMicros: intent.estimatedCostMicros,
-        conversation,
-        ...(governed
-          ? {
-              actionKind: governed.actionKind,
-              targets: governed.targets,
-              recipients: governed.recipients,
-              disclosure: governed.disclosure,
-              credentialOrAccessChange: governed.credentialOrAccessChange,
-              risk: governed.finalRisk,
-            }
-          : {}),
-      }),
-    ) as HomeApprovalDetail["facts"],
-  };
-}
 
 function line(text: string | null | undefined, maximum: number): string | null {
   if (!text) return null;
@@ -570,10 +501,7 @@ function memorySources(memory: MemorySources): HomeSource[] {
   ];
 }
 
-function approvalSource(
-  options: ProductionHomeOptions,
-  readCopy: ApprovalCopyReader | undefined,
-): HomeSource {
+function approvalSource(options: ProductionHomeOptions): HomeSource {
   return {
     name: "approvals",
     awaitsOwner: true,
@@ -583,27 +511,11 @@ function approvalSource(
         if (approval.status !== "pending" || Date.parse(approval.expiresAt) <= Date.parse(now))
           continue;
         const threadId = await options.runThread(approval.runId);
-        const thread = threadId ? await options.threadTitle(threadId).catch(() => null) : null;
-        const conversation =
-          thread?.dataClassification !== undefined &&
-          classificationRank(thread.dataClassification) <=
-            classificationRank(approval.intentSnapshot.dataClassification)
-            ? line(thread.title, 200)
-            : null;
-        const copy = await readCopy?.({
-          approvalRequestId: approval.id,
-          semanticSnapshotHash: approval.semanticSnapshotHash,
-          locale,
-        }).catch((error: unknown) => {
-          options.urgency?.onFailure(error);
-          return undefined;
-        });
-        const sentence = line(copy?.sentence, 2000);
         items.push({
           key: approvalKey(approval.id),
           kind: "approval",
           awaitsOwner: true,
-          ...(sentence ? { sentence, sentenceBasis: "model" as const } : NO_SENTENCE),
+          ...NO_SENTENCE,
           target: { type: "approval", id: approval.id, threadId, link: null },
           source: {
             type: "conversation",
@@ -617,7 +529,6 @@ function approvalSource(
           createdAt: approval.requestedAt,
           actions: [
             action(locale, "approved", "positive", {
-              modelLabel: copy?.affirmLabel ?? null,
               ownerPresence:
                 "recentAuthenticationRequired" in approval &&
                 approval.recentAuthenticationRequired === true,
@@ -629,7 +540,6 @@ function approvalSource(
           ],
           ruleHit: false,
           dataClassification: approval.intentSnapshot.dataClassification,
-          approval: approvalDetail(approval, conversation),
         });
       }
       return { items, unread: 0 };
@@ -721,13 +631,10 @@ function showableOnly(
   };
 }
 
-export function createProductionHomeSources(
-  options: ProductionHomeOptions,
-  readCopy?: ApprovalCopyReader,
-): HomeSource[] {
+export function createProductionHomeSources(options: ProductionHomeOptions): HomeSource[] {
   return [
     ...(options.proactive ? [mailSource(options.proactive)] : []),
-    approvalSource(options, readCopy),
+    approvalSource(options),
     ...(options.memory ? memorySources(options.memory) : []),
     ...(options.runs ? [runSource(options, options.runs)] : []),
   ].map((source) => showableOnly(source, options.onSourceFailure));
@@ -735,38 +642,11 @@ export function createProductionHomeSources(
 
 export class ProductionHomeControl {
   readonly #service: HomeFeedService;
-  readonly #urgency: HomeUrgencyService | undefined;
-  readonly #options: ProductionHomeOptions;
-  #timer: ReturnType<typeof setInterval> | undefined;
 
   constructor(options: ProductionHomeOptions) {
-    const { memory, settings, urgency } = options;
-    this.#options = options;
-    this.#urgency = urgency
-      ? new HomeUrgencyService({
-          scope: urgency.scope,
-          store: urgency.store,
-          seal: urgency.seal,
-          model: urgency.model,
-          modelAllows: urgency.modelAllows,
-          settings: urgency.settings,
-          timeZone: urgency.timeZone,
-          clock: options.clock,
-          digest: sha256,
-          estimateCostMicros: urgency.estimateCostMicros,
-          candidates: () => this.#service.awaitingCandidates(),
-          locale: async () => (await urgency.readLocale()) ?? HOME_SCORING_LOCALE,
-        })
-      : undefined;
-    const scoring = this.#urgency;
+    const { memory, settings } = options;
     this.#service = new HomeFeedService({
-      sources: createProductionHomeSources(
-        options,
-        scoring ? (input) => this.approvalCopy(input) : undefined,
-      ),
-      ...(scoring && urgency
-        ? { scores: (candidates) => scoring.scores(candidates), onScoreFailure: urgency.onFailure }
-        : {}),
+      sources: createProductionHomeSources(options),
       ...(memory
         ? {
             upcoming: async ({ now, until, limit }) => {
@@ -792,48 +672,6 @@ export class ProductionHomeControl {
       digest: sha256,
       onSourceFailure: options.onSourceFailure,
     });
-  }
-
-  async approvalCopy(input: {
-    readonly approvalRequestId: string;
-    readonly semanticSnapshotHash: string;
-    readonly locale: HomeLocale;
-  }): Promise<HomeApprovalCopy> {
-    if (!this.#urgency) return { sentence: null, affirmLabel: null };
-    return this.#urgency.approvalCopy({
-      ...input,
-      itemKey: approvalKey(input.approvalRequestId),
-      negativeLabel: HOME_TEXT[input.locale].actions.denied,
-    });
-  }
-
-  async score(): Promise<HomeUrgencyRunResult | undefined> {
-    const urgency = this.#options.urgency;
-    if (!this.#urgency || !urgency) return undefined;
-    try {
-      const result = await this.#urgency.run();
-      urgency.onScored?.(result);
-      return result;
-    } catch (error) {
-      urgency.onFailure(error);
-      return undefined;
-    }
-  }
-
-  startScoring(): void {
-    const urgency = this.#options.urgency;
-    if (!this.#urgency || !urgency?.settings.enabled || this.#timer) return;
-    this.#timer = setInterval(() => {
-      void this.score();
-    }, urgency.settings.checkIntervalSeconds * 1000);
-    this.#timer.unref?.();
-    void this.score();
-  }
-
-  async stopScoring(): Promise<void> {
-    if (this.#timer) clearInterval(this.#timer);
-    this.#timer = undefined;
-    await this.#urgency?.settled();
   }
 
   awaitingCount(): Promise<number | undefined> {

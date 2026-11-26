@@ -630,6 +630,7 @@ export const threadExecutionTextSchema = object({
     itemId: machineString,
     offset: integer(0),
     text: displayText,
+    emittedAt: nullable(timestamp),
     observedAt: timestamp,
   }),
 });

@@ -400,6 +400,7 @@ class TemplateTest(RenderedPacket):
         self.assertEqual(packet_maker.next_label('twelfth'), 'thirteenth')
         self.assertEqual(packet_maker.next_label('nineteenth'), 'twentieth')
         self.assertEqual(packet_maker.next_label('twentieth'), 'twentyfirst')
+        self.assertEqual(packet_maker.next_label('firstinstall'), 'first')
         with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_LABEL_NOT_DERIVABLE'):
             packet_maker.next_label('hotfix')
 
@@ -470,7 +471,7 @@ class TemplateTest(RenderedPacket):
     UPGRADE_SWITCH_SHA256 = {
     'systemd/S2-stop-and-inspect.py': 'c466dde3068064600fb817631b3fa282eac1cc47539a11635953f0518b5e4fee',
     'systemd/S7-startup-readback.mjs': '0d258810e6a4809a742b2bca8a9734353cce0114fbee4de8f2a554c78bb022fc',
-    'systemd/S7-switch-start-readback.py': 'cca47a75b61ae53e229c79689fa89483ca0704784febd46ebe24493afb52d8e9',
+    'systemd/S7-switch-start-readback.py': '9eb298c271bfd42013261af8aa61fcb226d795bc2601d9190c60165f742848a0',
     'install/S9-clean-transport.py': '235a7d2882edaa304097746315a4be7f5c5f467fea83cd1522a43a1e3b223533',    }
 
     def render_first_tools(self):
@@ -521,8 +522,7 @@ class TemplateTest(RenderedPacket):
         )
         derived = packet_maker.interpret_discovery(facts, INSTANCE, 'twelfth')
         self.assertEqual((derived['OLD_LABEL'], derived['OLD_PREFIX'], derived['OLD_OPERATIONS']), ('firstinstall', prefix, '/opt/himawari/operations/first-install'))
-        with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_LABEL_NOT_DERIVABLE'):
-            packet_maker.interpret_discovery(facts, INSTANCE)
+        self.assertEqual(packet_maker.interpret_discovery(facts, INSTANCE)['LABEL'], 'first')
 
     def test_an_expected_hostname_pinned_in_the_instance_is_still_enforced(self):
         pinned = {**INSTANCE, 'host': {**INSTANCE['host'], 'expectedHostname': 'hermes-home'}}
@@ -705,9 +705,10 @@ class DerivedExpectationsTest(RenderedPacket):
         with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_HISTORY_COMPARISON_SWITCH_REMOVED'):
             packet_maker.base_parameters({**INSTANCE, 'historyComparison': {'mode': 'off'}}, TWELFTH_COMMIT, '2026-11-15', {'LABEL': 'thirtieth'})
 
-    def test_andy_production_keeps_a_failed_deploy_and_other_instances_roll_back(self):
-        self.assertEqual(packet_maker.deploy_failure_choice(INSTANCE), 'keep')
+    def test_andy_production_rolls_a_failed_deploy_back_and_keep_stays_available(self):
+        self.assertEqual(packet_maker.deploy_failure_choice(INSTANCE), 'rollback')
         self.assertEqual(packet_maker.deploy_failure_choice({}), 'rollback')
+        self.assertEqual(packet_maker.deploy_failure_choice({'onDeployFailure': 'keep'}), 'keep')
         with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_ON_DEPLOY_FAILURE_INVALID'):
             packet_maker.deploy_failure_choice({'onDeployFailure': 'ignore'})
 
@@ -780,6 +781,34 @@ class DerivedExpectationsTest(RenderedPacket):
         unchanged = static_root_configuration(self.render())(copy.deepcopy(original))
         self.assertEqual(unchanged['modelDescriptors'][1], original['modelDescriptors'][1])
         self.assertEqual(unchanged['memory'], original['memory'])
+
+    SPEECH_TARGET = {'adapter': 'dashscope-qwen-tts', 'magpieModelRef': 'deepseek-primary', 'provider': 'dashscope-intl', 'model': 'qwen3-tts-flash', 'voice': 'Serena', 'languageType': 'Chinese', 'firstAudioTimeoutMs': 1500, 'maximumCharacters': 600}
+
+    def test_an_approved_speech_target_adds_only_the_speech_section(self):
+        packet = self.render(TARGET_SPEECH_JSON=packet_maker.speech_target(self.SPEECH_TARGET))
+        original = production_config(TWELFTH['OLD_PREFIX'], TWELFTH['ORIGINAL_PUBLIC_FETCH_BYTES'], TWELFTH['ORIGINAL_CONTEXT_WINDOW'], TWELFTH['ORIGINAL_MAX_TOKENS'])
+        switched = static_root_configuration(packet)(copy.deepcopy(original))
+        self.assertEqual(switched['speech'], self.SPEECH_TARGET)
+        self.assertEqual({key: value for key, value in switched.items() if key not in ('speech', 'http', 'runPolicy', 'modelDescriptors')}, {key: value for key, value in original.items() if key not in ('http', 'runPolicy', 'modelDescriptors')})
+        replaced = static_root_configuration(packet)({**copy.deepcopy(original), 'speech': {**self.SPEECH_TARGET, 'voice': 'Cherry'}})
+        self.assertEqual(replaced['speech'], self.SPEECH_TARGET)
+        fixtures = subprocess.run([sys.executable, '-I', str(packet / 'systemd' / 'verify-switch-config-fixtures.py'), shutil.which('node')], capture_output=True, text=True, check=False)
+        self.assertEqual(fixtures.returncode, 0, fixtures.stdout + fixtures.stderr)
+        self.assertNotIn('speech', static_root_configuration(self.render())(copy.deepcopy(original)))
+
+    def test_a_speech_target_outside_the_supported_shape_is_refused(self):
+        self.assertEqual(packet_maker.speech_target(None), 'null')
+        self.assertEqual(json.loads(packet_maker.speech_target(self.SPEECH_TARGET)), self.SPEECH_TARGET)
+        valid = self.SPEECH_TARGET
+        missing_voice = {key: value for key, value in valid.items() if key != 'voice'}
+        for candidate in (
+            {**valid, 'adapter': 'openai-tts'}, {**valid, 'provider': 'dashscope/../x'}, {**valid, 'provider': 'Upper'},
+            {**valid, 'voice': 'has space'}, {**valid, 'languageType': 'zh-CN'}, {**valid, 'firstAudioTimeoutMs': 100},
+            {**valid, 'firstAudioTimeoutMs': 1500.0}, {**valid, 'maximumCharacters': 601}, {**valid, 'maximumCharacters': True},
+            {**valid, 'endpoint': 'https://example.com'}, missing_voice, 'speech',
+        ):
+            with self.subTest(candidate=candidate), self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_SPEECH_TARGET_INVALID'):
+                packet_maker.speech_target(candidate)
 
     def test_p3_1_an_embedding_target_outside_the_local_policy_is_refused(self):
         valid = {'ref': 'local-embedding', 'role': 'embedding', 'provider': 'local-onnx', 'model': 'jina-embeddings-v5-text-small-retrieval-int8', 'version': 'v', 'allowedDataClassifications': ['public', 'private'], 'disclosure': 'local_only', 'secretRef': None, 'capabilities': ['embedding'], 'cost': {'input': 0, 'output': 0, 'cacheRead': 0, 'cacheWrite': 0}, 'dimensions': 1024, 'artifactSha256': 'a' * 64}
@@ -903,14 +932,13 @@ class ArmTargetTest(RenderedPacket):
 
     def test_the_arm_builder_is_the_target_itself_and_never_the_rehearsal_host(self):
         settings = packet_maker.load_builder('arm64', 'tokyo-a1', '192.0.2.7')
-        self.assertEqual((settings['hostname'], settings['transport'], settings['address']), ('tokyo-a1', 'target-ssh', '192.0.2.7'))
+        self.assertEqual((settings['hostname'], settings['address']), ('tokyo-a1', '192.0.2.7'))
         with unittest.mock.patch.object(packet_maker, 'python_material_sha', return_value='b' * 64), unittest.mock.patch.object(packet_maker, 'python_material_version', return_value='3.12.10'):
             same = packet_maker.builder_parameters('e' * 40, {'HOSTNAME': 'tokyo-a1', 'NODE_ARCH': 'arm64'}, settings)
             self.assertEqual((same['BUILDER_HOSTNAME'], same['REHEARSAL_HOSTNAME']), ('tokyo-a1', ''))
-            elsewhere = packet_maker.builder_parameters('e' * 40, {'HOSTNAME': 'vmi3618928', 'NODE_ARCH': 'x64'}, packet_maker.load_builder('x64', 'vmi3618928', '192.0.2.1'))
-            self.assertEqual((elsewhere['BUILDER_HOSTNAME'], elsewhere['REHEARSAL_HOSTNAME']), ('hermes-home', 'hermes-home'))
-        with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_BUILDER_UNKNOWN_ARCHITECTURE'):
-            packet_maker.load_builder('riscv64', 'x', 'y')
+        for arch in ('riscv64', 'x64'):
+            with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_BUILDER_UNKNOWN_ARCHITECTURE'):
+                packet_maker.load_builder(arch, 'x', 'y')
 
     def test_the_arm_builder_reaches_the_target_over_ssh_as_the_build_account(self):
         hermes = packet_maker.Hermes('thirteenth-1234abcd-20261027t010203', packet_maker.load_builder('arm64', 'tokyo-a1', '192.0.2.7'))
@@ -920,21 +948,25 @@ class ArmTargetTest(RenderedPacket):
         self.assertEqual((upload[0], upload[-2], upload[-1]), ('scp', '/tmp/a', 'himawari-build@192.0.2.7:/remote/b'))
 
 
+FAKE_SSH = '#!/bin/bash\nexec bash -c "${@: -1}"\n'
+FAKE_SCP = '#!/bin/bash\nremote="${@: -1}"; remote="${remote#*:}"; local="${@: -2:1}"; cp "$local" "$remote.upload-tmp" && mv "$remote.upload-tmp" "$remote"\n'
+
+
 class HermesCommandTest(unittest.TestCase):
     TAG = '[PG-1]'
 
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.root = Path(self.directory.name)
-        wrapper = self.root / 'hermes-ssh.sh'
-        wrapper.write_text('#!/bin/bash\nexec bash -c "$1"\n')
-        wrapper.chmod(0o755)
-        upload = self.root / 'hermes-upload.sh'
-        upload.write_text('#!/bin/bash\ncp "$1" "$2.upload-tmp" && mv "$2.upload-tmp" "$2"\n')
-        upload.chmod(0o755)
-        self.environment = {'HIMAWARI_HERMES_SSH': str(wrapper), 'HIMAWARI_HERMES_UPLOAD': str(upload), 'HIMAWARI_HERMES_POLL_SECONDS': '0.05'}
+        ssh = self.root / 'ssh'
+        ssh.write_text(FAKE_SSH)
+        ssh.chmod(0o755)
+        self.scp = self.root / 'scp'
+        self.scp.write_text(FAKE_SCP)
+        self.scp.chmod(0o755)
+        self.environment = {'HIMAWARI_PACKET_SSH': str(ssh), 'HIMAWARI_PACKET_SCP': str(self.scp), 'HIMAWARI_HERMES_POLL_SECONDS': '0.05'}
         os.environ.update(self.environment)
-        self.hermes = packet_maker.Hermes('thirteenth-1234abcd-20261027t010203')
+        self.hermes = packet_maker.Hermes('thirteenth-1234abcd-20261027t010203', packet_maker.load_builder('arm64', 'tokyo-a1', '192.0.2.7'))
         self.hermes.work = str(self.root / 'work' / self.hermes.run_id)
         self.hermes.scripts = str(self.root / 'scripts' / self.hermes.run_id)
 
@@ -976,14 +1008,13 @@ class HermesCommandTest(unittest.TestCase):
         with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_HERMES_PREFLIGHT_FAILED .*HERMES_WALKTHROUGH_FAILED HOST_UNEXPECTED'):
             self.hermes.preflight()
 
-    def test_an_upload_area_the_wrapper_refuses_is_found_before_any_build(self):
-        refusing = self.root / 'refusing-upload.sh'
-        refusing.write_text('#!/bin/bash\ncase "$2" in ' + str(self.root / 'scripts') + '/*) cp "$1" "$2.upload-tmp" && mv "$2.upload-tmp" "$2" ;; *) echo "HERMES_UPLOAD_REMOTE_OUTSIDE_TEST_AREA: $2" >&2; exit 3 ;; esac\n')
+    def test_an_upload_area_the_target_refuses_is_found_before_any_build(self):
+        refusing = self.root / 'refusing-scp'
+        refusing.write_text('#!/bin/bash\nremote="${@: -1}"; remote="${remote#*:}"; case "$remote" in ' + str(self.root / 'scripts') + '/*) exec ' + shlex.quote(str(self.scp)) + ' "$@" ;; *) echo "scp: $remote: Permission denied" >&2; exit 1 ;; esac\n')
         refusing.chmod(0o755)
-        self.hermes.upload_wrapper = str(refusing)
-        with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_HERMES_UPLOAD_AREA_REFUSED .*HERMES_UPLOAD_REMOTE_OUTSIDE_TEST_AREA'):
-            self.hermes.probe_uploads()
-        self.hermes.upload_wrapper = os.environ['HIMAWARI_HERMES_UPLOAD']
+        with unittest.mock.patch.dict(os.environ, {'HIMAWARI_PACKET_SCP': str(refusing)}):
+            with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_HERMES_UPLOAD_AREA_REFUSED .*Permission denied'):
+                self.hermes.probe_uploads()
         self.hermes.probe_uploads()
         self.assertEqual(list(Path(self.hermes.scripts).iterdir()), [])
         self.assertEqual(list(Path(self.hermes.work + '-inputs').iterdir()), [])
@@ -1002,13 +1033,6 @@ class HermesCommandTest(unittest.TestCase):
         self.hermes.upload_check_materials(packet)
         self.assertTrue((Path(self.hermes.work) / 'materials' / 'context.json').is_file())
         self.assertTrue((Path(self.hermes.work + '-inputs') / bundle.name).is_file())
-
-    def test_builder_uploads_go_where_the_hermes_upload_wrapper_allows(self):
-        settings = json.loads((HERE / 'hermes' / 'builder.json').read_text())
-        allowed = ('/home/andy/himawari-tests/', '/data/hermes/himawari/tool-audit-round2/')
-        for key in ('workRoot', 'scriptRoot'):
-            self.assertTrue(settings[key].startswith(allowed), key)
-        self.assertTrue(settings['workRoot'].startswith('/data/'))
 
     def test_materials_are_fetched_and_digests_checked(self):
         remote = Path(self.hermes.work) / 'materials'
@@ -1201,8 +1225,6 @@ class ReleaseWalkthroughTest(unittest.TestCase):
         self.assertIn('LOCKED_PYTHON_MISSING', run.stderr)
 
     def test_the_generator_runs_the_preflight_before_any_build(self):
-        settings = json.loads((HERE / 'hermes' / 'builder.json').read_text())
-        self.assertTrue(settings['piToolBin'].startswith('/home/andy/himawari-tests/'))
         source = (HERE / 'make-packet.py').read_text()
         body = source[source.index('def prepare(arguments):'):]
         self.assertLess(body.index('hermes.preflight()'), body.index("step('discover'"))
@@ -1242,11 +1264,11 @@ class HermesCleanupTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             calls = root / 'calls'
-            wrapper = root / 'hermes-ssh.sh'
-            wrapper.write_text('#!/bin/bash\necho "$1" >> ' + shlex.quote(str(calls)) + '\n')
-            wrapper.chmod(0o755)
-            with unittest.mock.patch.dict(os.environ, {'HIMAWARI_HERMES_SSH': str(wrapper)}):
-                hermes = packet_maker.Hermes('twentieth-e9d30b22-20261030t010000')
+            ssh = root / 'ssh'
+            ssh.write_text('#!/bin/bash\necho "${@: -1}" >> ' + shlex.quote(str(calls)) + '\n')
+            ssh.chmod(0o755)
+            with unittest.mock.patch.dict(os.environ, {'HIMAWARI_PACKET_SSH': str(ssh)}):
+                hermes = packet_maker.Hermes('twentieth-e9d30b22-20261030t010000', packet_maker.load_builder('arm64', 'target', '192.0.2.1'))
                 with unittest.mock.patch.object(packet_maker, 'build_packet', side_effect=SystemExit('PACKET_HERMES_STEP_FAILED')), \
                         unittest.mock.patch.object(packet_maker, 'Hermes', return_value=hermes), \
                         unittest.mock.patch.object(packet_maker, 'load_instance', return_value={'host': {'address': '192.0.2.1'}}), \
@@ -1482,13 +1504,13 @@ class SourceBundleTest(unittest.TestCase):
 
     def test_hermes_gets_its_own_whole_bundle_when_it_lacks_the_base(self):
         first, second, third, fourth = self.commits
-        wrapper = self.root / 'hermes-ssh.sh'
-        wrapper.write_text('#!/bin/bash\nexec bash -c "$1"\n')
-        wrapper.chmod(0o755)
+        ssh = self.root / 'ssh'
+        ssh.write_text(FAKE_SSH)
+        ssh.chmod(0o755)
         builder_repo = self.root / 'builder-repo'
         subprocess.run(['git', 'clone', '-q', '--no-checkout', str(self.repo), str(builder_repo)], check=True)
-        with unittest.mock.patch.dict(os.environ, {'HIMAWARI_HERMES_SSH': str(wrapper)}):
-            hermes = packet_maker.Hermes('twentyfourth-1234abcd-20261101t010203')
+        with unittest.mock.patch.dict(os.environ, {'HIMAWARI_PACKET_SSH': str(ssh)}):
+            hermes = packet_maker.Hermes('twentyfourth-1234abcd-20261101t010203', packet_maker.load_builder('arm64', 'target', '192.0.2.1'))
             hermes.settings = {**hermes.settings, 'source': str(builder_repo)}
             self.assertTrue(hermes.has_commit(third))
             self.assertFalse(hermes.has_commit('e' * 40))
@@ -2088,6 +2110,89 @@ class ProductionStartupBudgetTest(unittest.TestCase):
         deadlines = re.findall(r'deadline = time\.monotonic\(\) \+ ([0-9]+)\n', switch)
         self.assertEqual(len(deadlines), 1)
         self.assertGreater(int(deadlines[0]) * 1000, budget_ms + INSTANCE['startupReadyMarginSeconds'] * 1000)
+
+
+FIRST_TOOLS_REFS = ['himawari.pi-coding', 'himawari.public-search', 'himawari.public-fetch']
+FIRST_TOOLS_PARAMETERS = {'FIRST_TOOLS': '1', 'NEW_CAPABILITY_REFS_JSON': json.dumps(FIRST_TOOLS_REFS, separators=(',', ':'))}
+
+
+class FirstToolsMaintenanceTest(RenderedPacket):
+    TAG = '[PG-2]'
+
+    def hashes(self, packet):
+        return {path.relative_to(packet).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest() for path in packet.rglob('*') if path.is_file()}
+
+    def s9(self, packet):
+        spec = importlib.util.spec_from_file_location('s9_control_' + packet.name, packet / 'maintenance' / 'S9-control-files.py')
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_the_two_renders_differ_only_in_the_files_that_carry_the_new_capability_list(self):
+        upgrade = self.hashes(self.render())
+        first = self.hashes(self.render(**FIRST_TOOLS_PARAMETERS))
+        self.assertEqual(set(upgrade), set(first))
+        self.assertEqual({name for name in upgrade if upgrade[name] != first[name]}, {'signing/cloud-capability-manifest.mjs', 'signing/verify-capability-manifest.mjs', 'signing/finalize-binding-inputs.py', 'systemd/S2-stop-and-inspect.py', 'systemd/S7-switch-start-readback.py', 'systemd/S7-startup-readback.mjs', 'install/S9-clean-transport.py'})
+
+    def test_maintenance_fixtures_pass_in_the_first_tools_render(self):
+        packet = self.render(**FIRST_TOOLS_PARAMETERS)
+        scratch = self.root / 'fixture-temp-first'
+        scratch.mkdir()
+        result = subprocess.run([shutil.which('node'), str(packet / 'maintenance' / 'verify-fixtures.mjs')], capture_output=True, text=True, cwd=HERE.parents[1], env={**os.environ, 'HIMAWARI_TEST_TEMP_ROOT': str(scratch)}, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr[-2000:])
+        counts = json.loads(result.stdout.strip().splitlines()[-1])['counts']
+        for group in ('firstToolsAccepted', 'firstToolsPendingAccepted', 'firstToolsRegisteredAccepted', 'firstToolsGrantRejections', 'firstToolsPendingRejections', 'firstToolsRegisteredRejections'):
+            self.assertGreater(counts[group], 0, group)
+
+    def frozen(self, capabilities):
+        grant_bytes = json.dumps({'id': 'directory:himawari-prod-workspace-20261015', 'revision': 1})
+        grant = {'routeKey': 'coding', 'grantId': 'directory:himawari-prod-workspace-20261015', 'stateRevision': 1, 'metadataSha256': hashlib.sha256(grant_bytes.encode()).hexdigest()}
+        return {'directoryGrants': [grant], 'capabilities': capabilities}, {'revision': 1, 'value_json': grant_bytes}
+
+    def test_s9_restore_of_a_first_tools_deployment_needs_a_catalog_with_no_registrations(self):
+        module = self.s9(self.render(**FIRST_TOOLS_PARAMETERS))
+        binding = {'workspace': {'decisionRef': 'G90', 'routeKey': 'coding', 'grantId': 'directory:himawari-prod-workspace-20261015', 'canonicalPath': '/var/lib/himawari/workspace', 'subdirectories': ['files', 'repos']}}
+        frozen, grant_row = self.frozen([])
+        self.assertEqual(module.validate_restored_catalog(binding, frozen, grant_row, {}, True, 0)['capabilityUpgradeDiscarded'], True)
+        row = {'id': 'himawari.pi-coding', 'version': '1.0.0', 'status': 'active', 'revision': 1, 'integrity': 'sha256:' + 'a' * 64, 'record_json': '{}'}
+        for rows, count in (({}, 1), ({'himawari.pi-coding': row}, 1), ({}, None)):
+            with self.assertRaisesRegex(RuntimeError, 'TWELFTH_S9_RESTORED_CATALOG_NOT_AT_S0'):
+                module.validate_restored_catalog(binding, frozen, grant_row, rows, True, count)
+        with self.assertRaisesRegex(RuntimeError, 'TWELFTH_S9_FROZEN_CATALOG_INVALID'):
+            module.validate_restored_catalog(binding, frozen, grant_row, {})
+        with self.assertRaisesRegex(RuntimeError, 'TWELFTH_S9_RESTORED_GRANT_CHANGED'):
+            module.validate_restored_catalog(binding, frozen, {'revision': 2, 'value_json': grant_row['value_json']}, {}, True, 0)
+
+    def test_s9_control_files_skip_the_snapshot_and_attestation_only_when_they_are_absent_in_a_first_tools_restore(self):
+        module = self.s9(self.render(**FIRST_TOOLS_PARAMETERS))
+        for name in ('CONFIG', 'UNIT', 'SNAPSHOT', 'ATTESTATION'):
+            setattr(module, name, self.root / name.lower())
+        for name in ('CONFIG', 'UNIT'):
+            getattr(module, name).write_text('x')
+        self.assertEqual([entry[1] for entry in module.control_files(False)], ['config.json', 'unit.service', 'capability-deployment.json', 'startup-attestation.json'])
+        self.assertEqual([entry[1] for entry in module.control_files(True)], ['config.json', 'unit.service'])
+        module.SNAPSHOT.write_text('x')
+        self.assertEqual([entry[1] for entry in module.control_files(True)], ['config.json', 'unit.service', 'capability-deployment.json'])
+
+    def test_s9_first_tools_state_is_read_from_the_original_configuration_and_must_match_the_frozen_catalog(self):
+        module = self.s9(self.render(**FIRST_TOOLS_PARAMETERS))
+        module.EVIDENCE = self.root / 'evidence'
+        module.EVIDENCE.mkdir()
+        module.safe_file = lambda filename, uid=0, mode=None: Path(filename).read_bytes()
+        module.OLD_CONFIG_SHA = hashlib.sha256(b'{"runPolicy": {}}').hexdigest()
+        (module.EVIDENCE / 'original-config.json').write_bytes(b'{"runPolicy": {}}')
+        self.assertIs(module.first_tools_restore({'capabilities': []}), True)
+        with self.assertRaisesRegex(RuntimeError, 'TWELFTH_S9_FIRST_TOOLS_STATE_INCONSISTENT'):
+            module.first_tools_restore({'capabilities': [{'capabilityRef': 'himawari.pi-coding'}]})
+        installed = b'{"capabilityDeployment": {"snapshotPath": "/x", "sha256": "sha256:00"}}'
+        (module.EVIDENCE / 'original-config.json').write_bytes(installed)
+        module.OLD_CONFIG_SHA = hashlib.sha256(installed).hexdigest()
+        self.assertIs(module.first_tools_restore({'capabilities': [{'capabilityRef': 'himawari.pi-coding'}]}), False)
+        with self.assertRaisesRegex(RuntimeError, 'TWELFTH_S9_FIRST_TOOLS_STATE_INCONSISTENT'):
+            module.first_tools_restore({'capabilities': []})
+        module.OLD_CONFIG_SHA = '0' * 64
+        with self.assertRaisesRegex(RuntimeError, 'TWELFTH_S9_ORIGINAL_CONTROL_BYTES_CHANGED'):
+            module.first_tools_restore({'capabilities': []})
 
 
 if __name__ == '__main__':

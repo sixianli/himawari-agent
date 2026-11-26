@@ -16,11 +16,9 @@ import type {
   DeviceActionStorePort,
   ExecutionEnvironmentStorePort,
   ExternalMemoryProposalStorePort,
-  GapCaseMarkPort,
   GatewayReadModelPort,
   GitHubIntegrationStatePort,
   GovernanceMutationReceiptStorePort,
-  HomeUrgencyStorePort,
   InboxStorePort,
   LedgerObservationPort,
   McpConnectionStorePort,
@@ -38,7 +36,6 @@ import type {
   ModelBudgetPort,
   ModelInvocationIdentityPort,
   ModelUsageStorePort,
-  MuseIntakePort,
   OwnerIdentityStatePort,
   OwnerPreferencesStorePort,
   OwnerRuleStorePort,
@@ -314,6 +311,7 @@ export class SqliteDurableAdapters {
         this.context.read("trace.readRun", { runId, afterSequence, limit }),
       readSession: (sessionId, afterRecordedAt, limit) =>
         this.context.read("trace.readSession", { sessionId, afterRecordedAt, limit }),
+      readRecentByType: (input) => this.context.read("trace.readRecentByType", input),
     });
   }
 
@@ -934,6 +932,7 @@ export class SqliteDurableAdapters {
       appendHistory: (input) => this.context.write("memory.appendHistory", input),
       listHistory: (input) => this.context.read("memory.listHistory", input),
       readHistory: (input) => this.context.read("memory.readHistory", input),
+      listHistoryAfter: (input) => this.context.read("memory.listHistoryAfter", input),
       numbers: (input) => this.context.read("memory.numbers", input),
       byNumber: (input) => this.context.read("memory.byNumber", input),
     });
@@ -1069,15 +1068,6 @@ export class SqliteDurableAdapters {
     });
   }
 
-  homeUrgency(): HomeUrgencyStorePort {
-    return Object.freeze<HomeUrgencyStorePort>({
-      listScores: (input) => this.context.read("homeUrgency.listScores", input),
-      listRecentFailures: (input) => this.context.read("homeUrgency.listRecentFailures", input),
-      countSince: (input) => this.context.read("homeUrgency.countSince", input),
-      recordCall: (input) => this.context.write("homeUrgency.recordCall", input),
-    });
-  }
-
   ownerRules(): OwnerRuleStorePort {
     return Object.freeze<OwnerRuleStorePort>({
       list: (input) => this.context.read("ownerRule.list", input),
@@ -1105,6 +1095,13 @@ export class SqliteDurableAdapters {
       spentMicros: (input) => this.context.read("subthread.spentMicros", input),
       listExchanges: (input) => this.context.read("subthread.listExchanges", input),
       recordExchange: (input) => this.context.write("subthread.recordExchange", input),
+      listAwaitingApproval: (input) => this.context.read("subthread.listAwaitingApproval", input),
+      createTimer: (input) => this.context.write("subthread.createTimer", input),
+      readTimer: (input) => this.context.read("subthread.readTimer", input),
+      listTimers: (input) => this.context.read("subthread.listTimers", input),
+      listDueTimers: (input) => this.context.read("subthread.listDueTimers", input),
+      advanceTimer: (input) => this.context.write("subthread.advanceTimer", input),
+      setTimerStatus: (input) => this.context.write("subthread.setTimerStatus", input),
       recordResult: (input) => this.context.write("subthread.recordResult", input),
       listResults: (input) => this.context.read("subthread.listResults", input),
       readResult: (input) => this.context.write("subthread.readResult", input),
@@ -1127,6 +1124,8 @@ export class SqliteDurableAdapters {
       clearSummary: (input) => this.context.write("inbox.clearSummary", input),
       readSettings: (input) => this.context.write("inbox.readSettings", input),
       changeSettings: (input) => this.context.write("inbox.changeSettings", input),
+      recordUrgency: (input) => this.context.write("inbox.recordUrgency", input),
+      readUrgency: (input) => this.context.write("inbox.readUrgency", input),
     });
   }
 
@@ -1220,9 +1219,6 @@ export class SqliteDurableAdapters {
       markPushEnqueued: (input) => this.context.write("proactive.markPushEnqueued", input),
       readPush: (input) => this.context.read("proactive.readPush", input),
       readInsights: (input) => this.context.read("proactive.readInsights", input),
-      previewBackoff: (input) => this.context.read("proactive.previewBackoff", input),
-      listBackoff: (input) => this.context.read("proactive.listBackoff", input),
-      restoreBackoff: (input) => this.context.write("proactive.restoreBackoff", input),
       listSourceSettings: (input) => this.context.read("proactive.listSourceSettings", input),
       writeSourceSettings: (input) => this.context.write("proactive.writeSourceSettings", input),
       processedSince: (input) => this.context.read("proactive.processedSince", input),
@@ -1232,14 +1228,6 @@ export class SqliteDurableAdapters {
     return Object.freeze<OwnerPreferencesStorePort>({
       read: (input) => this.context.read("ownerPreferences.read", input),
       write: (input) => this.context.write("ownerPreferences.write", input),
-    });
-  }
-
-  gapCaseMarks(): GapCaseMarkPort {
-    return Object.freeze<GapCaseMarkPort>({
-      mark: (input) => this.context.write("decisionLedger.gapMark", input),
-      unmark: (input) => this.context.write("decisionLedger.gapUnmark", input),
-      list: (input) => this.context.read("decisionLedger.gapMarks", input),
     });
   }
 
@@ -1253,13 +1241,10 @@ export class SqliteDurableAdapters {
       rate: (input) => this.context.write("decisionLedger.rate", input),
       listReviewPool: (input) => this.context.read("decisionLedger.listReviewPool", input),
       rateMany: (input) => this.context.write("decisionLedger.rateMany", input),
-      recordMuse: (input) => this.context.write("decisionLedger.recordMuse", input),
-      listMuse: (input) => this.context.read("decisionLedger.listMuse", input),
       lastRuleUses: (input) => this.context.read("decisionLedger.lastRuleUses", input),
       listSignals: (input) => this.context.read("decisionLedger.listSignals", input),
       readCalibrationRows: (input) =>
         this.context.read("decisionLedger.readCalibrationRows", input),
-      readGapCandidates: (input) => this.context.read("decisionLedger.readGapCandidates", input),
       readMailTrace: (input) => this.context.read("decisionLedger.readMailTrace", input),
     });
   }
@@ -1276,18 +1261,6 @@ export class SqliteDurableAdapters {
       appendCheck: (input) => this.context.write("ledgerObservation.appendCheck", input),
       listChecks: (input) => this.context.read("ledgerObservation.listChecks", input),
       listEvents: (input) => this.context.read("ledgerObservation.listEvents", input),
-    });
-  }
-
-  museIntake(): MuseIntakePort {
-    return Object.freeze<MuseIntakePort>({
-      ingestBatch: (input) => this.context.write("museIntake.ingestBatch", input),
-      listItems: (input) => this.context.read("museIntake.listItems", input),
-      channelStatus: (input) => this.context.read("museIntake.channelStatus", input),
-      checkChannel: (input) => this.context.write("museIntake.checkChannel", input),
-      setPaused: (input) => this.context.write("museIntake.setPaused", input),
-      rate: (input) => this.context.write("museIntake.rate", input),
-      clearAll: (input) => this.context.write("museIntake.clearAll", input),
     });
   }
 

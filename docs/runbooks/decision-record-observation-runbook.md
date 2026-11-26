@@ -2,24 +2,15 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:864e3522a25e08609e9620ae89f1690072349512795f8c1ae9a0915dc5ef3341"
 supersedes: ""
 superseded_by: ""
 date: "2026-11-03"
 covers: ".agents/instructions/delivery-mode.md, apps/agent-service/src/production-observation.ts, packages/application/src/services/ledger-observation.ts, packages/persistence-sqlite/src/migrations/0074_ledger_observation.sql, scripts/delivery-mode/deploy.sh, scripts/delivery-mode/packet-template/s0-db/read-s0-db.mjs"
-verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
+verified_at: "7c8521fe5f55e7dd57c5bd52badd16eef647502e"
 ---
 
 # 决策记录观察期 Runbook
 
-<!-- runbook-contract:
-- https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0155-decision-record-observation-and-weekly-report-page.md
-- apps/agent-service/src/production-observation.ts
-- packages/application/src/services/ledger-observation.ts
-- packages/persistence-sqlite/src/migrations/0074_ledger_observation.sql
-- scripts/calibration-report/report.mjs
-- scripts/delivery-mode/packet-template/s0-db/read-s0-db.mjs
--->
 
 本手册说明 P0-8 的“连续运行验收”怎样做：带观察功能的版本上线以后，Andy 在网页上选数据起点，服务每天自己检查决策记录（数据库表 `decision_ledger`，记录 Himawari 每次拿主意的那张表）有没有正常写入，第 8 天出首份校准周报。决定和检查规则见 [ADR 0302](../adr/0302-decision-records-and-calibration.md)。本手册里的时间都是日本时间（JST）。
 
@@ -55,7 +46,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 - 决定、检查项和门槛：[ADR 0302](../adr/0302-decision-records-and-calibration.md)。
 - 检查规则代码：`packages/application/src/services/ledger-observation.ts`；服务定时任务：`apps/agent-service/src/production-observation.ts`；表结构：`packages/persistence-sqlite/src/migrations/0074_ledger_observation.sql`。
-- 生产访问规则：[交付模式](../../.agents/instructions/delivery-mode.md)第 29 行（可以以 `root` 或 `himawari-prod` 登录读 `/var/lib/himawari`，不打印、不带出机密，不以生产账号跑测试）。
+- 生产访问规则：[交付模式](../../.agents/instructions/delivery-mode.md#fast-mode)里“生产访问”一条（可以以 `root` 或 `himawari-prod` 登录读 `/var/lib/himawari`，不打印、不带出机密，不以生产账号跑测试）。
 - 事故和门槛：`.claude/rules/incident-gates.md`、`docs/incidents-and-gates.md`。
 
 [↑ 回到阅读导航](#contents)

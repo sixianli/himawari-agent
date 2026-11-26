@@ -699,11 +699,6 @@ describe("[iOS-7] proactive source registry", () => {
         const check = h.checker(source);
         check.reader.items = [mail(source, id)];
         expect(await check.service.run()).toMatchObject({ scenario: source, verdict: "silent" });
-        h.exec(
-          `INSERT OR REPLACE INTO proactive_push_backoff (owner_id, agent_id, source, class_key, stage,
-             since_at, ignored_count, updated_at)
-           VALUES ('${OWNER_ID}', '${AGENT_ID}', '${source}', 'due:example.com', 1, '${h.clock.now()}', 3, '${h.clock.now()}')`,
-        );
       }
     };
     const left = (table: string, column = "source", where = "") =>
@@ -713,7 +708,6 @@ describe("[iOS-7] proactive source registry", () => {
     const everywhere = () => ({
       insights: left("source_insights"),
       processed: left("proactive_processed_messages"),
-      backoff: left("proactive_push_backoff"),
       decisions: left("decision_ledger", "scenario", "WHERE kind = 'proactive'"),
       connections: left("proactive_connections"),
       pushes: h.query("SELECT COUNT(*) AS total FROM proactive_pushes")[0]?.["total"],
@@ -723,7 +717,6 @@ describe("[iOS-7] proactive source registry", () => {
     expect(await everywhere()).toEqual({
       insights: [],
       processed: both,
-      backoff: both,
       decisions: both,
       connections: both,
       pushes: 0,
@@ -733,7 +726,6 @@ describe("[iOS-7] proactive source registry", () => {
     expect(await everywhere()).toEqual({
       insights: [],
       processed: ["gmail"],
-      backoff: ["gmail"],
       decisions: ["gmail"],
       connections: both,
       pushes: 0,
@@ -746,7 +738,6 @@ describe("[iOS-7] proactive source registry", () => {
     expect(after).toMatchObject({
       insights: [],
       processed: ["gmail", "gmail"],
-      backoff: ["gmail"],
       connections: ["gmail"],
     });
     expect(after.decisions.filter((source) => source === "gmail")).toHaveLength(2);

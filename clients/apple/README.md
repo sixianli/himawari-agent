@@ -1,7 +1,7 @@
 <a id="apple-clients"></a>
 # Himawari 苹果客户端
 
-这里是 Himawari 的 iPhone App 和 Mac 菜单栏 App（以后还有 Apple Watch）。设计和分批见[详细设计](../../docs/execution/specs/2026-11-11-apple-device-body-design.md)和[实施计划](../../docs/execution/plans/2026-11-11-apple-device-body-plan.md)；界面照 2026-11-25 定下的原型第 4 版 `docs/assets/apple-clients/2026-11-25-v4/` 做（颜色、尺寸、字号由其中的 `tokens.json` 生成；Mac 和手表暂停，它们的数值在这份文件里照抄第 2 版）。现在做到第 2 批（配对、主对话）、第 6 批（分享面板、Safari 扩展）和第 10B 批（Mac 菜单栏 App）。
+这里是 Himawari 的 iPhone App 和 Mac 菜单栏 App（以后还有 Apple Watch）。设计和建造顺序见[详细设计](../../docs/execution/specs/2026-11-11-apple-device-body-design.md)；界面照 2026-11-25 定下的原型第 4 版 `docs/assets/apple-clients/2026-11-25-v4/` 做（颜色、尺寸、字号由其中的 `tokens.json` 生成；Mac 和手表暂停，它们的数值在这份文件里照抄第 2 版）。现在做到第 2 批（配对、主对话）、第 6 批（分享面板、Safari 扩展）和第 10B 批（Mac 菜单栏 App）。
 
 - [代码怎么分](#layout)
 - [在 Mac 上构建、测试、装到 iPhone](#on-the-mac)
@@ -22,7 +22,7 @@
 | 目标 | 放什么 | 谁维护 |
 | --- | --- | --- |
 | `HimawariCore` | 设备签名（按 RFC 9421，一种给 HTTP 请求签名的标准）、密钥（存在手机的安全芯片里）、配对、和服务器通信、事件流、待发消息队列、本地缓存。只用 Foundation，能在 Linux 上编译和测试 | 第 2 批 |
-| `HimawariDesign` | 颜色（浅色深色两套）、Himawari 说的话用的衬线字、卡片、胶囊按钮、玻璃圆钮、页签栏、葵盘标志、图标 | 第 2 批；别的批要加共用组件先找第 2 批线程 |
+| `HimawariDesign` | 颜色（浅色深色两套）、系统文本样式（全 App 只用系统字）、卡片、胶囊按钮、玻璃圆钮、页签栏、葵盘标志、图标 | 第 2 批；别的批要加共用组件先找第 2 批线程 |
 | `HimawariChat` | 主对话的聊天界面 | 第 2 批 |
 | `HimawariManage` | 记忆、设置等管理页面；现在只有两个入口占位，设置页里多了一行“让 Himawari 感知” | 第 11 批 |
 | `HimawariSenses` | 让 Himawari 感知：位置、日程、健康和运动、通讯录、相册、剪贴板六项的采集（只在 iPhone 上编译），以及总览、介绍、系统没允许、开着的一项这几屏。示例场景 `19-senses-1-overview` 到 `19-senses-5-denied`；场景名带 `system-prompt` 的会弹出真的系统询问框，`scripts/ui-review.sh` 拍之前清掉 App 的权限、拍完重启模拟器，免得询问框留在系统上盖住后面的场景；脚本也把模拟器的系统语言设成简体中文并强制 12 小时制，系统询问框才和原型一样是中文，状态栏时间才是原型里的“9:41”而不是“09:41” | 第 6 批 |

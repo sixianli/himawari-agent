@@ -37,4 +37,43 @@ final class SunflowerSeedsTests: XCTestCase {
             XCTAssertEqual(Double(seeds) / SunflowerSeeds.growthPerSecond(seeds: seeds), SunflowerSeeds.fullGrowthSeconds, accuracy: 0.0001)
         }
     }
+
+    private func visible(_ growth: Double, _ seeds: Int) -> Int {
+        SunflowerSeeds.at(growth: growth, seeds: seeds, startsEmpty: true).filter { $0.radius > 0 }.count
+    }
+
+    func testBusyMarkBreathesBetweenSeventyPercentAndTheWholeFlower() {
+        let counts = stride(from: 0.0, through: 20.0, by: 0.05).map {
+            visible(SunflowerSeeds.breathing(seconds: $0, seeds: 34, low: 0.7), 34)
+        }
+        XCTAssertEqual(counts.min(), 24)
+        XCTAssertEqual(counts.max(), 34)
+    }
+
+    func testTheChatPuckBreathesItsOwnEightyNineSeedsInsteadOfTheSizeTier() {
+        let seeds = Int(DesignTokens.Chat.puckSeeds)
+        XCTAssertEqual(seeds, 89)
+        XCTAssertEqual(SunflowerSeeds.seedCount(forDiameter: Double(DesignTokens.Chat.puckMark)), 34)
+        XCTAssertEqual(drawn(seeds).count, 89)
+        let counts = stride(from: 0.0, through: 20.0, by: 0.05).map {
+            visible(SunflowerSeeds.breathing(seconds: $0, seeds: seeds, low: Double(DesignTokens.Chat.puckBusyLow)), seeds)
+        }
+        XCTAssertEqual(counts.min(), 63)
+        XCTAssertEqual(counts.max(), 89)
+        let leg = Double(seeds) * (1 - Double(DesignTokens.Chat.puckBusyLow)) / SunflowerSeeds.growthPerSecond(seeds: seeds)
+        XCTAssertEqual(leg, SunflowerSeeds.fullGrowthSeconds * 0.3, accuracy: 0.0001)
+    }
+
+    func testBreathingMovesAtTheUsualGrowthSpeed() {
+        let leg = 34 * 0.3 / SunflowerSeeds.growthPerSecond(seeds: 34)
+        XCTAssertEqual(SunflowerSeeds.breathing(seconds: 0, seeds: 34, low: 0.7), 34 * 0.7, accuracy: 0.0001)
+        XCTAssertEqual(SunflowerSeeds.breathing(seconds: leg, seeds: 34, low: 0.7), 34, accuracy: 0.0001)
+        XCTAssertEqual(SunflowerSeeds.breathing(seconds: 2 * leg, seeds: 34, low: 0.7), 34 * 0.7, accuracy: 0.0001)
+    }
+
+    func testTheEmptyChatFlowerGrowsOnceAndStaysWhole() {
+        XCTAssertEqual(visible(SunflowerSeeds.growingOnce(seconds: 0, seeds: 144), 144), 0)
+        XCTAssertEqual(SunflowerSeeds.growingOnce(seconds: 1000, seeds: 144), SunflowerSeeds.resting(seeds: 144))
+        XCTAssertEqual(visible(SunflowerSeeds.growingOnce(seconds: 1000, seeds: 144), 144), 144)
+    }
 }

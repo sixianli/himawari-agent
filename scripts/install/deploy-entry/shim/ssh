@@ -1,0 +1,20 @@
+#!/bin/bash
+set -uo pipefail
+target=""
+while [[ "$#" -gt 0 ]]; do
+  case "$1" in
+    -o | -i | -p | -l | -F | -J | -E | -b | -c | -m | -S) shift 2 ;;
+    -*) shift ;;
+    *) target="$1"; shift; break ;;
+  esac
+done
+[[ -n "$target" ]] || { echo "shim ssh: no target" >&2; exit 255; }
+account="${target%@*}"
+[[ "$account" != "$target" ]] || account=root
+[[ "$account" =~ ^[a-z_][a-z0-9_-]*$ ]] || { echo "shim ssh: bad account $account" >&2; exit 255; }
+command="$*"
+if [[ "$account" == root ]]; then
+  cd /root 2>/dev/null || cd /
+  exec /bin/bash -c "$command"
+fi
+exec /usr/sbin/runuser -l "$account" -c "$command"

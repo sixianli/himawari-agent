@@ -8,7 +8,7 @@ node_bin=$1
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -q
-apt-get install -y -q --no-install-recommends bubblewrap socat ripgrep apparmor-utils
+apt-get install -y -q --no-install-recommends bubblewrap socat ripgrep apparmor-utils restic
 
 profile=/etc/apparmor.d/bwrap
 cat > "$profile" <<'PROFILE'

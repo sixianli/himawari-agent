@@ -288,24 +288,6 @@ export function ProactiveBanners({
           <span>{message("proactive.dailyLimit")}</span>
         </output>
       ) : null}
-      {overview.backoff.map((entry) => (
-        <div
-          key={entry.classKey}
-          className="proactive-banner"
-          data-tone="need"
-          data-testid={`backoff-${entry.classKey}`}
-        >
-          <span>
-            {message(entry.stage === 1 ? "proactive.backoff.stage1" : "proactive.backoff.stage2", {
-              domain: entry.domain,
-              count: entry.ignoredCount,
-            })}
-          </span>
-          <ActionButton onClick={() => void proactive.restoreBackoff(entry.classKey)}>
-            {message("proactive.backoff.restore")}
-          </ActionButton>
-        </div>
-      ))}
       {!overview.enabled ? (
         <output className="proactive-banner">
           <span>

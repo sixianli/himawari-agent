@@ -8,6 +8,7 @@ export type ExecutionLiveEvent =
       readonly itemId: string;
       readonly offset: number;
       readonly text: string;
+      readonly emittedAt: string;
     }
   | { readonly kind: "changed"; readonly runId: string };
 
@@ -20,11 +21,18 @@ export interface ExecutionLiveText {
 const RETAINED_RUNS = 200;
 
 export class ExecutionLiveFeed {
+  readonly #now: () => string;
   readonly #listeners = new Set<(event: ExecutionLiveEvent) => void>();
   readonly #texts = new Map<
     string,
     { readonly threadId: string; readonly itemId: string; readonly shown: string }
   >();
+
+  readonly #firstEmittedAt = new Map<string, string>();
+
+  constructor(now: () => string = () => new Date().toISOString()) {
+    this.#now = now;
+  }
 
   subscribe(listener: (event: ExecutionLiveEvent) => void): () => void {
     this.#listeners.add(listener);
@@ -39,7 +47,7 @@ export class ExecutionLiveFeed {
     readonly timestamp: unknown;
     readonly text: string;
   }): void {
-    if (!input.threadId) return;
+    if (!input.threadId || input.text.length === 0) return;
     const itemId = executionMessageItemId(input.runId, input.timestamp);
     const shown = input.text;
     const prior = this.#texts.get(input.runId);
@@ -52,6 +60,14 @@ export class ExecutionLiveFeed {
       const oldest = this.#texts.keys().next().value;
       if (oldest !== undefined) this.#texts.delete(oldest);
     }
+    const emittedAt = this.#now();
+    if (!this.#firstEmittedAt.has(input.runId)) {
+      this.#firstEmittedAt.set(input.runId, emittedAt);
+      if (this.#firstEmittedAt.size > RETAINED_RUNS) {
+        const oldest = this.#firstEmittedAt.keys().next().value;
+        if (oldest !== undefined) this.#firstEmittedAt.delete(oldest);
+      }
+    }
     this.#emit({
       kind: "text",
       threadId: input.threadId,
@@ -59,7 +75,12 @@ export class ExecutionLiveFeed {
       itemId,
       offset,
       text: shown.slice(offset),
+      emittedAt,
     });
+  }
+
+  firstEmittedAt(runId: string): string | null {
+    return this.#firstEmittedAt.get(runId) ?? null;
   }
 
   changed(runId: string): void {

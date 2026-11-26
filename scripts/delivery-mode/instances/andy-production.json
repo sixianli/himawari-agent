@@ -16,9 +16,38 @@
     "modelRef": "deepseek-primary",
     "contextWindow": 1000000,
     "maxTokens": 32768,
-    "publicFetchMaximumBytes": 102400
+    "publicFetchMaximumBytes": 102400,
+    "embedding": {
+      "ref": "local-embedding",
+      "role": "embedding",
+      "provider": "local-onnx",
+      "model": "jina-embeddings-v5-text-small-retrieval-int8",
+      "version": "onnx-int8-v1",
+      "allowedDataClassifications": ["public", "private", "sensitive"],
+      "disclosure": "local_only",
+      "secretRef": null,
+      "capabilities": ["embedding"],
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0
+      },
+      "dimensions": 1024,
+      "artifactSha256": "dcf55698530d735cf4ab00ddd4406e88ff74b09de204a6a4c1e2c7078e753366"
+    },
+    "speech": {
+      "adapter": "dashscope-qwen-tts",
+      "magpieModelRef": "deepseek-primary",
+      "provider": "qwen",
+      "model": "qwen3-tts-flash",
+      "voice": "Serena",
+      "languageType": "Chinese",
+      "firstAudioTimeoutMs": 1500,
+      "maximumCharacters": 600
+    }
   },
-  "onDeployFailure": "keep",
+  "onDeployFailure": "rollback",
   "materialCache": {
     "minBytes": 16777216,
     "maxBytes": 1073741824

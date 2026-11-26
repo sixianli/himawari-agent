@@ -280,7 +280,6 @@ describe.each(["worker", "direct"] as const)("[P4-5] real memory eval through %s
       now: () => resource.clock.value,
       newId: () => `real-eval-${++sequence}`,
       promptSha256: "c".repeat(64),
-      maxSelectedMemories: 3,
       recallEstimateMicros: 0,
       listMemories: () => resource.repository.productMemoryState().listActive(OWNER_ID, AGENT_ID),
       readMemoryText: async (record) => resource.content.values.get(record.contentRef),

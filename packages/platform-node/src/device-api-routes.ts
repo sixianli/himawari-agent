@@ -24,19 +24,23 @@ import {
   PERCEPTION_SENSES,
   PERCEPTION_TEXT_MAXIMUM,
   PERCEPTION_UTTERANCE_ID_PATTERN,
+  PHONE_VOICE_PROOF_PREFIX,
   PORT_ERROR_CODES,
+  TALK_PROOF_PREFIX,
   type ThreadGatewayRequestMessage,
   type UploadGrantPurpose,
+  type VaultService,
   VOICE_HEARD_NAME_MAXIMUM_CHARACTERS,
   VOICE_TRIGGERS,
-  type VoiceAddresseeOutcome,
-  type VoiceAddresseeRequest,
   type VoiceEvidence,
   type VoiceGates,
   type VoiceTrigger,
-  type VaultService,
 } from "@himawari-agent/application";
 import {
+  CHAT_ATTACHMENT_TEXT_CHARACTERS,
+  CHAT_ATTACHMENTS_PER_MESSAGE,
+  CHAT_IMAGE_DATA_URL,
+  CHAT_IMAGE_DATA_URL_CHARACTERS,
   DATA_EXPORT_ID_PATTERN,
   HOME_LOCALES,
   THREAD_GATEWAY_SCHEMA_VERSION,
@@ -65,11 +69,17 @@ import { DEVICE_PUSH_ERROR_CODES, DevicePushError, type DevicePushPort } from ".
 import type { DeviceSignedRequest } from "./device-request-signature.js";
 import {
   type AuthenticatedDeviceRequest,
+  type DeviceStreamDiagnostic,
   PAIRED_DEVICE_ERROR_CODES,
   PairedDeviceError,
   type PairedDeviceService,
 } from "./paired-device-service.js";
 import type { AuthorizedUpload, PerceptionService } from "./perception-service.js";
+import {
+  SPEECH_ERROR_CODES,
+  SpeechSynthesisError,
+  type SpeechSynthesisPort,
+} from "./speech-synthesis.js";
 import {
   PLAIN_TEXT_MAXIMUM_CHARACTERS,
   parseTextAdmission,
@@ -107,6 +117,9 @@ export const DEVICE_API_ROUTES = Object.freeze([
   { method: "GET", path: "threads/{threadId}/execution-stream", signed: true },
   { method: "GET", path: "threads/{threadId}/runs/{runId}/execution", signed: true },
   { method: "POST", path: "payloads/text", signed: true },
+  { method: "POST", path: "attachments", signed: true },
+  { method: "POST", path: "voice-timing", signed: true },
+  { method: "GET", path: "voice-timing", signed: true },
   { method: "POST", path: "uploads/begin", signed: true },
   { method: "POST", path: "perception", signed: true, uploadPurpose: "perception" },
   { method: "POST", path: "perception/media", signed: false, uploadPurpose: "media" },
@@ -132,6 +145,7 @@ export const DEVICE_API_ROUTES = Object.freeze([
   { method: "POST", path: "vault/change", signed: true },
   { method: "POST", path: "vault/approve", signed: true },
   { method: "POST", path: "vault/deny", signed: true },
+  { method: "POST", path: "speech", signed: true },
 ] as const);
 
 export const DEVICE_UPLOAD_GRANT_HEADER = "himawari-upload-grant" as const;
@@ -174,6 +188,9 @@ const MESSAGE_ID_PATTERN = /^[A-Za-z0-9_-]{16,64}$/u;
 const UTTERANCE_ID_PATTERN = PERCEPTION_UTTERANCE_ID_PATTERN;
 const MACHINE_STRING = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const MESSAGE_TEXT_MAXIMUM = PLAIN_TEXT_MAXIMUM_CHARACTERS;
+const ATTACHMENT_REQUEST_ID = /^[A-Za-z0-9_-]{16,96}$/u;
+const ATTACHMENT_ENVELOPE_BYTES = 1024;
+const UTF8_BYTES_PER_CHARACTER = 3;
 export type DeviceTextClassification = TextAdmissionClassification;
 const VOICE_KEYS = [
   "trigger",
@@ -295,11 +312,8 @@ export interface DeviceApiRouteOptions {
     }) => Promise<readonly string[]>;
   };
   readonly voiceGates?: () => VoiceGates;
-  readonly addressee?: (input: {
-    readonly authentication: GatewayAuthenticationContext;
-    readonly request: VoiceAddresseeRequest;
-  }) => Promise<VoiceAddresseeOutcome>;
   readonly prefetch?: UtterancePrefetchPort;
+  readonly speech?: SpeechSynthesisPort;
   readonly threadGateway: AgentThreadGatewayPort;
   readonly gateways: DeviceGateways;
   readonly audit: AuditLedgerPort;
@@ -310,7 +324,18 @@ export interface DeviceApiRouteOptions {
     readonly idempotencyKey: string;
     readonly content: string;
     readonly dataClassification?: DeviceTextClassification;
+    readonly contentType?: DevicePayloadContentType;
   }) => Promise<string>;
+  readonly chatAttachments?: () => DeviceChatAttachments;
+  readonly listVoiceTiming?: (limit: number) => Promise<readonly unknown[]>;
+  readonly recordVoiceTiming?: (input: {
+    readonly authentication: GatewayAuthenticationContext;
+    readonly messageId: string;
+    readonly runId: string;
+    readonly saidAt: string;
+    readonly firstTextAt: string;
+    readonly firstSoundAt: string | null;
+  }) => Promise<"recorded" | "unknown_run">;
   readonly streamThreadEvents: (input: {
     readonly gateway: AgentThreadGatewayPort;
     readonly authentication: GatewayAuthenticationContext;
@@ -448,6 +473,34 @@ export function presentPairedDevice(device: PairedDevice) {
   };
 }
 
+export type DevicePayloadContentType =
+  | "text/plain"
+  | "text/x-himawari-attachment"
+  | "text/x-himawari-image";
+
+export interface DeviceChatAttachments {
+  readonly images: boolean;
+}
+
+export function presentDeviceAttachments(
+  configuration: DeviceConfiguration,
+  chat: DeviceChatAttachments,
+) {
+  const room = Math.max(
+    0,
+    configuration.limits["device.request.body_bytes"] - ATTACHMENT_ENVELOPE_BYTES,
+  );
+  return {
+    textCharacters: Math.min(
+      CHAT_ATTACHMENT_TEXT_CHARACTERS,
+      Math.floor(room / UTF8_BYTES_PER_CHARACTER),
+    ),
+    imageCharacters: chat.images ? Math.min(CHAT_IMAGE_DATA_URL_CHARACTERS, room) : 0,
+    perMessage: CHAT_ATTACHMENTS_PER_MESSAGE,
+    messageCharacters: MESSAGE_TEXT_MAXIMUM,
+  };
+}
+
 export function presentDeviceLimits(configuration: DeviceConfiguration) {
   return DEVICE_HARD_LIMIT_KEYS.map((key) => ({
     key,
@@ -492,28 +545,67 @@ export async function presentDevicePerception(
   };
 }
 
+interface HeldDeviceStream {
+  readonly stream: Readable;
+  readonly connection: NodeJS.EventEmitter & { destroy(): unknown };
+  readonly openedAt: number;
+}
+
+const REOPEN_NUMBERS = ["lastConnected", "lastStatus", "lastError", "offline", "attempts"] as const;
+const DROP_REASON = /^[A-Za-z]{1,24}$/;
+const REPORTED_NUMBER = /^-?\d{1,9}$/;
+
+function reopenReport(query: string): Partial<DeviceStreamDiagnostic> {
+  const params = new URLSearchParams(query);
+  const lastDrop = params.get("lastDrop");
+  if (lastDrop === null || !DROP_REASON.test(lastDrop)) return {};
+  const report: Record<string, string | number> = { lastDrop };
+  for (const key of REOPEN_NUMBERS) {
+    const value = params.get(key);
+    if (value !== null && REPORTED_NUMBER.test(value)) report[key] = Number(value);
+  }
+  return report;
+}
+
 function holdDeviceStream(
-  counts: Map<string, number>,
+  held: Map<string, HeldDeviceStream[]>,
   deviceId: string,
+  path: string,
   stream: Readable,
   maximum: number,
-  connection: NodeJS.EventEmitter,
+  connection: NodeJS.EventEmitter & { destroy(): unknown },
+  report: (diagnostic: DeviceStreamDiagnostic) => void,
 ): void {
-  const open = counts.get(deviceId) ?? 0;
-  if (open >= maximum) {
-    stream.destroy();
-    throw new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.STREAM_LIMIT, 429, {
-      streamConnections: maximum,
+  const open = held.get(deviceId) ?? [];
+  const entry: HeldDeviceStream = { stream, connection, openedAt: Date.now() };
+  const heldSeconds = (since: number) => Math.round((Date.now() - since) / 1000);
+  while (open.length >= maximum) {
+    const oldest = open.shift();
+    if (!oldest) break;
+    report({
+      event: "device.stream_replaced",
+      deviceId,
+      path,
+      heldSeconds: heldSeconds(oldest.openedAt),
     });
+    oldest.stream.destroy();
+    oldest.connection.destroy();
   }
-  counts.set(deviceId, open + 1);
+  open.push(entry);
+  held.set(deviceId, open);
   let released = false;
   const release = () => {
     if (released) return;
     released = true;
-    const remaining = (counts.get(deviceId) ?? 1) - 1;
-    if (remaining > 0) counts.set(deviceId, remaining);
-    else counts.delete(deviceId);
+    report({
+      event: "device.stream_closed",
+      deviceId,
+      path,
+      heldSeconds: heldSeconds(entry.openedAt),
+    });
+    const remaining = (held.get(deviceId) ?? []).filter((other) => other !== entry);
+    if (remaining.length > 0) held.set(deviceId, remaining);
+    else held.delete(deviceId);
   };
   stream.once("close", release);
   stream.once("error", release);
@@ -554,14 +646,24 @@ async function* bounded(
 }
 
 export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApiRouteOptions) {
-  const streamCounts = new Map<string, number>();
+  const heldStreams = new Map<string, HeldDeviceStream[]>();
   const holdStream = (
+    request: FastifyRequest,
     deviceId: string,
     stream: Readable,
     maximum: number,
-    connection: NodeJS.EventEmitter,
+    connection: NodeJS.EventEmitter & { destroy(): unknown },
   ) => {
-    holdDeviceStream(streamCounts, deviceId, stream, maximum, connection);
+    const path = request.url.slice(DEVICE_API_PREFIX.length + 1).split("?")[0] ?? "";
+    options.devices.reportStream({
+      event: "device.stream_opened",
+      deviceId,
+      path,
+      ...reopenReport(rawQuery(request)),
+    });
+    holdDeviceStream(heldStreams, deviceId, path, stream, maximum, connection, (diagnostic) =>
+      options.devices.reportStream(diagnostic),
+    );
   };
   const scope = (authentication: GatewayAuthenticationContext): PairedDeviceScope =>
     ({
@@ -698,6 +800,9 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
           streamConnections: configuration.streamConnections,
           signatureToleranceSeconds: configuration.signatureToleranceSeconds,
           limits: presentDeviceLimits(configuration),
+          ...(options.chatAttachments
+            ? { attachments: presentDeviceAttachments(configuration, options.chatAttachments()) }
+            : {}),
           ...(options.perception
             ? {
                 perception: await presentDevicePerception(
@@ -905,6 +1010,75 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
           reply,
           await readFile({ authentication: authenticated.authentication, fileId }),
         );
+      });
+
+      device.post("/speech", async (request, reply) => {
+        await authenticate(request);
+        const body = json(request);
+        only(body, ["text"]);
+        const text = body["text"];
+        if (typeof text !== "string") return options.rejectBody(400);
+        if (!options.speech) return options.sendJson(reply, 503, { code: "SPEECH_UNAVAILABLE" });
+        const abort = new AbortController();
+        request.raw.once("close", () => abort.abort());
+        let audio: Awaited<ReturnType<SpeechSynthesisPort["synthesize"]>>;
+        try {
+          audio = await options.speech.synthesize({ text, signal: abort.signal });
+        } catch (error) {
+          const code =
+            error instanceof SpeechSynthesisError ? error.code : SPEECH_ERROR_CODES.UPSTREAM_FAILED;
+          request.log.warn(
+            {
+              event: "speech.failed",
+              code,
+              ...(error instanceof SpeechSynthesisError && error.upstreamStatus !== undefined
+                ? { upstreamStatus: error.upstreamStatus }
+                : {}),
+            },
+            "speech synthesis failed",
+          );
+          const status =
+            code === SPEECH_ERROR_CODES.INPUT_INVALID || code === SPEECH_ERROR_CODES.SENSITIVE_TEXT
+              ? 422
+              : code === SPEECH_ERROR_CODES.FIRST_AUDIO_TIMEOUT
+                ? 504
+                : 502;
+          return options.sendJson(reply, status, { code });
+        }
+        const started = performance.now();
+        let bytes = 0;
+        const log = request.log;
+        const counted = Readable.from(
+          (async function* () {
+            let completed = false;
+            try {
+              for await (const chunk of audio.chunks) {
+                bytes += chunk.byteLength;
+                yield Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength);
+              }
+              completed = true;
+            } finally {
+              log.info(
+                {
+                  event: "speech.synthesized",
+                  completed,
+                  characters: audio.characters,
+                  firstAudioMs: audio.firstAudioMs,
+                  streamMs: Math.round(performance.now() - started),
+                  bytes,
+                },
+                "speech synthesized",
+              );
+            }
+          })(),
+        );
+        return reply
+          .code(200)
+          .header("cache-control", "no-store")
+          .header("x-himawari-speech-first-audio-ms", String(audio.firstAudioMs))
+          .header("x-himawari-speech-sample-rate", String(audio.sampleRate))
+          .type(audio.mediaType)
+          .send(counted);
       });
 
       device.post("/usage/report", async (request, reply) => {
@@ -1250,7 +1424,13 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
               configuration.connectionMaxSeconds * 1000,
             ),
           );
-          holdStream(authenticated.device.id, stream, configuration.streamConnections, reply.raw);
+          holdStream(
+            request,
+            authenticated.device.id,
+            stream,
+            configuration.streamConnections,
+            reply.raw,
+          );
           try {
             options.setStreamHeaders(reply);
             return reply.send(stream);
@@ -1343,8 +1523,11 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
                 "text",
                 "utteranceId",
                 "voice",
+                "spoken",
               ].includes(key),
           ) ||
+          (body["spoken"] !== undefined &&
+            (body["spoken"] !== true || body["voice"] !== undefined)) ||
           (body["voice"] !== undefined &&
             (body["utteranceId"] === undefined || parseVoiceEvidence(body["voice"]) === null)) ||
           (body["utteranceId"] !== undefined &&
@@ -1361,6 +1544,7 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
           body["text"].length > MESSAGE_TEXT_MAXIMUM
         )
           options.rejectBody(400);
+        let heardByPhone = false;
         if (body["voice"] !== undefined) {
           const evidence = parseVoiceEvidence(body["voice"]) as VoiceEvidence;
           const verdict = decideVoiceCommand(evidence, options.voiceGates?.());
@@ -1368,24 +1552,7 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
             return options.sendJson(reply, 409, {
               error: { code: VOICE_COMMAND_UNCONFIRMED_CODE, reason: verdict.reason },
             });
-          const addressed = options.addressee
-            ? await options.addressee({
-                authentication,
-                request: {
-                  deviceId: authenticated.device.id,
-                  utteranceId: body["utteranceId"] as string,
-                  trigger: evidence.trigger,
-                  heardName: evidence.heardName,
-                  text: body["text"] as string,
-                },
-              })
-            : evidence.trigger === "hands_on"
-              ? "addressed"
-              : "addressed_unsure";
-          if (addressed !== "addressed")
-            return options.sendJson(reply, 409, {
-              error: { code: VOICE_COMMAND_UNCONFIRMED_CODE, reason: addressed },
-            });
+          heardByPhone = evidence.trigger !== "hands_on";
         }
         if (typeof body["utteranceId"] === "string")
           options.prefetch?.settle({
@@ -1428,7 +1595,7 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
             runId: `run:${suffix}`,
             sessionId: authentication.sessionId,
             contentRef,
-            sourceProofRef: `device:${authenticated.device.id}`,
+            sourceProofRef: `${heardByPhone ? PHONE_VOICE_PROOF_PREFIX : body["spoken"] === true ? TALK_PROOF_PREFIX : "device:"}${authenticated.device.id}`,
             dataClassification: "private",
             occurredAt: now().toISOString(),
             resultRef,
@@ -1441,6 +1608,77 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
             body["utteranceId"],
           );
         return options.sendJson(reply, 200, accepted);
+      });
+
+      device.post("/voice-timing", async (request, reply) => {
+        const { device: paired, authentication } = await authenticate(request);
+        if (!options.recordVoiceTiming) return options.rejectNotAllowed();
+        const body = json(request);
+        only(body, ["messageId", "saidAt", "firstTextAt", "firstSoundAt"]);
+        const { messageId, saidAt, firstTextAt, firstSoundAt } = body;
+        const instant = (value: unknown): value is string =>
+          typeof value === "string" &&
+          ISO_MILLISECONDS.test(value) &&
+          !Number.isNaN(Date.parse(value));
+        if (
+          typeof messageId !== "string" ||
+          !MESSAGE_ID_PATTERN.test(messageId) ||
+          !instant(saidAt) ||
+          !instant(firstTextAt) ||
+          (firstSoundAt !== null && !instant(firstSoundAt))
+        )
+          return options.rejectBody(400);
+        const outcome = await options.recordVoiceTiming({
+          authentication,
+          messageId,
+          runId: `run:${stableSuffix(paired.id, messageId)}`,
+          saidAt,
+          firstTextAt,
+          firstSoundAt,
+        });
+        if (outcome === "unknown_run") return options.rejectBody(404);
+        return options.sendJson(reply, 200, { recorded: true });
+      });
+
+      device.get("/voice-timing", async (request, reply) => {
+        await authenticate(request);
+        if (!options.listVoiceTiming) return options.rejectNotAllowed();
+        const query = new URLSearchParams(rawQuery(request));
+        const requested = query.get("limit");
+        if (requested !== null && !/^[1-9][0-9]{0,5}$/.test(requested))
+          return options.rejectBody(400);
+        const limit = Math.min(requested === null ? 20 : Number(requested), 50);
+        return options.sendJson(reply, 200, { items: await options.listVoiceTiming(limit) });
+      });
+
+      device.post("/attachments", async (request, reply) => {
+        const { device: paired, authentication } = await authenticate(request);
+        const chat = options.chatAttachments?.();
+        if (!chat) return options.rejectNotAllowed();
+        const body = json(request);
+        only(body, ["requestId", "content", "as"]);
+        const { requestId, content } = body;
+        const kind = body["as"];
+        if (
+          typeof requestId !== "string" ||
+          !ATTACHMENT_REQUEST_ID.test(requestId) ||
+          typeof content !== "string" ||
+          content.length === 0 ||
+          (kind !== "text" && kind !== "image")
+        )
+          return options.rejectBody(400);
+        if (kind === "image" && !chat.images) return options.rejectBody(415);
+        const limits = presentDeviceAttachments(options.configuration(), chat);
+        if (content.length > (kind === "image" ? limits.imageCharacters : limits.textCharacters))
+          return options.rejectBody(413);
+        if (kind === "image" && !CHAT_IMAGE_DATA_URL.test(content)) return options.rejectBody(400);
+        const ref = await options.protectText({
+          authentication,
+          idempotencyKey: `device-attachment:${stableSuffix(paired.id, requestId)}`,
+          content,
+          contentType: kind === "image" ? "text/x-himawari-image" : "text/x-himawari-attachment",
+        });
+        return options.sendJson(reply, 201, { ref });
       });
 
       device.post("/payloads/text/new", async (request, reply) => {
@@ -1757,7 +1995,13 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
             configuration.connectionMaxSeconds * 1000,
           ),
         );
-        holdStream(authenticated.device.id, stream, configuration.streamConnections, reply.raw);
+        holdStream(
+          request,
+          authenticated.device.id,
+          stream,
+          configuration.streamConnections,
+          reply.raw,
+        );
         if (!mac) {
           options.push?.streamOpened(authenticated.device.id);
           stream.once("close", () => options.push?.streamClosed(authenticated.device.id));

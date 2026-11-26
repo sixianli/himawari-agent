@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 usage() {
-  echo "usage: bash $0 mac [--repo DIR [--apply-local]] <root>... | hermes <root>... | remove-mac | remove-hermes" >&2
+  echo "usage: bash $0 mac [--repo DIR [--apply-local]] <root>... | remove-mac" >&2
   exit 64
 }
 [[ "$#" -ge 1 ]] || usage
@@ -16,12 +16,6 @@ local_copy="$share/prune-local.py"
 local_config="$share/retention.json"
 local_label="com.himawari.prune-local"
 local_plist="$HOME/Library/LaunchAgents/$local_label.plist"
-marker="# himawari-prune-rebuildable"
-
-remove_cron() {
-  { crontab -l 2>/dev/null || true; } | { grep -vF "$marker" || true; } | crontab -
-}
-
 case "$mode" in
   remove-mac)
     for file in "$plist" "$local_plist"; do
@@ -31,12 +25,7 @@ case "$mode" in
     echo "PRUNE_SCHEDULE_REMOVED mac"
     exit 0
     ;;
-  remove-hermes)
-    remove_cron
-    echo "PRUNE_SCHEDULE_REMOVED hermes"
-    exit 0
-    ;;
-  mac|hermes) ;;
+  mac) ;;
   *) usage ;;
 esac
 
@@ -44,8 +33,8 @@ repo=""
 apply_local=""
 while [[ "$#" -gt 0 && "$1" == --* ]]; do
   case "$1" in
-    --repo) [[ "$#" -ge 2 && "$mode" == mac ]] || usage; repo="$2"; shift 2 ;;
-    --apply-local) [[ "$mode" == mac ]] || usage; apply_local="--apply"; shift ;;
+    --repo) [[ "$#" -ge 2 ]] || usage; repo="$2"; shift 2 ;;
+    --apply-local) apply_local="--apply"; shift ;;
     *) usage ;;
   esac
 done
@@ -72,54 +61,44 @@ if [[ -n "$repo" ]]; then
   "${preview[@]}"
 fi
 
-if [[ "$mode" == mac ]]; then
-  log="$HOME/Library/Logs/himawari-prune-rebuildable.log"
-  mkdir -p "$(dirname "$plist")" "$(dirname "$log")"
+log="$HOME/Library/Logs/himawari-prune-rebuildable.log"
+mkdir -p "$(dirname "$plist")" "$(dirname "$log")"
+{
+  echo '<?xml version="1.0" encoding="UTF-8"?>'
+  echo '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">'
+  echo '<plist version="1.0"><dict>'
+  echo "<key>Label</key><string>$label</string>"
+  echo '<key>ProgramArguments</key><array>'
+  for argument in /usr/bin/python3 -I "$copy" --apply --skip-if-busy "${roots[@]}"; do
+    echo "<string>$argument</string>"
+  done
+  echo '</array>'
+  echo '<key>StartCalendarInterval</key><dict><key>Hour</key><integer>4</integer><key>Minute</key><integer>0</integer></dict>'
+  echo "<key>StandardOutPath</key><string>$log</string>"
+  echo "<key>StandardErrorPath</key><string>$log</string>"
+  echo '</dict></plist>'
+} > "$plist"
+launchctl bootout "gui/$(id -u)" "$plist" 2>/dev/null || true
+launchctl bootstrap "gui/$(id -u)" "$plist"
+echo "PRUNE_SCHEDULE_INSTALLED mac $plist log=$log"
+if [[ -n "$repo" ]]; then
+  local_log="$HOME/Library/Logs/himawari-prune-local.log"
   {
     echo '<?xml version="1.0" encoding="UTF-8"?>'
     echo '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">'
     echo '<plist version="1.0"><dict>'
-    echo "<key>Label</key><string>$label</string>"
+    echo "<key>Label</key><string>$local_label</string>"
     echo '<key>ProgramArguments</key><array>'
-    for argument in /usr/bin/python3 -I "$copy" --apply --skip-if-busy "${roots[@]}"; do
+    for argument in "${local_arguments[@]}"; do
       echo "<string>$argument</string>"
     done
     echo '</array>'
-    echo '<key>StartCalendarInterval</key><dict><key>Hour</key><integer>4</integer><key>Minute</key><integer>0</integer></dict>'
-    echo "<key>StandardOutPath</key><string>$log</string>"
-    echo "<key>StandardErrorPath</key><string>$log</string>"
+    echo '<key>StartCalendarInterval</key><dict><key>Hour</key><integer>4</integer><key>Minute</key><integer>10</integer></dict>'
+    echo "<key>StandardOutPath</key><string>$local_log</string>"
+    echo "<key>StandardErrorPath</key><string>$local_log</string>"
     echo '</dict></plist>'
-  } > "$plist"
-  launchctl bootout "gui/$(id -u)" "$plist" 2>/dev/null || true
-  launchctl bootstrap "gui/$(id -u)" "$plist"
-  echo "PRUNE_SCHEDULE_INSTALLED mac $plist log=$log"
-  if [[ -n "$repo" ]]; then
-    local_log="$HOME/Library/Logs/himawari-prune-local.log"
-    {
-      echo '<?xml version="1.0" encoding="UTF-8"?>'
-      echo '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">'
-      echo '<plist version="1.0"><dict>'
-      echo "<key>Label</key><string>$local_label</string>"
-      echo '<key>ProgramArguments</key><array>'
-      for argument in "${local_arguments[@]}"; do
-        echo "<string>$argument</string>"
-      done
-      echo '</array>'
-      echo '<key>StartCalendarInterval</key><dict><key>Hour</key><integer>4</integer><key>Minute</key><integer>10</integer></dict>'
-      echo "<key>StandardOutPath</key><string>$local_log</string>"
-      echo "<key>StandardErrorPath</key><string>$local_log</string>"
-      echo '</dict></plist>'
-    } > "$local_plist"
-    launchctl bootout "gui/$(id -u)" "$local_plist" 2>/dev/null || true
-    launchctl bootstrap "gui/$(id -u)" "$local_plist"
-    echo "PRUNE_SCHEDULE_INSTALLED mac-local $local_plist mode=${apply_local:-report-only} log=$local_log"
-  fi
-else
-  log="$HOME/.local/state/himawari/prune-rebuildable.log"
-  mkdir -p "$(dirname "$log")"
-  quoted=""
-  for root in "${roots[@]}"; do quoted+=" $(printf '%q' "$root")"; done
-  line="0 4 * * * /usr/bin/python3 -I $(printf '%q' "$copy") --apply --skip-if-busy$quoted >> $(printf '%q' "$log") 2>&1 $marker"
-  { { crontab -l 2>/dev/null || true; } | { grep -vF "$marker" || true; }; echo "$line"; } | crontab -
-  echo "PRUNE_SCHEDULE_INSTALLED hermes log=$log"
+  } > "$local_plist"
+  launchctl bootout "gui/$(id -u)" "$local_plist" 2>/dev/null || true
+  launchctl bootstrap "gui/$(id -u)" "$local_plist"
+  echo "PRUNE_SCHEDULE_INSTALLED mac-local $local_plist mode=${apply_local:-report-only} log=$local_log"
 fi

@@ -1,5 +1,4 @@
-import type { AgentId, DemoLocale, DeploymentId, OwnerId } from "@himawari-agent/domain";
-import type { VoiceAddresseeConfiguration } from "../services/voice-addressee.js";
+import type { AgentId, DeploymentId, OwnerId } from "@himawari-agent/domain";
 import type { ApplePushConfiguration } from "./apple-push.js";
 import type { DataClassification } from "./common.js";
 import type { DeviceConfiguration } from "./device-limits.js";
@@ -270,8 +269,7 @@ export interface ProactiveGmailConfiguration {
 
 export interface ProactiveConfiguration {
   readonly modelRef: string;
-  readonly gmail?: ProactiveGmailConfiguration;
-  readonly demoInbox?: DemoLocale;
+  readonly gmail: ProactiveGmailConfiguration;
   readonly intervalMs: number;
   readonly perCheckMs: number;
   readonly dailyCostMicros: number;
@@ -291,7 +289,6 @@ export interface ProactiveConfiguration {
   readonly reviewSilentSharePermille: number;
   readonly reviewPrereview: ReviewPrereviewConfiguration;
   readonly reviewMemoryUnusedDays: number;
-  readonly backoffThreshold: number;
 }
 
 export interface ReviewPrereviewConfiguration {
@@ -309,12 +306,6 @@ export interface ReviewPrereviewConfiguration {
     readonly auditPermille: number;
     readonly windowDays: number;
   };
-}
-
-export interface MuseIntakeConfiguration {
-  readonly enabled: boolean;
-  readonly secretRef: string;
-  readonly gapExportSecretRef?: string;
 }
 
 export interface ImportDuplicateTuning {
@@ -441,14 +432,25 @@ export interface OwnerIntentCheckConfiguration {
   readonly secretRef: string;
 }
 
+export interface UserComputersConfiguration {
+  readonly socketPath: string;
+}
+
+export interface BrowserConfiguration {
+  readonly maxOutputBytes: number;
+  readonly maxTextChars: number;
+  readonly responseReserveMs: number;
+}
+
 export interface RunPolicyConfiguration {
   readonly timeZone?: string;
+  readonly userComputers?: UserComputersConfiguration;
+  readonly browser?: BrowserConfiguration;
   readonly inbox?: InboxConfiguration;
   readonly approvalBodyPreviewCharacters?: number;
   readonly toolRefusals?: ToolRefusalConfiguration;
   readonly ownerIntentCheck?: OwnerIntentCheckConfiguration;
   readonly realEval?: RealEvalConfiguration;
-  readonly museIntake?: MuseIntakeConfiguration;
   readonly importDuplicates?: ImportDuplicateConfiguration;
   readonly mcpRead?: McpReadConfiguration;
   readonly webPush?: WebPushConfiguration;
@@ -457,8 +459,6 @@ export interface RunPolicyConfiguration {
   readonly homeFeed?: HomeFeedConfiguration;
   readonly searchAsk?: SearchAskConfiguration;
   readonly perception?: PerceptionConfiguration;
-  readonly voiceAddressee?: VoiceAddresseeRouteConfiguration;
-  readonly homeUrgency?: HomeUrgencyConfiguration;
   readonly proactive?: ProactiveConfiguration;
   readonly coding?: CodingRouteConfiguration;
   readonly publicSearch?: PublicSearchRouteConfiguration;
@@ -469,14 +469,7 @@ export interface RunPolicyConfiguration {
   readonly systemInstruction: string;
   readonly freezeThreadPrompts?: boolean;
   readonly memoryLimit: number;
-  readonly maxSelectedMemories: number;
   readonly retiredKeys?: readonly string[];
-}
-
-export interface VoiceAddresseeRouteConfiguration extends VoiceAddresseeConfiguration {
-  readonly model: string;
-  readonly secretRef: string;
-  readonly inputMicrosPerMillionTokens: number;
 }
 
 export interface AutomaticReviewConfiguration {
@@ -486,6 +479,20 @@ export interface AutomaticReviewConfiguration {
   readonly maximumWaitMs: number;
   readonly maxOutputBytes: number;
   readonly confidenceThreshold?: number;
+}
+
+export const SPEECH_ADAPTERS = ["dashscope-qwen-tts"] as const;
+export type SpeechAdapter = (typeof SPEECH_ADAPTERS)[number];
+
+export interface SpeechConfiguration {
+  readonly adapter: SpeechAdapter;
+  readonly magpieModelRef: string;
+  readonly provider: string;
+  readonly model: string;
+  readonly voice: string;
+  readonly languageType: string;
+  readonly firstAudioTimeoutMs: number;
+  readonly maximumCharacters: number;
 }
 
 export interface ProductConfiguration {
@@ -503,6 +510,7 @@ export interface ProductConfiguration {
   readonly taskEnvironments?: TaskEnvironmentConfiguration;
   readonly http?: HttpConfiguration;
   readonly identity?: IdentityConfiguration;
+  readonly speech?: SpeechConfiguration;
   readonly modelDescriptors: readonly ConfiguredModelDescriptor[];
   readonly memory: ConfiguredMemoryDescriptor;
   readonly repositoryAllowlistRefs: readonly string[];
@@ -514,17 +522,4 @@ export interface ProductConfiguration {
 
 export interface ConfigurationPort {
   load(): Promise<ProductConfiguration>;
-}
-
-export interface HomeUrgencyConfiguration {
-  readonly enabled: boolean;
-  readonly modelRef?: string;
-  readonly dailyLimit: number;
-  readonly dailyCostMicros: number;
-  readonly perCall: number;
-  readonly referenceLimit: number;
-  readonly requestTimeoutMs: number;
-  readonly checkIntervalSeconds: number;
-  readonly retryAfterHours: number;
-  readonly affirmLabelMax: Readonly<Record<string, number>>;
 }

@@ -28,6 +28,26 @@ export interface SubthreadRecord {
   readonly budgetMicros: number | null;
   readonly budgetHitAt: string | null;
   readonly title: string | null;
+  readonly approvalRunId: string | null;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export type SubthreadTimerStatus = "active" | "paused" | "cancelled" | "finished";
+export type SubthreadTimerCreator = "owner" | "agreed" | "self";
+
+export interface SubthreadTimerRecord {
+  readonly id: string;
+  readonly threadId: string;
+  readonly schedule: Readonly<Record<string, unknown>>;
+  readonly taskRef: string;
+  readonly ownerWordsRef: string | null;
+  readonly createdBy: SubthreadTimerCreator;
+  readonly status: SubthreadTimerStatus;
+  readonly nextAt: string | null;
+  readonly lastScheduledAt: string | null;
+  readonly runCount: number;
+  readonly runBudgetMicros: number;
   readonly createdAt: string;
   readonly updatedAt: string;
 }
@@ -178,6 +198,7 @@ export interface SubthreadStorePort {
       readonly asked?: boolean;
       readonly budgetMicros?: number;
       readonly budgetHit?: boolean;
+      readonly approvalRunId?: string | null;
       readonly now: string;
     },
   ): Promise<SubthreadRecord | undefined>;
@@ -201,6 +222,47 @@ export interface SubthreadStorePort {
   listExchanges(
     input: OwnerRuleScope & { readonly threadId: string; readonly limit: number },
   ): Promise<readonly SubthreadExchangeRecord[]>;
+  listAwaitingApproval(input: OwnerRuleScope): Promise<readonly SubthreadRecord[]>;
+  createTimer(
+    input: OwnerRuleScope & {
+      readonly id: string;
+      readonly threadId: string;
+      readonly schedule: Readonly<Record<string, unknown>>;
+      readonly taskRef: string;
+      readonly ownerWordsRef: string | null;
+      readonly createdBy: SubthreadTimerCreator;
+      readonly nextAt: string | null;
+      readonly runBudgetMicros: number;
+      readonly now: string;
+    },
+  ): Promise<SubthreadTimerRecord>;
+  readTimer(
+    input: OwnerRuleScope & { readonly id: string },
+  ): Promise<SubthreadTimerRecord | undefined>;
+  listTimers(
+    input: OwnerRuleScope & { readonly limit: number },
+  ): Promise<readonly SubthreadTimerRecord[]>;
+  listDueTimers(
+    input: OwnerRuleScope & { readonly now: string; readonly limit: number },
+  ): Promise<readonly SubthreadTimerRecord[]>;
+  advanceTimer(
+    input: OwnerRuleScope & {
+      readonly id: string;
+      readonly scheduledAt: string | null;
+      readonly nextAt: string | null;
+      readonly finished: boolean;
+      readonly now: string;
+    },
+  ): Promise<SubthreadTimerRecord | undefined>;
+  setTimerStatus(
+    input: OwnerRuleScope & {
+      readonly id: string;
+      readonly from: readonly SubthreadTimerStatus[];
+      readonly to: SubthreadTimerStatus;
+      readonly nextAt?: string | null;
+      readonly now: string;
+    },
+  ): Promise<SubthreadTimerRecord | undefined>;
   markStuck(
     input: OwnerRuleScope & {
       readonly threadId: string;

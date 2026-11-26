@@ -25,10 +25,19 @@ let interfaceDependencies: [Package.Dependency] = []
 #else
 let interfaceDependencies: [Package.Dependency] = [
     .package(url: "https://github.com/FluidInference/FluidAudio.git", exact: "0.18.3", traits: ["Diarizer"]),
+    .package(url: "https://github.com/appstefan/HighlightSwift.git", exact: "1.2.0"),
 ]
 let interfaceTargets: [Target] = [
     .target(name: "HimawariDesign", dependencies: ["HimawariCore"], resources: [.process("Resources")]),
-    .target(name: "HimawariChat", dependencies: ["HimawariCore", "HimawariDesign"], resources: [.process("Resources")]),
+    .target(
+        name: "HimawariChat",
+        dependencies: [
+            "HimawariCore",
+            "HimawariDesign",
+            .product(name: "HighlightSwift", package: "HighlightSwift", condition: .when(platforms: [.iOS, .macOS])),
+        ],
+        resources: [.process("Resources")]
+    ),
     .target(name: "HimawariActions", dependencies: ["HimawariCore", "HimawariDesign"]),
     .target(name: "HimawariManage", dependencies: ["HimawariCore", "HimawariDesign", "HimawariActions"], resources: [.process("Resources")]),
     .target(name: "HimawariSenses", dependencies: ["HimawariCore", "HimawariDesign"], resources: [.process("Resources")]),

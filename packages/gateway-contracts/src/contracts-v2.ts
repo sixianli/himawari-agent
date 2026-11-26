@@ -49,20 +49,13 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "proactive.review.rate",
   "proactive.review.checkup",
   "proactive.source.manage",
-  "proactive.backoff.restore",
   "proactive.sources.read",
   "proactive.sources.snapshot",
   "proactive.source.settings.set",
   "proactive.source.switch_off",
-  "muse.overview.read",
-  "muse.overview.snapshot",
-  "muse.item.rate",
-  "muse.intake.set",
-  "muse.data.clear",
   "proactive.weekly.read",
   "proactive.weekly.snapshot",
   "proactive.observation.start",
-  "proactive.gapcase.mark",
   "owner.preferences.read",
   "owner.preferences.snapshot",
   "owner.preferences.set",
@@ -176,6 +169,9 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "think.settings.read",
   "think.settings.snapshot",
   "think.settings.change",
+  "timers.read",
+  "timers.snapshot",
+  "timers.change",
   "server.status.read",
   "server.status.snapshot",
   "home.read",
@@ -500,15 +496,6 @@ const proactiveOverviewSnapshotSchema = object({
     quietHours: proactiveQuietHoursSchema,
     importantSenders: proactiveSendersSchema,
     dailyLimitReached: booleanValue,
-    backoff: array(
-      object({
-        classKey: boundedString(128),
-        domain: boundedString(128),
-        stage: integer(1, 2),
-        ignoredCount: integer(0),
-        changedAt: timestamp,
-      }),
-    ),
     insights: array(
       object({
         id: machineString,
@@ -1006,6 +993,42 @@ const thinkSettingsChangeCommandSchema = object({
     value: nullable(integer(0)),
   }),
 });
+const timersQuerySchema = object({
+  ...envelope("query", "timers.read"),
+  payload: object({}),
+});
+const timersSnapshotSchema = object({
+  ...envelope("snapshot", "timers.snapshot"),
+  payload: object({
+    timers: array(
+      object({
+        timerId: machineString,
+        kind: enumeration(["reminder", "follow_up", "recurring"]),
+        title: nullable(boundedString(20)),
+        task: boundedString(4000),
+        ownerWords: nullable(boundedString(4000)),
+        schedule: boundedString(200),
+        createdBy: enumeration(["owner", "agreed", "self"]),
+        status: enumeration(["active", "paused", "cancelled", "finished"]),
+        nextAt: nullable(timestamp),
+        lastAt: nullable(timestamp),
+        runCount: integer(0),
+        spentMicros: integer(0),
+        runBudgetMicros: nullable(integer(1)),
+        lastResult: nullable(object({ text: boundedString(2000), at: timestamp })),
+        createdAt: timestamp,
+      }),
+    ),
+    generatedAt: timestamp,
+  }),
+});
+const timersChangeCommandSchema = object({
+  ...commandEnvelope("timers.change"),
+  payload: object({
+    timerId: machineString,
+    action: enumeration(["pause", "resume", "cancel"]),
+  }),
+});
 export const SERVER_STATUS_OVERALL = ["healthy", "degraded", "not_ready", "not_live"] as const;
 export const SERVER_STATUS_DEPENDENCY = ["healthy", "degraded", "blocked", "unavailable"] as const;
 export const HOME_KEY_MAXIMUM = 160;
@@ -1018,8 +1041,8 @@ export const HOME_ITEM_KINDS = [
   "running",
   "problem",
 ] as const;
-export const HOME_SENTENCE_BASES = ["recorded", "catalog", "model", "none"] as const;
-export const HOME_RANKS = ["rule", "deadline", "unscored", "model", "recency"] as const;
+export const HOME_SENTENCE_BASES = ["recorded", "catalog", "none"] as const;
+export const HOME_RANKS = ["rule", "deadline", "awaiting", "recency"] as const;
 export const HOME_TARGET_TYPES = [
   "mail",
   "memory",
@@ -1065,7 +1088,7 @@ export const HOME_ACTIONS = [
   "undo",
   "reconnect",
 ] as const;
-export const HOME_LABEL_BASES = ["catalog", "model"] as const;
+export const HOME_LABEL_BASES = ["catalog"] as const;
 export const HOME_POLARITIES = ["positive", "negative", "neutral"] as const;
 const homeQuerySchema = object({
   ...envelope("query", "home.read"),
@@ -1605,10 +1628,6 @@ const proactiveSourceManageCommandSchema = object({
     action: enumeration(["disconnect", "clear_records"]),
   }),
 });
-const proactiveBackoffRestoreCommandSchema = object({
-  ...commandEnvelope("proactive.backoff.restore"),
-  payload: object({ classKey: nullable(boundedString(128)) }),
-});
 const proactiveSafetyLimitShape = {
   limit: integer(1),
   defaultLimit: integer(1),
@@ -1657,55 +1676,6 @@ const proactiveSourceSettingsSetCommandSchema = object({
 const proactiveSourceSwitchOffCommandSchema = object({
   ...commandEnvelope("proactive.source.switch_off"),
   payload: object({ source: proactiveSourceName }),
-});
-const museOverviewQuerySchema = object({
-  ...envelope("query", "muse.overview.read"),
-  payload: object({}),
-});
-const museItemKindSchema = enumeration(["proactive", "scheduled"]);
-const museOverviewSnapshotSchema = object({
-  ...envelope("snapshot", "muse.overview.snapshot"),
-  payload: object({
-    channel: object({
-      state: enumeration(["never", "ok", "stale", "down", "paused"]),
-      lastBatchAt: nullable(timestamp),
-      gapCount: integer(0),
-    }),
-    receivedWeek: integer(0),
-    suppressedWeek: integer(0),
-    pending: integer(0),
-    delay: nullable(object({ medianMinutes: integer(0), samples: integer(10) })),
-    items: array(
-      object({
-        kind: museItemKindSchema,
-        naturalKey: machineString,
-        occurredAt: timestamp,
-        title: nullable(proactiveTextSchema(300)),
-        text: nullable(proactiveTextSchema(500)),
-        withheld: booleanValue,
-        timingOk: nullable(booleanValue),
-        contentOk: nullable(booleanValue),
-      }),
-    ),
-    generatedAt: timestamp,
-  }),
-});
-const museItemRateCommandSchema = object({
-  ...commandEnvelope("muse.item.rate"),
-  payload: object({
-    kind: museItemKindSchema,
-    naturalKey: machineString,
-    timingOk: nullable(booleanValue),
-    contentOk: nullable(booleanValue),
-  }),
-});
-const museIntakeSetCommandSchema = object({
-  ...commandEnvelope("muse.intake.set"),
-  payload: object({ paused: booleanValue }),
-});
-const museDataClearCommandSchema = object({
-  ...commandEnvelope("muse.data.clear"),
-  payload: object({}),
 });
 
 const sensitiveInterceptionCursorSchema = object({
@@ -1894,69 +1864,6 @@ const proactiveWeeklySnapshotSchema = object({
           }),
         }),
       ),
-      muse: object({
-        entries: integer(0),
-        reminded: integer(0),
-        silent: integer(0),
-        unpaired: integer(0),
-        pairedMails: integer(0),
-        timing: calibrationRateSchema,
-        content: calibrationRateSchema,
-        pairing: calibrationRateSchema,
-        buckets: object({
-          both: integer(0),
-          museOnly: integer(0),
-          himawariOnly: integer(0),
-          bothSilent: integer(0),
-          noHimawariRecord: integer(0),
-        }),
-      }),
-      gapCases: array(
-        object({
-          id: machineString,
-          messageId: nullable(gmailMessageId),
-          museAt: timestamp,
-          museTitle: nullable(proactiveTextSchema(300)),
-          museText: nullable(proactiveTextSchema(500)),
-          museTextWithheld: booleanValue,
-          himawariOutcome: machineString,
-          himawariReasonCode: machineString,
-          himawariReason: nullable(proactiveTextSchema(500)),
-          ownerRating: nullable(enumeration(["useful", "unneeded", "missed"])),
-          attribution: enumeration([
-            "notRemembered",
-            "notRetrieved",
-            "wrongJudgment",
-            "notReadFully",
-          ]),
-          memoryHits: integer(0),
-          relatedMessages: integer(0),
-          decidedAt: timestamp,
-          marked: booleanValue,
-        }),
-      ),
-      gap: nullable(
-        object({
-          pairedMails: integer(0),
-          ratedMails: integer(0),
-          unratedMails: integer(0),
-          lines: array(
-            object({
-              line: enumeration(["hitRate", "disturbanceRate"]),
-              mails: integer(0),
-              museReminded: integer(0),
-              himawariReminded: integer(0),
-              muse: calibrationRateSchema,
-              himawari: calibrationRateSchema,
-              difference: nullable(numberInRange(-1, 1)),
-              low: nullable(numberInRange(-1, 1)),
-              high: nullable(numberInRange(-1, 1)),
-              verdict: enumeration(["insufficient", "inconclusive", "decided"]),
-              direction: enumeration(["museHigher", "himawariHigher", "none"]),
-            }),
-          ),
-        }),
-      ),
       implicit: object({
         pushedDecisions: integer(0),
         otherDecisionEvents: integer(0),
@@ -2037,14 +1944,6 @@ const proactiveWeeklySnapshotSchema = object({
       ),
     }),
     generatedAt: timestamp,
-  }),
-});
-const proactiveGapCaseMarkCommandSchema = object({
-  ...commandEnvelope("proactive.gapcase.mark"),
-  payload: object({
-    caseId: machineString,
-    endDay: jstDaySchema,
-    marked: booleanValue,
   }),
 });
 const proactiveObservationStartCommandSchema = object({
@@ -2354,31 +2253,6 @@ const decisionEmailSnapshotSchema = object({
         relatedMessages: nullable(integer(0)),
       }),
     ),
-    muse: object({
-      entries: array(
-        object({
-          entryId: boundedString(128),
-          museAt: timestamp,
-          reminded: booleanValue,
-          kind: nullable(enumeration(["proactive", "scheduled"])),
-          state: nullable(enumeration(["delivered", "suppressed", "succeeded", "failed"])),
-          title: nullable(proactiveTextSchema(300)),
-          text: nullable(proactiveTextSchema(500)),
-          textWithheld: booleanValue,
-          timingOk: nullable(booleanValue),
-          contentOk: nullable(booleanValue),
-        }),
-      ),
-      truncated: booleanValue,
-    }),
-    comparison: enumeration([
-      "both",
-      "museOnly",
-      "himawariOnly",
-      "bothSilent",
-      "noMuseEntry",
-      "noHimawariRecord",
-    ]),
   }),
 });
 const memoryOverviewSnapshotSchema = object({
@@ -3806,20 +3680,13 @@ const schemasByType = {
   "proactive.review.rate": proactiveReviewRateCommandSchema,
   "proactive.review.checkup": proactiveReviewCheckupCommandSchema,
   "proactive.source.manage": proactiveSourceManageCommandSchema,
-  "proactive.backoff.restore": proactiveBackoffRestoreCommandSchema,
   "proactive.sources.read": proactiveSourcesQuerySchema,
   "proactive.sources.snapshot": proactiveSourcesSnapshotSchema,
   "proactive.source.settings.set": proactiveSourceSettingsSetCommandSchema,
   "proactive.source.switch_off": proactiveSourceSwitchOffCommandSchema,
-  "muse.overview.read": museOverviewQuerySchema,
-  "muse.overview.snapshot": museOverviewSnapshotSchema,
-  "muse.item.rate": museItemRateCommandSchema,
-  "muse.intake.set": museIntakeSetCommandSchema,
-  "muse.data.clear": museDataClearCommandSchema,
   "proactive.weekly.read": proactiveWeeklyQuerySchema,
   "proactive.weekly.snapshot": proactiveWeeklySnapshotSchema,
   "proactive.observation.start": proactiveObservationStartCommandSchema,
-  "proactive.gapcase.mark": proactiveGapCaseMarkCommandSchema,
   "owner.preferences.read": ownerPreferencesQuerySchema,
   "owner.preferences.snapshot": ownerPreferencesSnapshotSchema,
   "owner.preferences.set": ownerPreferencesSetCommandSchema,
@@ -3848,6 +3715,9 @@ const schemasByType = {
   "think.settings.read": thinkSettingsQuerySchema,
   "think.settings.snapshot": thinkSettingsSnapshotSchema,
   "think.settings.change": thinkSettingsChangeCommandSchema,
+  "timers.read": timersQuerySchema,
+  "timers.snapshot": timersSnapshotSchema,
+  "timers.change": timersChangeCommandSchema,
   "server.status.read": serverStatusQuerySchema,
   "server.status.snapshot": serverStatusSnapshotSchema,
   "home.read": homeQuerySchema,

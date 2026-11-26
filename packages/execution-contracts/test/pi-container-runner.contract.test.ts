@@ -27,10 +27,16 @@ describe("Pi container runner input", () => {
     }
   });
 
+  it("accepts the workspace inside the owner's computer", () => {
+    const value = { ...input, workspace: "/home/himawari/workspace" };
+    expect(piContainerRunnerInputSchema.parse(value)).toEqual(value);
+  });
+
   it.each([
     ["a workspace outside the mount root", { workspace: "/project/root-1" }],
     ["a workspace below the mounted directory", { workspace: "/workspaces/root-1/src" }],
     ["a workspace of another directory", { workspace: "/workspaces/root-2" }],
+    ["another directory of the computer", { workspace: "/home/himawari" }],
     ["a write through a read grant", { tool: "write" }],
     ["an edit through a read grant", { tool: "edit" }],
     ["the host copy save", { tool: "save_copy", access: "write" }],

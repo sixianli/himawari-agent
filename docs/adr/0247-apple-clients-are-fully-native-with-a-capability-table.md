@@ -7,7 +7,7 @@ superseded_by: ""
 amends: "docs/adr/0229-native-apple-clients-and-device-api.md"
 date: "2026-11-12"
 covers: "apps/control-center/src/app/control-center-inventory.ts, packages/gateway-contracts/src/contracts-v2.ts, packages/gateway-contracts/src/contracts.ts, packages/gateway-contracts/src/thread-contracts-v3.ts"
-verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
+verified_at: "7c8521fe5f55e7dd57c5bd52badd16eef647502e"
 ---
 
 # ADR 0247：苹果客户端所有页面都用原生界面，不嵌网页；原生页面按客户端能力表走和网页同一份处理程序
@@ -110,6 +110,6 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 - [ADR 0229](0229-native-apple-clients-and-device-api.md)：被本 ADR 修订决定第 3、4 条。
 - [详细设计](../execution/specs/2026-11-11-apple-device-body-design.md#ui-baseline)
-- [实施计划](../execution/plans/2026-11-11-apple-device-body-plan.md)
+- [实施计划（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/e51fe4363ed3e21ab6581e3563c652441f4e6b76/docs/execution/plans/2026-11-11-apple-device-body-plan.md#batches)
 
 [↑ 回到阅读导航](#contents)

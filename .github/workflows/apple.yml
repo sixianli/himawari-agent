@@ -18,9 +18,26 @@ defaults:
   run:
     shell: bash
 jobs:
+  changes:
+    name: apple/changes
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft != true }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      client: ${{ steps.scope.outputs.client }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: 看这次改动有没有碰 iPhone 客户端，没碰就不占 Mac 机器
+        id: scope
+        env:
+          BASE: ${{ github.event_name != 'workflow_dispatch' && (github.event.pull_request.base.sha || github.event.before) || '' }}
+        run: node scripts/ci/apple-scope.mjs "$BASE" "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
   iphone:
     name: apple/iphone
-    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft != true }}
+    needs: changes
+    if: ${{ needs.changes.outputs.client == 'true' }}
     runs-on: macos-26
     timeout-minutes: 60
     steps:
@@ -40,3 +57,69 @@ jobs:
           -configuration Debug
           -destination 'generic/platform=iOS Simulator'
           CODE_SIGNING_ALLOWED=NO
+  iphone-accessibility:
+    name: apple/iphone-accessibility ${{ matrix.shard }}
+    needs: changes
+    if: ${{ needs.changes.outputs.client == 'true' }}
+    runs-on: macos-26
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ["0/3", "1/3", "2/3"]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: 选一台最新系统的 iPhone 模拟器
+        id: simulator
+        run: |
+          udid="$(xcrun simctl list devices available --json | python3 -c '
+          import json, re, sys
+          runtimes = json.load(sys.stdin)["devices"]
+          def version(key):
+              return [int(part) for part in re.findall(r"\d+", key.rsplit(".", 1)[-1])]
+          ios = sorted((key for key in runtimes if ".SimRuntime.iOS-" in key), key=version)
+          phones = [device for device in runtimes[ios[-1]] if device["name"].startswith("iPhone")]
+          print(phones[0]["udid"])
+          ')"
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+          xcrun simctl list devices | grep "$udid"
+      - name: 每个示例场景跑苹果的无障碍审计（浅色全部审计项，深色对比度）
+        env:
+          TEST_RUNNER_HIMAWARI_AUDIT_SHARD: ${{ matrix.shard }}
+        run: >-
+          set -o pipefail;
+          xcodebuild test
+          -project clients/apple/App/Himawari.xcodeproj
+          -scheme Himawari
+          -configuration Debug
+          -destination "id=${{ steps.simulator.outputs.udid }}"
+          -only-testing:HimawariUITests
+          CODE_SIGNING_ALLOWED=NO
+          -resultBundlePath accessibility-audit.xcresult
+          | tee accessibility-audit.log
+          | grep -E 'A11Y_AUDIT_|error:|Test Case .* (passed|failed)|\*\* TEST'
+      - name: 列出这次审计发现的问题
+        if: ${{ always() }}
+        run: grep -E 'A11Y_AUDIT_' accessibility-audit.log | sort -u || true
+      - name: 测试没跑完时打印失败原因
+        if: ${{ failure() }}
+        run: |
+          xcrun xcresulttool get test-results tests --path accessibility-audit.xcresult --compact | python3 -c '
+          import json, sys
+          def walk(node):
+              for child in node.get("children", []):
+                  if child.get("nodeType") == "Failure Message":
+                      print("A11Y_AUDIT_FAILURE", child.get("name", ""))
+                  walk(child)
+          for plan in json.load(sys.stdin).get("testNodes", []):
+              walk(plan)
+          ' | sort -u | head -200 || true
+      - name: 保存测试结果包
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: accessibility-audit-${{ strategy.job-index }}
+          path: accessibility-audit.xcresult
+          retention-days: 7

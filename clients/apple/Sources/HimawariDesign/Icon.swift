@@ -5,6 +5,7 @@ public enum IconName: String, CaseIterable, Sendable {
     case addressBook = "address-book"
     case addressBookLarge = "address-book-large"
     case affiliate
+    case alarm
     case alertCircle = "alert-circle"
     case alertCircleLarge = "alert-circle-large"
     case alertTriangle = "alert-triangle"

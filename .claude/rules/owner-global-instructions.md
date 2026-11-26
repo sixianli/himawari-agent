@@ -1,7 +1,7 @@
 <a id="owners-global-instructions"></a>
 # Andy 的全局指令
 
-这些是 Andy 给每个代理的全局指令，由 Andy 的 `~/.agents/AGENTS.md` 和 `~/.claude/CLAUDE.md` 合并而来，好让读不到 Andy 机器的云端会话遵守同样的规则。Andy 的 Mac 上的会话已经加载原件；两份副本内容相同。只在本机才有的细节已改写：这里提到的技能，在 Skill 工具（加载技能的工具）列出它时通过 Skill 工具使用，否则在计划或回复里说明它没有加载，只在指令自身文字所及的范围内照做，不得猜测这个技能的内容。本仓库的 [AGENTS.md](../../AGENTS.md) 和 `.agents/instructions/` 下的文件是对这些规则的补充；当它们定了某条项目专用规则时（例如 `DELIVERY_MODE`、关于事故和反复犯的错误的规则、Hermes 包装脚本，或推送规则的补充条款），以项目规则为准。本副本是中文译本；同一个错误第三次出现时怎么办，以 [incident-gates.md](incident-gates.md) 为准。
+这些是 Andy 给每个代理的全局指令，由 Andy 的 `~/.agents/AGENTS.md` 和 `~/.claude/CLAUDE.md` 合并而来，好让读不到 Andy 机器的云端会话遵守同样的规则。Andy 的 Mac 上的会话已经加载原件；两份副本内容相同。只在本机才有的细节已改写：这里提到的技能，在 Skill 工具（加载技能的工具）列出它时通过 Skill 工具使用，否则在计划或回复里说明它没有加载，只在指令自身文字所及的范围内照做，不得猜测这个技能的内容。本仓库的 [AGENTS.md](../../AGENTS.md) 和 `.agents/instructions/` 下的文件是对这些规则的补充；当它们定了某条项目专用规则时（例如 `DELIVERY_MODE`、关于事故和反复犯的错误的规则，或推送规则的补充条款），以项目规则为准。本副本是中文译本；同一个错误第三次出现时怎么办，以 [incident-gates.md](incident-gates.md) 为准。
 
 <a id="communication"></a>
 ## 沟通

@@ -12,7 +12,6 @@
     "version": "owner-policy-v1",
     "systemInstruction": "按用户请求执行已授权任务。首次测量仅使用 read 读取获准虚构文件并回答指定内容。",
     "memoryLimit": 20,
-    "maxSelectedMemories": 5,
     "timeZone": "Asia/Shanghai",
     "coding": {
       "hostId": "himawari-prod-host",

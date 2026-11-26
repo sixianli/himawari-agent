@@ -36,9 +36,9 @@ import {
   RealMemoryEvalService,
 } from "@himawari-agent/application";
 import { REAL_EVAL_QUESTION } from "@himawari-agent/prompt-catalog";
+import { maskForExport } from "./export-masking.js";
 import { quoteRefOfMemory } from "./production-memory-consolidation.js";
 import type { MailEmbeddingContext } from "./production-run-memory.js";
-import { maskForExport } from "./production-gap-export.js";
 
 export const REAL_EVAL_TICK_MS = 60 * 60 * 1000;
 export const REAL_EVAL_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -502,7 +502,6 @@ export class ProductionRealEval {
 export interface ProductionRealEvalDependencies {
   readonly configuration: RealEvalConfiguration;
   readonly scope: RealEvalScope;
-  readonly maxSelectedMemories: number;
   readonly memoryLimit: number;
   readonly recallEstimateMicros: number;
   readonly store: RealEvalStorePort;
@@ -545,7 +544,6 @@ export function createProductionRealEval(deps: ProductionRealEvalDependencies): 
     model: deps.model,
     now: deps.now,
     newId: deps.newId,
-    maxSelectedMemories: deps.maxSelectedMemories,
     recallEstimateMicros: deps.recallEstimateMicros,
     promptSha256: createHash("sha256")
       .update(JSON.stringify(REAL_EVAL_QUESTION.segments))

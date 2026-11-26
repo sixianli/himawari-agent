@@ -138,7 +138,6 @@ export function generate(tokens) {
     for (const extra of rest) {
       if (typeof extra === "number")
         lineHeight = extra > 3 ? number(extra) : `${number(size)} * ${number(extra)}`;
-      else if (extra === "himawari") face = ".himawari";
       else if (extra === "number") face = ".rounded";
       else if (/^字间距 [\d.]+$/u.test(extra)) tracking = number(Number(extra.split(" ")[1]));
       else throw new Error(`DESIGN_TOKEN_TYPE_EXTRA_UNKNOWN ${name} ${extra}`);
