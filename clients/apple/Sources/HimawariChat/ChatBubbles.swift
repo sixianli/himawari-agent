@@ -54,7 +54,18 @@ struct BubbleBackground: ViewModifier {
             .padding(.horizontal, paddingX)
             .padding(.vertical, paddingY)
             .background(side == .her ? Color.hmBubble : Color.hmText, in: shape)
-            .contentShape(.contextMenuPreview, shape)
+            .menuPreviewShape(shape)
+    }
+}
+
+extension View {
+    @ViewBuilder
+    fileprivate func menuPreviewShape(_ shape: BubbleShape) -> some View {
+        #if os(iOS)
+        contentShape(.contextMenuPreview, shape)
+        #else
+        self
+        #endif
     }
 }
 
