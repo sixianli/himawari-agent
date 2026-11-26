@@ -9,13 +9,13 @@ import {
   DEFAULT_HOME_FEED,
   DEFAULT_VOICE_GATES,
   DEVICE_CONFIGURATION_DEFAULTS,
-  type ExecutionLiveFeed,
   type DeviceActionAuthorizationPort,
   type DeviceActionOpenRequestPort,
   type DeviceActionRecord,
   type DeviceActionRegistry,
   type DeviceConfiguration,
   defaultDeviceHardLimits,
+  type ExecutionLiveFeed,
   type GatewayAuthenticationContext,
   PERCEPTION_CONFIGURATION_DEFAULTS,
   type PerceptionConfiguration,
@@ -82,12 +82,12 @@ import { ContextExternalContent } from "../../apps/agent-service/src/context-ext
 import { createProductionApprovalGateway } from "../../apps/agent-service/src/production-approval-gateway.ts";
 import { createProductionDeviceActions } from "../../apps/agent-service/src/production-device-actions.ts";
 import { ProductionHomeControl } from "../../apps/agent-service/src/production-home.ts";
-import { ProductionMainThread } from "../../apps/agent-service/src/production-main-thread.ts";
 import {
   ProductionHttpPayloadAdmission,
   ProductionThreadGatewayAccessPolicy,
   utterancePrefetch,
 } from "../../apps/agent-service/src/production-http-composition.ts";
+import { ProductionMainThread } from "../../apps/agent-service/src/production-main-thread.ts";
 import { ProductionMuseControl } from "../../apps/agent-service/src/production-muse-intake-control.ts";
 
 export const ownerId = createOwnerId("owner-device-api");
@@ -182,6 +182,7 @@ export async function harness(
     readonly clock?: ManualClock;
     readonly live?: ExecutionLiveFeed;
     readonly mainThread?: boolean;
+    readonly beforeReady?: (app: FastifyInstance) => void;
     readonly exportArchive?: NonNullable<
       Parameters<typeof buildHttpGatewayServer>[0]["devices"]
     >["exportArchive"];
@@ -605,6 +606,7 @@ export async function harness(
       ...(options.exportArchive ? { exportArchive: options.exportArchive } : {}),
     },
   });
+  options.beforeReady?.(app);
   await app.ready();
   return {
     origin: publicOrigin,

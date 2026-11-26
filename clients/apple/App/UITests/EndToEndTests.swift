@@ -52,9 +52,8 @@ final class EndToEndTests: XCTestCase {
         let composer = app.composer
         composer.tap()
         composer.typeText(text)
-        let sendButton = app.buttons[AppStrings.text("chat.send")]
-        XCTAssertTrue(sendButton.waitForExistence(timeout: 5))
-        sendButton.doubleTap()
+        XCTAssertTrue(app.waitFor(5) { app.sendButton.exists }, "no send button after typing")
+        app.sendButton.doubleTap()
         XCTAssertTrue(
             app.waitFor(60) { app.texts(containing: "\(answers.opening)“\(text)”").firstMatch.exists },
             "no answer for \"\(text)\""
@@ -139,12 +138,14 @@ final class EndToEndTests: XCTestCase {
         let title = app.navigationBars[herPage]
         XCTAssertTrue(title.waitForExistence(timeout: 10), "her page did not open")
         try await Task.sleep(for: .seconds(2))
-        let rows = app.scrollViews.firstMatch.buttons.allElementsBoundByIndex
+        let list = app.herPageList
+        XCTAssertTrue(list.waitForExistence(timeout: 10), "her page has no memory row")
+        let rows = list.buttons.allElementsBoundByIndex
             .filter { $0.isHittable }
             .map(\.label)
         XCTAssertFalse(rows.isEmpty, "her page has no rows")
         for row in rows {
-            let button = app.scrollViews.firstMatch.buttons[row].firstMatch
+            let button = list.buttons[row].firstMatch
             guard button.exists else { continue }
             button.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
             let pushed = app.waitFor(5) { !title.exists || !title.isHittable }
@@ -168,7 +169,7 @@ final class EndToEndTests: XCTestCase {
         let herPage = AppStrings.text("chat.herPage")
         app.buttons[herPage].firstMatch.tap()
         XCTAssertTrue(app.navigationBars[herPage].waitForExistence(timeout: 10))
-        let memory = app.scrollViews.firstMatch.buttons.containing(
+        let memory = app.herPageList.buttons.matching(
             NSPredicate(format: "label BEGINSWITH %@", AppStrings.manage("herMemory"))
         ).firstMatch
         XCTAssertTrue(memory.waitForExistence(timeout: 10), "her page has no memory row")
@@ -188,9 +189,8 @@ final class EndToEndTests: XCTestCase {
         XCTAssertTrue(composer.waitForExistence(timeout: 20), "no chat input box")
         composer.tap()
         composer.typeText(text)
-        let sendButton = app.buttons[AppStrings.text("chat.send")]
-        XCTAssertTrue(sendButton.waitForExistence(timeout: 5), "no send button after typing")
-        sendButton.tap()
+        XCTAssertTrue(app.waitFor(5) { app.sendButton.exists }, "no send button after typing")
+        app.sendButton.tap()
     }
 
     private func waitForStored(_ text: String) async throws -> Int {

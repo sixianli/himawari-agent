@@ -1,7 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
-import type { IncomingMessage, ServerResponse } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
 import { connect, createServer as createTcpServer, type Server, type Socket } from "node:net";
 import { tmpdir } from "node:os";
@@ -47,6 +46,19 @@ const ANSWER_TOKENS_PER_SECOND = 12;
 function openssl(args: readonly string[]) {
   const result = spawnSync("openssl", args, { encoding: "utf8" });
   if (result.status !== 0) throw new Error(`IOS_E2E_OPENSSL_FAILED ${result.stderr}`);
+}
+
+function gatewayType(body: unknown): string {
+  let parsed = body;
+  if (Buffer.isBuffer(body) || typeof body === "string") {
+    try {
+      parsed = JSON.parse(body.toString());
+    } catch {
+      return "";
+    }
+  }
+  const type = (parsed as { type?: unknown } | undefined)?.type;
+  return typeof type === "string" ? ` ${type}` : "";
 }
 
 async function certificates(root: string) {
@@ -276,16 +288,22 @@ export async function startE2eBackend(): Promise<E2eBackend> {
   const origin = `https://localhost:${frontPort}`;
   const clock = new LiveClock();
   const live = new ExecutionLiveFeed();
-  const h = await harness({ origin, clock, live, mainThread: true });
+  const h = await harness({
+    origin,
+    clock,
+    live,
+    mainThread: true,
+    beforeReady: (app) =>
+      app.addHook("onResponse", async (request, reply) => {
+        if (!request.url.startsWith("/api/device/")) return;
+        const type = gatewayType(request.body);
+        process.stdout.write(
+          `IOS_E2E_REQUEST ${request.method} ${request.url.split("?")[0]}${type} ${reply.statusCode}\n`,
+        );
+      }),
+  });
   h.configuration.current = { ...h.configuration.current, heartbeatSeconds: 15 };
   await h.app.listen({ host: "127.0.0.1", port: appPort });
-  h.app.server.on("request", (request: IncomingMessage, response: ServerResponse) => {
-    response.on("finish", () =>
-      process.stdout.write(
-        `IOS_E2E_REQUEST ${request.method} ${request.url?.split("?")[0]} ${response.statusCode}\n`,
-      ),
-    );
-  });
   const payloads = h.repository.payloadStore(ownerId, agentId);
   await payloads.put(
     await h.protector.protect({

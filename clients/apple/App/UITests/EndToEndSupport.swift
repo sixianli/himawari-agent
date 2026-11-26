@@ -127,6 +127,18 @@ extension XCUIApplication {
         return descendants(matching: .any).matching(predicate).firstMatch
     }
 
+    var sendButton: XCUIElement {
+        let label = AppStrings.text("chat.send")
+        let keyboard = keyboards.firstMatch
+        let keyboardFrame = keyboard.exists ? keyboard.frame : .null
+        let matches = buttons.matching(NSPredicate(format: "label == %@", label)).allElementsBoundByIndex
+        return matches.first { !keyboardFrame.intersects($0.frame) } ?? buttons[label].firstMatch
+    }
+
+    var herPageList: XCUIElement {
+        scrollViews.containing(NSPredicate(format: "label BEGINSWITH %@", AppStrings.manage("herMemory"))).firstMatch
+    }
+
     func texts(containing text: String) -> XCUIElementQuery {
         descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", text, text))
     }
