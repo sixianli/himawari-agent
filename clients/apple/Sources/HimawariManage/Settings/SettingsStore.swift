@@ -13,18 +13,18 @@ public final class SettingsStore {
 
     public private(set) var phase: Phase = .loading
     public private(set) var devices: [PairedDevice] = []
+    public private(set) var thisDeviceId: String?
+    public private(set) var server: DeviceRoster.Server?
 
-    @ObservationIgnored let gateway: ManageGateway
-    @ObservationIgnored let identity: DeviceIdentity?
+    @ObservationIgnored let directory: DeviceDirectory
 
-    public init(gateway: ManageGateway, identity: DeviceIdentity?) {
-        self.gateway = gateway
-        self.identity = identity
+    public init(directory: DeviceDirectory) {
+        self.directory = directory
     }
 
     public func load() async {
         do {
-            devices = try await loadDevices().devices
+            apply(try await directory.roster())
             phase = .loaded
         } catch {
             phase = .failed
@@ -32,47 +32,42 @@ public final class SettingsStore {
     }
 
     public func reloadDevices() async {
-        if let listed = try? await loadDevices() { devices = listed.devices }
+        if let roster = try? await directory.roster() { apply(roster) }
+    }
+
+    private func apply(_ roster: DeviceRoster) {
+        thisDeviceId = roster.thisDeviceId
+        server = roster.server
+        devices = roster.devices.filter { $0.status != "revoked" }
+    }
+
+    public var thisDevice: PairedDevice? { devices.first(where: isThisDevice) }
+
+    public var otherDevices: [PairedDevice] {
+        devices.filter { !isThisDevice($0) }.sorted { first, second in
+            (first.lastSeenAt.flatMap(Timestamp.parse) ?? .distantPast) > (second.lastSeenAt.flatMap(Timestamp.parse) ?? .distantPast)
+        }
     }
 
     public func isThisDevice(_ device: PairedDevice) -> Bool {
-        device.id == identity?.deviceId
+        device.id == thisDeviceId
     }
 
     public func presence(_ device: PairedDevice) -> DevicePresence {
         DevicePresence.of(device, isThisDevice: isThisDevice(device))
     }
 
-    public func rename(_ device: PairedDevice, to name: String, reason: String) async throws {
-        _ = try await gateway.command(
-            .v2,
-            "device.rename",
-            payload: [
-                "deviceId": .string(device.id),
-                "expectedRevision": .number(Double(device.revision)),
-                "name": .string(name.trimmingCharacters(in: .whitespacesAndNewlines)),
-            ],
-            options: ManageCommandOptions(confirmReason: reason)
-        )
+    public func rename(_ device: PairedDevice, to name: String) async throws {
+        try await directory.rename(device.id, expectedRevision: device.revision, name: name.trimmingCharacters(in: .whitespacesAndNewlines))
         await reloadDevices()
     }
 
     public func revoke(_ device: PairedDevice, reason: String) async throws {
-        _ = try await gateway.command(
-            .v2,
-            "device.revoke",
-            payload: ["deviceId": .string(device.id), "expectedRevision": .number(Double(device.revision))],
-            options: ManageCommandOptions(confirmReason: reason)
-        )
-        if !isThisDevice(device) { await reloadDevices() }
-    }
-
-    func loadDevices() async throws -> DeviceListPayload {
-        let data = try await gateway.read(.v2, "device.list.read")
-        let payload = try JSONDecoder().decode(Snapshot<DeviceListPayload>.self, from: data).payload
-        return DeviceListPayload(
-            devices: payload.devices.filter { $0.status != "revoked" },
-            pairing: payload.pairing
-        )
+        let mine = isThisDevice(device)
+        try await directory.revoke(device.id, expectedRevision: device.revision, confirmReason: mine ? nil : reason)
+        if !mine {
+            devices.removeAll { $0.id == device.id }
+            await reloadDevices()
+        }
     }
 }

@@ -1,97 +1,88 @@
+import HimawariCore
 import HimawariDesign
 import SwiftUI
-
-typealias DL = ManageLayout.DeviceSheet
 
 struct DevicePage: View {
     let store: SettingsStore
     let deviceId: String
     var actions: DeviceActionsModel? = nil
+    let unsentMessages: () -> Int?
     let removedThisDevice: () -> Void
     let back: () -> Void
     @State private var renaming = false
     @State private var draftName = ""
-    @State private var failed = false
+    @State private var removing: PairedDevice?
+    @State private var signingOut = false
+    @State private var failure: String?
 
     private var device: PairedDevice? { store.devices.first { $0.id == deviceId } }
 
     var body: some View {
-        SettingsPage(gap: DL.detailGap) {
+        List {
             if let device {
-                SheetHeader(title: device.name, leading: .back, action: back)
-                SettingsGroup(label: nil) {
+                Section {
                     Button {
                         draftName = device.name
                         renaming = true
                     } label: {
-                        SettingsRow(icon: nil, title: M.deviceName, value: device.name, chevron: true)
+                        LabeledContent(M.deviceName, value: device.name)
                     }
-                    .buttonStyle(.pressable)
-                    presenceRow(device)
-                    let channel = M.channel(device.releaseChannel)
-                    SettingsRow(icon: nil, title: M.pairedOn, value: Timestamp.parse(device.pairedAt).map(M.pairedDay), last: channel == nil)
-                    if let channel {
-                        SettingsRow(icon: nil, title: M.deviceVersion, value: channel, last: true)
+                    .foregroundStyle(Color.hmText)
+                    let presence = store.presence(device)
+                    LabeledContent(presence == .connected ? M.deviceNow : M.lastConnected) {
+                        Text(M.presence(presence)).foregroundStyle(presence == .connected ? Color.hmSuccess : Color.hmMuted)
+                    }
+                    if let signedIn = Timestamp.parse(device.pairedAt) {
+                        LabeledContent(M.signedInOn, value: M.pairedDay(signedIn))
+                    }
+                    if let channel = M.channel(device.releaseChannel) {
+                        LabeledContent(M.deviceVersion, value: channel)
                     }
                 }
                 if let actions, store.isThisDevice(device) {
-                    DeviceAbilitiesSection(model: actions)
-                }
-                Button {
-                    Task {
-                        do {
-                            let wasThisDevice = store.isThisDevice(device)
-                            try await store.revoke(device, reason: M.confirmRemove(device.name))
-                            if wasThisDevice { removedThisDevice() } else { back() }
-                        } catch {
-                            failed = true
-                        }
+                    Section {
+                        DeviceAbilitiesSection(model: actions)
+                            .listRowInsets(EdgeInsets())
+                            .listRowBackground(Color.clear)
                     }
-                } label: {
-                    Text(M.removeDevice).hmType(SL.rowValue).foregroundStyle(Color.hmDanger)
-                        .frame(minHeight: DL.linkMinHeight)
                 }
-                .buttonStyle(.pressable)
-                .padding(.horizontal, DL.addLinkPadding)
-            } else {
-                SheetHeader(title: "", leading: .back, action: back)
+                Section {
+                    if store.isThisDevice(device) {
+                        Button(M.signOut, role: .destructive) { signingOut = true }
+                            .frame(maxWidth: .infinity)
+                    } else {
+                        Button(M.removeDevice, role: .destructive) { removing = device }
+                            .frame(maxWidth: .infinity)
+                    }
+                }
             }
         }
+        .deviceListStyle()
+        .navigationTitle(device?.name ?? "")
         .alert(M.renameTitle, isPresented: $renaming) {
             TextField(M.deviceName, text: $draftName)
             Button(M.cancel, role: .cancel) {}
             Button(M.ok) { rename() }
         }
-        .alert(M.actionFailed, isPresented: $failed) {}
-    }
-
-    private func presenceRow(_ device: PairedDevice) -> some View {
-        let presence = store.presence(device)
-        return VStack(spacing: 0) {
-            HStack {
-                Text(presence == .connected ? M.deviceNow : M.lastConnected).hmType(SL.rowValue).foregroundStyle(Color.hmText)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Text(M.presence(presence)).hmType(SL.rowValue)
-                    .foregroundStyle(presence == .connected ? Color.hmSuccess : Color.hmMuted)
-            }
-            .padding(.vertical, SL.rowPaddingVertical)
-            .frame(minHeight: SL.rowMinHeight)
-            RowSeparator()
+        .removeDeviceDialog(store: store, removing: $removing, failure: $failure, removed: back)
+        .signOutDialog(store: store, signingOut: $signingOut, failure: $failure, unsentMessages: unsentMessages, signedOut: removedThisDevice)
+        .alert(failure ?? "", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
+            Button(M.ok) {}
         }
     }
 
     private func rename() {
         guard let device else { return }
         guard let name = DeviceName.accepted(draftName) else {
-            failed = true
+            failure = M.actionFailed
             return
         }
         guard name != device.name else { return }
         Task {
             do {
-                try await store.rename(device, to: name, reason: M.confirmRename(name))
+                try await store.rename(device, to: name)
             } catch {
-                failed = true
+                failure = M.actionFailed
             }
         }
     }

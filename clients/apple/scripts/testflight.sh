@@ -11,9 +11,25 @@ need() {
   [ -n "${!1:-}" ] || { echo "TESTFLIGHT_MISSING $1" >&2; exit 2; }
 }
 
+server_settings() {
+  server=()
+  local origin="${HIMAWARI_SERVER_ORIGIN:-}"
+  origin="${origin%/}"
+  [ -n "$origin" ] || return 0
+  case "$origin" in
+    https://*) ;;
+    *) echo "TESTFLIGHT_BAD_SERVER_ORIGIN HIMAWARI_SERVER_ORIGIN must start with https://" >&2; exit 2 ;;
+  esac
+  local host="${origin#https://}"
+  host="${host%%/*}"
+  host="${host%%:*}"
+  server=("HIMAWARI_SERVER_ORIGIN=$origin" "HIMAWARI_SERVER_HOST=$host")
+}
+
 archive_app() {
   need APPLE_TEAM_ID
   need HIMAWARI_BUILD_NUMBER
+  server_settings
   rm -rf "$archive"
   xcodebuild archive \
     -project "$project" \
@@ -27,7 +43,8 @@ archive_app() {
     AD_HOC_CODE_SIGNING_ALLOWED=YES \
     PROVISIONING_PROFILE_SPECIFIER= \
     HIMAWARI_RELEASE_CHANNEL=testflight \
-    CURRENT_PROJECT_VERSION="$HIMAWARI_BUILD_NUMBER"
+    CURRENT_PROJECT_VERSION="$HIMAWARI_BUILD_NUMBER" \
+    ${server[@]+"${server[@]}"}
   check_entitlements
 }
 
@@ -44,6 +61,7 @@ cleanup_key() {
 
 archive_and_upload() {
   need ASC_ISSUER_ID
+  need HIMAWARI_SERVER_ORIGIN
   trap cleanup_key EXIT
   archive_app
   write_key

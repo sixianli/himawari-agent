@@ -55,9 +55,7 @@ public struct VaultRootView: View {
 
     public init(api: DeviceAPI, confirmKey: DeviceKeySigner, close: @escaping () -> Void) {
         _model = State(initialValue: VaultAssembly.model(api: api, confirmKey: confirmKey))
-        let gateway = ManageGateway(transport: SignedDeviceTransport(http: api.http, confirmKey: confirmKey))
-        let identity = api.http.currentCredentials.map { DeviceIdentity(deviceId: $0.deviceId, origin: $0.origin, access: $0.access) }
-        _settings = State(initialValue: SettingsStore(gateway: gateway, identity: identity))
+        _settings = State(initialValue: SettingsStore(directory: SignedDeviceDirectory(http: api.http, confirmKey: confirmKey)))
         self.close = close
     }
 

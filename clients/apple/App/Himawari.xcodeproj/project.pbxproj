@@ -820,6 +820,8 @@
 				HIMAWARI_APP_GROUP = group.win.siyi.himawari;
 				HIMAWARI_ENTITLEMENTS_SUFFIX = "";
 				HIMAWARI_KEYCHAIN_GROUP = win.siyi.himawari.shared;
+				HIMAWARI_SERVER_HOST = "";
+				HIMAWARI_SERVER_ORIGIN = "";
 				CLANG_ENABLE_MODULES = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				SDKROOT = iphoneos;
@@ -838,6 +840,8 @@
 				HIMAWARI_APP_GROUP = group.win.siyi.himawari;
 				HIMAWARI_ENTITLEMENTS_SUFFIX = "";
 				HIMAWARI_KEYCHAIN_GROUP = win.siyi.himawari.shared;
+				HIMAWARI_SERVER_HOST = "";
+				HIMAWARI_SERVER_ORIGIN = "";
 				CLANG_ENABLE_MODULES = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				SDKROOT = iphoneos;

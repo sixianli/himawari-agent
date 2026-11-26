@@ -94,3 +94,8 @@ public enum ManageLayout {
         public static let actionGap: CGFloat = 8
     }
 }
+
+public enum SignInLayout {
+    public static let macWindowWidth: CGFloat = 460
+    public static let macWindowHeight: CGFloat = 560
+}

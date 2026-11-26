@@ -111,11 +111,40 @@ enum M {
     static func approvalsWaiting(_ count: Int) -> String {
         text("等你同意 · \(count) 件", ja: "あなたの同意待ち · \(count) 件", en: "Waiting for you · \(count)")
     }
-    static func phoneLine(_ name: String, _ presence: String) -> String { "\(name) · \(presence)" }
-    static func pairedSince(_ date: Date) -> String {
-        text("\(pairedDay(date))配对", ja: "\(pairedDay(date))にペアリング", en: "Paired \(pairedDay(date))")
+    static func serverSince(_ date: Date) -> String {
+        text("自\(pairedDay(date))起", ja: "\(pairedDay(date))から", en: "Since \(pairedDay(date))")
     }
-    static var disconnectThisIPhone: String { text("断开这台 iPhone", ja: "この iPhone の接続を解除", en: "Disconnect this iPhone") }
+    static func inUse(signedIn date: Date?) -> String {
+        guard let date else { return text("正在使用", ja: "使用中", en: "In use") }
+        return text("正在使用 · \(pairedDay(date))登录", ja: "使用中 · \(pairedDay(date))にサインイン", en: "In use · Signed in \(pairedDay(date))")
+    }
+    static func thisDevice(_ kind: String) -> String {
+        switch kind {
+        case "mac": text("这台 Mac", ja: "この Mac", en: "This Mac")
+        case "watch": text("这块手表", ja: "この Apple Watch", en: "This Apple Watch")
+        default: thisIPhone
+        }
+    }
+    static var otherDevices: String { text("其他设备", ja: "ほかのデバイス", en: "Other Devices") }
+    static var remove: String { text("移除", ja: "削除", en: "Remove") }
+    static func removeQuestion(_ name: String) -> String { text("移除“\(name)”？", ja: "“\(name)”を削除しますか？", en: "Remove “\(name)”?") }
+    static var removeExplain: String { text("它会马上退出，要重新登录才能再用。", ja: "すぐにサインアウトされ、使うにはもう一度サインインが必要です。", en: "It will be signed out right away and must sign in again to be used.") }
+    static var removeFailed: String { text("没移除成功", ja: "削除できませんでした", en: "Couldn’t remove it") }
+    static var signOut: String { text("退出登录", ja: "サインアウト", en: "Sign Out") }
+    static var signOutQuestion: String { text("退出登录？", ja: "サインアウトしますか？", en: "Sign out?") }
+    static func signOutExplain(_ kind: String, unsent: Int?) -> String {
+        let device = kind == "mac" ? "Mac" : "iPhone"
+        var explain = text(
+            "这台 \(device) 会从设备列表移除，本机的设备密钥会删掉。以后用通行密钥面容 ID 一下就能再登录。",
+            ja: "この \(device) はデバイス一覧から削除され、本体のデバイス鍵も消去されます。あとでパスキーですぐにサインインし直せます。",
+            en: "This \(device) will be removed from your devices and its device keys deleted. You can sign in again later with your passkey."
+        )
+        if let unsent, unsent > 0 {
+            explain += text("还有 \(unsent) 条消息没发出去，会丢掉。", ja: "未送信のメッセージ \(unsent) 件は失われます。", en: " \(unsent) unsent messages will be lost.")
+        }
+        return explain
+    }
+    static var signOutFailed: String { text("没退出成功", ja: "サインアウトできませんでした", en: "Couldn’t sign out") }
     static var quietWhen: String { text("什么时候不响", ja: "鳴らさない時間", en: "When to stay quiet") }
     static var quietAtNight: String { text("晚上不响", ja: "夜は鳴らさない", en: "Quiet at night") }
     static var quietOff: String { text("不设不响的时段", ja: "鳴らさない時間を設けない", en: "No quiet hours") }
@@ -310,13 +339,12 @@ enum M {
         case .seen(let date):
             relative(date)
         case .neverSeen: text("还没连过", ja: "まだつながっていません", en: "Never connected")
-        case .waitingForConfirmation: text("等确认", ja: "確認待ち", en: "Waiting to confirm")
         }
     }
 
     static var deviceName: String { text("名字", ja: "名前", en: "Name") }
     static var deviceNow: String { text("现在", ja: "いま", en: "Now") }
-    static var pairedOn: String { text("配对于", ja: "ペアリング日", en: "Paired") }
+    static var signedInOn: String { text("登录于", ja: "サインイン日", en: "Signed In") }
     static var deviceVersion: String { text("版本", ja: "バージョン", en: "Version") }
 
     static func channel(_ value: String) -> String? {
@@ -329,9 +357,8 @@ enum M {
         }
     }
 
-    static var removeDevice: String { text("移除这台设备", ja: "このデバイスを外す", en: "Remove this device") }
-    static func confirmRemove(_ name: String) -> String { text("移除 \(name)", ja: "\(name) を外す", en: "Remove \(name)") }
-    static func confirmRename(_ name: String) -> String { text("把名字改成 \(name)", ja: "名前を \(name) に変える", en: "Rename to \(name)") }
+    static var removeDevice: String { text("移除这台设备", ja: "このデバイスを削除", en: "Remove This Device") }
+    static func confirmRemove(_ name: String) -> String { text("移除 \(name)", ja: "\(name) を削除", en: "Remove \(name)") }
     static var renameTitle: String { text("给这台设备起个名字", ja: "このデバイスに名前をつける", en: "Name this device") }
     static var ok: String { text("好", ja: "OK", en: "OK") }
     static var lastConnected: String { text("上次连上", ja: "最後の接続", en: "Last connected") }

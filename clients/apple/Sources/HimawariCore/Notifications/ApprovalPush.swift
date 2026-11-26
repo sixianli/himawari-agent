@@ -4,6 +4,7 @@ public struct HimawariPush: Sendable, Equatable {
     public static let actionsCategory = "himawari.actions"
     public static let plainCategory = "himawari.plain"
     public static let approvalKind = "approval"
+    public static let deviceSignedInKind = "device_signed_in"
     static let version = 1
 
     public enum ActionKind: String, Sendable, Equatable, CaseIterable {

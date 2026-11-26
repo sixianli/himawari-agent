@@ -67,13 +67,4 @@
 "settings.shortcut.needsModifier" = "⌥・⌘・⌃ のどれかを含めてください";
 "settings.elsewhere" = "記憶・ルール・リマインダーは iPhone で管理します。";
 "key.space" = "スペース";
-"pairing.title" = "この Mac を Himawari につなぐ";
-"pairing.step1" = "iPhone の Himawari で 設定 → デバイス → デバイスを追加 を開き、「Mac で読み取れない：ペアリングリンクを送る」を押して、この Mac にリンクを送ってください";
-"pairing.step2" = "iPhone がない場合は、Web の設定からも追加できます";
-"pairing.paste" = "ペアリングリンクを貼り付け";
-"pairing.connect" = "接続";
-"pairing.server" = "リンクに書かれたサーバー";
-"pairing.waiting" = "iPhone（または Web）の数字と同じなら、\nそちらで確認してください";
 "pairing.cancel" = "キャンセル";
-"pairing.retry" = "もう一度";
-"pairing.problem" = "接続できませんでした。iPhone でもう一度デバイスを追加し、新しいリンクを送ってください";

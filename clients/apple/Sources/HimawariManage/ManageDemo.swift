@@ -154,10 +154,7 @@ enum ManageDemo {
     }
 
     @MainActor static func settingsStore() -> SettingsStore {
-        SettingsStore(
-            gateway: gateway(),
-            identity: DeviceIdentity(deviceId: phoneId, origin: URL(string: "https://himawari.example.com")!, access: nil)
-        )
+        SettingsStore(directory: DemoDeviceDirectory())
     }
 
     static func gateway(allowances: Bool = true) -> ManageGateway {
@@ -168,7 +165,6 @@ enum ManageDemo {
         switch type {
         case "memory.overview.read": memories
         case "memory.rules.read": allowances ? rules : #"{"payload":{"rules":[],"allowances":[],"allowanceDays":7}}"#
-        case "device.list.read": devices
         case "quiet_hours.read": #"{"payload":{"version":"v1","editable":true,"enabled":true,"start":"23:00","end":"07:00","classes":["scheduled_reminder","run_result","mail_reminder","her_words"],"rules":[{"ruleId":"rule-quiet","summary":"晚上 11 点到早上 7 点别推"}]}}"#
         default: "{}"
         }
@@ -209,11 +205,23 @@ enum ManageDemo {
     ],"allowanceDays":7}}
     """#
 
-    private static let devices = #"""
-    {"payload":{"devices":[
-      {"id":"dev_demoPhone000000000000","revision":1,"kind":"iphone","name":"Andy 的 iPhone","releaseChannel":"direct","status":"active","pairedAt":"2026-11-02T00:00:00Z","lastSeenAt":"2026-11-12T00:00:00Z","pairingNumber":null}
-    ],"limits":[],"pairing":null,"generatedAt":"2026-11-12T00:00:00Z"}}
+    static let roster = #"""
+    {"thisDeviceId":"dev_demoPhone000000000000","devices":[
+      {"id":"dev_demoPhone000000000000","revision":1,"kind":"iphone","name":"Andy 的 iPhone","releaseChannel":"testflight","status":"active","pairedAt":"2026-11-26T00:00:00Z","lastSeenAt":"2026-11-26T00:00:00Z"},
+      {"id":"dev_demoMac00000000000000","revision":3,"kind":"mac","name":"Andy 的 MacBook Air","releaseChannel":"mac_direct","status":"active","pairedAt":"2026-11-26T01:00:00Z","lastSeenAt":"2026-11-26T02:00:00Z"},
+      {"id":"dev_demoWatch000000000000","revision":2,"kind":"watch","name":"Apple Watch","releaseChannel":"direct","status":"active","pairedAt":"2026-11-24T00:00:00Z","lastSeenAt":null}
+    ],"server":{"origin":"https://himawari.example.com","since":"2026-11-26T00:00:00Z"}}
     """#
+}
+
+private struct DemoDeviceDirectory: DeviceDirectory {
+    func roster() async throws -> DeviceRoster {
+        try JSONDecoder().decode(DeviceRoster.self, from: Data(ManageDemo.roster.utf8))
+    }
+
+    func rename(_ deviceId: String, expectedRevision: Int, name: String) async throws {}
+
+    func revoke(_ deviceId: String, expectedRevision: Int, confirmReason: String?) async throws {}
 }
 
 private actor DemoTransport: DeviceTransport {

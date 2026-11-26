@@ -32,7 +32,7 @@ public struct HerPage: View {
     @State private var memory: MemoryStore
     @State private var quietHours: QuietHoursStore
     @State private var timers: TimersStore
-    @State private var path: [Page] = []
+    @State private var path: [Page]
     @State private var sensesOpen = false
     @State private var vaultCount: HerVaultCount = .unknown
     @State private var vaultOpen = false
@@ -46,6 +46,7 @@ public struct HerPage: View {
     private let talk: (String) -> Void
     private let close: () -> Void
     private let removedThisDevice: () -> Void
+    private let unsentMessages: () -> Int?
     private let countVault: () async -> HerVaultCount
     private let vault: ((@escaping () -> Void) -> AnyView)?
     private let server: String?
@@ -61,14 +62,14 @@ public struct HerPage: View {
         sensesOn: @escaping () -> Int? = { nil },
         talk: @escaping (String) -> Void,
         close: @escaping () -> Void,
-        removedThisDevice: @escaping () -> Void
+        removedThisDevice: @escaping () -> Void,
+        unsentMessages: @escaping () -> Int? = { nil },
+        opensDevices: Bool = false
     ) {
+        _path = State(initialValue: opensDevices ? [.devices] : [])
         let gateway = ManageGateway(transport: SignedDeviceTransport(http: api.http, confirmKey: confirmKey))
-        let identity = api.http.currentCredentials.map {
-            DeviceIdentity(deviceId: $0.deviceId, origin: $0.origin, access: $0.access)
-        }
-        server = identity?.origin.absoluteString
-        _settings = State(initialValue: SettingsStore(gateway: gateway, identity: identity))
+        server = api.http.currentCredentials?.origin.absoluteString
+        _settings = State(initialValue: SettingsStore(directory: SignedDeviceDirectory(http: api.http, confirmKey: confirmKey)))
         _memory = State(initialValue: MemoryStore(gateway: gateway))
         _quietHours = State(initialValue: QuietHoursStore(gateway: gateway))
         _timers = State(initialValue: TimersStore(gateway: gateway))
@@ -81,6 +82,7 @@ public struct HerPage: View {
         self.talk = talk
         self.close = close
         self.removedThisDevice = removedThisDevice
+        self.unsentMessages = unsentMessages
         countVault = {
             do {
                 return .items(try await api.vaultSnapshot().items.count)
@@ -112,6 +114,7 @@ public struct HerPage: View {
         talk = { _ in }
         close = {}
         removedThisDevice = {}
+        unsentMessages = { 0 }
         let shown = vaultItems
         countVault = { shown }
         server = "https://himawari.example"
@@ -210,9 +213,9 @@ public struct HerPage: View {
                         sensesSummary: sensesOn().map(M.sensesOn)
                     ) { path.removeLast() }
                 case .devices:
-                    HerDevicesPage(store: settings, open: { path.append(.device($0.id)) }, removedThisDevice: removedThisDevice) { path.removeLast() }
+                    HerDevicesPage(store: settings, unsentMessages: unsentMessages, removedThisDevice: removedThisDevice)
                 case .device(let id):
-                    DevicePage(store: settings, deviceId: id, actions: actions, removedThisDevice: removedThisDevice) { path.removeLast() }
+                    DevicePage(store: settings, deviceId: id, actions: actions, unsentMessages: unsentMessages, removedThisDevice: removedThisDevice) { path.removeLast() }
                 case .allowances:
                     HerAllowancesPage(memory: memory) { path.removeLast() }
                 case .timers:

@@ -46,13 +46,13 @@ enum DemoScene: String, CaseIterable {
     case deletePerception = "next-7-delete-perception"
     case deletePerceptionDays = "next-7-delete-perception-days"
     case deletePerceptionEpisode = "next-7-delete-perception-episode"
-    case pairing = "11-pairing"
-    case pairingScan = "15-pairing-flow-1-scan"
-    case pairingConfirmServer = "15-pairing-flow-1b-confirm-server"
-    case pairingWaiting = "15-pairing-flow-2-waiting"
-    case pairingExpired = "15-pairing-flow-3-expired"
-    case pairingUnreachable = "15-pairing-flow-4-unreachable"
-    case pairingRemoved = "15-pairing-flow-5-removed"
+    case signIn = "11-sign-in"
+    case signInCode = "15-sign-in-1-code"
+    case signInCodeInvalid = "15-sign-in-2-code-invalid"
+    case signInCodeExpired = "15-sign-in-3-code-expired"
+    case signInServer = "15-sign-in-4-server"
+    case signInNoPasskey = "15-sign-in-5-no-passkey"
+    case signInRemoved = "15-sign-in-6-removed"
     case chatEmpty = "16-chat-states-1-empty"
     case chatSending = "16-chat-states-3-sending"
     case chatOffline = "16-chat-states-4-offline"
@@ -228,18 +228,18 @@ struct DemoSceneView: View {
         case .motionScroll:
             chat(DemoChatFixtures.longConversation())
                 .environment(\.transcriptScrollsToTopAfter, 4)
-        case .pairing:
-            PairingView(model: .demo(.unpaired(nil)))
-        case .pairingScan:
-            PairingView(model: .demo(.unpaired(nil)), scanning: true)
-        case .pairingConfirmServer:
-            PairingView(model: .demo(.confirmingServer(host: DemoScene.demoHost)))
-        case .pairingWaiting:
-            PairingView(model: .demo(.waitingForConfirmation(number: "482 913"), host: DemoScene.demoHost))
-        case .pairingExpired:
-            PairingView(model: .demo(.unpaired(.codeExpired(ttlSeconds: 600))))
-        case .pairingUnreachable:
-            PairingView(model: .demo(.unpaired(.unreachable)))
+        case .signIn:
+            SignInView(model: .demo(.signedOut(nil), host: DemoScene.demoHost), path: [], quietAttempt: false)
+        case .signInCode:
+            SignInView(model: .demo(.signedOut(nil), host: DemoScene.demoHost), path: [.setupCode], quietAttempt: false)
+        case .signInCodeInvalid:
+            SignInView(model: .demo(.signedOut(nil), host: DemoScene.demoHost, setupProblem: .codeInvalid), path: [.setupCode], quietAttempt: false)
+        case .signInCodeExpired:
+            SignInView(model: .demo(.signedOut(nil), host: DemoScene.demoHost, setupProblem: .codeExpired), path: [.setupCode], quietAttempt: false)
+        case .signInServer:
+            SignInView(model: .demo(.signedOut(nil), host: DemoScene.demoHost), path: [], serverOpen: true, quietAttempt: false)
+        case .signInNoPasskey:
+            SignInView(model: .demo(.signedOut(.noPasskeyHere), host: DemoScene.demoHost), path: [], quietAttempt: false)
         case .handoverTyping:
             HandoverDemo.sheet(.typing)
         case .handoverAnswered:
@@ -258,8 +258,8 @@ struct DemoSceneView: View {
             HandoverDemo.entry(.safariOn)
         case .shareEntry:
             HandoverDemo.entry(.shareOn)
-        case .pairingRemoved:
-            PairingView(model: .demo(.unpaired(.removed)))
+        case .signInRemoved:
+            SignInView(model: .demo(.signedOut(.removed), host: DemoScene.demoHost), path: [], quietAttempt: false)
         case .sensesOverview:
             DemoSensesHost(scene: .overview)
         case .sensesIntro:

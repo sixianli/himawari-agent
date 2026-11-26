@@ -4,68 +4,145 @@ import SwiftUI
 
 struct HerDevicesPage: View {
     let store: SettingsStore
-    let open: (PairedDevice) -> Void
+    let unsentMessages: () -> Int?
     let removedThisDevice: () -> Void
-    let back: () -> Void
-    @State private var disconnecting = false
-    @State private var failed = false
-
-    private var thisPhone: PairedDevice? { store.devices.first(where: store.isThisDevice) }
+    @State private var removing: PairedDevice?
+    @State private var signingOut = false
+    @State private var failure: String?
 
     var body: some View {
-        SettingsPage(gap: SL.pageGap) {
-            SheetHeader(title: M.devicesTitle, leading: .back, action: back)
-            if let phone = thisPhone {
-                SettingsGroup(label: nil) {
-                    Button { open(phone) } label: {
-                        HerRow(
-                            icon: .deviceMobilePlain,
-                            title: M.thisIPhone,
-                            subtitle: M.phoneLine(phone.name, M.presence(store.presence(phone))),
-                            last: true
-                        )
+        List {
+            if let device = store.thisDevice {
+                Section(M.thisDevice(device.kind)) {
+                    NavigationLink(value: HerPage.Page.device(device.id)) {
+                        DeviceRow(device: device, subtitle: M.inUse(signedIn: Timestamp.parse(device.pairedAt)), subtitleColor: Color.hmMuted)
                     }
-                    .buttonStyle(.pressable)
                 }
             }
-            if let origin = store.identity?.origin {
-                SettingsGroup(label: M.server) {
-                    SettingsRow(
-                        icon: nil,
-                        title: origin.host() ?? origin.absoluteString,
-                        detail: thisPhone.flatMap { Timestamp.parse($0.pairedAt) }.map(M.pairedSince),
-                        last: true
-                    )
+            if !store.otherDevices.isEmpty {
+                Section(M.otherDevices) {
+                    ForEach(store.otherDevices) { device in
+                        NavigationLink(value: HerPage.Page.device(device.id)) {
+                            DeviceRow(device: device, subtitle: M.presence(store.presence(device)), subtitleColor: Color.hmMuted)
+                        }
+                        .swipeActions {
+                            Button(M.remove, role: .destructive) { removing = device }
+                        }
+                    }
                 }
             }
-            if thisPhone != nil {
-                Button { disconnecting = true } label: {
-                    Text(M.disconnectThisIPhone)
-                        .hmType(SL.rowValue)
-                        .foregroundStyle(Color.hmDanger)
-                        .padding(.horizontal, DesignTokens.Her.pillPaddingX)
-                        .frame(minHeight: DesignTokens.Size.pill)
-                        .background(Color.hmFill, in: Capsule())
+            if let server = store.server {
+                Section(M.server) {
+                    VStack(alignment: .leading) {
+                        Text(URL(string: server.origin)?.host() ?? server.origin)
+                            .foregroundStyle(Color.hmText)
+                            .textSelection(.enabled)
+                        if let since = server.since.flatMap(Timestamp.parse) {
+                            Text(M.serverSince(since)).font(.footnote).foregroundStyle(Color.hmMuted)
+                        }
+                    }
                 }
-                .buttonStyle(.pressable)
-                .frame(maxWidth: .infinity)
+            }
+            if store.thisDevice != nil {
+                Section {
+                    Button(M.signOut, role: .destructive) { signingOut = true }
+                        .frame(maxWidth: .infinity)
+                }
             }
         }
-        .confirmationDialog(M.disconnectThisIPhone, isPresented: $disconnecting, titleVisibility: .visible) {
-            Button(M.disconnectThisIPhone, role: .destructive, action: disconnect)
+        .deviceListStyle()
+        .navigationTitle(M.devicesTitle)
+        .refreshable { await store.reloadDevices() }
+        .task { if store.phase != .loaded { await store.load() } }
+        .removeDeviceDialog(store: store, removing: $removing, failure: $failure)
+        .signOutDialog(store: store, signingOut: $signingOut, failure: $failure, unsentMessages: unsentMessages, signedOut: removedThisDevice)
+        .alert(failure ?? "", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
+            Button(M.ok) {}
         }
-        .alert(M.actionFailed, isPresented: $failed) {}
+    }
+}
+
+struct DeviceRow: View {
+    let device: PairedDevice
+    let subtitle: String
+    let subtitleColor: Color
+
+    var body: some View {
+        Label {
+            VStack(alignment: .leading) {
+                Text(device.name).foregroundStyle(Color.hmText)
+                Text(subtitle).font(.footnote).foregroundStyle(subtitleColor)
+            }
+        } icon: {
+            DeviceKindIcon(kind: device.kind)
+        }
+    }
+}
+
+struct DeviceKindIcon: View {
+    let kind: String
+
+    var body: some View {
+        Group {
+            switch kind {
+            case "iphone": Icon(.deviceMobilePlain, size: DesignTokens.Her.rowIcon)
+            case "mac": Image(systemName: "laptopcomputer")
+            case "watch": Image(systemName: "applewatch")
+            default: Image(systemName: "questionmark.app")
+            }
+        }
+        .foregroundStyle(Color.hmSun)
+        .accessibilityHidden(true)
+    }
+}
+
+extension View {
+    @ViewBuilder
+    func deviceListStyle() -> some View {
+        #if os(iOS)
+        listStyle(.insetGrouped)
+        #else
+        listStyle(.inset)
+        #endif
     }
 
-    private func disconnect() {
-        guard let phone = thisPhone else { return }
-        Task {
-            do {
-                try await store.revoke(phone, reason: M.disconnectThisIPhone)
-                removedThisDevice()
-            } catch {
-                failed = true
+    func removeDeviceDialog(store: SettingsStore, removing: Binding<PairedDevice?>, failure: Binding<String?>, removed: @escaping () -> Void = {}) -> some View {
+        confirmationDialog(
+            removing.wrappedValue.map { M.removeQuestion($0.name) } ?? "",
+            isPresented: Binding(get: { removing.wrappedValue != nil }, set: { if !$0 { removing.wrappedValue = nil } }),
+            titleVisibility: .visible,
+            presenting: removing.wrappedValue
+        ) { device in
+            Button(M.remove, role: .destructive) {
+                Task {
+                    do {
+                        try await store.revoke(device, reason: M.confirmRemove(device.name))
+                        removed()
+                    } catch {
+                        failure.wrappedValue = M.removeFailed
+                    }
+                }
             }
+        } message: { _ in
+            Text(M.removeExplain)
+        }
+    }
+
+    func signOutDialog(store: SettingsStore, signingOut: Binding<Bool>, failure: Binding<String?>, unsentMessages: @escaping () -> Int?, signedOut: @escaping () -> Void) -> some View {
+        confirmationDialog(M.signOutQuestion, isPresented: signingOut, titleVisibility: .visible) {
+            Button(M.signOut, role: .destructive) {
+                guard let device = store.thisDevice else { return }
+                Task {
+                    do {
+                        try await store.revoke(device, reason: M.signOut)
+                        signedOut()
+                    } catch {
+                        failure.wrappedValue = M.signOutFailed
+                    }
+                }
+            }
+        } message: {
+            Text(M.signOutExplain(store.thisDevice?.kind ?? "iphone", unsent: unsentMessages()))
         }
     }
 }

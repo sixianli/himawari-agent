@@ -37,7 +37,7 @@ public struct HimawariRootView: View {
             if model.phase == .active, let chat = model.chat {
                 MainShell(model: model, chat: chat)
             } else {
-                PairingView(model: model)
+                SignInView(model: model)
             }
         }
         .onOpenURL { url in
@@ -47,17 +47,6 @@ public struct HimawariRootView: View {
             NavigationStack {
                 HandoverEntryRoute(link.entry, safariURL: model.vault.pairingRecord()?.origin)
             }
-        }
-        .onOpenURL { url in model.handlePairingLink(url.absoluteString) }
-        .confirmationDialog(
-            L.text("watch.offer.title"),
-            isPresented: Binding(get: { model.watchOffer != nil }, set: { if !$0 { model.declineWatchOffer() } }),
-            titleVisibility: .visible
-        ) {
-            Button(L.text("watch.offer.watch")) { model.sendOfferToWatch() }
-            Button(L.text("watch.offer.cancel"), role: .cancel) { model.declineWatchOffer() }
-        } message: {
-            if let host = model.watchOfferHost { Text(host) }
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { model.becameActive() }
@@ -81,6 +70,7 @@ struct MainShell: View {
     @State private var listening: ListeningController?
     @State private var herOpen: Bool
     @State private var herListenOpen = false
+    @State private var herOpensDevices = false
     #if os(iOS)
     @State private var dictation = ChatDictation()
     @State private var talkSession = ChatTalkSession()
@@ -151,6 +141,12 @@ struct MainShell: View {
             NotificationRouter.shared.approvalsRequested = false
             herOpen = true
         }
+        .onChange(of: NotificationRouter.shared.devicesRequested, initial: true) { _, requested in
+            guard requested else { return }
+            NotificationRouter.shared.devicesRequested = false
+            herOpensDevices = true
+            herOpen = true
+        }
         #endif
     }
 
@@ -198,8 +194,11 @@ struct MainShell: View {
             removedThisDevice: {
                 herOpen = false
                 model.removedThisDevice()
-            }
+            },
+            unsentMessages: { model.unsentMessages },
+            opensDevices: herOpensDevices
         )
+        .onDisappear { herOpensDevices = false }
         .sheet(isPresented: $herListenOpen) {
             if let listening {
                 ListenEntrySheet(controller: listening) { herListenOpen = false }

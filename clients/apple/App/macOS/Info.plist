@@ -28,17 +28,8 @@
 	<string>Himawari</string>
 	<key>HimawariReleaseChannel</key>
 	<string>$(HIMAWARI_RELEASE_CHANNEL)</string>
-	<key>CFBundleURLTypes</key>
-	<array>
-		<dict>
-			<key>CFBundleURLName</key>
-			<string>$(PRODUCT_BUNDLE_IDENTIFIER).pairing</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>himawari-pair</string>
-			</array>
-		</dict>
-	</array>
+	<key>HimawariServerOrigin</key>
+	<string>$(HIMAWARI_SERVER_ORIGIN)</string>
 	<key>LSUIElement</key>
 	<true/>
 	<key>LSMinimumSystemVersion</key>

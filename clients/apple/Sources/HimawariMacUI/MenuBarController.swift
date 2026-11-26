@@ -15,11 +15,10 @@ final class MenuBarController: NSObject, NSWindowDelegate, NSDraggingDestination
     private let notices = ResultNotices()
     private var shortcut: GlobalShortcut?
     private var settingsWindow: NSWindow?
-    private var pairingWindow: NSWindow?
+    private var signInWindow: NSWindow?
     private var observation: Task<Void, Never>?
     private let messages: MessagesSensor
     private let presence: PresenceSensor
-    private let pairingInbox = PairingInbox()
 
     init(model: MenuBarModel) {
         self.model = model
@@ -44,7 +43,7 @@ final class MenuBarController: NSObject, NSWindowDelegate, NSDraggingDestination
         messages.start()
         presence.start()
         observeBadge()
-        if model.app.phase != .active { showPairing() }
+        if model.app.phase != .active { showSignIn() }
     }
 
     private func applyShortcut(_ value: KeyShortcut) {
@@ -74,7 +73,7 @@ final class MenuBarController: NSObject, NSWindowDelegate, NSDraggingDestination
             },
             pair: { [weak self] in
                 self?.popover.performClose(nil)
-                self?.showPairing()
+                self?.showSignIn()
             }
         ))
         host.sizingOptions = .preferredContentSize
@@ -86,7 +85,7 @@ final class MenuBarController: NSObject, NSWindowDelegate, NSDraggingDestination
             while !Task.isCancelled {
                 guard let self else { return }
                 updateBadge(model.awaitingCount)
-                if model.app.phase == .active { pairingWindow?.close() }
+                if model.app.phase == .active { signInWindow?.close() }
                 await withCheckedContinuation { continuation in
                     withObservationTracking {
                         _ = self.model.awaitingCount
@@ -146,7 +145,7 @@ final class MenuBarController: NSObject, NSWindowDelegate, NSDraggingDestination
 
     func summonInputBar(files: [URL] = []) {
         guard model.app.phase == .active else {
-            showPairing()
+            showSignIn()
             return
         }
         let snapshot = files.isEmpty
@@ -168,27 +167,21 @@ final class MenuBarController: NSObject, NSWindowDelegate, NSDraggingDestination
         settingsWindow?.makeKeyAndOrderFront(nil)
     }
 
-    func receivePairingLink(_ url: URL) {
-        pairingInbox.receive(url.absoluteString)
-        guard model.app.phase != .active else { return }
-        showPairing()
-    }
-
-    func showPairing() {
-        if pairingWindow == nil {
-            let window = NSWindow(contentViewController: NSHostingController(rootView: MacPairingView(model: model.app, inbox: pairingInbox)))
+    func showSignIn() {
+        if signInWindow == nil {
+            let window = NSWindow(contentViewController: NSHostingController(rootView: MacSignInWindow(model: model.app)))
             window.title = L.text("app.name")
             window.styleMask = [.titled, .closable]
             window.isReleasedWhenClosed = false
-            pairingWindow = window
+            signInWindow = window
         }
         NSApp.activate()
-        pairingWindow?.center()
-        pairingWindow?.makeKeyAndOrderFront(nil)
+        signInWindow?.center()
+        signInWindow?.makeKeyAndOrderFront(nil)
     }
 
     func windowWillClose(_ notification: Notification) {
-        if (notification.object as? NSWindow) === pairingWindow { pairingWindow = nil }
+        if (notification.object as? NSWindow) === signInWindow { signInWindow = nil }
     }
 
     @objc private func quit() {

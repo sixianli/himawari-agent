@@ -123,14 +123,20 @@ public final class DeviceHTTPClient: @unchecked Sendable {
     }
 
     public func pair(origin: URL, access: ServiceAccessToken?, body: Data) async throws -> Data {
-        guard let url = Self.url(origin: origin, path: "pair", rawQuery: "") else { throw DeviceAPIError.invalidResponse }
+        try Self.check(try await unsigned(origin: origin, method: "POST", path: "pair", access: access, body: body))
+    }
+
+    public func unsigned(origin: URL, method: String, path: String, access: ServiceAccessToken? = nil, body: Data? = nil) async throws -> HTTPExchangeResponse {
+        guard let url = Self.url(origin: origin, path: path, rawQuery: "") else { throw DeviceAPIError.invalidResponse }
         var urlRequest = URLRequest(url: url)
-        urlRequest.httpMethod = "POST"
-        urlRequest.httpBody = body
-        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        urlRequest.httpMethod = method
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Accept")
+        if let body {
+            urlRequest.httpBody = body
+            urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        }
         Self.apply(access: access, to: &urlRequest)
-        let response = try await exchange.send(urlRequest)
-        return try Self.check(response)
+        return try await exchange.send(urlRequest)
     }
 
     public func upload(path: String, header: String, grant: String, body: Data, contentType: String) async throws -> Data {
@@ -241,6 +247,7 @@ public final class DeviceHTTPClient: @unchecked Sendable {
     static func check(_ response: HTTPExchangeResponse) throws -> Data {
         if (200..<300).contains(response.status) { return response.body }
         let body = (try? JSONDecoder().decode(ErrorBody.self, from: response.body))?.error
+            ?? (try? JSONDecoder().decode(ErrorBody.Inner.self, from: response.body))
         throw DeviceAPIError.server(status: response.status, code: body?.code, pairingCodeTtlSeconds: body?.pairingCodeTtlSeconds, reason: body?.reason ?? body?.reasonCode)
     }
 

@@ -25,12 +25,6 @@ public final class MacAppDelegate: NSObject, NSApplicationDelegate {
         controller = MenuBarController(model: model)
     }
 
-    public func application(_ application: NSApplication, open urls: [URL]) {
-        for url in urls where url.scheme == PairingInvitation.scheme {
-            controller?.receivePairingLink(url)
-        }
-    }
-
     public func applicationDidBecomeActive(_ notification: Notification) {
         controller?.model.app.becameActive()
         controller?.model.settings.refreshPermissions()
