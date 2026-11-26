@@ -148,6 +148,7 @@ export const DEVICE_API_ROUTES = Object.freeze([
   { method: "POST", path: "connections/list", signed: true },
   { method: "POST", path: "connections/authorization", signed: true },
   { method: "POST", path: "connections/authorization/complete", signed: true },
+  { method: "POST", path: "connections/disconnect", signed: true },
 ] as const);
 
 export const DEVICE_UPLOAD_GRANT_HEADER = "himawari-upload-grant" as const;
@@ -316,6 +317,7 @@ export interface DeviceConnectionsPort {
     readonly deviceId: string;
     readonly state: string;
   }): Promise<"connected" | "denied" | "failed">;
+  disconnect(input: { readonly connection: string }): Promise<boolean | undefined>;
 }
 
 const CALLBACK_SCHEME_PATTERN = /^[a-z][a-z0-9+-]*(?:\.[a-z0-9+-]+)+$/u;
@@ -1348,6 +1350,18 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
           state,
         });
         return options.sendJson(reply, 200, { outcome });
+      });
+
+      device.post("/connections/disconnect", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        const body = json(request);
+        only(body, ["connection"]);
+        const connection = body["connection"];
+        if (typeof connection !== "string" || !CONNECTION_NAME_PATTERN.test(connection))
+          options.rejectBody(400);
+        const outcome = await connections(authenticated).disconnect({ connection });
+        if (outcome === undefined) return options.rejectNotAllowed();
+        return options.sendJson(reply, 200, { disconnected: outcome });
       });
 
       device.get("/actions/policy", async (request, reply) => {

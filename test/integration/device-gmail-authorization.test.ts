@@ -17,6 +17,7 @@ afterEach(async () => {
 function recordingGmail() {
   const begun: { deviceId: string; connection: string; callbackScheme: string }[] = [];
   const completed: { deviceId: string; state: string }[] = [];
+  const disconnected: string[] = [];
   const port: DeviceConnectionsPort = {
     list: async () => [
       {
@@ -36,8 +37,13 @@ function recordingGmail() {
       completed.push({ ...input });
       return "connected";
     },
+    disconnect: async ({ connection }) => {
+      if (connection !== "github") return undefined;
+      disconnected.push(connection);
+      return true;
+    },
   };
-  return { port, begun, completed };
+  return { port, begun, completed, disconnected };
 }
 
 async function post(h: Harness, client: PairedClient, path: string, body: unknown) {
@@ -90,6 +96,11 @@ describe("[PG-12] the iPhone asks the server for the Gmail sign-in page", () => 
     expect(gmail.completed).toEqual([
       { deviceId: client.deviceId, state: "AbCdEfGhIjKlMnOpQrStUvWx" },
     ]);
+    expect(await post(h, client, "connections/disconnect", { connection: "github" })).toEqual({
+      status: 200,
+      body: { disconnected: true },
+    });
+    expect(gmail.disconnected).toEqual(["github"]);
   });
 
   it("[reverse] refuses web schemes, malformed states, extra fields and unsigned requests, and never reaches Gmail", async () => {
@@ -146,8 +157,18 @@ describe("[PG-12] the iPhone asks the server for the Gmail sign-in page", () => 
           })
         ).status,
       ).toBe(400);
+    for (const connection of ["GitHub", "", 3])
+      expect((await post(h, client, "connections/disconnect", { connection })).status).toBe(400);
+    expect(
+      (await post(h, client, "connections/disconnect", { connection: "github", force: true }))
+        .status,
+    ).toBe(400);
+    expect(
+      (await post(h, client, "connections/disconnect", { connection: "dropbox" })).status,
+    ).toBe(404);
     expect(gmail.begun).toEqual([]);
     expect(gmail.completed).toEqual([]);
+    expect(gmail.disconnected).toEqual([]);
     const unknown = await post(h, client, "connections/authorization", {
       connection: "dropbox",
       callbackScheme: "win.siyi.himawari.app",

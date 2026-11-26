@@ -61,6 +61,7 @@ import {
   sqliteLibraryVersion,
 } from "@himawari-agent/persistence-sqlite";
 import {
+  APP_CONNECTION_CLIENT_SECRET_PURPOSE,
   APPLE_PUSH_SECRET_PURPOSE,
   assertProductionSecretSource,
   BoundedJwksFetcher,
@@ -88,6 +89,7 @@ import {
   MUSE_INTAKE_SECRET_PURPOSE,
   NodeVaultCrypto,
   PayloadUdsServer,
+  ProductionAppConnections,
   parseServiceArguments,
   portErrorSite,
   RuntimeHealthModel,
@@ -757,6 +759,7 @@ export async function startTenantRuntime(
   let applePush: ProductionApplePush | undefined;
   let applePushSender: ReturnType<typeof createApplePushSender> | undefined;
   let proactive: ProductionProactive | undefined;
+  let appConnections: ProductionAppConnections | undefined;
   let memoryClassifier: ProductionMemoryClassifier | undefined;
   let memoryImportDuplicates: ReturnType<typeof productionImportDuplicateChecker>;
   let museIntake: ProductionMuseIntake | undefined;
@@ -2306,6 +2309,40 @@ export async function startTenantRuntime(
               ids,
             })
           : undefined;
+      const appConnectionConfigurations = configuration.runPolicy?.appConnections ?? [];
+      if (appConnectionConfigurations.length > 0 && protector) {
+        const definitions = [];
+        for (const entry of appConnectionConfigurations) {
+          const secret = configuration.secretReferences.find(
+            ({ ref, purpose }) =>
+              ref === entry.clientSecretRef && purpose === APP_CONNECTION_CLIENT_SECRET_PURPOSE,
+          );
+          if (!secret) continue;
+          definitions.push({
+            name: entry.name,
+            title: entry.title,
+            serverUrl: entry.serverUrl,
+            clientId: entry.clientId,
+            clientSecret: await hostModelSources(configuration).provider.resolve(
+              secret.ref,
+              secret.version,
+            ),
+            trustsReadOnlyLabels: entry.trustsReadOnlyLabels,
+          });
+        }
+        appConnections = new ProductionAppConnections({
+          scope: { ownerId: configuration.ownerId, agentId: configuration.agentId },
+          store: repository.appConnections(),
+          seal: createProactiveSeal({
+            payloads: repository.payloadStore(configuration.ownerId, configuration.agentId),
+            protector,
+            ids,
+          }),
+          definitions,
+          publicOrigin: configuration.publicOrigin,
+          now: () => clock.now(),
+        });
+      }
       memoryImportDuplicates = productionImportDuplicateChecker(
         configuration,
         hostModelSources(configuration).provider,
@@ -3562,6 +3599,7 @@ export async function startTenantRuntime(
           settled: async (ids) => (await webPush?.settled(ids)) ?? [],
         },
         ...(proactive ? { proactive } : {}),
+        ...(appConnections ? { appConnections } : {}),
         threadDeletionDiagnostic: (event: Record<string, string>) =>
           writeServiceDiagnostic(errorOutput, { component: "agent-service", ...event }),
         messageOptions,

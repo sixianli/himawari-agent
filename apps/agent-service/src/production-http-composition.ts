@@ -64,6 +64,7 @@ import {
 } from "@himawari-agent/persistence-sqlite";
 import {
   CloudflareAccessJwtVerifier as AccessJwtVerifier,
+  APP_CONNECTIONS_CALLBACK_PATH,
   assertProductionSecretSource,
   assertUnixSocketPathLength,
   authenticateHttpRequest,
@@ -100,6 +101,7 @@ import {
   type PairedDeviceWarning,
   type PerceptionLimitWarning,
   PerceptionService,
+  type ProductionAppConnections,
   ProductSessionAuthenticationService,
   type ProductSessionAuthenticationServiceOptions,
   prepareUnixSocketPath,
@@ -348,6 +350,7 @@ export interface ProductionHttpCompositionOptions {
     readonly applePush?: ProductionApplePush;
   };
   readonly proactive?: ProductionProactive;
+  readonly appConnections?: ProductionAppConnections;
   readonly inbox?: {
     readonly delivery?: InboxDelivery;
     readonly mainThread?: {
@@ -739,13 +742,52 @@ function authorityForConfiguration(
   return authority;
 }
 
-function deviceConnections(proactive: ProductionProactive): DeviceConnectionsPort {
+function deviceConnections(
+  proactive: ProductionProactive | undefined,
+  apps: ProductionAppConnections | undefined,
+): DeviceConnectionsPort {
   return {
-    list: async () => [await proactive.connection()],
+    list: async () => [
+      ...(proactive ? [await proactive.connection()] : []),
+      ...(apps ? await apps.list() : []),
+    ],
     begin: async ({ connection, ...input }) =>
-      connection === GMAIL_SOURCE.name ? proactive.beginAppAuthorization(input) : undefined,
-    complete: (input) => proactive.completeAppAuthorization(input),
+      proactive && connection === GMAIL_SOURCE.name
+        ? proactive.beginAppAuthorization(input)
+        : apps?.begin({ ...input, connection }),
+    complete: (input) =>
+      apps?.owns(input.state)
+        ? apps.complete(input)
+        : proactive
+          ? proactive.completeAppAuthorization(input)
+          : Promise.resolve("failed"),
+    disconnect: async ({ connection }) =>
+      apps?.definition(connection) ? apps.disconnect(connection) : undefined,
   };
+}
+
+export function registerAppConnectionRoutes(
+  app: FastifyInstance,
+  connections: ProductionAppConnections,
+): void {
+  app.get(APP_CONNECTIONS_CALLBACK_PATH, async (request, reply) => {
+    const query = request.query as Record<string, unknown>;
+    const text = (key: string) =>
+      typeof query[key] === "string" && (query[key] as string).length <= 2048
+        ? (query[key] as string)
+        : null;
+    const back = connections.callback({
+      state: text("state"),
+      code: text("code"),
+      error: text("error"),
+      iss: text("iss"),
+    });
+    if (back === undefined) return reply.code(400).header("cache-control", "no-store").send();
+    return reply
+      .header("cache-control", "no-store")
+      .header("referrer-policy", "no-referrer")
+      .redirect(back, 303);
+  });
 }
 
 export function registerProactiveRoutes(
@@ -1955,11 +1997,11 @@ export async function createProductionHttpComposition(
               scope.ownerId === ownerId && scope.agentId === agentId ? options.vault : undefined,
           }
         : {}),
-      ...(options.proactive
+      ...(options.proactive || options.appConnections
         ? {
             connections: (scope: PairedDeviceScope) =>
-              scope.ownerId === ownerId && scope.agentId === agentId && options.proactive
-                ? deviceConnections(options.proactive)
+              scope.ownerId === ownerId && scope.agentId === agentId
+                ? deviceConnections(options.proactive, options.appConnections)
                 : undefined,
           }
         : {}),
@@ -1977,6 +2019,7 @@ export async function createProductionHttpComposition(
       method: identityConfiguration.kind === "built-in" ? "built-in" : "cloudflare-access",
     }),
   );
+  if (options.appConnections) registerAppConnectionRoutes(app, options.appConnections);
   if (options.proactive)
     registerProactiveRoutes(app, options.proactive, {
       authentication,
