@@ -308,12 +308,6 @@ export interface ReviewPrereviewConfiguration {
   };
 }
 
-export interface MuseIntakeConfiguration {
-  readonly enabled: boolean;
-  readonly secretRef: string;
-  readonly gapExportSecretRef?: string;
-}
-
 export interface ImportDuplicateTuning {
   readonly yesAtLeastPermille: number;
   readonly noAtMostPermille: number;
@@ -438,14 +432,18 @@ export interface OwnerIntentCheckConfiguration {
   readonly secretRef: string;
 }
 
+export interface UserComputersConfiguration {
+  readonly socketPath: string;
+}
+
 export interface RunPolicyConfiguration {
   readonly timeZone?: string;
+  readonly userComputers?: UserComputersConfiguration;
   readonly inbox?: InboxConfiguration;
   readonly approvalBodyPreviewCharacters?: number;
   readonly toolRefusals?: ToolRefusalConfiguration;
   readonly ownerIntentCheck?: OwnerIntentCheckConfiguration;
   readonly realEval?: RealEvalConfiguration;
-  readonly museIntake?: MuseIntakeConfiguration;
   readonly importDuplicates?: ImportDuplicateConfiguration;
   readonly mcpRead?: McpReadConfiguration;
   readonly webPush?: WebPushConfiguration;

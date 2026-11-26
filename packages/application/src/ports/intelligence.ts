@@ -487,6 +487,7 @@ export interface RuntimeToolSettledResult {
   readonly errorCode: string | null;
   readonly externalActionId: string | null;
   readonly modelContent: string;
+  readonly modelImages?: readonly { readonly mimeType: string; readonly data: string }[];
   readonly contentClassification?: DataClassification;
   readonly refused?: true;
 }

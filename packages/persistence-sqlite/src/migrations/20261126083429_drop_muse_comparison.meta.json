@@ -1,0 +1,29 @@
+{
+  "alters": [
+    "gap_case_marks",
+    "muse_reference_entries",
+    "muse_intake_conflicts",
+    "muse_intake_items",
+    "muse_intake_batches",
+    "muse_intake_channel",
+    "muse_intake_items_time_index",
+    "muse_reference_entries_intake_key_index",
+    "muse_reference_entries_time_index"
+  ],
+  "removes": [
+    "proactive",
+    "scheduled",
+    "delivered",
+    "suppressed",
+    "succeeded",
+    "failed",
+    "send",
+    "skip",
+    "defer",
+    "regular",
+    "high",
+    "*[^A-Za-z0-9_-]*",
+    "gap_*",
+    "????-??-??T??:??:??.???Z"
+  ]
+}

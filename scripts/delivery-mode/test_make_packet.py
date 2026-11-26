@@ -705,9 +705,10 @@ class DerivedExpectationsTest(RenderedPacket):
         with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_HISTORY_COMPARISON_SWITCH_REMOVED'):
             packet_maker.base_parameters({**INSTANCE, 'historyComparison': {'mode': 'off'}}, TWELFTH_COMMIT, '2026-11-15', {'LABEL': 'thirtieth'})
 
-    def test_andy_production_keeps_a_failed_deploy_and_other_instances_roll_back(self):
-        self.assertEqual(packet_maker.deploy_failure_choice(INSTANCE), 'keep')
+    def test_andy_production_rolls_a_failed_deploy_back_and_keep_stays_available(self):
+        self.assertEqual(packet_maker.deploy_failure_choice(INSTANCE), 'rollback')
         self.assertEqual(packet_maker.deploy_failure_choice({}), 'rollback')
+        self.assertEqual(packet_maker.deploy_failure_choice({'onDeployFailure': 'keep'}), 'keep')
         with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_ON_DEPLOY_FAILURE_INVALID'):
             packet_maker.deploy_failure_choice({'onDeployFailure': 'ignore'})
 

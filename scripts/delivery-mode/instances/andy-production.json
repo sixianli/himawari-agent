@@ -47,7 +47,7 @@
       "maximumCharacters": 600
     }
   },
-  "onDeployFailure": "keep",
+  "onDeployFailure": "rollback",
   "materialCache": {
     "minBytes": 16777216,
     "maxBytes": 1073741824
