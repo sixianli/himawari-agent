@@ -6,7 +6,7 @@ supersedes: "https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941
 superseded_by: ""
 date: "2026-11-26"
 covers: "packages/memory-engine/src/hybrid-memory-provider.ts, packages/memory-engine/src/relevance.ts, packages/memory-engine/src/consolidation.ts, packages/memory-engine/src/time-scope.ts, packages/application/src/embedding-profiles.ts, packages/application/src/services/model-visibility.ts, packages/application/src/ports/memory-dates.ts, apps/agent-service/src/production-run-memory.ts, apps/agent-service/src/production-memory-capture.ts, apps/agent-service/src/production-memory-classification.ts"
-verified_at: "7d0ffcd52cbb69d4941871cf9bf08d93f3843da8"
+verified_at: "7c8521fe5f55e7dd57c5bd52badd16eef647502e"
 ---
 
 # ADR 0300：记忆现在怎样工作

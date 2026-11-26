@@ -6,7 +6,7 @@ supersedes: "https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941
 superseded_by: ""
 date: "2026-11-26"
 covers: "apps/control-center/src/execution-timeline.ts, apps/control-center/src/spreadsheet-model.ts, apps/control-center/src/components/glyphs.tsx, apps/control-center/src/rounded.css, apps/control-center/src/quiet-scrollbars.ts, packages/platform-node/src/http-gateway-server.ts, packages/platform-node/src/browser-thread-files.ts, packages/persistence-sqlite/src/sqlite-thread-artifact-operations.ts, scripts/check-layout-audit.mjs, scripts/check-control-center-build.mjs, scripts/render-brand-assets.mjs, docs/ui-ux-design-guide.md"
-verified_at: "7d0ffcd52cbb69d4941871cf9bf08d93f3843da8"
+verified_at: "7c8521fe5f55e7dd57c5bd52badd16eef647502e"
 ---
 
 # ADR 0295：网页对话界面的现行做法

@@ -25,7 +25,7 @@ superseded_by: ""
 
 - 2026-08-26 由所有者直接提出：外界信息输入后，应能主动触发 Agent 对该输入作出响应。
 - 产品已有的外部事件触发原则：[SOURCE: docs/prd-v0.2.md#后台任务计划与恢复]
-- 当前统一 Trigger 接纳边界：[SOURCE: docs/architecture-v0.1.md#unified-trigger-ingestion-and-scheduling]
+- 当前统一 Trigger 接纳边界：[SOURCE: https://github.com/sixianli/himawari-agent/blob/7c8521fe5f55e7dd57c5bd52badd16eef647502e/docs/architecture-v0.1.md#unified-trigger-ingestion-and-scheduling]
 
 ## Notes
 
