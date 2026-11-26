@@ -25,6 +25,7 @@ enum M {
     static var rules: String { text("规则", ja: "ルール", en: "Rules") }
     static var search: String { text("搜索", ja: "検索", en: "Search") }
     static var searchPrompt: String { text("搜记住的事和规则", ja: "覚えていることとルールを検索", en: "Search memories and rules") }
+    static var searchFailed: String { text("现在搜不了，稍后再试", ja: "いまは検索できません。あとでもう一度", en: "Search isn't available right now. Try again later") }
     static func noSearchResults(_ query: String) -> String { text("没有找到“\(query)”", ja: "「\(query)」は見つかりません", en: "Nothing found for “\(query)”") }
     static var nothingRemembered: String {
         text("还没有记住的事", ja: "まだ覚えていることはありません", en: "Nothing remembered yet")
