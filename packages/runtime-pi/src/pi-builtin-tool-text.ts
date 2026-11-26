@@ -1,6 +1,7 @@
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import {
   TOOL_BUILTIN_BASH,
+  TOOL_BUILTIN_BASH_COMPUTER,
   TOOL_BUILTIN_BASH_TIMEOUT,
   TOOL_BUILTIN_READ,
   TOOL_BUILTIN_READ_GUIDELINE,
@@ -30,7 +31,10 @@ function withTimeoutDescription(parameters: ToolDefinition["parameters"]) {
   } as ToolDefinition["parameters"];
 }
 
-export function himawariBuiltinToolText(builtin: BuiltinText): HimawariBuiltinToolText {
+export function himawariBuiltinToolText(
+  builtin: BuiltinText,
+  options: { readonly toolsRunInComputer?: boolean } = {},
+): HimawariBuiltinToolText {
   switch (builtin.name) {
     case "read":
       return {
@@ -40,7 +44,9 @@ export function himawariBuiltinToolText(builtin: BuiltinText): HimawariBuiltinTo
       };
     case "bash":
       return {
-        description: TOOL_BUILTIN_BASH.text,
+        description: options.toolsRunInComputer
+          ? TOOL_BUILTIN_BASH_COMPUTER.text
+          : TOOL_BUILTIN_BASH.text,
         parameters: withTimeoutDescription(builtin.parameters),
         promptGuidelines: undefined,
       };

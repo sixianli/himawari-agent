@@ -1,4 +1,4 @@
-import type { AgentId, DemoLocale, DeploymentId, OwnerId } from "@himawari-agent/domain";
+import type { AgentId, DeploymentId, OwnerId } from "@himawari-agent/domain";
 import type { ApplePushConfiguration } from "./apple-push.js";
 import type { DataClassification } from "./common.js";
 import type { DeviceConfiguration } from "./device-limits.js";
@@ -269,8 +269,7 @@ export interface ProactiveGmailConfiguration {
 
 export interface ProactiveConfiguration {
   readonly modelRef: string;
-  readonly gmail?: ProactiveGmailConfiguration;
-  readonly demoInbox?: DemoLocale;
+  readonly gmail: ProactiveGmailConfiguration;
   readonly intervalMs: number;
   readonly perCheckMs: number;
   readonly dailyCostMicros: number;
@@ -439,8 +438,13 @@ export interface OwnerIntentCheckConfiguration {
   readonly secretRef: string;
 }
 
+export interface UserComputersConfiguration {
+  readonly socketPath: string;
+}
+
 export interface RunPolicyConfiguration {
   readonly timeZone?: string;
+  readonly userComputers?: UserComputersConfiguration;
   readonly inbox?: InboxConfiguration;
   readonly approvalBodyPreviewCharacters?: number;
   readonly toolRefusals?: ToolRefusalConfiguration;
