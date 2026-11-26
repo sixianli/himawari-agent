@@ -15,6 +15,7 @@ import {
   type DeviceActionRegistry,
   type DeviceConfiguration,
   defaultDeviceHardLimits,
+  deviceVoiceTimingLister,
   deviceVoiceTimingRecorder,
   type GatewayAuthenticationContext,
   PERCEPTION_CONFIGURATION_DEFAULTS,
@@ -632,6 +633,13 @@ export async function harness(
         });
         return port ? { chatModels: port } : {};
       })(),
+      listVoiceTiming: deviceVoiceTimingLister({
+        ownerId,
+        agentId,
+        trace: repository.traceStore(),
+        payloads: repository.payloadStore(ownerId, agentId),
+        protector,
+      }),
       recordVoiceTiming: deviceVoiceTimingRecorder({
         ownerId,
         agentId,

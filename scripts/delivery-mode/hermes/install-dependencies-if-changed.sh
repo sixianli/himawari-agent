@@ -14,6 +14,9 @@ if [[ -d "$source/node_modules" && -f "$marker" && "$(cat "$marker")" == "$wante
   exit 0
 fi
 rm -f "$marker"
+if [[ -e "$evidence" || -e "$evidence.log" ]]; then
+  evidence="$evidence-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+fi
 (cd "$source" && node scripts/ci/install-dependencies.mjs --root . --tools "$tools" --evidence "$evidence" --cache .ci-output/npm-cache) > "$evidence.log" 2>&1 || { echo "DEPENDENCY_INSTALL_FAILED $evidence.log" >&2; exit 5; }
 mkdir -p "$source/.ci-output"
 echo "$wanted" > "$marker"

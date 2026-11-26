@@ -119,6 +119,7 @@ export const DEVICE_API_ROUTES = Object.freeze([
   { method: "POST", path: "payloads/text", signed: true },
   { method: "POST", path: "attachments", signed: true },
   { method: "POST", path: "voice-timing", signed: true },
+  { method: "GET", path: "voice-timing", signed: true },
   { method: "POST", path: "uploads/begin", signed: true },
   { method: "POST", path: "perception", signed: true, uploadPurpose: "perception" },
   { method: "POST", path: "perception/media", signed: false, uploadPurpose: "media" },
@@ -327,8 +328,10 @@ export interface DeviceApiRouteOptions {
   }) => Promise<string>;
   readonly chatAttachments?: () => DeviceChatAttachments;
   readonly chatModels?: DeviceChatModelPort;
+  readonly listVoiceTiming?: (limit: number) => Promise<readonly unknown[]>;
   readonly recordVoiceTiming?: (input: {
     readonly authentication: GatewayAuthenticationContext;
+    readonly messageId: string;
     readonly runId: string;
     readonly saidAt: string;
     readonly firstTextAt: string;
@@ -1658,6 +1661,7 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
           return options.rejectBody(400);
         const outcome = await options.recordVoiceTiming({
           authentication,
+          messageId,
           runId: `run:${stableSuffix(paired.id, messageId)}`,
           saidAt,
           firstTextAt,
@@ -1665,6 +1669,17 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
         });
         if (outcome === "unknown_run") return options.rejectBody(404);
         return options.sendJson(reply, 200, { recorded: true });
+      });
+
+      device.get("/voice-timing", async (request, reply) => {
+        await authenticate(request);
+        if (!options.listVoiceTiming) return options.rejectNotAllowed();
+        const query = new URLSearchParams(rawQuery(request));
+        const requested = query.get("limit");
+        if (requested !== null && !/^[1-9][0-9]{0,5}$/.test(requested))
+          return options.rejectBody(400);
+        const limit = Math.min(requested === null ? 20 : Number(requested), 50);
+        return options.sendJson(reply, 200, { items: await options.listVoiceTiming(limit) });
       });
 
       device.post("/attachments", async (request, reply) => {

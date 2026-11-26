@@ -313,6 +313,7 @@ export class SqliteDurableAdapters {
         this.context.read("trace.readRun", { runId, afterSequence, limit }),
       readSession: (sessionId, afterRecordedAt, limit) =>
         this.context.read("trace.readSession", { sessionId, afterRecordedAt, limit }),
+      readRecentByType: (input) => this.context.read("trace.readRecentByType", input),
     });
   }
 
