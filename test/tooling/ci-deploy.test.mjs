@@ -1,5 +1,13 @@
 import { spawnSync } from "node:child_process";
-import { chmodSync, cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -119,6 +127,28 @@ describe("ci-deploy.sh", () => {
     expect(child.stdout).toContain("CI_DEPLOY_PREPARE");
     expect(child.stderr).toContain("PREPARE_FAILED");
     expect(child.status).toBe(3);
+  });
+
+  it("tightens the database file modes before building the packet", () => {
+    const { repo, first } = workspace();
+    const second = commitFile(repo, "src/app.ts", "changed");
+    const log = `${repo}-ssh-calls.log`;
+    directories.push(log);
+    const recorder = `${repo}-fake-ssh.sh`;
+    writeFileSync(
+      recorder,
+      `#!/bin/bash\necho "$@" >> ${log}\necho /opt/himawari/releases/2026-11-25-${first.slice(0, 8)}\n`,
+    );
+    const child = run(repo, {
+      HIMAWARI_PACKET_HOST: "198.51.100.9",
+      HIMAWARI_PACKET_SSH: recorder,
+      HIMAWARI_DEPLOY_COMMIT: second,
+    });
+    expect(child.stdout).toContain("CI_DEPLOY_DB_PERMISSIONS");
+    expect(child.stdout.indexOf("CI_DEPLOY_DB_PERMISSIONS")).toBeLessThan(
+      child.stdout.indexOf("CI_DEPLOY_PREPARE"),
+    );
+    expect(readFileSync(log, "utf8")).toContain("chmod 600");
   });
 
   it("refuses when the running release is not a known commit", () => {
