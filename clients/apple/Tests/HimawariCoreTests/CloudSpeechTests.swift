@@ -111,7 +111,10 @@ final class ByteExchange: HTTPExchange, @unchecked Sendable {
         let at = Date(timeIntervalSince1970: 1_800_000_000)
         _ = try? await api.send(OutgoingMessage(threadId: "thr_1", expectedRevision: 1, text: "说的", createdAt: at, spoken: true))
         _ = try? await api.send(OutgoingMessage(threadId: "thr_1", expectedRevision: 1, text: "打的", createdAt: at))
-        let bodies = try exchange.requests.map { try #require(JSONSerialization.jsonObject(with: try #require($0.httpBody)) as? [String: Any]) }
+        let bodies = try exchange.requests.map { request in
+            let body = try #require(request.httpBody)
+            return try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        }
         #expect(bodies.count == 2)
         #expect(bodies.first?["spoken"] as? Bool == true)
         #expect(bodies.last?["spoken"] == nil)
