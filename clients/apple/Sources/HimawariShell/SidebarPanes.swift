@@ -25,7 +25,7 @@ public struct MainChatPane: View {
                     .environment(\.chatStopRun, stopRun)
                     .environment(\.chatChooseOption, chooseOption)
                     .environment(\.chatOwnerAwaited, (model.actions?.waitingCount ?? 0) > 0)
-                    .environment(\.chatCanAttach, model.configuration?.acceptsChatAttachments == true)
+                    .environment(\.chatAttachLimits, model.configuration?.attachments)
             } else {
                 MainThreadWaiting(failed: lookupFailed) { Task { await findMainThread() } }
             }
