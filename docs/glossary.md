@@ -4,7 +4,7 @@ supersedes: ""
 superseded_by: ""
 date: "2026-11-02"
 covers: ".agents/instructions/prompt-prefix.md, scripts/check-glossary.mjs"
-verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
+verified_at: "7c8521fe5f55e7dd57c5bd52badd16eef647502e"
 ---
 
 # Himawari 词表

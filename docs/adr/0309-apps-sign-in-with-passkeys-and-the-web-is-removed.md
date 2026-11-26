@@ -7,7 +7,7 @@ superseded_by: ""
 date: "2026-11-26"
 implementation: in_progress
 covers: "packages/platform-node/src/device-api-routes.ts, apps/agent-service/src/production-http-composition.ts, apps/agent-service/src/production-mcp-connections-control.ts, apps/control-center/src/**, clients/apple/Sources/HimawariCore/Pairing.swift"
-verified_at: "54b438b2cbb11b5748e8b1ae187d014fe141200d"
+verified_at: "7c8521fe5f55e7dd57c5bd52badd16eef647502e"
 ---
 
 # ADR 0309：App 用通行密钥直接登录，网页整体删除

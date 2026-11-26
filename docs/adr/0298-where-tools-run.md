@@ -6,7 +6,7 @@ supersedes: "https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941
 superseded_by: ""
 date: "2026-11-26"
 covers: "packages/runtime-sandbox/src/user-computer/manager.ts, apps/agent-service/src/production-computer-tools.ts, packages/runtime-sandbox/computer-image/Dockerfile, packages/runtime-sandbox/src/job-host.ts, packages/execution-contracts/src/sandbox-runtime-version.ts, packages/platform-node/src/capabilities/sandbox-host-verifier.ts, apps/agent-service/src/production-sandbox-services.ts, apps/execution-worker/src/production-sandbox-execution-v2.ts, packages/runtime-sandbox/scripts/check-srt-boundary.mjs"
-verified_at: "7d0ffcd52cbb69d4941871cf9bf08d93f3843da8"
+verified_at: "7c8521fe5f55e7dd57c5bd52badd16eef647502e"
 ---
 
 # ADR 0298：工具在哪里执行：沙箱和执行环境

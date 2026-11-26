@@ -7,7 +7,7 @@ superseded_by: ""
 amends: ""
 date: "2026-11-15"
 covers: "clients/apple/README.md, clients/apple/scripts/mac-ui-review.sh, clients/apple/scripts/ui-review.sh, clients/apple/ui-review/.gitignore, scripts/delivery-mode/make-packet.py, scripts/disk-hygiene/install-schedule.sh, scripts/disk-hygiene/prune-rebuildable.py, scripts/disk-hygiene/retention.json"
-verified_at: "8d78eb5496a9041e33f795ebed563af9ed4391b9"
+verified_at: "7c8521fe5f55e7dd57c5bd52badd16eef647502e"
 ---
 
 # ADR 0276：截图等生成文件不进 main，开发机上的产物按可改的期限自动回收

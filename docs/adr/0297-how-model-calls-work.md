@@ -6,7 +6,7 @@ supersedes: "https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941
 superseded_by: ""
 date: "2026-11-26"
 covers: "packages/platform-node/src/strict-configuration.ts, packages/runtime-pi/src/configured-model-binding.ts, packages/runtime-pi/src/pi-model-transport.ts, packages/runtime-pi/src/pi-runtime-adapter.ts, packages/runtime-pi/src/cache-usage-observation.ts, packages/application/src/services/model-egress.ts, packages/persistence-sqlite/src/sqlite-model-budget-operations.ts, apps/agent-service/src/production-model-composition.ts, scripts/check-expensive-models.mjs, scripts/operations/cache-hit-report.mjs, test/fixtures/jarvis-test/models.json, packages/platform-node/src/speech-synthesis.ts, apps/agent-service/src/production-speech.ts"
-verified_at: "7d0ffcd52cbb69d4941871cf9bf08d93f3843da8"
+verified_at: "7c8521fe5f55e7dd57c5bd52badd16eef647502e"
 ---
 
 # ADR 0297：模型调用的现行做法

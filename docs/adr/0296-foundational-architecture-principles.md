@@ -6,7 +6,7 @@ supersedes: "https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941
 superseded_by: ""
 date: "2026-11-26"
 covers: "packages/domain, packages/application, packages/runtime-pi, packages/gateway-contracts, packages/persistence-sqlite/src/migration-engine.ts, docs/architecture-v0.2.md"
-verified_at: "7d0ffcd52cbb69d4941871cf9bf08d93f3843da8"
+verified_at: "7c8521fe5f55e7dd57c5bd52badd16eef647502e"
 ---
 
 # ADR 0296：Himawari 的基础架构原则

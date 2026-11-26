@@ -6,7 +6,7 @@ supersedes: "https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941
 superseded_by: ""
 date: "2026-11-26"
 covers: "scripts/delivery-mode/make-packet.py, scripts/delivery-mode/deploy.sh, scripts/delivery-mode/rollback.sh, scripts/delivery-mode/deploy-preflight.py, scripts/delivery-mode/generated-packet-gate.py, scripts/delivery-mode/run-packet-checks.py, scripts/delivery-mode/release-cleanup.py, scripts/delivery-mode/release-cleanup-remote.py, scripts/delivery-mode/packet-template/install/source-cache.mjs, scripts/delivery-mode/instances/andy-production.json, scripts/ci/platforms.mjs"
-verified_at: "7d0ffcd52cbb69d4941871cf9bf08d93f3843da8"
+verified_at: "7c8521fe5f55e7dd57c5bd52badd16eef647502e"
 ---
 
 # ADR 0293：上线包怎样生成、上线和清理

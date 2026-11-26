@@ -7,7 +7,7 @@ superseded_by: ""
 date: "2026-11-11"
 amended_by: "docs/adr/0247-apple-clients-are-fully-native-with-a-capability-table.md"
 covers: "packages/application/src/services/approval-service.ts, packages/application/src/services/thread-prompt-bundle-service.ts, packages/gateway-contracts/src/contracts.ts, packages/platform-node/src/http-gateway-server.ts"
-verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
+verified_at: "7c8521fe5f55e7dd57c5bd52badd16eef647502e"
 ---
 
 # ADR 0229：做 iPhone、Apple Watch、Mac 的原生客户端，设备走专用接口、设备密钥和苹果推送

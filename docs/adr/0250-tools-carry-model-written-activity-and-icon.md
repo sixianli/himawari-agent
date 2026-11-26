@@ -7,7 +7,7 @@ amends: ""
 superseded_by: ""
 date: "2026-11-12"
 covers: ".agents/instructions/prompt-prefix.md, apps/control-center/src/step-summary.ts, apps/control-center/test/step-summary.unit.test.ts, packages/application/src/services/thread-prompt-bundle-service.ts, packages/gateway-contracts/src/process-step.ts, packages/gateway-contracts/src/validation.ts, packages/prompt-catalog/src/activity.ts, packages/runtime-pi/src/pi-runtime-adapter.ts, packages/runtime-pi/test/fixtures/d4-golden-requests.json, packages/runtime-pi/test/pi-runtime-adapter.compat.test.ts, test/integration/thread-run-lifecycle.test.ts"
-verified_at: "cbda12b8fc3e2f2273f1048c46bbf39060938cc3"
+verified_at: "7c8521fe5f55e7dd57c5bd52badd16eef647502e"
 ---
 
 # ADR 0250：每个工具多两个可选参数，过程行的那句话和图标由模型自己给

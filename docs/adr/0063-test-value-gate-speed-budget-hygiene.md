@@ -6,7 +6,7 @@ supersedes: ""
 superseded_by: ""
 date: "2026-10-21"
 covers: "ci/coverage-policy.json, ci/policy.json, ci/test-hygiene-baseline.json, scripts/ci/check-policy.mjs, scripts/ci/run.mjs"
-verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
+verified_at: "7c8521fe5f55e7dd57c5bd52badd16eef647502e"
 ---
 
 # ADR 0063：新增测试先过价值门槛，测试有速度与隔离预算，测试卫生由门禁守住
