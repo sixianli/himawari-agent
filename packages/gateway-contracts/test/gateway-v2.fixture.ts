@@ -775,6 +775,31 @@ export const governanceMessages = [
     asks: [],
     generatedAt: "2026-11-14T03:00:00.000Z",
   }),
+  fixture("query", "memory.search.read", { query: "我对什么过敏" }),
+  fixture("snapshot", "memory.search.snapshot", {
+    query: "我对什么过敏",
+    results: [
+      {
+        kind: "memory",
+        memoryId: "memory-1",
+        ruleId: null,
+        text: "我吃花生会过敏",
+        category: "preference",
+        tentative: false,
+        updatedAt: "2026-11-20T03:00:00.000Z",
+      },
+      {
+        kind: "rule",
+        memoryId: "memory-2",
+        ruleId: "owner:allergy",
+        text: "点外卖时避开含花生的菜",
+        category: "rule",
+        tentative: false,
+        updatedAt: "2026-11-21T03:00:00.000Z",
+      },
+    ],
+    generatedAt: "2026-11-26T03:00:00.000Z",
+  }),
   fixture("query", "home.read", { locale: "zh-CN" }),
   fixture("snapshot", "home.snapshot", {
     items: [

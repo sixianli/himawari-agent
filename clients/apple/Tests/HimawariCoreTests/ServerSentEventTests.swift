@@ -55,6 +55,14 @@ import Testing
             == .executionText(ExecutionText(threadId: "t1", runId: "r1", itemId: "i1", offset: 4, text: "大阪")))
     }
 
+    @Test func keepsWhenTheServerSentHerFirstWord() {
+        let data = """
+        {"type":"thread.execution_text","payload":{"threadId":"t1","runId":"r1","itemId":"i1","offset":0,"text":"好","emittedAt":"2026-11-26T03:00:01.200Z","observedAt":"2026-11-26T03:00:01.300Z"}}
+        """
+        #expect(DeviceEventDecoder.decode(ServerSentEvent(event: "message", data: data, id: nil))
+            == .executionText(ExecutionText(threadId: "t1", runId: "r1", itemId: "i1", offset: 0, text: "好", emittedAt: "2026-11-26T03:00:01.200Z")))
+    }
+
     @Test func decodesExecutionStreamEventsNamedByType() {
         let changed = """
         {"type":"thread.execution_changed","payload":{"threadId":"t1","runId":"r1","runRevision":2,"traceSequence":5,"resourceRevision":"x","observedAt":"2026-11-12T00:00:00Z"}}

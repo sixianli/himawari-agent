@@ -21,14 +21,21 @@
 "chat.herPage" = "她的页面";
 "common.close" = "关闭";
 "attach.add" = "给她看点东西";
-"attach.title" = "给她看点东西";
+"attach.title" = "添加";
 "attach.camera" = "拍照";
 "attach.photos" = "照片";
 "attach.files" = "文件";
 "attach.location" = "我现在的位置";
 "attach.remove" = "去掉 %@";
-"attach.problem.tooMany" = "一次最多带 %d 样";
+"attach.retry" = "重试";
+"attach.problem.tooMany" = "最多 %d 个";
 "attach.problem.tooLarge" = "太大了，她收不下";
+"attach.problem.fileTooLarge" = "这个文件太大了（最大 %d MB）";
+"attach.problem.images" = "她现在看不了图片，先发文字或文件";
+"attach.recent.denied" = "允许读取照片后，这里会显示最近的照片";
+"attach.recent.settings" = "去设置";
+"attach.recent.more" = "选择更多照片";
+"attach.recent.photo" = "照片";
 "attach.problem.outdated" = "服务器还不支持带东西，先更新服务器";
 "attach.problem.upload" = "没传上，稍后再试";
 "attach.problem.unreadable" = "这个文件她还看不了";
@@ -47,6 +54,7 @@
 "chat.talk.herTurn" = "她在说 · 开口就能打断";
 "chat.talk.muted" = "静音了";
 "chat.talk.failed" = "没能开始语音对话，再试一次";
+"chat.talk.voiceHint" = "在 设置 > 辅助功能 > 朗读内容 > 声音 里下载“高品质”中文语音，她说话会更自然";
 "chat.option.chosen" = "选了";
 "chat.copyCode" = "复制代码";
 "chat.menu.reply" = "回复";
@@ -72,6 +80,8 @@
 "background.dollars.tiny" = "不到 0.01 美元";
 "background.spent" = "花了 %@";
 "background.budgetLine" = "花了 %@，预算 %@";
+"background.spent.tiny" = "花了不到 0.01 美元";
+"background.budgetLine.tiny" = "花了不到 0.01 美元，预算 %@";
 "background.step" = "第 %d 步，共 %d 步";
 "background.untitled" = "子线程";
 "background.tag.working" = "在做";
@@ -95,3 +105,5 @@
 "background.exchange.budget" = "说钱不够";
 "background.exchange.resultBoard" = "结果板";
 "background.readOnly" = "这里只能看。有话回主对话说，她会转过来。";
+"chat.bubble.her" = "她说";
+"chat.bubble.owner" = "你说";

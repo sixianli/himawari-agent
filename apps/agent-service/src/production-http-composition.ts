@@ -172,6 +172,11 @@ import {
   ProductionMemoryControl,
 } from "./production-memory-control.js";
 import { ProductionMemoryInbox } from "./production-memory-inbox.js";
+import {
+  PRODUCTION_MEMORY_SEARCH_OPERATIONS,
+  ProductionMemorySearch,
+  type ProductionMemorySearchOptions,
+} from "./production-memory-search.js";
 import { flushSensitiveInterceptions } from "./production-model-egress.js";
 import {
   PRODUCTION_OBSERVATION_OPERATIONS,
@@ -317,6 +322,7 @@ export interface ProductionHttpCompositionOptions {
     readonly search?: {
       readonly provider: ProductionSearchOptions["provider"];
       readonly episodes?: ProductionSearchOptions["episodes"];
+      readonly embedOutsideRun: ProductionMemorySearchOptions["embedOutsideRun"];
     };
     readonly service: Pick<
       DurableMemoryService,
@@ -905,6 +911,7 @@ function routeOptions(
         ...PRODUCTION_DEVICE_OPERATIONS,
         ...PRODUCTION_HOME_OPERATIONS,
         ...(searchAvailable ? PRODUCTION_SEARCH_OPERATIONS : []),
+        ...(searchAvailable ? PRODUCTION_MEMORY_SEARCH_OPERATIONS : []),
         ...PRODUCTION_DATA_EXPORT_OPERATIONS,
         ...PRODUCTION_FILES_OPERATIONS,
         ...PRODUCTION_SPOKEN_DECISION_OPERATIONS,
@@ -1696,6 +1703,25 @@ export async function createProductionHttpComposition(
         clock: { now: clock },
       })
     : undefined;
+  const memorySearchControl = options.memory?.search
+    ? new ProductionMemorySearch({
+        ownerId,
+        agentId,
+        provider: options.memory.search.provider,
+        state: repository.productMemoryState(),
+        ...(ownerRuleWriter ? { rules: ownerRuleWriter } : {}),
+        readText: async (record) => {
+          const payload = await memoryPayloads.get(record.contentRef);
+          if (!payload || payload.contentType !== "text/plain") return undefined;
+          return new TextDecoder("utf-8", { fatal: true }).decode(
+            await payloadProtector.unprotect({ ownerId, agentId, payload }),
+          );
+        },
+        embedOutsideRun: options.memory.search.embedOutsideRun,
+        requestTimeoutMs: configuration.deadlines.providerRequestMs,
+        clock: { now: clock },
+      })
+    : undefined;
   const readPerceptionText = async (contentRef: string) => {
     const payload = await repository.payloadStore(ownerId, agentId).get(contentRef);
     if (!payload || payload.contentType !== "text/plain") return undefined;
@@ -1766,6 +1792,7 @@ export async function createProductionHttpComposition(
     access: threadAccess,
     homeControl: home,
     ...(searchControl ? { searchControl } : {}),
+    ...(memorySearchControl ? { memorySearchControl } : {}),
     recentAuthentication,
     clock: { now: clock },
     authority: options.authority,

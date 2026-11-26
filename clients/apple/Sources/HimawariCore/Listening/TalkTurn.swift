@@ -8,6 +8,10 @@ public struct TalkTurn: Sendable, Equatable {
     public private(set) var pending = ""
     private var lastChange: ContinuousClock.Instant?
     private var endsOnFinal = false
+    private var heardUntil: TimeInterval?
+    private var sentUntil: TimeInterval?
+    private var sentWordCount = 0
+    private var continuesLastSend = false
 
     public init() {}
 
@@ -15,7 +19,13 @@ public struct TalkTurn: Sendable, Equatable {
 
     public var isEmpty: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
-    public mutating func heard(_ piece: String, isFinal: Bool, at now: ContinuousClock.Instant) {
+    public mutating func heard(_ piece: String, isFinal: Bool, from start: TimeInterval, to end: TimeInterval, at now: ContinuousClock.Instant) {
+        var piece = piece
+        if let sentUntil, start < sentUntil {
+            piece = Self.dropping(sentWordCount, wordCharactersFrom: piece)
+            guard !piece.isEmpty else { return }
+            continuesLastSend = true
+        }
         if isFinal {
             settled += piece
             pending = ""
@@ -24,6 +34,7 @@ public struct TalkTurn: Sendable, Equatable {
         }
         endsOnFinal = isFinal
         lastChange = now
+        heardUntil = max(heardUntil ?? end, end)
     }
 
     public func isDone(at now: ContinuousClock.Instant) -> Bool {
@@ -34,8 +45,35 @@ public struct TalkTurn: Sendable, Equatable {
 
     public mutating func take() -> String {
         let said = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        self = TalkTurn()
+        forget(said)
         return said
+    }
+
+    public mutating func drop() {
+        forget(text)
+    }
+
+    private mutating func forget(_ said: String) {
+        let until = [sentUntil, heardUntil].compactMap { $0 }.max()
+        let count = (continuesLastSend ? sentWordCount : 0) + Self.wordCharacters(in: said)
+        self = TalkTurn()
+        sentUntil = until
+        sentWordCount = count
+    }
+
+    static func wordCharacters(in text: String) -> Int {
+        text.filter { $0.isLetter || $0.isNumber }.count
+    }
+
+    static func dropping(_ count: Int, wordCharactersFrom text: String) -> String {
+        var seen = 0
+        var index = text.startIndex
+        while index < text.endIndex, seen < count {
+            if text[index].isLetter || text[index].isNumber { seen += 1 }
+            index = text.index(after: index)
+        }
+        let rest = text[index...].drop { !($0.isLetter || $0.isNumber) }
+        return String(rest)
     }
 }
 

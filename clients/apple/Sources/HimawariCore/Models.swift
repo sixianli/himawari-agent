@@ -300,4 +300,5 @@ public struct ExecutionText: Codable, Sendable, Equatable {
     public let itemId: String
     public let offset: Int
     public let text: String
+    public var emittedAt: String? = nil
 }

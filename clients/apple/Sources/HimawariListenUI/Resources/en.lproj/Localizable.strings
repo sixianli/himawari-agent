@@ -75,3 +75,14 @@
 "demo.request" = "Set up a meeting with Tanaka tomorrow morning, ";
 "demo.requestTail" = "around ten";
 "demo.askHeard" = "set up a meeting with Tanaka";
+"live.talk.title" = "Talking with her";
+"live.talk.listening" = "Listening";
+"live.talk.speaking" = "Speaking";
+"live.talk.muted" = "Muted";
+"live.talk.mute" = "Mute";
+"live.talk.unmute" = "Unmute";
+"live.talk.end" = "End";
+"live.work.step" = "Step %d/%d";
+"live.work.working" = "Working on it";
+"live.work.waiting" = "Waiting for you";
+"live.work.finished" = "Done";
