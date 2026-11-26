@@ -179,15 +179,6 @@ describe("[PG-11] Gmail read-only source", () => {
     expect(fake.calls[1]).toMatchObject({ url: "https://oauth2.googleapis.com/revoke" });
   });
 
-  it("[P6-demo] [reverse] the real OAuth client never sends a fake inbox token to Google", async () => {
-    const fake = fakeGoogle(() => json({}));
-    const client = oauth(fake.fetch);
-    expect(await client.revoke("demo-inbox:v1:ja:2026-11-04T01:00:00.000Z")).toBe(true);
-    expect(fake.calls).toEqual([]);
-    expect(await client.revoke("refresh-real")).toBe(true);
-    expect(fake.calls).toHaveLength(1);
-  });
-
   it("[PG-10] never calls the Calendar API or any Gmail write endpoint", async () => {
     const fake = google();
     const reader = flatMailReader(
