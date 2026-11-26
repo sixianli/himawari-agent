@@ -934,6 +934,15 @@ export async function createProductionHttpComposition(
     ...DEVICE_CONFIGURATION_DEFAULTS,
     limits: defaultDeviceHardLimits(),
   };
+  const chatModel = configuration.modelDescriptors.find(
+    (descriptor) => descriptor.role === "primary",
+  );
+  const chatAttachments = Object.freeze({
+    images:
+      options.modelCatalog?.find((entry) => entry.ref === chatModel?.ref)?.images ??
+      chatModel?.input.includes("image") ??
+      false,
+  });
   const devicePairingAccess = await resolveDevicePairingAccess(
     configuration.secretReferences,
     (ref, version) => secretSources.provider.resolve(ref, version),
@@ -1879,6 +1888,7 @@ export async function createProductionHttpComposition(
       service: pairedDevices,
       home: { resolveAction: (input) => home.resolveAction(input) },
       configuration: () => deviceConfiguration,
+      chatAttachments: () => chatAttachments,
       audit: repository.auditLedger(),
       push: devicePush,
       ...(options.onDeviceAuditFailed ? { onAuditFailed: options.onDeviceAuditFailed } : {}),

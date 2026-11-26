@@ -108,6 +108,8 @@ def load_instance(name, host=None):
 
 
 def next_label(running):
+    if running == FIRST_INSTALL_LABEL:
+        return ORDINALS[0]
     if running not in ORDINALS or running == ORDINALS[-1]:
         refuse('PACKET_LABEL_NOT_DERIVABLE', running)
     return ORDINALS[ORDINALS.index(running) + 1]

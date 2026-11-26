@@ -25,6 +25,7 @@ import {
   PERCEPTION_TEXT_MAXIMUM,
   PERCEPTION_UTTERANCE_ID_PATTERN,
   PHONE_VOICE_PROOF_PREFIX,
+  TALK_PROOF_PREFIX,
   PORT_ERROR_CODES,
   type ThreadGatewayRequestMessage,
   type UploadGrantPurpose,
@@ -36,6 +37,10 @@ import {
   type VoiceTrigger,
 } from "@himawari-agent/application";
 import {
+  CHAT_ATTACHMENT_TEXT_CHARACTERS,
+  CHAT_ATTACHMENTS_PER_MESSAGE,
+  CHAT_IMAGE_DATA_URL,
+  CHAT_IMAGE_DATA_URL_CHARACTERS,
   DATA_EXPORT_ID_PATTERN,
   HOME_LOCALES,
   THREAD_GATEWAY_SCHEMA_VERSION,
@@ -112,6 +117,7 @@ export const DEVICE_API_ROUTES = Object.freeze([
   { method: "GET", path: "threads/{threadId}/execution-stream", signed: true },
   { method: "GET", path: "threads/{threadId}/runs/{runId}/execution", signed: true },
   { method: "POST", path: "payloads/text", signed: true },
+  { method: "POST", path: "attachments", signed: true },
   { method: "POST", path: "uploads/begin", signed: true },
   { method: "POST", path: "perception", signed: true, uploadPurpose: "perception" },
   { method: "POST", path: "perception/media", signed: false, uploadPurpose: "media" },
@@ -180,6 +186,9 @@ const MESSAGE_ID_PATTERN = /^[A-Za-z0-9_-]{16,64}$/u;
 const UTTERANCE_ID_PATTERN = PERCEPTION_UTTERANCE_ID_PATTERN;
 const MACHINE_STRING = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const MESSAGE_TEXT_MAXIMUM = PLAIN_TEXT_MAXIMUM_CHARACTERS;
+const ATTACHMENT_REQUEST_ID = /^[A-Za-z0-9_-]{16,96}$/u;
+const ATTACHMENT_ENVELOPE_BYTES = 1024;
+const UTF8_BYTES_PER_CHARACTER = 3;
 export type DeviceTextClassification = TextAdmissionClassification;
 const VOICE_KEYS = [
   "trigger",
@@ -313,7 +322,9 @@ export interface DeviceApiRouteOptions {
     readonly idempotencyKey: string;
     readonly content: string;
     readonly dataClassification?: DeviceTextClassification;
+    readonly contentType?: DevicePayloadContentType;
   }) => Promise<string>;
+  readonly chatAttachments?: () => DeviceChatAttachments;
   readonly streamThreadEvents: (input: {
     readonly gateway: AgentThreadGatewayPort;
     readonly authentication: GatewayAuthenticationContext;
@@ -448,6 +459,34 @@ export function presentPairedDevice(device: PairedDevice) {
     confirmedAt: device.confirmedAt,
     revokedAt: device.revokedAt,
     lastSeenAt: device.lastSeenAt,
+  };
+}
+
+export type DevicePayloadContentType =
+  | "text/plain"
+  | "text/x-himawari-attachment"
+  | "text/x-himawari-image";
+
+export interface DeviceChatAttachments {
+  readonly images: boolean;
+}
+
+export function presentDeviceAttachments(
+  configuration: DeviceConfiguration,
+  chat: DeviceChatAttachments,
+) {
+  const room = Math.max(
+    0,
+    configuration.limits["device.request.body_bytes"] - ATTACHMENT_ENVELOPE_BYTES,
+  );
+  return {
+    textCharacters: Math.min(
+      CHAT_ATTACHMENT_TEXT_CHARACTERS,
+      Math.floor(room / UTF8_BYTES_PER_CHARACTER),
+    ),
+    imageCharacters: chat.images ? Math.min(CHAT_IMAGE_DATA_URL_CHARACTERS, room) : 0,
+    perMessage: CHAT_ATTACHMENTS_PER_MESSAGE,
+    messageCharacters: MESSAGE_TEXT_MAXIMUM,
   };
 }
 
@@ -750,6 +789,9 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
           streamConnections: configuration.streamConnections,
           signatureToleranceSeconds: configuration.signatureToleranceSeconds,
           limits: presentDeviceLimits(configuration),
+          ...(options.chatAttachments
+            ? { attachments: presentDeviceAttachments(configuration, options.chatAttachments()) }
+            : {}),
           ...(options.perception
             ? {
                 perception: await presentDevicePerception(
@@ -1470,8 +1512,11 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
                 "text",
                 "utteranceId",
                 "voice",
+                "spoken",
               ].includes(key),
           ) ||
+          (body["spoken"] !== undefined &&
+            (body["spoken"] !== true || body["voice"] !== undefined)) ||
           (body["voice"] !== undefined &&
             (body["utteranceId"] === undefined || parseVoiceEvidence(body["voice"]) === null)) ||
           (body["utteranceId"] !== undefined &&
@@ -1539,7 +1584,7 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
             runId: `run:${suffix}`,
             sessionId: authentication.sessionId,
             contentRef,
-            sourceProofRef: `${heardByPhone ? PHONE_VOICE_PROOF_PREFIX : "device:"}${authenticated.device.id}`,
+            sourceProofRef: `${heardByPhone ? PHONE_VOICE_PROOF_PREFIX : body["spoken"] === true ? TALK_PROOF_PREFIX : "device:"}${authenticated.device.id}`,
             dataClassification: "private",
             occurredAt: now().toISOString(),
             resultRef,
@@ -1552,6 +1597,36 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
             body["utteranceId"],
           );
         return options.sendJson(reply, 200, accepted);
+      });
+
+      device.post("/attachments", async (request, reply) => {
+        const { device: paired, authentication } = await authenticate(request);
+        const chat = options.chatAttachments?.();
+        if (!chat) return options.rejectNotAllowed();
+        const body = json(request);
+        only(body, ["requestId", "content", "as"]);
+        const { requestId, content } = body;
+        const kind = body["as"];
+        if (
+          typeof requestId !== "string" ||
+          !ATTACHMENT_REQUEST_ID.test(requestId) ||
+          typeof content !== "string" ||
+          content.length === 0 ||
+          (kind !== "text" && kind !== "image")
+        )
+          return options.rejectBody(400);
+        if (kind === "image" && !chat.images) return options.rejectBody(415);
+        const limits = presentDeviceAttachments(options.configuration(), chat);
+        if (content.length > (kind === "image" ? limits.imageCharacters : limits.textCharacters))
+          return options.rejectBody(413);
+        if (kind === "image" && !CHAT_IMAGE_DATA_URL.test(content)) return options.rejectBody(400);
+        const ref = await options.protectText({
+          authentication,
+          idempotencyKey: `device-attachment:${stableSuffix(paired.id, requestId)}`,
+          content,
+          contentType: kind === "image" ? "text/x-himawari-image" : "text/x-himawari-attachment",
+        });
+        return options.sendJson(reply, 201, { ref });
       });
 
       device.post("/payloads/text/new", async (request, reply) => {

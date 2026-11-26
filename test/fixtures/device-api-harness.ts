@@ -183,6 +183,7 @@ export async function harness(
     readonly speech?: NonNullable<
       Parameters<typeof buildHttpGatewayServer>[0]["devices"]
     >["speech"];
+    readonly chatAttachments?: { readonly images: boolean };
   } = {},
 ): Promise<Harness> {
   const publicOrigin = options.origin ?? origin;
@@ -588,6 +589,9 @@ export async function harness(
       ),
       ...(options.exportArchive ? { exportArchive: options.exportArchive } : {}),
       ...(options.speech ? { speech: options.speech } : {}),
+      ...(options.chatAttachments
+        ? { chatAttachments: () => options.chatAttachments as { readonly images: boolean } }
+        : {}),
     },
   });
   await app.ready();

@@ -233,3 +233,45 @@ describe("[iOS-8] a name call is the owner's own voice; whether it was meant for
     expect(await commands(h)).toEqual([]);
   });
 });
+
+describe("the phone's talk mode tells her this turn was spoken, without any voice proof", () => {
+  const talk = (
+    h: Harness,
+    client: PairedClient,
+    threadId: string,
+    body: Record<string, unknown>,
+  ) => {
+    sequence += 1;
+    return devicePost(h, client, "messages", {
+      messageId: `device-message-talk-${String(sequence).padStart(4, "0")}`,
+      threadId,
+      expectedRevision: 1,
+      text: "今天东京天气怎么样",
+      ...body,
+    });
+  };
+
+  it("marks a spoken turn as spoken, and a typed turn never", async () => {
+    const { h, client, threadId } = await setup();
+    const spoken = await talk(h, client, threadId, { spoken: true });
+    expect(spoken.status, JSON.stringify(spoken.body)).toBe(200);
+    const source = await latestRunSource(h, threadId);
+    expect(source?.viaTalk).toBe(true);
+    expect(source?.viaPhoneVoice).toBeUndefined();
+    const typed = await talk(h, client, threadId, {});
+    expect(typed.status).toBe(200);
+    const typedSource = await latestRunSource(h, threadId);
+    expect(typedSource?.viaTalk).toBeUndefined();
+  });
+
+  it("turns away a spoken flag that is not true, or that arrives with a voice proof", async () => {
+    const { h, client, threadId } = await setup();
+    for (const body of [
+      { spoken: false },
+      { spoken: "yes" },
+      { spoken: true, utteranceId: "utterance-talk-1", voice: { trigger: "hands_on" } },
+    ])
+      expect((await talk(h, client, threadId, body)).status).toBe(400);
+    expect(await commands(h)).toEqual([]);
+  });
+});
