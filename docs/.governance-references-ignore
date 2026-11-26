@@ -40,3 +40,7 @@ ci/required
 .claude/settings.local.json
 .claude/worktrees
 .claude/.cc-writes
+
+# 已不再使用的 Hermes 测试机包装脚本（只在 Mac 本机的 .ci-output/handoff/scripts 里，从未入库），历史记录里会提到
+hermes-ssh.sh
+hermes-upload.sh

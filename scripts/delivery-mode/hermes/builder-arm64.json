@@ -1,6 +1,5 @@
 {
   "arch": "arm64",
-  "transport": "target-ssh",
   "sshUser": "himawari-build",
   "hostname": null,
   "workRoot": "/home/himawari-build/packet-builder/work",
