@@ -5,8 +5,12 @@ import SwiftUI
 struct AboutPage: View {
     let server: String?
     var openStatus: (() -> Void)? = nil
+    let openTiming: () -> Void
     let back: () -> Void
+    @AppStorage(AboutPage.developerModeKey) private var developerMode = false
     @Environment(\.openURL) private var openURL
+
+    static let developerModeKey = "about.developerMode"
 
     static var versionLine: String? {
         let info = Bundle.main.infoDictionary
@@ -37,6 +41,17 @@ struct AboutPage: View {
                     }
                     .buttonStyle(.pressable)
                 }
+            }
+            if developerMode {
+                SettingsGroup(label: M.developer) {
+                    Button(action: openTiming) {
+                        HerRow(icon: .stopwatch, title: M.talkTiming, last: true)
+                    }
+                    .buttonStyle(.pressable)
+                }
+            }
+            SettingsGroup(label: nil) {
+                SettingsRow(icon: nil, title: M.developerMode, switchState: $developerMode, last: true)
             }
         }
     }

@@ -184,6 +184,7 @@ enum ManageDemo {
     static func answer(_ type: String, allowances: Bool) -> String {
         switch type {
         case "memory.overview.read": memories
+        case "memory.search.read": searchHits
         case "memory.rules.read": allowances ? rules : #"{"payload":{"rules":[],"allowances":[],"allowanceDays":7}}"#
         case "device.list.read": devices
         case "server.status.read": serverStatus
@@ -192,6 +193,8 @@ enum ManageDemo {
         default: "{}"
         }
     }
+
+    static let searchHits = #"{"payload":{"query":"过敏","results":[{"kind":"memory","memoryId":"m3","ruleId":null,"text":"对花生过敏","category":"health","tentative":false,"updatedAt":"2026-10-21T03:00:00Z"},{"kind":"rule","memoryId":"m6","ruleId":"r1","text":"给没发过邮件的人发信，先问我","category":"rule","tentative":false,"updatedAt":"2026-10-20T03:00:00Z"}],"generatedAt":"2026-11-26T03:00:00Z"}}"#
 
     private static func memory(
         _ id: String, _ group: String, _ text: String, inference: Bool, recordedAt: String, lastUsedAt: String?, quote: String?,

@@ -187,4 +187,33 @@ final class SuspendingPushTransport: PushRegistrationTransport, @unchecked Senda
         await sync.deviceReady()
         #expect(transport.callCount == 1)
     }
+
+    @Test func backgroundWorkTokensRegisterAsLiveActivityTokensBesideTheAlertToken() async throws {
+        let transport = FakePushTransport()
+        let sync = sync(transport)
+        await sync.deviceReady()
+        await sync.tokenArrived(Data([1]))
+        await sync.tokenArrived(Data([2]), for: .backgroundWorkStart)
+        await sync.tokenArrived(Data([3]), for: .backgroundWork("sub_1"))
+        #expect(transport.sent == [
+            PushRegistrationRequest(token: "01", environment: "development", topic: "win.siyi.himawari", locale: "ja"),
+            PushRegistrationRequest(slot: .backgroundWorkStart, token: "02", environment: "development", topic: "win.siyi.himawari", locale: "ja"),
+            PushRegistrationRequest(slot: .backgroundWork("sub_1"), token: "03", environment: "development", topic: "win.siyi.himawari", locale: "ja"),
+        ])
+        let body = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(transport.sent[2])) as? [String: String])
+        #expect(body == ["pushType": "liveactivity", "activityKind": "background_work", "activityRef": "sub_1", "token": "03", "environment": "development", "topic": "win.siyi.himawari", "locale": "ja"])
+        let start = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(transport.sent[1])) as? [String: String])
+        #expect(start["activityRef"] == "")
+    }
+
+    @Test func anEndedActivityIsNotRegisteredAgainWhenTheDeviceReconnects() async {
+        let transport = FakePushTransport()
+        let sync = sync(transport)
+        await sync.deviceReady()
+        await sync.tokenArrived(Data([3]), for: .backgroundWork("sub_1"))
+        await sync.activityEnded(.backgroundWork("sub_1"))
+        await sync.deviceGone()
+        await sync.deviceReady()
+        #expect(transport.sent.count == 1)
+    }
 }

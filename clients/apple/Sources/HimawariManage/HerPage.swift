@@ -33,6 +33,7 @@ public struct HerPage: View {
         case transfer
         case importPaste
         case importPreview
+        case talkTiming
     }
 
     @State private var settings: SettingsStore
@@ -60,6 +61,7 @@ public struct HerPage: View {
     private let removedThisDevice: () -> Void
     private let countVault: () async -> HerVaultCount
     private let vault: ((@escaping () -> Void) -> AnyView)?
+    private let voiceTimings: @Sendable () async throws -> [VoiceTimingRecord]
     private let server: String?
 
     public init(
@@ -98,6 +100,7 @@ public struct HerPage: View {
         self.talk = talk
         self.close = close
         self.removedThisDevice = removedThisDevice
+        voiceTimings = { try await api.voiceTimings() }
         countVault = {
             do {
                 return .items(try await api.vaultSnapshot().items.count)
@@ -139,6 +142,7 @@ public struct HerPage: View {
         countVault = { shown }
         server = "https://himawari.example"
         vault = nil
+        voiceTimings = { [] }
     }
 
     public var body: some View {
@@ -149,14 +153,14 @@ public struct HerPage: View {
                     if let actions, actions.waitingCount > 0 {
                         SettingsGroup(label: nil) {
                             Button { path.append(.approvals) } label: {
-                                HerRow(icon: .handStop, title: M.approvalsWaiting(actions.waitingCount), last: true)
+                                HerRow(icon: .hourglass, title: M.approvalsWaiting(actions.waitingCount), last: true)
                             }
                             .buttonStyle(.pressable)
                         }
                     }
                     SettingsGroup(label: nil) {
                         Button { path.append(.memory) } label: {
-                            HerRow(icon: .affiliate, title: M.herMemory, subtitle: memory.summary(categoryLabel: M.category).map(M.memorySummary), last: true)
+                            HerRow(icon: .brain, title: M.herMemory, subtitle: memory.summary(categoryLabel: M.category).map(M.memorySummary), last: true)
                         }
                         .buttonStyle(.pressable)
                     }
@@ -192,7 +196,7 @@ public struct HerPage: View {
                             .buttonStyle(.pressable)
                         }
                         Button { path.append(.privacy) } label: {
-                            HerRow(icon: .eye, title: M.privacy)
+                            HerRow(icon: .handStop, title: M.privacy)
                         }
                         .buttonStyle(.pressable)
                         Button { path.append(.devices) } label: {
@@ -262,7 +266,7 @@ public struct HerPage: View {
                 case .timer(let id):
                     TimerDetailPage(store: timers, timerId: id) { path.removeLast() }
                 case .about:
-                    AboutPage(server: server, openStatus: { path.append(.serverStatus) }) { path.removeLast() }
+                    AboutPage(server: server, openStatus: { path.append(.serverStatus) }, openTiming: { path.append(.talkTiming) }) { path.removeLast() }
                 case .serverStatus:
                     ServerStatusPage(store: serverStatus) { path.removeLast() }
                 case .transfer:
@@ -276,6 +280,8 @@ public struct HerPage: View {
                     MemoryImportPastePage(store: memoryImport, openPreview: { path.append(.importPreview) }) { path.removeLast() }
                 case .importPreview:
                     MemoryImportPreviewPage(store: memoryImport, finish: finishImport) { path.removeLast() }
+                case .talkTiming:
+                    TalkTimingPage(load: voiceTimings)
                 case .approvals:
                     if let actions {
                         ApprovalsView(model: actions, openThread: { _ in close() }) { path.removeLast() }
@@ -354,14 +360,14 @@ struct HerRow: View {
     var value: String? = nil
     var chevron = true
     var last = false
+    @ScaledMetric(relativeTo: .body) private var symbolWidth = DesignTokens.Her.rowSymbolWidth
 
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: SL.rowGap) {
-                Icon(icon, size: DesignTokens.Her.rowIcon)
+                Icon(icon, size: DesignTokens.Her.rowSymbolWidth)
                     .foregroundStyle(Color.hmGlyph)
-                    .frame(width: DesignTokens.Her.rowTile, height: DesignTokens.Her.rowTile)
-                    .background(Color.hmTile, in: RoundedRectangle(cornerRadius: DesignTokens.Her.rowTileRadius, style: .continuous))
+                    .frame(width: symbolWidth)
                 VStack(alignment: .leading, spacing: DesignTokens.Her.rowSubtitleGap) {
                     Text(title).hmType(SL.rowValue).foregroundStyle(Color.hmText)
                     if let subtitle {

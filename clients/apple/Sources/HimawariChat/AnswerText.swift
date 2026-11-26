@@ -23,11 +23,18 @@ struct AnswerText: View {
         }
         .foregroundStyle(muted ? Color.hmMuted : Color.hmText)
         .tint(Color.hmLink)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .textRenderer(InlineCodeRenderer())
+        .frame(maxWidth: Self.fillsWidth(blocks) ? .infinity : nil, alignment: .leading)
+        .inlineCodeBackgrounds(text.contains("`"))
         #if os(macOS)
         .textSelection(.enabled)
         #endif
+    }
+
+    static func fillsWidth(_ blocks: [AnswerBlock]) -> Bool {
+        blocks.contains { block in
+            if case .paragraph = block { return false }
+            return true
+        }
     }
 
     private static func carriesDot(_ block: AnswerBlock?) -> Bool {
@@ -53,7 +60,13 @@ struct AnswerText: View {
         return linked
     }
 
+    private static let styledMemo = TextMemo<Text>(limit: 2000)
+
     static func styled(_ source: String) -> Text {
+        styledMemo.value(for: source, make: makeStyled)
+    }
+
+    private static func makeStyled(_ source: String) -> Text {
         let attributed = inline(source)
         var pieces: [Text] = []
         for run in attributed.runs {
@@ -99,7 +112,7 @@ struct AnswerText: View {
             .fixedSize(horizontal: false, vertical: true)
         case let .code(language, source):
             AnswerCodeBlock(language: language, code: source, copy: copyCode)
-                .messageMenu(codeMenu(source))
+                .messageMenu(codeMenu(source), ownPreview: true)
         case let .table(header, rows):
             AnswerTable(header: header, rows: rows)
         case .rule:
@@ -168,6 +181,17 @@ struct AnswerTable: View {
 }
 
 struct InlineCodeMark: TextAttribute {}
+
+extension View {
+    @ViewBuilder
+    func inlineCodeBackgrounds(_ present: Bool) -> some View {
+        if present {
+            textRenderer(InlineCodeRenderer())
+        } else {
+            self
+        }
+    }
+}
 
 struct InlineCodeRenderer: TextRenderer {
     func draw(layout: Text.Layout, in context: inout GraphicsContext) {

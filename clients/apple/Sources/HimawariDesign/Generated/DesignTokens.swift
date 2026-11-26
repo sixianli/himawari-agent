@@ -3,6 +3,8 @@ import CoreGraphics
 public enum DesignTokens {
     public enum Colors {
         public static let bg = PaletteToken(light: RGBA(red: 252 / 255, green: 252 / 255, blue: 251 / 255, alpha: 1), dark: RGBA(red: 30 / 255, green: 30 / 255, blue: 30 / 255, alpha: 1))
+        public static let bubble = PaletteToken(light: RGBA(red: 239 / 255, green: 239 / 255, blue: 236 / 255, alpha: 1), dark: RGBA(red: 44 / 255, green: 44 / 255, blue: 43 / 255, alpha: 1))
+        public static let bubbleCode = PaletteToken(light: RGBA(red: 37 / 255, green: 41 / 255, blue: 33 / 255, alpha: 0.11), dark: RGBA(red: 255 / 255, green: 255 / 255, blue: 255 / 255, alpha: 0.06))
         public static let danger = PaletteToken(light: RGBA(red: 167 / 255, green: 60 / 255, blue: 48 / 255, alpha: 1), dark: RGBA(red: 239 / 255, green: 160 / 255, blue: 149 / 255, alpha: 1))
         public static let fill = PaletteToken(light: RGBA(red: 37 / 255, green: 41 / 255, blue: 33 / 255, alpha: 0.06), dark: RGBA(red: 228 / 255, green: 228 / 255, blue: 225 / 255, alpha: 0.08))
         public static let fill2 = PaletteToken(light: RGBA(red: 37 / 255, green: 41 / 255, blue: 33 / 255, alpha: 0.11), dark: RGBA(red: 228 / 255, green: 228 / 255, blue: 225 / 255, alpha: 0.15))
@@ -282,6 +284,11 @@ public enum DesignTokens {
     public enum Chat {
         public static let answerBlockGap: CGFloat = 10
         public static let attachCloseButton: CGFloat = 48
+        public static let attachRecentCheck: CGFloat = 24
+        public static let attachRecentCount: CGFloat = 30
+        public static let attachRecentHeight: CGFloat = 120
+        public static let attachRecentMaxWidth: CGFloat = 160
+        public static let attachRecentRadius: CGFloat = 12
         public static let attachRowIcon: CGFloat = 19
         public static let attachRowIconStroke: CGFloat = 1.7
         public static let attachRowTile: CGFloat = 34
@@ -305,6 +312,19 @@ public enum DesignTokens {
         public static let backgroundStepPaddingY: CGFloat = 10
         public static let backgroundTagPaddingX: CGFloat = 8
         public static let backgroundTagPaddingY: CGFloat = 3
+        public static let bubbleEdge: CGFloat = 16
+        public static let bubbleGroupGap: CGFloat = 2
+        public static let bubbleHerRoom: CGFloat = 40
+        public static let bubbleOwnerQuoteOpacity: CGFloat = 0.7
+        public static let bubbleOwnerShare: CGFloat = 0.78
+        public static let bubblePaddingX: CGFloat = 14
+        public static let bubblePaddingY: CGFloat = 9
+        public static let bubbleRadius: CGFloat = 20
+        public static let bubbleSpeakerGap: CGFloat = 14
+        public static let bubbleStepGap: CGFloat = 6
+        public static let bubbleTailHeight: CGFloat = 16
+        public static let bubbleTailWidth: CGFloat = 6
+        public static let bubbleTimePaddingY: CGFloat = 6
         public static let codeHeaderPaddingTop: CGFloat = 8
         public static let codePadding: CGFloat = 12
         public static let codeRadius: CGFloat = 12
@@ -326,6 +346,10 @@ public enum DesignTokens {
         public static let listGap: CGFloat = 4
         public static let listIndent: CGFloat = 4
         public static let listMarkerGap: CGFloat = 6
+        public static let liveActivityButton: CGFloat = 44
+        public static let liveActivityIslandMark: CGFloat = 18
+        public static let liveActivityIslandTrailing: CGFloat = 52
+        public static let liveActivityMark: CGFloat = 40
         public static let puckBannerGap: CGFloat = 8
         public static let puckBusyLow: CGFloat = 0.7
         public static let puckContentGap: CGFloat = 12
@@ -368,10 +392,8 @@ public enum DesignTokens {
         public static let pagePaddingHorizontal: CGFloat = 16
         public static let pagePaddingBottom: CGFloat = 40
         public static let pillPaddingX: CGFloat = 24
-        public static let rowIcon: CGFloat = 19
-        public static let rowIconStroke: CGFloat = 1.7
         public static let rowSubtitleGap: CGFloat = 2
-        public static let rowTile: CGFloat = 34
+        public static let rowSymbolWidth: CGFloat = 28
         public static let rowTileRadius: CGFloat = 10
     }
 
