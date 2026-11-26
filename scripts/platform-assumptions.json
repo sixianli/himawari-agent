@@ -117,6 +117,7 @@
     "scripts/delivery-mode/test_make_packet.py": 2,
     "scripts/install/first-install.sh": 1,
     "scripts/install/prepare-host-tools.sh": 1,
+    "scripts/operations/backup/install-backup.sh": 1,
     "test/integration/qualification/evidence/s1-task2-dependency-matrix.json": 1,
     "test/integration/qualification/evidence/s1-task2-dependency-preflight.json": 1,
     "test/integration/qualification/evidence/s1-task28-scale.json": 3,
@@ -131,6 +132,8 @@
     "scripts/install/prepare-host-tools.sh": 1,
     "scripts/model-review/gateway-lock.json": 4,
     "scripts/model-review/gateway.mjs": 3,
+    "scripts/operations/backup/install-backup.sh": 2,
+    "scripts/operations/backup/pins.json": 1,
     "test/tooling/review-gateway.test.mjs": 7,
     "test/tooling/verified-download.test.mjs": 4
   },

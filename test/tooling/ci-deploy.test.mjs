@@ -13,6 +13,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 const source = path.resolve(import.meta.dirname, "../../scripts/delivery-mode");
+const backupSource = path.resolve(import.meta.dirname, "../../scripts/operations/backup");
 const directories = [];
 
 function git(repo, ...args) {
@@ -50,11 +51,30 @@ function workspace() {
     path.join(source, "instances/andy-production.json"),
     path.join(repo, "scripts/delivery-mode/instances/andy-production.json"),
   );
+  mkdirSync(path.join(repo, "scripts/operations/backup"), { recursive: true });
+  cpSync(
+    path.join(backupSource, "himawari-backup.py"),
+    path.join(repo, "scripts/operations/backup/himawari-backup.py"),
+  );
   const first = commitFile(repo, "src/app.ts", "one");
   const fakeSsh = `${repo}-fake-ssh.sh`;
+  directories.push(`${repo}-remote.log`, `${repo}-refreshed.py`);
   writeFileSync(
     fakeSsh,
-    `#!/bin/bash\necho /opt/himawari/releases/2026-11-25-${first.slice(0, 8)}\n`,
+    [
+      "#!/bin/bash",
+      "for command; do :; done",
+      '[ -n "$FAKE_BACKUP_INSTALLED" ] || FAKE_BACKUP_INSTALLED=1',
+      '[ -n "$FAKE_BACKUP_EXIT" ] || FAKE_BACKUP_EXIT=0',
+      `echo "$command" >> ${repo}-remote.log`,
+      'case "$command" in',
+      '  "test -f /etc/himawari-backup/settings.json") exit "$FAKE_BACKUP_INSTALLED" ;;',
+      `  *himawari-backup.new*) cat > ${repo}-refreshed.py; exit 0 ;;`,
+      '  *"himawari-backup run"*) exit "$FAKE_BACKUP_EXIT" ;;',
+      "esac",
+      `echo /opt/himawari/releases/2026-11-25-${first.slice(0, 8)}`,
+      "",
+    ].join("\n"),
   );
   chmodSync(fakeSsh, 0o755);
   return { repo, first, fakeSsh };
@@ -127,6 +147,54 @@ describe("ci-deploy.sh", () => {
     expect(child.stdout).toContain("CI_DEPLOY_PREPARE");
     expect(child.stderr).toContain("PREPARE_FAILED");
     expect(child.status).toBe(3);
+  });
+
+  it("warns and goes on when the backup is not installed yet", () => {
+    const { repo, fakeSsh } = workspace();
+    const second = commitFile(repo, "src/app.ts", "changed");
+    const child = run(repo, {
+      HIMAWARI_PACKET_HOST: "198.51.100.9",
+      HIMAWARI_PACKET_SSH: fakeSsh,
+      HIMAWARI_DEPLOY_COMMIT: second,
+    });
+    expect(child.stderr).toContain("CI_DEPLOY_BACKUP_NOT_INSTALLED");
+    expect(child.stdout).toContain("CI_DEPLOY_PREPARE");
+  });
+
+  it("backs up before building a packet and refreshes the backup tool from the deployed commit", () => {
+    const { repo, fakeSsh } = workspace();
+    const second = commitFile(repo, "src/app.ts", "changed");
+    const child = run(repo, {
+      HIMAWARI_PACKET_HOST: "198.51.100.9",
+      HIMAWARI_PACKET_SSH: fakeSsh,
+      HIMAWARI_DEPLOY_COMMIT: second,
+      FAKE_BACKUP_INSTALLED: "0",
+    });
+    const output = child.stdout;
+    expect(output.indexOf("CI_DEPLOY_BACKUP_START")).toBeGreaterThan(-1);
+    expect(output.indexOf("CI_DEPLOY_BACKUP_START")).toBeLessThan(
+      output.indexOf("CI_DEPLOY_PREPARE"),
+    );
+    const log = readFileSync(`${repo}-remote.log`, "utf8");
+    expect(log).toContain("himawari-backup run --reason pre-deploy");
+    expect(readFileSync(`${repo}-refreshed.py`, "utf8")).toBe(
+      readFileSync(path.join(backupSource, "himawari-backup.py"), "utf8"),
+    );
+  });
+
+  it("deploys nothing when the backup before deploying fails", () => {
+    const { repo, fakeSsh } = workspace();
+    const second = commitFile(repo, "src/app.ts", "changed");
+    const child = run(repo, {
+      HIMAWARI_PACKET_HOST: "198.51.100.9",
+      HIMAWARI_PACKET_SSH: fakeSsh,
+      HIMAWARI_DEPLOY_COMMIT: second,
+      FAKE_BACKUP_INSTALLED: "0",
+      FAKE_BACKUP_EXIT: "1",
+    });
+    expect(child.status).toBe(6);
+    expect(child.stderr).toContain("CI_DEPLOY_REFUSED BACKUP_FAILED");
+    expect(child.stdout).not.toContain("CI_DEPLOY_PREPARE");
   });
 
   it("tightens the database file modes before building the packet", () => {
