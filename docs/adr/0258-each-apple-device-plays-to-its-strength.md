@@ -105,7 +105,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
    - ADR 0229 决定第 1 条“iPhone、Apple Watch、Mac 各有原生 App”不变。它“放弃的做法”里拿“Mac 上一直看屏幕”当理由的那半句（前提 11）不再成立：Mac 端只在主人唤它的那一刻带上前台 App、正开着的文件和选中的内容，不定时截屏，也不收听。收听由 iPhone、手表和随身麦克风做。
    - 每一端具体有哪几屏，在[详细设计](../execution/specs/2026-11-11-apple-device-body-design.md#device-roles)和界面基线里。
 
-2. **有 App 版的功能不再做网页版。** 这套设计带来的新页面（“感知到的”、让 Himawari 感知的各项开关、新的上限和用量）只做在 App 里，网页不加。ADR 0230 决定第 11 条“网页上有‘感知到的’页”（前提 10）改成：这一页在 iPhone 上。网页现有的页面不删；网页“设置 → 设备”保留，第一台设备的配对和手机丢了以后的移除都靠它。
+2. **有 App 版的功能不再做网页版。** 这套设计带来的新页面（“感知到的”、让 Himawari 感知的各项开关、新的上限和用量）只做在 App 里，网页不加。ADR 0230 决定第 11 条“网页上有‘感知到的’页”（前提 10）改成：这一页在 iPhone 上。网页现有的页面不删；网页“设置 → 设备”保留，第一台设备的配对和手机丢了以后的移除都靠它。（[ADR 0309](0309-apps-sign-in-with-passkeys-and-the-web-is-removed.md) 改为第一台设备在 App 里直接登录、设备在 App 里移除，网页最后整体删除。）
 
 3. **iPhone 上不做三张运维页**：派出去的帮手（`workers`）、代码和文件夹（`host-workspaces`）、服务器状态的明细（`health-deployment`）。它们留在电脑网页，在客户端能力表里登记成“手机上不做”并写明原因（前提 5）。这修订 ADR 0247 决定第 1 条的页面清单（前提 3）。2026-11-24 改成一个主对话以后（第 10 条），另有几页换了去处：审批（`approvals`）变成主对话里的同意卡片，建议（`suggestions`）不单独成页、变成她那条话下面的选项；能力（`capabilities-adapters`）、待采纳的改进（`improvements`）和“设备”页里登录着的浏览器这一版手机上不做，留在电脑网页，因为下一版范围清单和界面基线第 4 版都没有它们。清单里其余页面仍然是原生页面。每一页的去处见[详细设计](../execution/specs/2026-11-11-apple-device-body-design.md)里“网页的 16 个页面在 iPhone 上的去处”那张表；客户端能力表（`packages/gateway-contracts/src/client-capabilities.ts` 的 `CLIENT_PAGE_TABLE`）和由它生成的 Swift 已由 iPhone 照第 4 版改外壳的那个 PR（PR 637）改成这张表的去处：`approvals`、`suggestions` 对主对话（`chat`），`capabilities-adapters`、`improvements` 登记为这一版手机上不做。服务器状态在手机的设置里留一行（连着、服务器没准备好、连不上）。提交代码这类要主人点头的事，仍然作为一件等主人定的事送到手机。
 
