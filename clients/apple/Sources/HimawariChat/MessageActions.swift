@@ -17,13 +17,7 @@ extension View {
     func messageMenu(_ actions: MessageMenuActions?) -> some View {
         #if os(iOS)
         if let actions {
-            contextMenu {
-                if let reply = actions.reply {
-                    Button(action: reply) { Label(L.text("chat.menu.reply"), systemImage: "arrowshape.turn.up.left") }
-                }
-                Button(action: actions.copy) { Label(L.text("chat.menu.copy"), systemImage: "doc.on.doc") }
-                Button(action: actions.select) { Label(L.text("chat.menu.select"), systemImage: "text.cursor") }
-            }
+            modifier(MessageMenu(actions: actions))
         } else {
             self
         }
@@ -32,6 +26,33 @@ extension View {
         #endif
     }
 }
+
+#if os(iOS)
+struct MessageMenu: ViewModifier {
+    let actions: MessageMenuActions
+    @State private var width: CGFloat?
+
+    private static let shape = RoundedRectangle(cornerRadius: DesignTokens.Radius.bubble, style: .continuous)
+
+    func body(content: Content) -> some View {
+        content
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+            .contextMenu {
+                if let reply = actions.reply {
+                    Button(action: reply) { Label(L.text("chat.menu.reply"), systemImage: "arrowshape.turn.up.left") }
+                }
+                Button(action: actions.copy) { Label(L.text("chat.menu.copy"), systemImage: "doc.on.doc") }
+                Button(action: actions.select) { Label(L.text("chat.menu.select"), systemImage: "text.cursor") }
+            } preview: {
+                content
+                    .frame(width: width)
+                    .padding(DesignTokens.Chat.menuPreviewPadding)
+                    .background(Color.hmBackground, in: Self.shape)
+                    .clipShape(Self.shape)
+            }
+    }
+}
+#endif
 
 struct SelectableMessage: Identifiable, Equatable {
     let id: String
