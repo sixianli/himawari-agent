@@ -108,7 +108,20 @@ final class EndToEndTests: XCTestCase {
             app.waitFor(60) { answerFinished(to: text) },
             "no finished answer for \"\(text)\""
         )
+        if app.keyboards.firstMatch.exists {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.97, dy: 0.3)).tap()
+        }
+        if !app.waitFor(3, { !app.keyboards.firstMatch.exists }) {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4))
+                .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.97)))
+        }
+        XCTAssertTrue(app.waitFor(5) { !app.keyboards.firstMatch.exists }, "the keyboard did not go away")
         let bubble = app.staticTexts.matching(NSPredicate(format: "label == %@", text)).firstMatch
+        _ = app.waitFor(10) {
+            if bubble.exists && bubble.isHittable { return true }
+            app.swipeUp(velocity: .slow)
+            return false
+        }
         var lastFrame = CGRect.null
         let settled = app.waitFor(15, poll: 0.5) {
             guard bubble.exists, bubble.isHittable else { return false }
@@ -168,6 +181,10 @@ final class EndToEndTests: XCTestCase {
             if !app.waitFor(3, { title.exists && title.isHittable }) {
                 app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.12))
                     .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.95)))
+            }
+            let close = app.buttons[AppStrings.manage("close")].firstMatch
+            if !app.waitFor(3, { title.exists && title.isHittable }), close.exists {
+                close.tap()
             }
             XCTAssertTrue(
                 app.waitFor(5) { title.exists && title.isHittable },
