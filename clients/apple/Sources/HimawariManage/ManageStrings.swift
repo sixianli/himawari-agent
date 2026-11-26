@@ -51,6 +51,71 @@ enum M {
     }
     static var privacy: String { text("隐私", ja: "プライバシー", en: "Privacy") }
     static var devicesTitle: String { text("设备", ja: "デバイス", en: "Devices") }
+    static var nameTitle: String { text("你的称呼", ja: "呼び名", en: "What she calls you") }
+    static var namePlaceholder: String { text("比如 Andy", ja: "例：Andy", en: "For example, Andy") }
+    static var nameFooter: String {
+        text(
+            "她跟你说话时用这个称呼。留空就不用称呼。最多 40 个字。",
+            ja: "話しかけるときにこの名前で呼びます。空欄なら名前で呼びません。40 文字まで。",
+            en: "She uses this name when she talks to you. Leave it empty for no name. Up to 40 characters."
+        )
+    }
+    static var nameUnset: String { text("未设置", ja: "未設定", en: "Not set") }
+    static var modelTitle: String { text("她用的模型", ja: "使うモデル", en: "Her model") }
+    static var modelFooter: String {
+        text(
+            "从下一条消息起，她用选中的模型回答你从 App 发的消息。选项由服务器提供。",
+            ja: "次のメッセージから、アプリから送ったメッセージに選んだモデルで答えます。選択肢はサーバーから届きます。",
+            en: "From your next message, she answers what you send from the app with this model. The list comes from the server."
+        )
+    }
+    static var priceNote: String {
+        text(
+            "价格是 Magpie 清单里的标价（美元 / 百万 token）。“便宜”“适中”“较贵”按清单里所有有标价的模型，用“输入价 + 输出价”从低到高平分三档。已付费套餐内使用不另外扣费，但越贵越快用完套餐额度。",
+            ja: "価格は Magpie の一覧にある定価です（米ドル / 100 万トークン）。「安い」「中程度」「高め」は、定価のあるモデルを「入力 + 出力」の安い順に三等分したものです。契約済みプランの範囲内なら追加料金はかかりませんが、高いほど早く枠を使い切ります。",
+            en: "Prices are list prices from Magpie (USD per million tokens). Cheap, Mid and Pricey split every priced model into thirds by input plus output price. Use inside a paid plan costs nothing extra, but pricier models use up the plan sooner."
+        )
+    }
+    static var thinkingTitle: String { text("思考深度", ja: "考える深さ", en: "Thinking depth") }
+    static var thinkingFooter: String {
+        text("想得越深，回答越慢。", ja: "深く考えるほど、答えは遅くなります。", en: "Deeper thinking answers more slowly.")
+    }
+    static func thinkingLevel(_ level: String) -> String {
+        switch level {
+        case "off": text("关闭", ja: "オフ", en: "Off")
+        case "minimal": text("最低", ja: "最小", en: "Minimal")
+        case "low": text("低", ja: "低", en: "Low")
+        case "medium": text("标准", ja: "標準", en: "Standard")
+        case "high": text("高", ja: "高", en: "High")
+        case "xhigh": text("很高", ja: "非常に高", en: "Very high")
+        case "max": text("最高", ja: "最大", en: "Maximum")
+        default: level
+        }
+    }
+    static func modelName(_ model: ChatModel) -> String {
+        model.automatic == true ? text("自动", ja: "自動", en: "Auto") : model.name
+    }
+    static func modelDetail(_ model: ChatModel) -> String? {
+        if model.automatic == true {
+            return text("额度用完时自动换来源", ja: "枠が尽きたら別の提供元へ切り替え", en: "Switches source when a quota runs out")
+        }
+        guard let price = model.price else { return nil }
+        func dollars(_ value: Double) -> String {
+            value == 0 ? "0" : value >= 10 ? String(format: "%.0f", value) : value >= 1 ? String(format: "%.2f", value) : String(format: "%.2g", value)
+        }
+        return text(
+            "输入 $\(dollars(price.input)) · 输出 $\(dollars(price.output)) / 百万 token",
+            ja: "入力 $\(dollars(price.input)) · 出力 $\(dollars(price.output)) / 100 万トークン",
+            en: "Input $\(dollars(price.input)) · output $\(dollars(price.output)) per million tokens"
+        )
+    }
+    static func priceTier(_ tier: ChatModel.PriceTier) -> String {
+        switch tier {
+        case .low: text("便宜", ja: "安い", en: "Cheap")
+        case .mid: text("适中", ja: "中程度", en: "Mid")
+        case .high: text("较贵", ja: "高め", en: "Pricey")
+        }
+    }
     static var aboutTitle: String { text("关于", ja: "このアプリについて", en: "About") }
     static var aboutVersion: String { text("版本", ja: "バージョン", en: "Version") }
     static var aboutServer: String { text("服务器", ja: "サーバー", en: "Server") }

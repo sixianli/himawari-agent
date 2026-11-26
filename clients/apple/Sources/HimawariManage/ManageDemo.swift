@@ -29,6 +29,9 @@ public enum ManageDemoScreen: String, CaseIterable, Sendable {
     case herTimerReminder = "next-9-timer-reminder"
     case herTimerPaused = "next-9-timer-paused"
     case herNoTimers = "next-9-her-no-timers"
+    case herPersonal = "next-10-her-personal"
+    case herName = "next-10-her-name"
+    case herModel = "next-10-her-model"
 }
 
 public struct ManageDemoView: View {
@@ -88,6 +91,12 @@ public struct ManageDemoView: View {
             her([.timers, .timer(TimersStore.demoTanakaId)])
         case .herNoTimers:
             her([], timers: TimersStore(timers: nil))
+        case .herPersonal:
+            her([], personal: true)
+        case .herName:
+            her([.name], personal: true)
+        case .herModel:
+            her([.model], personal: true)
         case .herAllowanceDays:
             AllowanceDaysSheet(days: 7) { _ in }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -95,12 +104,13 @@ public struct ManageDemoView: View {
         }
     }
 
-    private func her(_ path: [HerPage.Page], allowances: Bool = true, timers: TimersStore = .demo()) -> some View {
+    private func her(_ path: [HerPage.Page], allowances: Bool = true, timers: TimersStore = .demo(), personal: Bool = false) -> some View {
         HerPage(
             settings: ManageDemo.settingsStore(),
             memory: ManageDemo.memoryStore(allowances: allowances),
             quietHours: QuietHoursStore(gateway: ManageDemo.gateway()),
             timers: timers,
+            personal: personal ? ManageDemo.personalStore() : nil,
             listening: DemoListening(),
             actions: .demo(),
             senses: AnyView(EmptyView()),
@@ -157,6 +167,19 @@ enum ManageDemo {
         SettingsStore(
             gateway: gateway(),
             identity: DeviceIdentity(deviceId: phoneId, origin: URL(string: "https://himawari.example.com")!, access: nil)
+        )
+    }
+
+    @MainActor static func personalStore() -> PersonalStore {
+        PersonalStore(
+            gateway: gateway(),
+            preferences: OwnerPreferences(name: "Andy", modelRef: "deepseek-flash", thinkingLevel: "high", revision: 3),
+            models: ChatModels(defaultRef: "magpie-main", options: [
+                ChatModel(ref: "magpie-main", name: "himawari-main", provider: "magpie", thinkingLevels: ["off", "low", "medium", "high"], automatic: true),
+                ChatModel(ref: "deepseek-flash", name: "DeepSeek V4.1 Flash", provider: "magpie", thinkingLevels: ["off", "high"], price: .init(input: 0.1, output: 0.4), priceTier: .low),
+                ChatModel(ref: "glm-flash", name: "GLM 5.3 Flash", provider: "magpie", thinkingLevels: ["off", "high"], price: .init(input: 0.2, output: 0.8), priceTier: .mid),
+                ChatModel(ref: "minimax", name: "MiniMax M3", provider: "magpie", thinkingLevels: ["off"], price: .init(input: 0.4, output: 1.6), priceTier: .high),
+            ])
         )
     }
 

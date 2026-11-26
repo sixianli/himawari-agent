@@ -182,6 +182,7 @@ import {
   PRODUCTION_OBSERVATION_OPERATIONS,
   type ProductionObservation,
 } from "./production-observation.js";
+import { deviceChatModels } from "./production-device-chat-models.js";
 import {
   PRODUCTION_OWNER_PREFERENCE_OPERATIONS,
   ProductionOwnerPreferencesControl,
@@ -943,6 +944,11 @@ export async function createProductionHttpComposition(
       options.modelCatalog?.find((entry) => entry.ref === chatModel?.ref)?.images ??
       chatModel?.input.includes("image") ??
       false,
+  });
+  const deviceModels = deviceChatModels({
+    catalog: options.modelCatalog,
+    configuration,
+    preferences: repository.ownerPreferences(),
   });
   const devicePairingAccess = await resolveDevicePairingAccess(
     configuration.secretReferences,
@@ -1898,6 +1904,7 @@ export async function createProductionHttpComposition(
       home: { resolveAction: (input) => home.resolveAction(input) },
       configuration: () => deviceConfiguration,
       chatAttachments: () => chatAttachments,
+      ...(deviceModels ? { chatModels: deviceModels } : {}),
       recordVoiceTiming: (input) => recordVoiceTiming(input),
       audit: repository.auditLedger(),
       push: devicePush,

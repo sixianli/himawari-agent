@@ -26,12 +26,15 @@ public struct HerPage: View {
         case timers
         case timer(String)
         case about
+        case name
+        case model
     }
 
     @State private var settings: SettingsStore
     @State private var memory: MemoryStore
     @State private var quietHours: QuietHoursStore
     @State private var timers: TimersStore
+    @State private var personal: PersonalStore
     @State private var path: [Page] = []
     @State private var sensesOpen = false
     @State private var vaultCount: HerVaultCount = .unknown
@@ -72,6 +75,7 @@ public struct HerPage: View {
         _memory = State(initialValue: MemoryStore(gateway: gateway))
         _quietHours = State(initialValue: QuietHoursStore(gateway: gateway))
         _timers = State(initialValue: TimersStore(gateway: gateway))
+        _personal = State(initialValue: PersonalStore(gateway: gateway, loadModels: { try? await api.configuration().chatModels }))
         self.listening = listening
         self.actions = actions
         self.openListening = openListening
@@ -97,11 +101,12 @@ public struct HerPage: View {
         #endif
     }
 
-    init(settings: SettingsStore, memory: MemoryStore, quietHours: QuietHoursStore, timers: TimersStore? = nil, listening: (any HerListening)? = nil, actions: DeviceActionsModel? = nil, senses: AnyView? = nil, vaultItems: HerVaultCount = .items(3), path: [Page] = []) {
+    init(settings: SettingsStore, memory: MemoryStore, quietHours: QuietHoursStore, timers: TimersStore? = nil, personal: PersonalStore? = nil, listening: (any HerListening)? = nil, actions: DeviceActionsModel? = nil, senses: AnyView? = nil, vaultItems: HerVaultCount = .items(3), path: [Page] = []) {
         _settings = State(initialValue: settings)
         _memory = State(initialValue: memory)
         _quietHours = State(initialValue: quietHours)
         _timers = State(initialValue: timers ?? TimersStore(timers: nil))
+        _personal = State(initialValue: personal ?? PersonalStore(gateway: settings.gateway, loadModels: { nil }))
         _path = State(initialValue: path)
         self.listening = listening
         self.actions = actions
@@ -156,6 +161,18 @@ public struct HerPage: View {
                         }
                     }
                     SettingsGroup(label: nil) {
+                        if personal.phase == .loaded {
+                            Button { path.append(.name) } label: {
+                                HerRow(icon: .user, title: M.nameTitle, value: personal.name ?? M.nameUnset)
+                            }
+                            .buttonStyle(.pressable)
+                        }
+                        if personal.canChooseModel, let model = personal.chosenModel {
+                            Button { path.append(.model) } label: {
+                                HerRow(icon: .bulb, title: M.modelTitle, value: M.modelName(model))
+                            }
+                            .buttonStyle(.pressable)
+                        }
                         if let hours = quietHours.hours {
                             Button { path.append(.notifications) } label: {
                                 HerRow(icon: .bell, title: M.notificationsTitle, subtitle: M.quietSummary(hours))
@@ -221,6 +238,10 @@ public struct HerPage: View {
                     TimerDetailPage(store: timers, timerId: id) { path.removeLast() }
                 case .about:
                     AboutPage(server: server) { path.removeLast() }
+                case .name:
+                    NamePage(store: personal) { path.removeLast() }
+                case .model:
+                    ModelPage(store: personal) { path.removeLast() }
                 case .approvals:
                     if let actions {
                         ApprovalsView(model: actions, openThread: { _ in close() }) { path.removeLast() }
@@ -256,8 +277,9 @@ public struct HerPage: View {
         async let memoryLoaded: Void = memory.load()
         async let quietLoaded: Void = quietHours.load()
         async let timersLoaded: Void = timers.load()
+        async let personalLoaded: Void = personal.load()
         vaultCount = await countVault()
-        _ = await (settingsLoaded, memoryLoaded, quietLoaded, timersLoaded)
+        _ = await (settingsLoaded, memoryLoaded, quietLoaded, timersLoaded, personalLoaded)
     }
 }
 

@@ -161,6 +161,7 @@ export interface HttpGatewayServerOptions {
     readonly speech?: SpeechSynthesisPort;
     readonly exportArchive?: DeviceApiRouteOptions["exportArchive"];
     readonly chatAttachments?: DeviceApiRouteOptions["chatAttachments"];
+    readonly chatModels?: DeviceApiRouteOptions["chatModels"];
     readonly recordVoiceTiming?: DeviceApiRouteOptions["recordVoiceTiming"];
   };
   readonly health?: HttpGatewayHealthPort;
@@ -1390,6 +1391,7 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
       ...(options.devices.chatAttachments
         ? { chatAttachments: options.devices.chatAttachments }
         : {}),
+      ...(options.devices.chatModels ? { chatModels: options.devices.chatModels } : {}),
       streamThreadEvents: streamThreadGatewayEvents,
       ...(options.payloadRead
         ? {
