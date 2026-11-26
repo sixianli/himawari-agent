@@ -15,7 +15,8 @@ browsers=$(setting browsers)
 toolbin=$(setting piToolBin)
 python=$tools/python/python/bin/python3
 [[ -x "$tools/bin/node" ]] || fail "NODE_MISSING $tools/bin/node" 5
-[[ "$("$python" --version 2>&1)" == "Python 3.12.10" ]] || fail "LOCKED_PYTHON_MISSING $python" 5
+locked_python=$(/usr/bin/python3 -I -c 'import json, sys; print(json.load(open(sys.argv[1]))["python"]["version"])' "$(setting source)/ci/toolchain-lock.json")
+[[ "$("$python" --version 2>&1)" == "Python $locked_python" ]] || fail "LOCKED_PYTHON_MISSING $python" 5
 [[ -d "$browsers" ]] || fail "BROWSERS_MISSING $browsers" 5
 [[ -x "$toolbin/fd" ]] || fail "PI_TOOL_MISSING $toolbin/fd" 5
 PATH="$toolbin:/usr/bin:/bin" command -v rg > /dev/null || fail "PI_TOOL_MISSING rg" 5

@@ -6,7 +6,7 @@ supersedes: ""
 superseded_by: ""
 date: "2026-10-31"
 covers: "packages/application/src/services/execution-live-feed.ts"
-verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
+verified_at: "7c8521fe5f55e7dd57c5bd52badd16eef647502e"
 ---
 
 # ADR 0138：回答文字边写边推给网页，过程记录写入后立刻通知

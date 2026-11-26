@@ -39,6 +39,6 @@ Himawari 提供单一 Owner 的内置账号：密码与 TOTP 验证器，验证�
 增加配置分支、凭据与会话事务、登录/再次认证/设备页面及管理命令；第 31 个迁移只新增三个表，不改写既有迁移历史。真实部署须配置 TLS 反向代理，账号完成本机验证不等于公网或 Worker 资格验收通过。产品目标与执行记录分别见以下文档。
 
 - [SOURCE: docs/prd-v0.2.md]
-- [SOURCE: docs/architecture-v0.1.md]
+- [SOURCE: docs/architecture-v0.2.md]
 - [2026-09-10-built-in-account-authentication-design.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/specs/2026-09-10-built-in-account-authentication-design.md)
 - [2026-09-10-built-in-account-authentication-plan.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/plans/2026-09-10-built-in-account-authentication-plan.md)

@@ -1,4 +1,5 @@
 export * from "./activity.js";
+export * from "./apps.js";
 export * from "./authorization.js";
 export * from "./background.js";
 export * from "./chat.js";

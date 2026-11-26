@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 import type {
+  AppConnectionStorePort,
   ApplePushStorePort,
   AttentionStatePort,
   AuditLedgerPort,
@@ -699,6 +700,10 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   proactive(): ProactiveStorePort {
     return this.durable.proactive();
+  }
+
+  appConnections(): AppConnectionStorePort {
+    return this.durable.appConnections();
   }
 
   ownerPreferences(): OwnerPreferencesStorePort {
