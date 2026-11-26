@@ -21,7 +21,7 @@ usage: prod-read.sh <query>
   columns <table>            column names of one table
   rows <table> <run-id>       rows of one table whose run_id or id column equals <run-id>
   rule-memories               metadata (no text) of the rule-category memories, all statuses, newest 500
-  gmail-decisions             metadata (no text) of the newest 100 Gmail decision records: outcome, rating, rule and memory counts, paired Muse entries
+  gmail-decisions             metadata (no text) of the newest 100 Gmail decision records: outcome, rating, rule and memory counts
   capabilities                metadata (no declaration body) of the registered capabilities, first 200 by id, with the count of all handles (any status)
   system-instruction          the runPolicy.systemInstruction text of the production configuration
 TEXT
@@ -116,9 +116,7 @@ if (mode === "summary") {
       "SELECT p.message_id, p.decision_id, p.outcome, p.skip_reason, p.owner_rating, p.processed_at, " +
         "COALESCE((SELECT json_array_length(j.value) FROM json_each(d.inputs, '$.floorHits') j WHERE j.key = p.message_id), 0) AS rule_count, " +
         "COALESCE((SELECT json_array_length(j.value) FROM json_each(d.inputs, '$.memoryByMail') j WHERE j.key = p.message_id), 0) AS memory_count, " +
-        "COALESCE((SELECT json_array_length(j.value) FROM json_each(d.inputs, '$.relatedByMail') j WHERE j.key = p.message_id), 0) AS related_count, " +
-        "(SELECT count(*) FROM muse_reference_entries e WHERE e.owner_id = p.owner_id AND e.agent_id = p.agent_id AND e.paired_message_id = p.message_id) AS muse_entries, " +
-        "(SELECT max(e.muse_reminded) FROM muse_reference_entries e WHERE e.owner_id = p.owner_id AND e.agent_id = p.agent_id AND e.paired_message_id = p.message_id) AS muse_reminded " +
+        "COALESCE((SELECT json_array_length(j.value) FROM json_each(d.inputs, '$.relatedByMail') j WHERE j.key = p.message_id), 0) AS related_count " +
         "FROM proactive_processed_messages p JOIN decision_ledger d ON d.id = p.decision_id " +
         "WHERE p.source = 'gmail' ORDER BY p.processed_at DESC, p.message_id LIMIT 100",
     )

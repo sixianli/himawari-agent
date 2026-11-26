@@ -72,7 +72,7 @@ describe("[rule-type:push_quiet_hours]", () => {
     expect(judge("run_result", "2026-11-11T22:00:00.000Z").hits).toHaveLength(0);
   });
 
-  it("REVERSE: approvals and Muse outages are never handed to rules, even by a rule that names them", () => {
+  it("REVERSE: approvals and proposals are never handed to rules, even by a rule that names them", () => {
     const rule = ownerRuleRecord({
       ruleId: "owner:hostile",
       revision: 1,
@@ -82,10 +82,10 @@ describe("[rule-type:push_quiet_hours]", () => {
     });
     const hostile = {
       ...rule,
-      expression: 'push_class == "approval" || push_class == "muse_outage"',
+      expression: 'push_class == "approval" || push_class == "proposal"',
     };
     const gate = new PushGate();
-    for (const pushClass of ["approval", "muse_outage", "unknown"] as const)
+    for (const pushClass of ["approval", "proposal", "unknown"] as const)
       expect(
         gate.decide({
           pushClass,
@@ -95,7 +95,7 @@ describe("[rule-type:push_quiet_hours]", () => {
         }),
       ).toEqual({ action: "deliver", failed: false });
     expect(pushClassOf({ kind: "approval", sourceKey: "approval:a1" })).toBe("approval");
-    expect(pushClassOf({ kind: "reminder", sourceKey: "muse-channel:2026" })).toBe("muse_outage");
+    expect(pushClassOf({ kind: "reminder", sourceKey: "muse-channel:2026" })).toBe("unknown");
     expect(pushClassOf({ kind: "reminder", sourceKey: "something:else" })).toBe("unknown");
     expect(pushClassOf({ kind: "reminder", sourceKey: "said:7:message3:m-11:1" })).toBe(
       "her_words",
