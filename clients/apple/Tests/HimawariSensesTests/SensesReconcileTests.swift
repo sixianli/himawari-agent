@@ -117,6 +117,7 @@ struct SenseTurnOnFeedbackTests {
     @Test func turningOnThatDoesNotEndOnSaysWhy() async {
         let service = RecordingSensesService()
         service.server = SenseServerView(state: "active", enabledSenses: [], knownTypes: ["location.visit"])
+        service.serverAfterRefresh = service.server
         let model = SensesModel(service: service, store: MemoryLocalStore())
         await model.turnOn(.calendar)
         #expect(model.state(.calendar) == .serverUnsupported)
