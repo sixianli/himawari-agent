@@ -1,0 +1,91 @@
+name: Mac release
+on:
+  push:
+    branches: [main]
+    paths:
+      - clients/apple/**
+      - .github/workflows/mac-release.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: mac-release
+  cancel-in-progress: false
+defaults:
+  run:
+    shell: bash
+env:
+  APPLE_TEAM_ID: WS6PVS5YQP
+  HIMAWARI_BUILD_NUMBER: ${{ github.run_number }}
+  HIMAWARI_UPDATE_FEED: https://github.com/${{ github.repository }}/releases/download/mac-updates/appcast.xml
+  HIMAWARI_DOWNLOAD_BASE: https://github.com/${{ github.repository }}/releases/download/mac-${{ github.run_number }}
+jobs:
+  publish:
+    name: mac-release/publish
+    if: ${{ github.ref == 'refs/heads/main' && github.repository == 'sixianli/himawari-agent' }}
+    runs-on: macos-26
+    timeout-minutes: 90
+    environment: testflight
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: 检查签名、公证和自动更新的密钥是否已填
+        id: keys
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          MAC_DEVELOPER_ID_P12: ${{ secrets.MAC_DEVELOPER_ID_P12 }}
+          MAC_DEVELOPER_ID_P12_PASSWORD: ${{ secrets.MAC_DEVELOPER_ID_P12_PASSWORD }}
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+          HIMAWARI_UPDATE_KEY: ${{ vars.SPARKLE_PUBLIC_KEY }}
+        run: |
+          missing=""
+          for name in ASC_KEY_ID ASC_ISSUER_ID ASC_KEY_P8 MAC_DEVELOPER_ID_P12 MAC_DEVELOPER_ID_P12_PASSWORD SPARKLE_PRIVATE_KEY HIMAWARI_UPDATE_KEY; do
+            [ -n "${!name}" ] || missing="$missing $name"
+          done
+          if [ -z "$missing" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::testflight 环境还缺：$missing，这次不出 Mac 安装包"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: 归档、用 Developer ID 签名、苹果公证、签自动更新
+        id: build
+        if: ${{ steps.keys.outputs.ready == 'true' }}
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          MAC_DEVELOPER_ID_P12: ${{ secrets.MAC_DEVELOPER_ID_P12 }}
+          MAC_DEVELOPER_ID_P12_PASSWORD: ${{ secrets.MAC_DEVELOPER_ID_P12_PASSWORD }}
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+          HIMAWARI_UPDATE_KEY: ${{ vars.SPARKLE_PUBLIC_KEY }}
+        run: clients/apple/scripts/mac-release.sh release
+      - name: 发到 GitHub Releases，并更新自动更新清单
+        if: ${{ steps.keys.outputs.ready == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ZIP: ${{ steps.build.outputs.zip }}
+          APPCAST: ${{ steps.build.outputs.appcast }}
+          VERSION: ${{ steps.build.outputs.version }}
+        run: |
+          gh release create "mac-$HIMAWARI_BUILD_NUMBER" "$ZIP" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Himawari for Mac $VERSION ($HIMAWARI_BUILD_NUMBER)" \
+            --notes "提交 ${GITHUB_SHA::8}。下载 zip，解压后把 HimawariMac 拖进“应用程序”。以后 App 会自己更新。" \
+            --latest
+          if ! gh release view mac-updates --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create mac-updates \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "Mac 自动更新清单" \
+              --notes "Mac App 每次检查更新读这里的 appcast.xml，不用手动下载。" \
+              --prerelease
+          fi
+          gh release upload mac-updates "$APPCAST" --repo "$GITHUB_REPOSITORY" --clobber
+          echo "已发布 Mac 版 $VERSION（build $HIMAWARI_BUILD_NUMBER，提交 ${GITHUB_SHA::8}）：https://github.com/$GITHUB_REPOSITORY/releases/tag/mac-$HIMAWARI_BUILD_NUMBER" >> "$GITHUB_STEP_SUMMARY"

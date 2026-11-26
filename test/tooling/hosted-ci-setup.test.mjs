@@ -55,6 +55,57 @@ describe("托管机器的准备脚本", () => {
   });
 });
 
+describe("Mac 安装包发布工作流", () => {
+  const text = readFileSync(path.join(repositoryRoot, ".github/workflows/mac-release.yml"), "utf8");
+  const workflow = parse(text);
+  const job = workflow.jobs.publish;
+  it("只在 main 上、免费的标准 Mac 机器上跑，只有发布这一步能写仓库", () => {
+    expect(Object.keys(workflow.jobs)).toEqual(["publish"]);
+    expect(workflow.on.push.branches).toEqual(["main"]);
+    expect(workflow.on.pull_request).toBeUndefined();
+    expect(job["runs-on"]).toBe(macRunnerLabel);
+    expect(job.if).toContain("github.ref == 'refs/heads/main'");
+    expect(workflow.permissions).toEqual({ contents: "read" });
+    expect(job.permissions).toEqual({ contents: "write" });
+    expect(() => validateHostedRunners({ "mac-release.yml": text })).not.toThrow();
+  });
+  it("缺任何一把密钥就只警告、不出包", () => {
+    const check = job.steps.find((step) => step.id === "keys");
+    for (const name of [
+      "ASC_KEY_ID",
+      "ASC_ISSUER_ID",
+      "ASC_KEY_P8",
+      "MAC_DEVELOPER_ID_P12",
+      "MAC_DEVELOPER_ID_P12_PASSWORD",
+      "SPARKLE_PRIVATE_KEY",
+      "HIMAWARI_UPDATE_KEY",
+    ]) {
+      expect(check.run).toContain(name);
+      expect(Object.keys(check.env)).toContain(name);
+    }
+    for (const step of job.steps.slice(job.steps.indexOf(check) + 1)) {
+      expect(step.if).toContain("steps.keys.outputs.ready == 'true'");
+    }
+  });
+  it("App 读的更新清单地址就是发布步骤上传 appcast.xml 的那个 release", () => {
+    expect(workflow.env.HIMAWARI_UPDATE_FEED).toContain(
+      "/releases/download/mac-updates/appcast.xml",
+    );
+    const publish = job.steps.at(-1).run;
+    expect(publish).toContain("gh release upload mac-updates");
+    expect(publish).toContain('gh release create "mac-$HIMAWARI_BUILD_NUMBER"');
+    expect(workflow.env.HIMAWARI_DOWNLOAD_BASE).toContain(
+      "/releases/download/mac-${{ github.run_number }}",
+    );
+    const plist = readFileSync(
+      path.join(repositoryRoot, "clients/apple/App/macOS/Info.plist"),
+      "utf8",
+    );
+    expect(plist).toContain("<string>$(HIMAWARI_UPDATE_FEED)</string>");
+    expect(plist).toContain("<string>$(HIMAWARI_UPDATE_KEY)</string>");
+  });
+});
+
 describe("iPhone 工作流", () => {
   const workflow = parse(
     readFileSync(path.join(repositoryRoot, ".github/workflows/apple.yml"), "utf8"),

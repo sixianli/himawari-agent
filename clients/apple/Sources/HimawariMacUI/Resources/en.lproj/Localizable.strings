@@ -66,7 +66,7 @@
 "pairing.retry" = "Try again";
 "pairing.problem" = "Couldn’t connect. Add the device again on iPhone and send the new pairing link";
 "sidebar.chat" = "Chat";
-"sidebar.her" = "Her";
+"sidebar.her" = "Himawari";
 "menu.go" = "Go";
 "settings.tab.general" = "General";
 "settings.tab.mac" = "This Mac";
@@ -79,3 +79,6 @@
 "menu.awaiting" = "%d waiting for you";
 "menu.talk" = "Talk to Himawari…";
 "menu.open" = "Open Himawari";
+"menu.checkForUpdates" = "Check for Updates…";
+"settings.autoUpdate" = "Automatically Check for Updates";
+"settings.autoUpdate.detail" = "Himawari tells you when a new version is ready to install.";

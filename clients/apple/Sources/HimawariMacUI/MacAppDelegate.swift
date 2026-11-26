@@ -9,6 +9,7 @@ import SwiftUI
 public final class MacAppDelegate: NSObject, NSApplicationDelegate {
     let menu: MenuBarModel
     let main: MacMainModel
+    let updater: MacUpdater?
     private var controller: MenuBarController?
     private var openWindow: OpenWindowAction?
     private var openSettingsAction: OpenSettingsAction?
@@ -17,6 +18,7 @@ public final class MacAppDelegate: NSObject, NSApplicationDelegate {
         let app = AppModel(kind: .mac)
         menu = MenuBarModel(app: app, settings: MacSettingsStore())
         main = MacMainModel(app: app)
+        updater = MacUpdater.forMainBundle()
         super.init()
     }
 

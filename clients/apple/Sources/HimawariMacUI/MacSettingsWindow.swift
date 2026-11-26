@@ -8,11 +8,12 @@ import SwiftUI
 struct MacSettingsWindow: View {
     let menu: MenuBarModel
     let main: MacMainModel
+    let updater: MacUpdater?
 
     var body: some View {
         TabView {
             Tab(L.text("settings.tab.general"), systemImage: "gearshape") {
-                MacGeneralSettings()
+                MacGeneralSettings(updater: updater)
             }
             if let workspace = main.workspace {
                 ForEach(main.settingsSections, id: \.self) { section in
@@ -39,6 +40,7 @@ struct MacSettingsWindow: View {
 }
 
 struct MacGeneralSettings: View {
+    let updater: MacUpdater?
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var failed = false
 
@@ -56,6 +58,16 @@ struct MacGeneralSettings: View {
             } footer: {
                 Text(L.text("settings.launchAtLogin.detail"))
                     .foregroundStyle(.secondary)
+            }
+            if let updater {
+                Section {
+                    Toggle(L.text("settings.autoUpdate"), isOn: Binding(get: { updater.checksAutomatically }, set: { updater.setChecksAutomatically($0) }))
+                    Button(L.text("menu.checkForUpdates")) { updater.checkForUpdates() }
+                        .disabled(!updater.canCheck)
+                } footer: {
+                    Text(L.text("settings.autoUpdate.detail"))
+                        .foregroundStyle(.secondary)
+                }
             }
         }
         .formStyle(.grouped)

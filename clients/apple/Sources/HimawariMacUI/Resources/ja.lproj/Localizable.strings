@@ -66,7 +66,7 @@
 "pairing.retry" = "もう一度";
 "pairing.problem" = "接続できませんでした。iPhone でもう一度デバイスを追加し、新しいリンクを送ってください";
 "sidebar.chat" = "会話";
-"sidebar.her" = "彼女";
+"sidebar.her" = "Himawari";
 "menu.go" = "移動";
 "settings.tab.general" = "一般";
 "settings.tab.mac" = "このMac";
@@ -79,3 +79,6 @@
 "menu.awaiting" = "あなたの判断待ち %d 件";
 "menu.talk" = "Himawariに話しかける…";
 "menu.open" = "Himawariを開く";
+"menu.checkForUpdates" = "アップデートを確認…";
+"settings.autoUpdate" = "アップデートを自動的に確認";
+"settings.autoUpdate.detail" = "新しいバージョンがあるとお知らせします。";

@@ -66,12 +66,12 @@
 "pairing.retry" = "再试一次";
 "pairing.problem" = "没连上。在 iPhone 上再添加一次设备，把新的配对链接发过来";
 "sidebar.chat" = "对话";
-"sidebar.her" = "她";
+"sidebar.her" = "Himawari";
 "menu.go" = "前往";
 "settings.tab.general" = "通用";
 "settings.tab.mac" = "这台 Mac";
 "settings.launchAtLogin" = "登录时打开";
-"settings.launchAtLogin.detail" = "打开后，开机登录就在后台运行，她在这台 Mac 上做事、等你定都不会断。";
+"settings.launchAtLogin.detail" = "打开后，开机登录就在后台运行，Himawari 在这台 Mac 上做事、等你定都不会断。";
 "settings.launchAtLogin.needsApproval" = "要在系统设置的“登录项”里允许 Himawari。";
 "settings.launchAtLogin.openLoginItems" = "打开登录项";
 "settings.launchAtLogin.failed" = "没改成，再试一次";
@@ -79,3 +79,6 @@
 "menu.awaiting" = "等你定 %d 件";
 "menu.talk" = "跟 Himawari 说…";
 "menu.open" = "打开 Himawari";
+"menu.checkForUpdates" = "检查更新…";
+"settings.autoUpdate" = "自动检查更新";
+"settings.autoUpdate.detail" = "有新版本时提醒你安装。";

@@ -16,12 +16,18 @@ public struct MacScenes: Scene {
         }
         .defaultSize(width: DesignTokens.Mac.windowMinWidth, height: DesignTokens.Mac.windowMinHeight)
         .commands {
+            CommandGroup(after: .appInfo) {
+                if let updater = delegate.updater {
+                    Button(L.text("menu.checkForUpdates")) { updater.checkForUpdates() }
+                        .disabled(!updater.canCheck)
+                }
+            }
             SidebarCommands()
             CommandGroup(replacing: .newItem) {}
             MacGoCommands(main: delegate.main)
         }
         Settings {
-            MacSettingsWindow(menu: delegate.menu, main: delegate.main)
+            MacSettingsWindow(menu: delegate.menu, main: delegate.main, updater: delegate.updater)
         }
     }
 }

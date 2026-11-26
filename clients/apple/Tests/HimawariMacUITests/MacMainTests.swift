@@ -1,5 +1,6 @@
 #if os(macOS)
 import AppKit
+import Foundation
 import HimawariCore
 @testable import HimawariMacUI
 import HimawariShell
@@ -45,6 +46,16 @@ import Testing
         MenuBarController.apply(KeyShortcut(keyCode: 4, modifiers: KeyShortcut.commandModifier | KeyShortcut.shiftModifier, key: "H"), to: letter)
         #expect(letter.keyEquivalent == "h")
         #expect(letter.keyEquivalentModifierMask == [.command, .shift])
+    }
+
+    @Test func updatesTurnOnOnlyWithAnHTTPSFeedAndAFullPublicKey() {
+        let key = Data(repeating: 7, count: 32).base64EncodedString()
+        #expect(MacUpdater.isConfigured(feed: "https://github.com/o/r/releases/download/mac-updates/appcast.xml", publicKey: key))
+        #expect(!MacUpdater.isConfigured(feed: "", publicKey: ""))
+        #expect(!MacUpdater.isConfigured(feed: nil, publicKey: key))
+        #expect(!MacUpdater.isConfigured(feed: "http://example.com/appcast.xml", publicKey: key))
+        #expect(!MacUpdater.isConfigured(feed: "https://example.com/appcast.xml", publicKey: Data(repeating: 7, count: 16).base64EncodedString()))
+        #expect(!MacUpdater.isConfigured(feed: "https://example.com/appcast.xml", publicKey: "$(HIMAWARI_UPDATE_KEY)"))
     }
 }
 #endif
