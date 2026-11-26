@@ -5,7 +5,7 @@ execution_risk: critical
 supersedes: ""
 superseded_by: ""
 covers: "scripts/operations/backup/**, scripts/delivery-mode/ci-deploy.sh, apps/admin-cli/src/index.ts, packages/persistence-sqlite/src/sqlite-recovery-point.ts"
-verified_at: "e51fe4363ed3e21ab6581e3563c652441f4e6b76"
+verified_at: "7c8521fe5f55e7dd57c5bd52badd16eef647502e"
 date: "2026-11-26"
 ---
 
@@ -25,7 +25,7 @@ date: "2026-11-26"
 <a id="scope"></a>
 ## Scope
 
-本手册管 Himawari 生产机（Oracle 东京的 ARM 机）上用户数据的机外备份：安装、日常运行、每周恢复演练，以及整台机器丢了之后从机外备份恢复。
+本手册管 Himawari 生产机（Oracle 东京的 ARM 机）上用户数据的备份：机外备份的安装、日常运行、每周恢复演练、整台机器丢了之后从机外备份恢复，以及直接用管理命令 `himawari backup` 在本机拍、核对和恢复恢复点。
 
 备份内容（一次备份叫一个“快照”）：
 
@@ -111,6 +111,22 @@ python3 -I /usr/local/sbin/himawari-backup drill
 5. 把 state/recovery-points/<恢复点号> 复制进 `<stateRoot>/recovery-points/`，属主改成服务账号，然后以服务账号运行：`himawari backup restore --config /etc/himawari/config.json --secret-dir <stateRoot>/secrets --backup <恢复点号> --target <stateRoot> --confirm RESTORE_<恢复点号>`。恢复后内置账号要重新登录。
 6. 启动服务，读回 `/health/ready`，再跑一次 `himawari-backup drill`。
 
+<a id="same-host-recovery-point"></a>
+### 同机恢复点（`himawari backup`）
+
+上面的定时任务和上线前备份内部都调用这组命令；只有需要在本机单独拍一份或退回某份恢复点时才手动用。命令以服务账号运行，`<stateRoot>` 和密钥目录取自 `/etc/himawari/config.json`：
+
+```bash
+himawari backup create --config /etc/himawari/config.json --secret-dir <stateRoot>/secrets --backup-id <恢复点号>
+himawari backup verify --config /etc/himawari/config.json --secret-dir <stateRoot>/secrets --backup <恢复点号>
+himawari backup restore --config /etc/himawari/config.json --secret-dir <stateRoot>/secrets --backup <恢复点号> --target <stateRoot> --confirm RESTORE_<恢复点号>
+```
+
+- `create` 只拍 `data/product.sqlite` 的一致性副本和它引用的附件密文，放在 `<stateRoot>/recovery-points/`，保留 30 天；`runtime/`、缓存、锁、密钥、日志都不在里面。拍完当场解密核对，核对不过就不算成功。
+- `verify` 会在 `recovery-points/` 下临时写一份解密后的副本，核对完删掉，所以要留出和数据库差不多大的空间。
+- `restore` 要求服务已停、`--target` 正好是配置里的状态目录、确认词正好是 `RESTORE_<恢复点号>`。它先解密到临时目录核对，再把当前 `data/` 挪到一边、换上新的；中途任何一步失败都把原来的 `data/` 换回去。成功后旧 `data/` 删除，恢复点之后写入的内容全部丢失，所以恢复到生产要先问 Andy。
+- 恢复只换 `data/`，不动配置、密钥、`authority.json`、程序版本和已经发生的外部动作（发出去的邮件、推送）。恢复时会让内置账号的旧会话和设备全部失效，用内置账号登录的要按 [安装启停 Runbook](install-start-stop-runbook.md#built-in-account) 重设凭据。
+
 <a id="verification"></a>
 ## Verification
 
@@ -145,3 +161,6 @@ python3 -I /usr/local/sbin/himawari-backup drill
 | `BACKUP_CLI_MISSING` / `BACKUP_RELEASE_UNKNOWN` | `grep -o '/opt/himawari/releases/[^ ]*' /etc/systemd/system/himawari-prod.service` | 服务单元里没有在用版本，先修好上线再备份 |
 | `BACKUP_ALREADY_RUNNING` | `systemctl status himawari-backup.service` | 等前一次跑完 |
 | 上线报 `CI_DEPLOY_REFUSED BACKUP_FAILED` | 同上几条 | 先修好备份再上线；不要跳过 |
+| `RECOVERY_POINT_TARGET_NOT_STOPPED` | `systemctl is-active himawari-prod.service` | 先停服务再恢复；不要删状态目录里的锁 |
+| `RECOVERY_POINT_AUTHENTICATION_FAILED`、`RECOVERY_POINT_DIGEST_MISMATCH`、`RECOVERY_POINT_PAYLOAD_INVALID`、`RECOVERY_POINT_SQLITE_CORRUPT` | 记下恢复点号和报错，不改恢复点文件 | 这份恢复点不能用，换另一份 |
+| `RECOVERY_POINT_SCHEMA_MISMATCH` | `himawari db status --config /etc/himawari/config.json` | 恢复点和当前程序的数据库版本不同，要用拍它时的那个版本恢复 |

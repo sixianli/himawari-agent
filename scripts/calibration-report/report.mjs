@@ -17,9 +17,7 @@ import {
   resolveWindow,
   sameMeasurement,
   summarizeDecisions,
-  summarizeGap,
   summarizeImplicit,
-  summarizeMuse,
   summarizePrereviewWeek,
 } from "./calibration.mjs";
 
@@ -99,8 +97,6 @@ export function run(
     }
     const data = readWindow(database, { ...scope, start: window.start, end: window.end });
     const decisions = summarizeDecisions(data.decisions, minimumSamples);
-    const muse = summarizeMuse(data.entries, data.mailJudgments, minimumSamples);
-    const gap = summarizeGap(data.entries, data.mailJudgments, minimumSamples);
     const implicit = summarizeImplicit(data.decisions, data.signals, minimumSamples);
     const prereview = summarizePrereviewWeek(data.prereviews, {
       agreementPermille: DEFAULT_PREREVIEW_AGREEMENT_PERMILLE,
@@ -124,11 +120,9 @@ export function run(
       window,
       scope,
       decisions,
-      muse,
       implicit,
       minimumSamples,
       previous,
-      gap,
       sections: prereviewReportLines(prereview),
     });
     output.write(`${markdown}\n`);
@@ -137,7 +131,6 @@ export function run(
         window,
         scope,
         decisions,
-        muse,
         implicit,
         minimumSamples,
         commit: options.get("revision") ?? currentCommit(root),
@@ -162,7 +155,7 @@ export function run(
         output.write(`历史记录：已追加到 ${path.relative(root, historyFile)}。\n`);
       }
     }
-    return { window, decisions, muse, prereview };
+    return { window, decisions, prereview };
   } finally {
     database.close();
   }

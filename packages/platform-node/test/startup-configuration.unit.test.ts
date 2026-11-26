@@ -2123,46 +2123,15 @@ it("[P5-3] accepts the MCP entry only behind Cloudflare Access, with its own aud
   );
 });
 
-it("accepts Muse intake only with a boolean switch and one secret whose purpose is muse-intake", () => {
+it("refuses the removed Muse intake settings as an unknown runPolicy key", () => {
   const raw = config("/tmp/himawari-muse-intake-config");
-  const policy = {
-    version: "1",
-    systemInstruction: "test",
-    memoryLimit: 10,
-  };
-  const references = raw["secretReferences"] as unknown[];
-  raw["secretReferences"] = [
-    ...references,
-    { ref: "muse-intake-secret", version: "v1", purpose: "muse-intake", scope: "agent" },
-    { ref: "other-secret", version: "v1", purpose: "google-oauth-client", scope: "agent" },
-    { ref: "gap-export-secret", version: "v1", purpose: "gap-export", scope: "agent" },
-  ];
-  const museIntake = { enabled: true, secretRef: "muse-intake-secret" };
-  raw["runPolicy"] = { ...policy, museIntake };
-  expect(parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.museIntake).toEqual(
-    museIntake,
-  );
-  const withGapExport = { ...museIntake, gapExportSecretRef: "gap-export-secret" };
-  raw["runPolicy"] = { ...policy, museIntake: withGapExport };
-  expect(parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.museIntake).toEqual(
-    withGapExport,
-  );
+  const policy = { version: "1", systemInstruction: "test", memoryLimit: 10 };
   raw["runPolicy"] = { ...policy };
-  expect(
-    parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.museIntake,
-  ).toBeUndefined();
-  for (const invalid of [
-    { ...museIntake, enabled: "yes" },
-    { secretRef: "muse-intake-secret" },
-    { ...museIntake, secretRef: "other-secret" },
-    { ...museIntake, secretRef: "missing-secret" },
-    { ...museIntake, secret: "inline" },
-    { ...museIntake, gapExportSecretRef: "muse-intake-secret" },
-    { ...museIntake, gapExportSecretRef: "missing-secret" },
-  ]) {
-    raw["runPolicy"] = { ...policy, museIntake: invalid };
-    expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
-  }
+  expect(parseProductConfiguration(raw, "2026-11-26T00:00:00.000Z").runPolicy).not.toHaveProperty(
+    "museIntake",
+  );
+  raw["runPolicy"] = { ...policy, museIntake: { enabled: true, secretRef: "muse-intake-secret" } };
+  expect(() => parseProductConfiguration(raw, "2026-11-26T00:00:00.000Z")).toThrow();
 });
 
 it("refuses the removed home urgency scoring settings as an unknown runPolicy key", () => {

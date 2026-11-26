@@ -317,12 +317,6 @@ export interface ReviewPrereviewConfiguration {
   };
 }
 
-export interface MuseIntakeConfiguration {
-  readonly enabled: boolean;
-  readonly secretRef: string;
-  readonly gapExportSecretRef?: string;
-}
-
 export interface ImportDuplicateTuning {
   readonly yesAtLeastPermille: number;
   readonly noAtMostPermille: number;
@@ -459,7 +453,6 @@ export interface RunPolicyConfiguration {
   readonly toolRefusals?: ToolRefusalConfiguration;
   readonly ownerIntentCheck?: OwnerIntentCheckConfiguration;
   readonly realEval?: RealEvalConfiguration;
-  readonly museIntake?: MuseIntakeConfiguration;
   readonly importDuplicates?: ImportDuplicateConfiguration;
   readonly mcpRead?: McpReadConfiguration;
   readonly webPush?: WebPushConfiguration;

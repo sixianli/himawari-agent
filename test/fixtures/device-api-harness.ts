@@ -1,11 +1,10 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   AgentThreadGatewayService,
   type ApplePushConfiguration,
-  createProactiveSeal,
   DEFAULT_HOME_FEED,
   DEFAULT_VOICE_GATES,
   DEVICE_CONFIGURATION_DEFAULTS,
@@ -84,12 +83,14 @@ import { ContextExternalContent } from "../../apps/agent-service/src/context-ext
 import { createProductionApprovalGateway } from "../../apps/agent-service/src/production-approval-gateway.ts";
 import { createProductionDeviceActions } from "../../apps/agent-service/src/production-device-actions.ts";
 import { ProductionHomeControl } from "../../apps/agent-service/src/production-home.ts";
+import { ProductionSensitiveInterceptionsControl } from "../../apps/agent-service/src/production-sensitive-interceptions-control.ts";
+import { WebPushPresence } from "../../apps/agent-service/src/production-web-push.ts";
+import { ProductionWebPushControl } from "../../apps/agent-service/src/production-web-push-control.ts";
 import {
   ProductionHttpPayloadAdmission,
   ProductionThreadGatewayAccessPolicy,
   utterancePrefetch,
 } from "../../apps/agent-service/src/production-http-composition.ts";
-import { ProductionMuseControl } from "../../apps/agent-service/src/production-muse-intake-control.ts";
 
 export const ownerId = createOwnerId("owner-device-api");
 export const agentId = createAgentId("agent-device-api");
@@ -332,7 +333,6 @@ export async function harness(
     })(),
   });
   const threadAccess = new ProductionThreadGatewayAccessPolicy({ ownerId, agentId, sessions });
-  const ids = { next: (namespace: string) => `${namespace}:${randomUUID()}` };
   const home = new ProductionHomeControl({
     settings: DEFAULT_HOME_FEED,
     listApprovals: () =>
@@ -356,15 +356,16 @@ export async function harness(
     authority: () => authority,
     executionAuthority: () => authority as never,
     ...(options.searchControl ? { searchControl: options.searchControl } : {}),
-    museControl: new ProductionMuseControl({
-      scope: { ownerId, agentId },
-      store: repository.museIntake(),
-      seal: createProactiveSeal({
-        payloads: repository.payloadStore(ownerId, agentId),
-        protector,
-        ids,
-      }),
-      ids,
+    sensitiveInterceptionsControl: new ProductionSensitiveInterceptionsControl({
+      configuration: { ownerId, agentId },
+      store: repository.sensitiveInterceptions(),
+      clock,
+    }),
+    webPushControl: new ProductionWebPushControl({
+      configuration: { ownerId, agentId },
+      store: repository.webPush(),
+      presence: new WebPushPresence(),
+      push: undefined,
       clock,
     }),
   });

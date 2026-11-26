@@ -1176,8 +1176,6 @@ function parseAppConnections(
     }),
   );
 }
-export const MUSE_INTAKE_SECRET_PURPOSE = "muse-intake";
-export const GAP_EXPORT_SECRET_PURPOSE = "gap-export";
 
 function parseProactive(value: unknown): NonNullable<RunPolicyConfiguration["proactive"]> {
   const field = "configuration.runPolicy.proactive";
@@ -1375,25 +1373,6 @@ function parseReviewPrereview(
       ),
       windowDays: number(reduction, reductionField, "windowDays", off.windowDays, 1, 366),
     }),
-  });
-}
-
-function parseMuseIntake(value: unknown): NonNullable<RunPolicyConfiguration["museIntake"]> {
-  const field = "configuration.runPolicy.museIntake";
-  const input = record(value, field);
-  rejectUnknown(input, ["enabled", "secretRef", "gapExportSecretRef"], field);
-  if (typeof input["enabled"] !== "boolean") throw invalid(`${field}.enabled`, "must be a boolean");
-  return Object.freeze({
-    enabled: input["enabled"],
-    secretRef: safeReference(input["secretRef"], `${field}.secretRef`),
-    ...(input["gapExportSecretRef"] === undefined
-      ? {}
-      : {
-          gapExportSecretRef: safeReference(
-            input["gapExportSecretRef"],
-            `${field}.gapExportSecretRef`,
-          ),
-        }),
   });
 }
 
@@ -1753,7 +1732,6 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       "deliveryTiming",
       "proactive",
       "appConnections",
-      "museIntake",
       "importDuplicates",
       "realEval",
       "mcpRead",
@@ -1822,9 +1800,6 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       ? {}
       : { appConnections: parseAppConnections(input["appConnections"]) }),
     ...(input["realEval"] === undefined ? {} : { realEval: parseRealEval(input["realEval"]) }),
-    ...(input["museIntake"] === undefined
-      ? {}
-      : { museIntake: parseMuseIntake(input["museIntake"]) }),
     ...(input["mcpRead"] === undefined ? {} : { mcpRead: parseMcpRead(input["mcpRead"]) }),
     ...(input["inbox"] === undefined ? {} : { inbox: parseInbox(input["inbox"]) }),
     ...(input["userComputers"] === undefined
@@ -2166,20 +2141,6 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       runPolicy.importDuplicates.secretRef,
       "model-auth",
       "configuration.runPolicy.importDuplicates.secretRef",
-    );
-  if (runPolicy?.museIntake)
-    assertIdentitySecretReference(
-      secretReferences,
-      runPolicy.museIntake.secretRef,
-      MUSE_INTAKE_SECRET_PURPOSE,
-      "configuration.runPolicy.museIntake.secretRef",
-    );
-  if (runPolicy?.museIntake?.gapExportSecretRef !== undefined)
-    assertIdentitySecretReference(
-      secretReferences,
-      runPolicy.museIntake.gapExportSecretRef,
-      GAP_EXPORT_SECRET_PURPOSE,
-      "configuration.runPolicy.museIntake.gapExportSecretRef",
     );
   for (const [index, connection] of (runPolicy?.appConnections ?? []).entries())
     assertIdentitySecretReference(
