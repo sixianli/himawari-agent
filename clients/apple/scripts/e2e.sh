@@ -97,12 +97,15 @@ grep -E 'error:|Test Case .* (passed|failed|skipped)|\*\* TEST' "$work/test.log"
 xcrun simctl spawn "$udid" log show --last 60m --style compact \
   --predicate 'process == "Himawari" AND (messageType == error OR messageType == fault OR eventMessage CONTAINS[c] "error" OR eventMessage CONTAINS[c] "fail")' \
   >"$work/app.log" 2>&1
+xcrun simctl spawn "$udid" log show --last 60m --style compact --info --debug \
+  --predicate 'subsystem BEGINSWITH "win.siyi.himawari"' \
+  >"$work/app-own.log" 2>&1
 set -e
 echo "IOS_E2E_BACKEND_LOG"
 grep -E 'IOS_E2E_|Error|error' "$log" | grep -vE 'IOS_E2E_(REQUEST|LIVE_TEXT) ' | head -80 || true
 echo "IOS_E2E_LIVE_TEXT_EVENTS $(grep -c 'IOS_E2E_LIVE_TEXT ' "$log" || true)"
 echo "IOS_E2E_APP_LOG"
-tail -40 "$work/app.log" || true
+tail -60 "$work/app-own.log" || true
 if grep -q "skipped" "$work/test.log" && ! grep -q "passed" "$work/test.log"; then
   echo "IOS_E2E_ALL_SKIPPED the end-to-end tests did not find the backend"
   exit 1
