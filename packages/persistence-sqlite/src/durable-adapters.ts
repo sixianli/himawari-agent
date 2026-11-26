@@ -23,6 +23,7 @@ import type {
   InboxStorePort,
   LedgerObservationPort,
   McpConnectionStorePort,
+  McpOAuthStorePort,
   McpMemorySyncStorePort,
   MemoryBookStorePort,
   MemoryCaptureBacklogPort,
@@ -1055,14 +1056,24 @@ export class SqliteDurableAdapters {
     });
   }
 
+  mcpOAuth(): McpOAuthStorePort {
+    return Object.freeze<McpOAuthStorePort>({
+      registerClient: (input) => this.context.write("mcpOAuth.registerClient", input),
+      readClient: (input) => this.context.read("mcpOAuth.readClient", input),
+      bindGrant: (input) => this.context.write("mcpOAuth.bindGrant", input),
+      issueTokens: (input) => this.context.write("mcpOAuth.issueTokens", input),
+      findAccess: (input) => this.context.read("mcpOAuth.findAccess", input),
+      rotateRefresh: (input) => this.context.write("mcpOAuth.rotateRefresh", input),
+      revokeToken: (input) => this.context.write("mcpOAuth.revokeToken", input),
+      pruneExpired: (input) => this.context.write("mcpOAuth.pruneExpired", input),
+    });
+  }
+
   mcpConnections(): McpConnectionStorePort {
     return Object.freeze<McpConnectionStorePort>({
-      create: (input) => this.context.write("mcpConnection.create", input),
       list: (input) => this.context.read("mcpConnection.list", input),
       read: (input) => this.context.read("mcpConnection.read", input),
-      findBySecret: (input) => this.context.read("mcpConnection.findBySecret", input),
       change: (input) => this.context.write("mcpConnection.change", input),
-      rotateSecret: (input) => this.context.write("mcpConnection.rotateSecret", input),
       touch: (input) => this.context.write("mcpConnection.touch", input),
       addUsage: (input) => this.context.write("mcpConnection.addUsage", input),
       usage: (input) => this.context.read("mcpConnection.usage", input),

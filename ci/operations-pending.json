@@ -42,7 +42,12 @@
     "files.list.read": "iPhone 只留一个主对话（2026-11-24 iPhone 新清单），文件页随旧设置页一起删掉，网页也没有页面（缺：调用方）。后端和测试留着；新版“她的页面”要用时再接，是否删除这个操作由 Andy 另行决定",
     "login.devices.read": "iPhone 只留一个主对话（2026-11-24 iPhone 新清单），网页登录管理页随旧设置页一起删掉，网页也没有页面（缺：调用方）。后端和测试留着；新版“她的页面”要用时再接，是否删除这个操作由 Andy 另行决定",
     "login.device.revoke": "iPhone 只留一个主对话（2026-11-24 iPhone 新清单），网页登录管理页随旧设置页一起删掉，网页也没有页面（缺：调用方）。后端和测试留着；新版“她的页面”要用时再接，是否删除这个操作由 Andy 另行决定",
-    "login.devices.revoke_others": "iPhone 只留一个主对话（2026-11-24 iPhone 新清单），网页登录管理页随旧设置页一起删掉，网页也没有页面（缺：调用方）。后端和测试留着；新版“她的页面”要用时再接，是否删除这个操作由 Andy 另行决定"
+    "login.devices.revoke_others": "iPhone 只留一个主对话（2026-11-24 iPhone 新清单），网页登录管理页随旧设置页一起删掉，网页也没有页面（缺：调用方）。后端和测试留着；新版“她的页面”要用时再接，是否删除这个操作由 Andy 另行决定",
+    "mcp.connections.read": "外部 agent 改标准 OAuth（ADR 0309 第 12 条）：网页的接入设置页已删，iPhone 的批准页和“接入的 agent”页在下一个 PR 里做（缺：调用方）。做完移出名单",
+    "mcp.connection.change": "外部 agent 改标准 OAuth（ADR 0309 第 12 条）：网页的接入设置页已删，iPhone 的批准页和“接入的 agent”页在下一个 PR 里做（缺：调用方）。做完移出名单",
+    "mcp.grants.read": "外部 agent 改标准 OAuth（ADR 0309 第 12 条）：网页的接入设置页已删，iPhone 的批准页和“接入的 agent”页在下一个 PR 里做（缺：调用方）。做完移出名单",
+    "mcp.grant.approve": "外部 agent 改标准 OAuth（ADR 0309 第 12 条）：网页的接入设置页已删，iPhone 的批准页和“接入的 agent”页在下一个 PR 里做（缺：调用方）。做完移出名单",
+    "mcp.grant.deny": "外部 agent 改标准 OAuth（ADR 0309 第 12 条）：网页的接入设置页已删，iPhone 的批准页和“接入的 agent”页在下一个 PR 里做（缺：调用方）。做完移出名单"
   },
   "notInstalled": {
     "capability.install.approve": "能力管理：契约和页面已有，生产网关没有安装。审核来源、批准安装、更新回应另行安排；装进已安装清单后移出名单",

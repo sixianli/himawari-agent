@@ -93,6 +93,7 @@ import { SqliteDeviceActionOperations } from "./sqlite-device-action-operations.
 import { SqliteExternalMemoryProposalOperations } from "./sqlite-external-memory-proposal-operations.ts";
 import { SqliteInboxOperations } from "./sqlite-inbox-operations.ts";
 import { SqliteMcpConnectionOperations } from "./sqlite-mcp-connection-operations.ts";
+import { SqliteMcpOAuthOperations } from "./sqlite-mcp-oauth-operations.ts";
 import { SqliteMcpMemorySyncOperations } from "./sqlite-mcp-memory-sync-operations.ts";
 import { SqliteMemoryBookOperations } from "./sqlite-memory-book-operations.ts";
 import { SqliteMemoryCaptureBacklogOperations } from "./sqlite-memory-capture-backlog-operations.ts";
@@ -396,6 +397,7 @@ export class SqliteDurableOperations {
   private readonly reviewPrereview: SqliteReviewPrereviewOperations;
   private readonly externalMemoryProposals: SqliteExternalMemoryProposalOperations;
   private readonly mcpConnections: SqliteMcpConnectionOperations;
+  private readonly mcpOAuth: SqliteMcpOAuthOperations;
   private readonly vault: SqliteVaultOperations;
   private readonly mcpMemorySync: SqliteMcpMemorySyncOperations;
   private readonly proactive: SqliteProactiveOperations;
@@ -514,6 +516,7 @@ export class SqliteDurableOperations {
       assertDiskHeadroom,
     );
     this.mcpConnections = new SqliteMcpConnectionOperations(database, fail, assertDiskHeadroom);
+    this.mcpOAuth = new SqliteMcpOAuthOperations(database, fail, assertDiskHeadroom);
     this.vault = new SqliteVaultOperations(database, fail, assertDiskHeadroom);
     this.mcpMemorySync = new SqliteMcpMemorySyncOperations(database, fail, assertDiskHeadroom);
     this.proactive = new SqliteProactiveOperations(
@@ -712,6 +715,7 @@ export class SqliteDurableOperations {
       return this.externalMemoryProposals.execute(operation, payload);
     if (operation.startsWith("mcpConnection."))
       return this.mcpConnections.execute(operation, payload);
+    if (operation.startsWith("mcpOAuth.")) return this.mcpOAuth.execute(operation, payload);
     if (operation.startsWith("vault.")) return this.vault.execute(operation, payload);
     if (operation.startsWith("mcpMemorySync."))
       return this.mcpMemorySync.execute(operation, payload);

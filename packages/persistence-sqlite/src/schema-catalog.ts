@@ -750,7 +750,7 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
   entry(
     "mcp_connections",
     "McpConnectionStorePort",
-    "each external agent connection the owner made: name, the SHA-256 of its random URL secret (never the secret), the capabilities ticked, the read ceiling, whether pushed memories wait for confirmation, status, and when it was last seen",
+    "each external agent connection the owner approved: name, an unused random digest kept only because the column cannot be dropped, the capabilities ticked, the read ceiling, whether pushed memories wait for confirmation, status, and when it was last seen",
     "metadata_only",
     "cascade with Owner or Agent deletion; a revoked connection stays so its usage stays explained",
   ),
@@ -781,6 +781,20 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "an append-only record of when each vault item was approved, denied, expired, filled or failed, and on which website",
     "metadata_only",
     "cascade with Owner or Agent deletion",
+  ),
+  entry(
+    "mcp_oauth_clients",
+    "McpOAuthStorePort",
+    "each OAuth client of the MCP entry: its client id (a registered id or the address of its metadata document), the name it gave, its redirect addresses, and the connection the owner approved for it",
+    "metadata_only",
+    "cascade with Owner or Agent deletion; unapproved registrations are pruned after a day",
+  ),
+  entry(
+    "mcp_oauth_tokens",
+    "McpOAuthStorePort",
+    "the SHA-256 of each access and refresh token issued to an MCP client (never the token), its connection, scopes, audience, expiry, and when a refresh token was used or revoked",
+    "metadata_only",
+    "cascade with its connection or with Owner or Agent deletion; expired rows are deleted",
   ),
   entry(
     "mcp_connection_usage_daily",

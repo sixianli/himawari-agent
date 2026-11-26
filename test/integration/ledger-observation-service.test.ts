@@ -115,15 +115,19 @@ describe.each(["worker", "direct"] as const)(
           serviceRevision: "41a6ce3",
         });
         setNow("2026-11-13T03:00:00.000Z");
-        await store.create({
+        await repository.mcpOAuth().bindGrant({
           ...scope,
-          id: "conn-weekly",
-          name: "Claude Code",
-          secretSha256: "a".repeat(64),
-          capabilities: ["mcp"],
-          readCeiling: "private",
-          pushPolicy: "ask",
-          createdAt: "2026-11-05T03:00:00.000Z",
+          clientId: "client-weekly",
+          registration: "dynamic",
+          clientName: "Claude Code",
+          redirectUris: ["http://127.0.0.1/callback"],
+          newConnection: {
+            id: "conn-weekly",
+            name: "Claude Code",
+            readCeiling: "private",
+            pushPolicy: "ask",
+          },
+          now: "2026-11-05T03:00:00.000Z",
         });
         const add = (day: string, counts: Record<string, number>, auto = false) =>
           store.addUsage({

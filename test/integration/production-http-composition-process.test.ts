@@ -2171,13 +2171,12 @@ async function systemInstructionChange(runPolicy: Record<string, unknown>) {
   }
 }
 
-it("[P5-3] checks the MCP entry against its own Cloudflare Access audience, not the web sign-in audience", async () => {
-  const mcpAudience = "mcp-access-audience-production-process";
-  const service = await openInstalledMain({ runPolicy: { mcpRead: { audience: mcpAudience } } });
+it("[P5-3] serves the MCP entry only to an OAuth access token and points a bare request to the sign-in details", async () => {
+  const service = await openInstalledMain();
   try {
-    const secret = seedMcpConnection();
-    const call = async (assertion?: string) =>
-      httpRequest(service.running().address, `/api/mcp/v1/${secret}`, {
+    const token = seedMcpConnection();
+    const call = async (bearer?: string) =>
+      httpRequest(service.running().address, "/api/mcp/v1", {
         ...jsonRequestBody({
           jsonrpc: "2.0",
           id: 1,
@@ -2187,28 +2186,41 @@ it("[P5-3] checks the MCP entry against its own Cloudflare Access audience, not 
         headers: {
           accept: "application/json, text/event-stream",
           "mcp-protocol-version": "2025-06-18",
-          ...(assertion ? { "cf-access-jwt-assertion": assertion } : {}),
+          ...(bearer ? { authorization: `Bearer ${bearer}` } : {}),
         },
       });
     const bare = await call();
     expect(bare.status).toBe(401);
-    expect(bare.headers.get("www-authenticate")).toBeNull();
-    const webAudience = await call(await signToken());
-    expect(webAudience.status).toBe(401);
-    const notOwner = await call(
-      await signToken({ audience: mcpAudience, subject: "someone-else-in-the-access-team" }),
+    expect(bare.headers.get("www-authenticate")).toContain(
+      `resource_metadata="${publicOrigin}/.well-known/oauth-protected-resource/api/mcp/v1"`,
     );
-    expect(notOwner.status).toBe(401);
-    const served = await call(await signToken({ audience: mcpAudience }));
+    const metadata = await httpRequest(
+      service.running().address,
+      "/.well-known/oauth-protected-resource/api/mcp/v1",
+      { method: "GET" },
+    );
+    expect(metadata.status).toBe(200);
+    expect(JSON.parse(metadata.raw)).toMatchObject({
+      resource: `${publicOrigin}/api/mcp/v1`,
+      authorization_servers: [publicOrigin],
+    });
+    expect((await call(await signToken())).status).toBe(401);
+    expect((await call("B".repeat(43))).status).toBe(401);
+    const served = await call(token);
     expect(served.status).toBe(200);
     expect(served.raw).toContain(String(new Date().getUTCFullYear()));
+    const names = await installedMcpToolNames(service.running().address, token);
+    expect(names).toEqual(
+      expect.arrayContaining(["today_context", "propose_memory", "propose_rule"]),
+    );
   } finally {
     await service.stop();
   }
 }, 120_000);
 
 function seedMcpConnection(): string {
-  const secret = "A".repeat(43);
+  const token = "A".repeat(43);
+  const now = new Date().toISOString();
   const seeded = openQualifiedDatabase(databasePath);
   try {
     seeded
@@ -2223,21 +2235,43 @@ function seedMcpConnection(): string {
         ownerId,
         agentId,
         "installed-process",
-        createHash("sha256").update(secret, "utf8").digest("hex"),
-        "2026-11-16T00:00:00.000Z",
-        "2026-11-16T00:00:00.000Z",
+        createHash("sha256").update("unused-installed-process").digest("hex"),
+        now,
+        now,
+      );
+    seeded
+      .prepare(
+        `INSERT OR IGNORE INTO mcp_oauth_clients (
+          client_id, owner_id, agent_id, registration, client_name, redirect_uris,
+          connection_id, created_at, updated_at
+        ) VALUES (?, ?, ?, 'dynamic', 'installed-process', '["http://127.0.0.1/callback"]', ?, ?, ?)`,
+      )
+      .run("client-installed-process", ownerId, agentId, "conn-installed-process", now, now);
+    seeded
+      .prepare(
+        `INSERT OR REPLACE INTO mcp_oauth_tokens (
+          token_sha256, owner_id, agent_id, kind, connection_id, client_id, family_id, scopes,
+          resource, created_at, expires_at, used_at, revoked_at
+        ) VALUES (?, ?, ?, 'access', ?, ?, ?, '["himawari:read","himawari:write"]', ?, ?, ?, NULL, NULL)`,
+      )
+      .run(
+        createHash("sha256").update(token, "utf8").digest("hex"),
+        ownerId,
+        agentId,
+        "conn-installed-process",
+        "client-installed-process",
+        "family-installed-process",
+        `${publicOrigin}/api/mcp/v1`,
+        now,
+        new Date(Date.now() + 3_600_000).toISOString(),
       );
   } finally {
     seeded.close();
   }
-  return secret;
+  return token;
 }
 
-async function installedMcpToolNames(
-  address: string,
-  assertion: string,
-  secret: string,
-): Promise<string[]> {
+async function installedMcpToolNames(address: string, token: string): Promise<string[]> {
   const client = new Client(
     { name: "claude-code", version: "2.1.400" },
     {
@@ -2246,10 +2280,10 @@ async function installedMcpToolNames(
     },
   );
   await client.connect(
-    new StreamableHTTPClientTransport(new URL(`/api/mcp/v1/${secret}`, address), {
+    new StreamableHTTPClientTransport(new URL("/api/mcp/v1", address), {
       fetch: async (input, init) => {
         const headers = new Headers(init?.headers);
-        headers.set("cf-access-jwt-assertion", assertion);
+        headers.set("authorization", `Bearer ${token}`);
         const target = new URL(input instanceof Request ? input.url : String(input));
         const result = await httpRequest(address, `${target.pathname}${target.search}`, {
           method: init?.method ?? "GET",
@@ -2269,28 +2303,6 @@ async function installedMcpToolNames(
     await client.close();
   }
 }
-
-it("[P5-3] shows the memory proposal tool only when runPolicy.mcpRead.proposals is on", async () => {
-  const mcpAudience = "mcp-access-audience-production-process";
-  for (const proposals of [false, true]) {
-    const service = await openInstalledMain({
-      runPolicy: { mcpRead: { audience: mcpAudience, ...(proposals ? { proposals } : {}) } },
-    });
-    try {
-      const secret = seedMcpConnection();
-      const names = await installedMcpToolNames(
-        service.running().address,
-        await signToken({ audience: mcpAudience }),
-        secret,
-      );
-      expect(names).toContain("today_context");
-      expect(names.includes("propose_memory")).toBe(proposals);
-      expect(names.includes("propose_rule")).toBe(proposals);
-    } finally {
-      await service.stop();
-    }
-  }
-}, 240_000);
 
 it("[PR-B] keeps the request head byte-identical when the configured system instruction changes between turns", async () => {
   const { first, second, rows } = await systemInstructionChange({});

@@ -17,7 +17,6 @@ import { DeviceSettings } from "./components/device-settings.js";
 import { AccountDevices, AccountLogin, accountRequest } from "./components/account-login.js";
 import { BrowserEntryScreen } from "./components/browser-entry-screen.js";
 import { ActionButton, Banner } from "./components/index.js";
-import { McpConnectionsSettings } from "./components/mcp-connections-settings.js";
 import {
   focusedMemoryIds,
   MemoryReminders,
@@ -52,7 +51,6 @@ import {
   ControlCenterIntlProvider,
   useControlCenterIntl,
 } from "./i18n/runtime.js";
-import { mcpConnectionsInstalled } from "./mcp-connections.js";
 import { useMemory } from "./memory.js";
 import { requestMessageFocus } from "./message-focus.js";
 import { useMuse } from "./muse.js";
@@ -596,16 +594,6 @@ function LocalizedControlCenterApp({
             {muse ? <MuseDataSettings muse={muse} message={message} /> : null}
           </>
         )
-      }
-      settingsAgents={
-        client && configuration && mcpConnectionsInstalled(configuration) ? (
-          <McpConnectionsSettings
-            client={client}
-            configuration={configuration}
-            connected={threadConnection !== "offline"}
-            message={message}
-          />
-        ) : undefined
       }
       settingsDevices={
         configuration?.installedDeviceApi ? (

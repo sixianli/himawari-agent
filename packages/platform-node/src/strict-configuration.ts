@@ -1395,16 +1395,6 @@ function parseImportDuplicates(value: unknown): ImportDuplicateConfiguration {
   });
 }
 
-function parseMcpRead(value: unknown): NonNullable<RunPolicyConfiguration["mcpRead"]> {
-  const field = "configuration.runPolicy.mcpRead";
-  const input = record(value, field);
-  rejectUnknown(input, ["audience", "proposals"], field);
-  const audience = safeReference(input["audience"], `${field}.audience`);
-  if (input["proposals"] === undefined) return Object.freeze({ audience });
-  if (input["proposals"] !== true) throw invalid(`${field}.proposals`, "must be true when present");
-  return Object.freeze({ audience, proposals: true as const });
-}
-
 function parseInbox(value: unknown): NonNullable<RunPolicyConfiguration["inbox"]> {
   const field = "configuration.runPolicy.inbox";
   const input = record(value, field);
@@ -1786,7 +1776,6 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
     ...(input["museIntake"] === undefined
       ? {}
       : { museIntake: parseMuseIntake(input["museIntake"]) }),
-    ...(input["mcpRead"] === undefined ? {} : { mcpRead: parseMcpRead(input["mcpRead"]) }),
     ...(input["inbox"] === undefined ? {} : { inbox: parseInbox(input["inbox"]) }),
     ...(input["importDuplicates"] === undefined
       ? {}
@@ -1807,6 +1796,7 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
 }
 
 const RETIRED_RUN_POLICY_KEYS = [
+  "mcpRead",
   "maxMemoryClassification",
   "deliveryTiming",
   "maxSelectedMemories",
@@ -2077,20 +2067,6 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
   const runPolicy =
     input["runPolicy"] === undefined ? undefined : parseRunPolicy(input["runPolicy"]);
   assertWebProviderSecretReferences(runPolicy, secretReferences);
-  if (runPolicy?.mcpRead && (!identity || identity.kind === "built-in"))
-    throw invalid(
-      "configuration.runPolicy.mcpRead",
-      "requires configuration.identity to use Cloudflare Access",
-    );
-  if (
-    runPolicy?.mcpRead &&
-    identity?.kind !== "built-in" &&
-    identity?.audience === runPolicy.mcpRead.audience
-  )
-    throw invalid(
-      "configuration.runPolicy.mcpRead.audience",
-      "must differ from configuration.identity.audience",
-    );
   if (runPolicy?.webPush)
     assertIdentitySecretReference(
       secretReferences,

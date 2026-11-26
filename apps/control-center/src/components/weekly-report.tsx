@@ -10,7 +10,7 @@ import type {
 } from "../proactive.js";
 import { AccountLogin } from "./account-login.js";
 import { Glyph, type GlyphName } from "./glyphs.js";
-import { McpUsageLines } from "./mcp-connections-settings.js";
+import { McpUsageLines } from "./mcp-usage-lines.js";
 import { ModalDialog } from "./overlays.js";
 import { ActionButton } from "./primitives.js";
 

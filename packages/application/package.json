@@ -14,6 +14,7 @@
     "./thread-prompt-bundles": "./src/ports/thread-prompt-bundles.ts",
     "./sensitive-interceptions": "./src/ports/sensitive-interceptions.ts",
     "./mcp-connections": "./src/ports/mcp-connections.ts",
+    "./mcp-oauth": "./src/ports/mcp-oauth.ts",
     "./mcp-memory-sync": "./src/ports/mcp-memory-sync.ts",
     "./model-usage": "./src/ports/model-usage.ts",
     "./real-eval": "./src/ports/real-eval.ts",

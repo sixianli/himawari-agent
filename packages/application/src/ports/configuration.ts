@@ -370,11 +370,6 @@ export interface RealEvalConfiguration {
   readonly requestTimeoutMs: number;
 }
 
-export interface McpReadConfiguration {
-  readonly audience: string;
-  readonly proposals?: true;
-}
-
 export interface InboxConfiguration {
   readonly stalledAfterMinutes?: number;
   readonly maxAttempts?: number;
@@ -448,7 +443,6 @@ export interface RunPolicyConfiguration {
   readonly realEval?: RealEvalConfiguration;
   readonly museIntake?: MuseIntakeConfiguration;
   readonly importDuplicates?: ImportDuplicateConfiguration;
-  readonly mcpRead?: McpReadConfiguration;
   readonly webPush?: WebPushConfiguration;
   readonly applePush?: ApplePushConfiguration;
   readonly device?: DeviceConfiguration;

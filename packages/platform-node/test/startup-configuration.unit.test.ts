@@ -2012,68 +2012,10 @@ it("[P5-3] accepts the MCP entry only behind Cloudflare Access, with its own aud
   expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
   raw["runPolicy"] = { ...policy, ownerProposals: {} };
   expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
-  for (const mcpRead of [
-    { audience: "mcp-access-audience" },
-    { audience: "mcp-access-audience", proposals: true },
-  ]) {
-    raw["runPolicy"] = { ...policy, mcpRead };
-    expect(parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.mcpRead).toEqual(
-      mcpRead,
-    );
-  }
-  raw["runPolicy"] = { ...policy };
-  expect(
-    parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.mcpRead,
-  ).toBeUndefined();
-  for (const invalid of [
-    {},
-    { secretRef: "mcp-read-secret" },
-    { audience: "mcp-access-audience", secretRef: "mcp-read-secret" },
-    { audience: "mcp-access-audience", writeSecretRef: "mcp-write-secret" },
-    { audience: "mcp-access-audience", proposals: false },
-    { audience: "mcp access audience" },
-    "mcp-access-audience",
-  ]) {
-    raw["runPolicy"] = { ...policy, mcpRead: invalid };
-    expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
-  }
-  const webAudience = (raw["identity"] as { audience: string }).audience;
-  raw["runPolicy"] = { ...policy, mcpRead: { audience: webAudience } };
-  expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow(
-    expect.objectContaining({
-      details: {
-        field: "configuration.runPolicy.mcpRead.audience",
-        reason: "must differ from configuration.identity.audience",
-      },
-    }),
-  );
   raw["runPolicy"] = { ...policy, mcpRead: { audience: "mcp-access-audience" } };
-  const withoutIdentity = { ...raw };
-  delete withoutIdentity["http"];
-  delete withoutIdentity["identity"];
-  expect(() => parseProductConfiguration(withoutIdentity, "2026-09-06T00:00:00.000Z")).toThrow(
-    expect.objectContaining({
-      details: {
-        field: "configuration.runPolicy.mcpRead",
-        reason: "requires configuration.identity to use Cloudflare Access",
-      },
-    }),
-  );
-  raw["identity"] = {
-    kind: "built-in",
-    sessionIdleMilliseconds: 86_400_000,
-    sessionAbsoluteMilliseconds: 604_800_000,
-    recentAuthentication: { maximumAgeMilliseconds: 900_000, clockSkewMilliseconds: 30_000 },
-    csrf: { keySecretRef: "identity-csrf", ttlMilliseconds: 1_800_000 },
-  };
-  expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow(
-    expect.objectContaining({
-      details: {
-        field: "configuration.runPolicy.mcpRead",
-        reason: "requires configuration.identity to use Cloudflare Access",
-      },
-    }),
-  );
+  const retired = parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy;
+  expect(retired?.retiredKeys).toEqual(["mcpRead"]);
+  expect(retired).not.toHaveProperty("mcpRead");
 });
 
 it("accepts Muse intake only with a boolean switch and one secret whose purpose is muse-intake", () => {

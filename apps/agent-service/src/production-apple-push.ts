@@ -51,6 +51,9 @@ export const APPLE_PUSH_TEXT = {
     openBody: "这台设备上有一件事在等着做",
     vaultTitle: "Himawari 请你批准一次使用",
     vaultBody: "点开后刷脸批准或拒绝",
+    mcpGrantTitle: "有 agent 想接入 Himawari",
+    mcpGrantBody: (name: string, host: string) =>
+      `「${name}」（${host}）。点开后用面容 ID 批准或拒绝`,
   },
   en: {
     approve: "Approve",
@@ -62,6 +65,9 @@ export const APPLE_PUSH_TEXT = {
     openBody: "Something is waiting to be done on this device",
     vaultTitle: "Himawari needs your approval",
     vaultBody: "Open to approve or decline with Face ID",
+    mcpGrantTitle: "An agent wants to connect to Himawari",
+    mcpGrantBody: (name: string, host: string) =>
+      `“${name}” (${host}). Open to approve or decline with Face ID`,
   },
   ja: {
     approve: "承認",
@@ -73,6 +79,9 @@ export const APPLE_PUSH_TEXT = {
     openBody: "このデバイスで行う操作が待っています",
     vaultTitle: "Himawari が使用の承認を求めています",
     vaultBody: "開いて Face ID で承認または拒否",
+    mcpGrantTitle: "エージェントが Himawari への接続を求めています",
+    mcpGrantBody: (name: string, host: string) =>
+      `「${name}」（${host}）。開いて Face ID で承認または拒否`,
   },
 } as const satisfies Record<WebPushLocale, unknown>;
 
@@ -195,6 +204,33 @@ export function applePushVaultApprovalPayload(input: {
       kind: VAULT_APPROVAL_PUSH_KIND,
       navigate: "/",
       vaultRequestId: input.requestId,
+      actions: [],
+    },
+  });
+}
+
+export const MCP_GRANT_PUSH_KIND = "mcp_grant" as const;
+const MCP_GRANT_NAME_BYTES = 120;
+
+export function applePushMcpGrantPayload(input: {
+  readonly title: string;
+  readonly body: string;
+  readonly grantId: string;
+}): string {
+  return JSON.stringify({
+    aps: {
+      alert: { title: input.title, body: input.body },
+      sound: "default",
+      "thread-id": MCP_GRANT_PUSH_KIND,
+      "interruption-level": "time-sensitive",
+      category: "himawari.plain",
+    },
+    himawari: {
+      v: 1,
+      tag: `mcp-grant-${input.grantId}`,
+      kind: MCP_GRANT_PUSH_KIND,
+      navigate: "/",
+      mcpGrantId: input.grantId,
       actions: [],
     },
   });
@@ -353,6 +389,45 @@ export class ProductionApplePush implements PushCompanionChannel {
             title: text.vaultTitle,
             body: text.vaultBody,
             requestId: input.requestId,
+          }),
+        });
+        await this.#applyRegistrationOutcome(registration, result, now);
+      }
+    } catch (error) {
+      this.#options.onFailure(error);
+    }
+  }
+
+  async requestMcpGrant(input: {
+    readonly id: string;
+    readonly clientName: string;
+    readonly clientHost: string;
+    readonly expiresAt: string;
+  }): Promise<void> {
+    try {
+      const registrations = (
+        await this.#options.store.listRegistrations({ ...this.#scope(), pushType: "alert" })
+      ).filter(
+        (registration) => registration.status === "active" && this.#configured(registration),
+      );
+      const now = this.#options.now();
+      for (const registration of registrations) {
+        const text = APPLE_PUSH_TEXT[registration.locale];
+        const result = await this.#transmit("alert", MCP_GRANT_PUSH_KIND, {
+          token: registration.token,
+          environment: registration.environment,
+          topic: registration.topic,
+          pushType: "alert",
+          priority: 10,
+          expiresAtSeconds: Math.floor(Date.parse(input.expiresAt) / 1_000),
+          collapseId: `mcp-grant-${input.id}`.slice(0, 64),
+          payload: applePushMcpGrantPayload({
+            title: text.mcpGrantTitle,
+            body: text.mcpGrantBody(
+              clip(input.clientName, MCP_GRANT_NAME_BYTES),
+              clip(input.clientHost, MCP_GRANT_NAME_BYTES),
+            ),
+            grantId: input.id,
           }),
         });
         await this.#applyRegistrationOutcome(registration, result, now);
