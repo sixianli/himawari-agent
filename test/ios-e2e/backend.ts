@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
-import { createServer as createHttpsServer } from "node:https";
+import { createServer as createHttpServer } from "node:http";
 import { connect, createServer as createTcpServer, type Server, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -393,7 +393,7 @@ export async function startE2eBackend(): Promise<E2eBackend> {
   }, 300);
   const front = new SwitchableFront(frontPort, appPort, tls);
   await front.start();
-  const control = createHttpsServer({ key: tls.key, cert: tls.cert }, (request, response) => {
+  const control = createHttpServer((request, response) => {
     const reply = (status: number, body: unknown) => {
       response.writeHead(status, { "content-type": "application/json" });
       response.end(JSON.stringify(body));
@@ -426,11 +426,10 @@ export async function startE2eBackend(): Promise<E2eBackend> {
       return reply(404, { error: "not_found" });
     })().catch((error) => reply(500, { error: String(error) }));
   });
-  control.on("tlsClientError", (error) => note(`TLS_ERROR control ${error.message}`));
   await new Promise<void>((resolve) => control.listen(controlPort, "127.0.0.1", () => resolve()));
   return {
     origin,
-    controlOrigin: `https://127.0.0.1:${controlPort}`,
+    controlOrigin: `http://127.0.0.1:${controlPort}`,
     caPath: tls.caPath,
     close: async () => {
       clearInterval(confirming);

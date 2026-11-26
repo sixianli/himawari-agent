@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { setTimeout as delay } from "node:timers/promises";
 import {
@@ -25,7 +26,8 @@ function call(
   onChunk?: (chunk: string) => boolean,
 ): Promise<Reply> {
   return new Promise((resolve, reject) => {
-    const request = httpsRequest(
+    const send = url.startsWith("https:") ? httpsRequest : httpRequest;
+    const request = send(
       url,
       { method: init.method ?? "GET", headers: init.headers, ca },
       (response) => {

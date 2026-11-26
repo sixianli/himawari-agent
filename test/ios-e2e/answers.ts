@@ -16,7 +16,9 @@ export function e2eAnswer(ownerText: string): string {
       { length: 40 },
       (_, index) => `- 第 ${index + 1} 行：用来把对话撑长，好测滚动。`,
     );
-    return [`${ANSWER_OPENING}“${text}”。`, "", ...lines, "", ANSWER_ENDING].join("\n");
+    return [`${ANSWER_OPENING}“${text}”。`, "", ...lines, "", `${ANSWER_ENDING}（${text}）`].join(
+      "\n",
+    );
   }
   return [`${ANSWER_OPENING}“${text}”。`, ...DEFAULT_BODY, ANSWER_ENDING].join("");
 }

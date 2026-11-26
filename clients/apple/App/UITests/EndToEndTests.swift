@@ -190,6 +190,7 @@ final class EndToEndTests: XCTestCase {
     }
 
     private func answerFinished(to text: String) -> Bool {
+        if app.texts(containing: "\(answers.ending)（\(text)）").firstMatch.exists { return true }
         let answer = app.texts(containing: "\(answers.opening)“\(text)”").firstMatch
         return answer.exists && [answer.label, answer.value as? String ?? ""].joined().contains(answers.ending)
     }
