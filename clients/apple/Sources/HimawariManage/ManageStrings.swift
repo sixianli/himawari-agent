@@ -25,6 +25,7 @@ enum M {
     static var rules: String { text("规则", ja: "ルール", en: "Rules") }
     static var search: String { text("搜索", ja: "検索", en: "Search") }
     static var searchPrompt: String { text("搜记住的事和规则", ja: "覚えていることとルールを検索", en: "Search memories and rules") }
+    static var searchFailed: String { text("现在搜不了，稍后再试", ja: "いまは検索できません。あとでもう一度", en: "Search isn't available right now. Try again later") }
     static func noSearchResults(_ query: String) -> String { text("没有找到“\(query)”", ja: "「\(query)」は見つかりません", en: "Nothing found for “\(query)”") }
     static var nothingRemembered: String {
         text("还没有记住的事", ja: "まだ覚えていることはありません", en: "Nothing remembered yet")
@@ -121,6 +122,33 @@ enum M {
     static var aboutServer: String { text("服务器", ja: "サーバー", en: "Server") }
     static var aboutLicenses: String { text("开源许可", ja: "オープンソースライセンス", en: "Open source licenses") }
     static var aboutNotConnected: String { text("没有连着", ja: "未接続", en: "Not connected") }
+    static var developerMode: String { text("开发者模式", ja: "開発者モード", en: "Developer mode") }
+    static var developer: String { text("开发者", ja: "開発者", en: "Developer") }
+    static var talkTiming: String { text("说话计时", ja: "会話の計時", en: "Talk timing") }
+    static var talkTimingRecent: String { text("最近 20 轮", ja: "直近 20 回", en: "Last 20 turns") }
+    static var talkTimingTurns: String { text("每一轮", ja: "各回", en: "Each turn") }
+    static var talkTimingTextGap: String { text("说完 → 第一个字", ja: "話し終わり → 最初の文字", en: "Done speaking → first word") }
+    static var talkTimingSoundGap: String { text("第一个字 → 第一声", ja: "最初の文字 → 最初の声", en: "First word → first sound") }
+    static var talkTimingDefinition: String {
+        text(
+            "一半：这些轮里一半在这个时间以内；九成：九成在这个时间以内。没出声的轮不算第二行。",
+            ja: "半分：これらの回の半分がこの時間以内。9 割：9 割がこの時間以内。声が出なかった回は 2 行目に数えません。",
+            en: "Half: half of these turns took this long or less. 90%: nine in ten did. Turns with no sound don't count toward the second row."
+        )
+    }
+    static func talkTimingSpread(half: String, ninety: String) -> String {
+        text("一半 \(half) · 九成 \(ninety)", ja: "半分 \(half) · 9 割 \(ninety)", en: "Half \(half) · 90% \(ninety)")
+    }
+    static func talkTimingTooFew(_ count: Int) -> String { text("轮数太少（\(count) 轮）", ja: "回数が少なすぎます（\(count) 回）", en: "Too few turns (\(count))") }
+    static func seconds(_ value: String) -> String { text("\(value) 秒", ja: "\(value) 秒", en: "\(value) s") }
+    static var talkTimingSilent: String { text("没出声", ja: "声なし", en: "No sound") }
+    static var talkTimingSaid: String { text("说完", ja: "話し終わり", en: "Done speaking") }
+    static var talkTimingFirstText: String { text("第一个字到手机", ja: "最初の文字が届いた", en: "First word reached the phone") }
+    static var talkTimingFirstSound: String { text("第一声", ja: "最初の声", en: "First sound") }
+    static var talkTimingEmitted: String { text("服务器发出第一个字", ja: "サーバーが最初の文字を送った", en: "Server sent the first word") }
+    static var talkTimingEmpty: String { text("还没有说话记录", ja: "まだ会話の記録はありません", en: "No talk records yet") }
+    static var talkTimingFailed: String { text("没读到计时", ja: "計時を読み込めませんでした", en: "Couldn't load timing") }
+    static var tryAgain: String { text("再试一次", ja: "もう一度", en: "Try again") }
     static var allowancesTitle: String { text("同意过的事", ja: "承認したこと", en: "What you've allowed") }
     static func allowancesSummary(_ count: Int) -> String {
         if count == 0 { return text("还没有“不用再问”的事", ja: "「もう聞かない」ことはまだありません", en: "Nothing she skips asking yet") }

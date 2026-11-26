@@ -75,3 +75,14 @@
 "demo.request" = "明日の午前、田中さんと約束を入れて、";
 "demo.requestTail" = "十時ごろ";
 "demo.askHeard" = "田中さんと約束を入れて";
+"live.talk.title" = "彼女と話す";
+"live.talk.listening" = "聞いています";
+"live.talk.speaking" = "話しています";
+"live.talk.muted" = "ミュート中";
+"live.talk.mute" = "ミュート";
+"live.talk.unmute" = "マイクをオン";
+"live.talk.end" = "終了";
+"live.work.step" = "%d/%d 段階目";
+"live.work.working" = "対応中";
+"live.work.waiting" = "あなたの返事待ち";
+"live.work.finished" = "完了";

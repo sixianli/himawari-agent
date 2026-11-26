@@ -14,14 +14,17 @@ final class AccessibilityAuditTests: XCTestCase {
 
     func testEveryDemoScene() throws {
         var found: [AuditFinding] = []
+        let modes: [(name: String, appearance: XCUIDevice.Appearance, types: XCUIAccessibilityAuditType)] = [
+            ("light", .light, .all),
+            ("dark", .dark, .contrast),
+        ]
         for scene in try Self.scenes() {
-            let app = launch(scene)
-            XCUIDevice.shared.appearance = .light
-            found += audit(app, scene: scene, mode: "light", types: .all)
-            XCUIDevice.shared.appearance = .dark
-            Thread.sleep(forTimeInterval: 0.5)
-            found += audit(app, scene: scene, mode: "dark", types: .contrast)
-            app.terminate()
+            for mode in modes {
+                XCUIDevice.shared.appearance = mode.appearance
+                let app = launch(scene)
+                found += audit(app, scene: scene, mode: mode.name, types: mode.types)
+                app.terminate()
+            }
         }
         XCUIDevice.shared.appearance = .light
         try judge(found)
@@ -34,6 +37,8 @@ final class AccessibilityAuditTests: XCTestCase {
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 20), "\(scene) did not reach the foreground")
         _ = app.windows.firstMatch.waitForExistence(timeout: 10)
         Thread.sleep(forTimeInterval: 1)
+        let systemAlert = XCUIApplication(bundleIdentifier: "com.apple.springboard").alerts.firstMatch
+        XCTAssertFalse(systemAlert.exists, "\(scene) asked the system for a permission; demo scenes must not, or the alert stays up and blocks every later scene")
         return app
     }
 

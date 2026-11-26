@@ -4,6 +4,22 @@ struct Snapshot<Payload: Decodable>: Decodable {
     let payload: Payload
 }
 
+public struct MemorySearchHit: Decodable, Sendable, Identifiable, Hashable {
+    public let kind: String
+    public let memoryId: String
+    public let ruleId: String?
+    public let text: String
+    public let category: String
+    public let tentative: Bool
+
+    public var id: String { "\(kind):\(memoryId)" }
+    public var isRule: Bool { kind == "rule" }
+}
+
+struct MemorySearchSnapshot: Decodable {
+    let results: [MemorySearchHit]
+}
+
 public struct MemoryItem: Decodable, Sendable, Identifiable, Hashable {
     public struct History: Decodable, Sendable, Hashable {
         public let historyId: Int

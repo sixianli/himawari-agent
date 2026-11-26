@@ -213,6 +213,7 @@ struct DemoSceneView: View {
         case .chatAttach:
             chat(DemoChatFixtures.offline())
                 .environment(\.chatOpensAttachSheet, true)
+                .environment(\.chatReadsPhotoLibrary, false)
         case .chatTalkListening:
             chat(DemoChatFixtures.formatted())
                 .environment(\.chatTalk, DemoTalk(phase: .listening, heard: DemoChatFixtures.talkHeard))
@@ -298,7 +299,7 @@ struct DemoSceneView: View {
 
     private func chat(_ state: DemoChatState) -> some View {
         ChatView(store: .demo(state), threadId: DemoChatFixtures.osakaThreadId)
-            .environment(\.chatCanAttach, true)
+            .environment(\.chatAttachLimits, AttachmentLimits(textCharacters: 200_000, imageCharacters: 2_000_000, perMessage: 10, messageCharacters: 400_000))
     }
 }
 
