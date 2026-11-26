@@ -24,7 +24,6 @@
     "./apple-push": "./src/ports/apple-push.ts",
     "./rule-review": "./src/ports/rule-review.ts",
     "./rule-ref": "./src/rules/rule-ref.ts",
-    "./muse-intake": "./src/ports/muse-intake.ts",
     "./proactive-sources": "./src/ports/proactive-sources.ts",
     "./ledger-observation": "./src/ports/ledger-observation.ts"
   },

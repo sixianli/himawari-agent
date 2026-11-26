@@ -65,6 +65,21 @@ def secret_directory(settings):
     return settings.get("secretDirectory") or str(Path(settings["stateRoot"]) / "secrets")
 
 
+def service_environment(settings):
+    try:
+        unit = Path(settings["unitPath"]).read_text(encoding="utf-8")
+    except OSError as error:
+        raise BackupError("BACKUP_SERVICE_ENVIRONMENT_UNKNOWN", settings["unitPath"]) from error
+    environment = {}
+    for line in unit.splitlines():
+        match = re.fullmatch(r"Environment=(PATH|HOME|LANG)=(\S+)", line.strip())
+        if match:
+            environment[match.group(1)] = match.group(2)
+    if "PATH" not in environment:
+        raise BackupError("BACKUP_SERVICE_ENVIRONMENT_UNKNOWN", "no Environment=PATH in " + settings["unitPath"])
+    return environment
+
+
 def as_service(settings, command):
     if pwd.getpwuid(os.getuid()).pw_name == settings["serviceAccount"]:
         return list(command)
@@ -93,7 +108,7 @@ def now_compact(clock):
 
 def create_recovery_point(settings, cli, reason, clock):
     backup_id = "auto-" + reason + "-" + now_compact(clock)
-    result = run(as_service(settings, [str(cli), "backup", "create", "--config", settings["config"], "--secret-dir", secret_directory(settings), "--backup-id", backup_id]))
+    result = run(as_service(settings, [str(cli), "backup", "create", "--config", settings["config"], "--secret-dir", secret_directory(settings), "--backup-id", backup_id]), service_environment(settings))
     try:
         report = json.loads(result.stdout)
     except ValueError as error:
@@ -270,7 +285,7 @@ def drill(settings, clock, output):
         rewrite_config(bundle / "config" / "config.json", str(bundle / "drill-config.json"), str(state))
         run(["/usr/bin/chown", "-R", settings["serviceAccount"] + ":" + settings["serviceAccount"], str(target)])
         run(["/usr/bin/chmod", "711", str(work), str(target)])
-        result = run(as_service(settings, [str(cli), "backup", "verify", "--config", str(bundle / "drill-config.json"), "--secret-dir", str(state / "secrets"), "--backup", info["backupId"]]))
+        result = run(as_service(settings, [str(cli), "backup", "verify", "--config", str(bundle / "drill-config.json"), "--secret-dir", str(state / "secrets"), "--backup", info["backupId"]]), service_environment(settings))
         report = json.loads(result.stdout)
         if report.get("fullIntegrityCheck") != "ok" or report.get("quickIntegrityCheck") != "ok":
             raise BackupError("DRILL_VERIFY_FAILED", info["backupId"])

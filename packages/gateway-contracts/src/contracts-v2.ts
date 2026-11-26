@@ -53,15 +53,9 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "proactive.sources.snapshot",
   "proactive.source.settings.set",
   "proactive.source.switch_off",
-  "muse.overview.read",
-  "muse.overview.snapshot",
-  "muse.item.rate",
-  "muse.intake.set",
-  "muse.data.clear",
   "proactive.weekly.read",
   "proactive.weekly.snapshot",
   "proactive.observation.start",
-  "proactive.gapcase.mark",
   "owner.preferences.read",
   "owner.preferences.snapshot",
   "owner.preferences.set",
@@ -1722,55 +1716,6 @@ const proactiveSourceSwitchOffCommandSchema = object({
   ...commandEnvelope("proactive.source.switch_off"),
   payload: object({ source: proactiveSourceName }),
 });
-const museOverviewQuerySchema = object({
-  ...envelope("query", "muse.overview.read"),
-  payload: object({}),
-});
-const museItemKindSchema = enumeration(["proactive", "scheduled"]);
-const museOverviewSnapshotSchema = object({
-  ...envelope("snapshot", "muse.overview.snapshot"),
-  payload: object({
-    channel: object({
-      state: enumeration(["never", "ok", "stale", "down", "paused"]),
-      lastBatchAt: nullable(timestamp),
-      gapCount: integer(0),
-    }),
-    receivedWeek: integer(0),
-    suppressedWeek: integer(0),
-    pending: integer(0),
-    delay: nullable(object({ medianMinutes: integer(0), samples: integer(10) })),
-    items: array(
-      object({
-        kind: museItemKindSchema,
-        naturalKey: machineString,
-        occurredAt: timestamp,
-        title: nullable(proactiveTextSchema(300)),
-        text: nullable(proactiveTextSchema(500)),
-        withheld: booleanValue,
-        timingOk: nullable(booleanValue),
-        contentOk: nullable(booleanValue),
-      }),
-    ),
-    generatedAt: timestamp,
-  }),
-});
-const museItemRateCommandSchema = object({
-  ...commandEnvelope("muse.item.rate"),
-  payload: object({
-    kind: museItemKindSchema,
-    naturalKey: machineString,
-    timingOk: nullable(booleanValue),
-    contentOk: nullable(booleanValue),
-  }),
-});
-const museIntakeSetCommandSchema = object({
-  ...commandEnvelope("muse.intake.set"),
-  payload: object({ paused: booleanValue }),
-});
-const museDataClearCommandSchema = object({
-  ...commandEnvelope("muse.data.clear"),
-  payload: object({}),
-});
 
 const sensitiveInterceptionCursorSchema = object({
   firstSeenAt: timestamp,
@@ -1958,69 +1903,6 @@ const proactiveWeeklySnapshotSchema = object({
           }),
         }),
       ),
-      muse: object({
-        entries: integer(0),
-        reminded: integer(0),
-        silent: integer(0),
-        unpaired: integer(0),
-        pairedMails: integer(0),
-        timing: calibrationRateSchema,
-        content: calibrationRateSchema,
-        pairing: calibrationRateSchema,
-        buckets: object({
-          both: integer(0),
-          museOnly: integer(0),
-          himawariOnly: integer(0),
-          bothSilent: integer(0),
-          noHimawariRecord: integer(0),
-        }),
-      }),
-      gapCases: array(
-        object({
-          id: machineString,
-          messageId: nullable(gmailMessageId),
-          museAt: timestamp,
-          museTitle: nullable(proactiveTextSchema(300)),
-          museText: nullable(proactiveTextSchema(500)),
-          museTextWithheld: booleanValue,
-          himawariOutcome: machineString,
-          himawariReasonCode: machineString,
-          himawariReason: nullable(proactiveTextSchema(500)),
-          ownerRating: nullable(enumeration(["useful", "unneeded", "missed"])),
-          attribution: enumeration([
-            "notRemembered",
-            "notRetrieved",
-            "wrongJudgment",
-            "notReadFully",
-          ]),
-          memoryHits: integer(0),
-          relatedMessages: integer(0),
-          decidedAt: timestamp,
-          marked: booleanValue,
-        }),
-      ),
-      gap: nullable(
-        object({
-          pairedMails: integer(0),
-          ratedMails: integer(0),
-          unratedMails: integer(0),
-          lines: array(
-            object({
-              line: enumeration(["hitRate", "disturbanceRate"]),
-              mails: integer(0),
-              museReminded: integer(0),
-              himawariReminded: integer(0),
-              muse: calibrationRateSchema,
-              himawari: calibrationRateSchema,
-              difference: nullable(numberInRange(-1, 1)),
-              low: nullable(numberInRange(-1, 1)),
-              high: nullable(numberInRange(-1, 1)),
-              verdict: enumeration(["insufficient", "inconclusive", "decided"]),
-              direction: enumeration(["museHigher", "himawariHigher", "none"]),
-            }),
-          ),
-        }),
-      ),
       implicit: object({
         pushedDecisions: integer(0),
         otherDecisionEvents: integer(0),
@@ -2101,14 +1983,6 @@ const proactiveWeeklySnapshotSchema = object({
       ),
     }),
     generatedAt: timestamp,
-  }),
-});
-const proactiveGapCaseMarkCommandSchema = object({
-  ...commandEnvelope("proactive.gapcase.mark"),
-  payload: object({
-    caseId: machineString,
-    endDay: jstDaySchema,
-    marked: booleanValue,
   }),
 });
 const proactiveObservationStartCommandSchema = object({
@@ -2418,31 +2292,6 @@ const decisionEmailSnapshotSchema = object({
         relatedMessages: nullable(integer(0)),
       }),
     ),
-    muse: object({
-      entries: array(
-        object({
-          entryId: boundedString(128),
-          museAt: timestamp,
-          reminded: booleanValue,
-          kind: nullable(enumeration(["proactive", "scheduled"])),
-          state: nullable(enumeration(["delivered", "suppressed", "succeeded", "failed"])),
-          title: nullable(proactiveTextSchema(300)),
-          text: nullable(proactiveTextSchema(500)),
-          textWithheld: booleanValue,
-          timingOk: nullable(booleanValue),
-          contentOk: nullable(booleanValue),
-        }),
-      ),
-      truncated: booleanValue,
-    }),
-    comparison: enumeration([
-      "both",
-      "museOnly",
-      "himawariOnly",
-      "bothSilent",
-      "noMuseEntry",
-      "noHimawariRecord",
-    ]),
   }),
 });
 const memoryOverviewSnapshotSchema = object({
@@ -3874,15 +3723,9 @@ const schemasByType = {
   "proactive.sources.snapshot": proactiveSourcesSnapshotSchema,
   "proactive.source.settings.set": proactiveSourceSettingsSetCommandSchema,
   "proactive.source.switch_off": proactiveSourceSwitchOffCommandSchema,
-  "muse.overview.read": museOverviewQuerySchema,
-  "muse.overview.snapshot": museOverviewSnapshotSchema,
-  "muse.item.rate": museItemRateCommandSchema,
-  "muse.intake.set": museIntakeSetCommandSchema,
-  "muse.data.clear": museDataClearCommandSchema,
   "proactive.weekly.read": proactiveWeeklyQuerySchema,
   "proactive.weekly.snapshot": proactiveWeeklySnapshotSchema,
   "proactive.observation.start": proactiveObservationStartCommandSchema,
-  "proactive.gapcase.mark": proactiveGapCaseMarkCommandSchema,
   "owner.preferences.read": ownerPreferencesQuerySchema,
   "owner.preferences.snapshot": ownerPreferencesSnapshotSchema,
   "owner.preferences.set": ownerPreferencesSetCommandSchema,

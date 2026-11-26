@@ -6,7 +6,7 @@
 逐步操作流程（连接、目录布局、临时目录根、运行方式、监控、清理）见 [测试主机运维 Runbook（操作手册）](../../docs/runbooks/test-host-operations-runbook.md)。硬边界如下：
 
 - 绝不在用户的 MacBook 上运行 Himawari 服务器端的测试：不做 Node 这一侧的构建，不跑 `npm run check`、`npm test`、任何 Vitest 项目或产品路径资格验证。发现那里有这类进程在运行时要停止它。
-- 例外只有苹果客户端（`clients/apple/` 下的 iPhone、Apple Watch、Mac App 和它们的扩展）：它们的构建、单元测试和装到 Andy 的设备上，在 Andy 的 Mac 上用 Xcode（苹果的开发工具，只能在 Mac 上运行）做，因为没有别的机器能做。这个例外不包括任何服务器端的命令；客户端测试要连服务器时，连 Hermes 测试机，不在 Mac 上起 Himawari 服务。依据 [ADR 0229](../../docs/adr/0229-native-apple-clients-and-device-api.md#decision) 决定第 8 条（Andy 2026-11-11：“同意改写”）。
+- 苹果客户端（`clients/apple/` 下的 iPhone、Apple Watch、Mac App 和它们的扩展）的构建、单元测试和打包，在 GitHub 的 macOS 机器（GitHub Actions 提供的、装好 Xcode 的云端 Mac）上做，iPhone 和 Mac 版都经 TestFlight（苹果的测试版分发服务）装到 Andy 的设备上，不依赖 Andy 的 Mac。依据 [ADR 0309](../../docs/adr/0309-apps-sign-in-with-passkeys-and-the-web-is-removed.md#decision) 决定第 14 条（Andy 2026-11-26 定：不再依赖他的 Mac）。客户端测试要连服务器时，连 Hermes 测试机，不在任何 Mac 上起 Himawari 服务。
 - 第 0-4 层在 Hermes 上运行；在那里做例行测试工作不需要再请示。原来云服务器上的测试账号 `himawari-ci` 随那台机器一起退租了。绝不使用 root 或生产账号，绝不读取生产机密，绝不触碰 `/opt/himawari`、`/etc/himawari`、`/var/lib/himawari` 或生产服务（不停止、不重启、不发请求）。任何需要 sudo、或会改变 Hermes 系统设置或服务的事，都以可执行脚本的形式交给用户，并解释每一步。
 - 测试主机的结果绝不能代替生产上线的受限主机验收或签名。第四次及以后的上线没有长期有效的验收例外：它冻结的运维上线包（安装、用户/权限、签名、验收、清理、服务启动）由 Claude 自己执行，不需要用户再授权（Andy 2026-11-26 取消了每次上线要他本人授权的限制，见[交付模式](delivery-mode.md#fast-mode)）。
 - 检出放在 NVMe 根盘上，测试输出放在检出的 `.ci-output/` 里，证据放在 `/data` 上，临时文件放在一个 10 字节长的 `mktemp -d /tmp/hXXXX` 根目录中，并把它作为 `HIMAWARI_TEST_TEMP_ROOT` 和 `TMPDIR` 传入；用 `umask 022` 运行；每次运行后归还根盘空间，并解释任何不足。细节和理由见该 Runbook。

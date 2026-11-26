@@ -133,6 +133,27 @@ export class InMemoryTraceStore implements TraceStorePort {
       .slice(0, limit)
       .map(frozenCopy);
   }
+
+  async readRecentByType(input: {
+    readonly ownerId: string;
+    readonly agentId: string;
+    readonly eventType: string;
+    readonly limit: number;
+  }): Promise<readonly TraceEvent[]> {
+    return [...this.records.values()]
+      .filter(
+        (event) =>
+          event.ownerId === input.ownerId &&
+          event.agentId === input.agentId &&
+          event.eventType === input.eventType,
+      )
+      .sort(
+        (left, right) =>
+          right.recordedAt.localeCompare(left.recordedAt) || right.id.localeCompare(left.id),
+      )
+      .slice(0, input.limit)
+      .map(frozenCopy);
+  }
 }
 
 export class InMemoryPayloadStore implements PayloadStorePort {

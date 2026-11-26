@@ -123,7 +123,7 @@ Andy 的全局指令已复制到 [.claude/rules/owner-global-instructions.md](.c
 <a id="test-and-production-hosts"></a>
 ## 测试主机和生产主机
 
-在运行、安排或委派任何构建、测试、资格验证或上线之前，或者在连接 Hermes 测试服务器、登录生产机之前，先读 [.agents/instructions/test-and-production-hosts.md](.agents/instructions/test-and-production-hosts.md)。简要来说：服务器端的构建、检查和测试绝不在 MacBook 上运行；iPhone、Apple Watch、Mac 客户端的构建、单元测试和安装在 Andy 的 Mac 上用 Xcode 做。
+在运行、安排或委派任何构建、测试、资格验证或上线之前，或者在连接 Hermes 测试服务器、登录生产机之前，先读 [.agents/instructions/test-and-production-hosts.md](.agents/instructions/test-and-production-hosts.md)。简要来说：服务器端的构建、检查和测试绝不在 MacBook 上运行；iPhone、Apple Watch、Mac 客户端的构建和单元测试在 GitHub 的 macOS 机器上做，经 TestFlight 安装，不依赖 Andy 的 Mac（ADR 0309 第 14 条）。
 
 <a id="test-trigger-timing"></a>
 ## 测试触发时机

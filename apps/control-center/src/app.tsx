@@ -23,7 +23,6 @@ import {
   MemoryTurnNote,
   OPEN_MEMORY_PAGE,
 } from "./components/memory-panel.js";
-import { MuseDataSettings } from "./components/muse-reference.js";
 import { NotificationSettings } from "./components/notification-settings.js";
 import { AutoMemorySetting } from "./components/personalization-settings.js";
 import {
@@ -53,7 +52,6 @@ import {
 } from "./i18n/runtime.js";
 import { useMemory } from "./memory.js";
 import { requestMessageFocus } from "./message-focus.js";
-import { useMuse } from "./muse.js";
 import { useOwnerPreferenceSync } from "./owner-preferences.js";
 import { resumedAfterLongAbsence } from "./page-resume.js";
 import {
@@ -402,12 +400,6 @@ function LocalizedControlCenterApp({
     connected: connection !== "offline",
     refreshSignal: gatewayRefreshSignal + threadRefreshSignal,
   });
-  const muse = useMuse({
-    client,
-    configuration,
-    connected: connection !== "offline",
-    refreshSignal: gatewayRefreshSignal + threadRefreshSignal,
-  });
   const settingsOpen = route.page === "settings";
   const [sensitiveOpen, setSensitiveOpen] = useState(false);
   useEffect(() => {
@@ -464,7 +456,6 @@ function LocalizedControlCenterApp({
                 <RemindersPage
                   memory={memory}
                   proactive={proactive}
-                  muse={muse}
                   focus={reminderFocus}
                   locale={locale}
                   message={message}
@@ -591,7 +582,6 @@ function LocalizedControlCenterApp({
               />
             ) : null}
             {proactive ? <ProactiveDataSettings proactive={proactive} message={message} /> : null}
-            {muse ? <MuseDataSettings muse={muse} message={message} /> : null}
           </>
         )
       }

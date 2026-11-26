@@ -36,7 +36,7 @@ import {
   RealMemoryEvalService,
 } from "@himawari-agent/application";
 import { REAL_EVAL_QUESTION } from "@himawari-agent/prompt-catalog";
-import { maskForExport } from "./production-gap-export.js";
+import { maskForExport } from "./export-masking.js";
 import { quoteRefOfMemory } from "./production-memory-consolidation.js";
 import type { MailEmbeddingContext } from "./production-run-memory.js";
 

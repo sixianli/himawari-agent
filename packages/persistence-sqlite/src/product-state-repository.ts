@@ -28,7 +28,6 @@ import type {
   DurableGitHubMonitorHistoryPolicyPort,
   ExecutionEnvironmentStorePort,
   ExternalMemoryProposalStorePort,
-  GapCaseMarkPort,
   GitHubIntegrationStatePort,
   GovernanceMutationReceiptStorePort,
   InboxStorePort,
@@ -49,7 +48,6 @@ import type {
   ModelBudgetPort,
   ModelInvocationIdentityPort,
   ModelUsageStorePort,
-  MuseIntakePort,
   OwnerIdentityStatePort,
   OwnerPreferencesStorePort,
   OwnerRuleStorePort,
@@ -676,16 +674,8 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
     return this.durable.realEval();
   }
 
-  gapCaseMarks(): GapCaseMarkPort {
-    return this.durable.gapCaseMarks();
-  }
-
   decisionLedger(): DecisionLedgerPort {
     return this.durable.decisionLedger();
-  }
-
-  museIntake(): MuseIntakePort {
-    return this.durable.museIntake();
   }
 
   ledgerObservation(): LedgerObservationPort {
