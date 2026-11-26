@@ -27,7 +27,6 @@ const LEDGER_TABLES = [
   "source_insights",
   "proactive_processed_messages",
   "decision_ledger_payloads",
-  "muse_reference_entries",
 ] as const;
 
 function dumpLedgerTables(database: ReturnType<typeof openQualifiedDatabase>) {
@@ -113,13 +112,6 @@ async function openMigrated(seedLedger = true) {
          VALUES ('d-old', 0, 'model_input', 'payload-x')`,
       )
       .run();
-    database
-      .prepare(
-        `INSERT INTO muse_reference_entries (id, owner_id, agent_id, muse_at, muse_reminded, timing_ok,
-          content_ok, content_ref, note_ref, paired_decision_id, intake_item_key, recorded_at, paired_message_id)
-         VALUES ('muse-1', ?, ?, ?, 1, 1, 1, 'payload-x', 'payload-x', 'd-old', 'intake-1', ?, 'm-1')`,
-      )
-      .run(OWNER, AGENT, T0, T0);
   }
   const before = dumpLedgerTables(database);
   database.pragma("foreign_keys = ON");

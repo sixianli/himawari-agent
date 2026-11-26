@@ -8,16 +8,13 @@ import {
   type EarlierDayCounts,
   earliestStartDay,
   evaluateObservationDay,
-  type GapCaseMarkPort,
   jstToday,
   type LedgerObservationPort,
   latestByDay,
-  MAIL_TRACE_MUSE_LIMIT,
   type McpConnectionStorePort,
   type ObservationScope,
   PORT_ERROR_CODES,
   type ProactiveSchedule,
-  type ProactiveSealPort,
   parseRuleRef,
   summarizeObservation,
 } from "@himawari-agent/application";
@@ -26,15 +23,10 @@ import {
   DEFAULT_MINIMUM_SAMPLES,
   type GroupSummary,
   jstDayStart,
-  type MuseSummary,
-  mailComparisonBucket,
-  pairEntriesByMail,
   proportion,
   resolveWindow,
   summarizeDecisions,
-  summarizeGap,
   summarizeImplicit,
-  summarizeMuse,
 } from "@himawari-agent/calibration";
 import { summarizeMcpUsage } from "@himawari-agent/calibration/mcp-connections";
 import {
@@ -51,15 +43,12 @@ import {
   gatewayV2MessageSchema,
 } from "@himawari-agent/gateway-contracts";
 import { displayRuleId } from "./production-decision-chain.js";
-import { buildGapCases, clean } from "./production-gap-cases.js";
-import { type GapCaseSnapshot, maskForExport } from "./production-gap-export.js";
 import { MCP_TOOL_KINDS } from "./production-mcp-connections-control.js";
 
 export const PRODUCTION_OBSERVATION_OPERATIONS = Object.freeze([
   "proactive.weekly.read",
   "decision.email.read",
   "proactive.observation.start",
-  "proactive.gapcase.mark",
 ] as const);
 
 export const OBSERVATION_TICK_MS = 15 * 60 * 1000;
@@ -81,12 +70,7 @@ export function readServiceRevision(
 export interface ProductionObservationOptions {
   readonly scope: ObservationScope;
   readonly observation: LedgerObservationPort;
-  readonly ledger: Pick<
-    DecisionLedgerPort,
-    "readCalibrationRows" | "readGapCandidates" | "readMailTrace" | "read"
-  >;
-  readonly marks?: GapCaseMarkPort;
-  readonly seal?: ProactiveSealPort;
+  readonly ledger: Pick<DecisionLedgerPort, "readCalibrationRows" | "readMailTrace" | "read">;
   readonly clock: { now(): string };
   readonly schedule: ProactiveSchedule;
   readonly serviceRevision: string;
@@ -228,16 +212,6 @@ export class ProductionObservation {
       end: window.end,
     });
     const groups = summarizeDecisions(rows.decisions, DEFAULT_MINIMUM_SAMPLES);
-    const muse: MuseSummary = summarizeMuse(
-      rows.entries,
-      new Map(rows.mailJudgments),
-      DEFAULT_MINIMUM_SAMPLES,
-    );
-    const gapCases = await this.#gapCases(window);
-    const markedIds = new Set(
-      (await this.#options.marks?.list(scope))?.map((mark) => mark.caseId) ?? [],
-    );
-    const gap = summarizeGap(rows.entries, new Map(rows.mailJudgments), DEFAULT_MINIMUM_SAMPLES);
     const implicit = summarizeImplicit(rows.decisions, rows.signals, DEFAULT_MINIMUM_SAMPLES);
     const prereviewSettings = this.#options.prereview ?? {
       agreementPermille: DEFAULT_PREREVIEW_AGREEMENT_PERMILLE,
@@ -291,38 +265,6 @@ export class ProductionObservation {
             ...group,
             applicable: [...group.applicable],
           })),
-          muse: {
-            entries: muse.entries,
-            reminded: muse.reminded,
-            silent: muse.silent,
-            unpaired: muse.unpaired,
-            pairedMails: muse.pairedMails,
-            timing: complete ? muse.timing : null,
-            content: complete ? muse.content : null,
-            pairing: complete ? muse.pairing : null,
-            buckets: muse.buckets,
-          },
-          gapCases: gapCases.map((item) => ({ ...item, marked: markedIds.has(item.id) })),
-          gap: complete
-            ? {
-                pairedMails: gap.pairedMails,
-                ratedMails: gap.ratedMails,
-                unratedMails: gap.unratedMails,
-                lines: gap.lines.map((line) => ({
-                  line: line.line,
-                  mails: line.mails,
-                  museReminded: line.muse.reminded,
-                  himawariReminded: line.himawari.reminded,
-                  muse: line.muse.rate,
-                  himawari: line.himawari.rate,
-                  difference: line.difference,
-                  low: line.low,
-                  high: line.high,
-                  verdict: line.verdict,
-                  direction: line.direction,
-                })),
-              }
-            : null,
           implicit: {
             pushedDecisions: implicit.pushedDecisions,
             otherDecisionEvents: implicit.otherDecisionEvents,
@@ -405,7 +347,7 @@ export class ProductionObservation {
   async #emailTrace(
     query: Extract<GatewayV2Query, { type: "decision.email.read" }>,
   ): Promise<GatewayV2Snapshot> {
-    const { ledger, scope, seal } = this.#options;
+    const { ledger, scope } = this.#options;
     const { messageId } = query.payload;
     const trace = await ledger.readMailTrace({ ...scope, messageId });
     const processed = trace.processed;
@@ -428,44 +370,6 @@ export class ProductionObservation {
           ])
         : null;
     const related = forMail("relatedByMail");
-    const open = async (ref: string | null, limit: number) => {
-      if (ref === null || seal === undefined) return null;
-      try {
-        const text = await seal.open({ ...scope, ref });
-        return text === undefined ? null : clean(text, limit) || null;
-      } catch {
-        return null;
-      }
-    };
-    const entries = await Promise.all(
-      trace.museEntries.slice(0, MAIL_TRACE_MUSE_LIMIT).map(async (entry) => ({
-        entryId: entry.entryId,
-        museAt: entry.museAt,
-        reminded: entry.museReminded,
-        kind: entry.kind as "proactive" | "scheduled" | null,
-        state: entry.state as "delivered" | "suppressed" | "succeeded" | "failed" | null,
-        title: entry.textWithheld ? null : await open(entry.titleRef, 300),
-        text: entry.textWithheld ? null : await open(entry.textRef ?? entry.contentRef, 500),
-        textWithheld: entry.textWithheld,
-        timingOk: entry.timingOk,
-        contentOk: entry.contentOk,
-      })),
-    );
-    const museRows = trace.museEntries.map((entry) => ({
-      museReminded: entry.museReminded,
-      timingOk: entry.timingOk,
-      contentOk: entry.contentOk,
-      pairedMessageId: messageId,
-    }));
-    const paired = pairEntriesByMail(museRows).get(messageId);
-    const comparison = !processed
-      ? "noHimawariRecord"
-      : !paired
-        ? "noMuseEntry"
-        : mailComparisonBucket(paired, {
-            outcome: processed.outcome,
-            ownerRating: processed.ownerRating,
-          });
     const snapshot = {
       ...query,
       kind: "snapshot",
@@ -487,58 +391,13 @@ export class ProductionObservation {
               relatedMessages: related === null ? null : related.length,
             }
           : null,
-        muse: { entries, truncated: trace.museEntries.length > MAIL_TRACE_MUSE_LIMIT },
-        comparison,
       },
     } as GatewayV2Snapshot;
     gatewayV2MessageSchema.parse(snapshot);
     return snapshot;
   }
 
-  async #gapCases(
-    window: { readonly start: string; readonly end: string },
-    mask?: (text: string) => string,
-  ) {
-    const { ledger, scope, seal } = this.#options;
-    return buildGapCases({
-      scope,
-      candidates: await ledger.readGapCandidates({
-        ...scope,
-        start: window.start,
-        end: window.end,
-      }),
-      seal,
-      ...(mask ? { mask } : {}),
-    });
-  }
-
-  async #markGapCase(payload: { caseId: string; endDay: string; marked: boolean }) {
-    const { marks, seal, scope } = this.#options;
-    if (!marks || !seal) invalid("GAP_MARKS_UNAVAILABLE");
-    if (!payload.marked) {
-      const ref = await marks.unmark({ ...scope, caseId: payload.caseId });
-      return { resultRef: `gap-case-unmark:${payload.caseId}`, replayed: ref === null };
-    }
-    const window = resolveWindow({ end: payload.endDay, days: 7 });
-    const found = (await this.#gapCases(window, maskForExport)).find(
-      (item) => item.id === payload.caseId,
-    );
-    if (!found) invalid("GAP_CASE_NOT_FOUND");
-    const at = this.#options.clock.now();
-    const snapshot: GapCaseSnapshot = { ...found, weekStart: window.start, weekEnd: window.end };
-    const ref = await seal.seal({ ...scope, text: JSON.stringify(snapshot), at });
-    const added = await marks
-      .mark({ ...scope, caseId: payload.caseId, snapshotRef: ref, at })
-      .catch(async (error: unknown) => {
-        await seal.release({ ...scope, refs: [ref] });
-        throw error;
-      });
-    if (!added) await seal.release({ ...scope, refs: [ref] });
-    return { resultRef: `gap-case-mark:${payload.caseId}`, replayed: !added };
-  }
-
   async execute(command: GatewayV2Command): Promise<{ resultRef: string; replayed: boolean }> {
-    if (command.type === "proactive.gapcase.mark") return this.#markGapCase(command.payload);
     if (command.type !== "proactive.observation.start")
       throw new Error("OBSERVATION_OPERATION_NOT_INSTALLED");
     const { observation, scope, serviceRevision } = this.#options;

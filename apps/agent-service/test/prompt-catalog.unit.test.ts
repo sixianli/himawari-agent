@@ -38,6 +38,22 @@ const KNOWN_TOOL_RESULT_STATUS: readonly (readonly [string, string])[] = [
     "apps/agent-service/src/production-coding-workflow.ts",
     '"目标文件已变化，已确认本次候选未发布。已准备的候选仍保留；',
   ],
+  [
+    "apps/agent-service/src/production-coding-workflow.ts",
+    '"这次工具调用已经发到你的电脑里，但服务中途重启，没拿到结果',
+  ],
+  [
+    "apps/agent-service/src/production-computer-tools.ts",
+    "`工具没有在你的电脑里执行：$" + "{error.code}$" + "{e",
+  ],
+  [
+    "apps/agent-service/src/production-computer-tools.ts",
+    '"工具没有在你的电脑里执行：COMPUTER_UNAVAIL',
+  ],
+  [
+    "apps/agent-service/src/production-computer-tools.ts",
+    '"工具在你的电脑里没有返回结果：PI_RUNNER_EXEC',
+  ],
   ["apps/agent-service/src/production-file-read-workflow.ts", "`文件读取未完成：$" + "{code}`"],
   [
     "apps/agent-service/src/production-runtime-tools.ts",

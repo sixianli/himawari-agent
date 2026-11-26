@@ -2,23 +2,17 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:7309e159a6d481c172f45893ecf613e65ed9e263aa35e98da1152fe24fd550ea"
 supersedes: ""
 superseded_by: ""
-date: "2026-10-21"
+date: "2026-11-26"
 covers: "ci/policy.json, scripts/ci/context.mjs, scripts/disk-hygiene/prune-rebuildable.py"
-verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
+verified_at: "7c8521fe5f55e7dd57c5bd52badd16eef647502e"
 ---
 
 # 测试主机操作 Runbook：在 Hermes 上跑测试并还回空间
 
-<!-- runbook-contract:
-- https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0056-cloud-server-also-test-host.md
-- scripts/ci/context.mjs
-- ci/policy.json
--->
 
-本手册把原先写在 `AGENTS.md` 里的测试主机操作步骤集中到一处：怎样连 Hermes（局域网里的 Linux 测试服务器），目录和临时数据放在哪里，跑测试时要记录什么，跑完怎样把磁盘空间还回去。规则本身见[测试触发时机](../../.agents/instructions/test-trigger-timing.md)和[ADR 0056](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0056-cloud-server-also-test-host.md)；`AGENTS.md` 只留硬边界并链接到这里。
+本手册写测试主机的操作步骤：怎样连 Hermes（局域网里的 Linux 测试服务器），目录和临时数据放在哪里，跑测试时要记录什么，跑完怎样把磁盘空间还回去。规则本身见[测试触发时机](../../.agents/instructions/test-trigger-timing.md)和[ADR 0056](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0056-cloud-server-also-test-host.md)；硬边界见[测试主机与生产主机](../../.agents/instructions/test-and-production-hosts.md)。
 
 ## 阅读导航
 
@@ -67,23 +61,22 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 ## Live-State Preflight
 
-1. 连接并核对主机名。Hermes 优先走 Tailscale（Mac 和家里网络之间的私有网络）：`ssh -o BatchMode=yes -o ConnectTimeout=20 -o ProxyCommand=none -o HostName=100.64.53.104 hermes '<命令>'`，`100.64.53.104` 是 Hermes 的 Tailscale 地址（`tailscale status` 里的 `hermes-home`）；这只覆盖命令行上的代理和地址，不改 SSH 配置。Tailscale 不可用时才走 `hermes-ssh` skill 的路线：Mac 的 SSH 别名 `hermes`（经 `cloudflared` 和 Cloudflare Access），例如 `ssh -o BatchMode=yes -o ConnectTimeout=15 hermes '<命令>'`；Cloudflare 要浏览器登录时请用户完成后重试同一条命令。两条路线都要检查退出码，并确认远端主机名是 `hermes-home`。opencode 和 Grok 只能通过项目的包装脚本连接（见 `AGENTS.md` 的 Delegated Coding Agents）。
+1. 连接并核对主机名。每条命令都经 `.ci-output/handoff/scripts/hermes-ssh.sh '<命令>'`，每次上传都经 `.ci-output/handoff/scripts/hermes-upload.sh <本地文件> <远端路径>`；不直接用 `ssh`、`scp`、`rsync`。包装脚本走 Tailscale（家里网络和 Mac 之间的私有网络）连 `hermes-home`，核对远端主机名，单次调用最长 300 秒。Tailscale 不可用时报告用户，不改走别的线路。这两个脚本只在开发机本地，不在仓库里。
 2. 记录根盘可用空间：`df -h /`。没有最低可用空间下限（G54），但要记下来，跑完比较。
-3. 做对照测量（修前修后、空闲对负载、两种设置对比）之前，先运行 `.ci-output/handoff/scripts/require-quiet-host.sh hermes|cloud`，只有它打印 QUIET_HOST_OK 才开始；证据里没有这一行的对照结果不被接受。
+3. 做对照测量（修前修后、空闲对负载、两种设置对比）之前，先运行 `.ci-output/handoff/scripts/require-quiet-host.sh hermes`，只有它打印 QUIET_HOST_OK 才开始；证据里没有这一行的对照结果不被接受。
 4. 确认 `PATH` 里锁定的 Node.js 在最前：非交互 SSH 可能没有它，例如 `PATH=/data/hermes/himawari/tool-audit-round2/r30/tools/bin:/usr/bin:/bin`；并把 `HIMAWARI_CI_TOOLS`、`HIMAWARI_CI_PYTHON`、`PLAYWRIGHT_BROWSERS_PATH`、`TMPDIR` 指向本任务的目录。
 
 <a id="procedure"></a>
 
 ## Procedure
 
-1. **目录布局（Hermes）。** 源码检出和它的 `node_modules` 放在登录账号家目录下本任务自己的目录、固态根盘上（例如 `~/himawari-tests/round2/source`，约 1 GiB）；机械盘 `/data` 上几万个小文件的冷读曾让首批测试超时。工具链、浏览器、日志、报告和保留的证据放在 `/data` 上本任务的目录（例如 `/data/hermes/himawari/tool-audit-round2/`）。构建和测试输出只在检出的 `.ci-output/` 里（CI 入口对外面的路径报 `CI_OUTPUT_OUTSIDE_RUN_DIRECTORY`）。云服务器上对应 `/srv/himawari-ci/` 的 `tools/`、`browsers/`、`source/`、`evidence/`。
-2. **同步代码。** 用 `git bundle` 和补丁从 Mac 同步；不在服务器上改代码。
+1. **目录布局（Hermes）。** 源码检出和它的 `node_modules` 放在登录账号家目录下本任务自己的目录、固态根盘上（例如 `~/himawari-tests/round2/source`，约 1 GiB）；机械盘 `/data` 上几万个小文件的冷读曾让首批测试超时。工具链、浏览器、日志、报告和保留的证据放在 `/data` 上本任务的目录（例如 `/data/hermes/himawari/tool-audit-round2/`）。构建和测试输出只在检出的 `.ci-output/` 里（CI 入口对外面的路径报 `CI_OUTPUT_OUTSIDE_RUN_DIRECTORY`）。
+2. **同步代码。** 用 `git bundle` 和补丁同步，经 `hermes-upload.sh` 上传；不在服务器上改代码。
 3. **建临时根。** 每次运行 `mktemp -d /tmp/hXXXX`，检查属主是测试账号、权限 0700、`realpath` 等于自身，然后同时设为 `HIMAWARI_TEST_TEMP_ROOT` 和 `TMPDIR`。路径保持 10 字节：Linux 的 Unix socket 路径上限 107 字节，产品路径夹具拒绝更长的根。SQLite 文件、socket、产品路径的测试安装、测试的 `TMPDIR` 都放在这里。
 4. **运行方式。** `umask 022`（登录账号默认 `0002` 会让测试建的目录组可写，沙箱以 `SANDBOX_HOST_PATH_UNSAFE` 拒绝）。预计超过几分钟的命令写成主机上的脚本后台启动：`setsid -f bash -c 'echo $$ > <pid 文件>; exec bash <脚本>' > <日志> 2>&1 < /dev/null`，`cd` 写在脚本里，结果写进文件，用 `.ci-output/handoff/scripts/hermes-wait.sh <日志> '<结束行>' <pid 文件>` 等待。一台主机同一时间只跑一个产品路径测试或一组第 2 层测试。
-5. **按批分配主机。** Claude 把每批分到空闲的主机，一批的第 0–3 层尽量在同一台上。
-6. **记录空间。** 记录临时目录的峰值大小和根盘最低可用空间。
-7. **还回空间。** 跑完先把要保留的报告和失败证据复制到 `/data` 上本任务的证据目录，再删除临时目录（只删本次运行自己建的 `/tmp/h*`）和这次运行留下的其他根盘产物：`.ci-output/` 下已被取代的构建和测试输出、产品路径和候选安装、解包的下载副本。任务结束时删除固态盘上的检出。
-8. **再记一次空间。** 应回到运行前的水平；差额在停止文件或提交说明里逐项写明有意保留的内容、大小和原因。报告删除的路径和释放的空间。
+5. **记录空间。** 记录临时目录的峰值大小和根盘最低可用空间。
+6. **还回空间。** 跑完先把要保留的报告和失败证据复制到 `/data` 上本任务的证据目录，再删除临时目录（只删本次运行自己建的 `/tmp/h*`）和这次运行留下的其他根盘产物：`.ci-output/` 下已被取代的构建和测试输出、产品路径和候选安装、解包的下载副本。任务结束时删除固态盘上的检出。
+7. **再记一次空间。** 应回到运行前的水平；差额在停止文件或提交说明里逐项写明有意保留的内容、大小和原因。报告删除的路径和释放的空间。
 
 <a id="verification"></a>
 
@@ -107,15 +100,15 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 ## Rollback
 
-- 这里的“回退”是把主机恢复到运行前的状态：删除本次运行建的临时目录、检出和产物，按 [Procedure](#procedure) 第 8–9 步执行并记录空间。
+- 这里的“回退”是把主机恢复到运行前的状态：删除本次运行建的临时目录、检出和产物，按 [Procedure](#procedure) 第 6–7 步执行并记录空间。
 - 删除之前确认没有进程、未完成的命令或任务还在用它，并在仓库和 `.ci-output/` 里搜索该路径；文档、交接文件、证据 README 或测试报告说是保留证据、或是某个未解决失败唯一现场的，不删。
 
 <a id="stop-conditions"></a>
 
 ## Stop Conditions
 
-- 生产服务不再 `active`，或重启次数增加：立刻停止本次测试，保留记录，告诉用户。
-- 测试账号出现 [oom_kill](https://github.com/sixianli/himawari-agent/blob/a56903d808de68423561a52d5e4db4b0b622191b/.claude/skills/opencode-orchestration/scripts/oc-watch.py)：停下诊断，不调高上限。
+- Hermes 上已有的 Himawari 服务不再 `active`，或重启次数增加：立刻停止本次测试，保留记录，告诉用户。
+- 测试进程被系统因内存不足杀掉（`dmesg` 里有 oom-kill）：停下诊断，不调高上限。
 - 远端主机名不是 `hermes-home`（Hermes）。
 - require-quiet-host.sh 没有打印 QUIET_HOST_OK 而要做对照测量。
 - 需要新下载、sudo 或改系统设置。
@@ -131,6 +124,6 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 | CI 入口报 `CI_OUTPUT_OUTSIDE_RUN_DIRECTORY` | 查输出路径是否在检出的 `.ci-output/` 里 | 把输出路径改回 `.ci-output/` |
 | 产品路径夹具拒绝临时根 | 查 `HIMAWARI_TEST_TEMP_ROOT` 的长度、属主、权限、`realpath` | 用 `mktemp -d /tmp/hXXXX` 重建 10 字节的根 |
 | 首批测试在 `/data` 上超时 | 查检出是否在机械盘 | 把检出和依赖移到固态根盘的任务目录 |
-| SSH 超时但 Hermes 健康 | `tailscale status` 看 `hermes-home` 是否在线 | 改走 Tailscale 路线；不改 SSH 配置 |
+| SSH 超时但 Hermes 健康 | `tailscale status` 看 `hermes-home` 是否在线 | Tailscale 断了就报告用户；不改 SSH 配置 |
 | 非交互 SSH 找不到 `node` | `echo $PATH` | 把锁定工具链放到 `PATH` 最前 |
 | 同步等待长命令被 300 秒上限结束 | 看包装脚本的提示 | 改为 `setsid -f` 后台启动并用 hermes-wait.sh 等待 |

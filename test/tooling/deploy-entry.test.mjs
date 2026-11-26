@@ -46,7 +46,7 @@ function source() {
   mkdirSync(path.join(repo, "scripts/delivery-mode/hermes"), { recursive: true });
   writeFileSync(
     path.join(repo, "scripts/delivery-mode/hermes/install-dependencies-if-changed.sh"),
-    '#!/bin/bash\necho "dependencies=stub"\n',
+    '#!/bin/bash\nmkdir "$3" || exit 5\n[[ -f node_modules/kept ]] && echo "dependencies=kept"\nmkdir -p node_modules .ci-output && touch node_modules/kept .ci-output/marker\necho "dependencies=stub evidence=$3"\n',
   );
   git(repo, "add", "-A");
   git(repo, "commit", "-q", "-m", "main");
@@ -67,14 +67,14 @@ function fakeTools() {
   return tools;
 }
 
-function runEntry(request, repo, tools = fakeTools()) {
+function runEntry(request, repo, tools = fakeTools(), base = temporary()) {
   return spawnSync("bash", [entry], {
     encoding: "utf8",
     env: {
       PATH: process.env.PATH,
       HOME: process.env.HOME,
       SSH_ORIGINAL_COMMAND: request,
-      HIMAWARI_DEPLOY_BASE: temporary(),
+      HIMAWARI_DEPLOY_BASE: base,
       HIMAWARI_DEPLOY_REPO_URL: repo,
       HIMAWARI_DEPLOY_TOOLS: tools,
     },
@@ -107,6 +107,20 @@ describe("himawari-deploy-entry", () => {
     const child = runEntry(`deploy ${side} - 0`, repo);
     expect(child.status).toBe(65);
     expect(child.stderr).toContain("COMMIT_NOT_ON_MAIN");
+  });
+
+  it("deploys the same commit again after an earlier attempt and keeps installed dependencies", () => {
+    const { repo, main } = source();
+    const tools = fakeTools();
+    const base = temporary();
+    const first = runEntry(`deploy ${main} - 1`, repo, tools, base);
+    expect(first.status).toBe(0);
+    expect(first.stdout).not.toContain("dependencies=kept");
+    const second = runEntry(`deploy ${main} - 1`, repo, tools, base);
+    expect(second.status).toBe(0);
+    expect(second.stdout).toContain("dependencies=kept");
+    const evidence = (output) => output.match(/evidence=(\S+)/)[1];
+    expect(evidence(second.stdout)).not.toBe(evidence(first.stdout));
   });
 
   it("stops before building when the build account has no node tools", () => {

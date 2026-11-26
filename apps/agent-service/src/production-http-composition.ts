@@ -20,6 +20,7 @@ import {
   DEVICE_CONFIGURATION_DEFAULTS,
   type DeviceActionService,
   defaultDeviceHardLimits,
+  deviceVoiceTimingLister,
   deviceVoiceTimingRecorder,
   type ExecutionLiveFeed,
   type GatewayAccessDecision,
@@ -142,7 +143,6 @@ import {
   ProductionDeviceControl,
 } from "./production-device-control.js";
 import { PRODUCTION_FILES_OPERATIONS, ProductionFilesControl } from "./production-files-control.js";
-import { type ProductionGapExport, registerGapExportRoute } from "./production-gap-export.js";
 import { PRODUCTION_HOME_OPERATIONS, ProductionHomeControl } from "./production-home.js";
 import { productionInbox } from "./production-inbox-composition.js";
 import { type InboxRunRegistry, ProductionInboxDelivery } from "./production-inbox-delivery.js";
@@ -178,11 +178,6 @@ import {
   type ProductionMemorySearchOptions,
 } from "./production-memory-search.js";
 import { flushSensitiveInterceptions } from "./production-model-egress.js";
-import { type ProductionMuseIntake, registerMuseIntakeRoute } from "./production-muse-intake.js";
-import {
-  PRODUCTION_MUSE_OPERATIONS,
-  type ProductionMuseControl,
-} from "./production-muse-intake-control.js";
 import {
   PRODUCTION_OBSERVATION_OPERATIONS,
   type ProductionObservation,
@@ -290,7 +285,7 @@ export interface ProductionHttpCompositionOptions {
     price?: { input: number; output: number };
     priceTier?: "low" | "mid" | "high";
   }[];
-  readonly live?: Pick<ExecutionLiveFeed, "subscribe" | "current">;
+  readonly live?: Pick<ExecutionLiveFeed, "subscribe" | "current" | "firstEmittedAt">;
   readonly cancelRun?: (
     input: Pick<CancelCoordinatedRunInput, "runId" | "command">,
   ) => Promise<void>;
@@ -367,10 +362,7 @@ export interface ProductionHttpCompositionOptions {
   };
   readonly threadDeletionDiagnostic?: (event: Record<string, string>) => void;
   readonly queryPrefetch?: ProductionQueryPrefetch;
-  readonly museIntake?: ProductionMuseIntake;
-  readonly gapExport?: ProductionGapExport;
   readonly mcpRead?: ProductionMcpRead;
-  readonly museControl?: ProductionMuseControl;
   readonly observation?: ProductionObservation;
   readonly configuration: ProductConfiguration;
   readonly repository: SqliteProductStateRepository;
@@ -827,7 +819,6 @@ function routeOptions(
   executionEnvironmentAvailable: boolean,
   memoryAvailable: boolean,
   proactiveAvailable: boolean,
-  museAvailable: boolean,
   observationAvailable: boolean,
   mcpConnectionsAvailable: boolean,
   searchAvailable: boolean,
@@ -865,7 +856,6 @@ function routeOptions(
         ...(memoryAvailable ? PRODUCTION_MEMORY_OPERATIONS : []),
         ...PRODUCTION_WEB_PUSH_OPERATIONS,
         ...(proactiveAvailable ? PRODUCTION_PROACTIVE_OPERATIONS : []),
-        ...(museAvailable ? PRODUCTION_MUSE_OPERATIONS : []),
         ...(observationAvailable ? PRODUCTION_OBSERVATION_OPERATIONS : []),
         ...PRODUCTION_OWNER_PREFERENCE_OPERATIONS,
         ...(memoryAvailable ? PRODUCTION_QUIET_HOURS_OPERATIONS : []),
@@ -970,6 +960,16 @@ export async function createProductionHttpComposition(
     payloads: repository.payloadStore(ownerId, agentId),
     protector: payloadProtector,
     now: clock,
+    ...(options.live
+      ? { firstTextEmittedAt: (runId: string) => options.live?.firstEmittedAt(runId) ?? null }
+      : {}),
+  });
+  const listVoiceTiming = deviceVoiceTimingLister({
+    ownerId,
+    agentId,
+    trace: repository.traceStore(),
+    payloads: repository.payloadStore(ownerId, agentId),
+    protector: payloadProtector,
   });
   const csrfKeyRef = configuredSecret(
     configuration,
@@ -1785,7 +1785,6 @@ export async function createProductionHttpComposition(
       clock: { now: clock },
     }),
     ...(options.proactive ? { proactiveControl: options.proactive } : {}),
-    ...(options.museControl ? { museControl: options.museControl } : {}),
     ...(options.observation ? { observationControl: options.observation } : {}),
     ...(ownerRuleWriter
       ? {
@@ -1910,7 +1909,6 @@ export async function createProductionHttpComposition(
       Boolean(options.executionEnvironment),
       Boolean(memoryControl),
       Boolean(options.proactive),
-      Boolean(options.museControl),
       Boolean(options.observation),
       Boolean(options.mcpRead),
       Boolean(searchControl),
@@ -1926,6 +1924,7 @@ export async function createProductionHttpComposition(
       configuration: () => deviceConfiguration,
       chatAttachments: () => chatAttachments,
       recordVoiceTiming: (input) => recordVoiceTiming(input),
+      listVoiceTiming: (limit) => listVoiceTiming(limit),
       audit: repository.auditLedger(),
       push: devicePush,
       ...(options.onDeviceAuditFailed ? { onAuditFailed: options.onDeviceAuditFailed } : {}),
@@ -1996,8 +1995,6 @@ export async function createProductionHttpComposition(
     protector: payloadProtector,
     now: clock,
   });
-  if (options.museIntake) registerMuseIntakeRoute(app, options.museIntake);
-  if (options.gapExport) registerGapExportRoute(app, options.gapExport);
   if (options.mcpRead) {
     registerMcpReadRoute(app, options.mcpRead);
     registerMcpConnectionAddressRoute(app, {

@@ -2,95 +2,78 @@
 status: active
 document_type: runbook
 execution_risk: standard
-contract_sha256: "sha256:ea1c1b7ded7a957b60ea8ca4c6c56c1d5b1bdd85f0deefbb858fe638467a2c6b"
 supersedes: ""
 superseded_by: ""
-date: "2026-09-19"
+date: "2026-11-26"
 covers: "scripts/operations/workspace-lifecycle-audit.mjs, test/integration/workspace-lifecycle-audit.test.ts"
-verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
+verified_at: "7c8521fe5f55e7dd57c5bd52badd16eef647502e"
 ---
 
-# 工作区历史占用只读核查
+# 工作区占用只读核查
 
-**来源：** [2026-09-16-workspace-authorization-lifecycle-design.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-16-workspace-authorization-lifecycle-design.md)
+`scripts/operations/workspace-lifecycle-audit.mjs` 只读地列出数据库里还没确认释放的工具执行、工作目录占用、排队和任务执行环境，用来判断哪些记录需要人工核对。它以只读连接打开数据库，不迁移、不改记录、不派发任务、不解密正文。上线验收也会自动运行它。
 
-<!-- runbook-contract:
-- packages/persistence-sqlite/src/migrations/0042_sandbox_resource_incidents.sql
-- scripts/operations/workspace-lifecycle-audit.mjs
-- test/integration/workspace-lifecycle-audit.test.ts
-- packages/persistence-sqlite/src/migrations
--->
+<a id="contents"></a>
 
-阅读导航：[范围](#scope) · [前提](#safety-and-preconditions) · [现场预检](#live-state-preflight) · [步骤](#procedure) · [结果判读](#verification) · [停止条件](#stop-conditions)
+## 阅读导航
+
+- [Scope](#scope)
+- [Authoritative Sources](#authoritative-sources)
+- [Safety and Preconditions](#safety-and-preconditions)
+- [Live-State Preflight](#live-state-preflight)
+- [Procedure](#procedure)
+- [Verification](#verification)
+- [Evidence](#evidence)
+- [Rollback](#rollback)
+- [Stop Conditions](#stop-conditions)
+- [Troubleshooting](#troubleshooting)
+
+<a id="scope"></a>
 
 ## Scope
 
-本流程读取 Schema 28～51 的工作区占用、执行、排队和任务级执行环境元数据，供后续恢复方案使用。工具通过 SQLite 只读连接和 `query_only` 执行，一页最多读取 1,000 条记录，不创建数据库、不迁移、不更新释放记录、不派发任务、不消费授权，也不解密文件正文或工具结果。
+- 适用：排查工具卡在“结果未确认”、工作目录一直被占用、上线停在未解决预约等问题时，先看数据库里记了什么。
+- 不适用：修复。输出固定带 `liveHostVerified: false` 和 `repairEligible: false`：它只是数据库清单，不证明进程真的停了，也不授权任何修复。要处置单个卡住的一次性沙箱预约，见[卡住的沙箱预约](sandbox-reservation-administrative-disposition-runbook.md)。
 
-Schema 39 的自动审查记录不属于这四个工作区分区；空列表不证明没有审查或授权记录。
-
-Schema 48 新增任务级执行环境：一轮对话里多次工具调用共用的隔离环境，它持有环境级占用（`lease`，整个环境持有的工作目录占用登记，释放前会冲突的其他任务不能动这些目录）。这些记录只在 `environments` 分区列出，不出现在按单次调用列出的 `executions` 分区；现有执行路线不会创建这类记录，所以通常为空页。
-
-Schema 49 只重建模型预算相关的三张表，新增对话标题的预算账户；它不改变本流程读取的四个分区，工具照常读取。
-
-Schema 50 新增管理员预约释放合同。新版清单继续只读报告该版本，通过 `reservationReleaseBasis` 区分数据库中保存的预约释放来源。`administrator_confirmed_cleanup` 表示管理员声明已确认清理，不是脚本认证的 Host proof。管理员引用、现场报告 SHA 或 Run failed 都不能把原工具结果与效果改成确定事实，也不生成自动修复资格。精确预约的只读预览与独立处置步骤见[专门处置 Runbook](sandbox-reservation-administrative-disposition-runbook.md#live-state-preflight)。[SOURCE: docs/runbooks/sandbox-reservation-administrative-disposition-runbook.md] 该入口也不检查 final 或进程，不解密 control。
-
-Schema 51 只重建任务执行环境的释放回执表，给释放依据多加一种“进程组已消失”（`process_group_gone`，同一轮复用的本机沙箱停止后的证明）；本流程只读取回执是否存在，照常读取。
-
-Schema 46 的目录移动合同复用原执行、占用和队列表；此清单不能替代目录 inode 和发布记录核验。Schema 44 的绑定历史与 Schema 45 的批次关联同原队列一起保留；本清单按原队列身份报告是否已经准入，不把重新绑定解释为已执行或可重放。
-
-这是数据库清单，不是实际宿主的停止证明。所有输出固定标明 `liveHostVerified: false` 和 `repairEligible: false`。即使数据库已有释放回执，也不据此生成自动解锁或重新执行命令。
+<a id="authoritative-sources"></a>
 
 ## Authoritative Sources
 
-- [执行与恢复约束](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-16-workspace-authorization-lifecycle-design.md#七恢复与错误合同)。
-- [实施进度和验收边界](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#implementation-record)。
-- [核查入口](../../scripts/operations/workspace-lifecycle-audit.mjs)与[真实 CLI/SQLite 回归](../../test/integration/workspace-lifecycle-audit.test.ts)。
-- [数据库备份与恢复流程](backup-restore-runbook.md)。复制活动数据库时应使用合适的 SQLite 备份方法，不只复制主文件而遗漏 WAL 中的数据。
+- 核查程序：`scripts/operations/workspace-lifecycle-audit.mjs`。
+- 回归测试：`test/integration/workspace-lifecycle-audit.test.ts`（真实 CLI 和真实 SQLite，核对读前读后数据库不变）。
+
+<a id="safety-and-preconditions"></a>
 
 ## Safety and Preconditions
 
-使用本仓库锁定依赖和匹配的 Node/native SQLite 环境。运行账号必须有目标数据库的读取权限。优先在已经验证的隔离备份上核查，明确该副本对应哪个实例、Owner 和 Agent，以及备份时间。
+- 以能读数据库的账号（生产上是 `himawari-prod`）运行，用仓库锁定的 Node 和依赖。
+- 优先在恢复点或数据库副本上跑；在运行中的数据库上跑时，每一页是各自的快照，不同页之间可能不是同一时刻。
+- 输出含内部任务编号，只放在受保护的目录，不贴进对话。
 
-输出包含内部任务编号和状态，保存在目标实例允许的受保护证据目录，不把清单公开上传。工具不打印数据库路径、授权 JSON、秘密引用、文件内容或受保护结果正文；命令行本身仍含数据库路径，应按本机终端记录的权限管理。
-
-读取当前实例是只读操作；任何后续停止进程、修复记录、迁移或部署均不包含在本流程中，需要对应的现场证明和具体操作授权。
+<a id="live-state-preflight"></a>
 
 ## Live-State Preflight
 
-1. 核对目标数据库绝对路径、对应实例和 Owner/Agent；不从相似文件名猜测目标。
-2. 核对当前源码、依赖及本 Runbook 静态合同；未知 Schema 停止读取，不自动升级。
-3. 确认是冻结备份还是活动数据库。每一页是独立 SQLite 快照；活动数据库的不同页面可能看到不同时间的状态，不能把跨页结果冒充同一时刻的完整清单。
-4. 确認证据输出目录和访问权限。本文命令中的路径与 ID 均为占位值，必须替换为已核对值。
+确认数据库的绝对路径和它属于哪个 Owner、Agent（生产是 `owner:first-production`、`agent:first-production`）。数据库版本不在程序认得的范围内时，程序报 `WORKSPACE_AUDIT_SCHEMA_UNSUPPORTED`，不要改数据库去迁就它。
+
+<a id="procedure"></a>
 
 ## Procedure
 
-在本仓库根目录执行，以下命令仅示范参数：
-
 ```sh
 node scripts/operations/workspace-lifecycle-audit.mjs \
-  --database /absolute/path/to/verified-copy.sqlite \
+  --database /absolute/path/to/product.sqlite \
   --owner owner-id --agent agent-id \
   --section executions --limit 100
 ```
 
-依次读取四个分区：`executions` 是新版执行与占用；`legacy` 是旧版未释放保护；`queue` 是持久排队记录；`environments` 是任务级执行环境及其环境级占用。Schema 28～34 尚无持久队列表，`queue` 返回空页；Schema 47 及更早没有环境表，`environments` 返回空页。这些空页都不能理解为已存在该功能但当前没有任务。
+依次读四个分区：`executions`（每次工具执行和它的占用）、`legacy`（旧版未释放的占用）、`queue`（排队记录）、`environments`（任务执行环境和环境级占用）。`nextAfterId` 不为空时，把它作为同一分区下一次的 `--after`，直到它为空。每页最多 1000 条。
 
-当 `nextAfterId` 非空，用该值作为同一分区下一次调用的 `--after` 参数。保留每一页和其参数，直到返回空游标；恰好填满一页时可能还需要读取一次空页。前三个分区按 job ID 分页，`environments` 按环境 ID 分页；`queue.sequence` 才是原排队次序，不能按报告展示次序重排队列。
-
-工具没有 `--repair`、`--apply` 或写入选项，未知参数直接拒绝。核查结束后，把需要宿主证明的条目交给对应的恢复流程；不要直接改表或重新执行原工具。
+<a id="verification"></a>
 
 ## Verification
 
-`recoveryStatus=scheduled` 表示等待核查，`recoveryAction` 为 inspect/stop，`recoveryNextAttemptAt` 为最早核查时间；它不证明后台此刻正在执行。Schema 43 之前该时间字段为空。`unresolved` 与空的下一时间表示本次已结束且没有自动重试，不能将它画成仍在核查。只读报告不改变这些记录。
-
-`environments` 分区里，`state` 是环境当前状态，`stopFence` 是停止标记（大于 0 表示已请求停止，此后不再接受新调用），`activeLeases` 是未释放的环境级占用数，`openCalls` 是尚未结束的调用数，`releaseReceiptPresent` 表示环境的永久释放回执。只有状态为 `released` 且回执存在，才不再列为未确认的环境责任。
-
-`executions` 分区里，`releaseReceiptPresent` 表示已绑定资源的永久回执；`reservationReleaseReceiptPresent` 表示未绑定预约的独立回执。后者不补造资源 supervision 或工具结果，停止标记仍保留；只有回执存在且没有有效 claim/barrier，才不再列为未确认的资源责任。字段只反映数据库记录，仍不证明当前宿主安全，也不授予重新执行或修改数据库的权限。
-
-`reservationReleaseBasis` 只报告已有预约回执的来源。管理员 basis 为 `administrator_confirmed_cleanup` 时，原因列表增加 `ADMINISTRATOR_CONFIRMED_CLEANUP`。原结果或效果未知仍分别保留 `RESULT_UNRESOLVED`、`EFFECT_UNRESOLVED`，并要求 `ORIGINAL_OPERATION_EFFECT_PROOF`（原操作实际效果的独立证据）。管理员释放资源不是工具执行或效果证明；不得据此认定 never-started、交付未启动失败或继续原模型回合。`liveHostVerified:false` 和 `repairEligible:false` 保持不变。
-
-首先核对输出 `mode=read_only`、Owner/Agent、Schema 和分区。下表说明主要原因代码；同一条目可以有多个原因。
+先看输出的 `mode` 是 `read_only`，Owner、Agent 和分区对得上。每条记录的原因代码含义：
 
 | 代码 | 能说明什么 | 后续仍需核对什么 |
 | --- | --- | --- |
@@ -112,27 +95,30 @@ node scripts/operations/workspace-lifecycle-audit.mjs \
 | `QUEUE_CANCELLED` / `QUEUE_ADMITTED` | 队列记录已取消或已有对应准入 | 保留历史；不要创建第二次执行 |
 | `QUEUE_ADMISSION_REQUIRES_RECONCILIATION` | 队列与准入记录需逐条核对 | 不据此猜测已派发或未派发 |
 
-回归命令沿用仓库集成测试入口：
-
-```sh
-node node_modules/vitest/vitest.mjs run --config vitest.workspace.ts \
-  --project integration test/integration/workspace-lifecycle-audit.test.ts
-```
+<a id="evidence"></a>
 
 ## Evidence
 
-保存源码提交、目标副本标识及时间、命令参数、分区游标、返回页和退出码。[本地证据目录](../../test/qualification/evidence/workspace-authorization-lifecycle/p7-local-01/)记录 CLI 子进程和真实 SQLite 测试，包括读取前后数据库正文及含 WAL 状态的独立序列化读回相同；不是生产历史数据演练或宿主进程资格证明。
+记下提交号、数据库是哪一份（副本还是运行中的）、命令参数、每页输出和退出码。
+
+<a id="rollback"></a>
 
 ## Rollback
 
-工具没有业务写入，无数据库回退步骤。发生读取失败时保留错误代码和已取得的页面，修正目标或环境后重新核查；不通过删除 WAL、修改版本号或关闭完整性检查来让读取通过。
+程序不写数据库，没有要回退的。读失败时保留错误码，改正参数或环境后重跑；不删 WAL、不改版本号。
+
+<a id="stop-conditions"></a>
 
 ## Stop Conditions
 
-遇到未知 Schema、账本序号不连续、读取错误、目标归属不清或输出与现场矛盾时，停止据此制定修复动作。`repairEligible=false` 永远不因缺少错误原因而变成允许修复。
+数据库版本不认得、读失败、Owner 或 Agent 不明确，或输出和现场矛盾时，不据此做任何修复。
+
+<a id="troubleshooting"></a>
 
 ## Troubleshooting
 
-- `WORKSPACE_AUDIT_ARGUMENT_INVALID`：检查绝对路径、Owner/Agent、分区、游标和 1～1,000 的整数页大小。
-- `WORKSPACE_AUDIT_SCHEMA_UNSUPPORTED`：当前读取器不支持该版本或账本序号不连续；不要修改数据库来适配脚本。
-- `WORKSPACE_AUDIT_READ_FAILED`：检查数据库存在性、读取权限、只读副本完整性、SQLite native 环境和是否长期被独占锁占用。公共错误输出不包含底层路径或数据库内容。
+| 错误码 | 处理 |
+| --- | --- |
+| `WORKSPACE_AUDIT_ARGUMENT_INVALID` | 检查绝对路径、Owner、Agent、分区名、游标和 1 到 1000 的页大小 |
+| `WORKSPACE_AUDIT_SCHEMA_UNSUPPORTED` | 程序不认得这个数据库版本，换用和数据库匹配的提交里的程序 |
+| `WORKSPACE_AUDIT_READ_FAILED` | 查文件是否存在、读权限和数据库是否被长时间独占锁住 |
