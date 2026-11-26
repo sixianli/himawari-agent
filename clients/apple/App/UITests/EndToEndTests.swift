@@ -109,7 +109,14 @@ final class EndToEndTests: XCTestCase {
             "no finished answer for \"\(text)\""
         )
         let bubble = app.staticTexts.matching(NSPredicate(format: "label == %@", text)).firstMatch
-        XCTAssertTrue(app.waitFor(15) { bubble.exists && bubble.isHittable }, "the sent message is not on screen to press")
+        var lastFrame = CGRect.null
+        let settled = app.waitFor(15, poll: 0.5) {
+            guard bubble.exists, bubble.isHittable else { return false }
+            let frame = bubble.frame
+            defer { lastFrame = frame }
+            return frame == lastFrame
+        }
+        XCTAssertTrue(settled, "the sent message did not stay still on screen long enough to press")
         bubble.press(forDuration: 1.0)
         let copy = app.buttons[AppStrings.text("chat.menu.copy")]
         XCTAssertTrue(copy.waitForExistence(timeout: 5), "long press did not open the message menu")
@@ -156,12 +163,11 @@ final class EndToEndTests: XCTestCase {
             XCTAssertTrue(pushed, "tapping the right side of \"\(row)\" on her page did nothing")
             guard pushed else { continue }
             attachScreenshot("her page / \(row)", app: app)
-            if title.exists {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.5))
+                .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)))
+            if !app.waitFor(3, { title.exists && title.isHittable }) {
                 app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.12))
                     .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.95)))
-            } else {
-                app.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.5))
-                    .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)))
             }
             XCTAssertTrue(
                 app.waitFor(5) { title.exists && title.isHittable },

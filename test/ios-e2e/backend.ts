@@ -41,7 +41,7 @@ export interface E2eBackend {
 }
 
 const SYSTEM_REF = "ios-e2e-system";
-const ANSWER_TOKENS_PER_SECOND = 12;
+const ANSWER_TOKENS_PER_SECOND = 4;
 
 function openssl(args: readonly string[]) {
   const result = spawnSync("openssl", args, { encoding: "utf8" });
