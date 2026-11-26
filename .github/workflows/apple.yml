@@ -79,8 +79,29 @@ jobs:
           -destination "id=${{ steps.simulator.outputs.udid }}"
           -only-testing:HimawariUITests
           CODE_SIGNING_ALLOWED=NO
+          -resultBundlePath accessibility-audit.xcresult
           | tee accessibility-audit.log
           | grep -E 'A11Y_AUDIT_|error:|Test Case .* (passed|failed)|\*\* TEST'
       - name: 列出这次审计发现的问题
         if: ${{ always() }}
         run: grep -E 'A11Y_AUDIT_' accessibility-audit.log | sort -u || true
+      - name: 测试没跑完时打印失败原因
+        if: ${{ failure() }}
+        run: |
+          xcrun xcresulttool get test-results tests --path accessibility-audit.xcresult --compact | python3 -c '
+          import json, sys
+          def walk(node):
+              for child in node.get("children", []):
+                  if child.get("nodeType") == "Failure Message":
+                      print("A11Y_AUDIT_FAILURE", child.get("name", ""))
+                  walk(child)
+          for plan in json.load(sys.stdin).get("testNodes", []):
+              walk(plan)
+          ' | sort -u | head -200 || true
+      - name: 保存测试结果包
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: accessibility-audit-${{ strategy.job-index }}
+          path: accessibility-audit.xcresult
+          retention-days: 7

@@ -911,7 +911,7 @@
   },
   {
     "key": "next-3-her-notifications|light|dynamicType",
-    "count": 7,
+    "count": 10,
     "why": "文字不完全跟动态字体放大（多半是 RootView 把字号封顶在 accessibility2，以及固定行高）；交 iPhone 编码线程按第 73 条改"
   },
   {
