@@ -109,10 +109,10 @@ struct DeviceKindIcon: View {
     var body: some View {
         Group {
             switch kind {
-            case "iphone": Icon(.deviceMobilePlain, size: DesignTokens.Her.rowIcon)
-            case "mac": Icon(.deviceLaptop, size: DesignTokens.Her.rowIcon)
-            case "watch": Icon(.deviceWatch, size: DesignTokens.Her.rowIcon)
-            default: Icon(.infoCircle, size: DesignTokens.Her.rowIcon)
+            case "iphone": Icon(.deviceMobilePlain, size: DesignTokens.IconSize.listRow)
+            case "mac": Icon(.deviceLaptop, size: DesignTokens.IconSize.listRow)
+            case "watch": Icon(.deviceWatch, size: DesignTokens.IconSize.listRow)
+            default: Icon(.infoCircle, size: DesignTokens.IconSize.listRow)
             }
         }
         .foregroundStyle(Color.hmSun)
