@@ -23,8 +23,12 @@ public final class ChatTalkSession: ChatTalk {
     @ObservationIgnored private let synthesizer = AVSpeechSynthesizer()
     @ObservationIgnored private var turn = TalkTurn()
     @ObservationIgnored private var reply = HerReply()
-    @ObservationIgnored private var sentencesRendering = 0
+    @ObservationIgnored private var sentences: [SpokenSentence] = []
+    @ObservationIgnored private var playback: Task<Void, Never>?
     @ObservationIgnored private var buffersPlaying = 0
+    @ObservationIgnored private var policy = CloudSpeechPolicy()
+    @ObservationIgnored public private(set) var timing = TalkTurnTiming()
+    @ObservationIgnored private let cloudSpeech: (@Sendable (String) async throws -> CloudSpeechAudio)?
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var speech = 0
     @ObservationIgnored private var onSaid: (@MainActor (String) -> Void)?
@@ -36,8 +40,9 @@ public final class ChatTalkSession: ChatTalk {
     private static let levelsKept = 32
     static let voiceHintShownKey = "talk.voiceHintShown"
 
-    public init(defaults: UserDefaults = .standard) {
+    public init(defaults: UserDefaults = .standard, cloudSpeech: (@Sendable (String) async throws -> CloudSpeechAudio)? = nil) {
         self.defaults = defaults
+        self.cloudSpeech = cloudSpeech
     }
 
     public func begin(onSaid: @escaping @MainActor (String) -> Void) async throws {
@@ -64,6 +69,8 @@ public final class ChatTalkSession: ChatTalk {
         self.pipeline = pipeline
         self.onSaid = onSaid
         turn = TalkTurn()
+        policy = CloudSpeechPolicy()
+        timing = TalkTurnTiming()
         heard = ""
         muted = false
         startedAt = Date()
@@ -82,7 +89,9 @@ public final class ChatTalkSession: ChatTalk {
 
     public func herReply(_ markdown: String, finished: Bool) {
         guard audio != nil else { return }
-        for sentence in reply.receive(markdown, finished: finished) { say(sentence) }
+        let spoken = reply.receive(markdown, finished: finished)
+        if !spoken.isEmpty, timing.firstTextAt == nil { timing.firstTextAt = Date() }
+        for sentence in spoken { say(sentence) }
     }
 
     public func setMuted(_ muted: Bool) {
@@ -103,12 +112,11 @@ public final class ChatTalkSession: ChatTalk {
         self.onSaid = nil
         feeding?.cancel()
         feeding = nil
-        synthesizer.stopSpeaking(at: .immediate)
+        dropSentences()
         audio?.stop()
         audio = nil
         let pipeline = pipeline
         self.pipeline = nil
-        sentencesRendering = 0
         buffersPlaying = 0
         reply = HerReply()
         heard = ""
@@ -173,6 +181,9 @@ public final class ChatTalkSession: ChatTalk {
         if turn.isDone(at: .now) {
             let said = turn.take()
             heard = ""
+            policy.newTurn()
+            timing = TalkTurnTiming()
+            timing.saidAt = Date()
             onSaid?(said)
         }
     }
@@ -187,38 +198,147 @@ public final class ChatTalkSession: ChatTalk {
 
     private func interrupt() {
         speech += 1
-        synthesizer.stopSpeaking(at: .immediate)
+        dropSentences()
         audio?.silence()
-        sentencesRendering = 0
         buffersPlaying = 0
         settlePhase()
     }
 
-    private func say(_ sentence: String) {
-        let utterance = AVSpeechUtterance(string: sentence)
-        utterance.voice = voice
-        let current = speech
-        sentencesRendering += 1
+    private func dropSentences() {
+        for sentence in sentences { sentence.cancel() }
+        sentences = []
+        playback?.cancel()
+        playback = nil
+        synthesizer.stopSpeaking(at: .immediate)
+    }
+
+    private func say(_ text: String) {
+        let sentence = SpokenSentence(text: text)
+        sentences.append(sentence)
         phase = .herTurn
         showActivity()
-        synthesizer.write(utterance) { [weak self] buffer in
-            guard let pcm = buffer as? AVAudioPCMBuffer else { return }
-            let captured = CapturedBuffer(buffer: pcm, hostTime: Date())
-            Task { @MainActor in self?.rendered(captured, speech: current) }
+        if sentences.count == 1 {
+            produce(sentence)
+        } else if sentences.count == 2, sentences[0].playing {
+            produce(sentence)
+        }
+        if playback == nil {
+            let current = speech
+            playback = Task { [weak self] in await self?.play(speech: current) }
         }
     }
 
-    private func rendered(_ captured: CapturedBuffer, speech current: Int) {
-        guard current == speech, let audio else { return }
-        if captured.buffer.frameLength == 0 {
-            sentencesRendering = max(0, sentencesRendering - 1)
-            settlePhase()
-            return
+    private func play(speech current: Int) async {
+        while current == speech, let sentence = sentences.first {
+            produce(sentence)
+            for await buffer in sentence.buffers {
+                guard current == speech, let audio else { return }
+                if !sentence.playing {
+                    sentence.playing = true
+                    if sentences.count > 1 { produce(sentences[1]) }
+                    if timing.firstSoundAt == nil {
+                        timing.firstSoundAt = Date()
+                        timing.route = sentence.route
+                    }
+                }
+                buffersPlaying += 1
+                audio.play(buffer) { [weak self] in
+                    Task { @MainActor in self?.played(speech: current) }
+                }
+            }
+            guard current == speech else { return }
+            if sentences.first === sentence { sentences.removeFirst() }
         }
-        buffersPlaying += 1
-        audio.play(captured.buffer) { [weak self] in
-            Task { @MainActor in self?.played(speech: current) }
+        guard current == speech else { return }
+        playback = nil
+        settlePhase()
+    }
+
+    private func produce(_ sentence: SpokenSentence) {
+        guard sentence.producer == nil else { return }
+        let route: SpeechRoute = cloudSpeech == nil ? .local : policy.route(sentence.text)
+        sentence.route = route
+        let current = speech
+        sentence.producer = Task { [weak self] in
+            defer { sentence.finish() }
+            guard let self else { return }
+            if route == .cloud, await self.streamCloud(sentence, speech: current) { return }
+            guard !Task.isCancelled, current == self.speech else { return }
+            sentence.route = .local
+            await self.streamLocal(sentence)
         }
+    }
+
+    private func streamCloud(_ sentence: SpokenSentence, speech current: Int) async -> Bool {
+        guard let cloudSpeech else { return false }
+        let text = sentence.text
+        let pump = Task { @MainActor [weak self] () -> CloudOutcome in
+            do {
+                let audio = try await cloudSpeech(text)
+                guard let format = AVAudioFormat(standardFormatWithSampleRate: audio.sampleRate, channels: 1) else { return .failed(nil) }
+                var decoder = PCM16Decoder()
+                for try await chunk in audio.chunks {
+                    let samples = decoder.samples(chunk)
+                    guard let buffer = Self.buffer(samples, format: format) else { continue }
+                    if !sentence.hasAudio, let self, current == self.speech, self.timing.serverFirstAudioMs == nil {
+                        self.timing.serverFirstAudioMs = audio.firstAudioMs
+                    }
+                    sentence.yield(buffer)
+                }
+                return sentence.hasAudio ? .finished : .failed(nil)
+            } catch let DeviceAPIError.server(status, _, _, _) {
+                return .failed(status)
+            } catch {
+                return .failed(nil)
+            }
+        }
+        let watchdog = Task { @MainActor in
+            try? await Task.sleep(for: CloudSpeechPolicy.firstAudioDeadline)
+            if !Task.isCancelled, !sentence.hasAudio { pump.cancel() }
+        }
+        let outcome = await withTaskCancellationHandler {
+            await pump.value
+        } onCancel: {
+            pump.cancel()
+        }
+        watchdog.cancel()
+        guard case let .failed(status) = outcome else { return true }
+        if current == speech, !Task.isCancelled { policy.failed(status: status) }
+        return sentence.hasAudio
+    }
+
+    private func streamLocal(_ sentence: SpokenSentence) async {
+        let utterance = AVSpeechUtterance(string: sentence.text)
+        utterance.voice = voice
+        let once = ResumeOnce()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
+                once.arm(done)
+                synthesizer.write(utterance) { buffer in
+                    guard let pcm = buffer as? AVAudioPCMBuffer else { return }
+                    let captured = CapturedBuffer(buffer: pcm, hostTime: Date())
+                    Task { @MainActor in
+                        if captured.buffer.frameLength == 0 {
+                            once.resume()
+                        } else {
+                            sentence.yield(captured.buffer)
+                        }
+                    }
+                }
+            }
+        } onCancel: {
+            once.resume()
+        }
+    }
+
+    private static func buffer(_ samples: [Float], format: AVAudioFormat) -> AVAudioPCMBuffer? {
+        guard !samples.isEmpty, let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(samples.count)),
+              let channel = buffer.floatChannelData?[0] else { return nil }
+        samples.withUnsafeBufferPointer { source in
+            channel.update(from: source.baseAddress!, count: samples.count)
+        }
+        buffer.frameLength = AVAudioFrameCount(samples.count)
+        return buffer
     }
 
     private func played(speech current: Int) {
@@ -229,12 +349,72 @@ public final class ChatTalkSession: ChatTalk {
 
     private func settlePhase() {
         guard audio != nil else { return }
-        if sentencesRendering > 0 || buffersPlaying > 0 {
+        if !sentences.isEmpty || buffersPlaying > 0 {
             phase = .herTurn
         } else {
             phase = muted ? .muted : .listening
         }
         showActivity()
+    }
+}
+private enum CloudOutcome: Sendable {
+    case finished
+    case failed(Int?)
+}
+
+@MainActor
+private final class SpokenSentence {
+    let text: String
+    let buffers: AsyncStream<AVAudioPCMBuffer>
+    private let continuation: AsyncStream<AVAudioPCMBuffer>.Continuation
+    var producer: Task<Void, Never>?
+    var route: SpeechRoute?
+    var playing = false
+    private(set) var hasAudio = false
+
+    init(text: String) {
+        self.text = text
+        let (buffers, continuation) = AsyncStream<AVAudioPCMBuffer>.makeStream()
+        self.buffers = buffers
+        self.continuation = continuation
+    }
+
+    func yield(_ buffer: AVAudioPCMBuffer) {
+        hasAudio = true
+        continuation.yield(buffer)
+    }
+
+    func finish() {
+        continuation.finish()
+    }
+
+    func cancel() {
+        producer?.cancel()
+        continuation.finish()
+    }
+}
+
+private final class ResumeOnce: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var resumed = false
+
+    func arm(_ continuation: CheckedContinuation<Void, Never>) {
+        let resumeNow = lock.withLock { () -> Bool in
+            if resumed { return true }
+            self.continuation = continuation
+            return false
+        }
+        if resumeNow { continuation.resume() }
+    }
+
+    func resume() {
+        let pending = lock.withLock { () -> CheckedContinuation<Void, Never>? in
+            resumed = true
+            defer { continuation = nil }
+            return continuation
+        }
+        pending?.resume()
     }
 }
 #endif

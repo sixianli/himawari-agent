@@ -90,7 +90,7 @@ struct MainShell: View {
     @State private var herListenOpen = false
     #if os(iOS)
     @State private var dictation = ChatDictation()
-    @State private var talkSession = ChatTalkSession()
+    @State private var talkSession: ChatTalkSession
     #endif
 
     init(model: AppModel, chat: ChatStore, actions: DeviceActionsModel? = nil, threadId: String? = nil, herOpen: Bool = false) {
@@ -99,6 +99,10 @@ struct MainShell: View {
         actionsOverride = actions
         fixedThreadId = threadId
         _herOpen = State(initialValue: herOpen)
+        #if os(iOS)
+        let api = model.api
+        _talkSession = State(initialValue: ChatTalkSession(cloudSpeech: { text in try await api.speech(text) }))
+        #endif
     }
 
     private var actions: DeviceActionsModel? { actionsOverride ?? model.actions }
