@@ -119,6 +119,7 @@ public struct HerPage: View {
         countVault = { shown }
         server = "https://himawari.example"
         vault = nil
+        voiceTimings = { [] }
     }
 
     public var body: some View {
