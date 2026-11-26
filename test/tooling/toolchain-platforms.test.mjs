@@ -51,7 +51,8 @@ describe("toolchain platforms", () => {
     collect(result);
     collect(evidence);
     expect(platformEnums.length).toBeGreaterThanOrEqual(2);
-    for (const allowed of platformEnums) expect([...allowed].sort()).toEqual([...artifactKeys].sort());
+    for (const allowed of platformEnums)
+      expect([...allowed].sort()).toEqual([...artifactKeys].sort());
   });
 
   it("pins aarch64 downloads for linux-arm64 at the same versions as linux-x64", () => {
