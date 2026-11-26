@@ -1,4 +1,4 @@
-import { generateKeyPairSync, randomBytes, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { chmod, lstat, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { request as httpRequest } from "node:http";
 import { connect } from "node:net";
@@ -24,20 +24,24 @@ import {
   SqliteProductStateRepository,
 } from "@himawari-agent/persistence-sqlite";
 import {
-  devicePairingNumber,
+  generateSetupCode,
   type HostProviderSecretSource,
   type HostSecretMaterialSource,
   initializeStateRoot,
   parseProductConfiguration,
+  writeSetupCode,
 } from "@himawari-agent/platform-node";
-import { buildDeviceTestRequest, generateDeviceTestKeyPair } from "@himawari-agent/testing";
+import {
+  buildDeviceTestRequest,
+  generateDeviceTestKeyPair,
+  SoftwarePasskey,
+} from "@himawari-agent/testing";
 import { exportJWK, importJWK, type JSONWebKeySet, SignJWT } from "jose";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createProductionHttpComposition,
   type ProductionHttpCompositionSecretSources,
   ProductionThreadGatewayAccessPolicy,
-  resolveDevicePairingAccess,
 } from "../src/production-http-composition.js";
 import {
   mcpConnectionSecretDigest,
@@ -385,8 +389,6 @@ describe("production HTTP composition", () => {
           "capability.detail",
           "capability.disable",
           "device.list.read",
-          "device.pairing.start",
-          "device.pairing.confirm",
           "device.rename",
           "device.revoke",
           "home.read",
@@ -2246,47 +2248,11 @@ describe("production Thread access scope", () => {
   );
 });
 
-describe("[P1-1] device pairing access", () => {
-  const resolve = async (ref: string, version: string) => `resolved:${ref}@${version}`;
-  const base = [
-    { ref: "payload-kek", version: "v1", purpose: "payload-encryption" },
-    { ref: "device-id-ref", version: "v2", purpose: "device-access-client-id" },
-    { ref: "device-key-ref", version: "v3", purpose: "device-access-client-secret" },
-  ];
-
-  it("reads the client id and secret from the two declared secrets", async () => {
-    await expect(resolveDevicePairingAccess(base, resolve)).resolves.toEqual({
-      clientId: "resolved:device-id-ref@v2",
-      clientSecret: "resolved:device-key-ref@v3",
-    });
-  });
-
-  it("refuses an access value the gateway contract would reject", async () => {
-    for (const value of ["", "x".repeat(257), "line\nbreak"])
-      await expect(
-        resolveDevicePairingAccess(base, async (ref) =>
-          ref === "device-key-ref" ? value : "client-id",
-        ),
-      ).rejects.toMatchObject({ code: "PRODUCTION_HTTP_SECRET_MATERIAL_INVALID" });
-    await expect(
-      resolveDevicePairingAccess(base, async () => "x".repeat(256)),
-    ).resolves.toBeDefined();
-  });
-
-  it("gives no access when either secret is not declared", async () => {
-    await expect(resolveDevicePairingAccess(base.slice(0, 1), resolve)).resolves.toBeUndefined();
-    await expect(resolveDevicePairingAccess(base.slice(0, 2), resolve)).resolves.toBeUndefined();
-    await expect(
-      resolveDevicePairingAccess([base[0], base[2]] as typeof base, resolve),
-    ).resolves.toBeUndefined();
-  });
-});
-
 describe("[P1-1] device management through gateway v2", () => {
   const ACCESS_ID = `access-id-${randomUUID()}`;
   const ACCESS_KEY = `access-key-${randomUUID()}`;
 
-  it("pairs, lists, confirms, renames and revokes a device with the gateway types and never leaks the access secrets", async () => {
+  it("signs devices in with a passkey, then lists, renames and revokes them with the gateway types and never leaks the access secrets", async () => {
     const paths = await fixture();
     const raw = rawConfiguration(paths);
     const config = parseProductConfiguration(
@@ -2425,10 +2391,8 @@ describe("[P1-1] device management through gateway v2", () => {
               revision: number;
               name: string;
               status: string;
-              pairingNumber: string | null;
             }[];
             limits: { key: string }[];
-            pairing: { expiresAt: string; access: unknown } | null;
           };
         };
       };
@@ -2447,99 +2411,109 @@ describe("[P1-1] device management through gateway v2", () => {
 
       const empty = await list();
       expect(empty.payload.devices).toEqual([]);
-      expect(empty.payload.pairing).toBeNull();
       expect(empty.payload.limits.map(({ key }) => key)).toContain("device.request.body_bytes");
 
-      const invalid = await command("device.pairing.start", { pairingCode: "A".repeat(21) + "B" });
-      expect(invalid.statusCode, invalid.body).toBe(400);
-      expect((await list()).payload.pairing).toBeNull();
-
-      const code = randomBytes(16).toString("base64url");
-      const started = await command("device.pairing.start", { pairingCode: code });
-      expect(started.statusCode, started.body).toBe(200);
-      const open = await list();
-      expect(open.payload.pairing).toEqual({
-        expiresAt: new Date(NOW.valueOf() + 600_000).toISOString(),
-        access: { clientId: ACCESS_ID, clientSecret: ACCESS_KEY },
-      });
-
-      const spki = () =>
-        generateKeyPairSync("ec", { namedCurve: "prime256v1" })
-          .publicKey.export({ type: "spki", format: "der" })
-          .toString("base64");
-      const devicePublicKey = spki();
-      const confirmPublicKey = spki();
-      const paired = await app.inject({
-        method: "POST",
-        url: "/api/device/v1/pair",
-        headers: { host: "agent.example.test", "content-type": "application/json" },
-        payload: JSON.stringify({
-          pairingCode: code,
+      const passkey = new SoftwarePasskey(ORIGIN);
+      const signIn = async (
+        name: string,
+        keys: { device: { publicKeySpkiBase64: string }; confirm: { publicKeySpkiBase64: string } },
+      ) => {
+        const device = {
           kind: "iphone",
-          name: "Andy iPhone",
+          name,
           releaseChannel: "direct",
-          devicePublicKey,
-          confirmPublicKey,
-        }),
+          devicePublicKey: keys.device.publicKeySpkiBase64,
+          confirmPublicKey: keys.confirm.publicKeySpkiBase64,
+        };
+        const enrolled =
+          (
+            await repository
+              .pairedDevices()
+              .listPasskeys({ ownerId: config.ownerId, agentId: config.agentId })
+          ).length > 0;
+        const post = (url: string, body: unknown) =>
+          app.inject({
+            method: "POST",
+            url: `/api/device/v1/sign-in/${url}`,
+            headers: { host: "agent.example.test", "content-type": "application/json" },
+            payload: JSON.stringify(body),
+          });
+        if (!enrolled) {
+          const code = generateSetupCode();
+          await writeSetupCode({
+            stateRoot: paths.stateRoot,
+            scope: { ownerId: config.ownerId, agentId: config.agentId },
+            code,
+            now: NOW,
+            minutes: 15,
+          });
+          const options = await post("setup/options", { setupCode: code, device });
+          expect(options.statusCode, options.body).toBe(200);
+          const started = options.json() as {
+            flowId: string;
+            publicKey: { challenge: string; rp: { id: string } };
+          };
+          const finished = await post("setup/finish", {
+            flowId: started.flowId,
+            credential: passkey.create(started.publicKey),
+          });
+          others.push(options.body, finished.body);
+          expect(finished.statusCode, finished.body).toBe(201);
+          return (finished.json() as { device: { id: string } }).device.id;
+        }
+        const options = await post("options", { device });
+        expect(options.statusCode, options.body).toBe(200);
+        const started = options.json() as {
+          flowId: string;
+          publicKey: { challenge: string; rpId: string };
+        };
+        const finished = await post("finish", {
+          flowId: started.flowId,
+          credential: passkey.get(started.publicKey),
+        });
+        others.push(options.body, finished.body);
+        expect(finished.statusCode, finished.body).toBe(200);
+        return (finished.json() as { device: { id: string } }).device.id;
+      };
+
+      const deviceId = await signIn("Andy iPhone", {
+        device: generateDeviceTestKeyPair(),
+        confirm: generateDeviceTestKeyPair(),
       });
-      others.push(paired.body);
-      expect(paired.statusCode, paired.body).toBe(201);
-      const pending = await list();
-      expect(pending.payload.pairing).toBeNull();
-      expect(pending.payload.devices).toEqual([
+      expect((await list()).payload.devices).toEqual([
         expect.objectContaining({
+          id: deviceId,
           name: "Andy iPhone",
-          status: "pending",
+          status: "active",
           revision: 0,
-          pairingNumber: devicePairingNumber({ devicePublicKey, confirmPublicKey }),
         }),
       ]);
-      const deviceId = pending.payload.devices[0]?.id ?? "";
-
-      const stale = await command("device.pairing.confirm", { deviceId, expectedRevision: 5 });
-      expect(stale.statusCode).not.toBe(200);
-      const confirmed = await command("device.pairing.confirm", {
-        deviceId,
-        expectedRevision: 0,
-      });
-      expect(confirmed.statusCode, confirmed.body).toBe(200);
-      expect(confirmed.json()).toEqual({ resultRef: `device:${deviceId}:1`, replayed: false });
-      const confirmedAgain = await command("device.pairing.confirm", {
-        deviceId,
-        expectedRevision: 0,
-      });
-      expect(confirmedAgain.statusCode, confirmedAgain.body).toBe(200);
-      expect(confirmedAgain.json()).toEqual({ resultRef: `device:${deviceId}:1`, replayed: true });
-      expect((await list()).payload.devices[0]).toMatchObject({
-        status: "active",
-        pairingNumber: null,
-      });
 
       const hidden = await command("device.rename", {
         deviceId,
-        expectedRevision: 1,
+        expectedRevision: 0,
         name: "Andy‮iPhone",
       });
       expect(hidden.statusCode).toBe(400);
       const renamed = await command("device.rename", {
         deviceId,
-        expectedRevision: 1,
+        expectedRevision: 0,
         name: "  Desk iPhone  ",
       });
       expect(renamed.statusCode, renamed.body).toBe(200);
       const renamedAgain = await command("device.rename", {
         deviceId,
-        expectedRevision: 1,
+        expectedRevision: 0,
         name: "Desk iPhone",
       });
-      expect(renamedAgain.json()).toEqual({ resultRef: `device:${deviceId}:2`, replayed: true });
+      expect(renamedAgain.json()).toEqual({ resultRef: `device:${deviceId}:1`, replayed: true });
       const otherName = await command("device.rename", {
         deviceId,
-        expectedRevision: 1,
+        expectedRevision: 0,
         name: "Another name",
       });
       expect(otherName.statusCode).not.toBe(200);
-      expect((await list()).payload.devices[0]).toMatchObject({ name: "Desk iPhone", revision: 2 });
+      expect((await list()).payload.devices[0]).toMatchObject({ name: "Desk iPhone", revision: 1 });
       const rest = await app.inject({
         method: "POST",
         url: "/api/devices/v1/list",
@@ -2549,41 +2523,19 @@ describe("[P1-1] device management through gateway v2", () => {
       expect(rest.statusCode, rest.body).toBe(200);
       expect(rest.body).toContain("Desk iPhone");
 
-      const revoked = await command("device.revoke", { deviceId, expectedRevision: 2 });
+      const revoked = await command("device.revoke", { deviceId, expectedRevision: 1 });
       expect(revoked.statusCode, revoked.body).toBe(200);
-      const revokedAgain = await command("device.revoke", { deviceId, expectedRevision: 2 });
-      expect(revokedAgain.json()).toEqual({ resultRef: `device:${deviceId}:3`, replayed: true });
+      const revokedAgain = await command("device.revoke", { deviceId, expectedRevision: 1 });
+      expect(revokedAgain.json()).toEqual({ resultRef: `device:${deviceId}:2`, replayed: true });
       const revokedStale = await command("device.revoke", { deviceId, expectedRevision: 0 });
       expect(revokedStale.statusCode).not.toBe(200);
-      expect((await list()).payload.devices[0]).toMatchObject({ status: "revoked", revision: 3 });
+      expect((await list()).payload.devices[0]).toMatchObject({ status: "revoked", revision: 2 });
 
-      const secondCode = randomBytes(16).toString("base64url");
-      expect((await command("device.pairing.start", { pairingCode: secondCode })).statusCode).toBe(
-        200,
-      );
       const second = {
         device: generateDeviceTestKeyPair(),
         confirm: generateDeviceTestKeyPair(),
       };
-      const secondPaired = await app.inject({
-        method: "POST",
-        url: "/api/device/v1/pair",
-        headers: { host: "agent.example.test", "content-type": "application/json" },
-        payload: JSON.stringify({
-          pairingCode: secondCode,
-          kind: "iphone",
-          name: "Confirmed iPhone",
-          releaseChannel: "direct",
-          devicePublicKey: second.device.publicKeySpkiBase64,
-          confirmPublicKey: second.confirm.publicKeySpkiBase64,
-        }),
-      });
-      expect(secondPaired.statusCode, secondPaired.body).toBe(201);
-      const secondDevice = (secondPaired.json() as { device: { id: string } }).device.id;
-      expect(
-        (await command("device.pairing.confirm", { deviceId: secondDevice, expectedRevision: 0 }))
-          .statusCode,
-      ).toBe(200);
+      const secondDevice = await signIn("Confirmed iPhone", second);
       const webLogins = await app.inject({
         method: "POST",
         url: "/api/gateway/v2/queries",

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { loadToolchainLock, validateToolchainLock } from "../../scripts/ci/install-tools.mjs";
 import {
@@ -30,6 +31,28 @@ describe("toolchain platforms", () => {
     expect(artifactPlatformKey("linux", "arm64")).toBe("linux-arm64");
     expect(() => artifactPlatformKey("linux", "riscv64")).toThrow("CI_PLATFORM_UNSUPPORTED");
     expect(() => artifactPlatformKey("win32", "x64")).toThrow("CI_PLATFORM_UNSUPPORTED");
+  });
+
+  it("lets every artifact platform pass the result and evidence record schemas", () => {
+    const artifactKeys = supportedPlatforms().map((platform) => {
+      const [os, arch] = platform.split("-");
+      return artifactPlatformKey(os, arch);
+    });
+    const schema = (name) => readFileSync(new URL(`../../ci/${name}`, import.meta.url), "utf8");
+    const result = JSON.parse(schema("result.schema.json"));
+    const evidence = JSON.parse(schema("evidence.schema.json"));
+    const platformEnums = [];
+    const collect = (node, key) => {
+      if (node && typeof node === "object") {
+        if (key === "platform" && Array.isArray(node.enum)) platformEnums.push(node.enum);
+        for (const [childKey, child] of Object.entries(node)) collect(child, childKey);
+      }
+    };
+    collect(result);
+    collect(evidence);
+    expect(platformEnums.length).toBeGreaterThanOrEqual(2);
+    for (const allowed of platformEnums)
+      expect([...allowed].sort()).toEqual([...artifactKeys].sort());
   });
 
   it("pins aarch64 downloads for linux-arm64 at the same versions as linux-x64", () => {

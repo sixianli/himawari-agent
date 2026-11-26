@@ -154,8 +154,6 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "improvement.snapshot",
   "device.list.read",
   "device.list.snapshot",
-  "device.pairing.start",
-  "device.pairing.confirm",
   "device.rename",
   "device.revoke",
   "perception.status.read",
@@ -639,23 +637,6 @@ const deviceIdSchema: Schema<string> = {
     return input;
   },
 };
-const devicePairingCodeSchema: Schema<string> = {
-  parse(input, path = "$") {
-    if (typeof input !== "string" || !/^[A-Za-z0-9_-]{21}[AQgw]$/u.test(input))
-      throw new ContractValidationError(
-        path,
-        "expected the canonical unpadded base64url encoding of 16 bytes",
-      );
-    return input;
-  },
-};
-const devicePairingNumberSchema: Schema<string> = {
-  parse(input, path = "$") {
-    if (typeof input !== "string" || !/^[0-9]{6}$/u.test(input))
-      throw new ContractValidationError(path, "expected a 6 digit pairing number");
-    return input;
-  },
-};
 function isHiddenNameCharacter(code: number): boolean {
   return (
     code < 0x20 ||
@@ -694,19 +675,6 @@ export function normalizeDeviceName(input: unknown): string | null {
     return null;
   }
 }
-const accessText = boundedString(256);
-export function isDeviceAccessText(input: unknown): boolean {
-  try {
-    accessText.parse(input);
-    return true;
-  } catch {
-    return false;
-  }
-}
-const deviceAccessSchema = object({
-  clientId: accessText,
-  clientSecret: accessText,
-});
 const deviceListQuerySchema = object({
   ...envelope("query", "device.list.read"),
   payload: object({}),
@@ -724,7 +692,6 @@ const deviceListSnapshotSchema = object({
         status: enumeration(DEVICE_STATUSES),
         pairedAt: timestamp,
         lastSeenAt: nullable(timestamp),
-        pairingNumber: nullable(devicePairingNumberSchema),
       }),
     ),
     limits: array(
@@ -734,27 +701,13 @@ const deviceListSnapshotSchema = object({
         value: integer(0),
       }),
     ),
-    pairing: nullable(
-      object({
-        expiresAt: timestamp,
-        access: nullable(deviceAccessSchema),
-      }),
-    ),
     generatedAt: timestamp,
   }),
-});
-const devicePairingStartCommandSchema = object({
-  ...commandEnvelope("device.pairing.start"),
-  payload: object({ pairingCode: devicePairingCodeSchema }),
 });
 const deviceRevisionTargetShape = {
   deviceId: deviceIdSchema,
   expectedRevision: integer(0),
 };
-const devicePairingConfirmCommandSchema = object({
-  ...commandEnvelope("device.pairing.confirm"),
-  payload: object(deviceRevisionTargetShape),
-});
 const deviceRevokeCommandSchema = object({
   ...commandEnvelope("device.revoke"),
   payload: object(deviceRevisionTargetShape),
@@ -3761,8 +3714,6 @@ const schemasByType = {
   "quiet_hours.set": quietHoursSetCommandSchema,
   "device.list.read": deviceListQuerySchema,
   "device.list.snapshot": deviceListSnapshotSchema,
-  "device.pairing.start": devicePairingStartCommandSchema,
-  "device.pairing.confirm": devicePairingConfirmCommandSchema,
   "device.rename": deviceRenameCommandSchema,
   "device.revoke": deviceRevokeCommandSchema,
   "perception.status.read": perceptionStatusQuerySchema,

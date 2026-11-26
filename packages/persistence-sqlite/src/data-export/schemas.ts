@@ -174,7 +174,7 @@ export const PAIRED_DEVICE_SCHEMA: JsonSchema = objectOf(
     lastSeenAt: nullable(timestamp),
   },
   [],
-  "一台配对过的 iPhone、Apple Watch 或 Mac：名字、种类、状态。只供查看，导入时不恢复；公钥、配对码和请求随机值是凭据，不导出。",
+  "一台配对过的 iPhone、Apple Watch 或 Mac：名字、种类、状态。只供查看，导入时不恢复；公钥、通行密钥、设置码记录和请求随机值是凭据，不导出。",
 );
 
 export const EXTERNAL_PROPOSAL_CATEGORIES = [

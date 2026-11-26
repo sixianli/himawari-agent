@@ -438,6 +438,25 @@ def speech_target(target):
     return json.dumps(target, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
 
 
+BROWSER_TARGET_KEYS = {'maxOutputBytes', 'maxTextChars', 'responseReserveMs'}
+COMPUTERS_SETTINGS = REPO / 'scripts/operations/computers/settings.json'
+
+
+def run_policy_target(target):
+    if target is None:
+        return '{}'
+    if not isinstance(target, dict) or set(target) != {'browser'}:
+        refuse('PACKET_COMPUTERS_TARGET_INVALID', target)
+    browser = target['browser']
+    if not isinstance(browser, dict) or set(browser) != BROWSER_TARGET_KEYS or any(type(browser[key]) is not int or browser[key] < 0 for key in browser):
+        refuse('PACKET_COMPUTERS_TARGET_INVALID', target)
+    socket_path = json.loads(COMPUTERS_SETTINGS.read_text())['paths']['socket']
+    if not isinstance(socket_path, str) or not socket_path.startswith('/'):
+        refuse('PACKET_COMPUTERS_SOCKET_INVALID', socket_path)
+    additions = {'userComputers': {'socketPath': socket_path}, 'browser': {key: browser[key] for key in ('maxOutputBytes', 'maxTextChars', 'responseReserveMs')}}
+    return json.dumps(additions, separators=(',', ':'), ensure_ascii=False)
+
+
 def embedding_target(target):
     if target is None:
         return 'null'
@@ -515,6 +534,7 @@ def base_parameters(instance, commit, date, discovered):
         'TARGET_PUBLIC_FETCH_BYTES': targets['publicFetchMaximumBytes'],
         'TARGET_EMBEDDING_JSON': embedding_target(targets.get('embedding')),
         'TARGET_SPEECH_JSON': speech_target(targets.get('speech')),
+        'TARGET_RUN_POLICY_JSON': run_policy_target(targets.get('computers')),
         'STARTUP_READY_BUDGET_MS': startup_ready_budget(instance, git('show', commit + ':' + WORKER_SERVICE_MAIN)),
         'STARTUP_PHASE_BASELINE_MS': startup_phase_baseline(instance),
     }

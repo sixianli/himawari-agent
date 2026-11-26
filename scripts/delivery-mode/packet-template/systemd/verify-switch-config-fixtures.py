@@ -53,6 +53,8 @@ if approved_embedding is not None:
 approved_speech = json.loads('__PKT_TARGET_SPEECH_JSON__')
 if approved_speech is not None:
     wanted['speech'] = approved_speech
+for key, value in json.loads('__PKT_TARGET_RUN_POLICY_JSON__').items():
+    wanted['runPolicy'][key] = value
 if accepted != wanted:
     failures.append('SWITCH_EXPECTED_CONFIG_NOT_ONLY_APPROVED_FIELDS')
 if json.dumps(original, sort_keys=True) != before:

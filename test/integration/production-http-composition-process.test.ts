@@ -12,9 +12,18 @@ import {
   loadBundledMigrations,
   openQualifiedDatabase,
 } from "@himawari-agent/persistence-sqlite";
-import { initializeStateRoot, writeAuthorityFile } from "@himawari-agent/platform-node";
+import {
+  generateSetupCode,
+  initializeStateRoot,
+  writeAuthorityFile,
+  writeSetupCode,
+} from "@himawari-agent/platform-node";
 import { CHAT_MEMORY_SNAPSHOT_MARKER, MEMORY_CAPTURE } from "@himawari-agent/prompt-catalog";
-import { buildDeviceTestRequest, generateDeviceTestKeyPair } from "@himawari-agent/testing";
+import {
+  buildDeviceTestRequest,
+  generateDeviceTestKeyPair,
+  SoftwarePasskey,
+} from "@himawari-agent/testing";
 import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { exportJWK, generateKeyPair, type JSONWebKeySet, SignJWT } from "jose";
@@ -2378,36 +2387,43 @@ const withoutTurnTime = (raw: string) =>
   raw.replace(turnTime, "本轮请求时间（UTC）：<time>。配置时区 $1 的当地时间：<time>。");
 
 async function pairInstalledDevice(service: Awaited<ReturnType<typeof openInstalledMain>>) {
-  const started = await service.web("pairing-codes", {});
-  expect(started.status, started.raw).toBe(201);
-  const code = (
-    JSON.parse(
-      Buffer.from(
-        String((started.body as { pairingUri: string }).pairingUri).replace(/^himawari-pair:/u, ""),
-        "base64url",
-      ).toString("utf8"),
-    ) as { code: string }
-  ).code;
+  const setupCode = generateSetupCode();
+  await writeSetupCode({
+    stateRoot,
+    scope: { ownerId: createOwnerId(ownerId), agentId: createAgentId(agentId) },
+    code: setupCode,
+    now: new Date(),
+    minutes: 15,
+  });
   const keys = generateDeviceTestKeyPair();
   const confirmKeys = generateDeviceTestKeyPair();
-  const paired = await httpRequest(service.running().address, "/api/device/v1/pair", {
-    method: "POST",
-    body: JSON.stringify({
-      pairingCode: code,
+  const passkey = new SoftwarePasskey(publicOrigin);
+  const signIn = (route: string, body: object) =>
+    httpRequest(service.running().address, `/api/device/v1/sign-in/${route}`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  const options = await signIn("setup/options", {
+    setupCode,
+    device: {
       kind: "iphone",
       name: "Andy iPhone",
       releaseChannel: "direct",
       devicePublicKey: keys.publicKeySpkiBase64,
       confirmPublicKey: confirmKeys.publicKeySpkiBase64,
-    }),
+    },
   });
-  expect(paired.status, paired.raw).toBe(201);
-  const device = (paired.body as { device: { id: string; revision: number } }).device;
-  const confirmed = await service.web("confirm", {
-    deviceId: device.id,
-    expectedRevision: device.revision,
+  expect(options.status, options.raw).toBe(200);
+  const started = options.body as {
+    flowId: string;
+    publicKey: { challenge: string; rp: { id: string } };
+  };
+  const finished = await signIn("setup/finish", {
+    flowId: started.flowId,
+    credential: passkey.create(started.publicKey),
   });
-  expect(confirmed.status, confirmed.raw).toBe(200);
+  expect(finished.status, finished.raw).toBe(201);
+  const device = (finished.body as { device: { id: string; revision: number } }).device;
   return async (route: string, body: object) => {
     const signed = buildDeviceTestRequest({
       origin: publicOrigin,
