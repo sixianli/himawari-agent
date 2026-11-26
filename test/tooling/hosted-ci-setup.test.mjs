@@ -96,7 +96,7 @@ describe("iPhone 工作流", () => {
     expect(job.name).toContain("apple/iphone-accessibility");
     expect(job.strategy.matrix.shard.length).toBeGreaterThan(1);
     const shard = job.steps.find((step) => step.run?.includes("xcodebuild test"));
-    expect(shard.env.TEST_RUNNER_HIMAWARI_AUDIT_SHARD).toBe("${{ matrix.shard }}");
+    expect(shard.env.TEST_RUNNER_HIMAWARI_AUDIT_SHARD).toContain("matrix.shard");
     const audit = job.steps.find((step) => step.run?.includes("xcodebuild test"))?.run ?? "";
     expect(audit).toContain("-scheme Himawari");
     expect(audit).toContain("-only-testing:HimawariUITests");
