@@ -1346,7 +1346,7 @@
   },
   {
     "key": "next-10-her-name|light|dynamicType",
-    "count": 1,
-    "why": "文字不完全跟动态字体放大：导航栏“完成”和分组标题的字号由系统和 RootView 的动态字体上限（accessibility2）决定，和她的页面其他场景同一原因；交 iPhone 编码线程按第 73 条改"
+    "count": 3,
+    "why": "文字不完全跟动态字体放大：导航栏“完成”、输入框和分组说明的字号由系统和 RootView 的动态字体上限（accessibility2）决定，和她的页面其他场景同一原因；交 iPhone 编码线程按第 73 条改"
   }
 ]
