@@ -67,6 +67,11 @@ const RULES = [
       /\b(?:UIImpactFeedbackGenerator|UINotificationFeedbackGenerator|UISelectionFeedbackGenerator|CHHapticEngine|WKInterfaceDevice|sensoryFeedback)\b/u,
   },
   {
+    code: "plain-button",
+    pattern:
+      /\.buttonStyle\(\s*\.plain\s*\)|\bPlainButtonStyle\(\)|\.buttonStyle\(\s*\.borderless\s*\)/u,
+  },
+  {
     code: "number-literal",
     pattern:
       /\b(?:size|cornerRadius|width|height|minWidth|minHeight|maxWidth|maxHeight|idealWidth|idealHeight|lineSpacing|fontSize|radius)\s*:\s*-?\d|\.(?:lineSpacing|cornerRadius|opacity|kerning|tracking)\(\s*-?\d/u,

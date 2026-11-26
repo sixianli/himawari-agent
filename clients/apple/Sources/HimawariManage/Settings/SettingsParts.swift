@@ -127,32 +127,52 @@ struct SegmentPicker<Value: Hashable>: View {
     let options: [(Value, String)]
 
     var body: some View {
-        HStack(spacing: 0) {
+        Picker(selection: $selection) {
             ForEach(options, id: \.0) { value, title in
-                option(value, title)
+                Text(title).tag(value)
+            }
+        } label: {
+            EmptyView()
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .controlSize(.large)
+    }
+}
+
+struct SearchField: View {
+    @Binding var text: String
+    let prompt: String
+    let clearLabel: String
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Icon(.search, size: DesignTokens.IconSize.chevron)
+                .foregroundStyle(Color.hmMuted)
+                .accessibilityHidden(true)
+            TextField(prompt, text: $text)
+                .hmType(DesignTokens.TypeScale.body)
+                .foregroundStyle(Color.hmText)
+                .focused($focused)
+                .submitLabel(.search)
+                .autocorrectionDisabled()
+            if !text.isEmpty {
+                Button {
+                    text = ""
+                } label: {
+                    Icon(.x, size: DesignTokens.IconSize.chevron)
+                        .foregroundStyle(Color.hmMuted)
+                        .frame(minWidth: DesignTokens.Size.minTapTarget, minHeight: DesignTokens.Size.minTapTarget)
+                }
+                .buttonStyle(.pressable)
+                .accessibilityLabel(Text(clearLabel))
             }
         }
-        .padding(ManageLayout.Segment.inset)
+        .padding(.leading, 12)
+        .frame(minHeight: DesignTokens.Size.minTapTarget)
         .background(Color.hmFill, in: RoundedRectangle(cornerRadius: DesignTokens.Radius.segment, style: .continuous))
-    }
-
-    private func option(_ value: Value, _ title: String) -> some View {
-        Button {
-            selection = value
-        } label: {
-            Text(title)
-                .hmType(selection == value ? DesignTokens.TypeScale.navTitle : DesignTokens.TypeScale.body)
-                .foregroundStyle(Color.hmText)
-                .frame(maxWidth: .infinity, minHeight: DesignTokens.Size.minTapTarget)
-                .background {
-                    if selection == value {
-                        RoundedRectangle(cornerRadius: DesignTokens.Radius.segment - ManageLayout.Segment.inset, style: .continuous)
-                            .fill(Color.hmSurface)
-                            .hmShadow(DesignTokens.Shadows.lift)
-                    }
-                }
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(selection == value ? .isSelected : [])
+        .contentShape(Rectangle())
+        .onTapGesture { focused = true }
     }
 }

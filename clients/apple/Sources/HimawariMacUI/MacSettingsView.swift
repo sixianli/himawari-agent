@@ -38,7 +38,7 @@ struct MacSettingsView: View {
                 }
                 row(icon: .plus) {
                     Button(L.text("settings.folder.add"), action: addFolders)
-                        .buttonStyle(.plain)
+                        .buttonStyle(.pressable)
                         .foregroundStyle(Color.hmSun)
                 } trailing: { EmptyView() }
             }
@@ -49,13 +49,13 @@ struct MacSettingsView: View {
                         Text(app.name).foregroundStyle(Color.hmText)
                     } trailing: {
                         Button(L.text("settings.apps.remove")) { store.removeApp(app.bundleId) }
-                            .buttonStyle(.plain)
+                            .buttonStyle(.pressable)
                             .foregroundStyle(Color.hmMuted)
                     }
                 }
                 row(icon: .plus) {
                     Button(L.text("settings.apps.add"), action: addApps)
-                        .buttonStyle(.plain)
+                        .buttonStyle(.pressable)
                         .foregroundStyle(Color.hmSun)
                 } trailing: {
                     tag(store.settings.apps.isEmpty ? L.text("settings.apps.none") : L.format("settings.apps.count", store.settings.apps.count))
@@ -226,7 +226,7 @@ struct MacSettingsView: View {
                 .foregroundStyle(Color.hmDanger)
                 .fixedSize(horizontal: false, vertical: true)
             Button(L.text(button)) { MacSettingsStore.openPrivacyPane(anchor) }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
                 .hmType(DesignTokens.TypeScale.macSmall)
                 .foregroundStyle(Color.hmSun)
         }

@@ -241,7 +241,7 @@ struct PairingView: View {
             .hmType(DesignTokens.TypeScale.body)
             .foregroundStyle(Color.hmSun)
             .frame(minHeight: DesignTokens.Size.minTapTarget)
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
     }
 
     static func detail(_ problem: PairingProblem) -> String {

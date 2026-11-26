@@ -53,7 +53,7 @@ public struct ScannerCloseButton: View {
                 .frame(width: DesignTokens.Size.glassButton, height: DesignTokens.Size.glassButton)
                 .background(Color.white.opacity(DesignTokens.Scanner.closeButtonFillOpacity), in: Circle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
         .accessibilityLabel(label)
     }
 }

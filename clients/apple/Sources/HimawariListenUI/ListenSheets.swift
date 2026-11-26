@@ -16,7 +16,7 @@ struct ListenSheetHeader: View {
                     .frame(width: 48, height: 48)
                     .background(Color.hmFill, in: Circle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
             .accessibilityLabel(Text(leadingLabel))
             Spacer()
             Text(title)
@@ -76,7 +76,7 @@ struct ListenLink: View {
                 .frame(minHeight: 44)
                 .padding(.horizontal, 12)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
     }
 }
 

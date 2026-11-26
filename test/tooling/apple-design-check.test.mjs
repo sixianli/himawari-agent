@@ -56,6 +56,18 @@ it("rejects direct calls to the system haptics in page code", () => {
   expect(findViolations("Haptics.shared.report(.messageSent)", "X.swift")).toEqual([]);
 });
 
+it("rejects plain buttons whose empty space cannot be tapped", () => {
+  for (const line of [
+    ".buttonStyle(.plain)",
+    ".buttonStyle( .plain )",
+    ".buttonStyle(PlainButtonStyle())",
+    ".buttonStyle(.borderless)",
+  ]) {
+    expect(findViolations(line, "X.swift").map((v) => v.code)).toEqual(["plain-button"]);
+  }
+  expect(findViolations(".buttonStyle(.pressable)", "X.swift")).toEqual([]);
+});
+
 it("accepts token-based code", () => {
   for (const line of [
     ".hmType(DesignTokens.TypeScale.body)",

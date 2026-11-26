@@ -8,7 +8,7 @@ struct ChatPuck: View {
     var body: some View {
         if let open {
             Button(action: open) { disc }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
                 .contentShape(Circle())
                 .accessibilityLabel(Text(L.text("chat.herPage")))
                 .accessibilityAddTraits(.isHeader)

@@ -53,6 +53,21 @@ public struct CapsuleButtonStyle: ButtonStyle {
     }
 }
 
+public struct PressableButtonStyle: ButtonStyle {
+    public init() {}
+
+    public func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .contentShape(Rectangle())
+            .opacity(configuration.isPressed ? 0.6 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
+
+extension ButtonStyle where Self == PressableButtonStyle {
+    public static var pressable: PressableButtonStyle { PressableButtonStyle() }
+}
+
 public struct RowPillButtonStyle: ButtonStyle {
     private let filled: Bool
 
@@ -195,7 +210,7 @@ public struct GlassCircleButton<Leading: View>: View {
                 .frame(width: size, height: size)
                 .contentShape(Circle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
         .glassEffect(.regular.interactive(), in: Circle())
         .accessibilityLabel(label)
     }

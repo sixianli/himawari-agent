@@ -169,7 +169,7 @@ public struct ApprovalsView: View {
                                     .padding(.bottom, 4)
                             }
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
                     if index < model.handled.count - 1 { RowSeparator() }
                 }
             }
@@ -271,7 +271,7 @@ public struct ApprovalDetailView: View {
             Button { openThread(origin.threadId) } label: {
                 infoRow(L.text("approval.from"), text, chevron: true)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
         } else {
             infoRow(L.text("approval.from"), text, chevron: false)
         }
@@ -337,7 +337,7 @@ public struct DeviceAbilitiesSection: View {
                                 Text(L.text("permission.status.\(permission.status.rawValue)"))
                             }
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.pressable)
                         if index < model.permissions.count - 1 { RowSeparator() }
                     }
                 }

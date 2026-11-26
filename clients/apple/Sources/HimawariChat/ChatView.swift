@@ -665,7 +665,7 @@ struct OwnerBubble: View {
                 if let quote {
                     if let target = quote.targetId {
                         Button { jump(target) } label: { ReplyQuoteView(quote: quote, lines: 2) }
-                            .buttonStyle(.plain)
+                            .buttonStyle(.pressable)
                             .padding(.bottom, DesignTokens.Chat.listGap)
                     } else {
                         ReplyQuoteView(quote: quote, lines: 2)
@@ -742,7 +742,7 @@ struct QueuedMessageRow: View {
                 }
             }
             .hmType(DesignTokens.TypeScale.caption)
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
             .frame(minHeight: DesignTokens.Size.minTapTarget)
             .contentShape(Rectangle())
             .padding(.vertical, -(DesignTokens.Size.minTapTarget - (DesignTokens.TypeScale.caption.lineHeight ?? DesignTokens.Size.minTapTarget)) / 2)

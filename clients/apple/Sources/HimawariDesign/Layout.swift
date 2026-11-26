@@ -41,10 +41,6 @@ public enum ManageLayout {
         public static let cornerRadius: CGFloat = 36
     }
 
-    public enum Segment {
-        public static let inset: CGFloat = 4
-    }
-
     public enum SettingsSheet {
         public static let pageGap: CGFloat = 20
         public static let cardListGap: CGFloat = 14

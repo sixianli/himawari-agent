@@ -105,7 +105,7 @@ struct SenseDetailView: View {
                     } label: {
                         SenseLineRow(line: line)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
                 }
             case .loading, nil:
                 ProgressView()
@@ -132,7 +132,7 @@ struct SenseDetailView: View {
                 } label: {
                     SenseValueRow(title: L.text("detail.route"), value: L.format("detail.routeDays", retention.days), showsChevron: true)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
             } else {
                 SenseValueRow(title: L.text("detail.kept"), value: L.text("intro.keepUntilDeleted"), showsChevron: false)
             }
@@ -172,7 +172,7 @@ struct SenseDetailView: View {
                         .foregroundStyle(Color.hmDanger)
                         .frame(minHeight: DesignTokens.Size.minTapTarget)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
                 .disabled(model.working == item)
             }
         }
@@ -192,7 +192,7 @@ struct SenseDetailView: View {
                     .frame(minHeight: DesignTokens.Size.minTapTarget)
                     .padding(.horizontal, DesignTokens.Senses.footnotePaddingX)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
             .disabled(model.working == item)
         }
     }

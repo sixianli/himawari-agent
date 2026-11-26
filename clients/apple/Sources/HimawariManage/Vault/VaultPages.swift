@@ -122,7 +122,7 @@ struct VaultListPage: View {
                                     last: index == model.items.count - 1
                                 )
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(.pressable)
                         }
                     }
                 }
@@ -139,7 +139,7 @@ struct VaultListPage: View {
                     Button(action: security) {
                         SettingsRow(icon: .shieldLock, title: M.vaultSecurityTitle, detail: M.vaultSecuritySubtitle, chevron: true, last: true)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
                 }
             }
         }
@@ -185,7 +185,7 @@ struct VaultAddPage: View {
                 Button(action: manual) {
                     SettingsRow(icon: .pencil, title: M.vaultManual, detail: M.vaultManualSubtitle, chevron: true, last: true)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
             }
             VaultNote(M.vaultAddLater)
             VaultNote(M.vaultEncryptedHere)
@@ -238,7 +238,7 @@ struct VaultSecretField: View {
                     Button { scanning = true } label: {
                         Icon(.scan, size: DesignTokens.IconSize.listRow).foregroundStyle(Color.hmSun)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
                     .accessibilityLabel(Text(M.vaultScan))
                 }
             }
@@ -419,7 +419,7 @@ struct VaultItemPage: View {
                 Button { replace(field) } label: {
                     Text(M.vaultReplace).hmType(DesignTokens.TypeScale.rowAction).foregroundStyle(Color.hmSun)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
             }
             .padding(.vertical, SL.rowPaddingVertical)
             .frame(minHeight: SL.rowMinHeight)
@@ -525,7 +525,7 @@ struct VaultSecurityPage: View {
                             Button { revoking = device } label: {
                                 Text(M.vaultRevoke).hmType(DesignTokens.TypeScale.rowAction).foregroundStyle(Color.hmDanger)
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(.pressable)
                         }
                     }
                     .overlay(alignment: .bottom) { if index < phones.count - 1 { RowSeparator() } }
@@ -536,7 +536,7 @@ struct VaultSecurityPage: View {
                 Button { confirmingRotate = true } label: {
                     SettingsRow(icon: .refresh, title: M.vaultRotate, detail: M.vaultRotateSubtitle, chevron: true, last: true)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
                 .disabled(busy || model.phase != .ready)
             }
             if let note { VaultNote(note, tone: note == M.vaultRotateDone ? .muted : .danger) }

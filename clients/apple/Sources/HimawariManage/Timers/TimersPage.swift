@@ -76,12 +76,13 @@ struct TimersPage: View {
                 .frame(maxWidth: .infinity, minHeight: SL.rowMinHeight, alignment: .leading)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.pressable)
             if timer.status == .paused {
                 Button(M.timerResume) { change(timer, .resume) }
                     .hmType(DesignTokens.TypeScale.rowAction)
                     .foregroundStyle(Color.hmLink)
-                    .buttonStyle(.borderless)
+                    .frame(minWidth: DesignTokens.Size.minTapTarget, minHeight: DesignTokens.Size.minTapTarget)
+                    .buttonStyle(.pressable)
                     .disabled(store.working.contains(timer.timerId))
             }
         }

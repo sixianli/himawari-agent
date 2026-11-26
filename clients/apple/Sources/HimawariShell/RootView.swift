@@ -224,7 +224,7 @@ struct MainThreadWaiting: View {
                         .foregroundStyle(Color.hmSun)
                         .frame(minHeight: DesignTokens.Size.rowMinHeight)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

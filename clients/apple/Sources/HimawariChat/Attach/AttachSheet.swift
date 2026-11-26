@@ -29,20 +29,20 @@ struct AttachSheet: View {
                             .frame(width: DesignTokens.Size.glassButton, height: DesignTokens.Size.glassButton)
                             .background(Color.hmFill, in: Circle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
                     .accessibilityLabel(Text(L.text("common.close")))
                     Spacer()
                 }
             }
             HStack(spacing: DesignTokens.Chat.attachTileGap) {
                 Button { cameraOpen = true } label: { AttachTile(icon: .camera, title: L.text("attach.camera")) }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
                 PhotosPicker(selection: $photos, maxSelectionCount: max(1, room), matching: .images) {
                     AttachTile(icon: .photo, title: L.text("attach.photos"))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
                 Button { filesOpen = true } label: { AttachTile(icon: .fileText, title: L.text("attach.files")) }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
             }
             Button(action: locate) {
                 HStack(spacing: DesignTokens.Size.rowGap) {
@@ -59,7 +59,7 @@ struct AttachSheet: View {
                 .frame(minHeight: DesignTokens.Size.rowMinHeight)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
             .disabled(locating)
             .himawariCard(padding: EdgeInsets(top: 0, leading: DesignTokens.Size.cardPaddingX, bottom: 0, trailing: DesignTokens.Size.cardPaddingX))
         }
@@ -151,8 +151,9 @@ struct AttachmentChips: View {
                             .lineLimit(1)
                         Button { remove(attachment.id) } label: {
                             Icon(.x, size: DesignTokens.Chat.attachRowIcon)
+                                .frame(minWidth: DesignTokens.Size.minTapTarget, minHeight: DesignTokens.Size.minTapTarget)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.pressable)
                         .accessibilityLabel(Text(L.format("attach.remove", attachment.name)))
                     }
                     .foregroundStyle(Color.hmText)
