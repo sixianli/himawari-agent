@@ -9,8 +9,8 @@ import {
   enforcedRuleCount,
   type PortableRule,
   type PortableRuleVersion,
-  type RuleSuspendReason,
   RULES_INDEX_FILE,
+  type RuleSuspendReason,
   renderRulesMarkdown,
   ruleParametersKey,
 } from "./rules.js";
@@ -809,7 +809,7 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
       reason: "可重建的派生数据；导入后服务启动时按当时的向量模型自动补建",
     },
     {
-      what: "配对设备的公钥、配对码和请求随机值",
+      what: "设备公钥、通行密钥、设置码记录和请求随机值",
       count: null,
       reason:
         "是凭据，不导出；设备的名字、种类和状态在 data/paired-devices.jsonl 里，只供查看，导入时不恢复，换库后设备要重新配对",
