@@ -78,7 +78,9 @@ describe("iPhone 工作流", () => {
     expect(build).toContain("-scheme Himawari ");
     expect(build).toContain("SWIFT_OPTIMIZATION_LEVEL=-O");
     expect(build).toContain("CODE_SIGNING_ALLOWED=NO");
-    const bench = steps.find((step) => step.run?.startsWith("bash clients/apple/scripts/scroll-bench.sh"))?.run ?? "";
+    const bench =
+      steps.find((step) => step.run?.startsWith("bash clients/apple/scripts/scroll-bench.sh"))
+        ?.run ?? "";
     expect(bench).toContain("--loads realistic,plain");
     expect(steps.some((step) => step.with?.name === "scroll-bench")).toBe(true);
   });
