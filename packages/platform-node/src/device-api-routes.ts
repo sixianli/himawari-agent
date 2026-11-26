@@ -145,6 +145,7 @@ export const DEVICE_API_ROUTES = Object.freeze([
   { method: "POST", path: "vault/approve", signed: true },
   { method: "POST", path: "vault/deny", signed: true },
   { method: "POST", path: "speech", signed: true },
+  { method: "POST", path: "connections/list", signed: true },
   { method: "POST", path: "connections/authorization", signed: true },
   { method: "POST", path: "connections/authorization/complete", signed: true },
 ] as const);
@@ -296,7 +297,16 @@ export interface DeviceConnectionAuthorizationStart {
   readonly authorizationUrl: string;
 }
 
+export interface DeviceConnection {
+  readonly name: string;
+  readonly title: string;
+  readonly status: "disconnected" | "connected" | "needs_reconnect";
+  readonly account: string | null;
+  readonly connectedAt: string | null;
+}
+
 export interface DeviceConnectionsPort {
+  list(): Promise<readonly DeviceConnection[]>;
   begin(input: {
     readonly deviceId: string;
     readonly connection: string;
@@ -1299,6 +1309,14 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
 
       const connections = (authenticated: AuthenticatedDeviceRequest): DeviceConnectionsPort =>
         options.connections?.(scope(authenticated.authentication)) ?? options.rejectNotAllowed();
+
+      device.post("/connections/list", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        only(json(request), []);
+        return options.sendJson(reply, 200, {
+          connections: await connections(authenticated).list(),
+        });
+      });
 
       device.post("/connections/authorization", async (request, reply) => {
         const authenticated = await authenticate(request);

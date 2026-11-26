@@ -28,6 +28,7 @@ struct GmailPage: View {
                         SettingsRow(icon: nil, title: M.gmailLastRead, value: M.relative(lastRead), last: true)
                     }
                 }
+                watchGroup
                 disconnectButton
             case .needsReconnect(let unreadSince):
                 SettingsGroup(label: nil) {
@@ -66,6 +67,30 @@ struct GmailPage: View {
         }
         .buttonStyle(.borderedProminent)
         .disabled(store.connecting)
+    }
+
+    @ViewBuilder private var watchGroup: some View {
+        if let watching = store.watching {
+            SettingsGroup(label: nil) {
+                SettingsRow(
+                    icon: nil,
+                    title: M.gmailWatch,
+                    detail: watching.on ? M.gmailWatchOn : M.gmailWatchOff,
+                    switchState: Binding(get: { watching.on }, set: setWatching),
+                    last: true
+                )
+            }
+        }
+    }
+
+    private func setWatching(_ on: Bool) {
+        Task {
+            do {
+                try await store.setWatching(on, reason: on ? M.gmailWatchStart : M.gmailWatchStop)
+            } catch {
+                problem = .failed
+            }
+        }
     }
 
     private var disconnectButton: some View {

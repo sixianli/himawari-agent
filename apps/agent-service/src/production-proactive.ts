@@ -205,6 +205,7 @@ export interface ProactiveAppAuthorizationStart {
 }
 
 export const PROACTIVE_APP_CALLBACK_HOST = "gmail-authorization";
+export const GMAIL_CONNECTION_TITLE = "Gmail";
 
 interface PendingAuthorization {
   readonly owner: string;
@@ -527,6 +528,27 @@ export class ProductionProactive {
       this.#options.onFailure(error);
       return "failed";
     }
+  }
+
+  async connection(): Promise<{
+    readonly name: string;
+    readonly title: string;
+    readonly status: "disconnected" | "connected" | "needs_reconnect";
+    readonly account: string | null;
+    readonly connectedAt: string | null;
+  }> {
+    const { scope, store, seal } = this.#options;
+    const connection = await store.readConnection({ ...scope, source: GMAIL_SOURCE.name });
+    const account = connection
+      ? ((await seal.open({ ...scope, ref: connection.accountRef })) ?? null)
+      : null;
+    return {
+      name: GMAIL_SOURCE.name,
+      title: GMAIL_CONNECTION_TITLE,
+      status: connection?.status ?? "disconnected",
+      account,
+      connectedAt: connection?.connectedAt ?? null,
+    };
   }
 
   async overview(): Promise<ProactiveOverview> {

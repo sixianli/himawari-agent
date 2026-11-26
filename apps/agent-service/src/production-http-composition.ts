@@ -741,6 +741,7 @@ function authorityForConfiguration(
 
 function deviceConnections(proactive: ProductionProactive): DeviceConnectionsPort {
   return {
+    list: async () => [await proactive.connection()],
     begin: async ({ connection, ...input }) =>
       connection === GMAIL_SOURCE.name ? proactive.beginAppAuthorization(input) : undefined,
     complete: (input) => proactive.completeAppAuthorization(input),

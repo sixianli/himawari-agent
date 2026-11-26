@@ -385,6 +385,15 @@ enum M {
         return text("从 \(shown) 起没看邮件", ja: "\(shown) 以降メールを確認していません", en: "No mail checked since \(shown)")
     }
     static var gmailDailyLimit: String { text("今天到了每日费用上限，0:00 恢复", ja: "今日の費用上限に達しました。0:00 に再開します", en: "Today’s cost limit is reached; checks resume at 0:00") }
+    static var gmailWatch: String { text("盯着新邮件", ja: "新着メールを見張る", en: "Watch new mail") }
+    static var gmailWatchOn: String { text("Himawari 定时看新邮件，要紧的会提醒你", ja: "Himawari が定期的に新着メールを確認し、大事なものを知らせます", en: "Himawari checks new mail on a schedule and tells you about what matters") }
+    static var gmailWatchOff: String { text("Himawari 现在不自己看新邮件", ja: "Himawari は今、自分では新着メールを確認しません", en: "Himawari isn’t checking new mail on its own right now") }
+    static var gmailWatchStart: String { text("开始盯着新邮件", ja: "新着メールの見張りを始める", en: "Start watching new mail") }
+    static var gmailWatchStop: String { text("不再盯着新邮件", ja: "新着メールの見張りをやめる", en: "Stop watching new mail") }
+    static var connectionsTitle: String { text("连接", ja: "接続", en: "Connections") }
+    static var connectionConnected: String { text("已连接", ja: "接続済み", en: "Connected") }
+    static var connectionExpired: String { text("授权失效，要重新连接", ja: "許可が切れました。再接続してください", en: "Access expired. Reconnect") }
+    static var connectionsNoneConnected: String { text("还没连接应用", ja: "まだアプリを接続していません", en: "No apps connected yet") }
     static var gmailDisconnect: String { text("断开 Gmail", ja: "Gmail の接続を解除", en: "Disconnect Gmail") }
     static var gmailDisconnectDetail: String {
         text("她不再看你的邮件，Google 那边的授权也一并收回。", ja: "メールを読まなくなり、Google 側の許可も取り消します。", en: "She stops reading your mail and the Google access is revoked.")

@@ -9,6 +9,8 @@ private actor GmailServer: DeviceTransport {
     var source = "gmail"
     var start = #"{"kind":"browser","authorizationUrl":"https://accounts.google.com/o/oauth2/v2/auth?state=s"}"#
     var outcome = "connected"
+    var watching = true
+    private(set) var confirmed: [String] = []
 
     func set(connection: String? = nil, decisions: String? = nil, source: String? = nil, start: String? = nil, outcome: String? = nil) {
         if let connection { self.connection = connection }
@@ -23,11 +25,12 @@ private actor GmailServer: DeviceTransport {
             return DeviceResponse(status: 201, body: Data(#"{"challenge":"c","expiresAt":"2026-11-26T00:00:30.000Z"}"#.utf8))
         }
         let body = try JSONDecoder().decode([String: JSONValue].self, from: json)
-        return await answer(path, body)
+        return await answer(path, body, confirm: confirm?.reason)
     }
 
-    private func answer(_ path: String, _ body: [String: JSONValue]) -> DeviceResponse {
+    private func answer(_ path: String, _ body: [String: JSONValue], confirm: String?) -> DeviceResponse {
         posts.append((path, body))
+        if let confirm { confirmed.append(confirm) }
         switch path {
         case GmailStore.startPath:
             return DeviceResponse(status: 200, body: Data(start.utf8))
@@ -37,6 +40,18 @@ private actor GmailServer: DeviceTransport {
             }
             return DeviceResponse(status: 200, body: Data(#"{"outcome":"\#(outcome)"}"#.utf8))
         default:
+            if body["type"] == .string("proactive.source.switch_off") {
+                watching = false
+                return DeviceResponse(status: 200, body: Data(#"{"type":"command.accepted"}"#.utf8))
+            }
+            if body["type"] == .string("proactive.source.settings.set") {
+                if case .object(let payload) = body["payload"], case .bool(let enabled) = payload["enabled"] { watching = enabled }
+                return DeviceResponse(status: 200, body: Data(#"{"type":"command.accepted"}"#.utf8))
+            }
+            if body["type"] == .string("proactive.sources.read") {
+                let sources = #"{"sources":[{"source":"\#(source)","enabled":\#(watching),"perDay":{"limit":40},"perCheck":{"limit":10}}]}"#
+                return DeviceResponse(status: 200, body: Data(#"{"payload":\#(sources)}"#.utf8))
+            }
             if body["type"] == .string("proactive.source.manage") {
                 connection = #"{"status":"disconnected","account":null,"connectedAt":null}"#
                 return DeviceResponse(status: 200, body: Data(#"{"type":"command.accepted"}"#.utf8))
@@ -133,6 +148,37 @@ final class GmailStoreTests: XCTestCase {
         let command = await server.posts.first { $0.body["type"] == .string("proactive.source.manage") }
         XCTAssertEqual(command?.body["payload"], .object(["source": .string("gmail"), "action": .string("disconnect")]))
         XCTAssertEqual(gmail.status, .disconnected)
+    }
+
+    func testWatchingNewMailTurnsOffWithoutFaceIDAndBackOnWithFaceIDKeepingTheLimits() async throws {
+        let server = GmailServer()
+        await server.set(connection: #"{"status":"connected","account":"andy@example.com","connectedAt":null}"#)
+        let gmail = store(server)
+        await gmail.load()
+        XCTAssertEqual(gmail.watching?.on, true)
+        try await gmail.setWatching(false, reason: "不再盯着新邮件")
+        XCTAssertEqual(gmail.watching?.on, false)
+        let off = await server.posts.first { $0.body["type"] == .string("proactive.source.switch_off") }
+        XCTAssertEqual(off?.body["payload"], .object(["source": .string("gmail")]))
+        let afterOff = await server.confirmed
+        XCTAssertEqual(afterOff, [])
+        try await gmail.setWatching(true, reason: "开始盯着新邮件")
+        XCTAssertEqual(gmail.watching?.on, true)
+        let on = await server.posts.first { $0.body["type"] == .string("proactive.source.settings.set") }
+        XCTAssertEqual(on?.body["payload"], .object(["source": .string("gmail"), "enabled": .bool(true), "perDay": .number(40), "perCheck": .number(10)]))
+        let afterOn = await server.confirmed
+        XCTAssertEqual(afterOn, ["开始盯着新邮件"])
+    }
+
+    func testWatchingStaysUnknownWhenTheServerHasNoGmailSource() async throws {
+        let server = GmailServer()
+        await server.set(source: "test_notes")
+        let gmail = store(server)
+        await gmail.load()
+        XCTAssertNil(gmail.watching)
+        try await gmail.setWatching(false, reason: "不再盯着新邮件")
+        let commands = await server.posts.filter { $0.body["type"] == .string("proactive.source.switch_off") }
+        XCTAssertTrue(commands.isEmpty)
     }
 
     func testRowStaysHiddenWithoutGmailOnTheServer() async {

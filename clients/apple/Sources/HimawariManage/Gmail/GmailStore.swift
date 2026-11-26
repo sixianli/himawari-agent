@@ -19,6 +19,12 @@ public struct GmailOverview: Decodable, Sendable, Equatable {
     public let decisions: [Check]
 }
 
+public struct GmailWatching: Equatable, Sendable {
+    public let on: Bool
+    let perDay: Int
+    let perCheck: Int
+}
+
 public enum GmailConnectOutcome: Equatable, Sendable {
     case connected
     case denied
@@ -50,6 +56,7 @@ public final class GmailStore {
     public private(set) var phase: Phase = .loading
     public private(set) var overview: GmailOverview?
     public private(set) var connecting = false
+    public private(set) var watching: GmailWatching?
 
     @ObservationIgnored private let gateway: ManageGateway
     @ObservationIgnored private let callbackScheme: String?
@@ -90,6 +97,12 @@ public final class GmailStore {
     }
 
     public func load() async {
+        async let watchingLoaded: Void = loadWatching()
+        await loadOverview()
+        await watchingLoaded
+    }
+
+    private func loadOverview() async {
         do {
             let data = try await gateway.read(.v2, "proactive.overview.read")
             let loaded = try JSONDecoder().decode(Snapshot<GmailOverview>.self, from: data).payload
@@ -112,6 +125,53 @@ public final class GmailStore {
         let outcome = await run(callbackScheme: callbackScheme, signIn: signIn)
         await load()
         return outcome
+    }
+
+    public func setWatching(_ on: Bool, reason: String) async throws {
+        guard let current = watching, current.on != on else { return }
+        if on {
+            _ = try await gateway.command(
+                .v2,
+                "proactive.source.settings.set",
+                payload: [
+                    "source": .string(Self.source),
+                    "enabled": .bool(true),
+                    "perDay": .number(Double(current.perDay)),
+                    "perCheck": .number(Double(current.perCheck)),
+                ],
+                options: ManageCommandOptions(confirmReason: reason)
+            )
+        } else {
+            _ = try await gateway.command(
+                .v2,
+                "proactive.source.switch_off",
+                payload: ["source": .string(Self.source)],
+                options: ManageCommandOptions(confirmReason: reason)
+            )
+        }
+        await loadWatching()
+    }
+
+    private func loadWatching() async {
+        struct Limit: Decodable {
+            let limit: Int
+        }
+        struct Source: Decodable {
+            let source: String
+            let enabled: Bool
+            let perDay: Limit
+            let perCheck: Limit
+        }
+        struct Sources: Decodable {
+            let sources: [Source]
+        }
+        do {
+            let data = try await gateway.read(.v2, "proactive.sources.read")
+            let gmail = try JSONDecoder().decode(Snapshot<Sources>.self, from: data).payload.sources.first { $0.source == Self.source }
+            watching = gmail.map { GmailWatching(on: $0.enabled, perDay: $0.perDay.limit, perCheck: $0.perCheck.limit) }
+        } catch {
+            return
+        }
     }
 
     public func disconnect(reason: String) async throws {

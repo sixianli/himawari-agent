@@ -697,10 +697,22 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
     expect(back.headers.location).toBe(`${APP_SCHEME}://gmail-authorization?state=${state}`);
     expect(String(back.headers.location)).not.toContain("code-1");
     expect((await h.overview()).connection.status).toBe("disconnected");
+    expect(await h.proactive.connection()).toEqual({
+      name: "gmail",
+      title: "Gmail",
+      status: "disconnected",
+      account: null,
+      connectedAt: null,
+    });
 
     expect(await h.proactive.completeAppAuthorization({ deviceId: "device-a", state })).toBe(
       "connected",
     );
+    expect(await h.proactive.connection()).toMatchObject({
+      name: "gmail",
+      status: "connected",
+      account: "andy@example.com",
+    });
     await h.proactive.stop();
     expect((await h.overview()).connection).toMatchObject({
       status: "connected",

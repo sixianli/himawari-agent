@@ -18,6 +18,15 @@ function recordingGmail() {
   const begun: { deviceId: string; connection: string; callbackScheme: string }[] = [];
   const completed: { deviceId: string; state: string }[] = [];
   const port: DeviceConnectionsPort = {
+    list: async () => [
+      {
+        name: "gmail",
+        title: "Gmail",
+        status: "connected",
+        account: "andy@example.com",
+        connectedAt: "2026-11-26T08:00:00.000Z",
+      },
+    ],
     begin: async (input) => {
       begun.push({ ...input });
       if (input.connection !== "gmail") return undefined;
@@ -49,6 +58,20 @@ describe("[PG-12] the iPhone asks the server for the Gmail sign-in page", () => 
     const h = await harness({ connections: gmail.port });
     const client = await pairAndConfirm(h);
 
+    expect(await post(h, client, "connections/list", {})).toEqual({
+      status: 200,
+      body: {
+        connections: [
+          {
+            name: "gmail",
+            title: "Gmail",
+            status: "connected",
+            account: "andy@example.com",
+            connectedAt: "2026-11-26T08:00:00.000Z",
+          },
+        ],
+      },
+    });
     const started = await post(h, client, "connections/authorization", {
       connection: "gmail",
       callbackScheme: "win.siyi.himawari.app",
@@ -140,5 +163,6 @@ describe("[PG-12] the iPhone asks the server for the Gmail sign-in page", () => 
       callbackScheme: "win.siyi.himawari.app",
     });
     expect(started.status).toBe(404);
+    expect((await post(h, client, "connections/list", {})).status).toBe(404);
   });
 });
