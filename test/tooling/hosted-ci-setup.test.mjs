@@ -94,8 +94,8 @@ describe("Mac 安装包发布工作流", () => {
     const publish = job.steps.at(-1).run;
     expect(publish).toContain("gh release upload mac-updates");
     expect(publish).toContain('gh release create "mac-$HIMAWARI_BUILD_NUMBER"');
-    expect(workflow.env.HIMAWARI_DOWNLOAD_BASE).toContain(
-      "/releases/download/mac-${{ github.run_number }}",
+    expect(workflow.env.HIMAWARI_DOWNLOAD_BASE).toMatch(
+      /\/releases\/download\/mac-\$\{\{ github\.run_number \}\}$/u,
     );
     const plist = readFileSync(
       path.join(repositoryRoot, "clients/apple/App/macOS/Info.plist"),
