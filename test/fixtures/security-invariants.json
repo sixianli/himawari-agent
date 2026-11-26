@@ -5,6 +5,7 @@
   "allowedHttpRoutes": [
     "GET /",
     "GET /*",
+    "GET /.well-known/apple-app-site-association",
     "GET /api/control-center/v1/config",
     "GET /api/files/v1/content/:fileId",
     "GET /api/gateway/v1/events",

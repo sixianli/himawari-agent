@@ -132,8 +132,6 @@ describe("[第11批] 客户端能力表", () => {
     ])
       expect(tiers(type), type).toBe("read");
     for (const type of [
-      "device.pairing.start",
-      "device.pairing.confirm",
       "device.rename",
       "device.revoke",
       "login.device.revoke",

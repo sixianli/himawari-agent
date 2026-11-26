@@ -202,7 +202,7 @@ final class ManageGatewayTests: XCTestCase {
         for type in ["device.list.read", "server.status.read", "login.devices.read", "files.list.read", "data.export.status.read"] {
             XCTAssertEqual(ClientCapabilities.find(.v2, type)?.tier, .read, type)
         }
-        for type in ["device.pairing.start", "device.pairing.confirm", "device.rename", "device.revoke", "login.device.revoke", "login.devices.revoke_others", "data.export.start"] {
+        for type in ["device.rename", "device.revoke", "login.device.revoke", "login.devices.revoke_others", "data.export.start"] {
             XCTAssertEqual(ClientCapabilities.find(.v2, type)?.tier, .change, type)
         }
         XCTAssertEqual(ClientCapabilities.find(.v2, "data.export.cancel")?.tier, .routine)

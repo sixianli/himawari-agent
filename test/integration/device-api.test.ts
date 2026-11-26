@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
@@ -17,7 +16,6 @@ import {
 } from "@himawari-agent/persistence-sqlite";
 import {
   DEVICE_PAYLOAD_TEXT_RESPONSE_BYTES,
-  devicePairingNumber,
   EnvelopePayloadProtector,
   PairedDeviceService,
 } from "@himawari-agent/platform-node";
@@ -29,50 +27,27 @@ import {
   createThread,
   type Harness,
   harness,
+  issueSetupCode,
   ownerId,
   type PairedClient,
-  pair,
   pairAndConfirm,
-  pairingCode,
   removeDeviceHarnessDirectories,
   send,
   signedRequest,
+  signInRequest,
   threadCommand,
   web,
 } from "../fixtures/device-api-harness.ts";
 
 afterEach(removeDeviceHarnessDirectories);
 
-describe("[P1-1] device pairing and signed device API", () => {
-  it("pairs as pending, works only after the owner confirms, and never exposes the internal session", async () => {
+describe("[P1-1] signed device API", () => {
+  it("lets a signed-in device call the API and never exposes the internal session", async () => {
     const h = await harness();
-    const paired = await pair(h);
-    expect(paired.response.statusCode).toBe(201);
-    const body = paired.response.json() as { device: Record<string, unknown> };
-    expect(body.device["status"]).toBe("pending");
-    expect(JSON.stringify(body)).not.toMatch(/session|authentication|PublicKey/iu);
-    const pending: PairedClient = {
-      deviceId: body.device["id"] as string,
-      keys: paired.keys,
-      confirmKeys: paired.confirmKeys,
-      revision: 0,
-    };
-    const beforeConfirm = await send(
-      h,
-      signedRequest(h, pending, { method: "GET", path: "/api/device/v1/config" }),
-    );
-    expect(beforeConfirm.statusCode).toBe(403);
-    expect(beforeConfirm.json()).toMatchObject({ error: { code: "DEVICE_PENDING" } });
-
-    const confirmed = await web(h, "confirm", {
-      deviceId: pending.deviceId,
-      expectedRevision: body.device["revision"],
-    });
-    expect(confirmed.status).toBe(200);
-    expect(JSON.stringify(confirmed.body)).not.toMatch(/session|authenticationRef/iu);
+    const client = await pairAndConfirm(h);
     const config = await send(
       h,
-      signedRequest(h, pending, { method: "GET", path: "/api/device/v1/config" }),
+      signedRequest(h, client, { method: "GET", path: "/api/device/v1/config" }),
     );
     expect(config.statusCode).toBe(200);
     expect(config.json()).toMatchObject({
@@ -82,18 +57,13 @@ describe("[P1-1] device pairing and signed device API", () => {
     expect((config.json() as { limits: unknown[] }).limits).toHaveLength(10);
 
     const listed = await web(h, "list");
-    expect(listed.body["devices"]).toMatchObject([{ id: pending.deviceId, status: "active" }]);
-    const stored = await h.repository.pairedDevices().readDevice(pending.deviceId);
+    expect(listed.body["devices"]).toMatchObject([{ id: client.deviceId, status: "active" }]);
+    const stored = await h.repository.pairedDevices().readDevice(client.deviceId);
     const internalSession = stored?.webSessionId
       ? await h.repository.sessionDeviceState().readSession(createSessionId(stored.webSessionId))
       : undefined;
     expect(internalSession?.authenticationRef).toMatch(/^sha256:[0-9a-f]{64}$/u);
-    const everything = [
-      paired.response.body,
-      JSON.stringify(confirmed.body),
-      config.body,
-      JSON.stringify(listed.body),
-    ].join("\n");
+    const everything = [config.body, JSON.stringify(listed.body)].join("\n");
     for (const secret of [
       stored?.webSessionId,
       stored?.webDeviceId,
@@ -103,97 +73,6 @@ describe("[P1-1] device pairing and signed device API", () => {
       expect(everything).not.toContain(secret);
     const webDevices = await h.repository.sessionDeviceState().listDevices(ownerId, false);
     expect(webDevices.map((device) => device.label)).toContain("Andy iPhone");
-    await h.repository.close();
-  });
-
-  it("rejects wrong, expired and used pairing codes and malformed pairing bodies", async () => {
-    const h = await harness();
-    const first = await pair(h);
-    expect(first.response.statusCode).toBe(201);
-    const reuse = await h.app.inject({
-      method: "POST",
-      url: "/api/device/v1/pair",
-      headers: { host: "himawari.example", "content-type": "application/json" },
-      payload: JSON.stringify({
-        pairingCode: first.code,
-        kind: "iphone",
-        name: "Second",
-        releaseChannel: "direct",
-        devicePublicKey: generateDeviceTestKeyPair().publicKeySpkiBase64,
-        confirmPublicKey: generateDeviceTestKeyPair().publicKeySpkiBase64,
-      }),
-    });
-    expect(reuse.statusCode).toBe(409);
-    expect(reuse.json()).toMatchObject({ error: { code: "DEVICE_PAIRING_CODE_USED" } });
-
-    const replaced = await web(h, "pairing-codes");
-    const started = await web(h, "pairing-codes");
-    const keysForReplaced = [generateDeviceTestKeyPair(), generateDeviceTestKeyPair()];
-    const stale = await h.app.inject({
-      method: "POST",
-      url: "/api/device/v1/pair",
-      headers: { host: "himawari.example", "content-type": "application/json" },
-      payload: JSON.stringify({
-        pairingCode: pairingCode(replaced.body["pairingUri"]),
-        kind: "iphone",
-        name: "Old code",
-        releaseChannel: "direct",
-        devicePublicKey: keysForReplaced[0]?.publicKeySpkiBase64,
-        confirmPublicKey: keysForReplaced[1]?.publicKeySpkiBase64,
-      }),
-    });
-    expect(stale.statusCode).toBe(404);
-    expect(stale.json()).toMatchObject({ error: { code: "DEVICE_PAIRING_CODE_INVALID" } });
-    h.clock.advance(10 * 60 * 1000);
-    const keys = [generateDeviceTestKeyPair(), generateDeviceTestKeyPair()];
-    const expired = await h.app.inject({
-      method: "POST",
-      url: "/api/device/v1/pair",
-      headers: { host: "himawari.example", "content-type": "application/json" },
-      payload: JSON.stringify({
-        pairingCode: pairingCode(started.body["pairingUri"]),
-        kind: "mac",
-        name: "Mac",
-        releaseChannel: "mac_direct",
-        devicePublicKey: keys[0]?.publicKeySpkiBase64,
-        confirmPublicKey: keys[1]?.publicKeySpkiBase64,
-      }),
-    });
-    expect(expired.statusCode).toBe(410);
-    expect(expired.json()).toEqual({
-      error: { code: "DEVICE_PAIRING_CODE_EXPIRED", pairingCodeTtlSeconds: 600 },
-    });
-
-    const base = {
-      pairingCode: "A".repeat(22),
-      kind: "iphone",
-      name: "Phone",
-      releaseChannel: "direct",
-      devicePublicKey: keys[0]?.publicKeySpkiBase64,
-      confirmPublicKey: keys[1]?.publicKeySpkiBase64,
-    };
-    const wrong = await h.app.inject({
-      method: "POST",
-      url: "/api/device/v1/pair",
-      headers: { host: "himawari.example", "content-type": "application/json" },
-      payload: JSON.stringify(base),
-    });
-    expect(wrong.statusCode).toBe(404);
-    for (const invalid of [
-      { ...base, kind: "ipad" },
-      { ...base, releaseChannel: "sideload" },
-      { ...base, confirmPublicKey: base.devicePublicKey },
-      { ...base, extra: true },
-      { ...base, name: "" },
-    ]) {
-      const response = await h.app.inject({
-        method: "POST",
-        url: "/api/device/v1/pair",
-        headers: { host: "himawari.example", "content-type": "application/json" },
-        payload: JSON.stringify(invalid),
-      });
-      expect(response.statusCode).toBe(400);
-    }
     await h.repository.close();
   });
 
@@ -868,97 +747,6 @@ describe("[P1-1] device client routes", () => {
     await h.repository.close();
   });
 
-  it("derives the pairing check number shared with the Apple client", () => {
-    expect(
-      devicePairingNumber({
-        devicePublicKey:
-          "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEgklbiEIaFeLcnBEGAX7ylAer27+O2cTirMqxkCXdrVByTm3MKdNuMjj5/bP+2kvVyfMc8phPkVYkp3O26tsqdw==",
-        confirmPublicKey:
-          "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEXt1kon6XViA/rbf1ELwj8N+xpbfJo0QbgAcAV8UD0y6+6C8fFDjS+K79AL4uj+Us/PpsJx6BVgjzgPFJKtg10g==",
-      }),
-    ).toBe("971525");
-  });
-
-  it("shows the check number only while a device waits for confirmation", async () => {
-    const h = await harness();
-    const paired = await pair(h);
-    const device = paired.response.json().device as { id: string; revision: number };
-    const expected = devicePairingNumber({
-      devicePublicKey: paired.keys.publicKeySpkiBase64,
-      confirmPublicKey: paired.confirmKeys.publicKeySpkiBase64,
-    });
-    expect((await web(h, "list")).body["devices"]).toMatchObject([
-      { id: device.id, status: "pending", pairingNumber: expected },
-    ]);
-    await web(h, "confirm", { deviceId: device.id, expectedRevision: device.revision });
-    expect((await web(h, "list")).body["devices"]).toMatchObject([
-      { id: device.id, status: "active", pairingNumber: null },
-    ]);
-    await h.repository.close();
-  });
-
-  it("puts the access token in the pairing code only when it is configured", async () => {
-    const decode = (uri: unknown) =>
-      JSON.parse(
-        Buffer.from(String(uri).replace(/^himawari-pair:/u, ""), "base64url").toString("utf8"),
-      ) as Record<string, unknown>;
-    const plain = await harness();
-    expect(decode((await web(plain, "pairing-codes")).body["pairingUri"])).not.toHaveProperty(
-      "access",
-    );
-    await plain.repository.close();
-    const clientSecret = randomUUID();
-    const access = { clientId: "device-client-id", clientSecret };
-    const withAccess = await harness({ pairingAccess: access });
-    expect(decode((await web(withAccess, "pairing-codes")).body["pairingUri"])).toMatchObject({
-      access,
-    });
-    await withAccess.repository.close();
-  });
-
-  it("returns the same device when a pairing request is retried with the same keys", async () => {
-    const h = await harness();
-    const started = await web(h, "pairing-codes");
-    const keys = generateDeviceTestKeyPair();
-    const confirmKeys = generateDeviceTestKeyPair();
-    const pairWith = (devicePublicKey: string, confirmPublicKey: string) =>
-      h.app.inject({
-        method: "POST",
-        url: "/api/device/v1/pair",
-        headers: { host: "himawari.example", "content-type": "application/json" },
-        payload: JSON.stringify({
-          pairingCode: pairingCode(started.body["pairingUri"]),
-          kind: "iphone",
-          name: "Andy iPhone",
-          releaseChannel: "direct",
-          devicePublicKey,
-          confirmPublicKey,
-        }),
-      });
-    const first = await pairWith(keys.publicKeySpkiBase64, confirmKeys.publicKeySpkiBase64);
-    expect(first.statusCode, first.body).toBe(201);
-    const retried = await pairWith(keys.publicKeySpkiBase64, confirmKeys.publicKeySpkiBase64);
-    expect(retried.statusCode, retried.body).toBe(200);
-    expect(retried.json()).toEqual(first.json());
-    const otherKeys = await pairWith(
-      generateDeviceTestKeyPair().publicKeySpkiBase64,
-      confirmKeys.publicKeySpkiBase64,
-    );
-    expect(otherKeys.statusCode).toBe(409);
-    expect(otherKeys.json()).toMatchObject({ error: { code: "DEVICE_PAIRING_CODE_USED" } });
-    expect((await web(h, "list")).body["devices"]).toHaveLength(1);
-    const device = (first.json() as { device: { id: string; revision: number } }).device;
-    const removed = await web(h, "revoke", {
-      deviceId: device.id,
-      expectedRevision: device.revision,
-    });
-    expect(removed.status).toBe(200);
-    const afterRemoval = await pairWith(keys.publicKeySpkiBase64, confirmKeys.publicKeySpkiBase64);
-    expect(afterRemoval.statusCode).toBe(403);
-    expect(afterRemoval.json()).toEqual({ error: { code: "DEVICE_REVOKED" } });
-    await h.repository.close();
-  });
-
   it("lets a new stream from the same device replace its oldest one when every slot is taken", async () => {
     const h = await harness();
     h.configuration.current = {
@@ -1079,41 +867,47 @@ describe("[P1-1] device client routes", () => {
 
   it("stores canonical keys and rejects one key used as both device and confirm key", async () => {
     const h = await harness();
-    const started = await web(h, "pairing-codes");
     const keys = generateDeviceTestKeyPair();
-    const pairWith = (devicePublicKey: string, confirmPublicKey: string) =>
-      h.app.inject({
-        method: "POST",
-        url: "/api/device/v1/pair",
-        headers: { host: "himawari.example", "content-type": "application/json" },
-        payload: JSON.stringify({
-          pairingCode: pairingCode(started.body["pairingUri"]),
-          kind: "iphone",
-          name: "Andy iPhone",
-          releaseChannel: "direct",
-          devicePublicKey,
-          confirmPublicKey,
-        }),
-      });
     const unpadded = keys.publicKeySpkiBase64.replace(/=+$/u, "");
     expect(unpadded).not.toBe(keys.publicKeySpkiBase64);
-    const same = await pairWith(keys.publicKeySpkiBase64, unpadded);
+    const code = await issueSetupCode(h);
+    const device = (devicePublicKey: string, confirmPublicKey: string) => ({
+      kind: "iphone",
+      name: "Andy iPhone",
+      releaseChannel: "direct",
+      devicePublicKey,
+      confirmPublicKey,
+    });
+    const same = await signInRequest(h, "setup/options", {
+      setupCode: code,
+      device: device(keys.publicKeySpkiBase64, unpadded),
+    });
     expect(same.statusCode).toBe(400);
-    const confirm = generateDeviceTestKeyPair().publicKeySpkiBase64;
-    const paired = await pairWith(unpadded, confirm);
-    expect(paired.statusCode, paired.body).toBe(201);
-    const stored = await h.repository.pairedDevices().readDevice(paired.json().device.id);
+    const options = await signInRequest(h, "setup/options", {
+      setupCode: code,
+      device: device(unpadded, generateDeviceTestKeyPair().publicKeySpkiBase64),
+    });
+    expect(options.statusCode, options.body).toBe(200);
+    const started = options.json() as {
+      flowId: string;
+      publicKey: { challenge: string; rp: { id: string } };
+    };
+    const finished = await signInRequest(h, "setup/finish", {
+      flowId: started.flowId,
+      credential: h.passkey.create(started.publicKey),
+    });
+    expect(finished.statusCode, finished.body).toBe(201);
+    const stored = await h.repository.pairedDevices().readDevice(finished.json().device.id);
     expect(stored?.devicePublicKey).toBe(keys.publicKeySpkiBase64);
     await h.repository.close();
   });
 
   it("rejects unknown fields on the owner's device management routes", async () => {
     const h = await harness();
-    const paired = await pair(h);
-    const device = paired.response.json().device as { id: string; revision: number };
+    const client = await pairAndConfirm(h);
+    const device = { id: client.deviceId, revision: client.revision };
     expect((await web(h, "list", { extra: 1 })).status).toBe(400);
-    expect((await web(h, "pairing-codes", { extra: 1 })).status).toBe(400);
-    for (const action of ["confirm", "revoke"])
+    for (const action of ["revoke"])
       expect(
         (await web(h, action, { deviceId: device.id, expectedRevision: device.revision, x: 1 }))
           .status,
@@ -1167,36 +961,8 @@ describe("[P1-1] device client routes", () => {
     await h.repository.close();
   });
 
-  it("keeps the first expiry when the owner starts pairing again with the same code", async () => {
-    const h = await harness();
-    const service = new PairedDeviceService({
-      store: h.repository.pairedDevices(),
-      sessions: h.repository.sessionDeviceState(),
-      configuration: () => h.configuration.current,
-      ownerActive: async () => true,
-      now: () => new Date(h.clock.now()),
-    });
-    const scope = { ownerId, agentId, sessionId: String(h.webAuthentication.sessionId) };
-    const code = Buffer.alloc(16, 7).toString("base64url");
-    const first = await service.startPairingWithCode({ ...scope, code });
-    h.clock.advance(60_000);
-    const again = await service.startPairingWithCode({ ...scope, code });
-    expect(again.expiresAt).toBe(first.expiresAt);
-    const next = await service.startPairingWithCode({
-      ...scope,
-      code: Buffer.alloc(16, 8).toString("base64url"),
-    });
-    expect(next.expiresAt).not.toBe(first.expiresAt);
-    h.clock.advance(9 * 60_000 + 1);
-    const expired = await service.startPairingWithCode({ ...scope, code });
-    expect(Date.parse(expired.expiresAt)).toBeGreaterThan(Date.parse(next.expiresAt));
-    await h.repository.close();
-  });
-
   it("rejects device names with hidden characters the same way as the gateway contract", async () => {
     const h = await harness();
-    const hidden = await pair(h, "Andy\u200biPhone");
-    expect(hidden.response.statusCode).toBe(400);
     const client = await pairAndConfirm(h);
     for (const name of [
       "Desk\u202eMac",
@@ -1250,7 +1016,7 @@ describe("[P1-1] device client routes", () => {
     const chunked = (size: number) =>
       h.app.inject({
         method: "POST",
-        url: "/api/device/v1/pair",
+        url: "/api/device/v1/sign-in/options",
         headers: { host: "himawari.example", "content-type": "application/json" },
         payload: Readable.from([Buffer.from(JSON.stringify({ name: "x".repeat(size) }))]),
       });
