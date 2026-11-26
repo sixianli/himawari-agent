@@ -262,6 +262,15 @@ export const DEFAULT_SEARCH_ASK: SearchAskConfiguration = Object.freeze({
   indexRebuildBatch: 200,
 });
 
+export interface AppConnectionConfiguration {
+  readonly name: string;
+  readonly title: string;
+  readonly serverUrl: string;
+  readonly clientId: string;
+  readonly clientSecretRef: string;
+  readonly trustsReadOnlyLabels: boolean;
+}
+
 export interface ProactiveGmailConfiguration {
   readonly clientId: string;
   readonly clientSecretRef: string;
@@ -431,9 +440,16 @@ export interface UserComputersConfiguration {
   readonly socketPath: string;
 }
 
+export interface BrowserConfiguration {
+  readonly maxOutputBytes: number;
+  readonly maxTextChars: number;
+  readonly responseReserveMs: number;
+}
+
 export interface RunPolicyConfiguration {
   readonly timeZone?: string;
   readonly userComputers?: UserComputersConfiguration;
+  readonly browser?: BrowserConfiguration;
   readonly inbox?: InboxConfiguration;
   readonly approvalBodyPreviewCharacters?: number;
   readonly toolRefusals?: ToolRefusalConfiguration;
@@ -447,6 +463,7 @@ export interface RunPolicyConfiguration {
   readonly searchAsk?: SearchAskConfiguration;
   readonly perception?: PerceptionConfiguration;
   readonly proactive?: ProactiveConfiguration;
+  readonly appConnections?: readonly AppConnectionConfiguration[];
   readonly coding?: CodingRouteConfiguration;
   readonly publicSearch?: PublicSearchRouteConfiguration;
   readonly publicFetch?: PublicFetchRouteConfiguration;

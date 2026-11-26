@@ -6,7 +6,7 @@ supersedes: "https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941
 superseded_by: ""
 date: "2026-11-26"
 covers: "packages/runtime-pi/package.json, packages/runtime-pi/src/pi-runtime-adapter.ts, packages/runtime-pi/src/pi-tool-batch-continuation.ts, packages/runtime-pi/src/configured-model-binding.ts, packages/runtime-pi/test/pi-runtime-adapter.compat.test.ts, packages/runtime-pi/test/prompt-prefix.compat.test.ts, packages/runtime-pi/test/fixtures/d4-golden-requests.json, docs/pi-development-guide.md"
-verified_at: "7d0ffcd52cbb69d4941871cf9bf08d93f3843da8"
+verified_at: "7c8521fe5f55e7dd57c5bd52badd16eef647502e"
 ---
 
 # ADR 0294：在 Pi 上开发：照官方写法，偏离逐条批准

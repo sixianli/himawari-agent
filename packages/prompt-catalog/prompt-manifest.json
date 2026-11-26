@@ -1002,6 +1002,31 @@
     "changedIn": "ADR 0250",
     "reason": "新增：工具参数 activity、activityIcon 的说明和系统提示里的过程图标表"
   },
+  "tools.app-action": {
+    "sha256": "de76eb8f6f7f35473135d7afa0dd58eb7ba20155a6dce6215f1655602dc603a0",
+    "changedIn": "ADR 0311",
+    "reason": "新增：通用连接的 app_action 工具，Himawari 用主人连接的应用时看到的说明"
+  },
+  "tools.app-action.action": {
+    "sha256": "2ad4e5f37ff3b3f1a5ff3119c1a25b6cd14adefca8923175f62be459d12ad20b",
+    "changedIn": "ADR 0311",
+    "reason": "新增：通用连接的 app_action 工具，Himawari 用主人连接的应用时看到的说明"
+  },
+  "tools.app-action.app": {
+    "sha256": "d3c71c135425516d20134c5834fec81029536d3ed2af4f36156162d7bae87904",
+    "changedIn": "ADR 0311",
+    "reason": "新增：通用连接的 app_action 工具，Himawari 用主人连接的应用时看到的说明"
+  },
+  "tools.app-action.arguments": {
+    "sha256": "70cb0c7484042d74af01e6bc80e2a91fcdf64274706425790d2866905998a6c0",
+    "changedIn": "ADR 0311",
+    "reason": "新增：通用连接的 app_action 工具，Himawari 用主人连接的应用时看到的说明"
+  },
+  "tools.app-action.tool": {
+    "sha256": "45d7ce984bc4797793eb3dbc5aa675c2a27c5c90e3e754f587cbbf14ce3da17b",
+    "changedIn": "ADR 0311",
+    "reason": "新增：通用连接的 app_action 工具，Himawari 用主人连接的应用时看到的说明"
+  },
   "tools.authorized": {
     "sha256": "e2bf668e954070fb41a107317b84ba9f5fc433f2a1b9a37b148f62fc76787fab",
     "changedIn": "ADR 0166",
@@ -1219,6 +1244,41 @@
     "sha256": "052bba8325aa7a15c5bfa6afce2e0085d2c1e198b68889285b05339f72690794",
     "changedIn": "ADR 0166",
     "reason": "W-09、W-13：写明有钟点的最多提前 1 小时、只有日期的当天 9 点（Andy 2026-11-05 定 D8）；失败时怎么说只留在身份说明里；复核第 2 轮：写明 yearly 的过去日期会顺延到下一次，不会被拒绝（reminderSchedule）"
+  },
+  "tools.result.app-action.describe": {
+    "sha256": "82aebe0fb75668124441d4bcf8d6f00c9a7dedc6dc212197e3a5a26cf53881bc",
+    "changedIn": "ADR 0311",
+    "reason": "新增：通用连接的 app_action 工具，Himawari 用主人连接的应用时看到的说明"
+  },
+  "tools.result.app-action.failed": {
+    "sha256": "db7b6ea1a08857f5aa57c6458a89e63337a51483a1f365a37c5f2eee084b85ec",
+    "changedIn": "ADR 0311",
+    "reason": "新增：通用连接的 app_action 工具，Himawari 用主人连接的应用时看到的说明"
+  },
+  "tools.result.app-action.invalid": {
+    "sha256": "e19f7d08a7148793a7470716b6a2728ccf6741dfb8800b666454108ba0ff90c4",
+    "changedIn": "ADR 0311",
+    "reason": "新增：通用连接的 app_action 工具，Himawari 用主人连接的应用时看到的说明"
+  },
+  "tools.result.app-action.no-app": {
+    "sha256": "bbee560f66ed816b5e54cd014f1cf69995f7191b00d249ba4581cfbaf6b6ec11",
+    "changedIn": "ADR 0311",
+    "reason": "新增：通用连接的 app_action 工具，Himawari 用主人连接的应用时看到的说明"
+  },
+  "tools.result.app-action.not-connected": {
+    "sha256": "8923b1a0773f966ab56589aa2dac6f4aee0c9c3af84236ac77387e2c6fd93de2",
+    "changedIn": "ADR 0311",
+    "reason": "新增：通用连接的 app_action 工具，Himawari 用主人连接的应用时看到的说明"
+  },
+  "tools.result.app-action.result": {
+    "sha256": "df0123cd17bc688091933f4996723c9d4d3611a06b3e73033e177e00078d8b82",
+    "changedIn": "ADR 0311",
+    "reason": "新增：通用连接的 app_action 工具，Himawari 用主人连接的应用时看到的说明"
+  },
+  "tools.result.app-action.unknown": {
+    "sha256": "da894b9af2111beb521cac3d24876769b0673d7c2eaf952a554f6574974e0ee9",
+    "changedIn": "ADR 0311",
+    "reason": "新增：通用连接的 app_action 工具，Himawari 用主人连接的应用时看到的说明"
   },
   "tools.result.device-action.describe": {
     "sha256": "23c31ae00ba70a34a1d2f83751f6de2c07a62d1d9e193ca9819e68508c1b4f7c",

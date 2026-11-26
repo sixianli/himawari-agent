@@ -1329,6 +1329,13 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "removed with its payloads when the owner disconnects the source",
   ),
   entry(
+    "app_connections",
+    "AppConnectionStorePort",
+    "one row per app the owner connected through its remote MCP server (for example GitHub): the connection name, whether it is connected or needs the owner to sign in again, and when it was connected; the OAuth tokens live only in a protected payload",
+    "payload_reference",
+    "removed with its payload when the owner disconnects the app",
+  ),
+  entry(
     "decision_ledger",
     "ProactiveStorePort, DecisionLedgerPort",
     "one row per model gate decision (proactive check, memory candidate, consolidation change, context truncation, retrieval degrade, external read, hard rule review, failed memory capture): inputs as ids, cost and the owner's rating; text only as protected payload references",

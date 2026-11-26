@@ -10,16 +10,17 @@ import {
   type IdGeneratorPort,
   limitedSourceReader,
   listDailyReviewSubjects,
+  type MailInboxPort,
   type MemoryCheckupService,
   OwnerRuleReplay,
   type OwnerRuleReplayResult,
   type OwnerRuleStorePort,
   PORT_ERROR_CODES,
-  type PrereviewRunResult,
+  PROACTIVE_SOURCE_LIMIT_ON_REACH,
   PROACTIVE_SOURCES,
+  type PrereviewRunResult,
   type ProactiveConfiguration,
   type ProactiveDecision,
-  type MailInboxPort,
   ProactiveMailCheckService,
   type ProactiveMailReader,
   type ProactiveModelInvoker,
@@ -34,17 +35,16 @@ import {
   type ProactiveSourceRegistry,
   type ProactiveSourceRunner,
   type ProactiveStorePort,
-  PROACTIVE_SOURCE_LIMIT_ON_REACH,
-  proactiveSourceLimitsValid,
-  readProactiveSourceSettings,
   parseReviewKey,
+  proactiveSourceLimitsValid,
   ReviewPrereviewService,
-  type RuleReviewReport,
-  type RuleReviewService,
   type ReviewPrereviewStorePort,
   type RuleRecord,
+  type RuleReviewReport,
+  type RuleReviewService,
   readDailyReview,
   readProactiveOverview,
+  readProactiveSourceSettings,
   recordProactiveProgramEntry,
   startOfNextZonedDay,
   startOfZonedDay,
@@ -199,6 +199,23 @@ export interface ProductionProactiveOptions {
 
 export type ProactiveAuthorizationOutcome = "connected" | "denied" | "failed";
 
+export interface ProactiveAppAuthorizationStart {
+  readonly kind: "browser";
+  readonly authorizationUrl: string;
+}
+
+export const PROACTIVE_APP_CALLBACK_HOST = "gmail-authorization";
+export const GMAIL_CONNECTION_TITLE = "Gmail";
+
+interface PendingAuthorization {
+  readonly owner: string;
+  readonly expiresAt: number;
+  readonly app?: {
+    readonly callbackScheme: string;
+    reply?: { readonly code: string | null; readonly error: string | null };
+  };
+}
+
 export class ProductionProactive {
   readonly #options: ProductionProactiveOptions;
   readonly #registry: ProactiveSourceRegistry<ProactiveSource>;
@@ -206,7 +223,7 @@ export class ProductionProactive {
   readonly #mail: ProactiveMailCheckService;
   #inbox: MailInboxPort | undefined;
   readonly #prereview: ReviewPrereviewService | undefined;
-  readonly #states = new Map<string, { readonly owner: string; readonly expiresAt: number }>();
+  readonly #states = new Map<string, PendingAuthorization>();
   #timer: ReturnType<typeof setInterval> | undefined;
   #running: Promise<void> | undefined;
 
@@ -402,17 +419,46 @@ export class ProductionProactive {
   }
 
   beginAuthorization(owner: string): string {
-    const now = Date.parse(this.#options.clock.now());
-    for (const [state, entry] of this.#states)
-      if (entry.expiresAt <= now) this.#states.delete(state);
-    while (this.#states.size >= MAX_PENDING_STATES) {
-      const oldest = this.#states.keys().next().value;
-      if (oldest === undefined) break;
-      this.#states.delete(oldest);
-    }
-    const state = randomBytes(24).toString("base64url");
-    this.#states.set(state, { owner, expiresAt: now + STATE_TTL_MS });
-    return this.#options.oauth.authorizationUrl(state);
+    return this.#issueState({ owner });
+  }
+
+  beginAppAuthorization(input: {
+    readonly deviceId: string;
+    readonly callbackScheme: string;
+  }): ProactiveAppAuthorizationStart {
+    return {
+      kind: "browser",
+      authorizationUrl: this.#issueState({
+        owner: input.deviceId,
+        app: { callbackScheme: input.callbackScheme },
+      }),
+    };
+  }
+
+  appCallback(input: {
+    readonly state: string | null;
+    readonly code: string | null;
+    readonly error: string | null;
+  }): string | undefined {
+    const pending = input.state ? this.#states.get(input.state) : undefined;
+    if (!input.state || !pending?.app) return undefined;
+    if (pending.app.reply === undefined && pending.expiresAt > this.#now())
+      pending.app.reply = { code: input.code, error: input.error };
+    return `${pending.app.callbackScheme}://${PROACTIVE_APP_CALLBACK_HOST}?${new URLSearchParams({ state: input.state })}`;
+  }
+
+  async completeAppAuthorization(input: {
+    readonly deviceId: string;
+    readonly state: string;
+  }): Promise<ProactiveAuthorizationOutcome> {
+    const pending = this.#states.get(input.state);
+    if (!pending?.app || pending.owner !== input.deviceId) return "failed";
+    this.#states.delete(input.state);
+    const reply = pending.app.reply;
+    if (!reply || pending.expiresAt <= this.#now()) return "failed";
+    if (reply.error) return reply.error === "access_denied" ? "denied" : "failed";
+    if (!reply.code) return "failed";
+    return this.#connect(reply.code);
   }
 
   async completeAuthorization(input: {
@@ -422,18 +468,37 @@ export class ProductionProactive {
     readonly error: string | null;
   }): Promise<ProactiveAuthorizationOutcome> {
     const pending = input.state ? this.#states.get(input.state) : undefined;
+    if (pending?.app) return "failed";
     if (input.state) this.#states.delete(input.state);
-    if (
-      !pending ||
-      pending.owner !== input.owner ||
-      pending.expiresAt <= Date.parse(this.#options.clock.now())
-    )
+    if (!pending || pending.owner !== input.owner || pending.expiresAt <= this.#now())
       return "failed";
     if (input.error) return input.error === "access_denied" ? "denied" : "failed";
     if (!input.code) return "failed";
+    return this.#connect(input.code);
+  }
+
+  #now(): number {
+    return Date.parse(this.#options.clock.now());
+  }
+
+  #issueState(pending: Omit<PendingAuthorization, "expiresAt">): string {
+    const now = this.#now();
+    for (const [state, entry] of this.#states)
+      if (entry.expiresAt <= now) this.#states.delete(state);
+    while (this.#states.size >= MAX_PENDING_STATES) {
+      const oldest = this.#states.keys().next().value;
+      if (oldest === undefined) break;
+      this.#states.delete(oldest);
+    }
+    const state = randomBytes(24).toString("base64url");
+    this.#states.set(state, { ...pending, expiresAt: now + STATE_TTL_MS });
+    return this.#options.oauth.authorizationUrl(state);
+  }
+
+  async #connect(code: string): Promise<ProactiveAuthorizationOutcome> {
     const { scope, store, seal, oauth } = this.#options;
     try {
-      const granted = await oauth.exchange(input.code);
+      const granted = await oauth.exchange(code);
       const account = await this.#options.readAccount(granted.accessToken);
       const now = this.#options.clock.now();
       const existing = await store.readConnection({ ...scope, source: GMAIL_SOURCE.name });
@@ -463,6 +528,27 @@ export class ProductionProactive {
       this.#options.onFailure(error);
       return "failed";
     }
+  }
+
+  async connection(): Promise<{
+    readonly name: string;
+    readonly title: string;
+    readonly status: "disconnected" | "connected" | "needs_reconnect";
+    readonly account: string | null;
+    readonly connectedAt: string | null;
+  }> {
+    const { scope, store, seal } = this.#options;
+    const connection = await store.readConnection({ ...scope, source: GMAIL_SOURCE.name });
+    const account = connection
+      ? ((await seal.open({ ...scope, ref: connection.accountRef })) ?? null)
+      : null;
+    return {
+      name: GMAIL_SOURCE.name,
+      title: GMAIL_CONNECTION_TITLE,
+      status: connection?.status ?? "disconnected",
+      account,
+      connectedAt: connection?.connectedAt ?? null,
+    };
   }
 
   async overview(): Promise<ProactiveOverview> {

@@ -1607,6 +1607,29 @@ describe("每人一台电脑的配置", () => {
     expect(() => parseProductConfiguration(withComputers(value), AT)).toThrow();
   });
 
+  it("读出浏览器的限额，没有电脑时拒绝", () => {
+    const browser = { maxOutputBytes: 8_388_608, maxTextChars: 20_000, responseReserveMs: 5_000 };
+    const raw = withComputers({ socketPath: "/run/computers.sock" });
+    (raw["runPolicy"] as Record<string, unknown>)["browser"] = browser;
+    expect(parseProductConfiguration(raw, AT).runPolicy?.browser).toEqual(browser);
+    delete (raw["runPolicy"] as Record<string, unknown>)["userComputers"];
+    expect(() => parseProductConfiguration(raw, AT)).toThrow(
+      expect.objectContaining({
+        details: expect.objectContaining({ field: "configuration.runPolicy.browser" }),
+      }),
+    );
+  });
+
+  it.each([
+    ["多出字段", { maxOutputBytes: 8192, maxTextChars: 1000, responseReserveMs: 0, extra: 1 }],
+    ["缺字段", { maxOutputBytes: 8192, maxTextChars: 1000 }],
+    ["输出上限太小", { maxOutputBytes: 1, maxTextChars: 1000, responseReserveMs: 0 }],
+  ])("浏览器配置拒绝：%s", (_name, browser) => {
+    const raw = withComputers({ socketPath: "/run/computers.sock" });
+    (raw["runPolicy"] as Record<string, unknown>)["browser"] = browser;
+    expect(() => parseProductConfiguration(raw, AT)).toThrow();
+  });
+
   it("工具在电脑里跑时不能开改原目录的 move_directory 和 save_copy", () => {
     for (const tool of ["move_directory", "save_copy"]) {
       const raw = withComputers({ socketPath: "/run/computers.sock" }, ["read", "bash", tool]);

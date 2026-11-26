@@ -6,7 +6,7 @@ supersedes: "https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941
 superseded_by: ""
 date: "2026-11-26"
 covers: "apps/agent-service/src/production-run-policy.ts, packages/runtime-pi/src/pi-runtime-adapter.ts, packages/runtime-pi/src/runtime-environment-block.ts, packages/runtime-pi/src/pi-builtin-tool-text.ts, packages/prompt-catalog/prompt-manifest.json, apps/agent-service/src/cache-hit-monitor.ts"
-verified_at: "7d0ffcd52cbb69d4941871cf9bf08d93f3843da8"
+verified_at: "7c8521fe5f55e7dd57c5bd52badd16eef647502e"
 ---
 
 # ADR 0303：发给模型的内容怎样组织

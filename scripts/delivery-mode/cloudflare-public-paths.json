@@ -8,7 +8,9 @@
     "/.well-known/oauth-protected-resource",
     "/.well-known/oauth-authorization-server",
     "/api/mcp-auth/v1",
-    "/api/mcp/v1"
+    "/api/mcp/v1",
+    "/api/connections/v1/callback",
+    "/api/proactive/v1/google/callback"
   ],
   "retireApplications": []
 }

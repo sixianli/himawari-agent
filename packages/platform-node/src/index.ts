@@ -1,3 +1,4 @@
+export * from "./app-connections.js";
 export * from "./apple-push-sender.js";
 export * from "./authenticated-uds-transport.js";
 export * from "./bounded-jwks-fetcher.js";

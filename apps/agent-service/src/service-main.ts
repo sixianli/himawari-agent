@@ -61,6 +61,7 @@ import {
   sqliteLibraryVersion,
 } from "@himawari-agent/persistence-sqlite";
 import {
+  APP_CONNECTION_CLIENT_SECRET_PURPOSE,
   APPLE_PUSH_SECRET_PURPOSE,
   assertProductionSecretSource,
   createApplePushSender,
@@ -84,6 +85,7 @@ import {
   MacOsKeychainSecretSource,
   NodeVaultCrypto,
   PayloadUdsServer,
+  ProductionAppConnections,
   parseServiceArguments,
   portErrorSite,
   RuntimeHealthModel,
@@ -141,6 +143,7 @@ import {
 } from "./production-http-composition.js";
 import { InboxRunRegistry } from "./production-inbox-delivery.js";
 import { expandConfigurationWithMagpieModels, priceTiers } from "./production-magpie-models.js";
+import { ProductionAppTools } from "./production-app-tools.js";
 import { ProductionMailRead } from "./production-mail-read.js";
 import { ProductionMcpMemoryWriter } from "./production-mcp-memory-writer.js";
 import { MCP_READ_PATH, ProductionMcpRead } from "./production-mcp-read.js";
@@ -219,6 +222,7 @@ import {
 } from "./production-run-memory.js";
 import { configuredWorkspaceRoot, createProductionRunPolicy } from "./production-run-policy.js";
 import { recordInCurrentRun } from "./production-run-timing.js";
+import { createConfiguredBrowserTools } from "./production-browser-tools.js";
 import { ProductionRuntimeTools } from "./production-runtime-tools.js";
 import {
   createProductionSandboxServices,
@@ -759,6 +763,7 @@ export async function startTenantRuntime(
   let applePush: ProductionApplePush | undefined;
   let applePushSender: ReturnType<typeof createApplePushSender> | undefined;
   let proactive: ProductionProactive | undefined;
+  let appConnections: ProductionAppConnections | undefined;
   let memoryClassifier: ProductionMemoryClassifier | undefined;
   let memoryImportDuplicates: ReturnType<typeof productionImportDuplicateChecker>;
   let mcpRead: ProductionMcpRead | undefined;
@@ -1967,7 +1972,22 @@ export async function startTenantRuntime(
             code: stableErrorCode(error),
           }),
       });
+      const browser = createConfiguredBrowserTools(configuration, {
+        now: () => Date.parse(clock.now()),
+        acceptsImages: async (modelRef) => {
+          const models = modelComposition?.composition.piModels;
+          if (!models || modelRef.length === 0) return false;
+          return (await models.resolve(modelRef)).model.input.includes("image");
+        },
+        readLocale: async () =>
+          (
+            await requireValue(repository)
+              .ownerPreferences()
+              .read({ ownerId: configuration.ownerId, agentId: configuration.agentId })
+          ).locale,
+      });
       const tools = new ProductionRuntimeTools({
+        ...(browser ? { browser } : {}),
         steering,
         memoryRecall,
         tellOwner,
@@ -1983,6 +2003,14 @@ export async function startTenantRuntime(
         ownerScope,
         externalContent,
         perception: perceptionTools,
+        apps: new ProductionAppTools({
+          connections: {
+            list: async () => (await appConnections?.list()) ?? [],
+            definition: (name) => appConnections?.definition(name),
+            tools: async (name) => appConnections?.tools(name),
+            call: async (name, tool, input) => appConnections?.call(name, tool, input),
+          },
+        }),
         vault: new ProductionVaultTools({
           scope: perceptionScope,
           list: (scope) => activeVault.listForModel(scope),
@@ -2306,6 +2334,40 @@ export async function startTenantRuntime(
               ids,
             })
           : undefined;
+      const appConnectionConfigurations = configuration.runPolicy?.appConnections ?? [];
+      if (appConnectionConfigurations.length > 0 && protector) {
+        const definitions = [];
+        for (const entry of appConnectionConfigurations) {
+          const secret = configuration.secretReferences.find(
+            ({ ref, purpose }) =>
+              ref === entry.clientSecretRef && purpose === APP_CONNECTION_CLIENT_SECRET_PURPOSE,
+          );
+          if (!secret) continue;
+          definitions.push({
+            name: entry.name,
+            title: entry.title,
+            serverUrl: entry.serverUrl,
+            clientId: entry.clientId,
+            clientSecret: await hostModelSources(configuration).provider.resolve(
+              secret.ref,
+              secret.version,
+            ),
+            trustsReadOnlyLabels: entry.trustsReadOnlyLabels,
+          });
+        }
+        appConnections = new ProductionAppConnections({
+          scope: { ownerId: configuration.ownerId, agentId: configuration.agentId },
+          store: repository.appConnections(),
+          seal: createProactiveSeal({
+            payloads: repository.payloadStore(configuration.ownerId, configuration.agentId),
+            protector,
+            ids,
+          }),
+          definitions,
+          publicOrigin: configuration.publicOrigin,
+          now: () => clock.now(),
+        });
+      }
       memoryImportDuplicates = productionImportDuplicateChecker(
         configuration,
         hostModelSources(configuration).provider,
@@ -3478,6 +3540,7 @@ export async function startTenantRuntime(
           settled: async (ids) => (await webPush?.settled(ids)) ?? [],
         },
         ...(proactive ? { proactive } : {}),
+        ...(appConnections ? { appConnections } : {}),
         threadDeletionDiagnostic: (event: Record<string, string>) =>
           writeServiceDiagnostic(errorOutput, { component: "agent-service", ...event }),
         messageOptions,
