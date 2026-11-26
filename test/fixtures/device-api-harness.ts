@@ -10,6 +10,7 @@ import {
   DEFAULT_HOME_FEED,
   DEFAULT_VOICE_GATES,
   DEVICE_CONFIGURATION_DEFAULTS,
+  type ExecutionLiveFeed,
   type DeviceActionAuthorizationPort,
   type DeviceActionOpenRequestPort,
   type DeviceActionRecord,
@@ -85,6 +86,7 @@ import { ContextExternalContent } from "../../apps/agent-service/src/context-ext
 import { createProductionApprovalGateway } from "../../apps/agent-service/src/production-approval-gateway.ts";
 import { createProductionDeviceActions } from "../../apps/agent-service/src/production-device-actions.ts";
 import { ProductionHomeControl } from "../../apps/agent-service/src/production-home.ts";
+import { ProductionMainThread } from "../../apps/agent-service/src/production-main-thread.ts";
 import {
   ProductionHttpPayloadAdmission,
   ProductionThreadGatewayAccessPolicy,
@@ -247,6 +249,9 @@ export async function harness(
       readonly repository: SqliteProductStateRepository;
       readonly protector: EnvelopePayloadProtector;
     }) => NonNullable<Parameters<typeof buildHttpGatewayServer>[0]["files"]>;
+    readonly clock?: ManualClock;
+    readonly live?: ExecutionLiveFeed;
+    readonly mainThread?: boolean;
     readonly exportArchive?: NonNullable<
       Parameters<typeof buildHttpGatewayServer>[0]["devices"]
     >["exportArchive"];
@@ -286,7 +291,7 @@ export async function harness(
       authorityLease.fencingToken,
     );
   database.close();
-  const clock = new ManualClock("2026-11-12T00:00:00.000Z");
+  const clock = options.clock ?? new ManualClock("2026-11-12T00:00:00.000Z");
   const now = () => new Date(clock.now());
   const repository = await SqliteProductStateRepository.open({
     stateRoot,
@@ -389,6 +394,20 @@ export async function harness(
         }),
         clock,
         waitForEvents: async () => new Promise((resolve) => setTimeout(resolve, 20)),
+        ...(options.live ? { live: options.live } : {}),
+        ...(options.mainThread
+          ? {
+              mainThread: new ProductionMainThread({
+                ownerId,
+                agentId,
+                threads,
+                commands,
+                payloads: repository.payloadStore(ownerId, agentId),
+                protector,
+                clock,
+              }),
+            }
+          : {}),
       });
       return { controlPlane: adapter, reads: adapter };
     })(),

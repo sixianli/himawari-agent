@@ -40,6 +40,40 @@ jobs:
           -configuration Debug
           -destination 'generic/platform=iOS Simulator'
           CODE_SIGNING_ALLOWED=NO
+  iphone-e2e:
+    name: apple/iphone-e2e
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft != true }}
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: 只改了文档时跳过
+        id: scope
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: node scripts/ci/ios-e2e-scope.mjs "$BASE" "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        if: ${{ steps.scope.outputs.run == 'true' }}
+        with:
+          node-version: 22.22.3
+      - name: 安装测试后端的依赖
+        if: ${{ steps.scope.outputs.run == 'true' }}
+        run: npm ci --no-audit --no-fund
+      - name: 起真后端，在模拟器上跑端到端测试
+        if: ${{ steps.scope.outputs.run == 'true' }}
+        run: clients/apple/scripts/e2e.sh
+      - name: 保存测试结果包和后端日志
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: iphone-e2e
+          path: |
+            ${{ runner.temp }}/ios-e2e/EndToEnd.xcresult
+            ${{ runner.temp }}/ios-e2e/*.log
+          retention-days: 7
   iphone-accessibility:
     name: apple/iphone-accessibility ${{ matrix.shard }}
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft != true }}
@@ -77,7 +111,7 @@ jobs:
           -scheme Himawari
           -configuration Debug
           -destination "id=${{ steps.simulator.outputs.udid }}"
-          -only-testing:HimawariUITests
+          -only-testing:HimawariUITests/AccessibilityAuditTests
           CODE_SIGNING_ALLOWED=NO
           -resultBundlePath accessibility-audit.xcresult
           | tee accessibility-audit.log
