@@ -189,6 +189,10 @@ enum M {
     static var pauseMemoryDetail: String {
         text("她照常回答，但不记新的", ja: "返事はいつもどおり。新しいことは覚えません", en: "She still answers, but won't remember anything new")
     }
+    static var listenAlways: String { text("一直听着", ja: "ずっと聞く", en: "Keep listening") }
+    static var listenAlwaysDetail: String {
+        text("开着时 Himawari 听周围的话，叫名字就应。锁屏和灵动岛一直有标记", ja: "オンの間、Himawari は周りの声を聞き、名前を呼ぶと応えます。ロック画面と Dynamic Island に常に表示されます", en: "While on, Himawari listens around you and answers when you say its name. It always shows on the Lock Screen and Dynamic Island")
+    }
     static var voiceprint: String { text("我的声纹", ja: "自分の声紋", en: "My voiceprint") }
     static var voiceprintDetail: String {
         text("只用来认出是你在说话", ja: "あなたの声だと聞き分けるためだけに使います", en: "Only used to tell that it's you speaking")

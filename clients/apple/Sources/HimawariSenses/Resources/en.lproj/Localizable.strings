@@ -176,3 +176,6 @@
 "demo.dinner" = "Dinner with family";
 "demo.clipboard" = "Meet at Osaka Station exit 3";
 "demo.heard" = "Send me the plan by next Wednesday";
+"detail.notOn.systemDenied" = "Not turned on: Himawari isn't allowed to use %@ in iPhone Settings.";
+"detail.notOn.unsupported" = "Not turned on: your Himawari server doesn't support %@ yet. Update the server and try again.";
+"detail.notOn.off" = "Not turned on: the server didn't enable %@. Try again in a moment.";

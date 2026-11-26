@@ -86,3 +86,14 @@
 "live.work.working" = "在办";
 "live.work.waiting" = "等你回答";
 "live.work.finished" = "办完了";
+"live.stopped" = "已停止";
+"enroll.preparing" = "正在准备声纹识别…";
+"enroll.tooShort" = "这句没听全，请再完整读一遍";
+"enroll.failed.title" = "没录成";
+"enroll.failed.microphone" = "打不开麦克风。请在“设置 > Himawari”里允许使用麦克风，再重试。";
+"enroll.failed.speech" = "这台 iPhone 现在用不了语音识别，请稍后重试。";
+"enroll.failed.model" = "声纹识别没准备好。第一次要联网下载，请连上网络后重试。";
+"enroll.failed.interrupted" = "录到一半被打断了（比如来了电话），请重试。";
+"enroll.failed.save" = "声纹没存下来，请重试。";
+"enroll.retry" = "重试";
+"enroll.openSettings" = "打开设置";

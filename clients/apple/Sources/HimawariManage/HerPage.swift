@@ -5,7 +5,9 @@ import SwiftUI
 @MainActor
 public protocol HerListening: AnyObject, Sendable {
     var hasVoiceprint: Bool { get }
+    var isListening: Bool { get }
     func deleteVoiceprint()
+    func stop()
 }
 
 public enum HerVaultCount: Equatable, Sendable {
@@ -41,6 +43,7 @@ public struct HerPage: View {
     private let listening: (any HerListening)?
     private let actions: DeviceActionsModel?
     private let openListening: () -> Void
+    private let openVoiceprint: () -> Void
     private let senses: AnyView?
     private let perceptionDeletion: ((@escaping () -> Void) -> AnyView)?
     private let sensesOn: () -> Int?
@@ -58,6 +61,7 @@ public struct HerPage: View {
         listening: (any HerListening)? = nil,
         actions: DeviceActionsModel? = nil,
         openListening: @escaping () -> Void = {},
+        openVoiceprint: @escaping () -> Void = {},
         senses: AnyView? = nil,
         perceptionDeletion: ((@escaping () -> Void) -> AnyView)? = nil,
         sensesOn: @escaping () -> Int? = { nil },
@@ -77,6 +81,7 @@ public struct HerPage: View {
         self.listening = listening
         self.actions = actions
         self.openListening = openListening
+        self.openVoiceprint = openVoiceprint
         self.senses = senses
         self.perceptionDeletion = perceptionDeletion
         self.sensesOn = sensesOn
@@ -109,6 +114,7 @@ public struct HerPage: View {
         self.listening = listening
         self.actions = actions
         openListening = {}
+        openVoiceprint = {}
         self.senses = senses
         perceptionDeletion = senses.map { shown in { _ in shown } }
         sensesOn = { 4 }
@@ -209,6 +215,7 @@ public struct HerPage: View {
                         memory: memory,
                         listening: listening,
                         openListening: openListening,
+                        openVoiceprint: openVoiceprint,
                         openSenses: senses == nil ? nil : { sensesOpen = true },
                         openDeletion: perceptionDeletion == nil ? nil : { deletionOpen = true },
                         sensesSummary: sensesOn().map(M.sensesOn)
@@ -262,6 +269,7 @@ public struct HerPage: View {
         async let memoryLoaded: Void = memory.load()
         async let quietLoaded: Void = quietHours.load()
         async let timersLoaded: Void = timers.load()
+        await actions?.refreshPermissions()
         vaultCount = await countVault()
         _ = await (settingsLoaded, memoryLoaded, quietLoaded, timersLoaded)
     }
@@ -326,6 +334,7 @@ struct PrivacyPage: View {
     let memory: MemoryStore
     let listening: (any HerListening)?
     let openListening: () -> Void
+    let openVoiceprint: () -> Void
     let openSenses: (() -> Void)?
     var openDeletion: (() -> Void)? = nil
     var sensesSummary: String? = nil
@@ -365,8 +374,16 @@ struct PrivacyPage: View {
             }
             if let listening {
                 SettingsGroup(label: nil) {
+                    SettingsRow(
+                        icon: nil,
+                        title: M.listenAlways,
+                        detail: M.listenAlwaysDetail,
+                        switchState: Binding(get: { listening.isListening }, set: { on in
+                            if on { openListening() } else { listening.stop() }
+                        })
+                    )
                     Button {
-                        if listening.hasVoiceprint { forgetVoiceprint = true } else { openListening() }
+                        if listening.hasVoiceprint { forgetVoiceprint = true } else { openVoiceprint() }
                     } label: {
                         SettingsRow(
                             icon: nil,

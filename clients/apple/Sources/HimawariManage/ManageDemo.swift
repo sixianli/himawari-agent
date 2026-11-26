@@ -112,7 +112,9 @@ public struct ManageDemoView: View {
 @MainActor
 final class DemoListening: HerListening {
     let hasVoiceprint = true
+    let isListening = false
     func deleteVoiceprint() {}
+    func stop() {}
 }
 
 extension TimersStore {

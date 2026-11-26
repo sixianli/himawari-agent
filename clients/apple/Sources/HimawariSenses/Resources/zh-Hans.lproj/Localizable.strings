@@ -176,3 +176,6 @@
 "demo.dinner" = "和家人吃晚饭";
 "demo.clipboard" = "大阪站 3 号出口见";
 "demo.heard" = "下周三前把方案发给我";
+"detail.notOn.systemDenied" = "没打开：iPhone 的“设置”里没允许 Himawari 使用%@。";
+"detail.notOn.unsupported" = "没打开：你的 Himawari 服务器还不支持%@，更新服务器后再试。";
+"detail.notOn.off" = "没打开：服务器没有开启%@，过一会儿再试。";

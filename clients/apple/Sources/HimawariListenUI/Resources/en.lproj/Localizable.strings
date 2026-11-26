@@ -86,3 +86,14 @@
 "live.work.working" = "Working on it";
 "live.work.waiting" = "Waiting for you";
 "live.work.finished" = "Done";
+"live.stopped" = "Stopped";
+"enroll.preparing" = "Getting voice recognition ready…";
+"enroll.tooShort" = "That didn't come through. Please read the whole sentence again.";
+"enroll.failed.title" = "Couldn't record";
+"enroll.failed.microphone" = "The microphone isn't available. Allow microphone access in Settings > Himawari, then try again.";
+"enroll.failed.speech" = "Speech recognition isn't available on this iPhone right now. Try again later.";
+"enroll.failed.model" = "Voice recognition isn't ready. The first time it needs to download, so connect to the internet and try again.";
+"enroll.failed.interrupted" = "Recording was interrupted (for example by a call). Try again.";
+"enroll.failed.save" = "Your voiceprint couldn't be saved. Try again.";
+"enroll.retry" = "Try again";
+"enroll.openSettings" = "Open Settings";

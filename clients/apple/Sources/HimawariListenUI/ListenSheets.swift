@@ -130,13 +130,25 @@ public struct EnrollmentProgress: Sendable, Equatable {
     public let total: Int
     public let prompt: String
     public let levels: [Double]
+    public let tooShort: Bool
 
-    public init(index: Int, total: Int, prompt: String, levels: [Double]) {
+    public init(index: Int, total: Int, prompt: String, levels: [Double], tooShort: Bool = false) {
         self.index = index
         self.total = total
         self.prompt = prompt
         self.levels = levels
+        self.tooShort = tooShort
     }
+}
+
+public enum EnrollmentFailure: String, Sendable, Equatable, CaseIterable {
+    case microphone
+    case speech
+    case model
+    case interrupted
+    case save
+
+    public var message: String { L.text("enroll.failed.\(rawValue)") }
 }
 
 public struct VoiceprintEnrollView: View {
@@ -167,9 +179,9 @@ public struct VoiceprintEnrollView: View {
             .padding(.top, 14)
             VoiceLevels(levels: progress.levels, color: .hmSunBright)
                 .frame(height: 56)
-            Text(L.text("enroll.hint"))
-                .font(.system(size: 15))
-                .foregroundStyle(Color.hmMuted)
+            Text(L.text(progress.tooShort ? "enroll.tooShort" : "enroll.hint"))
+                .font(.subheadline)
+                .foregroundStyle(progress.tooShort ? Color.hmText : Color.hmMuted)
                 .multilineTextAlignment(.center)
             ListenFactCard {
                 ListenFactRow(icon: .shieldLock, label: L.text("enroll.purpose.label"), value: L.text("enroll.purpose.value"))
@@ -178,6 +190,66 @@ public struct VoiceprintEnrollView: View {
             }
             Spacer(minLength: 0)
             ListenLink(title: L.text("enroll.later"), action: onLater)
+        }
+        .padding(EdgeInsets(top: 16, leading: 16, bottom: 40, trailing: 16))
+        .background(Color.hmBackground)
+    }
+}
+
+public struct VoiceprintEnrollStatusView: View {
+    public enum Status: Equatable {
+        case preparing
+        case failed(EnrollmentFailure)
+    }
+
+    private let status: Status
+    private let onClose: () -> Void
+    private let onRetry: () -> Void
+    private let onOpenSettings: () -> Void
+
+    public init(status: Status, onClose: @escaping () -> Void, onRetry: @escaping () -> Void, onOpenSettings: @escaping () -> Void) {
+        self.status = status
+        self.onClose = onClose
+        self.onRetry = onRetry
+        self.onOpenSettings = onOpenSettings
+    }
+
+    public var body: some View {
+        VStack(spacing: 22) {
+            ListenSheetHeader(title: L.text("enroll.title"), leading: .x, leadingLabel: L.text("close"), action: onClose)
+            Spacer(minLength: 0)
+            switch status {
+            case .preparing:
+                ProgressView()
+                    .controlSize(.large)
+                Text(L.text("enroll.preparing"))
+                    .font(.body)
+                    .foregroundStyle(Color.hmMuted)
+                    .multilineTextAlignment(.center)
+            case let .failed(failure):
+                Icon(.alertCircle, size: DesignTokens.Size.minTapTarget)
+                    .foregroundStyle(Color.hmSun)
+                    .accessibilityHidden(true)
+                Text(L.text("enroll.failed.title"))
+                    .font(.title2.weight(.semibold))
+                    .foregroundStyle(Color.hmText)
+                Text(failure.message)
+                    .font(.body)
+                    .foregroundStyle(Color.hmMuted)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 12)
+            }
+            Spacer(minLength: 0)
+            if case let .failed(failure) = status {
+                VStack(spacing: 6) {
+                    Button(L.text("enroll.retry"), action: onRetry)
+                        .buttonStyle(CapsuleButtonStyle(.primary, height: DesignTokens.Size.pillBig))
+                    if failure == .microphone {
+                        ListenLink(title: L.text("enroll.openSettings"), action: onOpenSettings)
+                    }
+                }
+            }
         }
         .padding(EdgeInsets(top: 16, leading: 16, bottom: 40, trailing: 16))
         .background(Color.hmBackground)

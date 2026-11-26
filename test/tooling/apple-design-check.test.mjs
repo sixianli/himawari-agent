@@ -48,6 +48,19 @@ it("rejects scattered size numbers in page code", () => {
   }
 });
 
+it("rejects locking page content to one screen height, which stops long pages from scrolling", () => {
+  for (const line of [
+    ".containerRelativeFrame(.vertical, alignment: .top)",
+    ".containerRelativeFrame([.horizontal, .vertical])",
+  ]) {
+    expect(findViolations(line, "X.swift").map((v) => v.code)).toEqual(["screen-height-lock"]);
+  }
+  expect(findViolations(".containerRelativeFrame(.horizontal)", "X.swift")).toEqual([]);
+  expect(findViolations(".frame(maxWidth: .infinity, alignment: .topLeading)", "X.swift")).toEqual(
+    [],
+  );
+});
+
 it("rejects direct calls to the system haptics in page code", () => {
   for (const line of [
     "UIImpactFeedbackGenerator(style: .light).impactOccurred()",

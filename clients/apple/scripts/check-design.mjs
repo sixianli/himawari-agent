@@ -99,6 +99,10 @@ const RULES = [
     pattern: /\.font\(\s*\.system\(\s*size:/u,
   },
   {
+    code: "screen-height-lock",
+    pattern: /\.containerRelativeFrame\(\s*(?:\.vertical|\[[^\]]*\.vertical)/u,
+  },
+  {
     code: "number-literal",
     pattern:
       /\b(?:size|cornerRadius|width|height|minWidth|minHeight|maxWidth|maxHeight|idealWidth|idealHeight|lineSpacing|fontSize|radius)\s*:\s*-?\d|\.(?:lineSpacing|cornerRadius|opacity|kerning|tracking)\(\s*-?\d/u,

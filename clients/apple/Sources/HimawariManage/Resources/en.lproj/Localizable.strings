@@ -28,8 +28,7 @@
 "result.waiting" = "Needs your OK";
 "result.other" = "This version of the app can't show this result";
 "result.other.update" = "You'll see it after updating the app";
-"abilities.title" = "What it can do for you";
-"abilities.system" = "Allowed in the system";
+"abilities.title" = "What Himawari can do for you";
 "permission.status.authorized" = "Allowed";
 "permission.status.notDetermined" = "Not asked yet";
 "permission.status.denied" = "Not allowed";
@@ -55,3 +54,4 @@
 "allowance.locked.ownerPresence" = "Things that need you there are always just once";
 "allowance.locked.asksEveryTime" = "She asks every time for this kind of thing, so it's just once";
 "allowance.notSaved" = "This one is approved, but how long it lasts wasn't saved, so she'll ask again next time";
+"abilities.systemAccess" = "System access";
