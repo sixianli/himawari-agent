@@ -78,16 +78,9 @@ node clients/apple/scripts/make-signature-fixture.mjs clients/apple/Tests/Himawa
 <a id="icons"></a>
 ## 图标
 
-图标用 Tabler Icons（一套开源线条图标，MIT 许可证）的 outline 款，不用苹果自带的 SF Symbols。代码里只写名字，例如 `Icon(.message)`；颜色跟着文字色走。用到哪些图标、每个的线宽，写在 `scripts/icons.json`：常规的 1.6，返回、关闭、加号、小箭头 2.2。
+图标一律是线条，大多数用苹果自带的 SF Symbols，Andy 2026-11-26 圈中的几个用 Tabler 线条款（规则见设计规范第 54 条）。代码里只写名字，例如 `Icon(.message)`；`Sources/HimawariDesign/Icon.swift` 的 `IconName.symbol` 写着每个名字对应的 SF Symbol，`IconName.tabler` 列出改用 Tabler 的那几个（图片用 `node scripts/make-icons.mjs <@tabler/icons 包目录> Sources/HimawariDesign/Resources` 按 `scripts/icons.json` 生成），`IconName.weight` 写着哪几个（小箭头、发送、关闭）用半粗。颜色跟着文字色走。图标大小跟着动态字体放大，最多放到 xxxLarge，免得撑破固定大小的圆钮。
 
-要加图标：先在 `scripts/icons.json` 里加一行，再在 `Sources/HimawariDesign/Icon.swift` 的 `IconName` 里加同名的一项，然后重新生成：
-
-```bash
-mkdir -p /tmp/tabler && cd /tmp/tabler && npm pack @tabler/icons@3.35.0 && tar xzf tabler-icons-3.35.0.tgz && cd -
-node clients/apple/scripts/make-icons.mjs /tmp/tabler/package clients/apple/Sources/HimawariDesign/Resources
-```
-
-脚本把每个 SVG 改好线宽后放进 `Icons.xcassets`（Xcode 的图片资源目录），按模板图片处理；许可证原文和版本号放进 `Licenses/`，以后的致谢页（第 11 批设置页）用 `ThirdPartyLicense.all` 读出来显示，第 2 批还没有界面用它。
+要加图标：在 `IconName` 里加一项，并在 `symbol` 里写上它的 SF Symbol 名字（编译器会要求每一项都写）。服务端发来的过程行图标名（`activityIcon`）不变，名字认不出时用 `puzzlepiece`。
 
 [返回目录](#apple-clients)
 

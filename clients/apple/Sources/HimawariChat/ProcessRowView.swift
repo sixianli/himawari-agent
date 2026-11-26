@@ -66,7 +66,7 @@ public struct ProcessRowView: View {
         case let .finished(steps, seconds):
             summary(icon: .check, text: L.format("process.didThings", steps.count), steps: steps, seconds: seconds)
         case let .stopped(steps, seconds):
-            summary(icon: .playerStop, text: L.text("process.stopped"), steps: steps, seconds: seconds)
+            summary(icon: .stop, text: L.text("process.stopped"), steps: steps, seconds: seconds)
         case let .failed(steps, seconds):
             summary(icon: .alertCircle, text: L.text("process.failed"), steps: steps, seconds: seconds)
         }

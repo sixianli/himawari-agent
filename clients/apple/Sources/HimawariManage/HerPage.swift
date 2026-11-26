@@ -126,14 +126,14 @@ public struct HerPage: View {
                     if let actions, actions.waitingCount > 0 {
                         SettingsGroup(label: nil) {
                             Button { path.append(.approvals) } label: {
-                                HerRow(icon: .handStop, title: M.approvalsWaiting(actions.waitingCount), last: true)
+                                HerRow(icon: .hourglass, title: M.approvalsWaiting(actions.waitingCount), last: true)
                             }
                             .buttonStyle(.pressable)
                         }
                     }
                     SettingsGroup(label: nil) {
                         Button { path.append(.memory) } label: {
-                            HerRow(icon: .affiliate, title: M.herMemory, subtitle: memory.summary(categoryLabel: M.category).map(M.memorySummary), last: true)
+                            HerRow(icon: .brain, title: M.herMemory, subtitle: memory.summary(categoryLabel: M.category).map(M.memorySummary), last: true)
                         }
                         .buttonStyle(.pressable)
                     }
@@ -163,7 +163,7 @@ public struct HerPage: View {
                             .buttonStyle(.pressable)
                         }
                         Button { path.append(.privacy) } label: {
-                            HerRow(icon: .eye, title: M.privacy)
+                            HerRow(icon: .handStop, title: M.privacy)
                         }
                         .buttonStyle(.pressable)
                         Button { path.append(.devices) } label: {
@@ -286,14 +286,14 @@ struct HerRow: View {
     var value: String? = nil
     var chevron = true
     var last = false
+    @ScaledMetric(relativeTo: .body) private var symbolWidth = DesignTokens.Her.rowSymbolWidth
 
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: SL.rowGap) {
-                Icon(icon, size: DesignTokens.Her.rowIcon)
+                Icon(icon, size: DesignTokens.Her.rowSymbolWidth)
                     .foregroundStyle(Color.hmGlyph)
-                    .frame(width: DesignTokens.Her.rowTile, height: DesignTokens.Her.rowTile)
-                    .background(Color.hmTile, in: RoundedRectangle(cornerRadius: DesignTokens.Her.rowTileRadius, style: .continuous))
+                    .frame(width: symbolWidth)
                 VStack(alignment: .leading, spacing: DesignTokens.Her.rowSubtitleGap) {
                     Text(title).hmType(SL.rowValue).foregroundStyle(Color.hmText)
                     if let subtitle {

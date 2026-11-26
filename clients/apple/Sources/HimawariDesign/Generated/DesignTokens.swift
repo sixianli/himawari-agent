@@ -387,10 +387,8 @@ public enum DesignTokens {
         public static let pagePaddingHorizontal: CGFloat = 16
         public static let pagePaddingBottom: CGFloat = 40
         public static let pillPaddingX: CGFloat = 24
-        public static let rowIcon: CGFloat = 19
-        public static let rowIconStroke: CGFloat = 1.7
         public static let rowSubtitleGap: CGFloat = 2
-        public static let rowTile: CGFloat = 34
+        public static let rowSymbolWidth: CGFloat = 28
         public static let rowTileRadius: CGFloat = 10
     }
 
