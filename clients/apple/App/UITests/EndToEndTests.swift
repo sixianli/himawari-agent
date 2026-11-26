@@ -152,11 +152,12 @@ final class EndToEndTests: XCTestCase {
             XCTAssertTrue(pushed, "tapping the right side of \"\(row)\" on her page did nothing")
             guard pushed else { continue }
             attachScreenshot("her page / \(row)", app: app)
-            if app.navigationBars.buttons.firstMatch.exists {
+            if title.exists {
+                app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.12))
+                    .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.95)))
+            } else {
                 app.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.5))
                     .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)))
-            } else {
-                app.swipeDown(velocity: .fast)
             }
             XCTAssertTrue(
                 app.waitFor(5) { title.exists && title.isHittable },

@@ -192,12 +192,20 @@ export function lastOwnerText(context: unknown): string {
     .messages;
   const owner = [...(messages ?? [])].reverse().find((message) => message.role === "user");
   const content = owner?.content;
-  if (typeof content === "string") return content;
-  if (Array.isArray(content))
-    return content
-      .map((part) => (part && typeof part === "object" && "text" in part ? String(part.text) : ""))
-      .join("");
-  return "";
+  const text =
+    typeof content === "string"
+      ? content
+      : Array.isArray(content)
+        ? content
+            .map((part) =>
+              part && typeof part === "object" && "text" in part ? String(part.text) : "",
+            )
+            .join("")
+        : "";
+  const spoken = [...text.matchAll(/<owner-message[^>]*>\n?([\s\S]*?)\n?<\/owner-message>/gu)].at(
+    -1,
+  );
+  return spoken?.[1] ?? text;
 }
 
 class SwitchableFront {

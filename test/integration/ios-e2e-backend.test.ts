@@ -156,7 +156,7 @@ describe("iPhone end-to-end backend", () => {
       }),
     ]);
     const joined = pieces.map((piece) => piece.text).join("");
-    expect(joined.startsWith(ANSWER_OPENING)).toBe(true);
+    expect(joined.startsWith(`${ANSWER_OPENING}“你好”。`)).toBe(true);
     expect(pieces.length).toBeGreaterThan(5);
     expect((pieces.at(-1)?.at ?? 0) - (pieces[0]?.at ?? 0)).toBeGreaterThan(1000);
     const listed = JSON.parse((await call(`${backend.controlOrigin}/messages`)).text) as {
