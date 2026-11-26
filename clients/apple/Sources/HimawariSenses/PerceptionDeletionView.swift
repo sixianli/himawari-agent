@@ -17,7 +17,7 @@ public struct PerceptionDeletionView: View {
 
     public var body: some View {
         NavigationStack(path: $path) {
-            SenseSheet(title: L.text("delete.title"), back: close) {
+            SenseSheet(title: L.text("delete.title"), closes: true, back: close) {
                 VStack(spacing: DesignTokens.Senses.listGap) {
                     Picker(L.text("delete.title"), selection: $model.segment) {
                         ForEach(PerceptionDeletionSegment.allCases, id: \.self) { segment in

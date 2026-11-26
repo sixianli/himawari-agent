@@ -48,4 +48,17 @@ import Testing
         let present = try #require(view.range(of: "confirmingStartOver = true"))
         #expect(assign.lowerBound < present.lowerBound, "the warning is not set before the dialog is presented")
     }
+
+    @Test func pairingReadsBothPublicKeysBeforeTheServerCanPairTheDevice() throws {
+        for file in ["Sources/HimawariShell/AppModel.swift", "Sources/HimawariWatchUI/WatchModel.swift"] {
+            let model = try source(file)
+            let submit = try #require(model.range(of: "private func submit(_ text: String)"))
+            let body = model[submit.upperBound...]
+            let pair = try #require(body.range(of: "try await api.pair("))
+            for read in ["let devicePublicKey = try deviceKey.publicKeySPKI()", "let confirmPublicKey = try confirmKey.publicKeySPKI()"] {
+                let found = try #require(body.range(of: read), "\(file) does not read \(read)")
+                #expect(found.lowerBound < pair.lowerBound, "\(file) reads a key after the server may have paired")
+            }
+        }
+    }
 }

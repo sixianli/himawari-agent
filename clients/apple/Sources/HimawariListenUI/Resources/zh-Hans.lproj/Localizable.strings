@@ -75,3 +75,14 @@
 "demo.request" = "明天上午帮我约田中，";
 "demo.requestTail" = "十点左右";
 "demo.askHeard" = "帮我约田中";
+"live.talk.title" = "和她说话";
+"live.talk.listening" = "在听";
+"live.talk.speaking" = "在说";
+"live.talk.muted" = "静音了";
+"live.talk.mute" = "静音";
+"live.talk.unmute" = "打开麦克风";
+"live.talk.end" = "结束";
+"live.work.step" = "第 %d/%d 步";
+"live.work.working" = "在办";
+"live.work.waiting" = "等你回答";
+"live.work.finished" = "办完了";

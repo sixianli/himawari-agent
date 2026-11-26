@@ -8,6 +8,13 @@ public struct MemoryRootView: View {
         case rules
     }
 
+    enum SearchState: Equatable {
+        case idle
+        case searching
+        case found([MemorySearchHit])
+        case failed
+    }
+
     enum Opening: Equatable {
         case memory(String)
         case edit(String)
@@ -25,6 +32,7 @@ public struct MemoryRootView: View {
     @State private var selectedRule: RuleSummary?
     @State private var trashOpen = false
     @State private var query = ""
+    @State private var search = SearchState.idle
     private let talk: (String) -> Void
     private let opening: Opening?
 
@@ -45,11 +53,11 @@ public struct MemoryRootView: View {
     public var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                if TextSearch.terms(query).isEmpty {
+                if Self.trimmed(query).isEmpty {
                     MemorySegment(selection: $tab)
                     content
                 } else {
-                    MemorySearchResults(store: store, query: query, openMemory: { selected = $0 }, openRule: { selectedRule = $0 })
+                    MemorySearchList(store: store, query: Self.trimmed(query), state: search, openMemory: { selected = $0 }, openRule: { selectedRule = $0 })
                 }
             }
             .padding(.horizontal, DesignTokens.Size.pagePaddingX)
@@ -65,6 +73,7 @@ public struct MemoryRootView: View {
         .navigationBarTitleDisplayMode(.large)
         #endif
         .searchable(text: $query, prompt: Text(M.searchPrompt))
+        .task(id: Self.trimmed(query)) { await runSearch(Self.trimmed(query)) }
         .task {
             await store.load()
             open(opening)
@@ -132,6 +141,28 @@ public struct MemoryRootView: View {
         }
     }
 
+    static func trimmed(_ query: String) -> String {
+        query.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func runSearch(_ text: String) async {
+        guard !text.isEmpty else {
+            search = .idle
+            return
+        }
+        if case .found = search {} else { search = .searching }
+        try? await Task.sleep(for: .milliseconds(300))
+        guard !Task.isCancelled else { return }
+        do {
+            let hits = try await store.search(text)
+            guard !Task.isCancelled else { return }
+            search = .found(hits)
+        } catch {
+            guard !Task.isCancelled else { return }
+            search = .failed
+        }
+    }
+
     private func open(_ opening: Opening?) {
         let memories = store.overview?.memories ?? []
         switch opening {
@@ -191,42 +222,41 @@ struct MemorySegment: View {
     }
 }
 
-struct MemorySearchResults: View {
+struct MemorySearchList: View {
     let store: MemoryStore
     let query: String
+    let state: MemoryRootView.SearchState
     let openMemory: (MemoryItem) -> Void
     let openRule: (RuleSummary) -> Void
 
     var body: some View {
-        let memories = store.groups(categoryLabel: M.category).flatMap(\.items).filter { TextSearch.matches($0.text, query: query) }
-        let rules = store.rules.filter { TextSearch.matches($0.summary, query: query) }
-        if memories.isEmpty && rules.isEmpty {
-            EmptyStateView(Text(M.noSearchResults(query.trimmingCharacters(in: .whitespaces)))).frame(minHeight: DesignTokens.Size.emptyMinHeight)
-        } else {
-            VStack(alignment: .leading, spacing: 24) {
-                if !memories.isEmpty {
-                    GroupedSection(Text(M.remembered)) {
-                        ForEach(Array(memories.enumerated()), id: \.element.id) { index, item in
-                            Button { openMemory(item) } label: {
-                                MemoryRow(text: item.text, detail: nil)
-                            }
-                            .buttonStyle(.pressable)
-                            if index < memories.count - 1 { RowSeparator() }
-                        }
-                    }
-                }
-                if !rules.isEmpty {
-                    GroupedSection(Text(M.rules)) {
-                        ForEach(Array(rules.enumerated()), id: \.element.id) { index, rule in
-                            Button { openRule(rule) } label: {
-                                MemoryRow(text: rule.summary, detail: nil)
-                            }
-                            .buttonStyle(.pressable)
-                            if index < rules.count - 1 { RowSeparator() }
-                        }
-                    }
+        switch state {
+        case .idle, .searching:
+            ProgressView().frame(maxWidth: .infinity, minHeight: DesignTokens.Size.emptyMinHeight)
+        case .failed:
+            EmptyStateView(Text(M.searchFailed)).frame(minHeight: DesignTokens.Size.emptyMinHeight)
+        case .found(let hits) where hits.isEmpty:
+            EmptyStateView(Text(M.noSearchResults(query))).frame(minHeight: DesignTokens.Size.emptyMinHeight)
+        case .found(let hits):
+            GroupedSection {
+                ForEach(Array(hits.enumerated()), id: \.element.id) { index, hit in
+                    row(hit)
+                    if index < hits.count - 1 { RowSeparator() }
                 }
             }
+        }
+    }
+
+    @ViewBuilder private func row(_ hit: MemorySearchHit) -> some View {
+        let detail = hit.isRule ? M.rules : M.category(hit.category)
+        if hit.isRule, let rule = store.rule(hit.ruleId) {
+            Button { openRule(rule) } label: { MemoryRow(text: hit.text, detail: detail) }
+                .buttonStyle(.pressable)
+        } else if let item = store.memory(hit.memoryId) {
+            Button { openMemory(item) } label: { MemoryRow(text: hit.text, detail: detail) }
+                .buttonStyle(.pressable)
+        } else {
+            MemoryRow(text: hit.text, detail: detail)
         }
     }
 }
