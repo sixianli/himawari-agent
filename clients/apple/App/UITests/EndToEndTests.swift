@@ -41,7 +41,7 @@ final class EndToEndTests: XCTestCase {
                 }
                 partial = partial ?? shown
             }
-            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+            try await Task.sleep(for: .milliseconds(100))
         }
         XCTAssertTrue(finished, "the answer to \"\(text)\" never finished on screen")
         XCTAssertNotNil(partial, "the answer only appeared once it was complete: the phone did not show it while it was streaming")
@@ -61,7 +61,7 @@ final class EndToEndTests: XCTestCase {
         )
         let sent = try await waitForStored(text)
         XCTAssertEqual(sent, 1, "the server stored \"\(text)\" \(sent) times after a double tap on send")
-        RunLoop.current.run(until: Date().addingTimeInterval(2))
+        try await Task.sleep(for: .seconds(2))
         let bubbles = app.staticTexts.matching(NSPredicate(format: "label == %@", text)).count
         XCTAssertEqual(bubbles, 1, "the chat shows \"\(text)\" \(bubbles) times after a double tap on send")
     }
@@ -138,7 +138,7 @@ final class EndToEndTests: XCTestCase {
         app.buttons[herPage].firstMatch.tap()
         let title = app.navigationBars[herPage]
         XCTAssertTrue(title.waitForExistence(timeout: 10), "her page did not open")
-        RunLoop.current.run(until: Date().addingTimeInterval(2))
+        try await Task.sleep(for: .seconds(2))
         let rows = app.scrollViews.firstMatch.buttons.allElementsBoundByIndex
             .filter { $0.isHittable }
             .map(\.label)
