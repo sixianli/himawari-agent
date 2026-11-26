@@ -190,7 +190,7 @@ public struct HerSectionView: View {
                 back: openChat
             )
         case .about:
-            AboutPage(server: workspace.server, back: openChat)
+            AboutPage(server: workspace.server, openTiming: { path.append(.talkTiming) }, back: openChat)
         }
     }
 
@@ -201,6 +201,8 @@ public struct HerSectionView: View {
             TimerDetailPage(store: workspace.timers, timerId: id) { path.removeLast() }
         case .device(let id):
             DevicePage(store: workspace.settings, deviceId: id, actions: actions, removedThisDevice: removedThisDevice) { path.removeLast() }
+        case .talkTiming:
+            TalkTimingPage(load: { [api = workspace.api] in try await api.voiceTimings() })
         default:
             EmptyView()
         }
