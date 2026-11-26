@@ -33,13 +33,14 @@ git -C "$checkout" cat-file -e "$commit^{commit}" 2>/dev/null || refuse COMMIT_U
 git -C "$checkout" merge-base --is-ancestor "$commit" origin/main || refuse COMMIT_NOT_ON_MAIN "$commit is not on main of $repo_url" 65
 [[ -z "$since" ]] || git -C "$checkout" cat-file -e "$since^{commit}" 2>/dev/null || refuse SINCE_UNKNOWN "$since" 65
 git -C "$checkout" checkout --quiet --force --detach "$commit" || refuse CHECKOUT_FAILED "$commit" 70
-git -C "$checkout" clean -qfdx -e production/
+git -C "$checkout" clean -qfdx -e production/ -e node_modules/ -e .ci-output/
 
 build_account="${HIMAWARI_DEPLOY_BUILD_ACCOUNT:-himawari-build}"
 tools="${HIMAWARI_DEPLOY_TOOLS:-$(getent passwd "$build_account" | cut -d: -f6)/packet-builder/tools}"
 [[ -x "$tools/bin/node" ]] || refuse TOOLS_MISSING "no node under $tools/bin; run scripts/install/prepare-host-tools.sh first" 70
 mkdir -p "$base/evidence"
-(cd "$checkout" && PATH="$tools/bin:/usr/sbin:/usr/bin:/sbin:/bin" bash scripts/delivery-mode/hermes/install-dependencies-if-changed.sh "$checkout" "$tools" "$base/evidence/dependencies-$commit") || refuse DEPENDENCIES_FAILED "see $base/evidence/dependencies-$commit.log" 70
+evidence="$base/evidence/dependencies-$commit-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+(cd "$checkout" && PATH="$tools/bin:/usr/sbin:/usr/bin:/sbin:/bin" bash scripts/delivery-mode/hermes/install-dependencies-if-changed.sh "$checkout" "$tools" "$evidence") || refuse DEPENDENCIES_FAILED "see $evidence.log" 70
 
 export PATH="$here/shim:$tools/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 export HIMAWARI_PACKET_HOST="${HIMAWARI_DEPLOY_LOCAL_HOST:-127.0.0.1}"
