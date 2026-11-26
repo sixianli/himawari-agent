@@ -210,6 +210,7 @@ public struct HandoverSheet: View {
                     .hmType(DesignTokens.TypeScale.caption)
                     .foregroundStyle(Color.hmMuted)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, DesignTokens.Handover.noteInset)
             }
             footer

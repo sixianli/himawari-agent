@@ -165,30 +165,36 @@ public struct VoiceprintEnrollView: View {
     public var body: some View {
         VStack(spacing: 22) {
             ListenSheetHeader(title: L.text("enroll.title"), leading: .x, leadingLabel: L.text("close"), action: onClose)
-            VStack(spacing: 8) {
-                Text(L.format("enroll.progress", progress.index + 1, progress.total))
-                    .font(.rounded(15, weight: .semibold))
-                    .foregroundStyle(Color.hmMuted)
-                Text(progress.prompt)
-                    .font(.system(.title, weight: .semibold))
-                    .lineSpacing(26 * 0.5 - 8)
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(Color.hmText)
-                    .padding(.horizontal, 12)
+            ScrollView {
+                VStack(spacing: 22) {
+                    VStack(spacing: 8) {
+                        Text(L.format("enroll.progress", progress.index + 1, progress.total))
+                            .font(.rounded(15, weight: .semibold))
+                            .foregroundStyle(Color.hmMuted)
+                        Text(progress.prompt)
+                            .font(.system(.title, weight: .semibold))
+                            .lineSpacing(26 * 0.5 - 8)
+                            .multilineTextAlignment(.center)
+                            .foregroundStyle(Color.hmText)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.horizontal, 12)
+                    }
+                    .padding(.top, 14)
+                    VoiceLevels(levels: progress.levels, color: .hmSunBright)
+                        .frame(height: 56)
+                    Text(L.text(progress.tooShort ? "enroll.tooShort" : "enroll.hint"))
+                        .font(.subheadline)
+                        .foregroundStyle(progress.tooShort ? Color.hmText : Color.hmMuted)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                    ListenFactCard {
+                        ListenFactRow(icon: .shieldLock, label: L.text("enroll.purpose.label"), value: L.text("enroll.purpose.value"))
+                        ListenFactRow(icon: .deviceMobile, label: L.text("enroll.where.label"), value: L.text("enroll.where.value"))
+                        ListenFactRow(icon: .trash, label: L.text("enroll.delete.label"), value: L.text("enroll.delete.value"))
+                    }
+                }
             }
-            .padding(.top, 14)
-            VoiceLevels(levels: progress.levels, color: .hmSunBright)
-                .frame(height: 56)
-            Text(L.text(progress.tooShort ? "enroll.tooShort" : "enroll.hint"))
-                .font(.subheadline)
-                .foregroundStyle(progress.tooShort ? Color.hmText : Color.hmMuted)
-                .multilineTextAlignment(.center)
-            ListenFactCard {
-                ListenFactRow(icon: .shieldLock, label: L.text("enroll.purpose.label"), value: L.text("enroll.purpose.value"))
-                ListenFactRow(icon: .deviceMobile, label: L.text("enroll.where.label"), value: L.text("enroll.where.value"))
-                ListenFactRow(icon: .trash, label: L.text("enroll.delete.label"), value: L.text("enroll.delete.value"))
-            }
-            Spacer(minLength: 0)
+            .scrollBounceBehavior(.basedOnSize)
             ListenLink(title: L.text("enroll.later"), action: onLater)
         }
         .padding(EdgeInsets(top: 16, leading: 16, bottom: 40, trailing: 16))
