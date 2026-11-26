@@ -442,9 +442,48 @@ BROWSER_TARGET_KEYS = {'maxOutputBytes', 'maxTextChars', 'responseReserveMs'}
 COMPUTERS_SETTINGS = REPO / 'scripts/operations/computers/settings.json'
 
 
-def run_policy_target(target):
+APP_CONNECTION_TARGET_KEYS = {'name', 'title', 'serverUrl', 'clientId', 'clientSecret', 'trustsReadOnlyLabels'}
+APP_CONNECTION_SECRET_PURPOSE = 'app-connection-client'
+APP_CONNECTION_SECRET_SCOPE = 'agent'
+
+
+def app_connections_target(target):
     if target is None:
-        return '{}'
+        return None, []
+    reference = re.compile(r'[A-Za-z0-9][A-Za-z0-9._-]{0,127}')
+    if not isinstance(target, list) or not target or len(target) > 32:
+        refuse('PACKET_APP_CONNECTIONS_TARGET_INVALID', target)
+    connections, secrets, names = [], [], set()
+    for entry in target:
+        if not isinstance(entry, dict) or set(entry) != APP_CONNECTION_TARGET_KEYS:
+            refuse('PACKET_APP_CONNECTIONS_TARGET_INVALID', entry)
+        secret = entry['clientSecret']
+        valid = (
+            isinstance(entry['name'], str) and re.fullmatch(r'[a-z][a-z0-9_]{0,63}', entry['name']) and entry['name'] not in names
+            and isinstance(entry['title'], str) and 0 < len(entry['title']) <= 64
+            and isinstance(entry['serverUrl'], str) and re.fullmatch(r'https://[A-Za-z0-9.-]+(:[0-9]+)?(/[A-Za-z0-9._~/-]*)?', entry['serverUrl'])
+            and isinstance(entry['clientId'], str) and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,255}', entry['clientId'])
+            and type(entry['trustsReadOnlyLabels']) is bool
+            and isinstance(secret, dict) and set(secret) == {'ref', 'version'}
+            and all(isinstance(secret[key], str) and reference.fullmatch(secret[key]) for key in ('ref', 'version'))
+            and secret['ref'] not in {known['ref'] for known in secrets}
+        )
+        if not valid:
+            refuse('PACKET_APP_CONNECTIONS_TARGET_INVALID', entry)
+        names.add(entry['name'])
+        connections.append({'name': entry['name'], 'title': entry['title'], 'serverUrl': entry['serverUrl'], 'clientId': entry['clientId'], 'clientSecretRef': secret['ref'], 'trustsReadOnlyLabels': entry['trustsReadOnlyLabels']})
+        secrets.append({'ref': secret['ref'], 'version': secret['version'], 'purpose': APP_CONNECTION_SECRET_PURPOSE, 'scope': APP_CONNECTION_SECRET_SCOPE})
+    return connections, secrets
+
+
+def secret_references_target(app_connections):
+    return json.dumps(app_connections_target(app_connections)[1], separators=(',', ':'), ensure_ascii=False)
+
+
+def run_policy_target(target, app_connections=None):
+    connections = app_connections_target(app_connections)[0]
+    if target is None:
+        return '{}' if connections is None else json.dumps({'appConnections': connections}, separators=(',', ':'), ensure_ascii=False)
     if not isinstance(target, dict) or set(target) != {'browser'}:
         refuse('PACKET_COMPUTERS_TARGET_INVALID', target)
     browser = target['browser']
@@ -454,6 +493,8 @@ def run_policy_target(target):
     if not isinstance(socket_path, str) or not socket_path.startswith('/'):
         refuse('PACKET_COMPUTERS_SOCKET_INVALID', socket_path)
     additions = {'userComputers': {'socketPath': socket_path}, 'browser': {key: browser[key] for key in ('maxOutputBytes', 'maxTextChars', 'responseReserveMs')}}
+    if connections is not None:
+        additions['appConnections'] = connections
     return json.dumps(additions, separators=(',', ':'), ensure_ascii=False)
 
 
@@ -534,7 +575,8 @@ def base_parameters(instance, commit, date, discovered):
         'TARGET_PUBLIC_FETCH_BYTES': targets['publicFetchMaximumBytes'],
         'TARGET_EMBEDDING_JSON': embedding_target(targets.get('embedding')),
         'TARGET_SPEECH_JSON': speech_target(targets.get('speech')),
-        'TARGET_RUN_POLICY_JSON': run_policy_target(targets.get('computers')),
+        'TARGET_RUN_POLICY_JSON': run_policy_target(targets.get('computers'), targets.get('appConnections')),
+        'TARGET_SECRET_REFERENCES_JSON': secret_references_target(targets.get('appConnections')),
         'STARTUP_READY_BUDGET_MS': startup_ready_budget(instance, git('show', commit + ':' + WORKER_SERVICE_MAIN)),
         'STARTUP_PHASE_BASELINE_MS': startup_phase_baseline(instance),
     }

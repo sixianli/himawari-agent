@@ -471,7 +471,7 @@ class TemplateTest(RenderedPacket):
     UPGRADE_SWITCH_SHA256 = {
     'systemd/S2-stop-and-inspect.py': 'c466dde3068064600fb817631b3fa282eac1cc47539a11635953f0518b5e4fee',
     'systemd/S7-startup-readback.mjs': '0d258810e6a4809a742b2bca8a9734353cce0114fbee4de8f2a554c78bb022fc',
-    'systemd/S7-switch-start-readback.py': '7aaf77278298cee5413cc49a07251297d461479beac01d9588ac77e5568f1f93',
+    'systemd/S7-switch-start-readback.py': 'b154d5b181215b884e3011797f7d3127c101a3c9db415d242ff46ee037c1fdc9',
     'install/S9-clean-transport.py': '235a7d2882edaa304097746315a4be7f5c5f467fea83cd1522a43a1e3b223533',    }
 
     def render_first_tools(self):
@@ -822,6 +822,44 @@ class DerivedExpectationsTest(RenderedPacket):
         ):
             with self.subTest(candidate=candidate), self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_COMPUTERS_TARGET_INVALID'):
                 packet_maker.run_policy_target(candidate)
+
+    APP_CONNECTIONS_TARGET = [{'name': 'github', 'title': 'GitHub', 'serverUrl': 'https://api.githubcopilot.com/mcp/', 'clientId': 'Iv23fixture', 'clientSecret': {'ref': 'github-app-client', 'version': 'v1'}, 'trustsReadOnlyLabels': True}]
+    APP_CONNECTION_SECRET = {'ref': 'github-app-client', 'version': 'v1', 'purpose': 'app-connection-client', 'scope': 'agent'}
+
+    def test_an_app_connections_target_adds_the_connection_and_its_secret_reference_only(self):
+        additions = json.loads(packet_maker.run_policy_target(self.COMPUTERS_TARGET, self.APP_CONNECTIONS_TARGET))
+        self.assertEqual(additions['appConnections'], [{'name': 'github', 'title': 'GitHub', 'serverUrl': 'https://api.githubcopilot.com/mcp/', 'clientId': 'Iv23fixture', 'clientSecretRef': 'github-app-client', 'trustsReadOnlyLabels': True}])
+        self.assertEqual(set(additions), {'userComputers', 'browser', 'appConnections'})
+        self.assertEqual(json.loads(packet_maker.run_policy_target(None, self.APP_CONNECTIONS_TARGET)), {'appConnections': additions['appConnections']})
+        self.assertEqual(json.loads(packet_maker.secret_references_target(self.APP_CONNECTIONS_TARGET)), [self.APP_CONNECTION_SECRET])
+        self.assertEqual(packet_maker.secret_references_target(None), '[]')
+        packet = self.render(
+            TARGET_RUN_POLICY_JSON=packet_maker.run_policy_target(None, self.APP_CONNECTIONS_TARGET),
+            TARGET_SECRET_REFERENCES_JSON=packet_maker.secret_references_target(self.APP_CONNECTIONS_TARGET),
+        )
+        model_secret = {'ref': 'vercel-gateway', 'version': 'v1', 'purpose': 'model-gateway', 'scope': 'deployment:one'}
+        original = {**production_config(TWELFTH['OLD_PREFIX'], TWELFTH['ORIGINAL_PUBLIC_FETCH_BYTES'], TWELFTH['ORIGINAL_CONTEXT_WINDOW'], TWELFTH['ORIGINAL_MAX_TOKENS']), 'secretReferences': [model_secret]}
+        switched = static_root_configuration(packet)(copy.deepcopy(original))
+        self.assertEqual(switched['runPolicy']['appConnections'], additions['appConnections'])
+        self.assertEqual(switched['secretReferences'], [*original['secretReferences'], self.APP_CONNECTION_SECRET])
+        self.assertEqual({key: value for key, value in switched['runPolicy'].items() if key not in ('appConnections', 'publicFetch')}, {key: value for key, value in original['runPolicy'].items() if key != 'publicFetch'})
+        redeployed = static_root_configuration(packet)({**copy.deepcopy(original), 'secretReferences': [{**self.APP_CONNECTION_SECRET, 'version': 'v0'}, model_secret]})
+        self.assertEqual(redeployed['secretReferences'], [model_secret, self.APP_CONNECTION_SECRET])
+        fixtures = subprocess.run([sys.executable, '-I', str(packet / 'systemd' / 'verify-switch-config-fixtures.py'), shutil.which('node')], capture_output=True, text=True, check=False)
+        self.assertEqual(fixtures.returncode, 0, fixtures.stdout + fixtures.stderr)
+        unchanged = static_root_configuration(self.render())(copy.deepcopy(original))
+        self.assertNotIn('appConnections', unchanged['runPolicy'])
+        self.assertEqual(unchanged['secretReferences'], original['secretReferences'])
+
+    def test_an_app_connections_target_outside_the_supported_shape_is_refused(self):
+        valid = self.APP_CONNECTIONS_TARGET[0]
+        for candidate in (
+            [], {}, 'github', [valid, valid], [{**valid, 'name': 'GitHub'}], [{**valid, 'serverUrl': 'http://api.githubcopilot.com/mcp/'}],
+            [{**valid, 'clientId': 'has space'}], [{**valid, 'clientSecret': 'plain-secret-value'}], [{**valid, 'clientSecret': {'ref': '../x', 'version': 'v1'}}],
+            [{**valid, 'trustsReadOnlyLabels': 'yes'}], [{**valid, 'extra': 1}], [{key: value for key, value in valid.items() if key != 'title'}],
+        ):
+            with self.subTest(candidate=candidate), self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_APP_CONNECTIONS_TARGET_INVALID'):
+                packet_maker.run_policy_target(None, candidate)
 
     def test_a_speech_target_outside_the_supported_shape_is_refused(self):
         self.assertEqual(packet_maker.speech_target(None), 'null')

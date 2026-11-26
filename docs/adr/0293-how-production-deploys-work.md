@@ -49,6 +49,7 @@ ADR 0099 整份作废：它是给 2026-11-25 退租的那台 x86 云服务器（
 - 冻结紧挨着上线：离上线时间长了，用 `make-packet.py freeze` 重新冻结。上线前检查对比生产机现在的配置、服务单元和授权轮次是否和冻结时一样，不一样就在停服前停下（`PREFLIGHT_REFREEZE`）。
 - 每人一个实例以后只需多写一个实例文件。
 - 实例文件的 `configTargets.computers`（浏览器的三个上限）让生成器在配置切换时给 `runPolicy` 加上 `userComputers`（套接字路径取自 `scripts/operations/computers/settings.json`）和 `browser`，S7 切换脚本和维护脚本按同样顺序算出新配置；回退还原原配置时这两项一起去掉。
+- 实例文件的 `configTargets.appConnections`（每项：应用名、显示名、MCP 网址、客户端编号、客户端密钥的引用和版本、`trustsReadOnlyLabels`）让生成器在配置切换时写入 `runPolicy.appConnections`，并在顶层 `secretReferences` 里放一条用途为 `app-connection-client` 的引用（同名引用先去掉再加，重复上线结果不变）；密钥文件本身由 Andy 事先放在 `<stateRoot>/secrets/<引用>.<版本>`，生成器不碰它（见 [ADR 0311](0311-connecting-apps-through-remote-mcp.md#connect)）。
 
 <a id="platform"></a>
 
