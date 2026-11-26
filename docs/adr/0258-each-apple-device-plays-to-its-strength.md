@@ -7,7 +7,7 @@ superseded_by: ""
 amends: "docs/adr/0229-native-apple-clients-and-device-api.md, docs/adr/0230-perception-records-and-memories-inferred-from-perception.md, docs/adr/0247-apple-clients-are-fully-native-with-a-capability-table.md"
 date: "2026-11-12"
 covers: "apps/control-center/src/app/control-center-inventory.ts, packages/gateway-contracts/src/client-capabilities.ts"
-verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
+verified_at: "7c8521fe5f55e7dd57c5bd52badd16eef647502e"
 implementation: in_progress
 ---
 

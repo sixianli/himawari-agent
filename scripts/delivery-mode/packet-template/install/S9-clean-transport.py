@@ -23,7 +23,7 @@ CONFIG = Path('/etc/himawari/config.json')
 UNIT = Path('/etc/systemd/system/himawari-prod.service')
 REBUILDABLE_DIRECTORIES = ('validation/source', 'validation/python', 'validation/ui-verified')
 BULK_DIRECTORIES = REBUILDABLE_DIRECTORIES + ('acceptance/runtime-tools', 'acceptance/question-12-downloads')
-ARCHIVE_NAMES = {'__PKT_BUNDLE_NAME__', 'candidate.tar.gz', 'python-3.12.10.tar.gz', 'node-modules.tar.gz', '__PKT_ARTIFACT_NAME__'}
+ARCHIVE_NAMES = {'__PKT_BUNDLE_NAME__', 'candidate.tar.gz', '__PKT_PYTHON_ARCHIVE_NAME__', 'node-modules.tar.gz', '__PKT_ARTIFACT_NAME__'}
 RETAINED_EXTENSIONS = {'.json', '.jsonl', '.log', '.stdout', '.stderr', '.txt', '.csv', '.md', '.patch', '.diff'}
 
 

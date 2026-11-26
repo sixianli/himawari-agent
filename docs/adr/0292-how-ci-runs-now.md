@@ -6,7 +6,7 @@ supersedes: "https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941
 superseded_by: ""
 date: "2026-11-26"
 covers: ".github/workflows/ci.yml, .github/workflows/main.yml, .github/workflows/merge-queue.yml, .github/workflows/apple.yml, ci/policy.json, scripts/ci/check-policy.mjs, scripts/ci/run.mjs, scripts/ci/test-scope.mjs, scripts/ci/aggregate.mjs, scripts/ci/required.mjs, scripts/ci/gate-log.mjs, scripts/ci/ci-summary.mjs, scripts/ci/main-evidence.mjs, scripts/ci/merge-queue.mjs, scripts/ci/prepare-hosted.sh, scripts/ci/apple-scope.mjs"
-verified_at: "7d0ffcd52cbb69d4941871cf9bf08d93f3843da8"
+verified_at: "7c8521fe5f55e7dd57c5bd52badd16eef647502e"
 ---
 
 # ADR 0292：CI 的现行做法

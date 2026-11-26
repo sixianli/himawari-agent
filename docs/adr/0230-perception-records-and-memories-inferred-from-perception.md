@@ -8,7 +8,7 @@ amended_by: "docs/adr/0285-one-main-thread-subthreads-and-one-inbox.md"
 amends: "https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0179-keep-low-confidence-memory-candidates-as-tentative.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0106-proactive-loop-v1-gmail-read-only.md"
 date: "2026-11-11"
 covers: "apps/agent-service/src/production-memory-capture.ts, packages/application/src/ports/proactive-checks.ts, packages/gateway-contracts/src/contracts.ts, packages/persistence-sqlite/src/data-export/schemas.ts, packages/persistence-sqlite/src/migrations/0062_proactive_checks.sql, packages/persistence-sqlite/src/sqlite-governed-deletion.ts, packages/persistence-sqlite/src/sqlite-proactive-operations.ts"
-verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
+verified_at: "7c8521fe5f55e7dd57c5bd52badd16eef647502e"
 ---
 
 # ADR 0230：设备感知到的东西存成感知记录，不拼进对话；主人亲口说的才能直接成为记忆和提醒

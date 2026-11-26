@@ -10,48 +10,6 @@ const HISTORICAL = [
   "scripts/delivery-mode/packet-template/acceptance/cloud/basis-04/",
   "scripts/delivery-mode/packet-template/acceptance/cloud/probe-source/",
 ];
-const RELEASE_FROZEN = new Map([
-  [
-    "scripts/operations/hermes-e2e-fixes-start.mjs",
-    "18a8d1732b2cdd834f84ff9f8ffe65b85b8f42d79a3811c5738c15a05ba0130e",
-  ],
-  [
-    "scripts/operations/hermes-harness-start.mjs",
-    "a56fe8ebf309874f839811b933161ef5495dc15552d8df586ef45878df7df46a",
-  ],
-  [
-    "scripts/operations/hermes-loop-finalization-start.mjs",
-    "03c18c0cd4f6ae519a1288037883e53515c8fa89027070b52f5386a477eee1bf",
-  ],
-  [
-    "scripts/operations/hermes-loop-identity-start.mjs",
-    "4e058cb50e18be3a55508b40615b8b9c1b7b86aa3d1255b9983dcc651c9b41f0",
-  ],
-  [
-    "scripts/operations/hermes-native-history-start.mjs",
-    "83e47097278c592e837585c3283371fb617a362e949a6172421a79d37f91aa41",
-  ],
-  [
-    "scripts/operations/hermes-protected-start.mjs",
-    "03cf3ea57209293a3045d8d553d34431a9d046937ec7de9544e74e4b5e4eec88",
-  ],
-  [
-    "scripts/operations/hermes-search-time-start.mjs",
-    "32abd1350081c14e6a9937dc293aa9a0359c81646743f534d8b2e3f59581c817",
-  ],
-  [
-    "scripts/operations/hermes-source-links-start.mjs",
-    "bb2df0c1ec1b2d990eb3db00b74440c24e1982eb7e477a5a674dfaad309ee467",
-  ],
-  [
-    "scripts/operations/hermes-three-fixes-start.mjs",
-    "363fcfdc19699b2c51b2b08986bd8ba1313c813a9310df69506d55e5bd7d2808",
-  ],
-  [
-    "scripts/operations/hermes-ui-session-start.mjs",
-    "417c60f4f2a95710c645e5b0db07ce05b1dd7b6b1e2bcafcbf7d87fc29d990a7",
-  ],
-]);
 const VERSION = String.raw`(?<version>\d+\.\d+\.\d+)`;
 const PATTERNS = [
   new RegExp(String.raw`\bsrt:${VERSION}`, "g"),
@@ -114,16 +72,7 @@ export function srtVersionProblems(root) {
   const files = execFileSync("git", ["ls-files", "-z"], { cwd: root, encoding: "utf8" })
     .split("\0")
     .filter((file) => file && file !== "package-lock.json")
-    .filter((file) => !HISTORICAL.some((prefix) => file.startsWith(prefix)))
-    .filter((file) => !RELEASE_FROZEN.has(file));
-  for (const [file, pinned] of RELEASE_FROZEN) {
-    const absolute = path.join(root, file);
-    if (
-      existsSync(absolute) &&
-      createHash("sha256").update(readFileSync(absolute)).digest("hex") !== pinned
-    )
-      problems.push(`SRT_FROZEN_RELEASE_CHANGED ${file}`);
-  }
+    .filter((file) => !HISTORICAL.some((prefix) => file.startsWith(prefix)));
   const stale = new Set();
   for (const file of files) {
     const absolute = path.join(root, file);
