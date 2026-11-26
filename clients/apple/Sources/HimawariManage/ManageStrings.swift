@@ -363,4 +363,32 @@ enum M {
         }
         return "\(shortDate(date)) \(time)"
     }
+    static var gmailTitle: String { "Gmail" }
+    static var gmailConnectTitle: String { text("连接 Gmail，让 Himawari 帮你盯收件箱", ja: "Gmail を接続して受信箱を見てもらう", en: "Connect Gmail so Himawari keeps an eye on your inbox") }
+    static var gmailConnectBody: String {
+        text(
+            "只读。每 15 分钟看一次新邮件，要你处理的事和快到期的事由她告诉你；只有要紧又快到期的才推送。",
+            ja: "読み取りのみ。15 分ごとに新着メールを読み、対応が必要なことや期限が近いことを伝えます。急ぎで期限が近いものだけ通知します。",
+            en: "Read-only. Every 15 minutes she reads new mail and tells you what needs you and what is due soon. Only urgent things due soon are pushed."
+        )
+    }
+    static var gmailNotConnected: String { text("没连接", ja: "未接続", en: "Not connected") }
+    static var gmailConnect: String { text("连接 Gmail", ja: "Gmail を接続", en: "Connect Gmail") }
+    static var gmailReconnect: String { text("重新连接", ja: "再接続", en: "Reconnect") }
+    static func gmailConnectedOn(_ date: Date) -> String {
+        text("连接于 \(pairedDay(date))", ja: "\(pairedDay(date))に接続", en: "Connected \(pairedDay(date))")
+    }
+    static var gmailLastRead: String { text("上次看邮件", ja: "最後にメールを確認", en: "Last checked mail") }
+    static var gmailExpired: String { text("Google 授权失效，Gmail 读不了", ja: "Google の許可が切れ、Gmail を読めません", en: "Google access expired, so Gmail can’t be read") }
+    static func gmailUnreadSince(_ date: Date) -> String {
+        let shown = date.formatted(.dateTime.month().day().hour().minute().locale(locale))
+        return text("从 \(shown) 起没看邮件", ja: "\(shown) 以降メールを確認していません", en: "No mail checked since \(shown)")
+    }
+    static var gmailDailyLimit: String { text("今天到了每日费用上限，0:00 恢复", ja: "今日の費用上限に達しました。0:00 に再開します", en: "Today’s cost limit is reached; checks resume at 0:00") }
+    static var gmailDisconnect: String { text("断开 Gmail", ja: "Gmail の接続を解除", en: "Disconnect Gmail") }
+    static var gmailDisconnectDetail: String {
+        text("她不再看你的邮件，Google 那边的授权也一并收回。", ja: "メールを読まなくなり、Google 側の許可も取り消します。", en: "She stops reading your mail and the Google access is revoked.")
+    }
+    static var gmailDenied: String { text("你在 Google 没有同意，Gmail 没连上", ja: "Google で許可されなかったため、接続していません", en: "Google access wasn’t granted, so Gmail isn’t connected") }
+    static var gmailFailed: String { text("Gmail 没连上，再试一次", ja: "Gmail に接続できませんでした。もう一度お試しください", en: "Gmail didn’t connect. Try again") }
 }

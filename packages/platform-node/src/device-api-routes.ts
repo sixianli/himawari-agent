@@ -145,6 +145,8 @@ export const DEVICE_API_ROUTES = Object.freeze([
   { method: "POST", path: "vault/approve", signed: true },
   { method: "POST", path: "vault/deny", signed: true },
   { method: "POST", path: "speech", signed: true },
+  { method: "POST", path: "connections/authorization", signed: true },
+  { method: "POST", path: "connections/authorization/complete", signed: true },
 ] as const);
 
 export const DEVICE_UPLOAD_GRANT_HEADER = "himawari-upload-grant" as const;
@@ -289,8 +291,38 @@ export interface DeviceDownload {
   readonly fileName: string;
 }
 
+export type DeviceConnectionAuthorizationStart =
+  | { readonly kind: "browser"; readonly authorizationUrl: string }
+  | { readonly kind: "demo" };
+
+export interface DeviceConnectionsPort {
+  begin(input: {
+    readonly deviceId: string;
+    readonly connection: string;
+    readonly callbackScheme: string;
+  }): Promise<DeviceConnectionAuthorizationStart | undefined>;
+  complete(input: {
+    readonly deviceId: string;
+    readonly state: string;
+  }): Promise<"connected" | "denied" | "failed">;
+}
+
+const CALLBACK_SCHEME_PATTERN = /^[a-z][a-z0-9+-]*(?:\.[a-z0-9+-]+)+$/u;
+const CALLBACK_SCHEME_MAXIMUM_LENGTH = 128;
+const CONNECTION_NAME_PATTERN = /^[a-z][a-z0-9_]{0,63}$/u;
+const AUTHORIZATION_STATE_PATTERN = /^[A-Za-z0-9_-]{16,128}$/u;
+
+export function isDeviceCallbackScheme(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    value.length <= CALLBACK_SCHEME_MAXIMUM_LENGTH &&
+    CALLBACK_SCHEME_PATTERN.test(value)
+  );
+}
+
 export interface DeviceApiRouteOptions {
   readonly home?: DeviceHomePort;
+  readonly connections?: (scope: PairedDeviceScope) => DeviceConnectionsPort | undefined;
   readonly pairingAccess?: DevicePairingAccess;
   readonly publicOrigin: URL;
   readonly devices: PairedDeviceService;
@@ -1262,6 +1294,41 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
         const authenticated = await authenticate(request);
         await vault(authenticated).deny(scope(authenticated.authentication), json(request));
         return options.sendJson(reply, 200, { denied: true });
+      });
+
+      const connections = (authenticated: AuthenticatedDeviceRequest): DeviceConnectionsPort =>
+        options.connections?.(scope(authenticated.authentication)) ?? options.rejectNotAllowed();
+
+      device.post("/connections/authorization", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        const body = json(request);
+        only(body, ["connection", "callbackScheme"]);
+        const connection = body["connection"];
+        const callbackScheme = body["callbackScheme"];
+        if (typeof connection !== "string" || !CONNECTION_NAME_PATTERN.test(connection))
+          options.rejectBody(400);
+        if (!isDeviceCallbackScheme(callbackScheme)) options.rejectBody(400);
+        const started = await connections(authenticated).begin({
+          deviceId: authenticated.device.id,
+          connection,
+          callbackScheme,
+        });
+        if (!started) return options.rejectNotAllowed();
+        return options.sendJson(reply, 200, started);
+      });
+
+      device.post("/connections/authorization/complete", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        const body = json(request);
+        only(body, ["state"]);
+        const state = body["state"];
+        if (typeof state !== "string" || !AUTHORIZATION_STATE_PATTERN.test(state))
+          options.rejectBody(400);
+        const outcome = await connections(authenticated).complete({
+          deviceId: authenticated.device.id,
+          state,
+        });
+        return options.sendJson(reply, 200, { outcome });
       });
 
       device.get("/actions/policy", async (request, reply) => {

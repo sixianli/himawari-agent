@@ -25,6 +25,7 @@ import {
   type GatewayAccessDecision,
   type GatewayAuthenticationContext,
   type GatewayV2InboundMessage,
+  GMAIL_SOURCE,
   MAIL_INBOX_SOURCE_KIND,
   type McpMemorySyncStorePort,
   type OwnerIdentityStatePort,
@@ -76,6 +77,7 @@ import {
   type CloudflareAccessIdentityFetcher,
   DEVICE_ACCESS_SECRET_PURPOSES,
   type DeviceActionHub,
+  type DeviceConnectionsPort,
   type DeviceGatewayAuditFailure,
   type DeviceNotificationHub,
   type DevicePairingAccess,
@@ -129,7 +131,6 @@ import {
 } from "./production-approval-gateway.js";
 import { backgroundCommandRef } from "./production-background-commands.js";
 import { registerChatExportRoute } from "./production-chat-export.js";
-import { createProductionSpeech } from "./production-speech.js";
 import {
   DataExportJobs,
   deviceExportArchive,
@@ -216,6 +217,7 @@ import {
   PRODUCTION_SERVER_STATUS_OPERATIONS,
   ProductionServerStatusControl,
 } from "./production-server-status-control.js";
+import { createProductionSpeech } from "./production-speech.js";
 import {
   DEFAULT_TIMER_TIME_ZONE,
   localTime,
@@ -737,6 +739,14 @@ function authorityForConfiguration(
   return authority;
 }
 
+function deviceConnections(proactive: ProductionProactive): DeviceConnectionsPort {
+  return {
+    begin: async ({ connection, ...input }) =>
+      connection === GMAIL_SOURCE.name ? proactive.beginAppAuthorization(input) : undefined,
+    complete: (input) => proactive.completeAppAuthorization(input),
+  };
+}
+
 export function registerProactiveRoutes(
   app: FastifyInstance,
   proactive: ProductionProactive,
@@ -774,6 +784,16 @@ export function registerProactiveRoutes(
       typeof query[key] === "string" && (query[key] as string).length <= 2048
         ? (query[key] as string)
         : null;
+    const app = proactive.appCallback({
+      state: text("state"),
+      code: text("code"),
+      error: text("error"),
+    });
+    if (app !== undefined)
+      return reply
+        .header("cache-control", "no-store")
+        .header("referrer-policy", "no-referrer")
+        .redirect(app, 303);
     const subject = await owner(request);
     if (!subject) {
       if (query["return"] !== undefined) return settingsPage(reply, "failed");
@@ -1932,6 +1952,14 @@ export async function createProductionHttpComposition(
         ? {
             vault: (scope: PairedDeviceScope) =>
               scope.ownerId === ownerId && scope.agentId === agentId ? options.vault : undefined,
+          }
+        : {}),
+      ...(options.proactive
+        ? {
+            connections: (scope: PairedDeviceScope) =>
+              scope.ownerId === ownerId && scope.agentId === agentId && options.proactive
+                ? deviceConnections(options.proactive)
+                : undefined,
           }
         : {}),
       voiceGates: () => DEFAULT_VOICE_GATES,

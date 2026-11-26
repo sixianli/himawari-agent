@@ -660,6 +660,115 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
     expect(h.failures).toEqual([]);
   });
 
+  const APP_SCHEME = "win.example.himawari";
+
+  async function appStart(h: Awaited<ReturnType<typeof setup>>, deviceId = "device-a") {
+    const started = await h.proactive.beginAppAuthorization({
+      deviceId,
+      callbackScheme: APP_SCHEME,
+    });
+    if (started.kind !== "browser") throw new Error("expected a Google sign-in page");
+    const google = new URL(started.authorizationUrl);
+    expect(google.origin + google.pathname).toBe("https://accounts.google.com/o/oauth2/v2/auth");
+    expect(google.searchParams.get("redirect_uri")).toBe(
+      `${ORIGIN}${PROACTIVE_GOOGLE_CALLBACK_PATH}`,
+    );
+    return google.searchParams.get("state") ?? "";
+  }
+
+  async function googleReturns(h: Awaited<ReturnType<typeof setup>>, query: string) {
+    return h.app.inject({ method: "GET", url: `${PROACTIVE_GOOGLE_CALLBACK_PATH}?${query}` });
+  }
+
+  it("[PG-12] the iPhone connects Gmail: Google returns to the server without a web session, the server sends the system sign-in window back to the app, and the app's signed request finishes the connection", async () => {
+    const h = await setup();
+    const state = await appStart(h);
+    const back = await googleReturns(h, `state=${state}&code=code-1&scope=x`);
+    expect(back.statusCode).toBe(303);
+    expect(back.headers.location).toBe(`${APP_SCHEME}://gmail-authorization?state=${state}`);
+    expect(String(back.headers.location)).not.toContain("code-1");
+    expect((await h.overview()).connection.status).toBe("disconnected");
+
+    expect(await h.proactive.completeAppAuthorization({ deviceId: "device-a", state })).toBe(
+      "connected",
+    );
+    await h.proactive.stop();
+    expect((await h.overview()).connection).toMatchObject({
+      status: "connected",
+      account: "andy@example.com",
+    });
+    expect(await h.proactive.completeAppAuthorization({ deviceId: "device-a", state })).toBe(
+      "failed",
+    );
+    expect(h.failures).toEqual([]);
+  });
+
+  it("[PG-12][reverse] another device, a web session, a forged state, a refusal at Google or an expired sign-in never connects Gmail", async () => {
+    const h = await setup();
+    const stolen = await appStart(h);
+    await googleReturns(h, `state=${stolen}&code=code-1`);
+    expect(
+      await h.proactive.completeAppAuthorization({ deviceId: "device-b", state: stolen }),
+    ).toBe("failed");
+    const web = await h.app.inject({
+      method: "GET",
+      url: `${PROACTIVE_GOOGLE_CALLBACK_PATH}?state=${stolen}&code=code-1`,
+      headers: cookie,
+    });
+    expect(web.headers.location).toBe(`${APP_SCHEME}://gmail-authorization?state=${stolen}`);
+    expect(
+      await h.proactive.completeAuthorization({
+        owner: "owner-subject:device-1",
+        state: stolen,
+        code: "code-1",
+        error: null,
+      }),
+    ).toBe("failed");
+
+    const forged = await googleReturns(h, "state=forged-state-value-0000&code=code-1");
+    expect(forged.statusCode).toBe(200);
+    expect(String(forged.headers["content-type"])).toContain("text/html");
+    expect(
+      await h.proactive.completeAppAuthorization({
+        deviceId: "device-a",
+        state: "forged-state-value-0000",
+      }),
+    ).toBe("failed");
+
+    const refused = await appStart(h);
+    await googleReturns(h, `state=${refused}&error=access_denied`);
+    expect(
+      await h.proactive.completeAppAuthorization({ deviceId: "device-a", state: refused }),
+    ).toBe("denied");
+
+    const unanswered = await appStart(h);
+    expect(
+      await h.proactive.completeAppAuthorization({ deviceId: "device-a", state: unanswered }),
+    ).toBe("failed");
+
+    const late = await appStart(h);
+    h.clock.advance(11 * 60_000);
+    await googleReturns(h, `state=${late}&code=code-1`);
+    expect(await h.proactive.completeAppAuthorization({ deviceId: "device-a", state: late })).toBe(
+      "failed",
+    );
+
+    expect((await h.overview()).connection.status).toBe("disconnected");
+    expect(
+      h.google.calls.filter(({ url }) => url === "https://oauth2.googleapis.com/token"),
+    ).toEqual([]);
+  });
+
+  it("[PG-12] on the demo mailbox the app connects without opening Google", async () => {
+    const h = await setup({ demoInbox: "ja" });
+    expect(
+      await h.proactive.beginAppAuthorization({ deviceId: "device-a", callbackScheme: APP_SCHEME }),
+    ).toEqual({ kind: "demo" });
+    await h.proactive.stop();
+    expect((await h.overview()).connection.status).toBe("connected");
+    expect(h.google.calls).toEqual([]);
+  });
+
   const smbcRule = {
     type: "mail_must_notify",
     summary: "SMBC 的邮件一律提醒",

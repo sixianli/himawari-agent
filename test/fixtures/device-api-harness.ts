@@ -56,6 +56,7 @@ import {
   BrowserTextPayloadReader,
   buildHttpGatewayServer,
   DeviceActionHub,
+  type DeviceConnectionsPort,
   DeviceNotificationHub,
   type DevicePairingAccess,
   DevicePresence,
@@ -168,6 +169,7 @@ export async function harness(
     readonly applePush?: ApplePushConfiguration;
     readonly revokeHookFails?: "prepare" | "wipe";
     readonly withoutNotifications?: boolean;
+    readonly connections?: DeviceConnectionsPort;
     readonly indexTermLimit?: number;
     readonly indexReadText?: (
       contentRef: string,
@@ -561,6 +563,14 @@ export async function harness(
       perception,
       vault: (scope) =>
         scope.ownerId === ownerId && scope.agentId === agentId ? vault : undefined,
+      ...(options.connections
+        ? {
+            connections: (scope) =>
+              scope.ownerId === ownerId && scope.agentId === agentId
+                ? options.connections
+                : undefined,
+          }
+        : {}),
       actions: {
         service: (scope) =>
           scope.ownerId === ownerId && scope.agentId === agentId ? actions.service : undefined,
