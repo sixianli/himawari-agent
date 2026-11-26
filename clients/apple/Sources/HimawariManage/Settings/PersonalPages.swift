@@ -30,7 +30,7 @@ struct NamePage: View {
                         if value.count > PersonalStore.nameLimit { draft = String(value.prefix(PersonalStore.nameLimit)) }
                     }
             } footer: {
-                Text(M.nameFooter)
+                Text(M.nameFooter).foregroundStyle(Color.hmText)
             }
         }
         .scrollContentBackground(.hidden)
@@ -44,7 +44,7 @@ struct NamePage: View {
                 if saving {
                     ProgressView()
                 } else {
-                    Button(M.done, action: save).disabled(!changed)
+                    Button(M.done, action: save)
                 }
             }
         }
@@ -57,7 +57,8 @@ struct NamePage: View {
     }
 
     private func save() {
-        guard changed, !saving else { return }
+        guard !saving else { return }
+        guard changed else { return back() }
         saving = true
         Task {
             defer { saving = false }
@@ -100,6 +101,7 @@ struct ModelPage: View {
                     .labelsHidden()
                 } footer: {
                     Text(models.options.contains { $0.priceTier != nil || $0.price != nil } ? M.modelFooter + "\n\n" + M.priceNote : M.modelFooter)
+                        .foregroundStyle(Color.hmText)
                 }
                 if let model = selected, model.thinkingLevels.count > 1 {
                     Section {
@@ -111,9 +113,9 @@ struct ModelPage: View {
                         .pickerStyle(.inline)
                         .labelsHidden()
                     } header: {
-                        Text(M.thinkingTitle)
+                        Text(M.thinkingTitle).foregroundStyle(Color.hmText)
                     } footer: {
-                        Text(M.thinkingFooter)
+                        Text(M.thinkingFooter).foregroundStyle(Color.hmText)
                     }
                 }
             }
@@ -129,7 +131,7 @@ struct ModelPage: View {
                 if saving {
                     ProgressView()
                 } else {
-                    Button(M.done, action: save).disabled(!changed)
+                    Button(M.done, action: save)
                 }
             }
         }
@@ -152,7 +154,8 @@ struct ModelPage: View {
     }
 
     private func save() {
-        guard let model = selected, changed, !saving else { return }
+        guard !saving else { return }
+        guard let model = selected, changed else { return back() }
         saving = true
         Task {
             defer { saving = false }
@@ -176,13 +179,13 @@ struct ModelChoiceLabel: View {
                 if let tier = model.priceTier {
                     Text(M.priceTier(tier))
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.hmText)
                 }
             }
             if let detail = M.modelDetail(model) {
                 Text(detail)
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.hmText)
             }
         }
         .accessibilityElement(children: .combine)

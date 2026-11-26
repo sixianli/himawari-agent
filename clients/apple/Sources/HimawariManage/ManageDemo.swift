@@ -29,7 +29,6 @@ public enum ManageDemoScreen: String, CaseIterable, Sendable {
     case herTimerReminder = "next-9-timer-reminder"
     case herTimerPaused = "next-9-timer-paused"
     case herNoTimers = "next-9-her-no-timers"
-    case herPersonal = "next-10-her-personal"
     case herName = "next-10-her-name"
     case herModel = "next-10-her-model"
 }
@@ -91,8 +90,6 @@ public struct ManageDemoView: View {
             her([.timers, .timer(TimersStore.demoTanakaId)])
         case .herNoTimers:
             her([], timers: TimersStore(timers: nil))
-        case .herPersonal:
-            her([], personal: true)
         case .herName:
             her([.name], personal: true)
         case .herModel:

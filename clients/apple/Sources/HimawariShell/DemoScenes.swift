@@ -36,7 +36,6 @@ enum DemoScene: String, CaseIterable {
     case herTimerReminder = "next-9-timer-reminder"
     case herTimerPaused = "next-9-timer-paused"
     case herNoTimers = "next-9-her-no-timers"
-    case herPersonal = "next-10-her-personal"
     case herName = "next-10-her-name"
     case herModel = "next-10-her-model"
     case chatEmptyFlower = "next-6-chat-empty"
@@ -281,7 +280,7 @@ struct DemoSceneView: View {
             DemoPerceptionDeletionHost(segment: .episodes, episode: "episode:00000000000000000000000000000002")
         case .listenIntro, .listenEnroll, .listenLive, .listenInterrupted, .listenCalling, .listenAsking, .listenStopped:
             ListenDemoScene(scene: scene)
-        case .memory, .memoryDetail, .memoryEdit, .rules, .ruleDetail, .deviceAbilities, .her, .herApprovals, .herPrivacy, .herDevices, .herNotifications, .herAllowances, .herAllowancesEmpty, .herAllowanceDays, .memoryVersions, .memoryTrash, .herAbout, .herTimers, .herTimersEmpty, .herTimersReminders, .herTimerRecurring, .herTimerReminder, .herTimerPaused, .herNoTimers, .herPersonal, .herName, .herModel:
+        case .memory, .memoryDetail, .memoryEdit, .rules, .ruleDetail, .deviceAbilities, .her, .herApprovals, .herPrivacy, .herDevices, .herNotifications, .herAllowances, .herAllowancesEmpty, .herAllowanceDays, .memoryVersions, .memoryTrash, .herAbout, .herTimers, .herTimersEmpty, .herTimersReminders, .herTimerRecurring, .herTimerReminder, .herTimerPaused, .herNoTimers, .herName, .herModel:
             EmptyView()
         }
     }
