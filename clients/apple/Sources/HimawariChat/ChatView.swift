@@ -520,7 +520,7 @@ public struct ChatView: View {
         withAnimation(.easeInOut(duration: 0.15)) { talking = true }
         Task {
             do {
-                try await talk.begin { said in deliver(said, clearDraft: false) }
+                try await talk.begin { said in deliver(said, clearDraft: false, spoken: true) }
             } catch {
                 withAnimation(.easeInOut(duration: 0.15)) { talking = false }
                 attachProblem = L.text("chat.talk.failed")
@@ -548,7 +548,7 @@ public struct ChatView: View {
         }
     }
 
-    private func deliver(_ text: String, clearDraft: Bool) {
+    private func deliver(_ text: String, clearDraft: Bool, spoken: Bool = false) {
         let carried = attachments
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !carried.isEmpty, !uploading else { return }
         Haptics.shared.report(.messageSent)
@@ -557,14 +557,14 @@ public struct ChatView: View {
         let text = MessageReply.compose(replyingTo: replyTo, text: text)
         if carried.isEmpty {
             if clearDraft { draft = "" }
-            Task { await store.send(text, in: threadId) }
+            Task { await store.send(text, in: threadId, spoken: spoken) }
             return
         }
         uploading = true
         Task {
             defer { uploading = false }
             do {
-                try await store.send(text, attachments: carried, requestId: sendRequestId, in: threadId)
+                try await store.send(text, attachments: carried, requestId: sendRequestId, in: threadId, spoken: spoken)
                 attachments.removeAll { item in carried.contains { $0.id == item.id } }
                 sendRequestId = OutgoingMessage.newId()
                 if clearDraft { draft = "" }

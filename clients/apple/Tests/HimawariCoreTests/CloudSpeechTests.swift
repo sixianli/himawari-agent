@@ -102,6 +102,21 @@ final class ByteExchange: HTTPExchange, @unchecked Sendable {
         }
     }
 
+    @Test func aSpokenMessageTellsTheServerAndATypedOneDoesNot() async throws {
+        let accepted = HTTPExchangeResponse(status: 200, body: Data(#"{"accepted":true,"threadRevision":2}"#.utf8))
+        let exchange = RecordingExchange([accepted, accepted])
+        let http = DeviceHTTPClient(exchange: exchange, now: { Date(timeIntervalSince1970: 1_800_000_000) })
+        http.use(DeviceCredentials(origin: try #require(URL(string: "https://himawari.example.test:8443/")), deviceId: "dev_AAAAAAAAAAAAAAAAAAAAAA", access: nil, deviceKey: try SoftwareKeySigner()))
+        let api = DeviceAPI(http: http)
+        let at = Date(timeIntervalSince1970: 1_800_000_000)
+        _ = try? await api.send(OutgoingMessage(threadId: "thr_1", expectedRevision: 1, text: "说的", createdAt: at, spoken: true))
+        _ = try? await api.send(OutgoingMessage(threadId: "thr_1", expectedRevision: 1, text: "打的", createdAt: at))
+        let bodies = try exchange.requests.map { try #require(JSONSerialization.jsonObject(with: try #require($0.httpBody)) as? [String: Any]) }
+        #expect(bodies.count == 2)
+        #expect(bodies.first?["spoken"] as? Bool == true)
+        #expect(bodies.last?["spoken"] == nil)
+    }
+
     private func api(_ exchange: ByteExchange) throws -> DeviceAPI {
         let http = DeviceHTTPClient(exchange: exchange, now: { Date(timeIntervalSince1970: 1_800_000_000) })
         http.use(DeviceCredentials(origin: try #require(URL(string: "https://himawari.example.test:8443/")), deviceId: "dev_AAAAAAAAAAAAAAAAAAAAAA", access: nil, deviceKey: try SoftwareKeySigner()))

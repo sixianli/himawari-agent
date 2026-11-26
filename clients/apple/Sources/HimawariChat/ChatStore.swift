@@ -331,18 +331,18 @@ public final class ChatStore {
         return created.threadId
     }
 
-    public func send(_ text: String, in threadId: String) async {
+    public func send(_ text: String, in threadId: String, spoken: Bool = false) async {
         guard !frozen else { return }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         let revision = details[threadId]?.thread.revision ?? threads.first(where: { $0.threadId == threadId })?.revision ?? createdRevisions[threadId] ?? 1
-        await outbox.enqueue(OutgoingMessage(threadId: threadId, expectedRevision: revision, text: trimmed, createdAt: Date()))
+        await outbox.enqueue(OutgoingMessage(threadId: threadId, expectedRevision: revision, text: trimmed, createdAt: Date(), spoken: spoken))
         await flush()
     }
 
-    public func send(_ text: String, attachments: [ChatAttachment], requestId: String, in threadId: String) async throws {
+    public func send(_ text: String, attachments: [ChatAttachment], requestId: String, in threadId: String, spoken: Bool = false) async throws {
         guard !attachments.isEmpty else {
-            await send(text, in: threadId)
+            await send(text, in: threadId, spoken: spoken)
             return
         }
         let composed = try await api.compose(
@@ -351,7 +351,7 @@ public final class ChatStore {
             requestId: requestId,
             images: images
         )
-        await send(composed, in: threadId)
+        await send(composed, in: threadId, spoken: spoken)
     }
 
     public func retry(_ messageId: String) async {
