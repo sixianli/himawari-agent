@@ -27,6 +27,17 @@ jobs:
       - run: sudo bash scripts/ci/prepare-hosted.sh "$PWD/.ci-output/tools/bin/node"
       - name: build like build-candidate.sh
         run: |
+          node -e '
+          const fs = require("fs"); const p = "scripts/ci/security-redaction.mjs"; let s = fs.readFileSync(p, "utf8");
+          const a = "if (review) review.inspect({ name: member.name, bytes, findings });\n          else assert(findings.length === 0, \"PUBLIC_ARTIFACT_CONTAINS_SECRET\");";
+          if (!s.includes(a)) throw new Error("anchor a");
+          s = s.replace(a, "try { if (review) review.inspect({ name: member.name, bytes, findings }); else if (findings.length) throw new Error(\"PUBLIC_ARTIFACT_CONTAINS_SECRET\"); } catch (error) { console.error(\"REHEARSAL_MEMBER_FAIL\", member.name, error.message, JSON.stringify(findings.map((f) => [f.rule, f.line]))); throw error; }");
+          const b = "inspectBytes(bytes, sentinels);\n          member = null;";
+          if (!s.includes(b)) throw new Error("anchor b");
+          s = s.replace(b, "try { inspectBytes(bytes, sentinels); } catch (error) { console.error(\"REHEARSAL_NESTED_FAIL\", member.name, error.message); throw error; }\n          member = null;");
+          fs.writeFileSync(p, s);
+          '
+          git diff --stat
           run=reh
           export PATH=$PWD/.ci-output/tools/bin:/usr/bin:/bin HIMAWARI_CI_TOOLS=$PWD/.ci-output/tools HIMAWARI_CI_PYTHON=$PWD/.ci-output/tools/python/python/bin/python3
           scratch=$(mktemp -d /tmp/hXXXX); chmod 700 "$scratch"
@@ -35,28 +46,8 @@ jobs:
           echo "build-rc=$?"
           set -e
           tail -n 60 build.log
+          grep -rh "REHEARSAL_" .ci-output/reh 2>/dev/null | head -20 || true
           ls -la .ci-output/$run .ci-output/$run/build-linux-arm64 || true
-          if grep -q PUBLIC_ARTIFACT_CONTAINS_SECRET build.log; then
-            mkdir -p "$RUNNER_TEMP/unpacked" && tar -xzf .ci-output/$run/build-linux-arm64/linux-arm64-abi*-1.tar.gz -C "$RUNNER_TEMP/unpacked"
-            node --input-type=module -e '
-            import { readdirSync, readFileSync, lstatSync } from "node:fs";
-            import { join, relative } from "node:path";
-            import { gunzipSync } from "node:zlib";
-            import { findBuildSecrets } from "./scripts/ci/security-source.mjs";
-            import { redactText } from "./scripts/ci/redact-text.mjs";
-            const root = process.argv[1];
-            const walk = (dir) => { for (const name of readdirSync(dir)) { const full = join(dir, name); const stat = lstatSync(full); if (stat.isDirectory()) walk(full); else if (stat.isFile()) { const rel = relative(root, full); if (redactText(rel, { sentinels: [] }) !== rel) console.log("REHEARSAL_SECRET_NAME", rel); check(rel, readFileSync(full)); } } };
-            const check = (name, bytes) => {
-              const findings = findBuildSecrets({ name, bytes });
-              const text = bytes.toString("utf8");
-              const redacted = redactText(text, { sentinels: [] }) !== text;
-              if (findings.length || redacted) console.log("REHEARSAL_SECRET_HIT", name, JSON.stringify(findings.map((f) => [f.rule, f.line])), "redactText=" + redacted);
-              if (bytes.length > 2 && bytes[0] === 0x1f && bytes[1] === 0x8b) { try { check(name + "!gunzip", gunzipSync(bytes)); } catch {} }
-            };
-            check("NAME_CHECK", Buffer.from(""));
-            walk(root);
-            ' "$RUNNER_TEMP/unpacked" | head -50
-          fi
           /usr/bin/python3 -I scripts/delivery-mode/hermes/layer3-verdict.py ".ci-output/$run/local-summary.json" "$(git rev-parse HEAD)" build
           mkdir -p rehearsal/materials
           cp .ci-output/$run/build-linux-arm64/linux-arm64-abi*-1.tar.gz rehearsal/materials/
