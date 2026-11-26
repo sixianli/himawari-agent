@@ -26,6 +26,7 @@ public struct HerPage: View {
         case timers
         case timer(String)
         case about
+        case talkTiming
     }
 
     @State private var settings: SettingsStore
@@ -48,6 +49,7 @@ public struct HerPage: View {
     private let removedThisDevice: () -> Void
     private let countVault: () async -> HerVaultCount
     private let vault: ((@escaping () -> Void) -> AnyView)?
+    private let voiceTimings: @Sendable () async throws -> [VoiceTimingRecord]
     private let server: String?
 
     public init(
@@ -81,6 +83,7 @@ public struct HerPage: View {
         self.talk = talk
         self.close = close
         self.removedThisDevice = removedThisDevice
+        voiceTimings = { try await api.voiceTimings() }
         countVault = {
             do {
                 return .items(try await api.vaultSnapshot().items.count)
@@ -220,7 +223,9 @@ public struct HerPage: View {
                 case .timer(let id):
                     TimerDetailPage(store: timers, timerId: id) { path.removeLast() }
                 case .about:
-                    AboutPage(server: server) { path.removeLast() }
+                    AboutPage(server: server, openTiming: { path.append(.talkTiming) }) { path.removeLast() }
+                case .talkTiming:
+                    TalkTimingPage(load: voiceTimings)
                 case .approvals:
                     if let actions {
                         ApprovalsView(model: actions, openThread: { _ in close() }) { path.removeLast() }

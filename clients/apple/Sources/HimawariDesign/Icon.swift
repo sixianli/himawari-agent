@@ -32,6 +32,7 @@ public enum IconName: String, CaseIterable, Sendable {
     case chevronRight = "chevron-right"
     case circleCheck = "circle-check"
     case clock
+    case stopwatch
     case compass
     case cloud
     case code
@@ -157,6 +158,7 @@ public enum IconName: String, CaseIterable, Sendable {
         case .chevronRight: "chevron.right"
         case .circleCheck: "checkmark.circle"
         case .clock: "clock"
+        case .stopwatch: "stopwatch"
         case .compass: "location.north.line"
         case .cloud: "cloud"
         case .code: "chevron.left.forwardslash.chevron.right"
