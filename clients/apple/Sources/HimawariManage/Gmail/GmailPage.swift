@@ -76,7 +76,7 @@ struct GmailPage: View {
                     icon: nil,
                     title: M.gmailWatch,
                     detail: watching.on ? M.gmailWatchOn : M.gmailWatchOff,
-                    switchState: Binding(get: { watching.on }, set: setWatching),
+                    switchState: Binding(get: { watching.on }, set: { on in setWatching(on) }),
                     last: true
                 )
             }
