@@ -145,11 +145,12 @@ public struct SignInView: View {
                 path.append(.setupCode)
             } label: {
                 Text(L.text("signIn.firstTime"))
-                    .foregroundStyle(Color.hmText)
                     .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.borderedProminent)
             .controlSize(.large)
+            .tint(Color.hmSurface)
+            .foregroundStyle(Color.hmText)
             .disabled(model.phase == .signingIn || model.serverOrigin == nil)
             Button {
                 serverOpen = true
