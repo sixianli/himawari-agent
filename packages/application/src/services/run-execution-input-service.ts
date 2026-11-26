@@ -49,13 +49,19 @@ interface FrozenRunInput {
 const CLASSIFICATION_ORDER = ["public", "private", "sensitive", "restricted"] as const;
 const DEFAULT_FOLD_LIMIT = 19;
 
+export const PHONE_VOICE_SOURCE_ATTRIBUTE = 'source="phone-voice"';
+
 export function ownerMessagesPrompt(
-  messages: readonly { readonly id: string; readonly text: string }[],
+  messages: readonly {
+    readonly id: string;
+    readonly text: string;
+    readonly viaPhoneVoice?: boolean;
+  }[],
 ): string {
   return messages
     .map(
-      ({ id, text }) =>
-        `<owner-message id="${id}">\n${text.replaceAll("</owner-message>", "‹/owner-message›")}\n</owner-message>`,
+      ({ id, text, viaPhoneVoice }) =>
+        `<owner-message id="${id}"${viaPhoneVoice ? ` ${PHONE_VOICE_SOURCE_ATTRIBUTE}` : ""}>\n${text.replaceAll("</owner-message>", "‹/owner-message›")}\n</owner-message>`,
     )
     .join("\n\n");
 }
@@ -301,7 +307,7 @@ export class RunExecutionInputService {
       limit,
       now: clock.now(),
     });
-    if (folded.length === 0) return undefined;
+    if (folded.length === 0 && !source.viaPhoneVoice) return undefined;
     const read = async (ref: string) => {
       const payload = await payloads.get(ref as never);
       if (!payload) invalid("Folded owner message is unavailable");
@@ -309,9 +315,19 @@ export class RunExecutionInputService {
         await protector.unprotect({ ownerId: source.ownerId, agentId: source.agentId, payload }),
       );
     };
-    const parts = [{ id: source.sourceId, text: await read(source.payloadRef) }];
+    const parts = [
+      {
+        id: source.sourceId,
+        text: await read(source.payloadRef),
+        viaPhoneVoice: source.viaPhoneVoice === true,
+      },
+    ];
     for (const message of folded)
-      parts.push({ id: message.messageId, text: await read(message.contentRef) });
+      parts.push({
+        id: message.messageId,
+        text: await read(message.contentRef),
+        viaPhoneVoice: message.viaPhoneVoice === true,
+      });
     const text = ownerMessagesPrompt(parts);
     const rank = Math.max(
       CLASSIFICATION_ORDER.indexOf(source.dataClassification),

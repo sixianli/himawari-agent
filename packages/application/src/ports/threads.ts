@@ -62,6 +62,7 @@ export interface FoldedOwnerMessage {
   readonly contentRef: PayloadRef;
   readonly dataClassification: DataClassification;
   readonly position: number;
+  readonly viaPhoneVoice?: true;
 }
 
 export interface AdmitOwnerMessageInput {
