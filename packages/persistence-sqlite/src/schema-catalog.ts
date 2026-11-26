@@ -1065,16 +1065,23 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
   entry(
     "paired_devices",
     "PairedDeviceStorePort",
-    "one row per paired iPhone, Apple Watch or Mac: kind, name, release channel, the two public keys, pending, active or revoked, and which browser device row its embedded web sessions use",
+    "one row per paired iPhone, Apple Watch or Mac: kind, name, release channel, the two public keys, active or revoked, and which session device row its embedded web sessions use",
     "metadata_only",
     "cascade with Owner or Agent deletion; a revoked device stays as revoked until the owner is deleted",
   ),
   entry(
-    "device_pairing_codes",
+    "owner_passkeys",
     "PairedDeviceStorePort",
-    "one row per pairing code the owner generated: only the SHA-256 of the code, who started it, when it expires and which device used it; never exported",
+    "one row per passkey the owner created in an App: the credential id, its public key, the signature counter, transports, whether it is synced, when it was created and last used; never exported",
     "metadata_only",
-    "kept after use so a retried pairing request gets the same device; removed when the Owner starts another pairing, and with Owner or Agent deletion",
+    "cascade with Owner or Agent deletion",
+  ),
+  entry(
+    "sign_in_setup_code_uses",
+    "PairedDeviceStorePort",
+    "one row per one-time setup code that created a passkey: only the SHA-256 of the code, which passkey it created and when; never exported",
+    "metadata_only",
+    "cascade with the passkey, Owner or Agent deletion",
   ),
   entry(
     "device_request_nonces",

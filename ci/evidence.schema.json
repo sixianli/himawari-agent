@@ -113,14 +113,14 @@
     "platforms": {
       "type": "array",
       "minItems": 1,
-      "maxItems": 2,
+      "maxItems": 3,
       "items": {
         "type": "object",
         "additionalProperties": false,
         "required": ["platform", "archiveSha256", "reportSha256"],
         "properties": {
           "platform": {
-            "enum": ["linux-x64", "macos-arm64"]
+            "enum": ["linux-x64", "linux-arm64", "macos-arm64"]
           },
           "archiveSha256": {
             "type": "string",

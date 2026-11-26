@@ -51,6 +51,7 @@ export const APPLE_PUSH_TEXT = {
     openBody: "这台设备上有一件事在等着做",
     vaultTitle: "Himawari 请你批准一次使用",
     vaultBody: "点开后刷脸批准或拒绝",
+    signedInTitle: "新设备已登录",
   },
   en: {
     approve: "Approve",
@@ -62,6 +63,7 @@ export const APPLE_PUSH_TEXT = {
     openBody: "Something is waiting to be done on this device",
     vaultTitle: "Himawari needs your approval",
     vaultBody: "Open to approve or decline with Face ID",
+    signedInTitle: "New device signed in",
   },
   ja: {
     approve: "承認",
@@ -73,6 +75,7 @@ export const APPLE_PUSH_TEXT = {
     openBody: "このデバイスで行う操作が待っています",
     vaultTitle: "Himawari が使用の承認を求めています",
     vaultBody: "開いて Face ID で承認または拒否",
+    signedInTitle: "新しいデバイスがログインしました",
   },
 } as const satisfies Record<WebPushLocale, unknown>;
 
@@ -169,6 +172,33 @@ export function applePushOpenRequestPayload(input: {
       kind: "device_action",
       navigate: "/",
       actionId: input.actionId,
+      actions: [],
+    },
+  });
+}
+
+export const DEVICE_SIGNED_IN_PUSH_KIND = "device_signed_in" as const;
+const DEVICE_SIGNED_IN_PUSH_LIFETIME_SECONDS = 86_400;
+
+export function applePushDeviceSignedInPayload(input: {
+  readonly title: string;
+  readonly body: string;
+  readonly deviceId: string;
+}): string {
+  return JSON.stringify({
+    aps: {
+      alert: { title: input.title, body: input.body },
+      sound: "default",
+      "thread-id": DEVICE_SIGNED_IN_PUSH_KIND,
+      "interruption-level": "active",
+      category: "himawari.plain",
+    },
+    himawari: {
+      v: 1,
+      tag: `device-signed-in-${input.deviceId}`,
+      kind: DEVICE_SIGNED_IN_PUSH_KIND,
+      navigate: "/devices",
+      deviceId: input.deviceId,
       actions: [],
     },
   });
@@ -319,6 +349,41 @@ export class ProductionApplePush implements PushCompanionChannel {
             tag,
             actionId: record.id,
             ownerPresence: record.ownerPresence,
+          }),
+        });
+        await this.#applyRegistrationOutcome(registration, result, now);
+      }
+    } catch (error) {
+      this.#options.onFailure(error);
+    }
+  }
+
+  async announceSignedIn(device: { readonly id: string; readonly name: string }): Promise<void> {
+    try {
+      const registrations = (
+        await this.#options.store.listRegistrations({ ...this.#scope(), pushType: "alert" })
+      ).filter(
+        (registration) =>
+          registration.status === "active" &&
+          registration.deviceId !== device.id &&
+          this.#configured(registration),
+      );
+      const now = this.#options.now();
+      for (const registration of registrations) {
+        const text = APPLE_PUSH_TEXT[registration.locale];
+        const result = await this.#transmit("alert", DEVICE_SIGNED_IN_PUSH_KIND, {
+          token: registration.token,
+          environment: registration.environment,
+          topic: registration.topic,
+          pushType: "alert",
+          priority: 10,
+          expiresAtSeconds:
+            Math.floor(Date.parse(now) / 1_000) + DEVICE_SIGNED_IN_PUSH_LIFETIME_SECONDS,
+          collapseId: `device-signed-in-${device.id}`,
+          payload: applePushDeviceSignedInPayload({
+            title: text.signedInTitle,
+            body: device.name,
+            deviceId: device.id,
           }),
         });
         await this.#applyRegistrationOutcome(registration, result, now);

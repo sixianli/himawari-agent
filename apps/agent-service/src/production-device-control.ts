@@ -14,29 +14,21 @@ import type {
   GatewayV2Snapshot,
 } from "@himawari-agent/gateway-contracts";
 import {
-  type DevicePairingAccess,
   type PairedDeviceService,
-  pairingAccessFields,
   presentDeviceLimits,
   presentPairedDevice,
 } from "@himawari-agent/platform-node";
 
 export const PRODUCTION_DEVICE_OPERATIONS = Object.freeze([
   "device.list.read",
-  "device.pairing.start",
-  "device.pairing.confirm",
   "device.rename",
   "device.revoke",
 ] as const);
 
 export interface ProductionDeviceControlOptions {
   readonly configuration: Pick<ProductConfiguration, "ownerId" | "agentId">;
-  readonly devices: Pick<
-    PairedDeviceService,
-    "list" | "openPairing" | "startPairingWithCode" | "confirm" | "rename" | "revoke"
-  >;
+  readonly devices: Pick<PairedDeviceService, "list" | "rename" | "revoke">;
   readonly deviceConfiguration: () => DeviceConfiguration;
-  readonly pairingAccess?: DevicePairingAccess;
   readonly clock: ClockPort;
 }
 
@@ -75,10 +67,7 @@ export class ProductionDeviceControl {
   async query(query: GatewayV2Query): Promise<GatewayV2Snapshot> {
     if (query.type !== "device.list.read") throw new Error("DEVICE_OPERATION_NOT_INSTALLED");
     const scope = this.#scope();
-    const [devices, pairing] = await Promise.all([
-      this.#options.devices.list(scope),
-      this.#options.devices.openPairing(scope),
-    ]);
+    const devices = await this.#options.devices.list(scope);
     return {
       ...query,
       kind: "snapshot",
@@ -96,27 +85,18 @@ export class ProductionDeviceControl {
             status: view.status,
             pairedAt: view.pairedAt,
             lastSeenAt: view.lastSeenAt,
-            pairingNumber: view.pairingNumber,
           };
         }),
         limits: presentDeviceLimits(this.#options.deviceConfiguration()).map(
           ({ key, unit, value }) => ({ key, unit, value }),
         ),
-        pairing: pairing
-          ? {
-              expiresAt: pairing.expiresAt,
-              access: this.#options.pairingAccess
-                ? pairingAccessFields(this.#options.pairingAccess)
-                : null,
-            }
-          : null,
         generatedAt: this.#options.clock.now(),
       },
     } as GatewayV2Snapshot;
   }
 
   async execute(
-    authentication: GatewayAuthenticationContext,
+    _authentication: GatewayAuthenticationContext,
     command: GatewayV2Command,
   ): Promise<{ resultRef: string; replayed: boolean }> {
     const scope = this.#scope();
@@ -127,25 +107,6 @@ export class ProductionDeviceControl {
     )
       throw new ApplicationPortError(PORT_ERROR_CODES.NOT_AUTHORITATIVE, "DEVICE_OWNER_REQUIRED");
     switch (command.type) {
-      case "device.pairing.start": {
-        if (!authentication.sessionId)
-          throw new ApplicationPortError(
-            PORT_ERROR_CODES.NOT_AUTHORITATIVE,
-            "DEVICE_PAIRING_SESSION_REQUIRED",
-          );
-        const pairing = await this.#options.devices.startPairingWithCode({
-          ...scope,
-          sessionId: authentication.sessionId,
-          code: command.payload.pairingCode,
-        });
-        return { resultRef: `device-pairing:${pairing.expiresAt}`, replayed: false };
-      }
-      case "device.pairing.confirm":
-        return this.#change(
-          command.payload,
-          () => this.#options.devices.confirm({ ...scope, ...command.payload }),
-          (device) => device.status === "active",
-        );
       case "device.rename":
         return this.#change(
           command.payload,

@@ -199,8 +199,6 @@ export const CLIENT_CAPABILITY_TABLE: readonly ClientCapabilityEntry[] = Object.
   query("v2", "search.ask.read"),
   query("v2", "memory.search.read"),
   query("v2", "device.list.read"),
-  change("v2", "device.pairing.start"),
-  change("v2", "device.pairing.confirm"),
   change("v2", "device.rename"),
   change("v2", "device.revoke"),
   query("v2", "server.status.read"),
