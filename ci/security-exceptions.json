@@ -2186,7 +2186,7 @@
       "reviewReference": "https://github.com/sixianli/himawari-agent/pull/737",
       "expiresAt": "2026-12-04T00:00:00Z",
       "sourceProofSha256": "6e3390d6b783e7be946fad629292799da28d0b42f84856e50d2c1b0383291e75",
-      "sourceReview": "2026-11-27 上线线程核对：官方 npm tarball onnxruntime-node-1.30.0.tgz 的 sha512 等于锁文件 integrity，sha256 等于 sourceProofSha256；tarball 成员字节等于构建出的成员。逐段读了命中：private-key 两处是 \"-----BEGIN RSA PRIVATE KEY-----\" 与 \"-----END EC PRIVATE KEY-----\"、\"-----BEGIN EC PRIVATE KEY-----\" 与 \"-----END PRIVATE KEY-----\" 两对相邻常量，中间只隔一两个字节的分隔符；bearer-token 是 \"Authorization: Bearer %s\" 模板，和已同意的 x64 版同一处。只在 arm64 产物里出现，x64 产物打包时会剪掉这个文件。"
+      "sourceReview": "2026-11-27 上线线程核对：官方 npm tarball onnxruntime-node-1.30.0.tgz 的 sha512 等于锁文件 integrity，sha256 等于 sourceProofSha256；tarball 成员字节等于构建出的成员。逐段读了命中：private-key 两处是 OpenSSL 的 PEM 标记常量：RSA 私钥开头标记紧挨 EC 私钥结尾标记、EC 私钥开头标记紧挨通用私钥结尾标记，两对之间只隔一两个字节的分隔符，没有任何密钥内容；bearer-token 是 \"Authorization: Bearer %s\" 模板，和已同意的 x64 版同一处。只在 arm64 产物里出现，x64 产物打包时会剪掉这个文件。"
     }
   ]
 }
