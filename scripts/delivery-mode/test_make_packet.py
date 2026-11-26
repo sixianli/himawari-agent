@@ -1010,6 +1010,7 @@ class MigrateFixtureSeedTest(unittest.TestCase):
         self.assertNotIn('migrations.slice(0, from)', source)
         self.assertIn('const pendingNames = new Set(common.migrationExpectedLedger.map((row) => row.name));', source)
         self.assertIn('persistence.applyMigrations(seeded, productionApplied);', source)
+        self.assertIn('.map((migration, index) => ({ ...migration, sequence: index + 1 }))', source)
 
 
 class FinalizeCapabilityFixtureTest(unittest.TestCase):
