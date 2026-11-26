@@ -403,6 +403,8 @@ def interpret_discovery(facts, instance, label=None):
     }
 
 
+SPEECH_TARGET_KEYS = {'adapter', 'magpieModelRef', 'provider', 'model', 'voice', 'languageType', 'firstAudioTimeoutMs', 'maximumCharacters'}
+SPEECH_ADAPTERS = ('dashscope-qwen-tts',)
 EMBEDDING_TARGET_KEYS = {'ref', 'role', 'provider', 'model', 'version', 'allowedDataClassifications', 'disclosure', 'secretRef', 'capabilities', 'cost', 'dimensions'}
 EMBEDDING_PROFILES = {
     ('vercel-ai-gateway', 'alibaba/qwen3-embedding-8b'): (4096, 1024),
@@ -419,6 +421,21 @@ def finite_non_negative(value):
         return math.isfinite(float(value)) and value >= 0
     except OverflowError:
         return False
+
+
+def speech_target(target):
+    if target is None:
+        return 'null'
+    reference = re.compile(r'[A-Za-z0-9][A-Za-z0-9._/:@-]{0,255}')
+    if not isinstance(target, dict) or set(target) != SPEECH_TARGET_KEYS or target['adapter'] not in SPEECH_ADAPTERS:
+        refuse('PACKET_SPEECH_TARGET_INVALID', target)
+    if not all(isinstance(target[key], str) and reference.fullmatch(target[key]) for key in ('magpieModelRef', 'model', 'voice')):
+        refuse('PACKET_SPEECH_TARGET_INVALID', target)
+    if not isinstance(target['provider'], str) or not re.fullmatch(r'[a-z0-9][a-z0-9_-]{0,63}', target['provider']) or not isinstance(target['languageType'], str) or not re.fullmatch(r'[A-Za-z]{2,32}', target['languageType']):
+        refuse('PACKET_SPEECH_TARGET_INVALID', target)
+    if type(target['firstAudioTimeoutMs']) is not int or not 200 <= target['firstAudioTimeoutMs'] <= 10000 or type(target['maximumCharacters']) is not int or not 1 <= target['maximumCharacters'] <= 600:
+        refuse('PACKET_SPEECH_TARGET_INVALID', target)
+    return json.dumps(target, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
 
 
 def embedding_target(target):
@@ -497,6 +514,7 @@ def base_parameters(instance, commit, date, discovered):
         'TARGET_MAX_TOKENS': targets['maxTokens'],
         'TARGET_PUBLIC_FETCH_BYTES': targets['publicFetchMaximumBytes'],
         'TARGET_EMBEDDING_JSON': embedding_target(targets.get('embedding')),
+        'TARGET_SPEECH_JSON': speech_target(targets.get('speech')),
         'STARTUP_READY_BUDGET_MS': startup_ready_budget(instance, git('show', commit + ':' + WORKER_SERVICE_MAIN)),
         'STARTUP_PHASE_BASELINE_MS': startup_phase_baseline(instance),
     }

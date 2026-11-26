@@ -180,6 +180,9 @@ export async function harness(
     readonly exportArchive?: NonNullable<
       Parameters<typeof buildHttpGatewayServer>[0]["devices"]
     >["exportArchive"];
+    readonly speech?: NonNullable<
+      Parameters<typeof buildHttpGatewayServer>[0]["devices"]
+    >["speech"];
   } = {},
 ): Promise<Harness> {
   const publicOrigin = options.origin ?? origin;
@@ -584,6 +587,7 @@ export async function harness(
         agentId,
       ),
       ...(options.exportArchive ? { exportArchive: options.exportArchive } : {}),
+      ...(options.speech ? { speech: options.speech } : {}),
     },
   });
   await app.ready();

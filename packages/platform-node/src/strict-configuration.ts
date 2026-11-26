@@ -51,6 +51,9 @@ import {
   type RealEvalMode,
   type RecentAuthenticationConfiguration,
   type RunPolicyConfiguration,
+  SPEECH_ADAPTERS,
+  type SpeechAdapter,
+  type SpeechConfiguration,
   type TaskEnvironmentConfiguration,
   type TaskEnvironmentImageConfiguration,
   type ToolRefusalConfiguration,
@@ -522,6 +525,57 @@ function parseModel(value: unknown, index: number): ConfiguredModelDescriptor {
     throw invalid(`${field}.baseUrl`, "is only supported for Magpie");
   }
   return Object.freeze(descriptor);
+}
+
+export const SPEECH_FIRST_AUDIO_TIMEOUT_RANGE = Object.freeze({ minimum: 200, maximum: 10_000 });
+export const SPEECH_MAXIMUM_CHARACTERS_RANGE = Object.freeze({ minimum: 1, maximum: 600 });
+
+function parseSpeechConfiguration(value: unknown): SpeechConfiguration {
+  const field = "configuration.speech";
+  const input = record(value, field);
+  rejectUnknown(
+    input,
+    [
+      "adapter",
+      "magpieModelRef",
+      "provider",
+      "model",
+      "voice",
+      "languageType",
+      "firstAudioTimeoutMs",
+      "maximumCharacters",
+    ],
+    field,
+  );
+  const adapter = string(input["adapter"], `${field}.adapter`);
+  if (!(SPEECH_ADAPTERS as readonly string[]).includes(adapter))
+    throw invalid(`${field}.adapter`, "is not a supported speech adapter");
+  const provider = string(input["provider"], `${field}.provider`);
+  if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(provider))
+    throw invalid(`${field}.provider`, "must be a Magpie provider id");
+  const languageType = string(input["languageType"], `${field}.languageType`);
+  if (!/^[A-Za-z]{2,32}$/.test(languageType))
+    throw invalid(`${field}.languageType`, "must be a language name");
+  return Object.freeze({
+    adapter: adapter as SpeechAdapter,
+    magpieModelRef: safeReference(input["magpieModelRef"], `${field}.magpieModelRef`),
+    provider,
+    model: safeReference(input["model"], `${field}.model`),
+    voice: safeReference(input["voice"], `${field}.voice`),
+    languageType,
+    firstAudioTimeoutMs: integer(
+      input["firstAudioTimeoutMs"],
+      `${field}.firstAudioTimeoutMs`,
+      SPEECH_FIRST_AUDIO_TIMEOUT_RANGE.minimum,
+      SPEECH_FIRST_AUDIO_TIMEOUT_RANGE.maximum,
+    ),
+    maximumCharacters: integer(
+      input["maximumCharacters"],
+      `${field}.maximumCharacters`,
+      SPEECH_MAXIMUM_CHARACTERS_RANGE.minimum,
+      SPEECH_MAXIMUM_CHARACTERS_RANGE.maximum,
+    ),
+  });
 }
 
 function parseNumberMap(value: unknown, field: string): Readonly<Record<string, number>> {
@@ -1790,6 +1844,7 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       "taskEnvironments",
       "http",
       "identity",
+      "speech",
       "modelDescriptors",
       "memory",
       "repositoryAllowlistRefs",
@@ -1856,6 +1911,8 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
   if (http?.previewOrigin !== undefined && new URL(http.previewOrigin).host === origin.host) {
     throw invalid("configuration.http.previewOrigin", "must differ from the public origin");
   }
+  const speech =
+    input["speech"] === undefined ? undefined : parseSpeechConfiguration(input["speech"]);
   if ((http === undefined) !== (identity === undefined)) {
     throw invalid("configuration", "http and identity must be configured together");
   }
@@ -2121,6 +2178,11 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
         "needs an embedding model that accepts sensitive data",
       );
   }
+  if (speech) {
+    const descriptor = modelDescriptors.find(({ ref }) => ref === speech.magpieModelRef);
+    if (!descriptor || descriptor.provider !== "magpie" || descriptor.role !== "primary")
+      throw invalid("configuration.speech.magpieModelRef", "must name a configured Magpie model");
+  }
   const review = runPolicy?.automaticReview;
   if (review) {
     const descriptor = modelDescriptors.find(({ ref }) => ref === review.modelRef);
@@ -2148,6 +2210,7 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
     ...(taskEnvironments === undefined ? {} : { taskEnvironments }),
     ...(http === undefined ? {} : { http }),
     ...(identity === undefined ? {} : { identity }),
+    ...(speech === undefined ? {} : { speech }),
     modelDescriptors,
     memory: Object.freeze({
       adapter: "himawari-sqlite" as const,

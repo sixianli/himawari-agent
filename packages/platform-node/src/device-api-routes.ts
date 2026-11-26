@@ -71,6 +71,11 @@ import {
 } from "./paired-device-service.js";
 import type { AuthorizedUpload, PerceptionService } from "./perception-service.js";
 import {
+  SPEECH_ERROR_CODES,
+  SpeechSynthesisError,
+  type SpeechSynthesisPort,
+} from "./speech-synthesis.js";
+import {
   PLAIN_TEXT_MAXIMUM_CHARACTERS,
   parseTextAdmission,
   type TextAdmissionClassification,
@@ -132,6 +137,7 @@ export const DEVICE_API_ROUTES = Object.freeze([
   { method: "POST", path: "vault/change", signed: true },
   { method: "POST", path: "vault/approve", signed: true },
   { method: "POST", path: "vault/deny", signed: true },
+  { method: "POST", path: "speech", signed: true },
 ] as const);
 
 export const DEVICE_UPLOAD_GRANT_HEADER = "himawari-upload-grant" as const;
@@ -296,6 +302,7 @@ export interface DeviceApiRouteOptions {
   };
   readonly voiceGates?: () => VoiceGates;
   readonly prefetch?: UtterancePrefetchPort;
+  readonly speech?: SpeechSynthesisPort;
   readonly threadGateway: AgentThreadGatewayPort;
   readonly gateways: DeviceGateways;
   readonly audit: AuditLedgerPort;
@@ -950,6 +957,75 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
           reply,
           await readFile({ authentication: authenticated.authentication, fileId }),
         );
+      });
+
+      device.post("/speech", async (request, reply) => {
+        await authenticate(request);
+        const body = json(request);
+        only(body, ["text"]);
+        const text = body["text"];
+        if (typeof text !== "string") return options.rejectBody(400);
+        if (!options.speech) return options.sendJson(reply, 503, { code: "SPEECH_UNAVAILABLE" });
+        const abort = new AbortController();
+        request.raw.once("close", () => abort.abort());
+        let audio: Awaited<ReturnType<SpeechSynthesisPort["synthesize"]>>;
+        try {
+          audio = await options.speech.synthesize({ text, signal: abort.signal });
+        } catch (error) {
+          const code =
+            error instanceof SpeechSynthesisError ? error.code : SPEECH_ERROR_CODES.UPSTREAM_FAILED;
+          request.log.warn(
+            {
+              event: "speech.failed",
+              code,
+              ...(error instanceof SpeechSynthesisError && error.upstreamStatus !== undefined
+                ? { upstreamStatus: error.upstreamStatus }
+                : {}),
+            },
+            "speech synthesis failed",
+          );
+          const status =
+            code === SPEECH_ERROR_CODES.INPUT_INVALID || code === SPEECH_ERROR_CODES.SENSITIVE_TEXT
+              ? 422
+              : code === SPEECH_ERROR_CODES.FIRST_AUDIO_TIMEOUT
+                ? 504
+                : 502;
+          return options.sendJson(reply, status, { code });
+        }
+        const started = performance.now();
+        let bytes = 0;
+        const log = request.log;
+        const counted = Readable.from(
+          (async function* () {
+            let completed = false;
+            try {
+              for await (const chunk of audio.chunks) {
+                bytes += chunk.byteLength;
+                yield Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength);
+              }
+              completed = true;
+            } finally {
+              log.info(
+                {
+                  event: "speech.synthesized",
+                  completed,
+                  characters: audio.characters,
+                  firstAudioMs: audio.firstAudioMs,
+                  streamMs: Math.round(performance.now() - started),
+                  bytes,
+                },
+                "speech synthesized",
+              );
+            }
+          })(),
+        );
+        return reply
+          .code(200)
+          .header("cache-control", "no-store")
+          .header("x-himawari-speech-first-audio-ms", String(audio.firstAudioMs))
+          .header("x-himawari-speech-sample-rate", String(audio.sampleRate))
+          .type(audio.mediaType)
+          .send(counted);
       });
 
       device.post("/usage/report", async (request, reply) => {

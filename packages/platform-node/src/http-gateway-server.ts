@@ -49,6 +49,7 @@ import {
   type UtterancePrefetchPort,
 } from "./device-api-routes.js";
 import { type DeviceGatewayAuditFailure, DeviceGatewayError } from "./device-gateway.js";
+import type { SpeechSynthesisPort } from "./speech-synthesis.js";
 import { DevicePushError, type DevicePushPort } from "./device-push.js";
 import { DeviceSignatureError } from "./device-request-signature.js";
 import {
@@ -154,6 +155,7 @@ export interface HttpGatewayServerOptions {
     readonly home?: DeviceHomePort;
     readonly voiceGates?: () => VoiceGates;
     readonly prefetch?: UtterancePrefetchPort;
+    readonly speech?: SpeechSynthesisPort;
     readonly exportArchive?: DeviceApiRouteOptions["exportArchive"];
   };
   readonly health?: HttpGatewayHealthPort;
@@ -1336,6 +1338,7 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
       ...(options.devices.notifications ? { notifications: options.devices.notifications } : {}),
       ...(options.devices.voiceGates ? { voiceGates: options.devices.voiceGates } : {}),
       ...(options.devices.prefetch ? { prefetch: options.devices.prefetch } : {}),
+      ...(options.devices.speech ? { speech: options.devices.speech } : {}),
       ...(options.devices.exportArchive ? { exportArchive: options.devices.exportArchive } : {}),
       ...(options.files
         ? {
