@@ -14,7 +14,7 @@
 "approval.confirm" = "同意";
 "approval.why" = "为什么问你";
 "approval.why.rule" = "规则：%@";
-"approval.why.noRule" = "还没有规则允许它自己做";
+"approval.why.noRule" = "还没有规则允许 Himawari 自己做";
 "approval.from" = "从哪来的";
 "approval.from.thread" = "对话“%@”";
 "approval.from.unnamed" = "一个还没起名的对话";

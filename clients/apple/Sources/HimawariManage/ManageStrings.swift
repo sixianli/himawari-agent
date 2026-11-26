@@ -41,8 +41,8 @@ enum M {
     static var stopRun: String { text("停下这次回答", ja: "この返事を止める", en: "Stop this answer") }
     static var chooseOption: String { text("选这一项", ja: "これを選ぶ", en: "Choose this") }
     static var done: String { text("完成", ja: "完了", en: "Done") }
-    static var herPage: String { text("她的页面", ja: "Himawari のページ", en: "Her page") }
-    static var herMemory: String { text("她记得的", ja: "覚えていること", en: "What she remembers") }
+    static var herPage: String { text("Himawari", ja: "Himawari", en: "Himawari") }
+    static var herMemory: String { text("Himawari 记得的", ja: "覚えていること", en: "What Himawari remembers") }
     static func memorySummary(_ summary: MemorySummary) -> String {
         text(
             "\(summary.memories) 条记忆 · \(summary.rules) 条规则",
@@ -86,8 +86,8 @@ enum M {
     static var tryAgain: String { text("再试一次", ja: "もう一度", en: "Try again") }
     static var allowancesTitle: String { text("同意过的事", ja: "承認したこと", en: "What you've allowed") }
     static func allowancesSummary(_ count: Int) -> String {
-        if count == 0 { return text("还没有“不用再问”的事", ja: "「もう聞かない」ことはまだありません", en: "Nothing she skips asking yet") }
-        return text("\(count) 条“不用再问”", ja: "\(count) 件「もう聞かない」", en: "\(count) she won't ask again")
+        if count == 0 { return text("还没有“不用再问”的事", ja: "「もう聞かない」ことはまだありません", en: "Nothing Himawari skips asking yet") }
+        return text("\(count) 条“不用再问”", ja: "\(count) 件「もう聞かない」", en: "\(count) Himawari won't ask again")
     }
     static func vaultSummary(_ count: HerVaultCount) -> String? {
         guard case let .items(items) = count else { return nil }
@@ -109,9 +109,9 @@ enum M {
     static var revokeFailed: String { text("没撤掉，再试一次", ja: "取り消せませんでした。もう一度試してください", en: "Couldn't revoke. Try again") }
     static var allowancesFoot: String {
         text(
-            "她读过网页、邮件之后，这些都不算数，照样先问你。花钱每次都问，不会出现在这里。",
+            "Himawari 读过网页、邮件之后，这些都不算数，照样先问你。花钱每次都问，不会出现在这里。",
             ja: "ウェブページやメールを読んだあとは、これらは無効になり、いつも通りあなたに確認します。お金を使うことは毎回確認するので、ここには出てきません。",
-            en: "After she reads a web page or email, none of these count and she asks you first. Spending is asked every time and never shows up here."
+            en: "After Himawari reads a web page or email, none of these count and Himawari asks you first. Spending is asked every time and never shows up here."
         )
     }
     static func allowanceScope(_ allowance: OwnerAllowance) -> String {
@@ -144,23 +144,23 @@ enum M {
         text("\(pairedDay(date))配对", ja: "\(pairedDay(date))にペアリング", en: "Paired \(pairedDay(date))")
     }
     static var disconnectThisIPhone: String { text("断开这台 iPhone", ja: "この iPhone の接続を解除", en: "Disconnect this iPhone") }
-    static var quietWhen: String { text("什么时候不响", ja: "鳴らさない時間", en: "When to stay quiet") }
-    static var quietAtNight: String { text("晚上不响", ja: "夜は鳴らさない", en: "Quiet at night") }
-    static var quietOff: String { text("不设不响的时段", ja: "鳴らさない時間を設けない", en: "No quiet hours") }
-    static var quietFrom: String { text("从", ja: "開始", en: "From") }
-    static var quietTo: String { text("到", ja: "終了", en: "Until") }
+    static var quietWhen: String { text("勿扰时段", ja: "おやすみ時間", en: "Quiet hours") }
+    static var quietAtNight: String { text("定时勿扰", ja: "時間指定で鳴らさない", en: "Scheduled quiet hours") }
+    static var quietOff: String { text("关闭定时勿扰", ja: "時間指定をオフ", en: "Quiet hours off") }
+    static var quietFrom: String { text("开始", ja: "開始", en: "From") }
+    static var quietTo: String { text("结束", ja: "終了", en: "Until") }
     static func quietNote(end: String) -> String {
         text(
-            "这段时间里她的话不响，到 \(end) 再响。要你同意的事照样响，不然那件事会一直卡着。",
-            ja: "この間は彼女からの通知を鳴らさず、\(end) に鳴らします。あなたの同意が要ることは鳴ります。止まったままになるからです。",
-            en: "During this time her messages stay silent until \(end). Things that need your OK still ring, or they would stay stuck."
+            "这段时间里 Himawari 的消息不响，到 \(end) 再响。要你同意的事照样响，不然那件事会一直卡着。",
+            ja: "この間は Himawari からの通知を鳴らさず、\(end) に鳴らします。あなたの同意が要ることは鳴ります。止まったままになるからです。",
+            en: "During this time Himawari's messages stay silent until \(end). Things that need your OK still ring, or they would stay stuck."
         )
     }
     static var quietSayIt: String {
         text(
-            "在主对话里说“晚上 11 点以后别推”也一样，会改到这里。别的什么时候推，由她看事情定。",
-            ja: "会話で「夜 11 時以降は通知しないで」と言っても同じで、ここに反映されます。それ以外にいつ通知するかは、彼女が内容を見て決めます。",
-            en: "Saying \"don't notify me after 11 pm\" in the chat does the same and shows up here. When else to notify, she decides from what's going on."
+            "在主对话里说“晚上 11 点以后别推”也一样，会改到这里。别的什么时候推，由 Himawari 看事情定。",
+            ja: "会話で「夜 11 時以降は通知しないで」と言っても同じで、ここに反映されます。それ以外にいつ通知するかは、Himawari が内容を見て決めます。",
+            en: "Saying \"don't notify me after 11 pm\" in the chat does the same and shows up here. When else to notify, Himawari decides from what's going on."
         )
     }
     static var quietReadOnly: String {
@@ -182,12 +182,12 @@ enum M {
         )
     }
     static var deletePerception: String { text("删掉感知记录", ja: "感知の記録を削除", en: "Delete perception records") }
-    static var letHerSense: String { text("让她感知", ja: "彼女に感じ取らせる", en: "Let Her Sense") }
+    static var letHerSense: String { text("让 Himawari 感知", ja: "Himawari に感じ取らせる", en: "Let Himawari Sense") }
     static func sensesOn(_ count: Int) -> String { text("\(count) 项开着", ja: "\(count) 項目オン", en: "\(count) on") }
     static var pauseMemory: String { text("暂停记忆", ja: "記憶を一時停止", en: "Pause memory") }
     static var resumeMemory: String { text("恢复记忆", ja: "記憶を再開", en: "Resume memory") }
     static var pauseMemoryDetail: String {
-        text("她照常回答，但不记新的", ja: "返事はいつもどおり。新しいことは覚えません", en: "She still answers, but won't remember anything new")
+        text("Himawari 照常回答，但不记新的", ja: "返事はいつもどおり。新しいことは覚えません", en: "Himawari still answers, but won't remember anything new")
     }
     static var listenAlways: String { text("一直听着", ja: "ずっと聞く", en: "Keep listening") }
     static var listenAlwaysDetail: String {
@@ -203,9 +203,9 @@ enum M {
     static var forgetVoiceprintConfirm: String { text("删掉", ja: "削除", en: "Delete") }
     static var forgetVoiceprintDetail: String {
         text(
-            "删掉后她认不出哪句是你说的，要用时再录一次",
+            "删掉后 Himawari 认不出哪句是你说的，要用时再录一次",
             ja: "削除すると、どれがあなたの声か分からなくなります。必要なときにまた登録してください",
-            en: "She won't be able to tell which words are yours until you record it again"
+            en: "Himawari won't be able to tell which words are yours until you record it again"
         )
     }
 

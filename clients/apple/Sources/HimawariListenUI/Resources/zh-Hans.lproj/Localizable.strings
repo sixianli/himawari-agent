@@ -1,14 +1,14 @@
 "intro.title" = "收听";
-"intro.hero" = "让它听着周围";
-"intro.what.label" = "它记什么";
+"intro.hero" = "让 Himawari 听着周围";
+"intro.what.label" = "Himawari 记什么";
 "intro.what.value" = "听到的话，转成字";
 "intro.others.label" = "别人说的话";
 "intro.others.value" = "只记下来，不会变成记忆、提醒或动作";
 "intro.keep.label" = "留多久";
 "intro.keep.value" = "字一直留；录音用完就删";
-"intro.know.label" = "你怎么知道它在听";
+"intro.know.label" = "你怎么知道 Himawari 在听";
 "intro.know.value" = "屏幕顶上和锁屏一直有标记，点一下就停";
-"intro.note" = "每次都由你点开始。它自己不会在后台打开麦克风。";
+"intro.note" = "每次都由你点开始。Himawari 自己不会在后台打开麦克风。";
 "intro.start" = "开始听";
 "intro.later" = "先不用";
 "back" = "返回";
@@ -17,7 +17,7 @@
 "enroll.progress" = "第 %d 句，共 %d 句";
 "enroll.hint" = "照着读出来，读完自动到下一句";
 "enroll.purpose.label" = "声纹用来做什么";
-"enroll.purpose.value" = "只用来认出是你在叫它";
+"enroll.purpose.value" = "只用来认出是你在叫 Himawari";
 "enroll.where.label" = "存在哪";
 "enroll.where.value" = "只在这台 iPhone 上，不发给任何模型";
 "enroll.delete.label" = "不想要了";
@@ -63,8 +63,8 @@
 "notice.downgraded.batteryLow.title" = "电量不到 %d%%，现在只听名字";
 "notice.downgraded.deviceHot.title" = "手机有点热，现在只听名字";
 "notice.downgraded.batteryBudget.title" = "今天收听用的电到上限了，现在只听名字";
-"notice.downgraded.body" = "平常的话先不转字；叫它的名字照样应。充上电或凉下来后自动恢复";
-"notice.downgraded.batteryBudget.body" = "平常的话先不转字；叫它的名字照样应。明天恢复，上限在设置的“用量”里能改";
+"notice.downgraded.body" = "平常的话先不转字；叫 Himawari 的名字照样应。充上电或凉下来后自动恢复";
+"notice.downgraded.batteryBudget.body" = "平常的话先不转字；叫 Himawari 的名字照样应。明天恢复，上限在设置的“用量”里能改";
 "notice.restored.title" = "恢复正常收听";
 "notice.ask.body.airpods" = "同一句也在耳机里问了你";
 "resume.tomorrow" = "明天 %@ ";
@@ -75,7 +75,7 @@
 "demo.request" = "明天上午帮我约田中，";
 "demo.requestTail" = "十点左右";
 "demo.askHeard" = "帮我约田中";
-"live.talk.title" = "和她说话";
+"live.talk.title" = "和 Himawari 说话";
 "live.talk.listening" = "在听";
 "live.talk.speaking" = "在说";
 "live.talk.muted" = "静音了";
