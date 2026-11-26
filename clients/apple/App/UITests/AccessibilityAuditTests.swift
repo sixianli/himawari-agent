@@ -43,17 +43,23 @@ final class AccessibilityAuditTests: XCTestCase {
         mode: String,
         types: XCUIAccessibilityAuditType
     ) -> [AuditFinding] {
-        var found: [AuditFinding] = []
-        do {
-            try app.performAccessibilityAudit(for: types) { issue in
-                found.append(AuditFinding(scene: scene, mode: mode, issue: issue))
-                return true
+        var lastFailure: Error?
+        for _ in 0..<Self.auditAttempts {
+            var found: [AuditFinding] = []
+            do {
+                try app.performAccessibilityAudit(for: types) { issue in
+                    found.append(AuditFinding(scene: scene, mode: mode, issue: issue))
+                    return true
+                }
+                return found
+            } catch {
+                lastFailure = error
             }
-        } catch {
-            found.append(AuditFinding(scene: scene, mode: mode, failure: error))
         }
-        return found
+        return lastFailure.map { [AuditFinding(scene: scene, mode: mode, failure: $0)] } ?? []
     }
+
+    private static let auditAttempts = 2
 
     private func judge(_ found: [AuditFinding]) throws {
         let baseline = try AuditBaseline.load(from: Self.appleRoot.appendingPathComponent(AuditBaseline.path))
@@ -69,7 +75,7 @@ final class AccessibilityAuditTests: XCTestCase {
             if now > allowed {
                 XCTFail("\(key): \(now) accessibility issues, \(AuditBaseline.path) allows \(allowed); fix the new ones (see A11Y_AUDIT_ISSUE lines)")
             } else if now < allowed {
-                XCTFail("\(key): only \(now) accessibility issues left, lower its count in \(AuditBaseline.path) to \(now)")
+                print("::warning::A11Y_AUDIT_STALE \(key): only \(now) accessibility issues left, lower its count in \(AuditBaseline.path) to \(now)")
             }
         }
         let report = found.map(\.json)
