@@ -20,6 +20,7 @@ import {
   DEVICE_CONFIGURATION_DEFAULTS,
   type DeviceActionService,
   defaultDeviceHardLimits,
+  deviceVoiceTimingRecorder,
   type ExecutionLiveFeed,
   type GatewayAccessDecision,
   type GatewayAuthenticationContext,
@@ -955,6 +956,14 @@ export async function createProductionHttpComposition(
     keys: secretSources.keys,
     activeKey: { keyRef: payloadKey.ref, kekVersion: payloadKey.version, dekVersion: "dek-v1" },
   });
+  const recordVoiceTiming = deviceVoiceTimingRecorder({
+    ownerId,
+    agentId,
+    trace: repository.traceStore(),
+    payloads: repository.payloadStore(ownerId, agentId),
+    protector: payloadProtector,
+    now: clock,
+  });
   const csrfKeyRef = configuredSecret(
     configuration,
     identityConfiguration.csrf.keySecretRef,
@@ -1889,6 +1898,7 @@ export async function createProductionHttpComposition(
       home: { resolveAction: (input) => home.resolveAction(input) },
       configuration: () => deviceConfiguration,
       chatAttachments: () => chatAttachments,
+      recordVoiceTiming: (input) => recordVoiceTiming(input),
       audit: repository.auditLedger(),
       push: devicePush,
       ...(options.onDeviceAuditFailed ? { onAuditFailed: options.onDeviceAuditFailed } : {}),
