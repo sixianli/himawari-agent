@@ -26,6 +26,46 @@ export const INBOX_EVENT_ENTRY = templatePrompt({
   ],
 });
 
+export const MEMORY_SAVED_EVENT = templatePrompt({
+  id: "inbox.memory-saved",
+  purpose:
+    "主对话以外新存下或改了一条记忆时送进主对话的那件事的正文：记忆编号和时间；内容不放在这里，要看用 memory_open",
+  usedBy: ["apps/agent-service/src/production-memory-inbox.ts"],
+  layer: "last-user-message",
+  output: "free-text",
+  segments: [
+    text("主对话以外有一条记忆新存下或改过：第 "),
+    slot("number"),
+    text(" 条（"),
+    slot("time"),
+    text(
+      "）。内容没有写在这里，要看就用 memory_open 打开。看它和你知道的别的事（例如主人已有的安排）有没有冲突、有没有主人现在该知道的；没有就不出声。",
+    ),
+  ],
+});
+
+export const PERCEPTION_EPISODE_EVENT = templatePrompt({
+  id: "inbox.perception-episode",
+  purpose:
+    "手机感知到的一段经历整理好时送进主对话的那件事的正文：编号、起止时间、记录种类；感知内容不放在这里，要看用 perception_read 取回",
+  usedBy: ["apps/agent-service/src/production-perception-inbox.ts"],
+  layer: "last-user-message",
+  output: "free-text",
+  segments: [
+    text("手机感知到一段经历：编号 "),
+    slot("episodeId"),
+    text("，从 "),
+    slot("from"),
+    text(" 到 "),
+    slot("to"),
+    text("（主人当地时间），记录种类："),
+    slot("kinds"),
+    text(
+      "。内容没有写在这里，要看就用 perception_read，from 和 to 填这两个时间。看完和你知道的主人的事对一对，有主人现在该知道或该处理的再开口；没有就不出声。",
+    ),
+  ],
+});
+
 export const TOOL_TELL_OWNER = fixedPrompt({
   id: "tools.tell-owner",
   purpose: "tell_owner 工具的描述：被外来的事叫醒时怎样对主人开口、推不推到手机由谁定",

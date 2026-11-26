@@ -38,6 +38,7 @@ public final class ChatStore {
     public internal(set) var offlineShown = false
     public private(set) var loadingThreads = false
     public internal(set) var executions: [String: [ExecutionRecord]] = [:]
+    public internal(set) var backgroundWork: BackgroundWork?
 
     @ObservationIgnored private let api: DeviceAPI
     @ObservationIgnored private let outbox: Outbox
@@ -54,6 +55,7 @@ public final class ChatStore {
     @ObservationIgnored private var createdRevisions: [String: Int] = [:]
     @ObservationIgnored private var pendingTextRefs: Set<String> = []
     @ObservationIgnored private var executionLoads = ReloadGate<String>()
+    @ObservationIgnored private var backgroundLoads = ReloadGate<String>()
     @ObservationIgnored private let heartbeatSeconds: @Sendable () -> TimeInterval
     @ObservationIgnored private var watched: (threadId: String, stream: DeviceEventStream, task: Task<Void, Never>)?
     @ObservationIgnored private let answerLocale: AnswerLocale
@@ -166,6 +168,7 @@ public final class ChatStore {
     }
 
     private func restartConnections() {
+        notice?.retrying()
         events.restartConnection()
         watched?.stream.restartConnection()
     }
@@ -266,12 +269,18 @@ public final class ChatStore {
         return items
     }
 
+    public func showExecution(_ runId: String, in threadId: String) async {
+        guard ExecutionRefresh.needed(loaded: executions[runId] != nil, runStatus: run(runId, in: threadId)?.status) else { return }
+        await loadExecution(runId, in: threadId)
+    }
+
     public func loadExecution(_ runId: String, in threadId: String) async {
         guard !frozen else { return }
         guard executionLoads.begin(runId) else { return }
         while true {
             do {
-                executions[runId] = try await api.executionRecords(threadId: threadId, runId: runId, known: executions[runId] ?? [])
+                let records = try await api.executionRecords(threadId: threadId, runId: runId, known: executions[runId] ?? [])
+                if executions[runId] != records { executions[runId] = records }
             } catch {
                 executionLoads.cancel(runId)
                 await handle(error)
@@ -282,6 +291,24 @@ public final class ChatStore {
                 return
             }
             if !executionLoads.finish(runId) { return }
+        }
+    }
+
+    public func refreshBackgroundWork() async {
+        guard !frozen else { return }
+        guard backgroundLoads.begin("work") else { return }
+        while true {
+            do {
+                backgroundWork = try await api.backgroundWork()
+            } catch {
+                backgroundLoads.cancel("work")
+                return
+            }
+            if frozen {
+                backgroundLoads.cancel("work")
+                return
+            }
+            if !backgroundLoads.finish("work") { return }
         }
     }
 
@@ -390,6 +417,7 @@ public final class ChatStore {
             connection = .online
             onDeviceActions()
             await flush()
+            await refreshBackgroundWork()
         case .deviceActions:
             onDeviceActions()
         case .disconnected:
@@ -399,6 +427,7 @@ public final class ChatStore {
                 await load(threadEvent.threadId)
             }
             await refreshThreads()
+            await refreshBackgroundWork()
         case let .executionText(chunk):
             guard !StreamingReply(runId: chunk.runId).isSettled(in: details[chunk.threadId]) else { break }
             var reply = streaming[chunk.threadId].flatMap { $0.runId == chunk.runId ? $0 : nil } ?? StreamingReply(runId: chunk.runId)
@@ -408,7 +437,10 @@ public final class ChatStore {
             if details[threadId] != nil {
                 await load(threadId)
                 await loadExecution(runId, in: threadId)
+            } else if executions[runId] != nil {
+                await loadExecution(runId, in: threadId)
             }
+            await refreshBackgroundWork()
         case .notificationDeliver, .notificationWithdraw:
             onNotification?(event)
         case .unavailable:
@@ -416,6 +448,7 @@ public final class ChatStore {
         case .resyncRequired:
             await refreshThreads()
             for threadId in details.keys { await load(threadId) }
+            await refreshBackgroundWork()
         case .sessionInvalid:
             connection = .offline
             onSessionInvalid()

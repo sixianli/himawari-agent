@@ -67,11 +67,33 @@ const RULES = [
       /\b(?:UIImpactFeedbackGenerator|UINotificationFeedbackGenerator|UISelectionFeedbackGenerator|CHHapticEngine|WKInterfaceDevice|sensoryFeedback)\b/u,
   },
   {
+    code: "plain-button",
+    pattern:
+      /\.buttonStyle\(\s*\.plain\s*\)|\bPlainButtonStyle\(\)|\.buttonStyle\(\s*\.borderless\s*\)/u,
+  },
+  {
     code: "number-literal",
     pattern:
       /\b(?:size|cornerRadius|width|height|minWidth|minHeight|maxWidth|maxHeight|idealWidth|idealHeight|lineSpacing|fontSize|radius)\s*:\s*-?\d|\.(?:lineSpacing|cornerRadius|opacity|kerning|tracking)\(\s*-?\d/u,
   },
 ];
+
+export const FONT_DIRECTORIES = ["Sources", "App"];
+
+const FONT_RULE = {
+  code: "custom-font",
+  pattern:
+    /(?:Font)?\.custom\([^)]*\b(?:size|fixedSize):|design:\s*\.serif\b|\.withDesign\(\s*\.serif\s*\)|\b(?:UIFont|NSFont)\(\s*name:|\bCTFontCreateWithName\b/u,
+};
+
+export function findFontViolations(source, file) {
+  const violations = [];
+  source.split("\n").forEach((line, index) => {
+    if (FONT_RULE.pattern.test(line))
+      violations.push({ file, line: index + 1, code: FONT_RULE.code, text: line.trim() });
+  });
+  return violations;
+}
 
 export function findViolations(source, file) {
   const violations = [];
@@ -98,6 +120,11 @@ export function checkDesign(root = appleRoot, repo = repositoryRoot) {
   for (const directory of PAGE_DIRECTORIES) {
     for (const file of swiftFiles(path.join(root, directory))) {
       problems.push(...findViolations(readFileSync(file, "utf8"), path.relative(root, file)));
+    }
+  }
+  for (const directory of FONT_DIRECTORIES) {
+    for (const file of swiftFiles(path.join(root, directory))) {
+      problems.push(...findFontViolations(readFileSync(file, "utf8"), path.relative(root, file)));
     }
   }
   const web = path.join(root, WEB_DIRECTORY);

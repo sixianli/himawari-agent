@@ -146,7 +146,6 @@ enum MacDemo {
     }
 
     static func record(into folder: URL) {
-        SerifFace.shared.prepare()
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         for (appearance, suffix) in [(NSAppearance.Name.aqua, "light"), (.darkAqua, "dark")] {
             NSApp.appearance = NSAppearance(named: appearance)

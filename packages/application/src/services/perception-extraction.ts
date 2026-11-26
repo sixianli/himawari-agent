@@ -26,6 +26,7 @@ import type {
   PerceptionConfiguration,
   PerceptionEpisode,
   PerceptionRecord,
+  PerceptionRecordType,
   PerceptionScope,
   PerceptionSettings,
   PerceptionStorePort,
@@ -444,6 +445,10 @@ export interface PerceptionExtractionOptions {
   }) => Promise<PayloadRef>;
   readonly openTodos: () => Promise<readonly PerceptionOpenTodo[]>;
   readonly proposals?: PerceptionProposalPort;
+  readonly onEpisode?: (input: {
+    readonly episode: PerceptionEpisode;
+    readonly types: readonly PerceptionRecordType[];
+  }) => Promise<void>;
   readonly configuration: () => PerceptionConfiguration;
   readonly maximumCharacters: () => number;
   readonly timeZone: () => string;
@@ -595,6 +600,11 @@ export class PerceptionExtractionService {
     };
     try {
       const sources = await this.#sources(episode);
+      if (sources.length > 0)
+        await this.#options.onEpisode?.({
+          episode,
+          types: [...new Set(sources.map(({ record }) => record.type))],
+        });
       if (sources.every(({ text }) => text === null)) return await settle("done", null, null);
       const timeZone = this.#options.timeZone();
       const placeholders = new Map<string, string>();

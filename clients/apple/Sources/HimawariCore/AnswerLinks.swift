@@ -1,9 +1,13 @@
 import Foundation
 
 public enum AnswerLinks {
+    #if canImport(Darwin)
+    private static let linkDetector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
+    #endif
+
     public static func bareWebLinks(in text: String) -> [(range: Range<String.Index>, url: URL)] {
         #if canImport(Darwin)
-        guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else { return [] }
+        guard let detector = linkDetector else { return [] }
         let whole = NSRange(text.startIndex..., in: text)
         return detector.matches(in: text, options: [], range: whole).compactMap { match in
             guard let url = match.url, let range = Range(match.range, in: text) else { return nil }

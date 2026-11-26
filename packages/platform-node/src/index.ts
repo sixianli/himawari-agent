@@ -52,7 +52,6 @@ export * from "./text-admission.js";
 export * from "./thread-search-projector.js";
 export * from "./trusted-model-provider.js";
 export * from "./typesafe-jev-transport.js";
-export * from "./voice-addressee-decision.js";
 export * from "./web-host-boundary.js";
 export * from "./web-provider-chain.js";
 export * from "./web-provider-failure.js";

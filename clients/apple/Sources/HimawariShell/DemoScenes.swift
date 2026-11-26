@@ -29,7 +29,23 @@ enum DemoScene: String, CaseIterable {
     case memoryVersions = "next-4-memory-versions"
     case memoryTrash = "next-4-memory-trash"
     case herAbout = "next-6-her-about"
+    case herTimers = "next-9-timers"
+    case herTimersEmpty = "next-9-timers-empty"
+    case herTimersReminders = "next-9-timers-reminders"
+    case herTimerRecurring = "next-9-timer-recurring"
+    case herTimerReminder = "next-9-timer-reminder"
+    case herTimerPaused = "next-9-timer-paused"
+    case herNoTimers = "next-9-her-no-timers"
     case chatEmptyFlower = "next-6-chat-empty"
+    case backgroundEntry = "next-8-background"
+    case backgroundNone = "next-8-background-none"
+    case backgroundSheet = "next-8-background-sheet"
+    case backgroundSubthread = "next-8-background-subthread"
+    case backgroundExchanges = "next-8-background-exchanges"
+    case backgroundQuiet = "next-8-background-quiet"
+    case deletePerception = "next-7-delete-perception"
+    case deletePerceptionDays = "next-7-delete-perception-days"
+    case deletePerceptionEpisode = "next-7-delete-perception-episode"
     case pairing = "11-pairing"
     case pairingScan = "15-pairing-flow-1-scan"
     case pairingConfirmServer = "15-pairing-flow-1b-confirm-server"
@@ -103,7 +119,6 @@ struct DemoSceneView: View {
             .environment(\.listClock, DemoChatFixtures.now)
             .environment(\.stillFrames, !scene.rawValue.hasPrefix("motion-"))
             .environment(\.chatVoice, DemoVoice())
-            .onAppear { SerifFace.shared.prepare() }
             .task(id: scenePhase) {
                 guard scenePhase == .active else { return }
                 try? await Task.sleep(for: .milliseconds(300))
@@ -168,6 +183,20 @@ struct DemoSceneView: View {
                 .environment(\.chatShowsCopied, true)
         case .chatEmptyFlower:
             chat(DemoChatFixtures.empty())
+        case .backgroundEntry:
+            chat(DemoChatFixtures.backgroundWork())
+        case .backgroundNone:
+            chat(DemoChatFixtures.backgroundWork(empty: true))
+        case .backgroundSheet:
+            BackgroundWorkSheet(store: .demo(DemoChatFixtures.backgroundWork())) {}
+        case .backgroundSubthread:
+            subthread(DemoChatFixtures.backgroundFlightsId, opensExchanges: false)
+        case .backgroundExchanges:
+            subthread(DemoChatFixtures.backgroundFlightsId, opensExchanges: true)
+        case .backgroundQuiet:
+            NavigationStack {
+                SubthreadPage(store: .demo(DemoChatFixtures.backgroundWork()), route: SubthreadRoute(matter: "报销", subthreadId: "thread-sub-0000000000000000000000000000000d"))
+            }
         case .chatReplied:
             chat(DemoChatFixtures.replied())
         case .chatReplying:
@@ -241,9 +270,15 @@ struct DemoSceneView: View {
             DemoSensesHost(scene: .detail)
         case .sensesDenied:
             DemoSensesHost(scene: .denied)
+        case .deletePerception:
+            DemoPerceptionDeletionHost(segment: .episodes, episode: nil)
+        case .deletePerceptionDays:
+            DemoPerceptionDeletionHost(segment: .days, episode: nil)
+        case .deletePerceptionEpisode:
+            DemoPerceptionDeletionHost(segment: .episodes, episode: "episode:00000000000000000000000000000002")
         case .listenIntro, .listenEnroll, .listenLive, .listenInterrupted, .listenCalling, .listenAsking, .listenStopped:
             ListenDemoScene(scene: scene)
-        case .memory, .memoryDetail, .memoryEdit, .rules, .ruleDetail, .deviceAbilities, .her, .herApprovals, .herPrivacy, .herDevices, .herNotifications, .herAllowances, .herAllowancesEmpty, .herAllowanceDays, .memoryVersions, .memoryTrash, .herAbout:
+        case .memory, .memoryDetail, .memoryEdit, .rules, .ruleDetail, .deviceAbilities, .her, .herApprovals, .herPrivacy, .herDevices, .herNotifications, .herAllowances, .herAllowancesEmpty, .herAllowanceDays, .memoryVersions, .memoryTrash, .herAbout, .herTimers, .herTimersEmpty, .herTimersReminders, .herTimerRecurring, .herTimerReminder, .herTimerPaused, .herNoTimers:
             EmptyView()
         }
     }
@@ -251,6 +286,12 @@ struct DemoSceneView: View {
     private func approvalDetail(at index: Int) -> some View {
         let actions = DeviceActionsModel.demo()
         return ApprovalDetailView(model: actions, approval: actions.pending[index], openThread: { _ in }) {}
+    }
+
+    private func subthread(_ id: String, opensExchanges: Bool) -> some View {
+        NavigationStack {
+            SubthreadPage(store: .demo(DemoChatFixtures.backgroundWork()), route: SubthreadRoute(matter: "12 月 3 日大阪出差", subthreadId: id), exchangesOpen: opensExchanges)
+        }
     }
 
     private func chat(_ state: DemoChatState) -> some View {
@@ -271,6 +312,22 @@ struct DemoSensesHost: View {
             HandoverEntryRows()
         }
         .environment(\.senseOpensAutomatically, demo.opensAutomatically)
+    }
+}
+
+struct DemoPerceptionDeletionHost: View {
+    @State private var model: PerceptionDeletionModel
+    private let episode: String?
+
+    init(segment: PerceptionDeletionSegment, episode: String?) {
+        let model = PerceptionDeletionModel(senses: DemoSensesService.scene(.overview, now: DemoChatFixtures.now).model)
+        model.segment = segment
+        _model = State(initialValue: model)
+        self.episode = episode
+    }
+
+    var body: some View {
+        PerceptionDeletionView(model: model, opening: episode, close: {})
     }
 }
 

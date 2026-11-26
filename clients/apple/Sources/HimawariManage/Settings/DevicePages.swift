@@ -26,7 +26,7 @@ struct DevicePage: View {
                     } label: {
                         SettingsRow(icon: nil, title: M.deviceName, value: device.name, chevron: true)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
                     presenceRow(device)
                     let channel = M.channel(device.releaseChannel)
                     SettingsRow(icon: nil, title: M.pairedOn, value: Timestamp.parse(device.pairedAt).map(M.pairedDay), last: channel == nil)
@@ -51,7 +51,7 @@ struct DevicePage: View {
                     Text(M.removeDevice).hmType(SL.rowValue).foregroundStyle(Color.hmDanger)
                         .frame(minHeight: DL.linkMinHeight)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
                 .padding(.horizontal, DL.addLinkPadding)
             } else {
                 SheetHeader(title: "", leading: .back, action: back)

@@ -63,7 +63,7 @@ struct ContextChipView: View {
             Button(action: remove) {
                 Icon(.x, size: DesignTokens.Mac.chipClose).foregroundStyle(Color.hmMuted)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
             .accessibilityLabel(Text(L.format("input.remove", piece.name)))
         }
         .padding(.leading, DesignTokens.Mac.chipPaddingLeading)

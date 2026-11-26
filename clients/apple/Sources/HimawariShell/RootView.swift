@@ -48,7 +48,6 @@ public struct HimawariRootView: View {
                 HandoverEntryRoute(link.entry, safariURL: model.vault.pairingRecord()?.origin)
             }
         }
-        .onAppear { SerifFace.shared.prepare() }
         .onOpenURL { url in model.handlePairingLink(url.absoluteString) }
         .confirmationDialog(
             L.text("watch.offer.title"),
@@ -187,6 +186,9 @@ struct MainShell: View {
             senses: model.senses.map { senses in
                 AnyView(SensesView(model: senses) { HandoverEntryRows() })
             },
+            perceptionDeletion: model.senses.map { senses in
+                { (close: @escaping () -> Void) -> AnyView in AnyView(PerceptionDeletionView(model: PerceptionDeletionModel(senses: senses), close: close)) }
+            },
             sensesOn: { model.senses?.status?.senses.count },
             talk: { text in
                 herOpen = false
@@ -221,7 +223,7 @@ struct MainThreadWaiting: View {
                         .foregroundStyle(Color.hmSun)
                         .frame(minHeight: DesignTokens.Size.rowMinHeight)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

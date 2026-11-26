@@ -102,7 +102,6 @@ import {
   SystemdProviderSecretSource,
   stableErrorCode,
   TypeSafeJevTransport,
-  type VoiceAddresseeDecision,
   writeAgentServiceBootBinding,
   writeAuthorityFile,
   writeServiceDiagnostic,
@@ -193,6 +192,7 @@ import { ProductionOwnerRuleTools, ProductionOwnerRuleWriter } from "./productio
 import { ProductionOwnerSteering } from "./production-owner-steering.js";
 import { ProductionPayloadBrokerHandler } from "./production-payload-broker-handler.js";
 import { ProductionPerceptionExtraction } from "./production-perception-extraction.js";
+import { ProductionPerceptionInbox } from "./production-perception-inbox.js";
 import { ProductionPerceptionTools } from "./production-perception-tools.js";
 import {
   createProactivePushSource,
@@ -209,6 +209,7 @@ import {
   type ProductionRealEval,
   RealEvalSampleExpiry,
 } from "./production-real-eval.js";
+import { ProductionReminderInbox } from "./production-reminder-inbox.js";
 import { ProductionReminderTools, ProductionReminderWriter } from "./production-reminder-writer.js";
 import { createProductionRunComposition } from "./production-run-composition.js";
 import { ProductionRunDispatchLoop } from "./production-run-dispatch-loop.js";
@@ -225,13 +226,11 @@ import {
 } from "./production-sandbox-services.js";
 import { ProductionServiceLifecycle } from "./production-service-lifecycle.js";
 import { ProductionSubthreads } from "./production-subthreads.js";
-import { ProductionReminderInbox } from "./production-reminder-inbox.js";
 import { ProductionTellOwner } from "./production-tell-owner.js";
 import { ProductionThreadTasks } from "./production-thread-tasks.js";
 import { productionToolActionRegistry } from "./production-tool-actions.js";
 import { toolCallSandboxPrewarm } from "./production-tool-call-prewarm.js";
 import { ProductionVaultTools } from "./production-vault-tools.js";
-import { productionVoiceAddressee } from "./production-voice-addressee.js";
 import { ProductionWebPush, WebPushPresence } from "./production-web-push.js";
 import { createProductionWorkerParentBindingRegistry } from "./production-worker-parent-binding-registry.js";
 import {
@@ -299,14 +298,6 @@ let sandboxCommandInventoryOnce: Promise<SandboxCommandInventory> | undefined;
 function sandboxCommandInventory(): Promise<SandboxCommandInventory> {
   sandboxCommandInventoryOnce ??= inspectSandboxCommands();
   return sandboxCommandInventoryOnce;
-}
-
-function voiceAddresseeOption(
-  configuration: ProductConfiguration,
-  secretSource: ReturnType<typeof hostModelSources>["provider"],
-): { readonly voiceAddressee?: VoiceAddresseeDecision } {
-  const voiceAddressee = productionVoiceAddressee(configuration, secretSource);
-  return voiceAddressee ? { voiceAddressee } : {};
 }
 
 function productionClock(): ClockPort {
@@ -777,6 +768,7 @@ export async function startTenantRuntime(
   let observation: ProductionObservation | undefined;
   let realEval: ProductionRealEval | RealEvalSampleExpiry | undefined;
   let perceptionExtraction: ProductionPerceptionExtraction | undefined;
+  let perceptionInbox: ProductionPerceptionInbox | undefined;
   const webPushPresence = new WebPushPresence();
   let durableMemory: DurableMemoryService | undefined;
   let protector: PayloadProtectorPort | undefined;
@@ -2682,9 +2674,17 @@ export async function startTenantRuntime(
           configuration.runPolicy?.perception ?? PERCEPTION_CONFIGURATION_DEFAULTS;
         const extractionTimeZone = configuration.runPolicy?.timeZone ?? "UTC";
         let extractionEgress: ReturnType<typeof createProductionModelEgress> | undefined;
+        const episodeInbox = new ProductionPerceptionInbox({
+          scope: extractionScope,
+          store: repository.perception(),
+          timeZone: extractionTimeZone,
+          clock: { now: () => clock.now() },
+        });
+        perceptionInbox = episodeInbox;
         perceptionExtraction = new ProductionPerceptionExtraction({
           scope: extractionScope,
           store: repository.perception(),
+          onEpisode: (input) => episodeInbox.episode(input),
           model: createRealEvalModel({
             modelRef: extractionModelRef,
             invoker: (maxOutputTokens) =>
@@ -3567,6 +3567,7 @@ export async function startTenantRuntime(
             externalContent,
             subthreads,
             ...(reminderInbox ? { reminders: reminderInbox } : {}),
+            ...(perceptionInbox ? { perception: perceptionInbox } : {}),
             timerReminders: {
               writer: reminderWriter,
               read: (id: string) => requireValue(repository).memoryReminders().read(id),
@@ -3586,7 +3587,6 @@ export async function startTenantRuntime(
               ),
             }
           : {}),
-        ...voiceAddresseeOption(configuration, sources.provider),
         ...(museIntake ? { museIntake } : {}),
         ...(gapExport ? { gapExport } : {}),
         ...(mcpRead ? { mcpRead } : {}),

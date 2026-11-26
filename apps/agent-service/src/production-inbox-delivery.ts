@@ -27,6 +27,7 @@ import type {
   InboxDeliveryEvent,
   InboxDeliveryResult,
 } from "./production-inbox-worker.js";
+import { isApprovalAnswerEvent } from "./production-approval-answers.js";
 import type { ProductionMainThread } from "./production-main-thread.js";
 import { isReminderEvent, type ProductionReminderInbox } from "./production-reminder-inbox.js";
 import type { ProductionSubthreads } from "./production-subthreads.js";
@@ -171,6 +172,8 @@ export class ProductionInboxDelivery implements InboxDelivery {
     const first = events[0];
     if (!first)
       return { status: "handled", outcome: "empty", reasonCode: "no_events", runId: null };
+    if (input.fromOwner && events.every(({ entry }) => isApprovalAnswerEvent(entry.sourceKind)))
+      return this.#approvalAnswers(input.threadId, events, signal);
     if (input.fromOwner)
       return {
         status: "handled",
@@ -299,6 +302,48 @@ export class ProductionInboxDelivery implements InboxDelivery {
       outcome: ending === "settled" ? "delivered" : ending,
       reasonCode: cutOff ? "subthread_cut_off" : "subthread_ran",
       runId,
+    };
+  }
+
+  async #approvalAnswers(
+    threadId: string | null,
+    events: readonly InboxDeliveryEvent[],
+    signal: AbortSignal,
+  ): Promise<InboxDeliveryResult> {
+    const sleep = this.#options.sleep ?? defaultSleep;
+    const runIds = [...new Set(events.map(({ entry }) => entry.sourceRef))] as RunId[];
+    const subthreads = this.#options.subthreads;
+    const subthread = threadId !== null && subthreads ? await subthreads.open(threadId) : undefined;
+    let last: RunId | null = null;
+    for (const runId of runIds) {
+      last = runId;
+      let resumed = false;
+      for (;;) {
+        const stored = await this.#options.runs.readRun(runId);
+        const status = stored?.run.status;
+        if (status === undefined || TERMINAL.has(status)) break;
+        if (status !== "awaiting_approval") resumed = true;
+        else if (resumed) break;
+        if (resumed && !subthread) break;
+        await sleep(this.#options.pollMs ?? POLL_MS, signal);
+      }
+      if (!subthread || !subthreads) continue;
+      const stored = await this.#options.runs.readRun(runId);
+      const status = stored?.run.status;
+      if (status === "awaiting_approval") {
+        await subthreads.awaitingApproval({ threadId: subthread.threadId, runId });
+        continue;
+      }
+      await subthreads.approvalSettled(subthread.threadId);
+      const cutOff = status === "failed" && (await this.#cutOff(runId));
+      if (status === "completed" || cutOff)
+        await subthreads.afterRun({ threadId: subthread.threadId, runId, cutOff });
+    }
+    return {
+      status: "handled",
+      outcome: "resumed",
+      reasonCode: "approval_answered",
+      runId: last,
     };
   }
 

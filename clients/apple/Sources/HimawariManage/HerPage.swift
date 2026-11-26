@@ -23,20 +23,25 @@ public struct HerPage: View {
         case device(String)
         case approvals
         case allowances
+        case timers
+        case timer(String)
         case about
     }
 
     @State private var settings: SettingsStore
     @State private var memory: MemoryStore
     @State private var quietHours: QuietHoursStore
+    @State private var timers: TimersStore
     @State private var path: [Page] = []
     @State private var sensesOpen = false
     @State private var vaultCount: HerVaultCount = .unknown
     @State private var vaultOpen = false
+    @State private var deletionOpen = false
     private let listening: (any HerListening)?
     private let actions: DeviceActionsModel?
     private let openListening: () -> Void
     private let senses: AnyView?
+    private let perceptionDeletion: ((@escaping () -> Void) -> AnyView)?
     private let sensesOn: () -> Int?
     private let talk: (String) -> Void
     private let close: () -> Void
@@ -52,6 +57,7 @@ public struct HerPage: View {
         actions: DeviceActionsModel? = nil,
         openListening: @escaping () -> Void = {},
         senses: AnyView? = nil,
+        perceptionDeletion: ((@escaping () -> Void) -> AnyView)? = nil,
         sensesOn: @escaping () -> Int? = { nil },
         talk: @escaping (String) -> Void,
         close: @escaping () -> Void,
@@ -65,10 +71,12 @@ public struct HerPage: View {
         _settings = State(initialValue: SettingsStore(gateway: gateway, identity: identity))
         _memory = State(initialValue: MemoryStore(gateway: gateway))
         _quietHours = State(initialValue: QuietHoursStore(gateway: gateway))
+        _timers = State(initialValue: TimersStore(gateway: gateway))
         self.listening = listening
         self.actions = actions
         self.openListening = openListening
         self.senses = senses
+        self.perceptionDeletion = perceptionDeletion
         self.sensesOn = sensesOn
         self.talk = talk
         self.close = close
@@ -89,15 +97,17 @@ public struct HerPage: View {
         #endif
     }
 
-    init(settings: SettingsStore, memory: MemoryStore, quietHours: QuietHoursStore, listening: (any HerListening)? = nil, actions: DeviceActionsModel? = nil, senses: AnyView? = nil, vaultItems: HerVaultCount = .items(3), path: [Page] = []) {
+    init(settings: SettingsStore, memory: MemoryStore, quietHours: QuietHoursStore, timers: TimersStore? = nil, listening: (any HerListening)? = nil, actions: DeviceActionsModel? = nil, senses: AnyView? = nil, vaultItems: HerVaultCount = .items(3), path: [Page] = []) {
         _settings = State(initialValue: settings)
         _memory = State(initialValue: memory)
         _quietHours = State(initialValue: quietHours)
+        _timers = State(initialValue: timers ?? TimersStore(timers: nil))
         _path = State(initialValue: path)
         self.listening = listening
         self.actions = actions
         openListening = {}
         self.senses = senses
+        perceptionDeletion = senses.map { shown in { _ in shown } }
         sensesOn = { 4 }
         talk = { _ in }
         close = {}
@@ -118,25 +128,31 @@ public struct HerPage: View {
                             Button { path.append(.approvals) } label: {
                                 HerRow(icon: .handStop, title: M.approvalsWaiting(actions.waitingCount), last: true)
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(.pressable)
                         }
                     }
                     SettingsGroup(label: nil) {
                         Button { path.append(.memory) } label: {
                             HerRow(icon: .affiliate, title: M.herMemory, subtitle: memory.summary(categoryLabel: M.category).map(M.memorySummary), last: true)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.pressable)
                     }
                     SettingsGroup(label: nil) {
+                        if timers.phase != .unsupported {
+                            Button { path.append(.timers) } label: {
+                                HerRow(icon: .alarm, title: M.timersTitle, subtitle: timersSummary)
+                            }
+                            .buttonStyle(.pressable)
+                        }
                         Button { path.append(.allowances) } label: {
                             HerRow(icon: .shieldCheck, title: M.allowancesTitle, subtitle: M.allowancesSummary(memory.allowances.count), last: vaultCount == .unsupported)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.pressable)
                         if vaultCount != .unsupported {
                             Button { vaultOpen = true } label: {
                                 HerRow(icon: .key, title: M.vaultTitle, subtitle: M.vaultSummary(vaultCount), last: true)
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(.pressable)
                         }
                     }
                     SettingsGroup(label: nil) {
@@ -144,48 +160,44 @@ public struct HerPage: View {
                             Button { path.append(.notifications) } label: {
                                 HerRow(icon: .bell, title: M.notificationsTitle, subtitle: M.quietSummary(hours))
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(.pressable)
                         }
                         Button { path.append(.privacy) } label: {
                             HerRow(icon: .eye, title: M.privacy)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.pressable)
                         Button { path.append(.devices) } label: {
                             HerRow(icon: .deviceMobilePlain, title: M.devicesTitle, subtitle: devicesSummary, last: true)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.pressable)
                     }
                     SettingsGroup(label: nil) {
                         Button { path.append(.about) } label: {
                             HerRow(icon: .infoCircle, title: M.aboutTitle, subtitle: AboutPage.versionLine, last: true)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.pressable)
                     }
                 }
-                .padding(.top, DesignTokens.Her.pagePaddingTop)
+                .padding(.top, 8)
                 .padding(.horizontal, DesignTokens.Size.pagePaddingX)
                 .padding(.bottom, DesignTokens.Size.sheetPaddingBottom)
             }
             .scrollIndicators(.hidden)
             .refreshable { await load() }
-            .overlay(alignment: .topLeading) {
-                GlassCircleButton(Text(M.collapse), action: close) {
-                    Icon(.chevronDown, size: DesignTokens.IconSize.glassButton)
-                }
-                .padding(.leading, DesignTokens.Size.pagePaddingX)
-                .padding(.top, DesignTokens.Size.sheetPaddingTop)
-            }
             .himawariScreenBackground()
+            .navigationTitle(M.herPage)
             #if os(iOS)
-            .toolbar(.hidden, for: .navigationBar)
+            .navigationBarTitleDisplayMode(.inline)
             #endif
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(M.done, action: close)
+                }
+            }
             .navigationDestination(for: Page.self) { page in
                 switch page {
                 case .memory:
-                    MemoryRootView(store: memory, talk: talk, back: { path.removeLast() })
-                        #if os(iOS)
-                        .toolbar(.hidden, for: .navigationBar)
-                        #endif
+                    MemoryRootView(store: memory, talk: talk)
                 case .notifications:
                     NotificationsPage(store: quietHours) { path.removeLast() }
                 case .privacy:
@@ -194,6 +206,7 @@ public struct HerPage: View {
                         listening: listening,
                         openListening: openListening,
                         openSenses: senses == nil ? nil : { sensesOpen = true },
+                        openDeletion: perceptionDeletion == nil ? nil : { deletionOpen = true },
                         sensesSummary: sensesOn().map(M.sensesOn)
                     ) { path.removeLast() }
                 case .devices:
@@ -202,14 +215,15 @@ public struct HerPage: View {
                     DevicePage(store: settings, deviceId: id, actions: actions, removedThisDevice: removedThisDevice) { path.removeLast() }
                 case .allowances:
                     HerAllowancesPage(memory: memory) { path.removeLast() }
+                case .timers:
+                    TimersPage(store: timers, open: { path.append(.timer($0)) }) { path.removeLast() }
+                case .timer(let id):
+                    TimerDetailPage(store: timers, timerId: id) { path.removeLast() }
                 case .about:
                     AboutPage(server: server) { path.removeLast() }
                 case .approvals:
                     if let actions {
                         ApprovalsView(model: actions, openThread: { _ in close() }) { path.removeLast() }
-                            #if os(iOS)
-                            .toolbar(.hidden, for: .navigationBar)
-                            #endif
                     }
                 }
             }
@@ -218,9 +232,18 @@ public struct HerPage: View {
         .sheet(isPresented: $sensesOpen) {
             senses
         }
+        .sheet(isPresented: $deletionOpen) {
+            perceptionDeletion?({ deletionOpen = false })
+        }
         .sheet(isPresented: $vaultOpen, onDismiss: { Task { vaultCount = await countVault() } }) {
             vault?({ vaultOpen = false })
         }
+    }
+
+    private var timersSummary: String? {
+        guard timers.phase == .loaded else { return nil }
+        let counts = timers.counts
+        return M.timersSummary(active: counts.active, paused: counts.paused)
     }
 
     private var devicesSummary: String? {
@@ -232,8 +255,9 @@ public struct HerPage: View {
         async let settingsLoaded: Void = settings.load()
         async let memoryLoaded: Void = memory.load()
         async let quietLoaded: Void = quietHours.load()
+        async let timersLoaded: Void = timers.load()
         vaultCount = await countVault()
-        _ = await (settingsLoaded, memoryLoaded, quietLoaded)
+        _ = await (settingsLoaded, memoryLoaded, quietLoaded, timersLoaded)
     }
 }
 
@@ -297,6 +321,7 @@ struct PrivacyPage: View {
     let listening: (any HerListening)?
     let openListening: () -> Void
     let openSenses: (() -> Void)?
+    var openDeletion: (() -> Void)? = nil
     var sensesSummary: String? = nil
     let back: () -> Void
     @State private var failed = false
@@ -305,12 +330,20 @@ struct PrivacyPage: View {
     var body: some View {
         SettingsPage(gap: SL.pageGap) {
             SheetHeader(title: M.privacy, leading: .back, action: back)
-            if let openSenses {
+            if openSenses != nil || openDeletion != nil {
                 SettingsGroup(label: nil) {
-                    Button(action: openSenses) {
-                        HerRow(icon: .eye, title: M.letHerSense, subtitle: sensesSummary, last: true)
+                    if let openSenses {
+                        Button(action: openSenses) {
+                            HerRow(icon: .eye, title: M.letHerSense, subtitle: sensesSummary, last: openDeletion == nil)
+                        }
+                        .buttonStyle(.pressable)
                     }
-                    .buttonStyle(.plain)
+                    if let openDeletion {
+                        Button(action: openDeletion) {
+                            HerRow(icon: .trash, title: M.deletePerception, last: true)
+                        }
+                        .buttonStyle(.pressable)
+                    }
                 }
             }
             if let overview = memory.overview {
@@ -338,7 +371,7 @@ struct PrivacyPage: View {
                             last: true
                         )
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
                 }
             }
         }

@@ -16,7 +16,7 @@ struct ListenSheetHeader: View {
                     .frame(width: 48, height: 48)
                     .background(Color.hmFill, in: Circle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
             .accessibilityLabel(Text(leadingLabel))
             Spacer()
             Text(title)
@@ -76,7 +76,7 @@ struct ListenLink: View {
                 .frame(minHeight: 44)
                 .padding(.horizontal, 12)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
     }
 }
 
@@ -96,7 +96,7 @@ public struct ListenIntroView: View {
                 Icon(.earLarge, size: 72)
                     .foregroundStyle(Color.hmSun)
                 Text(L.text("intro.hero"))
-                    .font(.himawari(26, weight: .semibold))
+                    .font(.system(.title, weight: .semibold))
                     .multilineTextAlignment(.center)
                     .foregroundStyle(Color.hmText)
             }
@@ -158,7 +158,7 @@ public struct VoiceprintEnrollView: View {
                     .font(.rounded(15, weight: .semibold))
                     .foregroundStyle(Color.hmMuted)
                 Text(progress.prompt)
-                    .font(.himawari(26, weight: .semibold))
+                    .font(.system(.title, weight: .semibold))
                     .lineSpacing(26 * 0.5 - 8)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(Color.hmText)

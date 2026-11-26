@@ -91,7 +91,7 @@ public struct ProcessRowView: View {
             .foregroundStyle(Color.hmMuted)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
         .disabled(steps.isEmpty)
         .accessibilityHint(Text(L.text("process.expand")))
         .sheet(isPresented: $showingSteps) {
@@ -125,7 +125,7 @@ struct ProcessStepsSheet: View {
                             .frame(width: DesignTokens.Size.glassButton, height: DesignTokens.Size.glassButton)
                             .background(Color.hmFill, in: Circle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
                     .accessibilityLabel(Text(L.text("process.sheet.close")))
                     Spacer()
                 }

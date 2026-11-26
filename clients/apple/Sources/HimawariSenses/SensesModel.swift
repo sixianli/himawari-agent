@@ -185,7 +185,7 @@ public final class SensesModel {
         defer { working = nil }
         do {
             let result = try await service.deleteRecords(item, reason: L.format("detail.deleteAll", item.name))
-            notice = L.format("detail.deleted", result.deleted.records + result.deleted.trackPoints)
+            notice = L.format("detail.deleted", result.removed)
             await loadDay(item)
             await reloadStatus()
         } catch SensesGatewayError.confirmationCancelled {

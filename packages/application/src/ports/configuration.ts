@@ -1,5 +1,4 @@
 import type { AgentId, DemoLocale, DeploymentId, OwnerId } from "@himawari-agent/domain";
-import type { VoiceAddresseeConfiguration } from "../services/voice-addressee.js";
 import type { ApplePushConfiguration } from "./apple-push.js";
 import type { DataClassification } from "./common.js";
 import type { DeviceConfiguration } from "./device-limits.js";
@@ -456,7 +455,6 @@ export interface RunPolicyConfiguration {
   readonly homeFeed?: HomeFeedConfiguration;
   readonly searchAsk?: SearchAskConfiguration;
   readonly perception?: PerceptionConfiguration;
-  readonly voiceAddressee?: VoiceAddresseeRouteConfiguration;
   readonly proactive?: ProactiveConfiguration;
   readonly coding?: CodingRouteConfiguration;
   readonly publicSearch?: PublicSearchRouteConfiguration;
@@ -468,12 +466,6 @@ export interface RunPolicyConfiguration {
   readonly freezeThreadPrompts?: boolean;
   readonly memoryLimit: number;
   readonly retiredKeys?: readonly string[];
-}
-
-export interface VoiceAddresseeRouteConfiguration extends VoiceAddresseeConfiguration {
-  readonly model: string;
-  readonly secretRef: string;
-  readonly inputMicrosPerMillionTokens: number;
 }
 
 export interface AutomaticReviewConfiguration {

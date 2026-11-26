@@ -68,7 +68,7 @@ struct ChecklistView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.pressable)
                         if expanded {
                             ScrollView {
                                 VStack(alignment: .leading, spacing: DesignTokens.Mac.statusBadgeGap) {

@@ -24,6 +24,18 @@ public final class OfflineNotice {
             return
         }
         guard pending == nil, !shown else { return }
+        startGrace()
+    }
+
+    public func retrying() {
+        guard !connected else { return }
+        pending?.cancel()
+        pending = nil
+        show(false)
+        startGrace()
+    }
+
+    private func startGrace() {
         let grace = grace
         pending = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(grace * 1_000_000_000))

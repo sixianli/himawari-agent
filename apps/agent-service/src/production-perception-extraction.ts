@@ -10,6 +10,7 @@ import {
   type PayloadStorePort,
   type PerceptionConfiguration,
   type PerceptionExtractionModel,
+  type PerceptionExtractionOptions,
   type PerceptionExtractionReport,
   PerceptionExtractionService,
   type PerceptionProposalPort,
@@ -30,6 +31,7 @@ export interface ProductionPerceptionExtractionOptions {
   readonly book: Pick<MemoryBookStorePort, "latestGeneration">;
   readonly reminders: Pick<ProductionReminderWriter, "list">;
   readonly proposals?: PerceptionProposalPort;
+  readonly onEpisode?: PerceptionExtractionOptions["onEpisode"];
   readonly payloads: PayloadStorePort;
   readonly protector: PayloadProtectorPort;
   readonly tag: () => Promise<EgressPlaceholderTag>;
@@ -83,6 +85,7 @@ export function createPerceptionExtractionService(
         due: localTimeText(reminder.dueAt, options.timeZone),
       })),
     ...(options.proposals ? { proposals: options.proposals } : {}),
+    ...(options.onEpisode ? { onEpisode: options.onEpisode } : {}),
     configuration: options.configuration,
     maximumCharacters: () =>
       options.deviceConfiguration().limits[PERCEPTION_EXTRACT_SIZE_LIMIT_KEY],

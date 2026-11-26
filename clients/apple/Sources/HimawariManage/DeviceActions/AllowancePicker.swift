@@ -45,7 +45,7 @@ struct AllowancePicker: View {
                 }
                 .contentShape(Capsule(style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
         .accessibilityAddTraits(on ? .isSelected : [])
     }
 

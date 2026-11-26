@@ -10,6 +10,7 @@ struct ChatInputBar: View {
     var voice = false
     var hold: HoldPhase?
     var dictating = false
+    var offline = false
     var openAttach: (() -> Void)?
     var stop: (() -> Void)?
     var startTalk: (() -> Void)?
@@ -80,7 +81,7 @@ struct ChatInputBar: View {
             .foregroundStyle(Color.hmDanger)
             .frame(maxWidth: .infinity, minHeight: DesignTokens.Size.composerButton)
         case nil:
-            TextField(L.text("chat.input.placeholder"), text: $text, axis: .vertical)
+            TextField(L.text(offline ? "chat.offline" : "chat.input.placeholder"), text: $text, axis: .vertical)
                 .hmType(DesignTokens.TypeScale.body)
                 .foregroundStyle(Color.hmText)
                 .lineLimit(1...6)
@@ -120,7 +121,7 @@ struct ChatInputBar: View {
                 .frame(width: DesignTokens.Size.composerButton, height: DesignTokens.Size.composerButton)
                 .background(fill, in: Circle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
         .accessibilityLabel(Text(label))
     }
 }

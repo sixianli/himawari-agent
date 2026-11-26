@@ -20,8 +20,6 @@ import {
 
 export const SWEEP_STEP = 10;
 export const PREFETCH_SIMILARITY_LEVELS = Object.freeze([1000, 950, 900, 800]);
-export const ADDRESSEE_YES_LEVELS = Object.freeze([600, 700, 800, 900]);
-export const ADDRESSEE_NO_LEVELS = Object.freeze([100, 200, 300, 400]);
 const CHARACTER_LANGUAGES = new Set(["zh-Hans", "ja", "mixed"]);
 const CALL_PURPOSES = new Set(["command", "bystander", "tv_mention", "owner_mention"]);
 const NEGATIVE_CALLS = new Set(["bystander", "tv_mention"]);
@@ -300,102 +298,7 @@ export function scorePrefetch(observations) {
   };
 }
 
-export function addresseeKey(heardName, request) {
-  return JSON.stringify([heardName, request]);
-}
-
-export function addresseeQuestions(observations) {
-  const questions = new Map();
-  for (const { clip, call } of observations) {
-    if (!CALL_PURPOSES.has(clip.purpose)) continue;
-    if (typeof call?.request !== "string" || call.request.trim().length === 0) continue;
-    if (typeof call.heardName !== "string" || call.heardName.length === 0) continue;
-    questions.set(addresseeKey(call.heardName, call.request), {
-      heardName: call.heardName,
-      request: call.request,
-    });
-  }
-  return [...questions.values()];
-}
-
-export function parseAddresseeJudgments(text) {
-  const judgments = new Map();
-  for (const line of parseObservations(text))
-    judgments.set(addresseeKey(line.heardName, line.request), line);
-  return judgments;
-}
-
-function percentile(values, share) {
-  if (values.length === 0) return null;
-  const sorted = [...values].sort((a, b) => a - b);
-  return sorted[Math.min(sorted.length - 1, Math.ceil(share * sorted.length) - 1)];
-}
-
-function spokenSeconds(observations) {
-  return observations.reduce(
-    (sum, { transcripts }) =>
-      sum +
-      Math.max(0, ...(transcripts ?? []).flatMap(({ pieces }) => pieces.map((piece) => piece.at))),
-    0,
-  );
-}
-
-export function scoreAddressee(observations, judgments, gates) {
-  const calls = observations.filter(
-    (observation) => CALL_PURPOSES.has(observation.clip.purpose) && executes(observation, gates),
-  );
-  const probabilityOf = ({ call }) => {
-    if (typeof call.heardName !== "string" || call.heardName.length === 0) return null;
-    const judged = judgments.get(addresseeKey(call.heardName, call.request));
-    return typeof judged?.probability === "number" ? judged.probability : null;
-  };
-  const owner = calls.filter(({ clip }) => clip.source === "owner" && clip.purpose === "command");
-  const unwanted = calls.filter(
-    ({ clip }) => NEGATIVE_CALLS.has(clip.purpose) || clip.purpose === "owner_mention",
-  );
-  const judged = [...judgments.values()];
-  const hours = spokenSeconds(observations) / 3600;
-  const outcome = (observation, yes, no) => {
-    const probability = probabilityOf(observation);
-    if (probability === null) return "asked";
-    if (probability * 1000 >= yes) return "executed";
-    if (probability * 1000 <= no) return "dropped";
-    return "asked";
-  };
-  const rows = [];
-  for (const yes of ADDRESSEE_YES_LEVELS)
-    for (const no of ADDRESSEE_NO_LEVELS) {
-      if (no >= yes) continue;
-      const count = (items, kind) => items.filter((item) => outcome(item, yes, no) === kind).length;
-      const wronglyExecuted = count(unwanted, "executed");
-      rows.push({
-        yes,
-        no,
-        executed: rate(count(owner, "executed"), owner.length),
-        askedOwner: rate(count(owner, "asked"), owner.length),
-        missed: rate(count(owner, "dropped"), owner.length),
-        wronglyExecuted,
-        wronglyExecutedPerHour: hours > 0 ? wronglyExecuted / hours : null,
-        askedOnUnwanted: count(unwanted, "asked"),
-      });
-    }
-  const latencies = judged
-    .map(({ milliseconds }) => milliseconds)
-    .filter((value) => Number.isFinite(value));
-  return {
-    ownerCommands: owner.length,
-    unwanted: unwanted.length,
-    hours,
-    judged: judged.length,
-    failed: judged.filter(({ probability }) => typeof probability !== "number").length,
-    medianMilliseconds: percentile(latencies, 0.5),
-    p95Milliseconds: percentile(latencies, 0.95),
-    costMicros: judged.reduce((sum, { costMicros }) => sum + (costMicros ?? 0), 0),
-    rows,
-  };
-}
-
-export function scoreListening(observations, judgments = null) {
+export function scoreListening(observations) {
   const command = scoreCommand(observations);
   return {
     observations: observations.length,
@@ -403,17 +306,6 @@ export function scoreListening(observations, judgments = null) {
     command,
     transcription: scoreTranscription(observations),
     prefetch: scorePrefetch(observations),
-    addressee:
-      judgments === null
-        ? null
-        : scoreAddressee(
-            observations,
-            judgments,
-            gatesWith({
-              ambient: command.recommended.ambient?.threshold ?? VOICE_SCORE_MAX + 1,
-              near: command.recommended.airpods?.threshold ?? VOICE_SCORE_MAX + 1,
-            }),
-          ),
   };
 }
 
@@ -494,39 +386,15 @@ export function renderReport(score) {
     "| --- | --- |",
   );
   for (const row of prefetch.similarity) lines.push(`| ${row.threshold} | ${interval(row.rate)} |`);
-  if (score.addressee) renderAddressee(lines, score.addressee);
   return `${lines.join("\n")}\n`;
-}
-
-function renderAddressee(lines, addressee) {
-  lines.push("", "## 判断模型：是不是在叫它", "");
-  lines.push(
-    `只算通过了上面推荐门槛的句子：主人叫它 ${addressee.ownerCommands} 句，旁人、电视和主人只是提到它共 ${addressee.unwanted} 句。`,
-    `问了判断模型 ${addressee.judged} 次，失败 ${addressee.failed} 次；延迟中位数 ${addressee.medianMilliseconds ?? "—"} 毫秒，95% 不超过 ${addressee.p95Milliseconds ?? "—"} 毫秒；估算费用 ${(addressee.costMicros / 1e6).toFixed(6)} 美元。`,
-    `每小时误执行按录音里说话的总时长 ${(addressee.hours * 60).toFixed(1)} 分钟折算；录音是一句一句录的，不是连续一整天的收听，所以只能用来比较不同门槛。`,
-    "",
-    "| 执行门槛 | 不执行门槛 | 主人叫它直接执行 | 先问主人 | 漏掉 | 误执行 | 每小时误执行 | 不该执行却问了主人 |",
-    "| --- | --- | --- | --- | --- | --- | --- | --- |",
-  );
-  for (const row of addressee.rows)
-    lines.push(
-      `| ${row.yes} | ${row.no} | ${interval(row.executed)} | ${interval(row.askedOwner)} | ${interval(row.missed)} | ${row.wronglyExecuted} | ${row.wronglyExecutedPerHour?.toFixed(2) ?? "—"} | ${row.askedOnUnwanted} |`,
-    );
 }
 
 export function run(argv, options = {}) {
   const args = new Map();
   for (let index = 0; index < argv.length; index += 2) args.set(argv[index], argv[index + 1]);
   const input = args.get("--observations");
-  if (!input)
-    throw new Error(
-      "usage: listening-score.mjs --observations FILE [--addressee FILE] [--out DIR]",
-    );
-  const addressee = args.get("--addressee");
-  const score = scoreListening(
-    parseObservations(readFileSync(input, "utf8")),
-    addressee ? parseAddresseeJudgments(readFileSync(addressee, "utf8")) : null,
-  );
+  if (!input) throw new Error("usage: listening-score.mjs --observations FILE [--out DIR]");
+  const score = scoreListening(parseObservations(readFileSync(input, "utf8")));
   const report = renderReport(score);
   const out = args.get("--out");
   if (out) {

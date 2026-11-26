@@ -1,0 +1,25 @@
+#!/bin/bash
+set -uo pipefail
+operands=()
+while [[ "$#" -gt 0 ]]; do
+  case "$1" in
+    -o | -i | -P | -F | -S | -c | -l) shift 2 ;;
+    -*) shift ;;
+    *) operands+=("$1"); shift ;;
+  esac
+done
+[[ "${#operands[@]}" -eq 2 ]] || { echo "shim scp: expected one source and one destination" >&2; exit 255; }
+source="${operands[0]}"
+destination="${operands[1]}"
+[[ "$destination" == *:* ]] || { echo "shim scp: destination must be user@host:path" >&2; exit 255; }
+target="${destination%%:*}"
+path="${destination#*:}"
+account="${target%@*}"
+[[ "$account" != "$target" ]] || account=root
+[[ "$account" =~ ^[a-z_][a-z0-9_-]*$ ]] || { echo "shim scp: bad account $account" >&2; exit 255; }
+quoted="$(printf '%q' "$path")"
+if [[ "$account" == root ]]; then
+  /bin/bash -c "cat > $quoted" < "$source"
+else
+  /usr/sbin/runuser -l "$account" -c "cat > $quoted" < "$source"
+fi

@@ -24,17 +24,16 @@ import {
   PERCEPTION_SENSES,
   PERCEPTION_TEXT_MAXIMUM,
   PERCEPTION_UTTERANCE_ID_PATTERN,
+  PHONE_VOICE_PROOF_PREFIX,
   PORT_ERROR_CODES,
   type ThreadGatewayRequestMessage,
   type UploadGrantPurpose,
+  type VaultService,
   VOICE_HEARD_NAME_MAXIMUM_CHARACTERS,
   VOICE_TRIGGERS,
-  type VoiceAddresseeOutcome,
-  type VoiceAddresseeRequest,
   type VoiceEvidence,
   type VoiceGates,
   type VoiceTrigger,
-  type VaultService,
 } from "@himawari-agent/application";
 import {
   DATA_EXPORT_ID_PATTERN,
@@ -65,6 +64,7 @@ import { DEVICE_PUSH_ERROR_CODES, DevicePushError, type DevicePushPort } from ".
 import type { DeviceSignedRequest } from "./device-request-signature.js";
 import {
   type AuthenticatedDeviceRequest,
+  type DeviceStreamDiagnostic,
   PAIRED_DEVICE_ERROR_CODES,
   PairedDeviceError,
   type PairedDeviceService,
@@ -295,10 +295,6 @@ export interface DeviceApiRouteOptions {
     }) => Promise<readonly string[]>;
   };
   readonly voiceGates?: () => VoiceGates;
-  readonly addressee?: (input: {
-    readonly authentication: GatewayAuthenticationContext;
-    readonly request: VoiceAddresseeRequest;
-  }) => Promise<VoiceAddresseeOutcome>;
   readonly prefetch?: UtterancePrefetchPort;
   readonly threadGateway: AgentThreadGatewayPort;
   readonly gateways: DeviceGateways;
@@ -492,28 +488,67 @@ export async function presentDevicePerception(
   };
 }
 
+interface HeldDeviceStream {
+  readonly stream: Readable;
+  readonly connection: NodeJS.EventEmitter & { destroy(): unknown };
+  readonly openedAt: number;
+}
+
+const REOPEN_NUMBERS = ["lastConnected", "lastStatus", "lastError", "offline", "attempts"] as const;
+const DROP_REASON = /^[A-Za-z]{1,24}$/;
+const REPORTED_NUMBER = /^-?\d{1,9}$/;
+
+function reopenReport(query: string): Partial<DeviceStreamDiagnostic> {
+  const params = new URLSearchParams(query);
+  const lastDrop = params.get("lastDrop");
+  if (lastDrop === null || !DROP_REASON.test(lastDrop)) return {};
+  const report: Record<string, string | number> = { lastDrop };
+  for (const key of REOPEN_NUMBERS) {
+    const value = params.get(key);
+    if (value !== null && REPORTED_NUMBER.test(value)) report[key] = Number(value);
+  }
+  return report;
+}
+
 function holdDeviceStream(
-  counts: Map<string, number>,
+  held: Map<string, HeldDeviceStream[]>,
   deviceId: string,
+  path: string,
   stream: Readable,
   maximum: number,
-  connection: NodeJS.EventEmitter,
+  connection: NodeJS.EventEmitter & { destroy(): unknown },
+  report: (diagnostic: DeviceStreamDiagnostic) => void,
 ): void {
-  const open = counts.get(deviceId) ?? 0;
-  if (open >= maximum) {
-    stream.destroy();
-    throw new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.STREAM_LIMIT, 429, {
-      streamConnections: maximum,
+  const open = held.get(deviceId) ?? [];
+  const entry: HeldDeviceStream = { stream, connection, openedAt: Date.now() };
+  const heldSeconds = (since: number) => Math.round((Date.now() - since) / 1000);
+  while (open.length >= maximum) {
+    const oldest = open.shift();
+    if (!oldest) break;
+    report({
+      event: "device.stream_replaced",
+      deviceId,
+      path,
+      heldSeconds: heldSeconds(oldest.openedAt),
     });
+    oldest.stream.destroy();
+    oldest.connection.destroy();
   }
-  counts.set(deviceId, open + 1);
+  open.push(entry);
+  held.set(deviceId, open);
   let released = false;
   const release = () => {
     if (released) return;
     released = true;
-    const remaining = (counts.get(deviceId) ?? 1) - 1;
-    if (remaining > 0) counts.set(deviceId, remaining);
-    else counts.delete(deviceId);
+    report({
+      event: "device.stream_closed",
+      deviceId,
+      path,
+      heldSeconds: heldSeconds(entry.openedAt),
+    });
+    const remaining = (held.get(deviceId) ?? []).filter((other) => other !== entry);
+    if (remaining.length > 0) held.set(deviceId, remaining);
+    else held.delete(deviceId);
   };
   stream.once("close", release);
   stream.once("error", release);
@@ -554,14 +589,24 @@ async function* bounded(
 }
 
 export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApiRouteOptions) {
-  const streamCounts = new Map<string, number>();
+  const heldStreams = new Map<string, HeldDeviceStream[]>();
   const holdStream = (
+    request: FastifyRequest,
     deviceId: string,
     stream: Readable,
     maximum: number,
-    connection: NodeJS.EventEmitter,
+    connection: NodeJS.EventEmitter & { destroy(): unknown },
   ) => {
-    holdDeviceStream(streamCounts, deviceId, stream, maximum, connection);
+    const path = request.url.slice(DEVICE_API_PREFIX.length + 1).split("?")[0] ?? "";
+    options.devices.reportStream({
+      event: "device.stream_opened",
+      deviceId,
+      path,
+      ...reopenReport(rawQuery(request)),
+    });
+    holdDeviceStream(heldStreams, deviceId, path, stream, maximum, connection, (diagnostic) =>
+      options.devices.reportStream(diagnostic),
+    );
   };
   const scope = (authentication: GatewayAuthenticationContext): PairedDeviceScope =>
     ({
@@ -1250,7 +1295,13 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
               configuration.connectionMaxSeconds * 1000,
             ),
           );
-          holdStream(authenticated.device.id, stream, configuration.streamConnections, reply.raw);
+          holdStream(
+            request,
+            authenticated.device.id,
+            stream,
+            configuration.streamConnections,
+            reply.raw,
+          );
           try {
             options.setStreamHeaders(reply);
             return reply.send(stream);
@@ -1361,6 +1412,7 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
           body["text"].length > MESSAGE_TEXT_MAXIMUM
         )
           options.rejectBody(400);
+        let heardByPhone = false;
         if (body["voice"] !== undefined) {
           const evidence = parseVoiceEvidence(body["voice"]) as VoiceEvidence;
           const verdict = decideVoiceCommand(evidence, options.voiceGates?.());
@@ -1368,24 +1420,7 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
             return options.sendJson(reply, 409, {
               error: { code: VOICE_COMMAND_UNCONFIRMED_CODE, reason: verdict.reason },
             });
-          const addressed = options.addressee
-            ? await options.addressee({
-                authentication,
-                request: {
-                  deviceId: authenticated.device.id,
-                  utteranceId: body["utteranceId"] as string,
-                  trigger: evidence.trigger,
-                  heardName: evidence.heardName,
-                  text: body["text"] as string,
-                },
-              })
-            : evidence.trigger === "hands_on"
-              ? "addressed"
-              : "addressed_unsure";
-          if (addressed !== "addressed")
-            return options.sendJson(reply, 409, {
-              error: { code: VOICE_COMMAND_UNCONFIRMED_CODE, reason: addressed },
-            });
+          heardByPhone = evidence.trigger !== "hands_on";
         }
         if (typeof body["utteranceId"] === "string")
           options.prefetch?.settle({
@@ -1428,7 +1463,7 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
             runId: `run:${suffix}`,
             sessionId: authentication.sessionId,
             contentRef,
-            sourceProofRef: `device:${authenticated.device.id}`,
+            sourceProofRef: `${heardByPhone ? PHONE_VOICE_PROOF_PREFIX : "device:"}${authenticated.device.id}`,
             dataClassification: "private",
             occurredAt: now().toISOString(),
             resultRef,
@@ -1757,7 +1792,13 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
             configuration.connectionMaxSeconds * 1000,
           ),
         );
-        holdStream(authenticated.device.id, stream, configuration.streamConnections, reply.raw);
+        holdStream(
+          request,
+          authenticated.device.id,
+          stream,
+          configuration.streamConnections,
+          reply.raw,
+        );
         if (!mac) {
           options.push?.streamOpened(authenticated.device.id);
           stream.once("close", () => options.push?.streamClosed(authenticated.device.id));

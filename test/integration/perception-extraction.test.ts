@@ -14,7 +14,12 @@ import { type Embedder, HybridMemoryProvider } from "@himawari-agent/memory-engi
 import { openQualifiedDatabase } from "@himawari-agent/persistence-sqlite";
 import { sequentialPlaceholderTag } from "@himawari-agent/sensitive-capture";
 import { afterEach, describe, expect, it } from "vitest";
+import { ProductionInbox } from "../../apps/agent-service/src/production-inbox.ts";
 import { createPerceptionExtractionService } from "../../apps/agent-service/src/production-perception-extraction.ts";
+import {
+  PERCEPTION_EPISODE_EVENT_KIND,
+  ProductionPerceptionInbox,
+} from "../../apps/agent-service/src/production-perception-inbox.ts";
 import { ProductionReminderWriter } from "../../apps/agent-service/src/production-reminder-writer.ts";
 import { PERCEPTION_MEMORY_SOURCE_ID } from "../../packages/persistence-sqlite/src/memory-source-types.ts";
 import {
@@ -130,7 +135,23 @@ async function setup(options: { readonly withGeneration?: boolean } = {}) {
   };
   const received: VerifiedPerceptionProposal[] = [];
   const configuration = { current: PERCEPTION_CONFIGURATION_DEFAULTS };
+  const inbox = new ProductionInbox({
+    scope: perceptionScope,
+    store: h.repository.inbox(),
+    payloads,
+    protector: h.protector,
+    clock: h.clock,
+  });
+  const episodes = new ProductionPerceptionInbox({
+    scope: perceptionScope,
+    store: h.repository.perception(),
+    timeZone: "Asia/Tokyo",
+    clock: h.clock,
+  });
+  episodes.registerSource(inbox.sources);
+  episodes.attach(inbox);
   const service = createPerceptionExtractionService({
+    onEpisode: (input) => episodes.episode(input),
     scope: perceptionScope,
     store: h.repository.perception(),
     model,
@@ -180,10 +201,31 @@ async function setup(options: { readonly withGeneration?: boolean } = {}) {
       database.close();
     }
   };
+  const inboxRows = () => {
+    const database = openQualifiedDatabase(path.join(h.stateRoot, "product.sqlite"));
+    try {
+      return database
+        .prepare(
+          `SELECT source_ref AS sourceRef, source_version AS sourceVersion,
+                  external_content AS externalContent, priority, summary_ref AS summaryRef
+           FROM inbox_events WHERE source_kind = ?`,
+        )
+        .all(PERCEPTION_EPISODE_EVENT_KIND) as {
+        sourceRef: string;
+        sourceVersion: string;
+        externalContent: number;
+        priority: number;
+        summaryRef: string;
+      }[];
+    } finally {
+      database.close();
+    }
+  };
   return {
     h,
     client,
     service,
+    inboxRows,
     scripted,
     received,
     configuration,
@@ -594,6 +636,54 @@ describe("[iOS-5] perception extraction turns a finished episode into memories a
     const report = await s.service.runOnce();
     expect(s.scripted.prompts).toHaveLength(3);
     expect(report).toMatchObject({ done: 1, memories: 1, discarded: 1, costMicros: 360 });
+  });
+});
+
+describe("[ADR-0285] a finished episode goes to the main conversation's inbox", () => {
+  it("puts the episode in the inbox once, with its id, time and kinds but none of what was heard", async () => {
+    const s = await setup();
+    const said = owner(s.h, "我不吃香菜，以后点菜都别放");
+    await ingest(s.h, s.client, [said]);
+    await s.service.runOnce();
+    expect(s.inboxRows()).toEqual([]);
+    s.closeEpisode();
+    s.scripted.replies.push(reply({}));
+    await s.service.runOnce();
+    const rows = s.inboxRows();
+    expect(rows).toMatchObject([{ sourceVersion: "1", externalContent: 1, priority: 5 }]);
+    const summary = (await s.h.readText(rows[0]?.summaryRef ?? "")) ?? "";
+    expect(summary).toContain(rows[0]?.sourceRef ?? "missing");
+    expect(summary).toContain("speech.utterance");
+    expect(summary).toContain("perception_read");
+    expect(summary).not.toContain("香菜");
+    s.scripted.replies.push(reply({}));
+    await s.service.runOnce();
+    expect(s.inboxRows()).toHaveLength(1);
+  });
+
+  it("REVERSE: while perception is paused, no episode enters the inbox", async () => {
+    const s = await setup();
+    await ingest(s.h, s.client, [owner(s.h, "明天上午十点开会")]);
+    s.closeEpisode();
+    const store = s.h.repository.perception();
+    const current = await store.readSettings(perceptionScope);
+    const now = s.h.clock.now();
+    await store.writeSettings({
+      ...perceptionScope,
+      expectedRevision: current.revision,
+      now,
+      values: {
+        disabledSenses: current.disabledSenses,
+        pausedFrom: now,
+        pausedUntil: new Date(Date.parse(now) + 3_600_000).toISOString(),
+        retentionDays: current.retentionDays,
+        limitOverrides: current.limitOverrides,
+      },
+      decisions: [],
+    });
+    s.scripted.replies.push(reply({}));
+    expect((await s.service.runOnce()).episodes).toBe(1);
+    expect(s.inboxRows()).toEqual([]);
   });
 });
 

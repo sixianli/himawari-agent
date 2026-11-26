@@ -63,7 +63,7 @@ public struct SensesView<Handover: View>: View {
             content
         } else {
             NavigationLink(value: item) { content }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
         }
     }
 }

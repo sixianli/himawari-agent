@@ -54,10 +54,6 @@ import {
   type TaskEnvironmentConfiguration,
   type TaskEnvironmentImageConfiguration,
   type ToolRefusalConfiguration,
-  VOICE_ADDRESSEE_DEFAULTS,
-  VOICE_ADDRESSEE_RANGES,
-  type VoiceAddresseeConfiguration,
-  type VoiceAddresseeRouteConfiguration,
   WEB_FETCH_MAXIMUM_BYTES,
   WEB_PROVIDER_IDS,
   WEB_PROVIDERS,
@@ -1563,37 +1559,6 @@ function parseSearchAsk(value: unknown): NonNullable<RunPolicyConfiguration["sea
   );
 }
 
-function parseVoiceAddressee(value: unknown): VoiceAddresseeRouteConfiguration {
-  const field = "configuration.runPolicy.voiceAddressee";
-  const input = record(value, field);
-  const keys = Object.keys(VOICE_ADDRESSEE_DEFAULTS) as (keyof VoiceAddresseeConfiguration)[];
-  rejectUnknown(input, [...keys, "model", "secretRef", "inputMicrosPerMillionTokens"], field);
-  const tuning = Object.fromEntries(
-    keys.map((key) => {
-      const [minimum, maximum] = VOICE_ADDRESSEE_RANGES[key];
-      return [
-        key,
-        input[key] === undefined
-          ? VOICE_ADDRESSEE_DEFAULTS[key]
-          : integer(input[key], `${field}.${key}`, minimum, maximum),
-      ];
-    }),
-  ) as unknown as VoiceAddresseeConfiguration;
-  if (tuning.noAtMostPermille >= tuning.yesAtLeastPermille)
-    throw invalid(`${field}.noAtMostPermille`, "must be smaller than yesAtLeastPermille");
-  return Object.freeze({
-    ...tuning,
-    model: safeReference(input["model"], `${field}.model`),
-    secretRef: safeReference(input["secretRef"], `${field}.secretRef`),
-    inputMicrosPerMillionTokens: integer(
-      input["inputMicrosPerMillionTokens"],
-      `${field}.inputMicrosPerMillionTokens`,
-      1,
-      100_000_000,
-    ),
-  });
-}
-
 function parsePerception(value: unknown): PerceptionConfiguration {
   const field = "configuration.runPolicy.perception";
   const input = record(value, field);
@@ -1762,9 +1727,6 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
     ...(input["perception"] === undefined
       ? {}
       : { perception: parsePerception(input["perception"]) }),
-    ...(input["voiceAddressee"] === undefined
-      ? {}
-      : { voiceAddressee: parseVoiceAddressee(input["voiceAddressee"]) }),
     ...(input["proactive"] === undefined ? {} : { proactive: parseProactive(input["proactive"]) }),
     ...(input["realEval"] === undefined ? {} : { realEval: parseRealEval(input["realEval"]) }),
     ...(input["museIntake"] === undefined
@@ -1794,6 +1756,7 @@ const RETIRED_RUN_POLICY_KEYS = [
   "maxMemoryClassification",
   "deliveryTiming",
   "maxSelectedMemories",
+  "voiceAddressee",
 ] as const;
 
 function retiredRunPolicyKeys(input: JsonRecord): {
