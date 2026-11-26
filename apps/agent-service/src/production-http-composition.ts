@@ -20,6 +20,7 @@ import {
   DEVICE_CONFIGURATION_DEFAULTS,
   type DeviceActionService,
   defaultDeviceHardLimits,
+  deviceVoiceTimingLister,
   deviceVoiceTimingRecorder,
   type ExecutionLiveFeed,
   type GatewayAccessDecision,
@@ -285,7 +286,7 @@ export interface ProductionHttpCompositionOptions {
     price?: { input: number; output: number };
     priceTier?: "low" | "mid" | "high";
   }[];
-  readonly live?: Pick<ExecutionLiveFeed, "subscribe" | "current">;
+  readonly live?: Pick<ExecutionLiveFeed, "subscribe" | "current" | "firstEmittedAt">;
   readonly cancelRun?: (
     input: Pick<CancelCoordinatedRunInput, "runId" | "command">,
   ) => Promise<void>;
@@ -963,6 +964,16 @@ export async function createProductionHttpComposition(
     payloads: repository.payloadStore(ownerId, agentId),
     protector: payloadProtector,
     now: clock,
+    ...(options.live
+      ? { firstTextEmittedAt: (runId: string) => options.live?.firstEmittedAt(runId) ?? null }
+      : {}),
+  });
+  const listVoiceTiming = deviceVoiceTimingLister({
+    ownerId,
+    agentId,
+    trace: repository.traceStore(),
+    payloads: repository.payloadStore(ownerId, agentId),
+    protector: payloadProtector,
   });
   const csrfKeyRef = configuredSecret(
     configuration,
@@ -1899,6 +1910,7 @@ export async function createProductionHttpComposition(
       configuration: () => deviceConfiguration,
       chatAttachments: () => chatAttachments,
       recordVoiceTiming: (input) => recordVoiceTiming(input),
+      listVoiceTiming: (limit) => listVoiceTiming(limit),
       audit: repository.auditLedger(),
       push: devicePush,
       ...(options.onDeviceAuditFailed ? { onAuditFailed: options.onDeviceAuditFailed } : {}),

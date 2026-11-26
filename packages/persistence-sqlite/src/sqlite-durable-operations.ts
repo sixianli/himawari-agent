@@ -798,6 +798,10 @@ export class SqliteDurableOperations {
         return this.readTraceSession(
           payload as { sessionId: string; afterRecordedAt: string | null; limit: number },
         );
+      case "trace.readRecentByType":
+        return this.readTraceRecentByType(
+          payload as { ownerId: string; agentId: string; eventType: string; limit: number },
+        );
       case "payload.put":
         return this.putPayload(
           payload as { ownerId: string; agentId: string; payload: PayloadRecord },
@@ -1848,6 +1852,24 @@ export class SqliteDurableOperations {
           input.afterRecordedAt,
           input.limit,
         ) as JsonRow[],
+    );
+  }
+
+  private readTraceRecentByType(input: {
+    ownerId: string;
+    agentId: string;
+    eventType: string;
+    limit: number;
+  }): readonly TraceEvent[] {
+    assertLimit(input.limit, this.fail);
+    return parseRecords<TraceEvent>(
+      this.database
+        .prepare(
+          `SELECT record_json AS recordJson FROM trace_events
+          WHERE owner_id = ? AND agent_id = ? AND event_type = ?
+          ORDER BY recorded_at DESC, id DESC LIMIT ?`,
+        )
+        .all(input.ownerId, input.agentId, input.eventType, input.limit) as JsonRow[],
     );
   }
 
