@@ -250,6 +250,7 @@ export async function harness(
     readonly exportArchive?: NonNullable<
       Parameters<typeof buildHttpGatewayServer>[0]["devices"]
     >["exportArchive"];
+    readonly chatAttachments?: { readonly images: boolean };
   } = {},
 ): Promise<Harness> {
   const publicOrigin = options.origin ?? origin;
@@ -669,6 +670,9 @@ export async function harness(
       ),
       ...(options.withoutAddressee ? {} : { addressee: addresseeRoute }),
       ...(options.exportArchive ? { exportArchive: options.exportArchive } : {}),
+      ...(options.chatAttachments
+        ? { chatAttachments: () => options.chatAttachments as { readonly images: boolean } }
+        : {}),
     },
   });
   await app.ready();

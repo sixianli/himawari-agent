@@ -9,7 +9,7 @@ export interface DraftAttachment {
 }
 
 export const MESSAGE_LIMIT_BYTES = 64 * 1024;
-export const MAX_ATTACHMENTS = 10;
+export { CHAT_ATTACHMENTS_PER_MESSAGE as MAX_ATTACHMENTS } from "@himawari-agent/gateway-contracts";
 
 const SEPARATOR = "\n\n";
 const OPEN = '<file name="';

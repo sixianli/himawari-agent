@@ -20,6 +20,9 @@ import {
 } from "@himawari-agent/application";
 import type { DeploymentHealthSnapshot } from "@himawari-agent/domain";
 import {
+  CHAT_ATTACHMENT_TEXT_CHARACTERS,
+  CHAT_IMAGE_DATA_URL,
+  CHAT_IMAGE_DATA_URL_CHARACTERS,
   ContractValidationError,
   type EventSubscription,
   type GatewayCommand,
@@ -156,6 +159,7 @@ export interface HttpGatewayServerOptions {
     readonly prefetch?: UtterancePrefetchPort;
     readonly addressee?: DeviceApiRouteOptions["addressee"];
     readonly exportArchive?: DeviceApiRouteOptions["exportArchive"];
+    readonly chatAttachments?: DeviceApiRouteOptions["chatAttachments"];
   };
   readonly health?: HttpGatewayHealthPort;
   readonly metrics?: HttpGatewayMetricsPort;
@@ -240,10 +244,7 @@ const JSON_CONTENT_TYPE = "application/json";
 const SSE_CONTENT_TYPE = "text/event-stream; charset=utf-8";
 const DEFAULT_BODY_LIMIT = 256 * 1024;
 const DEFAULT_ASSET_LIMIT = 8 * 1024 * 1024;
-const ATTACHMENT_TEXT_CHARACTERS = 256 * 1024;
 const ATTACHMENT_BODY_LIMIT = 2 * 1024 * 1024;
-const IMAGE_DATA_URL_CHARACTERS = 1_500_000;
-const IMAGE_DATA_URL = /^data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+={0,2}$/;
 const DEFAULT_HEARTBEAT_MILLISECONDS = 15_000;
 const SLOW_REQUEST_MILLISECONDS = 2_000;
 const STREAM_PATH = /\/(?:execution-)?events$/;
@@ -1378,9 +1379,12 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
             idempotencyKey: input.idempotencyKey,
             content: input.content,
             dataClassification: input.dataClassification ?? "private",
-            contentType: "text/plain",
+            contentType: input.contentType ?? "text/plain",
           })
         ).payloadRef,
+      ...(options.devices.chatAttachments
+        ? { chatAttachments: options.devices.chatAttachments }
+        : {}),
       streamThreadEvents: streamThreadGatewayEvents,
       ...(options.payloadRead
         ? {
@@ -1486,13 +1490,13 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
     app.post(
       "/api/payload/v1/attachment",
       { bodyLimit: ATTACHMENT_BODY_LIMIT },
-      admitText(ATTACHMENT_TEXT_CHARACTERS, "text/x-himawari-attachment"),
+      admitText(CHAT_ATTACHMENT_TEXT_CHARACTERS, "text/x-himawari-attachment"),
     );
     app.post(
       "/api/payload/v1/image",
       { bodyLimit: ATTACHMENT_BODY_LIMIT },
-      admitText(IMAGE_DATA_URL_CHARACTERS, "text/x-himawari-image", (content) =>
-        IMAGE_DATA_URL.test(content),
+      admitText(CHAT_IMAGE_DATA_URL_CHARACTERS, "text/x-himawari-image", (content) =>
+        CHAT_IMAGE_DATA_URL.test(content),
       ),
     );
   }
