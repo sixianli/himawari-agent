@@ -55,10 +55,6 @@ import {
   type ProductionMemoryControl,
 } from "./production-memory-control.js";
 import {
-  PRODUCTION_MUSE_OPERATIONS,
-  type ProductionMuseControl,
-} from "./production-muse-intake-control.js";
-import {
   PRODUCTION_OBSERVATION_OPERATIONS,
   type ProductionObservation,
 } from "./production-observation.js";
@@ -136,7 +132,6 @@ export function createProductionApprovalGateway(options: {
   readonly memoryControl?: ProductionMemoryControl;
   readonly webPushControl?: ProductionWebPushControl;
   readonly proactiveControl?: Pick<ProductionProactive, "query" | "execute">;
-  readonly museControl?: Pick<ProductionMuseControl, "query" | "execute">;
   readonly observationControl?: Pick<ProductionObservation, "query" | "execute">;
   readonly ownerPreferencesControl?: ProductionOwnerPreferencesControl;
   readonly quietHoursControl?: ProductionQuietHoursControl;
@@ -205,36 +200,33 @@ export function createProductionApprovalGateway(options: {
                         ? options.observationControl.query(query)
                         : query.type.startsWith("proactive.") && options.proactiveControl
                           ? options.proactiveControl.query(query)
-                          : query.type.startsWith("muse.") && options.museControl
-                            ? options.museControl.query(query)
-                            : query.type.startsWith("quiet_hours.") && options.quietHoursControl
-                              ? options.quietHoursControl.query(query)
-                              : query.type.startsWith("owner.preferences.") &&
-                                  options.ownerPreferencesControl
-                                ? options.ownerPreferencesControl.query(query)
-                                : query.type.startsWith("sensitive.interceptions.") &&
-                                    options.sensitiveInterceptionsControl
-                                  ? options.sensitiveInterceptionsControl.query(query)
-                                  : query.type.startsWith("server.status.") &&
-                                      options.serverStatusControl
-                                    ? options.serverStatusControl.query(query)
-                                    : query.type.startsWith("data.export.") &&
-                                        options.dataExportControl
-                                      ? options.dataExportControl.query(query)
-                                      : query.type.startsWith("files.") && options.filesControl
-                                        ? options.filesControl.query(query, context)
-                                        : query.type.startsWith("device.") && options.deviceControl
-                                          ? options.deviceControl.query(query)
-                                          : query.type.startsWith("perception.") &&
-                                              options.perceptionControl
-                                            ? options.perceptionControl.query(query)
-                                            : query.type.startsWith("think.") &&
-                                                options.inboxControl
-                                              ? options.inboxControl.query(query)
-                                              : query.type.startsWith("timers.") &&
-                                                  options.timerControl
-                                                ? options.timerControl.query(query)
-                                                : searchAuthorization.query(query),
+                          : query.type.startsWith("quiet_hours.") && options.quietHoursControl
+                            ? options.quietHoursControl.query(query)
+                            : query.type.startsWith("owner.preferences.") &&
+                                options.ownerPreferencesControl
+                              ? options.ownerPreferencesControl.query(query)
+                              : query.type.startsWith("sensitive.interceptions.") &&
+                                  options.sensitiveInterceptionsControl
+                                ? options.sensitiveInterceptionsControl.query(query)
+                                : query.type.startsWith("server.status.") &&
+                                    options.serverStatusControl
+                                  ? options.serverStatusControl.query(query)
+                                  : query.type.startsWith("data.export.") &&
+                                      options.dataExportControl
+                                    ? options.dataExportControl.query(query)
+                                    : query.type.startsWith("files.") && options.filesControl
+                                      ? options.filesControl.query(query, context)
+                                      : query.type.startsWith("device.") && options.deviceControl
+                                        ? options.deviceControl.query(query)
+                                        : query.type.startsWith("perception.") &&
+                                            options.perceptionControl
+                                          ? options.perceptionControl.query(query)
+                                          : query.type.startsWith("think.") && options.inboxControl
+                                            ? options.inboxControl.query(query)
+                                            : query.type.startsWith("timers.") &&
+                                                options.timerControl
+                                              ? options.timerControl.query(query)
+                                              : searchAuthorization.query(query),
       async *subscribe({ authentication, signal }) {
         let previous: string | undefined;
         while (!signal?.aborted) {
@@ -354,12 +346,8 @@ export function createProductionApprovalGateway(options: {
           });
           return options.observationControl.execute(command);
         }
-        if (command.type === "proactive.gapcase.mark" && options.observationControl)
-          return options.observationControl.execute(command);
         if (command.type.startsWith("proactive.") && options.proactiveControl)
           return options.proactiveControl.execute(command);
-        if (command.type.startsWith("muse.") && options.museControl)
-          return options.museControl.execute(command);
         if (command.type.startsWith("quiet_hours.") && options.quietHoursControl)
           return options.quietHoursControl.execute(command);
         if (command.type.startsWith("owner.preferences.") && options.ownerPreferencesControl)
@@ -410,7 +398,6 @@ export function createProductionApprovalGateway(options: {
       ...(options.memoryControl ? PRODUCTION_MEMORY_OPERATIONS : []),
       ...(options.webPushControl ? PRODUCTION_WEB_PUSH_OPERATIONS : []),
       ...(options.proactiveControl ? PRODUCTION_PROACTIVE_OPERATIONS : []),
-      ...(options.museControl ? PRODUCTION_MUSE_OPERATIONS : []),
       ...(options.observationControl ? PRODUCTION_OBSERVATION_OPERATIONS : []),
       ...(options.ownerPreferencesControl ? PRODUCTION_OWNER_PREFERENCE_OPERATIONS : []),
       ...(options.quietHoursControl ? PRODUCTION_QUIET_HOURS_OPERATIONS : []),

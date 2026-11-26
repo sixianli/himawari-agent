@@ -7,7 +7,6 @@ import {
   resolveWindow,
   summarizeDecisions,
   summarizeImplicit,
-  summarizeMuse,
 } from "@himawari-agent/calibration";
 import { createAgentId, createOwnerId } from "@himawari-agent/domain";
 import {
@@ -654,7 +653,6 @@ describe.each(["worker", "direct"] as const)("[P0-11] decision signals through %
         window,
         scope: { ownerId: OWNER_ID, agentId: AGENT_ID },
         decisions: after.groups,
-        muse: summarizeMuse([], new Map(), DEFAULT_MINIMUM_SAMPLES),
         implicit: after.implicit,
         minimumSamples: DEFAULT_MINIMUM_SAMPLES,
       });

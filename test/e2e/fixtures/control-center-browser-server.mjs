@@ -433,48 +433,6 @@ function json(response, status, body) {
   response.end(JSON.stringify(body));
 }
 
-const museInitialItems = () => [
-  {
-    kind: "proactive",
-    naturalKey: "sub-github-storage",
-    occurredAt: "2026-08-26T08:20:08.200Z",
-    title: "GitHub 存储已满",
-    text: "GitHub 存储 100%，再不处理仓库会拒绝推送。今天处理比较合适。",
-    withheld: false,
-    timingOk: null,
-    contentOk: null,
-  },
-  {
-    kind: "scheduled",
-    naturalKey: "run-weather",
-    occurredAt: "2026-08-26T12:55:58.000Z",
-    title: "nightly-weather-umbrella",
-    text: "明天（8 月 27 日）出门提醒：08:00–08:40 约 15–16°C，多云间晴，不用带伞。",
-    withheld: false,
-    timingOk: null,
-    contentOk: null,
-  },
-  {
-    kind: "proactive",
-    naturalKey: "sub-sensitive",
-    occurredAt: "2026-08-25T03:00:00.000Z",
-    title: null,
-    text: null,
-    withheld: true,
-    timingOk: null,
-    contentOk: null,
-  },
-  {
-    kind: "proactive",
-    naturalKey: "sub-long-english",
-    occurredAt: "2026-08-24T03:00:00.000Z",
-    title: "Quarterly-estimated-tax-payment-reminder-from-the-accountant",
-    text: "Supercalifragilisticexpialidocious-account-number-0000-1111-2222-3333-4444-5555-6666 is due soon.",
-    withheld: false,
-    timingOk: true,
-    contentOk: false,
-  },
-];
 const sensitiveFixtureState = { commands: [], items: [] };
 function sensitiveReset(mode) {
   const at = (minutesAgo) => new Date(Date.now() - minutesAgo * 60_000).toISOString();
@@ -535,7 +493,6 @@ function sensitiveSnapshot() {
     generatedAt: new Date().toISOString(),
   };
 }
-const museFixtureState = { commands: [] };
 const externalFixtureState = { items: [], batches: [], decided: new Map(), commands: [] };
 function externalProposal(index, change = {}) {
   return {
@@ -752,79 +709,6 @@ function handleExternalCommand(message) {
   });
   return { status: 200, body: { resultRef: batchId, replayed: false } };
 }
-function museReset(mode) {
-  const channels = {
-    ok: { state: "ok", lastBatchAt: "2026-08-26T23:40:00.000Z", gapCount: 0 },
-    gaps: { state: "ok", lastBatchAt: "2026-08-26T23:40:00.000Z", gapCount: 2 },
-    stale: { state: "stale", lastBatchAt: "2026-08-26T21:20:00.000Z", gapCount: 0 },
-    down: { state: "down", lastBatchAt: "2026-08-26T20:30:00.000Z", gapCount: 0 },
-    paused: { state: "paused", lastBatchAt: "2026-08-26T23:40:00.000Z", gapCount: 0 },
-    never: { state: "never", lastBatchAt: null, gapCount: 0 },
-    empty: { state: "ok", lastBatchAt: "2026-08-26T23:40:00.000Z", gapCount: 0 },
-  };
-  museFixtureState.channel = channels[mode] ?? channels.ok;
-  museFixtureState.items = mode === "never" || mode === "empty" ? [] : museInitialItems();
-  museFixtureState.receivedWeek = mode === "never" || mode === "empty" ? 0 : 4;
-  museFixtureState.suppressedWeek = mode === "never" || mode === "empty" ? 0 : 1;
-  museFixtureState.delay = mode === "ok" ? { medianMinutes: 330, samples: 12 } : null;
-  museFixtureState.commands = [];
-}
-museReset("ok");
-
-function museOverview() {
-  const rateable = museFixtureState.items;
-  return {
-    channel: museFixtureState.channel,
-    receivedWeek: museFixtureState.receivedWeek,
-    suppressedWeek: museFixtureState.suppressedWeek,
-    pending: rateable.filter((item) => item.timingOk === null).length,
-    delay: museFixtureState.delay,
-    items: [...rateable].sort(
-      (left, right) =>
-        Number(left.timingOk !== null) - Number(right.timingOk !== null) ||
-        right.occurredAt.localeCompare(left.occurredAt),
-    ),
-    generatedAt: now,
-  };
-}
-
-function handleMuseCommand(message) {
-  if (!["muse.item.rate", "muse.intake.set", "muse.data.clear"].includes(message.type)) return null;
-  museFixtureState.commands.push({ type: message.type, payload: message.payload });
-  if (message.type === "muse.item.rate") {
-    const { kind, naturalKey, timingOk, contentOk } = message.payload;
-    if ((timingOk === null) !== (contentOk === null))
-      return { status: 400, body: { error: { code: "PORT_INVALID_OPERATION" } } };
-    const item = museFixtureState.items.find(
-      (entry) => entry.kind === kind && entry.naturalKey === naturalKey,
-    );
-    if (!item) return { status: 404, body: { error: { code: "PORT_NOT_FOUND" } } };
-    item.timingOk = timingOk;
-    item.contentOk = contentOk;
-  }
-  if (message.type === "muse.intake.set")
-    museFixtureState.channel = {
-      ...museFixtureState.channel,
-      state: message.payload.paused
-        ? "paused"
-        : museFixtureState.channel.lastBatchAt
-          ? "ok"
-          : "never",
-    };
-  if (message.type === "muse.data.clear") {
-    museFixtureState.items = [];
-    museFixtureState.receivedWeek = 0;
-    museFixtureState.suppressedWeek = 0;
-    museFixtureState.delay = null;
-    museFixtureState.channel = {
-      state: museFixtureState.channel.state === "paused" ? "paused" : "never",
-      lastBatchAt: null,
-      gapCount: 0,
-    };
-  }
-  return { status: 200, body: { resultRef: `muse:${message.type}`, replayed: false } };
-}
-
 function envelope(kind, type) {
   return {
     schemaVersion: "gateway.v2",
@@ -1240,56 +1124,6 @@ function weeklySnapshot(withMails = false) {
         group("context_truncation", 17, 0, 0, ["useful", "unneeded"]),
         group("retrieval_degrade", 1, 1, 0, ["useful", "unneeded"]),
       ],
-      muse: {
-        entries: 42,
-        reminded: 8,
-        silent: 34,
-        unpaired: 2,
-        pairedMails: 40,
-        timing: rate(6, 8),
-        content: rate(7, 8),
-        pairing: rate(40, 42),
-        buckets: { both: 5, museOnly: 1, himawariOnly: 2, bothSilent: 31, noHimawariRecord: 1 },
-      },
-      gap: withMails
-        ? {
-            pairedMails: 40,
-            ratedMails: 12,
-            unratedMails: 28,
-            lines: ["hitRate", "disturbanceRate"].map((line) => ({
-              line,
-              mails: 6,
-              museReminded: 4,
-              himawariReminded: 2,
-              muse: rate(4, 6),
-              himawari: rate(2, 6),
-              difference: 0.33,
-              low: -0.1,
-              high: 0.7,
-              verdict: "inconclusive",
-              direction: "none",
-            })),
-          }
-        : null,
-      gapCases: withMails
-        ? ["mail-fixture-full", "mail-fixture-old", "mail-fixture-nojudgment"].map((messageId) => ({
-            id: `gap_${messageId.replaceAll("-", "").slice(0, 20).padEnd(20, "0")}`,
-            messageId,
-            museAt: "2026-08-26T09:10:00.000Z",
-            museTitle: `Muse 提醒：${messageId}`,
-            museText: "请在周五前确认房租扣款",
-            museTextWithheld: false,
-            himawariOutcome: "ignore",
-            himawariReasonCode: "FIXTURE",
-            himawariReason: "看起来是普通通知",
-            ownerRating: "missed",
-            attribution: "notRemembered",
-            memoryHits: 0,
-            relatedMessages: 0,
-            decidedAt: "2026-08-26T09:00:00.000Z",
-            marked: false,
-          }))
-        : [],
       implicit: {
         pushedDecisions: 12,
         otherDecisionEvents: 1,
@@ -1682,18 +1516,6 @@ function decisionEmailFixture(messageId) {
       relatedMessages: null,
     },
   }[messageId];
-  const museEntry = {
-    entryId: `muse-${messageId}`,
-    museAt: "2026-08-26T09:10:00.000Z",
-    reminded: true,
-    kind: "proactive",
-    state: "delivered",
-    title: `Muse 提醒：${messageId}`,
-    text: "请在周五前确认房租扣款",
-    textWithheld: false,
-    timingOk: true,
-    contentOk: true,
-  };
   return {
     messageId,
     mail: known
@@ -1707,8 +1529,6 @@ function decisionEmailFixture(messageId) {
           ...known,
         }
       : null,
-    muse: { entries: [museEntry], truncated: false },
-    comparison: known ? "museOnly" : "noHimawariRecord",
   };
 }
 
@@ -1728,10 +1548,6 @@ function handleOperationsQuery(message, request) {
             ...envelope("snapshot", "sensitive.interceptions.snapshot"),
             payload: sensitiveSnapshot(),
           }
-        : undefined;
-    case "muse.overview.read":
-      return memoryFixture
-        ? { ...envelope("snapshot", "muse.overview.snapshot"), payload: museOverview() }
         : undefined;
     case "proactive.review.read":
       return memoryFixture
@@ -2458,10 +2274,6 @@ async function handleRequest(request, response) {
               "search.authorization.read",
               "search.authorization.set",
               "proactive.overview.read",
-              "muse.overview.read",
-              "muse.item.rate",
-              "muse.intake.set",
-              "muse.data.clear",
               "sensitive.interceptions.read",
               "sensitive.interceptions.clear",
               "proactive.review.read",
@@ -2530,14 +2342,6 @@ async function handleRequest(request, response) {
       return;
     }
     json(response, 200, { connectionId, path: `/api/mcp/v1/${secret}` });
-    return;
-  }
-  if (memoryFixture && url.pathname === "/__fixture/muse") {
-    if (request.method === "POST") {
-      const { mode } = await body(request);
-      if (mode !== undefined) museReset(mode);
-    }
-    json(response, 200, museFixtureState);
     return;
   }
   if (executionQualification && url.pathname === "/__fixture/run-approvals") {
@@ -2939,11 +2743,6 @@ async function handleRequest(request, response) {
       const external = memoryFixture ? handleExternalCommand(message) : null;
       if (external) {
         json(response, external.status, external.body);
-        return;
-      }
-      const muse = memoryFixture ? handleMuseCommand(message) : null;
-      if (muse) {
-        json(response, muse.status, muse.body);
         return;
       }
     }

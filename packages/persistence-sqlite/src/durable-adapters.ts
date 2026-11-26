@@ -16,7 +16,6 @@ import type {
   DeviceActionStorePort,
   ExecutionEnvironmentStorePort,
   ExternalMemoryProposalStorePort,
-  GapCaseMarkPort,
   GatewayReadModelPort,
   GitHubIntegrationStatePort,
   GovernanceMutationReceiptStorePort,
@@ -37,7 +36,6 @@ import type {
   ModelBudgetPort,
   ModelInvocationIdentityPort,
   ModelUsageStorePort,
-  MuseIntakePort,
   OwnerIdentityStatePort,
   OwnerPreferencesStorePort,
   OwnerRuleStorePort,
@@ -1233,14 +1231,6 @@ export class SqliteDurableAdapters {
     });
   }
 
-  gapCaseMarks(): GapCaseMarkPort {
-    return Object.freeze<GapCaseMarkPort>({
-      mark: (input) => this.context.write("decisionLedger.gapMark", input),
-      unmark: (input) => this.context.write("decisionLedger.gapUnmark", input),
-      list: (input) => this.context.read("decisionLedger.gapMarks", input),
-    });
-  }
-
   decisionLedger(): DecisionLedgerPort {
     return Object.freeze<DecisionLedgerPort>({
       append: (input) => this.context.write("decisionLedger.append", input),
@@ -1254,13 +1244,10 @@ export class SqliteDurableAdapters {
       rate: (input) => this.context.write("decisionLedger.rate", input),
       listReviewPool: (input) => this.context.read("decisionLedger.listReviewPool", input),
       rateMany: (input) => this.context.write("decisionLedger.rateMany", input),
-      recordMuse: (input) => this.context.write("decisionLedger.recordMuse", input),
-      listMuse: (input) => this.context.read("decisionLedger.listMuse", input),
       lastRuleUses: (input) => this.context.read("decisionLedger.lastRuleUses", input),
       listSignals: (input) => this.context.read("decisionLedger.listSignals", input),
       readCalibrationRows: (input) =>
         this.context.read("decisionLedger.readCalibrationRows", input),
-      readGapCandidates: (input) => this.context.read("decisionLedger.readGapCandidates", input),
       readMailTrace: (input) => this.context.read("decisionLedger.readMailTrace", input),
     });
   }
@@ -1277,18 +1264,6 @@ export class SqliteDurableAdapters {
       appendCheck: (input) => this.context.write("ledgerObservation.appendCheck", input),
       listChecks: (input) => this.context.read("ledgerObservation.listChecks", input),
       listEvents: (input) => this.context.read("ledgerObservation.listEvents", input),
-    });
-  }
-
-  museIntake(): MuseIntakePort {
-    return Object.freeze<MuseIntakePort>({
-      ingestBatch: (input) => this.context.write("museIntake.ingestBatch", input),
-      listItems: (input) => this.context.read("museIntake.listItems", input),
-      channelStatus: (input) => this.context.read("museIntake.channelStatus", input),
-      checkChannel: (input) => this.context.write("museIntake.checkChannel", input),
-      setPaused: (input) => this.context.write("museIntake.setPaused", input),
-      rate: (input) => this.context.write("museIntake.rate", input),
-      clearAll: (input) => this.context.write("museIntake.clearAll", input),
     });
   }
 

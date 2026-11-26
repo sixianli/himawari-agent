@@ -1654,5 +1654,65 @@
     "sha256": "5ca05852512a3c73b2bc1791cf184bd987665849dcc4e0fc6a6f886bde66f15a",
     "changedIn": "ADR 0285",
     "reason": "Always On 第 3 步：接着做的原因之一，上一次运行结束时计划里还有没做完的待办"
+  },
+  "tool-result.browser-no-page": {
+    "sha256": "965e09677b87a9d0e89b999f8868c6217ad90121a8edcd5af4aac7cf41ab7662",
+    "changedIn": "浏览器工具",
+    "reason": "新增浏览器工具的定义和结果文字"
+  },
+  "tool-result.browser-screenshot-text-only": {
+    "sha256": "def9aa2d6934585a7262471cd29031968d659c59995cb5c28e5ab21c5d581173",
+    "changedIn": "浏览器工具",
+    "reason": "新增浏览器工具的定义和结果文字"
+  },
+  "tool-result.browser-site-not-allowed": {
+    "sha256": "bc53e3cf86b027883062d1876f01e8fc178523251077984a3fa4eb76f285010b",
+    "changedIn": "浏览器工具",
+    "reason": "新增浏览器工具的定义和结果文字"
+  },
+  "tool-result.browser-unavailable": {
+    "sha256": "d06ef336270b679c4fba8a8643f1b1f02e0875cde09ab7de2c9223f23220c03d",
+    "changedIn": "浏览器工具",
+    "reason": "新增浏览器工具的定义和结果文字"
+  },
+  "tools.browser": {
+    "sha256": "d67b9041524390f82b662b72161b2a4e7f3c6c80a50a3d562f370213ebd667f2",
+    "changedIn": "浏览器工具",
+    "reason": "新增浏览器工具的定义和结果文字"
+  },
+  "tools.browser.action": {
+    "sha256": "592cdbbc600e6dde06ec3298853dbb961c3e546dee51ae9f08172ae072b3681c",
+    "changedIn": "浏览器工具",
+    "reason": "新增浏览器工具的定义和结果文字"
+  },
+  "tools.browser.hosts": {
+    "sha256": "4290e52ae1c4c9cf8f874603c8b9899a0519d96ee43adb9a384be168bfb6b85d",
+    "changedIn": "浏览器工具",
+    "reason": "新增浏览器工具的定义和结果文字"
+  },
+  "tools.browser.key": {
+    "sha256": "42ff2eaff8b09e003a279148874acab112cef686bbdd340b23ba73131d9191c4",
+    "changedIn": "浏览器工具",
+    "reason": "新增浏览器工具的定义和结果文字"
+  },
+  "tools.browser.ref": {
+    "sha256": "46827838fef09744b75819b3a688d5f40a14c5d258f020ee269d15a525e7d0b3",
+    "changedIn": "浏览器工具",
+    "reason": "新增浏览器工具的定义和结果文字"
+  },
+  "tools.browser.submit": {
+    "sha256": "9bdfe217889f6c5b512333d2cce498de2d6893d807fc652ffd77ad3f6c6be601",
+    "changedIn": "浏览器工具",
+    "reason": "新增浏览器工具的定义和结果文字"
+  },
+  "tools.browser.text": {
+    "sha256": "f0e2ec1e37f66d4338c76132a69451e9da2dc1539c5124378055f8e9eb687dd8",
+    "changedIn": "浏览器工具",
+    "reason": "新增浏览器工具的定义和结果文字"
+  },
+  "tools.browser.url": {
+    "sha256": "b38deaf33509804d822ba74e561e96b773b08ce38e3c75a178c6e49eb2e5bd4e",
+    "changedIn": "浏览器工具",
+    "reason": "新增浏览器工具的定义和结果文字"
   }
 }

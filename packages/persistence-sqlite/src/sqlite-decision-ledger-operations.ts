@@ -11,12 +11,7 @@ import {
   type DecisionRating,
   type DecisionRecordRead,
   type DecisionSignalEntry,
-  type GapCandidate,
-  type GapCaseMarkPort,
-  type GapCaseMarkRow,
   type MailTrace,
-  type MuseReferenceEntry,
-  type MuseReferenceWrite,
   type RuleLastUse,
   SPOKEN_REASON_CODES,
   SPOKEN_VERDICTS,
@@ -33,8 +28,6 @@ import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
 import { defaultRuleParameters } from "./sqlite-proactive-operations.ts";
 
 type Input<TName extends keyof DecisionLedgerPort> = Parameters<DecisionLedgerPort[TName]>[0];
-
-type MarkInput<TName extends keyof GapCaseMarkPort> = Parameters<GapCaseMarkPort[TName]>[0];
 
 const MAX_IDS = 200;
 const SPOKEN_REASONS = Object.values(SPOKEN_REASON_CODES)
@@ -330,26 +323,14 @@ export class SqliteDecisionLedgerOperations {
         return this.listReviewPool(payload as Input<"listReviewPool">);
       case "decisionLedger.rateMany":
         return this.rateMany(payload as Input<"rateMany">);
-      case "decisionLedger.recordMuse":
-        return this.recordMuse(payload as Input<"recordMuse">);
-      case "decisionLedger.listMuse":
-        return this.listMuse(payload as Input<"listMuse">);
       case "decisionLedger.lastRuleUses":
         return this.lastRuleUses(payload as Input<"lastRuleUses">);
       case "decisionLedger.listSignals":
         return this.listSignals(payload as Input<"listSignals">);
       case "decisionLedger.readCalibrationRows":
         return this.readCalibrationRows(payload as Input<"readCalibrationRows">);
-      case "decisionLedger.gapMark":
-        return this.gapMark(payload as MarkInput<"mark">);
-      case "decisionLedger.gapUnmark":
-        return this.gapUnmark(payload as MarkInput<"unmark">);
-      case "decisionLedger.gapMarks":
-        return this.gapMarks(payload as MarkInput<"list">);
       case "decisionLedger.readMailTrace":
         return this.readMailTrace(payload as Input<"readMailTrace">);
-      case "decisionLedger.readGapCandidates":
-        return this.readGapCandidates(payload as Input<"readGapCandidates">);
       default:
         return this.fail(
           "PORT_INVALID_OPERATION",
@@ -366,10 +347,6 @@ export class SqliteDecisionLedgerOperations {
         const rows = readCalibrationRows(this.database, input);
         return {
           decisions: rows.decisions.map((row) => ({ ...row })),
-          entries: rows.entries.map((row) => ({ ...row })),
-          mailJudgments: [...rows.mailJudgments.entries()].map(
-            ([id, judgment]) => [id, { ...judgment }] as const,
-          ),
           signals: rows.signals.map((row) => ({ ...row })),
           prereviews: readPrereviewWeek(this.database, input).map((row) => ({ ...row })),
         };
@@ -725,56 +702,6 @@ export class SqliteDecisionLedgerOperations {
     })();
   }
 
-  private recordMuse(write: MuseReferenceWrite): void {
-    this.assertDiskHeadroom();
-    const intakeItemKey = write.intakeItemKey ?? null;
-    const pairedMessageId = write.pairedMessageId ?? null;
-    const common =
-      (pairedMessageId === null || text(pairedMessageId, 1, 256)) &&
-      text(write.id, 1, 128) &&
-      validTime(write.museAt) &&
-      validTime(write.recordedAt) &&
-      (write.noteRef === null || text(write.noteRef, 1, 256)) &&
-      (intakeItemKey === null || text(intakeItemKey, 3, 200));
-    const shape =
-      write.museReminded === true
-        ? typeof write.timingOk === "boolean" &&
-          typeof write.contentOk === "boolean" &&
-          (write.contentRef === null || text(write.contentRef, 1, 256)) &&
-          (write.contentRef !== null || intakeItemKey !== null) &&
-          (write.pairedDecisionId === null || text(write.pairedDecisionId, 1, 128))
-        : write.museReminded === false &&
-          (write.pairedDecisionId === null || text(write.pairedDecisionId, 1, 128)) &&
-          (write.pairedDecisionId !== null || pairedMessageId !== null) &&
-          !("timingOk" in write) &&
-          !("contentOk" in write) &&
-          !("contentRef" in write);
-    if (!common || !shape) this.fail("PORT_INVALID_OPERATION", "Muse reference entry is invalid");
-    const reminded = write.museReminded === true;
-    this.database
-      .prepare(
-        `INSERT INTO muse_reference_entries (
-          id, owner_id, agent_id, muse_at, muse_reminded, timing_ok, content_ok, content_ref,
-          note_ref, paired_decision_id, intake_item_key, paired_message_id, recorded_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
-        write.id,
-        write.ownerId,
-        write.agentId,
-        write.museAt,
-        reminded ? 1 : 0,
-        reminded ? (write.timingOk ? 1 : 0) : null,
-        reminded ? (write.contentOk ? 1 : 0) : null,
-        reminded ? write.contentRef : null,
-        write.noteRef,
-        write.pairedDecisionId,
-        intakeItemKey,
-        pairedMessageId,
-        write.recordedAt,
-      );
-  }
-
   private listSignals(input: Input<"listSignals">): readonly DecisionSignalEntry[] {
     if (!idList(input.decisionIds)) this.fail("PORT_INVALID_OPERATION", "Decision ids are invalid");
     const read = this.database.prepare(
@@ -795,48 +722,6 @@ export class SqliteDecisionLedgerOperations {
     );
   }
 
-  private gapMark(input: MarkInput<"mark">): boolean {
-    return (
-      Number(
-        this.database
-          .prepare(
-            `INSERT OR IGNORE INTO gap_case_marks (owner_id, agent_id, case_id, snapshot_ref, marked_at)
-             VALUES (?, ?, ?, ?, ?)`,
-          )
-          .run(input.ownerId, input.agentId, input.caseId, input.snapshotRef, input.at).changes,
-      ) === 1
-    );
-  }
-
-  private gapUnmark(input: MarkInput<"unmark">): string | null {
-    return this.database.transaction(() => {
-      const row = this.database
-        .prepare(
-          `SELECT snapshot_ref AS snapshotRef FROM gap_case_marks
-           WHERE owner_id = ? AND agent_id = ? AND case_id = ?`,
-        )
-        .get(input.ownerId, input.agentId, input.caseId) as { snapshotRef: string } | undefined;
-      if (row === undefined) return null;
-      this.database
-        .prepare("DELETE FROM gap_case_marks WHERE owner_id = ? AND agent_id = ? AND case_id = ?")
-        .run(input.ownerId, input.agentId, input.caseId);
-      this.database
-        .prepare("DELETE FROM payloads WHERE ref = ? AND owner_id = ? AND agent_id = ?")
-        .run(row.snapshotRef, input.ownerId, input.agentId);
-      return row.snapshotRef;
-    })();
-  }
-
-  private gapMarks(input: MarkInput<"list">): readonly GapCaseMarkRow[] {
-    return this.database
-      .prepare(
-        `SELECT case_id AS caseId, snapshot_ref AS snapshotRef, marked_at AS markedAt
-         FROM gap_case_marks WHERE owner_id = ? AND agent_id = ?
-         ORDER BY marked_at, case_id`,
-      )
-      .all(input.ownerId, input.agentId) as GapCaseMarkRow[];
-  }
-
   private readMailTrace(input: Input<"readMailTrace">): MailTrace {
     const processedRow = this.database
       .prepare(
@@ -847,20 +732,6 @@ export class SqliteDecisionLedgerOperations {
       )
       .get(input.ownerId, input.agentId, input.messageId) as Record<string, unknown> | undefined;
     const asText = (value: unknown) => (typeof value === "string" ? value : null);
-    const entries = this.database
-      .prepare(
-        `SELECT e.id AS entryId, e.muse_at AS museAt, e.muse_reminded AS museReminded,
-           e.timing_ok AS timingOk, e.content_ok AS contentOk, e.content_ref AS contentRef,
-           i.kind AS kind, i.state AS state, i.title_ref AS titleRef, i.text_ref AS textRef,
-           COALESCE(i.text_withheld, 0) AS textWithheld
-         FROM muse_reference_entries e
-         LEFT JOIN muse_intake_items i
-           ON i.owner_id = e.owner_id AND i.agent_id = e.agent_id
-          AND e.intake_item_key = i.kind || ':' || i.natural_key
-         WHERE e.owner_id = ? AND e.agent_id = ? AND e.paired_message_id = ?
-         ORDER BY e.muse_at, e.id LIMIT 1000`,
-      )
-      .all(input.ownerId, input.agentId, input.messageId) as Record<string, unknown>[];
     return Object.freeze({
       processed: processedRow
         ? Object.freeze({
@@ -872,76 +743,6 @@ export class SqliteDecisionLedgerOperations {
             processedAt: String(processedRow["processedAt"]),
           })
         : null,
-      museEntries: Object.freeze(
-        entries.map((row) =>
-          Object.freeze({
-            entryId: String(row["entryId"]),
-            museAt: String(row["museAt"]),
-            museReminded: row["museReminded"] === 1,
-            timingOk: row["timingOk"] === null ? null : row["timingOk"] === 1,
-            contentOk: row["contentOk"] === null ? null : row["contentOk"] === 1,
-            kind: asText(row["kind"]),
-            state: asText(row["state"]),
-            titleRef: asText(row["titleRef"]),
-            textRef: asText(row["textRef"]),
-            contentRef: asText(row["contentRef"]),
-            textWithheld: row["textWithheld"] === 1,
-          }),
-        ),
-      ),
-    });
-  }
-
-  private readGapCandidates(input: Input<"readGapCandidates">): readonly GapCandidate[] {
-    if (!validTime(input.start) || !validTime(input.end) || input.start >= input.end)
-      this.fail("PORT_INVALID_OPERATION", "Gap window is invalid");
-    const rows = this.database
-      .prepare(
-        `SELECT e.id AS entryId, e.muse_at AS museAt, e.timing_ok AS timingOk,
-           e.content_ok AS contentOk, e.paired_message_id AS pairedMessageId,
-           e.content_ref AS museContentRef, i.title_ref AS museTitleRef, i.text_ref AS museTextRef,
-           COALESCE(i.text_withheld, 0) AS museTextWithheld,
-           d.id AS decisionId, p.outcome AS outcome, p.owner_rating AS ownerRating,
-           d.reason_code AS reasonCode, d.reason_ref AS reasonRef, d.checked_at AS decidedAt,
-           d.inputs AS inputs
-         FROM muse_reference_entries e
-         JOIN proactive_processed_messages p
-           ON p.owner_id = e.owner_id AND p.agent_id = e.agent_id
-          AND p.source = '${GMAIL_SOURCE.name}' AND p.message_id = e.paired_message_id
-         JOIN decision_ledger d ON d.id = p.decision_id
-         LEFT JOIN muse_intake_items i
-           ON i.owner_id = e.owner_id AND i.agent_id = e.agent_id
-          AND e.intake_item_key = i.kind || ':' || i.natural_key
-         WHERE e.owner_id = ? AND e.agent_id = ? AND e.muse_at >= ? AND e.muse_at < ?
-           AND e.muse_reminded = 1 AND e.paired_message_id IS NOT NULL
-         ORDER BY e.muse_at, e.id LIMIT 1000`,
-      )
-      .all(input.ownerId, input.agentId, input.start, input.end) as Record<string, unknown>[];
-    return rows.map((row) => {
-      const inputs = JSON.parse(String(row["inputs"])) as DecisionInputs;
-      const messageId = String(row["pairedMessageId"]);
-      const asText = (value: unknown) => (typeof value === "string" ? value : null);
-      return Object.freeze({
-        entryId: String(row["entryId"]),
-        museAt: String(row["museAt"]),
-        timingOk: row["timingOk"] === null ? null : row["timingOk"] === 1,
-        contentOk: row["contentOk"] === null ? null : row["contentOk"] === 1,
-        pairedMessageId: messageId,
-        museTitleRef: asText(row["museTitleRef"]),
-        museTextRef: asText(row["museTextRef"]),
-        museContentRef: asText(row["museContentRef"]),
-        museTextWithheld: row["museTextWithheld"] === 1,
-        decisionId: String(row["decisionId"]),
-        outcome: String(row["outcome"]),
-        ownerRating: asText(row["ownerRating"]) as GapCandidate["ownerRating"],
-        reasonCode: String(row["reasonCode"]),
-        reasonRef: asText(row["reasonRef"]),
-        decidedAt: String(row["decidedAt"]),
-        relatedRead: asText(inputs.relatedRead),
-        memoryRecall: asText(inputs.memoryRecall),
-        memoryHitsForMail: inputs.memoryByMail?.[messageId]?.length ?? 0,
-        relatedMessagesForMail: inputs.relatedByMail?.[messageId]?.length ?? 0,
-      });
     });
   }
 
@@ -977,31 +778,5 @@ export class SqliteDecisionLedgerOperations {
         );
     }
     return found;
-  }
-
-  private listMuse(input: Input<"listMuse">): readonly MuseReferenceEntry[] {
-    if (!validTime(input.since)) this.fail("PORT_INVALID_OPERATION", "Ledger time is invalid");
-    if (!Number.isSafeInteger(input.limit) || input.limit < 0 || input.limit > 500)
-      this.fail("PORT_INVALID_OPERATION", "Ledger limit is invalid");
-    return this.database
-      .prepare(
-        `SELECT id, muse_at AS museAt, muse_reminded AS museReminded, timing_ok AS timingOk,
-           content_ok AS contentOk, content_ref AS contentRef, note_ref AS noteRef,
-           paired_decision_id AS pairedDecisionId, intake_item_key AS intakeItemKey,
-           paired_message_id AS pairedMessageId, recorded_at AS recordedAt
-         FROM muse_reference_entries
-         WHERE owner_id = ? AND agent_id = ? AND muse_at >= ?
-         ORDER BY muse_at DESC, id DESC LIMIT ?`,
-      )
-      .all(input.ownerId, input.agentId, input.since, input.limit)
-      .map((row) => {
-        const entry = row as Record<string, unknown>;
-        return Object.freeze({
-          ...(entry as unknown as MuseReferenceEntry),
-          museReminded: entry["museReminded"] === 1,
-          timingOk: entry["timingOk"] === null ? null : entry["timingOk"] === 1,
-          contentOk: entry["contentOk"] === null ? null : entry["contentOk"] === 1,
-        });
-      });
   }
 }
