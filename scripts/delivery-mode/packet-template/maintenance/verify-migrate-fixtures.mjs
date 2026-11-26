@@ -77,9 +77,13 @@ function writeConfiguration(value) {
   return configurationPath;
 }
 
+const pendingNames = new Set(common.migrationExpectedLedger.map((row) => row.name));
+const productionApplied = migrations.filter((migration) => !pendingNames.has(migration.name));
+
 function seedCurrent(value) {
+  assert.equal(productionApplied.length, from, `MIGRATE_FIXTURE_PRODUCTION_APPLIED_COUNT:${productionApplied.length}:${from}`);
   const seeded = persistence.openQualifiedDatabase(value.databasePath);
-  persistence.applyMigrations(seeded, migrations.slice(0, from));
+  persistence.applyMigrations(seeded, productionApplied);
   seeded.close();
   chmodSync(value.databasePath, 0o600);
 }

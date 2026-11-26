@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 // Owned fake-data Worker-loss probe. The child is a harness, not production registration.
 import assert from "node:assert/strict";
 import { fork } from "node:child_process";
@@ -32,7 +33,7 @@ if (process.argv[2] === "worker") {
           "/usr/bin",
           "/usr/lib",
           "/lib",
-          "/lib64",
+          ...["/lib64"].filter(existsSync),
           "/dev",
           "/proc",
           path.dirname(process.execPath),
