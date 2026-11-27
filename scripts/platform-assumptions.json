@@ -41,7 +41,7 @@
     "test/tooling/product-path-platform.test.ts": 1
   },
   "linux-x64": {
-    ".github/workflows/ci.yml": 14,
+    ".github/workflows/ci.yml": 10,
     "ci/evidence.schema.json": 1,
     "ci/policy.json": 1,
     "ci/quality-policy.json": 3,
@@ -85,7 +85,7 @@
     "test/tooling/toolchain.test.mjs": 5
   },
   "arch-x64": {
-    ".github/workflows/ci.yml": 7,
+    ".github/workflows/ci.yml": 4,
     "packages/runtime-sandbox/src/srt-runtime-identity.ts": 1,
     "packages/runtime-sandbox/test/job-host-main.unit.test.ts": 1,
     "packages/runtime-sandbox/test/qualification.unit.test.ts": 2,

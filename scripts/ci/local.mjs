@@ -78,8 +78,6 @@ export async function local({
     if (result.status === "passed")
       built = path.join(directory, `build-${platform}`, result.artifacts[0].path);
   }
-  if (!check && built)
-    for (const engine of ["chromium", "firefox", "webkit"]) await execute("browser", engine, built);
   if ((!check || check === "tests") && built)
     for (const member of testsMembers) await execute("tests", member.key, built);
   if (!check || check === "tooling") await execute("tooling");

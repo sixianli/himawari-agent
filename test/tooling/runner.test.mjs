@@ -362,7 +362,7 @@ describe("required 失败证据和平台 artifact ID", () => {
       env: {},
     });
     expect(summary.status).toBe("failed");
-    expect(summary.missing).toHaveLength(11);
+    expect(summary.missing).toHaveLength(8);
     expect(read(path.join(root, ".ci-output/gate/summary.json"))).toEqual(summary);
     expect(read(path.join(root, ".ci-output/gate/context.json"))).toEqual(gateContext);
     expect(() =>

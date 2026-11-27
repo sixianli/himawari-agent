@@ -1,12 +1,4 @@
-import {
-  mkdirSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  symlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -42,9 +34,7 @@ function writeEnvelopeFiles(folder, envelope) {
   mkdirSync(folder, { recursive: true });
   writeFileSync(path.join(folder, "result.json"), JSON.stringify(envelope.result));
   for (const report of envelope.result.reports) {
-    const platform = ["browser", "tests"].includes(envelope.result.checkId)
-      ? "linux-x64"
-      : envelope.result.matrixKey;
+    const platform = envelope.result.checkId === "tests" ? "linux-x64" : envelope.result.matrixKey;
     writeFileSync(
       path.join(folder, report.path),
       report.kind === "artifact" ? archive(platform) : Buffer.from(`real ${report.kind} report`),
@@ -68,12 +58,12 @@ function positive() {
           ]),
         )
       : count();
-    const platform = ["browser", "tests"].includes(check.id) ? "linux-x64" : member.key;
+    const platform = check.id === "tests" ? "linux-x64" : member.key;
     const outputs = check.outputs.map((kind) => {
       const bytes = kind === "artifact" ? archive(platform) : Buffer.from(`real ${kind} report`);
       return { path: `report.${kind}`, kind, bytes: bytes.length, sha256: sha256(bytes) };
     });
-    const artifacts = ["build", "browser", "tests"].includes(check.id)
+    const artifacts = ["build", "tests"].includes(check.id)
       ? [
           {
             role: check.id === "build" ? "produced" : "consumed",
@@ -247,7 +237,7 @@ describe("complete-attempt gate", () => {
   it("accepts the complete positive control and emits a closed GateSummary", () => {
     const result = aggregate(positive());
     expect(result.status).toBe("passed");
-    expect(result.expected).toHaveLength(11);
+    expect(result.expected).toHaveLength(8);
     expect(result.failures).toEqual([]);
     expect(validateRecord("GateSummary", result)).toBe(result);
   });
@@ -583,7 +573,7 @@ describe("complete-attempt gate", () => {
     input.reports = readReportEnvelopes(directory);
     expect(aggregate(input).status).toBe("failed");
   });
-  it("浏览器证据目录里自带的 result.json 不当成检查结果，检查自己的 result.json 照常读", () => {
+  it("检查证据目录里自带的 result.json 不当成检查结果，检查自己的 result.json 照常读", () => {
     const input = positive();
     const directory = mkdtempSync(path.join(os.tmpdir(), "ci-results-"));
     directories.push(directory);
@@ -594,16 +584,17 @@ describe("complete-attempt gate", () => {
       );
       writeEnvelopeFiles(folder, envelope);
     }
-    const browserFolder = readdirSync(directory).find((name) => name.startsWith("browser-"));
-    const evidence = path.join(directory, browserFolder, "browser/reports/execution-chain");
+    const ownerEnvelope = input.reports.find((envelope) => envelope.result.checkId === "tests");
+    const ownerFolder = `tests-${ownerEnvelope.result.matrixKey}`;
+    const evidence = path.join(directory, ownerFolder, "tests/reports/execution-chain");
     mkdirSync(evidence, { recursive: true });
     writeFileSync(
       path.join(evidence, "result.json"),
       JSON.stringify({ cases: [], scope: "fixture" }),
     );
-    const browserResultFile = path.join(directory, browserFolder, "result.json");
-    const browserResult = JSON.parse(readFileSync(browserResultFile, "utf8"));
-    const nested = "browser/reports/execution-chain/result.json";
+    const ownerResultFile = path.join(directory, ownerFolder, "result.json");
+    const ownerResult = JSON.parse(readFileSync(ownerResultFile, "utf8"));
+    const nested = "tests/reports/execution-chain/result.json";
     const nestedBytes = readFileSync(path.join(evidence, "result.json"));
     const nestedReport = {
       path: nested,
@@ -611,17 +602,16 @@ describe("complete-attempt gate", () => {
       bytes: nestedBytes.length,
       kind: "json",
     };
-    browserResult.reports.push(nestedReport);
-    writeFileSync(browserResultFile, JSON.stringify(browserResult));
-    const browserEnvelope = input.reports.find((envelope) => envelope.result.checkId === "browser");
-    browserEnvelope.result.reports.push(nestedReport);
+    ownerResult.reports.push(nestedReport);
+    writeFileSync(ownerResultFile, JSON.stringify(ownerResult));
+    ownerEnvelope.result.reports.push(nestedReport);
     input.reports = readReportEnvelopes(directory);
     expect(
-      input.reports.find((envelope) => envelope.source === path.join(browserFolder, "result.json"))
+      input.reports.find((envelope) => envelope.source === path.join(ownerFolder, "result.json"))
         .artifacts,
     ).toContainEqual({ path: nested, sha256: sha256(nestedBytes), bytes: nestedBytes.length });
     expect(input.reports.map((envelope) => envelope.source)).not.toContain(
-      path.join(browserFolder, "browser/reports/execution-chain/result.json"),
+      path.join(ownerFolder, "tests/reports/execution-chain/result.json"),
     );
     expect(aggregate(input).status).toBe("passed");
     symlinkSync("/etc/hostname", path.join(evidence, "linked.txt"));

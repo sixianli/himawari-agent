@@ -97,7 +97,7 @@ verified_at: "7c8521fe5f55e7dd57c5bd52badd16eef647502e"
 
 ### 顺序
 
-16. 先做登录（第 1 到 6 条），再删网页上和 App 重复的页；个人设置、Gmail、外部 agent 接入、导出导入和服务器状态互不依赖，可以并行；Mac App 和它们同时做。**最后一步才删整个网页**（`apps/control-center`、网页会话 Cookie 和防伪造校验、Cloudflare 登录换取、网页布局检查、[ADR 0295](0295-web-chat-interface.md) 和网页设计规范里只属于网页的部分），前提是 iPhone 和 Mac App 都能完整替代网页。删完用一台新装的 iPhone 从零走一遍：登录、连 Gmail、接一个外部 agent、导出，全程不碰网页。
+16. 先做登录（第 1 到 6 条），再删网页上和 App 重复的页；个人设置、Gmail、外部 agent 接入、导出导入和服务器状态互不依赖，可以并行；Mac App 和它们同时做。**最后一步才删整个网页**（`apps/control-center`、网页会话 Cookie 和防伪造校验、Cloudflare 登录换取、网页布局检查、[ADR 0295](0295-web-chat-interface.md) 和网页设计规范里只属于网页的部分），前提是 iPhone 和 Mac App 都能完整替代网页。CI 和 `npm run check` 里只查网页的浏览器检查不等这一步，Andy 2026-11-27 定已提前去掉，见 [ADR 0292](0292-how-ci-runs-now.md#jobs)；检查脚本本身仍在这一步删。删完用一台新装的 iPhone 从零走一遍：登录、连 Gmail、接一个外部 agent、导出，全程不碰网页。
 17. 从现在起不再给网页加功能。
 
 <a id="options"></a>
