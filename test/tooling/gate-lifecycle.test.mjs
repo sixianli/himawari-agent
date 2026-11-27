@@ -126,16 +126,8 @@ vi.mock("../../scripts/ci/build.mjs", () => ({
     };
   },
 }));
-vi.mock("../../scripts/ci/browser.mjs", () => ({
-  runBrowser: async ({ output, artifact, engine }) => {
-    const report = write(path.join(output, "browser.json"), { engine, status: "passed" });
-    return {
-      exitCode: state.exitCode,
-      artifact: { path: artifact },
-      counts: count(),
-      reports: [{ path: report, kind: "json" }],
-    };
-  },
+vi.mock("../../scripts/ci/verify-artifact.mjs", () => ({
+  verifyArtifact: async () => ({}),
 }));
 
 import { aggregate, readReportEnvelopes } from "../../scripts/ci/aggregate.mjs";
