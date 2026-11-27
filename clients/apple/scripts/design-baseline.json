@@ -82,5 +82,11 @@
     "code": "number-literal",
     "count": 19,
     "why": "收听功能的界面早于 2026-11-12 的设计令牌，颜色和尺寸还是写死的；收听界面重做时一并清掉"
+  },
+  {
+    "file": "Sources/HimawariShell/DemoScenes.swift",
+    "code": "app-color-scheme",
+    "count": 1,
+    "why": "只给示例场景用：无障碍审计启动 App 时带 -HimawariDemoAppearance dark，靠它真正切到深色（GitHub 的 Mac 模拟器不跟着 XCUIDevice.appearance 切，见事故 I-120）；正式 App 不带这个参数，照样跟随系统外观"
   }
 ]
