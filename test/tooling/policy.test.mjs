@@ -14,6 +14,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { parse, stringify } from "yaml";
 import {
+  admitNewQualificationTests,
   chromiumInstall,
   DRAFT_SKIP_CONDITION,
   evaluateTestHygiene,
@@ -413,6 +414,66 @@ function fixtureRepository() {
   writeFileSync(path.join(root, "ci/policy.json"), JSON.stringify(policy));
   return { root, git };
 }
+
+describe("[ci-new-qualification] accepted policy admits only brand-new qualification tests", () => {
+  const added = "test/integration/memory-benchmark/live.test.ts";
+  const withoutAdded = () => {
+    const value = clone();
+    value.registeredTests = value.registeredTests.filter((entry) => entry.path !== added);
+    const integration = value.testProjects.find((entry) => entry.id === "integration");
+    integration.exclude = integration.exclude.filter((entry) => entry !== added);
+    return value;
+  };
+  const existing = "test/integration/production-memory-capture.test.ts";
+
+  it("admits a qualification test whose file is new, so the accepted policy matches Vitest", () => {
+    const accepted = withoutAdded();
+    expect(() => validateVitestProjects(accepted, vitestConfig())).toThrow(
+      "Vitest file selection differs from policy: integration",
+    );
+    const admitted = admitNewQualificationTests(accepted, policy, [existing]);
+    expect(validateVitestProjects(admitted, vitestConfig()).projects).toBe(18);
+    expect(accepted.registeredTests.some((entry) => entry.path === added)).toBe(false);
+  });
+
+  it("REVERSE: does not admit a registration whose file already exists at the base", () => {
+    const accepted = withoutAdded();
+    expect(admitNewQualificationTests(accepted, policy, [existing, added])).toBe(accepted);
+  });
+
+  it("REVERSE: does not let a proposal exclude an existing integration test by registering it", () => {
+    const accepted = withoutAdded();
+    const proposed = structuredClone(policy);
+    proposed.registeredTests.push({
+      path: existing,
+      kind: "qualification",
+      project: "qualification-hidden",
+      reason: "hide an existing test",
+      allowedModifiers: ["skip"],
+    });
+    proposed.testProjects.find((entry) => entry.id === "integration").exclude.push(existing);
+    const admitted = admitNewQualificationTests(accepted, proposed, [existing]);
+    expect(admitted.registeredTests.some((entry) => entry.path === existing)).toBe(false);
+    expect(admitted.testProjects.find((entry) => entry.id === "integration").exclude).not.toContain(
+      existing,
+    );
+  });
+
+  it("REVERSE: does not admit a new registration that is not a qualification test", () => {
+    const accepted = withoutAdded();
+    const proposed = structuredClone(policy);
+    proposed.registeredTests.find((entry) => entry.path === added).kind = "type-check";
+    expect(admitNewQualificationTests(accepted, proposed, [existing])).toBe(accepted);
+  });
+
+  it("REVERSE: does not admit a new qualification file that integration still runs", () => {
+    const accepted = withoutAdded();
+    const proposed = structuredClone(policy);
+    const integration = proposed.testProjects.find((entry) => entry.id === "integration");
+    integration.exclude = integration.exclude.filter((entry) => entry !== added);
+    expect(admitNewQualificationTests(accepted, proposed, [existing])).toBe(accepted);
+  });
+});
 
 describe("CI policy contract", () => {
   it("accepts Vitest main and qualification projects only when they agree with policy", () => {
