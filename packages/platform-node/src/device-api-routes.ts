@@ -67,6 +67,7 @@ import {
 } from "./device-notification-hub.js";
 import { DEVICE_PUSH_ERROR_CODES, DevicePushError, type DevicePushPort } from "./device-push.js";
 import type { DeviceSignedRequest } from "./device-request-signature.js";
+import type { DeviceSignInService } from "./device-sign-in.js";
 import {
   type AuthenticatedDeviceRequest,
   type DeviceStreamDiagnostic,
@@ -74,7 +75,6 @@ import {
   PairedDeviceError,
   type PairedDeviceService,
 } from "./paired-device-service.js";
-import type { DeviceSignInService } from "./device-sign-in.js";
 import type { AuthorizedUpload, PerceptionService } from "./perception-service.js";
 import {
   SPEECH_ERROR_CODES,
@@ -158,6 +158,8 @@ export const DEVICE_API_ROUTES = Object.freeze([
   { method: "POST", path: "connections/authorization", signed: true },
   { method: "POST", path: "connections/authorization/complete", signed: true },
   { method: "POST", path: "connections/disconnect", signed: true },
+  { method: "POST", path: "connections/add", signed: true },
+  { method: "POST", path: "connections/remove", signed: true },
 ] as const);
 
 export const DEVICE_UPLOAD_GRANT_HEADER = "himawari-upload-grant" as const;
@@ -297,10 +299,9 @@ export interface DeviceDownload {
   readonly fileName: string;
 }
 
-export interface DeviceConnectionAuthorizationStart {
-  readonly kind: "browser";
-  readonly authorizationUrl: string;
-}
+export type DeviceConnectionAuthorizationStart =
+  | { readonly kind: "browser"; readonly authorizationUrl: string }
+  | { readonly kind: "client_required"; readonly redirectUri: string };
 
 export interface DeviceConnection {
   readonly name: string;
@@ -308,7 +309,13 @@ export interface DeviceConnection {
   readonly status: "disconnected" | "connected" | "needs_reconnect";
   readonly account: string | null;
   readonly connectedAt: string | null;
+  readonly added: boolean;
 }
+
+export type DeviceConnectionAddOutcome =
+  | { readonly outcome: "added"; readonly connection: DeviceConnection }
+  | { readonly outcome: "invalid_address" }
+  | { readonly outcome: "unreachable" };
 
 export interface DeviceConnectionsPort {
   list(): Promise<readonly DeviceConnection[]>;
@@ -322,12 +329,22 @@ export interface DeviceConnectionsPort {
     readonly state: string;
   }): Promise<"connected" | "denied" | "failed">;
   disconnect(input: { readonly connection: string }): Promise<boolean | undefined>;
+  add(input: {
+    readonly serverUrl: string;
+    readonly title?: string;
+    readonly clientId?: string;
+    readonly clientSecret?: string;
+  }): Promise<DeviceConnectionAddOutcome | undefined>;
+  remove(input: { readonly connection: string }): Promise<boolean | undefined>;
 }
 
 const CALLBACK_SCHEME_PATTERN = /^[a-z][a-z0-9+-]*(?:\.[a-z0-9+-]+)+$/u;
 const CALLBACK_SCHEME_MAXIMUM_LENGTH = 128;
 const CONNECTION_NAME_PATTERN = /^[a-z][a-z0-9_]{0,63}$/u;
 const AUTHORIZATION_STATE_PATTERN = /^[A-Za-z0-9_-]{16,128}$/u;
+const ADDED_APP_ADDRESS_MAXIMUM = 2048;
+const ADDED_APP_TITLE_MAXIMUM = 80;
+const ADDED_APP_CLIENT_MAXIMUM = 512;
 
 export function isDeviceCallbackScheme(value: unknown): value is string {
   return (
@@ -1456,6 +1473,47 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
         const outcome = await connections(authenticated).disconnect({ connection });
         if (outcome === undefined) return options.rejectNotAllowed();
         return options.sendJson(reply, 200, { disconnected: outcome });
+      });
+
+      const optionalText = (value: unknown, maximum: number): string | undefined => {
+        if (value === undefined) return undefined;
+        if (typeof value !== "string" || value.length > maximum) options.rejectBody(400);
+        const trimmed = (value as string).trim();
+        return trimmed.length === 0 ? undefined : trimmed;
+      };
+
+      device.post("/connections/add", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        const body = json(request);
+        only(body, ["serverUrl", "title", "clientId", "clientSecret"]);
+        const serverUrl = optionalText(body["serverUrl"], ADDED_APP_ADDRESS_MAXIMUM);
+        const title = optionalText(body["title"], ADDED_APP_TITLE_MAXIMUM);
+        const clientId = optionalText(body["clientId"], ADDED_APP_CLIENT_MAXIMUM);
+        const secret = optionalText(body["clientSecret"], ADDED_APP_CLIENT_MAXIMUM);
+        if (serverUrl === undefined || (secret !== undefined && clientId === undefined))
+          options.rejectBody(400);
+        if (!authenticated.confirmed)
+          return options.sendJson(reply, 403, { code: "DEVICE_OWNER_PRESENCE_REQUIRED" });
+        const outcome = await connections(authenticated).add({
+          serverUrl: serverUrl as string,
+          ...(title === undefined ? {} : { title }),
+          ...(clientId === undefined ? {} : { clientId }),
+          ...(secret === undefined ? {} : { clientSecret: secret }),
+        });
+        if (outcome === undefined) return options.rejectNotAllowed();
+        return options.sendJson(reply, 200, outcome);
+      });
+
+      device.post("/connections/remove", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        const body = json(request);
+        only(body, ["connection"]);
+        const connection = body["connection"];
+        if (typeof connection !== "string" || !CONNECTION_NAME_PATTERN.test(connection))
+          options.rejectBody(400);
+        const outcome = await connections(authenticated).remove({ connection });
+        if (outcome === undefined) return options.rejectNotAllowed();
+        return options.sendJson(reply, 200, { removed: outcome });
       });
 
       device.get("/actions/policy", async (request, reply) => {

@@ -127,17 +127,17 @@ function modifierChain(lines, start) {
 
 export const FONT_DIRECTORIES = ["Sources", "App"];
 
-const FONT_RULE = {
-  code: "custom-font",
-  pattern:
-    /(?:Font)?\.custom\([^)]*\b(?:size|fixedSize):|design:\s*\.serif\b|\.withDesign\(\s*\.serif\s*\)|\b(?:UIFont|NSFont)\(\s*name:|\bCTFontCreateWithName\b/u,
-};
+const CUSTOM_FONT =
+  /(?:Font)?\.custom\([^)]*\b(?:size|fixedSize):|\b(?:UIFont|NSFont)\(\s*name:|\bCTFontCreateWithName\b/u;
+const SERIF_FONT = /design:\s*\.serif\b|\.withDesign\(\s*\.serif\s*\)/u;
+export const SERIF_ALLOWED = ["Sources/HimawariChat/AnswerFont.swift"];
 
 export function findFontViolations(source, file) {
+  const serifAllowed = SERIF_ALLOWED.some((allowed) => file.endsWith(allowed));
   const violations = [];
   source.split("\n").forEach((line, index) => {
-    if (FONT_RULE.pattern.test(line))
-      violations.push({ file, line: index + 1, code: FONT_RULE.code, text: line.trim() });
+    if (CUSTOM_FONT.test(line) || (!serifAllowed && SERIF_FONT.test(line)))
+      violations.push({ file, line: index + 1, code: "custom-font", text: line.trim() });
   });
   return violations;
 }

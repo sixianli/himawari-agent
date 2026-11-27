@@ -431,10 +431,19 @@ def failed_step_shows_every_error_file_written_anywhere_in_its_working_directori
     (run / 'r2l6-console.stderr').write_text('Error: sandbox refused\n')
     (run / 'install.log').write_text('npm ERR! code EACCES\n')
     (modules / 'build.log').write_text('ignored\n')
+    copied = run / 'scratch-failure-files/source/test/qualification/evidence'
+    copied.mkdir(parents=True)
+    (copied / 'contracts-before.log').write_text('FAIL old committed evidence\n')
+    (run / 'r2l6').mkdir()
+    (run / 'r2l6/report.json').write_text(json.dumps({'passed': False, 'failure': {'reason': 'Error: R2_L6_CONTROLLER_FAILED_EXIT', 'phase': 'restart'}, 'assertions': [{'id': 'install', 'passed': True}, {'id': 'restart', 'passed': False}]}))
+    (run / 'passed.json').write_text(json.dumps({'passed': True, 'failure': 'ignored'}))
+    (run / 'list.json').write_text('[1]')
     found = steps.failure_files([evidence, stage, scratch / 'missing'], 2, 'step-s6_acceptance-5')
     assert sorted(path.name for path in found) == ['install.log', 'r2l6-console.stderr', 's6-npm-observation.stderr'], found
     assert steps.failure_tail(run / 'r2l6-console.stderr', lines=20) == ['Error: sandbox refused']
     assert len(steps.failure_files([evidence, stage], 2, 'step-s6_acceptance-5', limit=2)) == 2
+    reports = steps.failed_reports([evidence, stage], 2)
+    assert [(path.name, details) for path, details in reports] == [('report.json', '{"failedAssertions": ["restart"], "failure": {"phase": "restart", "reason": "Error: R2_L6_CONTROLLER_FAILED_EXIT"}}')], reports
     shutil.rmtree(evidence)
     shutil.rmtree(stage)
 case('a failed step shows every error file written anywhere in its working directories', failed_step_shows_every_error_file_written_anywhere_in_its_working_directories)

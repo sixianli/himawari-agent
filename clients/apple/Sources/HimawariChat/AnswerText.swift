@@ -72,7 +72,7 @@ struct AnswerText: View {
         for run in attributed.runs {
             let piece = Text(AttributedString(attributed[run.range]))
             if run.inlinePresentationIntent?.contains(.code) == true {
-                pieces.append(Text("\u{2009}\(piece.customAttribute(InlineCodeMark()))\u{2009}"))
+                pieces.append(Text("\u{2009}\(piece.font(.system(.body, design: .monospaced)).customAttribute(InlineCodeMark()))\u{2009}"))
             } else {
                 pieces.append(piece)
             }
@@ -90,11 +90,10 @@ struct AnswerText: View {
         switch block {
         case let .paragraph(source):
             line(source, dot: trailingDot)
-                .hmType(Self.voice)
+                .answerType(Self.voice)
         case let .heading(_, source):
             line(source, dot: trailingDot)
-                .hmType(Self.voice)
-                .fontWeight(.semibold)
+                .answerType(Self.voice, semibold: true)
                 .accessibilityAddTraits(.isHeader)
         case let .bullets(items):
             list(items.map { ("•", $0) })
@@ -106,7 +105,7 @@ struct AnswerText: View {
                     .fill(Color.hmSeparator)
                     .frame(width: DesignTokens.Chat.quoteBar)
                 Self.styled(source)
-                    .hmType(Self.voice)
+                    .answerType(Self.voice)
                     .foregroundStyle(Color.hmMuted)
             }
             .fixedSize(horizontal: false, vertical: true)
@@ -126,9 +125,9 @@ struct AnswerText: View {
             ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                 HStack(alignment: .firstTextBaseline, spacing: DesignTokens.Chat.listMarkerGap) {
                     Text(verbatim: item.0)
-                        .hmType(Self.voice)
+                        .answerType(Self.voice)
                     Self.styled(item.1)
-                        .hmType(Self.voice)
+                        .answerType(Self.voice)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }

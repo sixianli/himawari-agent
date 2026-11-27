@@ -1,0 +1,28 @@
+{
+  "gates": [
+    { "workflow": "CI", "event": "pull_request", "job": "ci/required" },
+    { "workflow": "Apple", "event": "pull_request", "job": "apple/iphone" }
+  ],
+  "runSteps": [
+    "执行共享检查",
+    "草稿和被取消的运行直接判失败",
+    "核对全部 job 与报告，把汇总结论写进本步骤日志和作业摘要",
+    "main 上失败的运行满三次必须认领到事故清单",
+    "查找已合并 PR 的完整验收记录，从 ci/required 的日志取汇总结论",
+    "无法证明一致时选择完整 CI",
+    "重新查找并取回本次确认的 PR 汇总结论",
+    "在实际 main 提交上构建并验证安装启动及安全检查",
+    "看这次改动有没有碰 iPhone 客户端，没碰就不占 Mac 机器",
+    "看这次改动有没有碰苹果客户端（iPhone 和 Mac），没碰就不占 Mac 机器",
+    "跑 HimawariCore 单元测试",
+    "不签名编译 iPhone App",
+    "不签名编译原生 Mac App",
+    "每个示例场景跑苹果的无障碍审计（浅色、深色、最大字号）",
+    "每个示例场景跑苹果的无障碍审计（浅色全部审计项，深色对比度）",
+    "编译开了优化的调试版 iPhone App（模拟器）",
+    "长对话上下滚动，量掉帧",
+    "打 Release 归档并核对权限仍在签名里",
+    "归档并上传 TestFlight（苹果云端签名）",
+    "签名归档并上传 TestFlight"
+  ]
+}
