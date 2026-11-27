@@ -35,7 +35,7 @@ FAKE_MOUNT = '''#!/bin/bash
 echo "mount $*" >> "$FAKE_LOG/calls"
 if [ "$2" = overlay ]; then
   target="${@: -1}"
-  mkdir -p "$target/etc/cloud"
+  mkdir -p "$target/etc/cloud" "$target/etc/systemd/system"
   printf '# comment\\nLABEL=cloudimg-rootfs / ext4 defaults 0 1\\nLABEL=UEFI /boot/efi vfat umask=0077 0 1\\n' > "$target/etc/fstab"
 fi
 '''
@@ -189,6 +189,8 @@ class ShadowRehearsalTest(unittest.TestCase):
         self.assertIn('overlay=yes loop=yes', result.stdout)
         self.assertIn('nspawn=systemd_255_(255.4-1ubuntu8)', result.stdout)
         self.assertIn('SHADOW_FSTAB_DROPPED LABEL=UEFI /boot/efi vfat umask=0077 0 1', result.stdout)
+        self.assertIn('SHADOW_UNIT_MASKED oracle-keepalive.service', result.stdout)
+        self.assertIn('SHADOW_UNIT_MASKED cloudflared.service', result.stdout)
         self.assertNotIn('SHADOW_FSTAB_DROPPED # comment', result.stdout)
         self.assertIn('SHADOW_SYSTEM_STATE running', result.stdout)
         arguments = (self.log / 'nspawn.args').read_text().splitlines()
@@ -215,6 +217,7 @@ class ShadowRehearsalTest(unittest.TestCase):
         result = self.run_rehearsal(FAKE_NSPAWN_REFUSES=refusal, HIMAWARI_SHADOW_BOOT_WAIT='100')
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn('SHADOW_REHEARSAL_FAILED BOOT_EXITED', result.stderr)
+        self.assertRegex(result.stderr, r'nspawn exit=[1-9]')
         self.assertIn(refusal, result.stderr)
         arguments = (self.log / 'nspawn.args').read_text().splitlines()
         self.assertNotIn('--directory=/', arguments)

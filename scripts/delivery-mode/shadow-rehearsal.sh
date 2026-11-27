@@ -25,6 +25,7 @@ machine="himawari-shadow"
 boot_wait="${HIMAWARI_SHADOW_BOOT_WAIT:-300}"
 service_wait="${HIMAWARI_SHADOW_SERVICE_WAIT:-120}"
 probe_timeout="${HIMAWARI_SHADOW_PROBE_TIMEOUT:-15}"
+masked_units="${HIMAWARI_SHADOW_MASKED_UNITS:-oracle-keepalive.service cloudflared.service}"
 shadow=""
 booted=0
 launcher=""
@@ -99,6 +100,7 @@ mkdir "$shadow/layer" "$shadow/root"
 truncate -s "$upper_size" "$shadow/upper.img"
 "$mkfs" -q -F -m 0 "$shadow/upper.img" > /dev/null || fail UPPER_LAYER_FAILED "could not make the throwaway layer file $shadow/upper.img"
 
+boot_started="$(date +%s)"
 echo "SHADOW_BOOT_START"
 "$unshare" --mount --propagation private /bin/bash -c '
 set -e
@@ -112,9 +114,13 @@ fi
 if [ -d "$2/root/etc/cloud" ]; then
   : > "$2/root/etc/cloud/cloud-init.disabled"
 fi
-shift 2
+for masked in $3; do
+  ln -sfn /dev/null "$2/root/etc/systemd/system/$masked"
+  echo "SHADOW_UNIT_MASKED $masked"
+done
+shift 3
 exec "$@"
-' shadow-root "$mount" "$shadow" "$nspawn" --quiet --directory="$shadow/root" --private-network --link-journal=no --machine="$machine" --hostname="$(hostname)" --console=passive --bind="$shadow/data:$state_data" --property="MemoryMax=$memory_max" --boot > "$shadow/boot.log" 2>&1 9>&- &
+' shadow-root "$mount" "$shadow" "$masked_units" "$nspawn" --quiet --directory="$shadow/root" --private-network --link-journal=no --machine="$machine" --hostname="$(hostname)" --console=passive --bind="$shadow/data:$state_data" --property="MemoryMax=$memory_max" --boot > "$shadow/boot.log" 2>&1 9>&- &
 launcher=$!
 booted=1
 leader=""
@@ -138,18 +144,29 @@ stuck_units() {
   echo "failed: $(probe --failed --no-pager --no-legend 2>&1 | head -20 | tr -s ' \n' ' ')"
   echo "processes: $(look /bin/ps -eo pid,stat,etimes,args --no-headers 2>&1 | head -40 | cut -c1-160 | tr -s ' \n' ' ')"
   echo "journal: $(look /usr/bin/journalctl -b --no-pager -q -o short-monotonic -n 60 2>&1 | cut -c1-240 | tr '\n' '|')"
-  echo "console: $(tail -5 "$shadow/boot.log" | tr '\n' ' ')"
+  echo "console: $(console_tail)"
+}
+console_tail() {
+  sed 's/\x1b\[[0-9;?]*[A-Za-z]//g; s/\r//g' "$shadow/boot.log" | grep -v '^[[:space:]]*$' | tail -40 | cut -c1-200 | tr '\n' '|'
+}
+boot_exit() {
+  local status=0
+  wait "$launcher" 2> /dev/null || status=$?
+  launcher=""
+  echo "nspawn exit=$status"
+  echo "host journal: $(timeout "$probe_timeout" /usr/bin/journalctl --no-pager -q -o short-monotonic --since "@$boot_started" -k -t systemd -t systemd-machined -t systemd-nspawn -n 40 2>&1 | grep -iE 'shadow|nspawn|machine|oom|killed|memory' | tail -20 | cut -c1-240 | tr '\n' '|')"
+  echo "console: $(console_tail)"
 }
 deadline=$(( SECONDS + boot_wait ))
 state=""
 while (( SECONDS < deadline )); do
-  launcher_alive || fail BOOT_EXITED "the shadow machine exited while booting: $(tail -5 "$shadow/boot.log" | tr '\n' ' ')"
+  launcher_alive || fail BOOT_EXITED "the shadow machine exited while booting; $(boot_exit)"
   state="$(probe is-system-running 2> /dev/null || true)"
   [[ "$state" == running || "$state" == degraded ]] && break
   [[ "$state" == maintenance ]] && fail BOOT_EMERGENCY "the shadow machine fell into emergency mode while booting; $(stuck_units)"
   sleep 2
 done
-grep '^SHADOW_FSTAB_DROPPED ' "$shadow/boot.log" || true
+grep -E '^SHADOW_(FSTAB_DROPPED|UNIT_MASKED) ' "$shadow/boot.log" || true
 [[ "$state" == running || "$state" == degraded ]] || fail BOOT_TIMEOUT "the shadow machine did not finish booting in $boot_wait seconds (state ${state:-unreachable}); $(stuck_units)"
 echo "SHADOW_SYSTEM_STATE $state"
 deadline=$(( SECONDS + service_wait ))
