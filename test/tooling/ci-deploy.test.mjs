@@ -323,6 +323,11 @@ describe("ci-deploy.sh", () => {
     });
     const cleanup = child.stdout.indexOf("CI_DEPLOY_PREVIOUS_CLEANUP ");
     expect(cleanup).toBeGreaterThan(-1);
+    const report = child.stdout.indexOf(
+      `CI_DEPLOY_LAST_FAILURE_REPORT ${path.join(outputRoot, "2026-11-27-first-change-packet-07")}`,
+    );
+    expect(report).toBeGreaterThan(-1);
+    expect(report).toBeLessThan(cleanup);
     expect(cleanup).toBeLessThan(child.stdout.indexOf("CI_DEPLOY_PREPARE"));
     expect(readFileSync(`${repo}-cleanup.log`, "utf8")).toBe(
       `${path.join(outputRoot, "2026-11-27-first-change-packet-07")} apply\n`,
