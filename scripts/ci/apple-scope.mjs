@@ -1,11 +1,15 @@
 import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
+import { findGreenBase, getJson, getPages } from "./main-green.mjs";
 
 const APPLE_CLIENT = [
   /^clients\/apple\//u,
   /^\.github\/workflows\/apple\.yml$/u,
   /^scripts\/ci\/apple-scope\.mjs$/u,
+  /^scripts\/ci\/main-green\.mjs$/u,
 ];
+
+export const mainCheckPrefixes = ["apple/iphone", "apple/scroll"];
 
 export function touchesAppleClient(files) {
   if (files === null) return true;
@@ -24,12 +28,32 @@ export function changedFiles(base, head, git = execFileSync) {
   }
 }
 
+export async function sinceGreenBase({
+  repo = process.env.GITHUB_REPOSITORY,
+  runId = process.env.GITHUB_RUN_ID,
+  find = findGreenBase,
+} = {}) {
+  try {
+    return await find({
+      repo,
+      workflow: "apple.yml",
+      prefixes: mainCheckPrefixes,
+      runId,
+      getJson,
+      getPages,
+    });
+  } catch {
+    return null;
+  }
+}
+
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
-  const [base, head = "HEAD"] = process.argv.slice(2);
+  const [first, head = "HEAD"] = process.argv.slice(2);
+  const base = first === "--since-green" ? await sinceGreenBase() : first;
   const files = changedFiles(base, head);
   const client = touchesAppleClient(files);
   process.stderr.write(
-    `APPLE_SCOPE client=${client} files=${files === null ? "unknown" : files.length}\n`,
+    `APPLE_SCOPE client=${client} base=${base || "none"} files=${files === null ? "unknown" : files.length}\n`,
   );
-  process.stdout.write(`client=${client}\n`);
+  process.stdout.write(`client=${client}\nbase=${base ?? ""}\n`);
 }
