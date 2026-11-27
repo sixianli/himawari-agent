@@ -76,8 +76,8 @@ import {
   SUBSTITUTES,
   selfCheckCacheDir,
   selfCheckCacheHit,
-  selfCheckCacheLabel,
   selfCheckCacheKey,
+  selfCheckCacheLabel,
   selfCheckCacheWrite,
   selfCheckSteps,
   spentOf,
@@ -1089,12 +1089,19 @@ describe("opencode install integrity", () => {
       const code = `import { installOpencode } from ${JSON.stringify(script)}; installOpencode({ prefix: ${JSON.stringify(prefix)} });`;
       const run = () =>
         new Promise((done) => {
-          spawn(process.execPath, ["--input-type=module", "-e", code], { stdio: "ignore" }).on(
-            "close",
-            done,
-          );
+          const child = spawn(process.execPath, ["--input-type=module", "-e", code], {
+            stdio: ["ignore", "ignore", "pipe"],
+          });
+          let err = "";
+          child.stderr.on("data", (chunk) => {
+            err += chunk;
+          });
+          child.on("close", (status) => done({ status, failure: /Error.*$/mu.exec(err)?.[0] }));
         });
-      expect(await Promise.all([run(), run()])).toEqual([0, 0]);
+      expect(await Promise.all([run(), run()])).toEqual([
+        { status: 0, failure: undefined },
+        { status: 0, failure: undefined },
+      ]);
       expect(readdirSync(root)).toEqual(["shared"]);
     } finally {
       rmSync(root, { recursive: true, force: true });
