@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+import unittest.mock
 from unittest import mock
 
 HERE = Path(__file__).resolve().parent
@@ -582,6 +583,21 @@ class HostSystemBootTest(unittest.TestCase):
             with contextlib.redirect_stdout(output), self.assertRaises(SystemExit):
                 self.remote(root)['running_entry_path']('7.0.0-1013-oracle')
         self.assertIn('HOST_SYSTEM_FAILED RUNNING_KERNEL_NOT_IN_GRUB', output.getvalue())
+
+    def test_grub_tools_are_found_in_sbin_where_ubuntu_installs_them(self):
+        namespace = self.remote(Path('/nonexistent'))
+        with unittest.mock.patch.object(namespace['shutil'], 'which', side_effect=lambda name, path: '/usr/sbin/' + name if path.split(':')[0] == '/usr/sbin' else None):
+            self.assertEqual(namespace['system_tool']('grub-set-default'), '/usr/sbin/grub-set-default')
+
+    def test_a_missing_grub_tool_or_binary_is_reported_as_a_host_system_failure_not_a_traceback(self):
+        namespace = self.remote(Path('/nonexistent'))
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output), unittest.mock.patch.object(namespace['shutil'], 'which', return_value=None), self.assertRaises(SystemExit):
+            namespace['system_tool']('grub-set-default')
+        with contextlib.redirect_stdout(output), self.assertRaises(SystemExit):
+            namespace['run'](['/nonexistent/grub-set-default'])
+        self.assertIn('HOST_SYSTEM_FAILED GRUB_TOOL_MISSING grub-set-default', output.getvalue())
+        self.assertIn('HOST_SYSTEM_FAILED COMMAND_NOT_RUNNABLE /nonexistent/grub-set-default', output.getvalue())
 
     def test_the_remote_program_reuses_the_preflight_checks_and_pins_every_document_package(self):
         settings = self.remote(Path('/nonexistent'))['settings']
