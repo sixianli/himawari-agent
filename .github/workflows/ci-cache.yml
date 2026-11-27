@@ -14,7 +14,7 @@ defaults:
     shell: bash
 jobs:
   warm:
-    name: ci-cache/${{ matrix.arch }}
+    name: ci-cache/${{ matrix.runner }}
     if: ${{ github.ref == 'refs/heads/main' }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
@@ -22,10 +22,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - arch: x64
-            runner: ubuntu-24.04
-          - arch: arm64
-            runner: ubuntu-24.04-arm
+          - runner: ubuntu-24.04
+          - runner: ubuntu-24.04-arm
     env:
       CI_NODE: 22.22.3
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.ci-output/browsers
