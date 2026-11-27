@@ -20,6 +20,7 @@ public struct ChatView: View {
     @Environment(\.chatAttachLimits) private var attachLimits
     @Environment(\.chatStopRun) private var stopRun
     @Environment(\.chatChooseOption) private var chooseOption
+    @State private var explained: Set<String> = []
     @Environment(\.chatTalk) private var talk
     @Environment(\.chatOwnerAwaited) private var ownerAwaited
     @Environment(\.chatOpensTalk) private var opensTalk
@@ -47,9 +48,19 @@ public struct ChatView: View {
     @State private var safari: SafariLink?
     #endif
 
-    public init(store: ChatStore, threadId: String, draft: String = "", openHerPage: (() -> Void)? = nil, close: (() -> Void)? = nil) {
+    private let explainSpoken: ((ThreadMessage) -> AnyView)?
+
+    public init(
+        store: ChatStore,
+        threadId: String,
+        draft: String = "",
+        openHerPage: (() -> Void)? = nil,
+        close: (() -> Void)? = nil,
+        explainSpoken: ((ThreadMessage) -> AnyView)? = nil
+    ) {
         self.store = store
         self.close = close
+        self.explainSpoken = explainSpoken
         self.openHerPage = openHerPage
         self.threadId = threadId
         _draft = State(initialValue: draft)
@@ -304,8 +315,23 @@ public struct ChatView: View {
         return MessageMenuActions(
             reply: close == nil ? { startReply(to: message) } : nil,
             copy: { copyToPasteboard(MessageCopy.text(raw, fromAgent: fromAgent)) },
-            select: { selecting = SelectableMessage(id: message.messageId, text: raw, fromAgent: fromAgent) }
+            select: { selecting = SelectableMessage(id: message.messageId, text: raw, fromAgent: fromAgent) },
+            why: explains(message) ? { toggleWhy(message) } : nil
         )
+    }
+
+    private func explains(_ message: ThreadMessage) -> Bool {
+        message.role == .agent && message.spoken && explainSpoken != nil
+    }
+
+    private func toggleWhy(_ message: ThreadMessage) {
+        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) {
+            if explained.contains(message.messageId) {
+                explained.remove(message.messageId)
+            } else {
+                explained.insert(message.messageId)
+            }
+        }
     }
 
     private func startReply(to message: ThreadMessage) {
@@ -334,7 +360,7 @@ public struct ChatView: View {
         let whole = menu(for: message)
         return { code in
             guard let whole else { return nil }
-            return MessageMenuActions(reply: whole.reply, copy: { copyToPasteboard(code) }, select: whole.select)
+            return MessageMenuActions(reply: whole.reply, copy: { copyToPasteboard(code) }, select: whole.select, why: whole.why)
         }
     }
 
@@ -456,9 +482,11 @@ public struct ChatView: View {
         var text: String?
         var quote: BubbleQuote?
         var flashes = false
+        var why = ChatRowWhy.none
         switch row {
         case let .message(message):
             text = store.texts[message.contentRef]
+            if explains(message) { why = explained.contains(message.messageId) ? .open : .closed }
             if message.role == .owner, message.chosenFrom == nil { quote = self.quote(inside: text) }
             flashes = flashing == message.messageId
         case let .queued(item):
@@ -466,7 +494,7 @@ public struct ChatView: View {
         default:
             break
         }
-        return ChatRowModel(row: row, text: text, quote: quote, placement: placed, herWidth: herWidth, ownerWidth: ownerWidth, flashing: flashes, online: store.connection == .online)
+        return ChatRowModel(row: row, text: text, quote: quote, placement: placed, herWidth: herWidth, ownerWidth: ownerWidth, flashing: flashes, online: store.connection == .online, why: why)
     }
 
     private func rowActions(jump: @escaping (String) -> Void) -> ChatRowActions {
@@ -478,7 +506,9 @@ public struct ChatView: View {
             jump: jump,
             retry: { id in Task { await store.retry(id) } },
             discard: { id in Task { await store.discard(id) } },
-            showExecution: { [store, threadId] runId in await store.showExecution(runId, in: threadId) }
+            showExecution: { [store, threadId] runId in await store.showExecution(runId, in: threadId) },
+            toggleWhy: { toggleWhy($0) },
+            explanation: { [explainSpoken] message in explainSpoken?(message) }
         )
     }
 
@@ -683,6 +713,13 @@ struct ChatRowModel: Equatable {
     let ownerWidth: CGFloat
     let flashing: Bool
     let online: Bool
+    let why: ChatRowWhy
+}
+
+enum ChatRowWhy: Equatable {
+    case none
+    case closed
+    case open
 }
 
 struct ChatRowActions {
@@ -694,6 +731,8 @@ struct ChatRowActions {
     let retry: (String) -> Void
     let discard: (String) -> Void
     let showExecution: (String) async -> Void
+    let toggleWhy: (ThreadMessage) -> Void
+    let explanation: (ThreadMessage) -> AnyView?
 }
 
 struct ChatRowView: View, @MainActor Equatable {
@@ -766,6 +805,9 @@ struct ChatRowView: View, @MainActor Equatable {
                 if let options = message.options {
                     MessageOptionsView(options: options, choose: actions.choose(message))
                 }
+                if model.why != .none {
+                    why(message)
+                }
             }
         case .owner where message.chosenFrom != nil:
             ChosenOptionBubble(text: text, tail: tail, maxWidth: model.ownerWidth)
@@ -777,6 +819,27 @@ struct ChatRowView: View, @MainActor Equatable {
                 .hmType(DesignTokens.TypeScale.caption)
                 .foregroundStyle(Color.hmMuted)
                 .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+extension ChatRowView {
+    @ViewBuilder
+    fileprivate func why(_ message: ThreadMessage) -> some View {
+        let open = model.why == .open
+        Button {
+            actions.toggleWhy(message)
+        } label: {
+            Label(L.text(open ? "chat.why.hide" : "chat.why"), systemImage: "questionmark.circle")
+                .font(.subheadline)
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .tint(Color.hmSun)
+        .accessibilityValue(L.text(open ? "chat.why.open" : "chat.why.closed"))
+        if open, let explanation = actions.explanation(message) {
+            explanation
+                .transition(.opacity.combined(with: .move(edge: .top)))
         }
     }
 }
