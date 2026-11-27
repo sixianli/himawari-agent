@@ -15,24 +15,29 @@ struct ApprovalCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(approval.title)
-                        .hmType(DesignTokens.TypeScale.navTitle)
-                        .foregroundStyle(Color.hmText)
-                        .multilineTextAlignment(.leading)
-                    if let body = approval.display?.bodyPreview {
-                        Text(body)
-                            .hmType(DesignTokens.TypeScale.secondary)
-                            .foregroundStyle(Color.hmMuted)
-                            .lineLimit(2)
+            Button(action: open) {
+                HStack(alignment: .top, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(approval.title)
+                            .hmType(DesignTokens.TypeScale.navTitle)
+                            .foregroundStyle(Color.hmText)
                             .multilineTextAlignment(.leading)
+                        if let body = approval.display?.bodyPreview {
+                            Text(body)
+                                .hmType(DesignTokens.TypeScale.secondary)
+                                .foregroundStyle(Color.hmMuted)
+                                .lineLimit(2)
+                                .multilineTextAlignment(.leading)
+                        }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    Icon(.chevronRight, size: DesignTokens.IconSize.chevron)
+                        .foregroundStyle(Color.hmMuted)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                Icon(.chevronRight, size: DesignTokens.IconSize.chevron)
-                    .foregroundStyle(Color.hmMuted)
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.pressable)
+            .accessibilityHint(Text(L.text("approval.open")))
             AllowancePicker(approval: approval, days: allowanceDays, selection: $allowFor)
             HStack(spacing: 8) {
                 Button(ApprovalWords.decline(approval)) { respond(false, .once) }
@@ -41,12 +46,8 @@ struct ApprovalCard: View {
                     .buttonStyle(CapsuleButtonStyle(.primary, height: DesignTokens.Size.pill))
             }
             .disabled(busy)
-            .opacity(busy ? 0.5 : 1)
         }
         .himawariCard(padding: EdgeInsets(top: 18, leading: 18, bottom: 18, trailing: 18))
-        .contentShape(Rectangle())
-        .onTapGesture(perform: open)
-        .accessibilityAction(named: Text(L.text("approval.open")), open)
     }
 }
 

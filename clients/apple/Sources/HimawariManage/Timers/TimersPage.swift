@@ -106,6 +106,7 @@ struct TimersNote: View {
         Text(text)
             .hmType(DesignTokens.TypeScale.caption)
             .foregroundStyle(Color.hmMuted)
+            .fixedSize(horizontal: false, vertical: true)
             .textCase(nil)
     }
 }

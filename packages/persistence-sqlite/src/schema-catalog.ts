@@ -1343,6 +1343,20 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "removed with its payload when the owner disconnects the app",
   ),
   entry(
+    "app_connection_apps",
+    "AppConnectionStorePort",
+    "one row per app the owner added by typing its remote MCP server address in the app: the connection name, the shown title, the server address and when it was added",
+    "metadata_only",
+    "removed with the app's tokens and client identity when the owner removes the app",
+  ),
+  entry(
+    "app_connection_clients",
+    "AppConnectionStorePort",
+    "one row per app whose OAuth client identity Himawari holds (typed by the owner, a client ID metadata document or dynamic registration); the client ID, any secret and the issuer live only in a protected payload",
+    "payload_reference",
+    "removed with its payload when the owner removes the app or the issuer changes",
+  ),
+  entry(
     "decision_ledger",
     "ProactiveStorePort, DecisionLedgerPort",
     "one row per model gate decision (proactive check, memory candidate, consolidation change, context truncation, retrieval degrade, external read, hard rule review, failed memory capture): inputs as ids, cost and the owner's rating; text only as protected payload references",

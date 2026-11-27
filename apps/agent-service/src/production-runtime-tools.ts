@@ -317,8 +317,9 @@ async function nextWithAuthority<T>(
   }
 }
 
-function appApproval(access: AppCallAccess): OwnerScopeIntentExtras {
+function appApproval(access: AppCallAccess, step?: string): OwnerScopeIntentExtras {
   return {
+    ...(step === undefined ? {} : { step }),
     targets: [
       { type: "app", ref: access.app },
       { type: "app-tool", ref: access.tool },
@@ -947,13 +948,24 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       apps
         ? async (call) => ({
             value: await apps.run(call, {
-              authorize: async (access) => {
+              authorize: async (access, step) => {
                 if (!gate) reject();
-                const stopped = await gate(appApproval(access));
+                const stopped = await gate(appApproval(access, step));
                 if (stopped) throw new OwnerScopeStop(stopped);
               },
               markExternalContent: async () => {
                 await this.#options.externalContent?.mark(call.runId, APP_ACTION_EXTERNAL_ORIGIN);
+              },
+              recall: async (key) => {
+                const found = await this.#options.artifacts.lookup({
+                  runId: call.runId,
+                  purpose: "trace",
+                  operationKey: key,
+                });
+                return found ? this.#readJson(found.payloadRef) : undefined;
+              },
+              record: async (key, value) => {
+                await this.#writeJson(call, key, value);
               },
             }),
             contentClassification: "private",

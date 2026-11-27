@@ -6,6 +6,7 @@ from pathlib import Path
 import pwd
 import re
 import socket
+import stat
 import subprocess
 import sys
 import time
@@ -59,17 +60,57 @@ def failure_tail(path, lines=40, width=300):
     return [line[:width] for line in text.splitlines() if line.strip()][-lines:]
 
 
-def helper_error_files(directory, since_ns, own_name, limit=10):
+FAILURE_FILE_SUFFIXES = ('.stderr', '.err', '.log')
+FAILURE_FILE_SKIPPED_DIRECTORIES = {'node_modules', '.git', 'source', 'scratch-failure-files'}
+FAILURE_REPORT_KEYS = ('failure', 'failureCode', 'error', 'errors', 'reason', 'runnerErrors', 'readbackErrors', 'runtimeIntegrityFailure', 'fault')
+
+
+def written_files(roots, since_ns, accept):
     found = []
-    for path in sorted(directory.glob('*.stderr')):
+    for root in roots:
+        if not root.is_dir() or root.is_symlink():
+            continue
+        for parent, directories, files in os.walk(root):
+            directories[:] = sorted(name for name in directories if name not in FAILURE_FILE_SKIPPED_DIRECTORIES)
+            for filename in files:
+                if not accept(filename):
+                    continue
+                path = Path(parent) / filename
+                try:
+                    info = path.lstat()
+                except OSError:
+                    continue
+                if not stat.S_ISREG(info.st_mode) or info.st_mtime_ns < since_ns or info.st_size == 0:
+                    continue
+                found.append((info.st_mtime_ns, str(path), path))
+    return [path for _, _, path in sorted(found)]
+
+
+def failure_files(roots, since_ns, own_name, limit=12):
+    return written_files(roots, since_ns, lambda filename: filename.endswith(FAILURE_FILE_SUFFIXES) and not filename.startswith(own_name + '.'))[-limit:]
+
+
+def failed_reports(roots, since_ns, limit=8, width=1500):
+    found = []
+    for path in written_files(roots, since_ns, lambda filename: filename.endswith('.json')):
         try:
-            info = path.lstat()
-        except OSError:
+            if path.stat().st_size > 4 * 1024 * 1024:
+                continue
+            value = json.loads(path.read_bytes())
+        except (OSError, ValueError):
             continue
-        if path.name.startswith(own_name + '.') or not path.is_file() or path.is_symlink() or info.st_mtime_ns < since_ns or info.st_size == 0:
+        if not isinstance(value, dict) or value.get('passed') is not False:
             continue
-        found.append(path)
-    return found[:limit]
+        details = {key: value[key] for key in FAILURE_REPORT_KEYS if value.get(key)}
+        failed = [entry.get('id') or entry.get('name') for entry in value.get('assertions', []) if isinstance(entry, dict) and entry.get('passed') is False]
+        if failed:
+            details['failedAssertions'] = failed[:20]
+        failed_commands = [{'name': entry.get('name'), 'exitCode': entry.get('exitCode')} for entry in value.get('commands', []) if isinstance(entry, dict) and entry.get('exitCode') not in (0, None)]
+        if failed_commands:
+            details['failedCommands'] = failed_commands[:20]
+        if details:
+            found.append((path, json.dumps(details, ensure_ascii=False, sort_keys=True)[:width]))
+    return found[-limit:]
 
 
 def main():
@@ -110,12 +151,16 @@ def main():
     common.publish(path, (json.dumps(report, indent=2) + '\n').encode(), 0, __PKT_SERVICE_GID__, 0o640)
     if not report['passed']:
         for extension in ('stderr', 'stdout'):
-            for line in failure_tail(common.EVIDENCE / (name + '.' + extension)):
+            for line in failure_tail(common.EVIDENCE / (name + '.' + extension), lines=80 if extension == 'stderr' else 40):
                 print('STEP_FAILURE_TAIL ' + extension + ' ' + line)
-        for path in helper_error_files(common.EVIDENCE, started_ns, name):
-            print('STEP_FAILURE_FILE ' + str(path))
-            for line in failure_tail(path, lines=20):
-                print('STEP_FAILURE_TAIL ' + path.name + ' ' + line)
+        roots = [common.EVIDENCE, common.STAGE.parent]
+        for found in failure_files(roots, started_ns, name):
+            print('STEP_FAILURE_FILE ' + str(found))
+            for line in failure_tail(found, lines=20):
+                print('STEP_FAILURE_TAIL ' + found.name + ' ' + line)
+        for found, details in failed_reports(roots, started_ns):
+            for start in range(0, len(details), 300):
+                print('STEP_FAILURE_REPORT ' + str(found) + ' ' + details[start:start + 300])
     print(json.dumps({'passed': report['passed'], 'action': action, 'exitCode': report['exitCode'], 'report': str(path), 'sha256': common.sha(common.read(path, 0))}))
     return report['exitCode'] if 0 <= report['exitCode'] <= 255 else 1
 

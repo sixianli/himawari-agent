@@ -1,4 +1,6 @@
 import type {
+  AddedAppRecord,
+  AppClientRecord,
   AppConnectionRecord,
   AppConnectionScope,
   AppConnectionStorePort,
@@ -16,6 +18,8 @@ const STATUSES: readonly string[] = ["connected", "needs_reconnect"];
 
 const COLUMNS = `name, tokens_ref AS tokensRef, status, connected_at AS connectedAt,
   updated_at AS updatedAt`;
+const TITLE_MAXIMUM = 80;
+const SERVER_URL_MAXIMUM = 2048;
 
 export class SqliteAppConnectionOperations {
   private readonly database: Database.Database;
@@ -44,6 +48,16 @@ export class SqliteAppConnectionOperations {
         return this.mark(payload as Input<"mark">);
       case "appConnections.remove":
         return this.remove(payload as Input<"remove">);
+      case "appConnections.listApps":
+        return this.listApps(payload as AppConnectionScope);
+      case "appConnections.addApp":
+        return this.addApp(payload as Input<"addApp">);
+      case "appConnections.removeApp":
+        return this.removeApp(payload as Input<"removeApp">);
+      case "appConnections.readClient":
+        return this.readClient(payload as Input<"readClient">);
+      case "appConnections.saveClient":
+        return this.saveClient(payload as Input<"saveClient">);
       default:
         return this.fail("PORT_INVALID_OPERATION", `Unknown app connection operation ${operation}`);
     }
@@ -139,6 +153,88 @@ export class SqliteAppConnectionOperations {
         .prepare("DELETE FROM app_connections WHERE owner_id = ? AND agent_id = ? AND name = ?")
         .run(input.ownerId, input.agentId, name);
       return before ? [before.tokensRef] : [];
+    })();
+  }
+
+  private listApps(scope: AppConnectionScope): readonly AddedAppRecord[] {
+    const rows = this.database
+      .prepare(
+        `SELECT name, title, server_url AS serverUrl, created_at AS createdAt
+         FROM app_connection_apps WHERE owner_id = ? AND agent_id = ? ORDER BY created_at, name`,
+      )
+      .all(scope.ownerId, scope.agentId) as AddedAppRecord[];
+    return Object.freeze(rows.map((row) => Object.freeze({ ...row })));
+  }
+
+  private addApp(input: Input<"addApp">): void {
+    this.assertDiskHeadroom();
+    const name = this.name(input.name);
+    this.time(input.now);
+    if (
+      typeof input.title !== "string" ||
+      input.title.trim().length === 0 ||
+      input.title.length > TITLE_MAXIMUM
+    )
+      this.invalid("App title is invalid");
+    if (
+      typeof input.serverUrl !== "string" ||
+      !URL.canParse(input.serverUrl) ||
+      input.serverUrl.length > SERVER_URL_MAXIMUM
+    )
+      this.invalid("App server address is invalid");
+    this.database
+      .prepare(
+        `INSERT INTO app_connection_apps (owner_id, agent_id, name, title, server_url, created_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run(input.ownerId, input.agentId, name, input.title, input.serverUrl, input.now);
+  }
+
+  private removeApp(input: Input<"removeApp">): readonly string[] {
+    const name = this.name(input.name);
+    return this.database.transaction(() => {
+      const released = [...this.remove(input)];
+      const client = this.readClient(input);
+      if (client) released.push(client.clientRef);
+      this.database
+        .prepare(
+          "DELETE FROM app_connection_clients WHERE owner_id = ? AND agent_id = ? AND name = ?",
+        )
+        .run(input.ownerId, input.agentId, name);
+      this.database
+        .prepare("DELETE FROM app_connection_apps WHERE owner_id = ? AND agent_id = ? AND name = ?")
+        .run(input.ownerId, input.agentId, name);
+      return released;
+    })();
+  }
+
+  private readClient(input: Input<"readClient">): AppClientRecord | undefined {
+    const row = this.database
+      .prepare(
+        `SELECT name, client_ref AS clientRef, updated_at AS updatedAt FROM app_connection_clients
+         WHERE owner_id = ? AND agent_id = ? AND name = ?`,
+      )
+      .get(input.ownerId, input.agentId, this.name(input.name)) as AppClientRecord | undefined;
+    return row ? Object.freeze({ ...row }) : undefined;
+  }
+
+  private saveClient(input: Input<"saveClient">): readonly string[] {
+    this.assertDiskHeadroom();
+    const name = this.name(input.name);
+    this.time(input.now);
+    if (typeof input.clientRef !== "string" || input.clientRef.length === 0)
+      this.invalid("App client reference is invalid");
+    return this.database.transaction(() => {
+      const before = this.readClient(input);
+      this.database
+        .prepare(
+          `INSERT INTO app_connection_clients (owner_id, agent_id, name, client_ref, updated_at)
+           VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT (owner_id, agent_id, name) DO UPDATE SET
+             client_ref = excluded.client_ref, updated_at = excluded.updated_at`,
+        )
+        .run(input.ownerId, input.agentId, name, input.clientRef, input.now);
+      return before && before.clientRef !== input.clientRef ? [before.clientRef] : [];
     })();
   }
 }
