@@ -52,7 +52,20 @@
         "maxTextChars": 20000,
         "responseReserveMs": 5000
       }
-    }
+    },
+    "appConnections": [
+      {
+        "name": "github",
+        "title": "GitHub",
+        "serverUrl": "https://api.githubcopilot.com/mcp/",
+        "clientId": "Iv23ctB2TM1jlzmFsOOY",
+        "clientSecret": {
+          "ref": "github-app-client",
+          "version": "v1"
+        },
+        "trustsReadOnlyLabels": true
+      }
+    ]
   },
   "onDeployFailure": "rollback",
   "materialCache": {

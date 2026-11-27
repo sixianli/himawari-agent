@@ -373,6 +373,7 @@ export const approvedPublicFetchBytes = __PKT_TARGET_PUBLIC_FETCH_BYTES__;
 export const approvedEmbeddingDescriptor = Object.freeze(__PKT_TARGET_EMBEDDING_JSON__);
 export const approvedSpeech = Object.freeze(__PKT_TARGET_SPEECH_JSON__);
 export const approvedRunPolicyAdditions = Object.freeze(__PKT_TARGET_RUN_POLICY_JSON__);
+export const approvedSecretReferences = Object.freeze(__PKT_TARGET_SECRET_REFERENCES_JSON__);
 
 function applyApprovedEmbedding(configuration) {
   if (approvedEmbeddingDescriptor === null) return;
@@ -397,6 +398,7 @@ export function staticRootConfiguration(original) {
   applyApprovedEmbedding(configuration);
   if (approvedSpeech !== null) configuration.speech = structuredClone(approvedSpeech);
   for (const [key, value] of Object.entries(approvedRunPolicyAdditions)) configuration.runPolicy[key] = structuredClone(value);
+  for (const secret of approvedSecretReferences) configuration.secretReferences = [...(configuration.secretReferences ?? []).filter((entry) => entry?.ref !== secret.ref), structuredClone(secret)];
   return configuration;
 }
 
