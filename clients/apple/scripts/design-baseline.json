@@ -44,19 +44,19 @@
   {
     "file": "Sources/HimawariListenUI/ListenLiveViews.swift",
     "code": "color-literal",
-    "count": 26,
+    "count": 18,
     "why": "收听功能的界面早于 2026-11-12 的设计令牌，颜色和尺寸还是写死的；收听界面重做时一并清掉"
   },
   {
     "file": "Sources/HimawariListenUI/ListenLiveViews.swift",
     "code": "fixed-font",
-    "count": 14,
+    "count": 9,
     "why": "收听功能的界面早于 2026-11-12 的设计令牌，颜色和尺寸还是写死的；收听界面重做时一并清掉"
   },
   {
     "file": "Sources/HimawariListenUI/ListenLiveViews.swift",
     "code": "number-literal",
-    "count": 44,
+    "count": 31,
     "why": "收听功能的界面早于 2026-11-12 的设计令牌，颜色和尺寸还是写死的；收听界面重做时一并清掉"
   },
   {

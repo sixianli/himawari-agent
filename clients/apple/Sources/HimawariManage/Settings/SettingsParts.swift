@@ -159,6 +159,5 @@ struct SegmentPicker<Value: Hashable>: View {
         }
         .pickerStyle(.segmented)
         .labelsHidden()
-        .controlSize(.large)
     }
 }

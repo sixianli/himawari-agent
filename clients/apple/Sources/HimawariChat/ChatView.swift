@@ -38,6 +38,8 @@ public struct ChatView: View {
     @State private var dictation = DictationDraft()
     @State private var selecting: SelectableMessage?
     @State private var shownSteps: ShownSteps?
+    @State private var farFromLatest = false
+    @State private var latestJumps = 0
     @State private var copiedCount = 0
     @State private var copiedShown = false
     @State private var replyingTo: ThreadMessage?
@@ -106,6 +108,13 @@ public struct ChatView: View {
         VStack(spacing: 0) {
             header
             Spacer(minLength: 0)
+            if farFromLatest {
+                JumpToLatestButton { latestJumps += 1 }
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .padding(.horizontal, DesignTokens.Size.composerInsetX)
+                    .padding(.bottom, DesignTokens.Chat.listMarkerGap)
+                    .transition(reduceMotion ? .identity : .opacity)
+            }
             if copiedShown {
                 CopiedToast()
                     .padding(.bottom, DesignTokens.Chat.copiedToastLift)
@@ -427,6 +436,10 @@ public struct ChatView: View {
                     try? await Task.sleep(for: .seconds(scrollToTopAfter))
                     withAnimation(.easeInOut(duration: 3)) { proxy.scrollTo(first.id, anchor: .top) }
                 }
+                .onChange(of: latestJumps) { _, _ in
+                    guard let last = chatRows.last else { return }
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.3)) { proxy.scrollTo(last.id, anchor: .bottom) }
+                }
         }
     }
 
@@ -459,6 +472,11 @@ public struct ChatView: View {
             .padding(.bottom, 110)
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { screenWidth = $0 }
+        .onScrollGeometryChange(for: Bool.self) { geometry in
+            geometry.contentSize.height - geometry.visibleRect.maxY > geometry.containerSize.height
+        } action: { _, far in
+            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { farFromLatest = far }
+        }
         .defaultScrollAnchor(.bottom, for: .alignment)
         .defaultScrollAnchor(.bottom, for: .initialOffset)
         .defaultScrollAnchor(.bottom, for: .sizeChanges)

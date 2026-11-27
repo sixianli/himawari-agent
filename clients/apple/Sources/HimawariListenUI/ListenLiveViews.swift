@@ -126,17 +126,16 @@ public struct ListenCallPanel: View {
                 SunflowerMark()
                     .frame(width: 30, height: 30)
                 Text(L.text("live.calling"))
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(.headline)
             }
-            Text("\(Text(state.heard))\(Text(state.heardTail).foregroundStyle(.white.opacity(0.55)))")
-                .font(.system(size: 20))
-                .lineSpacing(20 * 0.45 - 6)
+            Text("\(Text(state.heard))\(Text(state.heardTail).foregroundStyle(Color.hmMuted))")
+                .font(.title3)
                 .padding(.top, 4)
                 .frame(maxWidth: .infinity, alignment: .leading)
             VoiceLevels(levels: levels, color: Self.waveColor)
                 .frame(height: 56)
         }
-        .foregroundStyle(.white)
+        .foregroundStyle(Color.hmText)
         .padding(EdgeInsets(top: 18, leading: 18, bottom: 14, trailing: 18))
         .modifier(LockPanelBackground())
     }
@@ -159,19 +158,18 @@ public struct ListenAskPanel<NotMe: View, ItsMe: View>: View {
                 SunflowerMark()
                     .frame(width: 30, height: 30)
                 Text(L.text("live.ask"))
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(.headline)
             }
             Text(ListenText.askExplanation(heard: state.heard, reason: state.refusal ?? .speakerUnconfirmed))
-                .font(.system(size: 15))
-                .lineSpacing(15 * 0.45 - 4)
-                .foregroundStyle(.white.opacity(0.8))
+                .font(.subheadline)
+                .foregroundStyle(Color.hmMuted)
                 .frame(maxWidth: .infinity, alignment: .leading)
             HStack(spacing: 8) {
                 notMe
                 itsMe
             }
         }
-        .foregroundStyle(.white)
+        .foregroundStyle(Color.hmText)
         .padding(18)
         .modifier(LockPanelBackground())
     }
@@ -181,18 +179,17 @@ public struct ListenAskPanel<NotMe: View, ItsMe: View>: View {
             if primary { Icon(.faceId, size: 20) }
             Text(title)
         }
-        .font(.system(size: 15, weight: primary ? .semibold : .regular))
-        .foregroundStyle(primary ? Color(.sRGB, red: 29 / 255, green: 31 / 255, blue: 26 / 255, opacity: 1) : .white)
-        .frame(maxWidth: .infinity, minHeight: 44)
-        .background(primary ? Color.white : Color.white.opacity(0.16), in: Capsule())
+        .font(primary ? .subheadline.weight(.semibold) : .subheadline)
+        .foregroundStyle(primary ? Color.hmOnText : Color.hmText)
+        .frame(maxWidth: .infinity, minHeight: DesignTokens.Size.minTapTarget)
+        .background(primary ? Color.hmText : Color.hmFill, in: Capsule())
     }
 }
 
 struct LockPanelBackground: ViewModifier {
     func body(content: Content) -> some View {
         content
-            .background(Color(.sRGB, red: 120 / 255, green: 128 / 255, blue: 112 / 255, opacity: 0.42), in: RoundedRectangle(cornerRadius: 30, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 30, style: .continuous).strokeBorder(.white.opacity(0.14), lineWidth: 1))
+            .background(Color.hmSurface, in: RoundedRectangle(cornerRadius: DesignTokens.Radius.card, style: .continuous))
     }
 }
 

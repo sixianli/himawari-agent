@@ -61,6 +61,7 @@
 "chat.menu.select" = "テキストを選択";
 "chat.menu.why" = "なぜ伝えたか";
 "chat.menu.steps" = "Himawari がしたことを見る";
+"chat.jumpLatest" = "最新へ";
 "chat.why" = "なぜ";
 "chat.why.hide" = "閉じる";
 "chat.why.open" = "表示中";

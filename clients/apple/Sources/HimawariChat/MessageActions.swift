@@ -84,6 +84,21 @@ struct SelectableMessage: Identifiable, Equatable {
     let fromAgent: Bool
 }
 
+struct JumpToLatestButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "chevron.down")
+                .font(.body.weight(.semibold))
+        }
+        .buttonStyle(.glass)
+        .buttonBorderShape(.circle)
+        .controlSize(.large)
+        .accessibilityLabel(Text(L.text("chat.jumpLatest")))
+    }
+}
+
 struct CopiedToast: View {
     var body: some View {
         Text(L.text("chat.copied"))

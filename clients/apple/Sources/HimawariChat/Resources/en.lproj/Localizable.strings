@@ -61,6 +61,7 @@
 "chat.menu.select" = "Select Text";
 "chat.menu.why" = "Why Himawari Said This";
 "chat.menu.steps" = "See What Himawari Did";
+"chat.jumpLatest" = "Jump to Latest";
 "chat.why" = "Why";
 "chat.why.hide" = "Hide";
 "chat.why.open" = "Shown";
