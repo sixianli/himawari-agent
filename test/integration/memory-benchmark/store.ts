@@ -20,7 +20,11 @@ import {
   createThreadId,
   type MemoryId,
 } from "@himawari-agent/domain";
-import { type Embedder, HybridMemoryProvider } from "@himawari-agent/memory-engine";
+import {
+  ConversationTurnService,
+  type Embedder,
+  HybridMemoryProvider,
+} from "@himawari-agent/memory-engine";
 import {
   applyMigrations,
   loadBundledMigrations,
@@ -29,6 +33,12 @@ import {
 } from "@himawari-agent/persistence-sqlite";
 import { createReferenceAdapterSet } from "@himawari-agent/testing";
 import {
+  conversationToolDescriptors,
+  DEFAULT_TOOL_RESULT_SHARE,
+  ProductionConversationTools,
+  toolResultCharacters,
+} from "../../../apps/agent-service/src/production-conversation-tools.ts";
+import {
   type MemoryCaptureCall,
   ProductionMemoryCapture,
 } from "../../../apps/agent-service/src/production-memory-capture.ts";
@@ -36,6 +46,12 @@ import type { BenchmarkStore } from "./datasets.ts";
 
 export const PRODUCTION_RELATED_MEMORY_LIMIT = 20;
 export const BENCHMARK_TIME_ZONE = "UTC";
+export const PRODUCTION_CONTEXT_WINDOW = 1_000_000;
+
+export interface ConversationToolOutcome {
+  readonly output: Record<string, unknown>;
+  readonly sessionIds: readonly string[];
+}
 
 type ThreadMessage = Awaited<ReturnType<ThreadRepositoryPort["listMessages"]>>[number];
 
@@ -54,7 +70,9 @@ export interface StoreStatistics {
   readonly captureFailures: number;
   readonly audits: Readonly<Record<string, number>>;
   readonly activeMemories: number;
+  readonly indexedTurns: number;
   readonly ingestMs: number;
+  readonly indexMs: number;
   readonly phaseMs: Readonly<Record<"search" | "capture" | "model" | "projection", number>>;
 }
 
@@ -65,7 +83,29 @@ export interface IngestedStore {
   profileText(now: string): Promise<string>;
   related(query: string, now: string): Promise<readonly RelatedMemory[]>;
   storedSessionIds(): Promise<ReadonlySet<string>>;
+  conversationTool(
+    name: string,
+    args: Record<string, unknown>,
+    callId: string,
+  ): Promise<ConversationToolOutcome>;
   close(): Promise<void>;
+}
+
+export function conversationTools() {
+  return conversationToolDescriptors().flatMap((descriptor) =>
+    "parameters" in descriptor && "description" in descriptor
+      ? [
+          {
+            type: "function" as const,
+            function: {
+              name: descriptor.name,
+              description: descriptor.description,
+              parameters: descriptor.parameters as Record<string, unknown>,
+            },
+          },
+        ]
+      : [],
+  );
 }
 
 const captureTag = (kind: string, value: string) =>
@@ -338,6 +378,37 @@ export async function ingestStore(input: {
     input.onTurn?.(index + 1, store.turns.length);
   }
   rows.close();
+  const turnIndex = new ConversationTurnService({
+    store: repository.conversationTurns(),
+    threads: repository.threadRepository(),
+    readText: ({ ref }) => readRef(ref),
+    embedder: input.embedder,
+    embeddableClassifications: ["public", "private", "sensitive"],
+    minimumSimilarity: input.minimumSimilarity,
+    onIndexFailure: (error) => failures.push(`conversation-turn:${stableErrorCode(error)}`),
+    onEmbeddingFailure: (error) => failures.push(`conversation-turn:${stableErrorCode(error)}`),
+    timeZone: BENCHMARK_TIME_ZONE,
+    now,
+  });
+  const indexStarted = performance.now();
+  let indexedTurns = 0;
+  for (;;) {
+    const indexed = await turnIndex.indexDue({ ownerId, agentId, limit: 100 });
+    if (indexed === 0) break;
+    indexedTurns += indexed;
+  }
+  const indexMs = performance.now() - indexStarted;
+  const conversation = new ProductionConversationTools({
+    ownerId,
+    agentId,
+    turns: turnIndex,
+    pageCharacters: toolResultCharacters(PRODUCTION_CONTEXT_WINDOW, DEFAULT_TOOL_RESULT_SHARE),
+    embedWithin: (_invocation, _slot, operation) => operation(),
+    timeZone: BENCHMARK_TIME_ZONE,
+  });
+  const capabilityOf = new Map(
+    conversationToolDescriptors().map(({ name, capabilityRef }) => [name, capabilityRef]),
+  );
   const profileTexts = new Map<string, string>();
   const profile = new OwnerProfileService({
     state: repository.productMemoryState(),
@@ -364,7 +435,9 @@ export async function ingestStore(input: {
       captureFailures: failures.length,
       audits,
       activeMemories: active.length,
+      indexedTurns,
       ingestMs: Math.round(performance.now() - started),
+      indexMs: Math.round(indexMs),
       phaseMs: Object.fromEntries(
         Object.entries(phaseMs).map(([phase, ms]) => [phase, Math.round(ms)]),
       ) as StoreStatistics["phaseMs"],
@@ -401,6 +474,35 @@ export async function ingestStore(input: {
           sessionsOf(record.sourceRefs),
         ),
       ),
+    conversationTool: async (name, args, callId) => {
+      const capabilityRef = capabilityOf.get(name);
+      if (!capabilityRef) return { output: { error: "UNKNOWN_TOOL" }, sessionIds: [] };
+      try {
+        const result = await conversation.run({
+          runId: createRunId("run-benchmark-answer"),
+          toolCallId: callId,
+          capabilityRef,
+          capabilityHandleRef: null,
+          arguments: args as never,
+          dataClassification: "private",
+        });
+        type Shown = { readonly lines?: readonly { readonly sequence: number }[] };
+        const output = result.output as Shown & { readonly turns?: readonly Shown[] };
+        const sequences = [...(output.turns ?? []), output].flatMap((part) =>
+          (part.lines ?? []).map(({ sequence }) => sequence),
+        );
+        return {
+          output: result.output,
+          sessionIds: [
+            ...new Set(
+              sequences.flatMap((sequence) => sessionOfRef.get(`payload-${sequence}`) ?? []),
+            ),
+          ],
+        };
+      } catch (error) {
+        return { output: { error: stableErrorCode(error) }, sessionIds: [] };
+      }
+    },
     close: async () => {
       await repository.close();
       await rm(stateRoot, { recursive: true, force: true });

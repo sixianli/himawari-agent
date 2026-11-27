@@ -282,15 +282,17 @@ describe("resuming an interrupted round", () => {
     await writeFile(path.join(output, "progress.json"), JSON.stringify({ spentUsd: 1.25 }));
     const earlier = await readEarlierRound(output);
     expect(earlier.spentUsd).toBe(1.25);
-    expect([...finishedSamples([sample, other], earlier, true)]).toEqual([sample.id]);
-    expect([...finishedSamples([sample, other], earlier, false)]).toEqual([sample.id]);
+    expect([
+      ...finishedSamples([sample, other], earlier, () => ["memory", "full-context"]),
+    ]).toEqual([sample.id]);
+    expect([...finishedSamples([sample, other], earlier, () => ["memory"])]).toEqual([sample.id]);
   });
 
   it("REVERSE: a fresh output directory resumes nothing and has spent nothing", async () => {
     const output = await mkdtemp(path.join(tmpdir(), "himawari-bench-resume-"));
     const earlier = await readEarlierRound(output);
     expect(earlier).toEqual({ spentUsd: 0, outcomes: [], stores: [] });
-    expect(finishedSamples(locomoSamples(locomo), earlier, false).size).toBe(0);
+    expect(finishedSamples(locomoSamples(locomo), earlier, () => ["memory"]).size).toBe(0);
   });
 
   it("REVERSE: a sample missing one store is not resumed even when its answers were recorded", async () => {
@@ -309,6 +311,8 @@ describe("resuming an interrupted round", () => {
       path.join(output, "stores.jsonl"),
       JSON.stringify({ id: sample.stores[0]?.id }),
     );
-    expect(finishedSamples([sample], await readEarlierRound(output), false).size).toBe(0);
+    expect(finishedSamples([sample], await readEarlierRound(output), () => ["memory"]).size).toBe(
+      0,
+    );
   });
 });
