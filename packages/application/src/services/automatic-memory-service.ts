@@ -174,25 +174,6 @@ export class AutomaticMemoryService {
         continue;
       }
       const explicitlyApproved = input.explicitRememberCandidateOrdinal === candidateOrdinal;
-      if (isSensitive(candidate) && !explicitlyApproved) {
-        const request = await this.requestApproval(input, candidate, candidateOrdinal);
-        approvalRequestIds.push(request.id);
-        await this.options.ledger?.append(
-          this.candidateLedger(input, candidateOrdinal, "pending_approval", "approval_requested", {
-            subjectRef: request.id,
-            contentRef: null,
-            memoryIds: candidate.existingMemoryId ? [candidate.existingMemoryId] : [],
-            candidate,
-          }),
-        );
-        await this.audit(
-          input,
-          candidateOrdinal,
-          input.interactive ? "approval_requested" : "background_reference_queued",
-          [],
-        );
-        continue;
-      }
       const confirmationCategory = confirmedTentativeCategory(candidate);
       const confirmsTentative = confirmationCategory !== undefined;
       const gates = this.options.gates ?? DEFAULT_CAPTURE_GATES;
@@ -404,41 +385,6 @@ export class AutomaticMemoryService {
       occurredAt: this.options.now(),
     });
     return committed;
-  }
-
-  private async requestApproval(
-    input: CommittedRunMemoryInput,
-    candidate: ExtractedMemoryCandidate & {
-      readonly dataClassification: "sensitive" | "restricted";
-    },
-    candidateOrdinal: number,
-  ): Promise<SensitiveMemoryApprovalRequest> {
-    const request = await this.options.approvals.create({
-      id: this.options.approvalIdFor(input.generationId, candidateOrdinal),
-      ownerId: input.ownerId,
-      agentId: input.agentId,
-      runId: input.runId,
-      threadId: input.threadId,
-      generationId: input.generationId,
-      sourceRef: input.sourceRef,
-      sourceClassification: input.sourceClassification,
-      candidateOrdinal,
-      productMemoryId:
-        candidate.existingMemoryId ??
-        this.options.memoryIdFor(input.generationId, candidateOrdinal),
-      decision: candidate.decision,
-      existingMemoryId: candidate.existingMemoryId,
-      dataClassification: candidate.dataClassification,
-      policyVersion: input.policyVersion,
-      modelDescriptorRef: input.modelDescriptorRef,
-      status: "pending",
-      deliveryState: input.interactive ? "deliverable" : "queued_no_ui",
-      requestedAt: this.options.now(),
-      decidedAt: null,
-      committedAt: null,
-    });
-    await this.options.candidates?.store({ request, candidate });
-    return request;
   }
 
   private async commitCandidate(

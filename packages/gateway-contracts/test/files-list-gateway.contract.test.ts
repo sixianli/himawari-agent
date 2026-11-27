@@ -24,6 +24,7 @@ const query = (overrides: Record<string, unknown>) =>
     origin: null,
     before: null,
     limit: 1,
+    search: null,
     ...overrides,
   });
 
@@ -45,6 +46,7 @@ describe("files list gateway messages", () => {
     for (const kind of ["document", "code", "web", "image", "pdf", "data", "other"])
       gatewayV2MessageSchema.parse(query({ kind }));
     for (const origin of ["uploaded", "generated"]) gatewayV2MessageSchema.parse(query({ origin }));
+    gatewayV2MessageSchema.parse(query({ search: "大阪" }));
     gatewayV2MessageSchema.parse(snapshot({}));
     gatewayV2MessageSchema.parse(snapshot({ files: [], nextCursor: "abc_-1" }));
     gatewayV2MessageSchema.parse(
@@ -75,6 +77,8 @@ describe("files list gateway messages", () => {
     ["an empty cursor", { before: "" }],
     ["a cursor over 512 characters", { before: "a".repeat(513) }],
     ["a thread filter", { threadId: "thread-1" }],
+    ["no search field", { search: undefined }],
+    ["a search over 200 characters", { search: "a".repeat(201) }],
   ])("rejects a query with %s", (_name, overrides) => {
     rejects(query(overrides));
   });

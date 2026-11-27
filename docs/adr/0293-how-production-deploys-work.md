@@ -49,6 +49,7 @@ ADR 0099 整份作废：它是给 2026-11-25 退租的那台 x86 云服务器（
 - 冻结紧挨着上线：离上线时间长了，用 `make-packet.py freeze` 重新冻结。上线前检查对比生产机现在的配置、服务单元和授权轮次是否和冻结时一样，不一样就在停服前停下（`PREFLIGHT_REFREEZE`）。
 - 每人一个实例以后只需多写一个实例文件。
 - 实例文件的 `configTargets.computers`（浏览器的三个上限）让生成器在配置切换时给 `runPolicy` 加上 `userComputers`（套接字路径取自 `scripts/operations/computers/settings.json`）和 `browser`，S7 切换脚本和维护脚本按同样顺序算出新配置；回退还原原配置时这两项一起去掉。
+- 实例文件的 `configTargets.appConnections`（每项：应用名、显示名、MCP 网址、客户端编号、客户端密钥的引用和版本、`trustsReadOnlyLabels`）让生成器在配置切换时写入 `runPolicy.appConnections`，并在顶层 `secretReferences` 里放一条用途为 `app-connection-client` 的引用（同名引用先去掉再加，重复上线结果不变）；密钥文件本身由 Andy 事先放在 `<stateRoot>/secrets/<引用>.<版本>`，生成器不碰它（见 [ADR 0311](0311-connecting-apps-through-remote-mcp.md#connect)）。
 
 <a id="platform"></a>
 
@@ -94,8 +95,8 @@ ADR 0099 整份作废：它是给 2026-11-25 退租的那台 x86 云服务器（
 
 ### 清理上线留下的东西
 
-- `deploy.sh` 在三个时点运行 `release-cleanup.py <操作包> apply`：上线前检查之前、上线成功之后、上线失败但旧版本仍在服务之后。回退也失败、或选了 `keep` 时不清理，现场全部留给诊断。清理失败不改变上线结果，只打印 `DEPLOY_CLEANUP_FAILED`。`plan` 模式只列出会删什么。
-- 清什么由生产机当时的状态决定：远端脚本从 systemd 单元读出正在服务的版本和它的回退目标，`/opt/himawari/releases/` 只留这两个；`/var/tmp/` 下的上线副本只留正在服务那一版的 `packet/`；正在服务那一版的证据整个保留，其他证据里超过 10 MiB 的文件删除（最新 3 份数据库副本除外）；删之前把 1 MiB 以下的报告和日志复制到 `/var/lib/himawari/release-cleanup/<时间>/`，并写 `cleanup-report.json`。
+- `deploy.sh` 在三个时点运行 `release-cleanup.py <操作包> apply`：上线前检查之前、上线成功之后、上线失败但旧版本仍在服务之后。回退也失败、或选了 `keep` 时不清理，现场全部留给诊断。清理失败不改变上线结果，只打印 `DEPLOY_CLEANUP_FAILED`。`plan` 模式只列出会删什么。另外，`ci-deploy.sh` 在生成新的上线包之前，先用上一次留下的上线包跑一遍清理（`CI_DEPLOY_PREVIOUS_CLEANUP`），让上次失败留下的目标目录不会挡住这一次（I-120）。
+- 清什么由生产机当时的状态决定：远端脚本从 systemd 单元读出正在服务的版本和它的回退目标，`/opt/himawari/releases/` 只留这两个；正在服务的版本是手装的、没有记录回退目标（操作目录里没有绑定记录）时，照样清掉失败留下的目标路径，其余旧版本一律保留（`serving-release-has-no-recorded-rollback-target`）；`/var/tmp/` 下的上线副本只留正在服务那一版的 `packet/`；正在服务那一版的证据整个保留，其他证据里超过 10 MiB 的文件删除（最新 3 份数据库副本除外）；删之前把 1 MiB 以下的报告和日志复制到 `/var/lib/himawari/release-cleanup/<时间>/`，并写 `cleanup-report.json`。
 - `/tmp` 里的验收现场：上线前那次清理留 1 份，上线成功后留 0 份，失败后留 1 份。只删名字、类型、权限、属主都符合、且没有进程在用的目录；测试 `test_release_cleanup.py` 核对清理和验收用的是同一套名字规则。
 - 上次失败留在目标路径上的残留由清理自己处理：属于正在服务的版本、回退目标、被进程或数据库引用的、或是符号链接的，保留并报 `CLEANUP_TARGET_PATH_LEFT`，其余先把小文件复制到 `release-cleanup/failed-attempts/` 再删。失败现场最多留 2 份，总量超过 200 MB 时只留最新一份。清理后仍有路径被占用，`deploy.sh` 在预检前以 `target-paths-left` 停下。Andy 同意这作为长期规则，不再逐次授权。
 - 宁可少删也不误删：单元文件或 `/etc/himawari/` 提到的、任何进程在用的、数据库里出现的路径都保留；读不出正在服务的版本、发现上线步骤正在运行、服务不是 active 时什么都不删；同一时间只允许一次清理。

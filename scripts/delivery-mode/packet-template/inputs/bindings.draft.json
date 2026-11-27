@@ -62,7 +62,7 @@
     "nodeSha256": "__PKT_NODE_SHA256__",
     "systemBwrapIdentity": {
       "path": "/usr/bin/bwrap",
-      "sha256": "e318903862396f96de3df57264e0158682b952fd3fb53ac23d876413e7b30f71"
+      "sha256": "__PKT_SYSTEM_BWRAP_SHA256__"
     },
     "programBwrapIdentity": {
       "path": "/usr/local/libexec/bubblewrap-0.11.2/bwrap",
@@ -71,7 +71,7 @@
     "serviceAccount": "himawari-prod",
     "systemBwrap": {
       "path": "/usr/bin/bwrap",
-      "sha256": "e318903862396f96de3df57264e0158682b952fd3fb53ac23d876413e7b30f71"
+      "sha256": "__PKT_SYSTEM_BWRAP_SHA256__"
     },
     "programBwrap": {
       "path": "/usr/local/libexec/bubblewrap-0.11.2/bwrap",

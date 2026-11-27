@@ -87,6 +87,6 @@
     "file": "Sources/HimawariShell/DemoScenes.swift",
     "code": "app-color-scheme",
     "count": 1,
-    "why": "只给示例场景用：无障碍审计启动 App 时带 -HimawariDemoAppearance dark，靠它真正切到深色（GitHub 的 Mac 模拟器不跟着 XCUIDevice.appearance 切，见事故 I-120）；正式 App 不带这个参数，照样跟随系统外观"
+    "why": "只给示例场景用：无障碍审计启动 App 时带 -HimawariDemoAppearance dark，靠它真正切到深色（GitHub 的 Mac 模拟器不跟着 XCUIDevice.appearance 切，见事故 I-121）；正式 App 不带这个参数，照样跟随系统外观"
   }
 ]

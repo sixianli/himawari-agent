@@ -94,6 +94,7 @@ const threads = new Map([
           committedAt: now,
           options: null,
           chosenFrom: null,
+          spoken: false,
         },
         {
           messageId: "message-02",
@@ -107,6 +108,7 @@ const threads = new Map([
           committedAt: now,
           options: null,
           chosenFrom: null,
+          spoken: false,
         },
       ],
       runs: [
@@ -151,6 +153,7 @@ const threads = new Map([
           committedAt: now,
           options: null,
           chosenFrom: null,
+          spoken: false,
         },
       ],
       runs: [],
@@ -2098,6 +2101,7 @@ function handleThreadCommand(message) {
         committedAt: message.payload.occurredAt,
         options: null,
         chosenFrom: null,
+        spoken: false,
       });
       thread.runs.push({
         runId: message.payload.runId,
@@ -2432,6 +2436,7 @@ async function handleRequest(request, response) {
         committedAt: run.updatedAt,
         options: null,
         chosenFrom: null,
+        spoken: false,
       });
     }
     if (!input.silent)

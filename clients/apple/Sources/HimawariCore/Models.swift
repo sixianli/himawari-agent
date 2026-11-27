@@ -88,6 +88,60 @@ public struct PerceptionSummary: Codable, Sendable, Equatable {
     }
 }
 
+public struct ChatModel: Codable, Sendable, Equatable, Identifiable {
+    public struct Price: Codable, Sendable, Equatable {
+        public let input: Double
+        public let output: Double
+
+        public init(input: Double, output: Double) {
+            self.input = input
+            self.output = output
+        }
+    }
+
+    public enum PriceTier: String, Codable, Sendable {
+        case low
+        case mid
+        case high
+    }
+
+    public let ref: String
+    public let name: String
+    public let provider: String
+    public let thinkingLevels: [String]
+    public var automatic: Bool? = nil
+    public var price: Price? = nil
+    public var priceTier: PriceTier? = nil
+
+    public var id: String { ref }
+
+    public init(ref: String, name: String, provider: String, thinkingLevels: [String], automatic: Bool? = nil, price: Price? = nil, priceTier: PriceTier? = nil) {
+        self.ref = ref
+        self.name = name
+        self.provider = provider
+        self.thinkingLevels = thinkingLevels
+        self.automatic = automatic
+        self.price = price
+        self.priceTier = priceTier
+    }
+
+    public var defaultThinkingLevel: String? {
+        ["medium", "low"].first(where: thinkingLevels.contains)
+            ?? thinkingLevels.first(where: { $0 != "off" })
+            ?? thinkingLevels.first
+    }
+}
+
+public struct ChatModels: Codable, Sendable, Equatable {
+    public let defaultRef: String
+    public let options: [ChatModel]
+
+    public init(defaultRef: String, options: [ChatModel]) {
+        self.defaultRef = defaultRef
+        self.options = options
+    }
+}
+
 public struct DeviceConfiguration: Codable, Sendable, Equatable {
     public let heartbeatSeconds: Int
     public let connectionMaxSeconds: Int
@@ -96,6 +150,7 @@ public struct DeviceConfiguration: Codable, Sendable, Equatable {
     public let streamConnections: Int?
     public let attachments: AttachmentLimits?
     public let perception: PerceptionSummary?
+    public var chatModels: ChatModels? = nil
 
     public var acceptsChatAttachments: Bool { attachments != nil }
 
@@ -148,6 +203,7 @@ public struct ThreadMessage: Codable, Sendable, Equatable, Identifiable {
     public let committedAt: String
     public var options: MessageOptions? = nil
     public var chosenFrom: ChosenOption? = nil
+    public var spoken = false
     public var id: String { messageId }
 }
 
@@ -164,6 +220,7 @@ extension ThreadMessage {
         committedAt = try container.decode(String.self, forKey: .committedAt)
         options = try? container.decodeIfPresent(MessageOptions.self, forKey: .options)
         chosenFrom = try? container.decodeIfPresent(ChosenOption.self, forKey: .chosenFrom)
+        spoken = (try? container.decodeIfPresent(Bool.self, forKey: .spoken)) ?? false
     }
 }
 

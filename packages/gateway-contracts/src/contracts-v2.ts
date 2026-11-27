@@ -73,10 +73,17 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "memory.classify.snapshot",
   "memory.import.duplicates.read",
   "memory.import.duplicates.snapshot",
+  "memory.import.preview.read",
+  "memory.import.preview.snapshot",
   "decision.chain.read",
   "decision.chain.snapshot",
   "decision.email.read",
   "decision.email.snapshot",
+  "decision.spoken.read",
+  "decision.spoken.snapshot",
+  "decision.spoken.rate",
+  "decision.stats.read",
+  "decision.stats.snapshot",
   "memory.approval.respond",
   "memory.tidy.undo",
   "memory.conversationReview.undo",
@@ -1155,6 +1162,24 @@ const serverStatusSnapshotSchema = object({
         reasonCode: nullable(machineString),
       }),
     ),
+    release: nullable(
+      object({
+        commit: {
+          parse(input: unknown, path = "$") {
+            if (typeof input !== "string" || !/^[0-9a-f]{7,40}$/u.test(input))
+              throw new ContractValidationError(path, "expected a commit hash");
+            return input;
+          },
+        },
+        installedAt: nullable(timestamp),
+      }),
+    ),
+    disk: nullable(
+      object({
+        availableBytes: integer(0),
+        totalBytes: integer(1),
+      }),
+    ),
     generatedAt: timestamp,
   }),
 });
@@ -1269,6 +1294,7 @@ const filesListQuerySchema = object({
     origin: nullable(enumeration(FILE_LIST_ORIGINS)),
     before: nullable(fileListCursorSchema),
     limit: integer(1, FILE_LIST_PAGE_LIMIT),
+    search: nullable(boundedString(200)),
   }),
 });
 const filesListSnapshotSchema = object({
@@ -2078,6 +2104,63 @@ const memoryImportDuplicatesSnapshotSchema = object({
     ),
   }),
 });
+export const MEMORY_IMPORT_PREVIEW_FILES_MAXIMUM = 10;
+export const MEMORY_IMPORT_PREVIEW_FILE_NAME_MAXIMUM = 128;
+export const MEMORY_IMPORT_PREVIEW_ITEMS_MAXIMUM = 500;
+export const MEMORY_IMPORT_PREVIEW_FILE_STATES = ["read", "empty", "unreadable"] as const;
+export const MEMORY_IMPORT_PREVIEW_FLAGS = [
+  "duplicate",
+  "secret",
+  "unclassified",
+  "similar",
+  "unchecked",
+  "coding",
+] as const;
+const memoryImportPreviewQuerySchema = object({
+  ...envelope("query", "memory.import.preview.read"),
+  payload: object({
+    source: enumeration(MEMORY_IMPORT_SOURCE_NAMES),
+    files: {
+      parse(input, path = "$.payload.files") {
+        const files = array(
+          object({
+            name: boundedString(MEMORY_IMPORT_PREVIEW_FILE_NAME_MAXIMUM),
+            contentRef: machineString,
+          }),
+        ).parse(input, path);
+        if (files.length < 1 || files.length > MEMORY_IMPORT_PREVIEW_FILES_MAXIMUM)
+          throw new ContractValidationError(path, "must hold 1 to 10 files");
+        return files;
+      },
+    },
+  }),
+});
+const memoryImportPreviewSnapshotSchema = object({
+  ...envelope("snapshot", "memory.import.preview.snapshot"),
+  payload: object({
+    files: array(
+      object({
+        name: boundedString(MEMORY_IMPORT_PREVIEW_FILE_NAME_MAXIMUM),
+        state: enumeration(MEMORY_IMPORT_PREVIEW_FILE_STATES),
+        found: integer(0),
+      }),
+    ),
+    found: integer(0),
+    items: array(
+      object({
+        contentRef: machineString,
+        text: boundedString(500),
+        from: boundedString(MEMORY_IMPORT_PREVIEW_FILE_NAME_MAXIMUM + 200),
+        category: enumeration(MEMORY_CATEGORY_NAMES),
+        subCategory: nullable(memoryLabelSchema),
+        topic: nullable(enumeration(MEMORY_SENSITIVE_TOPICS)),
+        flag: nullable(enumeration(MEMORY_IMPORT_PREVIEW_FLAGS)),
+        selectable: booleanValue,
+        checked: booleanValue,
+      }),
+    ),
+  }),
+});
 const decisionChainQuerySchema = object({
   ...envelope("query", "decision.chain.read"),
   payload: object({ decisionId: machineString }),
@@ -2247,6 +2330,66 @@ const decisionEmailSnapshotSchema = object({
         relatedMessages: nullable(integer(0)),
       }),
     ),
+  }),
+});
+export const DECISION_STATS_SPANS = ["week", "four_weeks"] as const;
+const spokenRatingSchema = enumeration(["useful", "unneeded"]);
+const decisionSpokenQuerySchema = object({
+  ...envelope("query", "decision.spoken.read"),
+  payload: object({ messageId: machineString }),
+});
+const decisionSpokenSnapshotSchema = object({
+  ...envelope("snapshot", "decision.spoken.snapshot"),
+  payload: object({
+    messageId: machineString,
+    rating: nullable(spokenRatingSchema),
+    decisions: array(
+      object({
+        decisionId: machineString,
+        decidedAt: timestamp,
+        pushed: booleanValue,
+        reason: nullable(boundedString(1000)),
+        cause: object({
+          kind: boundedString(64),
+          at: timestamp,
+          summary: nullable(boundedString(4000)),
+          memoryId: nullable(machineString),
+        }),
+      }),
+    ),
+  }),
+});
+const decisionSpokenRateCommandSchema = object({
+  ...commandEnvelope("decision.spoken.rate"),
+  payload: object({ messageId: machineString, rating: nullable(spokenRatingSchema) }),
+});
+const decisionStatsPeriodSchema = object({
+  start: timestamp,
+  end: timestamp,
+  spoken: integer(0),
+  rated: integer(0),
+  useful: integer(0),
+  unneeded: integer(0),
+});
+const decisionStatsRecallSchema = object({
+  at: timestamp,
+  correct: integer(0),
+  asked: integer(0),
+});
+const decisionStatsQuerySchema = object({
+  ...envelope("query", "decision.stats.read"),
+  payload: object({ span: enumeration(DECISION_STATS_SPANS) }),
+});
+const decisionStatsSnapshotSchema = object({
+  ...envelope("snapshot", "decision.stats.snapshot"),
+  payload: object({
+    span: enumeration(DECISION_STATS_SPANS),
+    minimumSamples: integer(1),
+    current: decisionStatsPeriodSchema,
+    previous: decisionStatsPeriodSchema,
+    recall: nullable(decisionStatsRecallSchema),
+    previousRecall: nullable(decisionStatsRecallSchema),
+    generatedAt: timestamp,
   }),
 });
 const memoryOverviewSnapshotSchema = object({
@@ -3767,10 +3910,17 @@ const schemasByType = {
   "memory.classify.snapshot": memoryClassifySnapshotSchema,
   "memory.import.duplicates.read": memoryImportDuplicatesQuerySchema,
   "memory.import.duplicates.snapshot": memoryImportDuplicatesSnapshotSchema,
+  "memory.import.preview.read": memoryImportPreviewQuerySchema,
+  "memory.import.preview.snapshot": memoryImportPreviewSnapshotSchema,
   "decision.chain.read": decisionChainQuerySchema,
   "decision.chain.snapshot": decisionChainSnapshotSchema,
   "decision.email.read": decisionEmailQuerySchema,
   "decision.email.snapshot": decisionEmailSnapshotSchema,
+  "decision.spoken.read": decisionSpokenQuerySchema,
+  "decision.spoken.snapshot": decisionSpokenSnapshotSchema,
+  "decision.spoken.rate": decisionSpokenRateCommandSchema,
+  "decision.stats.read": decisionStatsQuerySchema,
+  "decision.stats.snapshot": decisionStatsSnapshotSchema,
   "memory.approval.respond": memoryApprovalRespondCommandSchema,
   "memory.tidy.undo": memoryTidyUndoCommandSchema,
   "memory.conversationReview.undo": memoryConversationReviewUndoCommandSchema,

@@ -655,9 +655,17 @@ export const governanceMessages = [
       { name: "sqlite", required: true, status: "healthy", reasonCode: null },
       { name: "worker", required: true, status: "blocked", reasonCode: "WORKER_STARTING" },
     ],
+    release: { commit: "25bf7041", installedAt: "2026-11-26T07:40:00.000Z" },
+    disk: { availableBytes: 21474836480, totalBytes: 50000000000 },
     generatedAt: "2026-11-12T03:06:30.000Z",
   }),
-  fixture("query", "files.list.read", { kind: null, origin: "uploaded", before: null, limit: 50 }),
+  fixture("query", "files.list.read", {
+    kind: null,
+    origin: "uploaded",
+    before: null,
+    limit: 50,
+    search: "大阪",
+  }),
   fixture("snapshot", "files.list.snapshot", {
     files: [
       {
@@ -910,6 +918,50 @@ export const governanceMessages = [
       relatedMessages: 2,
     },
   }),
+  fixture("query", "decision.spoken.read", { messageId: "message:said:1" }),
+  fixture("snapshot", "decision.spoken.snapshot", {
+    messageId: "message:said:1",
+    rating: "useful",
+    decisions: [
+      {
+        decisionId: "inbox:mail1",
+        decidedAt: "2026-11-09T00:01:00.000Z",
+        pushed: true,
+        reason: "会议改了时间",
+        cause: {
+          kind: "mail",
+          at: "2026-11-09T00:00:00.000Z",
+          summary: "会议改到明天上午",
+          memoryId: null,
+        },
+      },
+    ],
+  }),
+  fixture("command", "decision.spoken.rate", { messageId: "message:said:1", rating: null }),
+  fixture("query", "decision.stats.read", { span: "week" }),
+  fixture("snapshot", "decision.stats.snapshot", {
+    span: "week",
+    minimumSamples: 5,
+    current: {
+      start: "2026-11-02T00:00:00.000Z",
+      end: "2026-11-09T00:00:00.000Z",
+      spoken: 6,
+      rated: 4,
+      useful: 3,
+      unneeded: 1,
+    },
+    previous: {
+      start: "2026-10-26T00:00:00.000Z",
+      end: "2026-11-02T00:00:00.000Z",
+      spoken: 2,
+      rated: 0,
+      useful: 0,
+      unneeded: 0,
+    },
+    recall: { at: "2026-11-08T00:00:00.000Z", correct: 24, asked: 30 },
+    previousRecall: null,
+    generatedAt: "2026-11-09T00:00:00.000Z",
+  }),
   fixture("query", "memory.overview.read", {}),
   fixture("query", "decision.chain.read", { decisionId: "proactive-decision:abc" }),
   fixture("snapshot", "decision.chain.snapshot", {
@@ -1015,6 +1067,38 @@ export const governanceMessages = [
     items: [
       { contentRef: "payload-05", verdict: "same", memoryId: "memory-insight" },
       { contentRef: "payload-06", verdict: "skipped", memoryId: null },
+    ],
+  }),
+  fixture("query", "memory.import.preview.read", {
+    source: "codex",
+    files: [{ name: "MEMORY.md", contentRef: "payload-07" }],
+  }),
+  fixture("snapshot", "memory.import.preview.snapshot", {
+    files: [{ name: "MEMORY.md", state: "read", found: 2 }],
+    found: 2,
+    items: [
+      {
+        contentRef: "memory-import:private:abc",
+        text: "喜欢早上跑步",
+        from: "MEMORY.md · User Profile",
+        category: "preference",
+        subCategory: null,
+        topic: null,
+        flag: null,
+        selectable: true,
+        checked: true,
+      },
+      {
+        contentRef: "memory-import:private:def",
+        text: "住在东京",
+        from: "MEMORY.md · User Profile",
+        category: "identity",
+        subCategory: null,
+        topic: null,
+        flag: "duplicate",
+        selectable: false,
+        checked: false,
+      },
     ],
   }),
   fixture("query", "memory.basis.read", { memoryId: "memory-insight" }),

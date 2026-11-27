@@ -67,6 +67,13 @@ else
   echo "CI_DEPLOY_BACKUP_NOT_INSTALLED: no /etc/himawari-backup/settings.json on $host; install it with scripts/operations/backup/install-backup.sh" >&2
 fi
 
+if remote "test -f /etc/himawari-heartbeat/healthcheck-url"; then
+  echo "CI_DEPLOY_HEARTBEAT_REFRESH"
+  remote "bash '$repo/scripts/operations/heartbeat/install-heartbeat.sh' install --keep-url --instance '$repo/scripts/delivery-mode/instances/$instance_name.json'" || refuse HEARTBEAT_REFRESH_FAILED "could not reinstall the heartbeat and its outage push on $host; see the HEARTBEAT_ line above" 3
+else
+  echo "CI_DEPLOY_HEARTBEAT_NOT_INSTALLED: no /etc/himawari-heartbeat/healthcheck-url on $host; install it with scripts/operations/heartbeat/install-heartbeat.sh" >&2
+fi
+
 echo "CI_DEPLOY_DB_PERMISSIONS"
 remote "cd /var/lib/himawari/state/data && for f in product.sqlite product.sqlite-wal product.sqlite-shm; do [ -e \"\$f\" ] && chmod 600 \"\$f\"; done; true" || refuse DB_PERMISSIONS_FAILED "cannot tighten the product database file modes on $host" 3
 
@@ -75,6 +82,15 @@ remote 'tools="$(getent passwd himawari-build | cut -d: -f6)/packet-builder/tool
 
 echo "CI_DEPLOY_NODE_OWNERSHIP"
 remote "chown -R root:root /opt/himawari/node && chmod -R go-w /opt/himawari/node" || refuse NODE_OWNERSHIP_FAILED "cannot make /opt/himawari/node root-owned on $host" 3
+
+echo "CI_DEPLOY_HOST_SYSTEM"
+/usr/bin/python3 -I "$here/host-system.py" | remote "/usr/bin/python3 -I -" || refuse HOST_SYSTEM_FAILED "could not install the document tools or pin the next boot to the running kernel on $host; see the HOST_SYSTEM_FAILED line above" 3
+
+previous_packet="$(find "$output_root" -mindepth 1 -maxdepth 1 -type d -name '*-change-packet-*' 2>/dev/null | sort | tail -1)"
+if [[ -n "$previous_packet" && -f "$previous_packet/inputs/bindings.json" && -f "$previous_packet/freeze-manifest.json" ]]; then
+  echo "CI_DEPLOY_PREVIOUS_CLEANUP $previous_packet"
+  /usr/bin/python3 -I "$here/release-cleanup.py" "$previous_packet" apply || echo "CI_DEPLOY_PREVIOUS_CLEANUP_INCOMPLETE: leftovers of the last attempt may still block this one; see the CLEANUP_ lines above" >&2
+fi
 
 echo "CI_DEPLOY_PREPARE $commit"
 prepare_log="$(mktemp)"
