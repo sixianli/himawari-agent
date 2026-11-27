@@ -427,6 +427,16 @@ class TargetPathClearingTest(CleanupCase):
         self.assertTrue((attempt / str(qualification).lstrip('/') / 'publication.json').exists())
         self.assertTrue((attempt / str(self.failed['operations']).lstrip('/') / 'run-01/s6-report.json').exists())
 
+    def test_I120_a_hand_installed_serving_release_without_recorded_bindings_still_clears_a_failed_attempt(self):
+        (self.serving['operations'] / 'inputs/bindings.json').unlink()
+        result = self.run_cleanup()
+        self.assertEqual([path for path in self.targets(self.failed) if os.path.lexists(path)], [])
+        self.assertEqual(result['targetPathsLeft'], [])
+        self.assertTrue(self.serving['prefix'].exists() and self.serving['operations'].exists())
+        self.assertTrue(self.previous['prefix'].exists() and self.first['prefix'].exists())
+        kept = {item['path']: item['reason'] for item in result['kept']}
+        self.assertEqual(kept[str(self.previous['prefix'])], 'serving-release-has-no-recorded-rollback-target')
+
     def test_plan_mode_changes_nothing(self):
         qualification = Path(self.failed['binding']['service']['newQualificationEvidenceRoot'])
         self.tree.file(qualification / 'publication.json')

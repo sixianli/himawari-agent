@@ -92,6 +92,7 @@ import {
   readAuthorityFile,
   readGmailAccount,
   readRestrictedExecutionTokenFile,
+  readRestrictedPrivateKeyPem,
   readWorkerServiceBootBinding,
   SERVICE_RUNTIME_ERROR_CODES,
   SystemdCredentialSecretSource,
@@ -3040,10 +3041,14 @@ export async function startTenantRuntime(
           applePushSender = createApplePushSender({
             teamId: applePushConfiguration.teamId,
             keyId: applePushConfiguration.keyId,
-            signingKey: await pushSources.keys.resolve(
-              applePushSecret.ref,
-              applePushSecret.version,
-            ),
+            signingKey:
+              process.platform === "darwin"
+                ? await pushSources.keys.resolve(applePushSecret.ref, applePushSecret.version)
+                : await readRestrictedPrivateKeyPem(
+                    path.join(configuration.stateRoot, "secrets"),
+                    applePushSecret.ref,
+                    applePushSecret.version,
+                  ),
             requestTimeoutSeconds: applePushConfiguration.requestTimeoutSeconds,
           });
           applePush = new ProductionApplePush({

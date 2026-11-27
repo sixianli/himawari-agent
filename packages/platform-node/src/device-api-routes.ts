@@ -375,6 +375,7 @@ export interface DeviceApiRouteOptions {
     readonly contentType?: DevicePayloadContentType;
   }) => Promise<string>;
   readonly chatAttachments?: () => DeviceChatAttachments;
+  readonly chatModels?: DeviceChatModelPort;
   readonly listVoiceTiming?: (limit: number) => Promise<readonly unknown[]>;
   readonly recordVoiceTiming?: (input: {
     readonly authentication: GatewayAuthenticationContext;
@@ -508,6 +509,31 @@ export type DevicePayloadContentType =
   | "text/plain"
   | "text/x-himawari-attachment"
   | "text/x-himawari-image";
+
+export interface DeviceChatModel {
+  readonly ref: string;
+  readonly name: string;
+  readonly provider: string;
+  readonly thinkingLevels: readonly string[];
+  readonly automatic?: boolean;
+  readonly price?: { readonly input: number; readonly output: number };
+  readonly priceTier?: "low" | "mid" | "high";
+}
+
+export interface DeviceChatModels {
+  readonly defaultRef: string;
+  readonly options: readonly DeviceChatModel[];
+}
+
+export interface DeviceModelChoice {
+  readonly modelRef: string;
+  readonly thinkingLevel: string;
+}
+
+export interface DeviceChatModelPort {
+  readonly list: () => DeviceChatModels;
+  readonly ownerChoice: (scope: PairedDeviceScope) => Promise<DeviceModelChoice | null>;
+}
 
 export interface DeviceChatAttachments {
   readonly images: boolean;
@@ -912,6 +938,7 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
           ...(options.chatAttachments
             ? { attachments: presentDeviceAttachments(configuration, options.chatAttachments()) }
             : {}),
+          ...(options.chatModels ? { chatModels: options.chatModels.list() } : {}),
           ...(options.perception
             ? {
                 perception: await presentDevicePerception(
@@ -1736,10 +1763,13 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
           content: "thread-action:submit",
         });
         const idempotencyKey = `device-message:${suffix}`;
+        const choice = options.chatModels
+          ? await options.chatModels.ownerChoice(scope(authentication))
+          : null;
         const command = threadGatewayMessageSchema.parse({
           schemaVersion: THREAD_GATEWAY_SCHEMA_VERSION,
           kind: "command",
-          type: "thread.message.submit",
+          type: choice ? "thread.message.submit_configured" : "thread.message.submit",
           messageId: `command:${suffix}`,
           correlationId: `correlation:${suffix}`,
           causationId: null,
@@ -1752,6 +1782,7 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
           actor: { actorType: "owner", actorId: authentication.ownerId },
           idempotencyKey,
           payload: {
+            ...(choice ? { modelRef: choice.modelRef, thinkingLevel: choice.thinkingLevel } : {}),
             threadId: body["threadId"],
             expectedRevision: body["expectedRevision"],
             messageId: `message:${suffix}`,

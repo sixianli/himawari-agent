@@ -33,6 +33,8 @@ public struct HerPage: View {
         case timers
         case timer(String)
         case about
+        case name
+        case model
         case serverStatus
         case transfer
         case importPaste
@@ -46,6 +48,7 @@ public struct HerPage: View {
     @State private var memory: MemoryStore
     @State private var quietHours: QuietHoursStore
     @State private var timers: TimersStore
+    @State private var personal: PersonalStore
     @State private var stats: DecisionStatsStore
     @State private var files: OwnerFilesStore
     @State private var connections: ConnectionsStore
@@ -97,6 +100,7 @@ public struct HerPage: View {
         _memory = State(initialValue: MemoryStore(gateway: gateway))
         _quietHours = State(initialValue: QuietHoursStore(gateway: gateway))
         _timers = State(initialValue: TimersStore(gateway: gateway))
+        _personal = State(initialValue: PersonalStore(gateway: gateway, loadModels: { try? await api.configuration().chatModels }))
         _stats = State(initialValue: DecisionStatsStore(gateway: gateway))
         _files = State(initialValue: OwnerFilesStore(gateway: gateway, api: api))
         _connections = State(initialValue: ConnectionsStore(gateway: gateway))
@@ -132,11 +136,12 @@ public struct HerPage: View {
         #endif
     }
 
-    init(settings: SettingsStore, memory: MemoryStore, quietHours: QuietHoursStore, timers: TimersStore? = nil, connections: ConnectionsStore? = nil, agents: AgentsStore? = nil, gmail: GmailStore? = nil, gateway: ManageGateway? = nil, memoryImport: MemoryImportStore? = nil, listening: (any HerListening)? = nil, actions: DeviceActionsModel? = nil, senses: AnyView? = nil, vaultItems: HerVaultCount = .items(3), path: [Page] = []) {
+    init(settings: SettingsStore, memory: MemoryStore, quietHours: QuietHoursStore, timers: TimersStore? = nil, connections: ConnectionsStore? = nil, agents: AgentsStore? = nil, gmail: GmailStore? = nil, personal: PersonalStore? = nil, gateway: ManageGateway? = nil, memoryImport: MemoryImportStore? = nil, listening: (any HerListening)? = nil, actions: DeviceActionsModel? = nil, senses: AnyView? = nil, vaultItems: HerVaultCount = .items(3), path: [Page] = []) {
         _settings = State(initialValue: settings)
         _memory = State(initialValue: memory)
         _quietHours = State(initialValue: quietHours)
         _timers = State(initialValue: timers ?? TimersStore(timers: nil))
+        _personal = State(initialValue: personal ?? PersonalStore(gateway: settings.gateway, loadModels: { nil }))
         _stats = State(initialValue: DecisionStatsStore(stats: nil))
         _files = State(initialValue: OwnerFilesStore(files: nil))
         _connections = State(initialValue: connections ?? ConnectionsStore(connections: nil))
@@ -220,6 +225,18 @@ public struct HerPage: View {
                         }
                     }
                     SettingsGroup(label: nil) {
+                        if personal.phase == .loaded {
+                            Button { path.append(.name) } label: {
+                                HerRow(icon: .user, title: M.nameTitle, value: personal.name ?? M.nameUnset)
+                            }
+                            .buttonStyle(.pressable)
+                        }
+                        if personal.canChooseModel, let model = personal.chosenModel {
+                            Button { path.append(.model) } label: {
+                                HerRow(icon: .bulb, title: M.modelTitle, value: M.modelName(model))
+                            }
+                            .buttonStyle(.pressable)
+                        }
                         if connections.available || actions != nil {
                             Button { path.append(.connections) } label: {
                                 HerRow(icon: .puzzle, title: M.connectionsTitle, subtitle: connectionsSummary)
@@ -328,6 +345,10 @@ public struct HerPage: View {
                     EvaluationPage(store: stats)
                 case .talkTiming:
                     TalkTimingPage(load: voiceTimings)
+                case .name:
+                    NamePage(store: personal) { path.removeLast() }
+                case .model:
+                    ModelPage(store: personal) { path.removeLast() }
                 case .approvals:
                     if let actions {
                         ApprovalsView(model: actions, openThread: { _ in close() }) { path.removeLast() }
@@ -377,11 +398,12 @@ public struct HerPage: View {
         async let timersLoaded: Void = timers.load()
         async let statsLoaded: Void = stats.load(.week)
         async let filesLoaded: Void = files.load()
+        async let personalLoaded: Void = personal.load()
         async let connectionsLoaded: Void = connections.load()
         async let agentsLoaded: Void = agents.load()
         await actions?.refreshPermissions()
         vaultCount = await countVault()
-        _ = await (settingsLoaded, memoryLoaded, quietLoaded, timersLoaded, statsLoaded, filesLoaded, connectionsLoaded, agentsLoaded)
+        _ = await (settingsLoaded, memoryLoaded, quietLoaded, timersLoaded, personalLoaded, statsLoaded, filesLoaded, connectionsLoaded, agentsLoaded)
     }
 }
 
