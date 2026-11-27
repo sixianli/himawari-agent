@@ -13,7 +13,6 @@
   --color-highlight: rgba(248, 235, 203, 1);
   --color-muted: rgba(86, 91, 80, 1);
   --color-on-bubble-owner: rgba(252, 252, 251, 1);
-  --color-on-speak: rgba(252, 252, 251, 1);
   --color-on-text: rgba(252, 252, 251, 1);
   --color-scrim: rgba(0, 0, 0, 0.28);
   --color-separator: rgba(37, 41, 33, 0.09);
@@ -240,7 +239,6 @@
     --color-highlight: rgba(75, 63, 37, 1);
     --color-muted: rgba(180, 180, 174, 1);
     --color-on-bubble-owner: rgba(252, 252, 251, 1);
-    --color-on-speak: rgba(228, 228, 225, 1);
     --color-on-text: rgba(30, 30, 30, 1);
     --color-scrim: rgba(0, 0, 0, 0.5);
     --color-separator: rgba(228, 228, 225, 0.1);

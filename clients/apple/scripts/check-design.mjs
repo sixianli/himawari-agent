@@ -30,10 +30,7 @@ export const TEXT_CONTRAST = {
   minimum: 4.5,
   foregrounds: ["text", "muted", "sun", "danger", "success", "glyph"],
   backgrounds: ["bg", "surface"],
-  pairs: [
-    ["onSpeak", "speak"],
-    ["onText", "text"],
-  ],
+  pairs: [["onText", "text"]],
 };
 
 const WEB_RULES = [
