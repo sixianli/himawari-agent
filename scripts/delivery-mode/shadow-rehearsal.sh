@@ -106,7 +106,7 @@ echo "SHADOW_BOOT_START"
 set -e
 "$1" -o loop "$2/upper.img" "$2/layer"
 mkdir "$2/layer/upper" "$2/layer/work"
-chown --reference=/ "$2/layer/upper"
+[ "$(id -u)" -ne 0 ] || chown --reference=/ "$2/layer/upper"
 chmod --reference=/ "$2/layer/upper"
 "$1" -t overlay overlay -o "lowerdir=/,upperdir=$2/layer/upper,workdir=$2/layer/work" "$2/root"
 if [ -f "$2/root/etc/fstab" ]; then
