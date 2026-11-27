@@ -50,11 +50,13 @@ describe("incident and gate list check", () => {
     expect(checkIncidentGates({ root })).toMatchObject({ errors: [] });
   });
 
-  it("refuses a third repeat that still has no hard gate", () => {
-    const root = fixture([row({ count: "3", state: "缺门槛", gate: "只写了文档" })]);
+  it("refuses a second occurrence that still has no hard gate, and lets a first one wait", () => {
+    const root = fixture([row({ count: "2", state: "缺门槛", gate: "只写了文档" })]);
     expect(checkIncidentGates({ root }).errors).toEqual([
-      "INCIDENT_THIRD_REPEAT_WITHOUT_HARD_GATE I-01 count=3",
+      "INCIDENT_REPEAT_WITHOUT_HARD_GATE I-01 count=2",
     ]);
+    const first = fixture([row({ count: "1", state: "缺门槛", gate: "只写了文档" })]);
+    expect(checkIncidentGates({ root: first }).errors).toEqual([]);
   });
 
   it("refuses a closed incident whose gate file does not exist or is not named", () => {
@@ -219,14 +221,14 @@ describe("incident and gate list check", () => {
   });
 });
 
-describe("a third repeat needs a gate that runs by itself", () => {
-  it("refuses a closed third repeat whose named gate nothing runs", () => {
-    const root = fixture([row({ count: "3" })]);
+describe("a repeat needs a gate that runs by itself", () => {
+  it("refuses a closed repeat whose named gate nothing runs", () => {
+    const root = fixture([row({ count: "2" })]);
     expect(checkIncidentGates({ root }).errors).toEqual(["INCIDENT_GATE_NOT_AUTOMATIC I-01"]);
   });
 
   it("accepts a test file, or a script that package.json, a hook or a workflow runs", () => {
-    const test = fixture([row({ count: "3", gate: "`scripts/gate.test.mjs`" })], {
+    const test = fixture([row({ count: "2", gate: "`scripts/gate.test.mjs`" })], {
       files: ["scripts/gate.test.mjs"],
     });
     expect(checkIncidentGates({ root: test }).errors).toEqual([]);
@@ -364,12 +366,12 @@ describe("repeat counts come from the commit history", () => {
     expect(history(root)).toEqual([]);
   });
 
-  it("turns the third counted commit into the hard-gate refusal", () => {
-    const root = historyFixture([row({ count: "3", state: "缺门槛", gate: "无" })]);
-    for (const n of [1, 2, 3]) commit(root, `fix: ${n}\n\nIncident: I-01`);
+  it("turns the second counted commit into the hard-gate refusal", () => {
+    const root = historyFixture([row({ count: "2", state: "缺门槛", gate: "无" })]);
+    for (const n of [1, 2]) commit(root, `fix: ${n}\n\nIncident: I-01`);
     const result = spawnSync("node", [join(root, RULE_FILE)], { cwd: root, encoding: "utf8" });
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain("INCIDENT_THIRD_REPEAT_WITHOUT_HARD_GATE I-01 count=3");
+    expect(result.stderr).toContain("INCIDENT_REPEAT_WITHOUT_HARD_GATE I-01 count=2");
   });
 
   it("refuses an Incident line naming an incident the list does not have", () => {

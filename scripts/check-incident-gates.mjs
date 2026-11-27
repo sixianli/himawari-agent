@@ -12,6 +12,7 @@ const OPEN_STATES = new Set(INCIDENT_STATES.filter((state) => state !== "已落�
 const SHORT_SYMPTOM_LENGTH = 80;
 const COLUMNS = ["编号", "日期", "现象", "根因", "次数", "门槛（文件或命令）", "状态"];
 const REPOSITORY_PATH = /`((?:\.?[A-Za-z0-9_-][A-Za-z0-9_.-]*\/)+[A-Za-z0-9_.-]+)`/g;
+export const REPEAT_LIMIT = 2;
 export const RULE_FILE = "scripts/check-incident-gates.mjs";
 export const RULE_MARK = "INCIDENT_TRAILER_MISSING";
 const INCIDENT_ID = /^I-\d{2,}$/;
@@ -79,8 +80,8 @@ export function checkIncidentGates({ root = repositoryRoot } = {}) {
     if (!Number.isSafeInteger(count) || count < 1) errors.push(`INCIDENT_COUNT_INVALID ${where}`);
     if (!INCIDENT_STATES.includes(incident.state))
       errors.push(`INCIDENT_STATE_INVALID ${where} ${incident.state}`);
-    if (count >= 3 && !HARD_GATE_STATES.has(incident.state))
-      errors.push(`INCIDENT_THIRD_REPEAT_WITHOUT_HARD_GATE ${where} count=${count}`);
+    if (count >= REPEAT_LIMIT && !HARD_GATE_STATES.has(incident.state))
+      errors.push(`INCIDENT_REPEAT_WITHOUT_HARD_GATE ${where} count=${count}`);
     const paths = [...(incident.gate ?? "").matchAll(REPOSITORY_PATH)].map((match) => match[1]);
     if (incident.state === "已落门槛" && paths.length === 0)
       errors.push(`INCIDENT_GATE_NOT_NAMED ${where}`);
@@ -88,7 +89,7 @@ export function checkIncidentGates({ root = repositoryRoot } = {}) {
       if (!existsSync(path.join(root, relative)))
         errors.push(`INCIDENT_GATE_PATH_MISSING ${where} ${relative}`);
     if (
-      count >= 3 &&
+      count >= REPEAT_LIMIT &&
       incident.state === "已落门槛" &&
       paths.length > 0 &&
       !paths.some((relative) => runsAutomatically(relative, runners))
