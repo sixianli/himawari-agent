@@ -383,6 +383,7 @@ public enum DesignTokens {
         public static let talkBarsInInput: CGFloat = 9
         public static let talkBarsOnTalkPage: CGFloat = 13
         public static let talkLabelGap: CGFloat = 10
+        public static let whyCardRadius: CGFloat = 12
     }
 
     public enum Her {

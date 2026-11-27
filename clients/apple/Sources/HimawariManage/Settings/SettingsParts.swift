@@ -72,6 +72,11 @@ struct SettingsRow: View {
     var chevron = false
     var switchState: Binding<Bool>? = nil
     var last = false
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    private var valueStacksUnderTitle: Bool {
+        typeSize.isAccessibilitySize
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -81,6 +86,9 @@ struct SettingsRow: View {
                 }
                 VStack(alignment: .leading, spacing: SL.rowTextGap) {
                     Text(title).hmType(SL.rowValue).foregroundStyle(Color.hmText)
+                    if let value, valueStacksUnderTitle {
+                        valueText(value)
+                    }
                     if let detail {
                         Text(detail).hmType(DesignTokens.TypeScale.caption).foregroundStyle(Color.hmMuted)
                     }
@@ -92,10 +100,8 @@ struct SettingsRow: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                if let value {
-                    Text(value)
-                        .hmType(SL.rowValue)
-                        .foregroundStyle(tone == .attention ? Color.hmDanger : tone == .good ? Color.hmSuccess : Color.hmMuted)
+                if let value, !valueStacksUnderTitle {
+                    valueText(value)
                 }
                 if let switchState {
                     Toggle("", isOn: switchState).labelsHidden().tint(Color.hmSuccess)
@@ -109,6 +115,12 @@ struct SettingsRow: View {
             if !last { RowSeparator() }
         }
         .contentShape(Rectangle())
+    }
+
+    private func valueText(_ value: String) -> some View {
+        Text(value)
+            .hmType(SL.rowValue)
+            .foregroundStyle(tone == .attention ? Color.hmDanger : tone == .good ? Color.hmSuccess : Color.hmMuted)
     }
 }
 

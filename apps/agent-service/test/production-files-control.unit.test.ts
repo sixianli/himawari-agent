@@ -66,4 +66,34 @@ describe("ProductionFilesControl", () => {
     ]);
     expect(asked).toEqual(["t-ok", "t-bad"]);
   });
+
+  it("passes the name search to the store so a search finds files on later pages", async () => {
+    const seen: unknown[] = [];
+    const control = new ProductionFilesControl({
+      configuration: { ownerId: "o1", agentId: "a1" } as never,
+      store: {
+        list: async (input: { search: string | null; threadId: string | null }) => {
+          seen.push([input.search, input.threadId]);
+          return { items: [], nextCursor: null };
+        },
+      } as never,
+      threadTitle: async () => null,
+      clock: { now: () => "2026-11-13T00:00:00.000Z" },
+    });
+    const ask = (search: string | null) =>
+      control.query(
+        {
+          type: "files.list.read",
+          scope: { ownerId: "o1", agentId: "a1" },
+          payload: { kind: null, origin: null, before: null, limit: 20, search },
+        } as never,
+        { authentication: { ownerId: "o1" } } as never,
+      );
+    await ask("大阪");
+    await ask(null);
+    expect(seen).toEqual([
+      ["大阪", null],
+      [null, null],
+    ]);
+  });
 });

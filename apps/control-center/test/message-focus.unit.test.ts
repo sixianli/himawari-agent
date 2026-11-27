@@ -27,6 +27,7 @@ const owner = (id: string, sequence: number): Detail["payload"]["messages"][numb
   committedAt: "2026-09-11T00:00:00Z",
   options: null,
   chosenFrom: null,
+  spoken: false,
 });
 
 function detailOf(threadId: string): Detail {
