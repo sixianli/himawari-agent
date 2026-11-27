@@ -1,0 +1,37 @@
+name: Apple screens
+on:
+  workflow_dispatch:
+    inputs:
+      scenes:
+        description: 示例场景名，逗号分隔（见 DemoScenes.swift）
+        required: true
+        default: 04-chat
+permissions:
+  contents: read
+concurrency:
+  group: apple-screens-${{ github.ref }}
+  cancel-in-progress: false
+defaults:
+  run:
+    shell: bash
+jobs:
+  screens:
+    name: apple/screens
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: 在模拟器里按深浅两种外观截示例场景
+        env:
+          SCENES: ${{ inputs.scenes }}
+          HIMAWARI_APPLE_CACHE: ${{ runner.temp }}/himawari
+        run: bash clients/apple/scripts/ui-review.sh --only "$SCENES" --out "$RUNNER_TEMP/screens"
+      - if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: apple-screens
+          path: ${{ runner.temp }}/screens
+          if-no-files-found: ignore
+          retention-days: 7
