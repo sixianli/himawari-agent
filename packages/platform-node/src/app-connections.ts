@@ -1,9 +1,12 @@
 import { randomBytes } from "node:crypto";
+import { isIP } from "node:net";
 import type { AppConnectionScope, AppConnectionStorePort } from "@himawari-agent/application";
 import {
   auth,
   Client,
   type FetchLike,
+  LATEST_PROTOCOL_VERSION,
+  type OAuthClientInformationMixed,
   type OAuthClientMetadata,
   type OAuthClientProvider,
   type OAuthDiscoveryState,
@@ -11,15 +14,40 @@ import {
   type StoredOAuthTokens,
   StreamableHTTPClientTransport,
 } from "@modelcontextprotocol/client";
-import type { DeviceConnection, DeviceConnectionAuthorizationStart } from "./device-api-routes.js";
+import type {
+  DeviceConnection,
+  DeviceConnectionAddOutcome,
+  DeviceConnectionAuthorizationStart,
+} from "./device-api-routes.js";
 
 export const APP_CONNECTIONS_CALLBACK_PATH = "/api/connections/v1/callback";
+export const APP_CONNECTIONS_CLIENT_METADATA_PATH = "/api/connections/v1/client.json";
 export const APP_CONNECTION_CALLBACK_HOST = "connection-authorization";
 
 const STATE_TTL_MS = 10 * 60_000;
 const MAX_PENDING_STATES = 20;
 const CLIENT_NAME = "Himawari";
 const MAX_TOOL_PAGES = 20;
+const ADDED_NAME_PREFIX = "app_";
+const TITLE_MAXIMUM = 80;
+const SERVER_URL_MAXIMUM = 2048;
+const PROBE_TIMEOUT_MS = 15_000;
+const PUBLIC_CLIENT_AUTH = "none";
+
+export function isAllowedAppServerUrl(url: URL): boolean {
+  const host = url.hostname.replace(/^\[|\]$/gu, "").toLowerCase();
+  return (
+    url.protocol === "https:" &&
+    url.username === "" &&
+    url.password === "" &&
+    url.hash === "" &&
+    host.length > 0 &&
+    isIP(host) === 0 &&
+    host !== "localhost" &&
+    !host.endsWith(".localhost") &&
+    host.includes(".")
+  );
+}
 
 export interface AppTool {
   readonly name: string;
@@ -37,9 +65,17 @@ export interface AppConnectionDefinition {
   readonly name: string;
   readonly title: string;
   readonly serverUrl: string;
-  readonly clientId: string;
+  readonly clientId?: string;
   readonly clientSecret?: string;
   readonly trustsReadOnlyLabels: boolean;
+}
+
+export interface AppConnectionApp {
+  readonly name: string;
+  readonly title: string;
+  readonly serverUrl: string;
+  readonly trustsReadOnlyLabels: boolean;
+  readonly added: boolean;
 }
 
 export interface AppConnectionSealPort {
@@ -65,8 +101,18 @@ interface Pending {
 }
 
 interface SavedGrant {
-  readonly tokens: StoredOAuthTokens;
+  readonly tokens?: StoredOAuthTokens;
   readonly discovery?: OAuthDiscoveryState;
+}
+
+interface ResolvedApp {
+  readonly definition: AppConnectionDefinition;
+  readonly added: boolean;
+}
+
+interface ClientHolder {
+  readonly fixed: boolean;
+  information?: StoredOAuthClientInformation;
 }
 
 export interface ProductionAppConnectionsOptions {
@@ -77,6 +123,7 @@ export interface ProductionAppConnectionsOptions {
   readonly publicOrigin: string;
   readonly now: () => string;
   readonly fetch?: FetchLike;
+  readonly serverUrlAllowed?: (url: URL) => boolean;
 }
 
 export class ProductionAppConnections {
@@ -95,14 +142,43 @@ export class ProductionAppConnections {
     return new URL(APP_CONNECTIONS_CALLBACK_PATH, this.#options.publicOrigin).href;
   }
 
-  definition(name: string): AppConnectionDefinition | undefined {
-    return this.#definitions.get(name);
+  get clientMetadataUrl(): string {
+    return new URL(APP_CONNECTIONS_CLIENT_METADATA_PATH, this.#options.publicOrigin).href;
+  }
+
+  clientMetadataDocument(): Readonly<Record<string, unknown>> {
+    return {
+      client_id: this.clientMetadataUrl,
+      client_name: CLIENT_NAME,
+      client_uri: new URL("/", this.#options.publicOrigin).href,
+      redirect_uris: [this.callbackUrl],
+      grant_types: ["authorization_code", "refresh_token"],
+      response_types: ["code"],
+      token_endpoint_auth_method: PUBLIC_CLIENT_AUTH,
+    };
+  }
+
+  async definition(name: string): Promise<AppConnectionApp | undefined> {
+    const resolved = await this.#resolve(name);
+    if (!resolved) return undefined;
+    const { definition, added } = resolved;
+    return {
+      name: definition.name,
+      title: definition.title,
+      serverUrl: definition.serverUrl,
+      trustsReadOnlyLabels: definition.trustsReadOnlyLabels,
+      added,
+    };
   }
 
   async list(): Promise<readonly DeviceConnection[]> {
     const { scope, store } = this.#options;
     const saved = new Map((await store.list(scope)).map((record) => [record.name, record]));
-    return this.#options.definitions.map((definition) => {
+    const added = (await store.listApps(scope)).filter(({ name }) => !this.#definitions.has(name));
+    return [
+      ...this.#options.definitions.map((definition) => ({ definition, added: false })),
+      ...added.map((app) => ({ definition: this.#addedDefinition(app), added: true })),
+    ].map(({ definition, added: isAdded }) => {
       const record = saved.get(definition.name);
       return {
         name: definition.name,
@@ -110,8 +186,50 @@ export class ProductionAppConnections {
         status: record?.status ?? "disconnected",
         account: null,
         connectedAt: record?.connectedAt ?? null,
+        added: isAdded,
       };
     });
+  }
+
+  async add(input: {
+    readonly serverUrl: string;
+    readonly title?: string;
+    readonly clientId?: string;
+    readonly clientSecret?: string;
+  }): Promise<DeviceConnectionAddOutcome> {
+    let url: URL;
+    try {
+      url = new URL(input.serverUrl);
+    } catch {
+      return { outcome: "invalid_address" };
+    }
+    const allowed = this.#options.serverUrlAllowed ?? isAllowedAppServerUrl;
+    if (input.serverUrl.length > SERVER_URL_MAXIMUM || !allowed(url))
+      return { outcome: "invalid_address" };
+    const probe = await this.#probe(url);
+    if (probe.kind === "unreachable") return { outcome: "unreachable" };
+    const { scope, store, now } = this.#options;
+    const at = now();
+    const name = `${ADDED_NAME_PREFIX}${randomBytes(6).toString("hex")}`;
+    const title =
+      shortTitle(input.title) ??
+      (probe.kind === "open" ? shortTitle(probe.title) : undefined) ??
+      shortTitle(url.hostname);
+    await store.addApp({ ...scope, name, title: title ?? name, serverUrl: url.href, now: at });
+    if (input.clientId !== undefined)
+      await this.#saveClient(name, typedClient(input.clientId, input.clientSecret));
+    if (probe.kind === "open") await this.#saveGrant(name, {}, "connect");
+    const listed = (await this.list()).find((entry) => entry.name === name);
+    return listed ? { outcome: "added", connection: listed } : { outcome: "unreachable" };
+  }
+
+  async remove(name: string): Promise<boolean | undefined> {
+    const resolved = await this.#resolve(name);
+    if (!resolved?.added) return undefined;
+    const { scope, store, seal } = this.#options;
+    const refs = await store.removeApp({ ...scope, name });
+    if (refs.length > 0) await seal.release({ ...scope, refs });
+    return true;
   }
 
   async begin(input: {
@@ -119,8 +237,9 @@ export class ProductionAppConnections {
     readonly connection: string;
     readonly callbackScheme: string;
   }): Promise<DeviceConnectionAuthorizationStart | undefined> {
-    const definition = this.#definitions.get(input.connection);
-    if (!definition) return undefined;
+    const resolved = await this.#resolve(input.connection);
+    if (!resolved) return undefined;
+    const { definition } = resolved;
     const state = this.#issueState({
       name: definition.name,
       deviceId: input.deviceId,
@@ -129,17 +248,25 @@ export class ProductionAppConnections {
     const pending = this.#states.get(state);
     if (!pending) return undefined;
     let authorizationUrl: URL | undefined;
-    const provider = this.#provider(definition, {
+    const provider = this.#provider(definition, await this.#client(definition), {
       state,
       pending,
       redirect: (url) => {
         authorizationUrl = url;
       },
     });
-    const result = await auth(provider, {
-      serverUrl: definition.serverUrl,
-      ...(this.#options.fetch === undefined ? {} : { fetchFn: this.#options.fetch }),
-    });
+    let result: Awaited<ReturnType<typeof auth>>;
+    try {
+      result = await auth(provider, {
+        serverUrl: definition.serverUrl,
+        ...(this.#options.fetch === undefined ? {} : { fetchFn: this.#options.fetch }),
+      });
+    } catch (error) {
+      this.#states.delete(state);
+      if (isRegistrationUnavailable(error))
+        return { kind: "client_required", redirectUri: this.callbackUrl };
+      return undefined;
+    }
     if (result !== "REDIRECT" || authorizationUrl === undefined) {
       this.#states.delete(state);
       return undefined;
@@ -175,10 +302,11 @@ export class ProductionAppConnections {
     if (!reply || pending.expiresAt <= Date.parse(this.#options.now())) return "failed";
     if (reply.error === "access_denied") return "denied";
     if (reply.error !== null || reply.code === null) return "failed";
-    const definition = this.#definitions.get(pending.name);
-    if (!definition) return "failed";
+    const resolved = await this.#resolve(pending.name);
+    if (!resolved) return "failed";
+    const { definition } = resolved;
     let granted: SavedGrant | undefined;
-    const provider = this.#provider(definition, {
+    const provider = this.#provider(definition, await this.#client(definition), {
       state: input.state,
       pending,
       saveTokens: (tokens) => {
@@ -208,15 +336,16 @@ export class ProductionAppConnections {
   }
 
   async open(name: string): Promise<Client | undefined> {
-    const definition = this.#definitions.get(name);
-    if (!definition) return undefined;
+    const resolved = await this.#resolve(name);
+    if (!resolved) return undefined;
+    const { definition } = resolved;
     const { scope, store, seal } = this.#options;
     const record = await store.read({ ...scope, name });
     if (!record || record.status !== "connected") return undefined;
     const text = await seal.open({ ...scope, ref: record.tokensRef });
     if (text === undefined) return undefined;
     let grant = JSON.parse(text) as SavedGrant;
-    const provider = this.#provider(definition, {
+    const provider = this.#provider(definition, await this.#client(definition), {
       grant: () => grant,
       saveTokens: async (tokens) => {
         grant = { ...grant, tokens };
@@ -296,8 +425,107 @@ export class ProductionAppConnections {
     if (released.length > 0) await seal.release({ ...scope, refs: released });
   }
 
+  async #resolve(name: string): Promise<ResolvedApp | undefined> {
+    const configured = this.#definitions.get(name);
+    if (configured) return { definition: configured, added: false };
+    if (!name.startsWith(ADDED_NAME_PREFIX)) return undefined;
+    const app = (await this.#options.store.listApps(this.#options.scope)).find(
+      (entry) => entry.name === name,
+    );
+    return app ? { definition: this.#addedDefinition(app), added: true } : undefined;
+  }
+
+  #addedDefinition(app: {
+    readonly name: string;
+    readonly title: string;
+    readonly serverUrl: string;
+  }): AppConnectionDefinition {
+    return {
+      name: app.name,
+      title: app.title,
+      serverUrl: app.serverUrl,
+      trustsReadOnlyLabels: false,
+    };
+  }
+
+  async #client(definition: AppConnectionDefinition): Promise<ClientHolder> {
+    if (definition.clientId !== undefined)
+      return {
+        fixed: true,
+        information: typedClient(definition.clientId, definition.clientSecret),
+      };
+    const { scope, store, seal } = this.#options;
+    const record = await store.readClient({ ...scope, name: definition.name });
+    const text = record ? await seal.open({ ...scope, ref: record.clientRef }) : undefined;
+    return text === undefined
+      ? { fixed: false }
+      : { fixed: false, information: JSON.parse(text) as StoredOAuthClientInformation };
+  }
+
+  async #saveClient(name: string, information: StoredOAuthClientInformation) {
+    const { scope, store, seal, now } = this.#options;
+    const at = now();
+    const clientRef = await seal.seal({ ...scope, text: JSON.stringify(information), at });
+    const released = await store.saveClient({ ...scope, name, clientRef, now: at });
+    if (released.length > 0) await seal.release({ ...scope, refs: released });
+  }
+
+  async #probe(
+    url: URL,
+  ): Promise<
+    | { readonly kind: "open"; readonly title?: string }
+    | { readonly kind: "sign_in" }
+    | { readonly kind: "unreachable" }
+  > {
+    const fetcher = this.#options.fetch ?? fetch;
+    let status: number;
+    try {
+      const response = await fetcher(url, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          accept: "application/json, text/event-stream",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "initialize",
+          params: {
+            protocolVersion: LATEST_PROTOCOL_VERSION,
+            capabilities: {},
+            clientInfo: { name: CLIENT_NAME, version: "1.0.0" },
+          },
+        }),
+        signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+        redirect: "manual",
+      });
+      status = response.status;
+      await response.body?.cancel();
+    } catch {
+      return { kind: "unreachable" };
+    }
+    if (status === 401) return { kind: "sign_in" };
+    if (status < 200 || status >= 300) return { kind: "unreachable" };
+    const client = new Client({ name: CLIENT_NAME, version: "1.0.0" });
+    try {
+      await client.connect(
+        new StreamableHTTPClientTransport(url, {
+          ...(this.#options.fetch === undefined ? {} : { fetch: this.#options.fetch }),
+        }),
+      );
+      const info = client.getServerVersion();
+      const title = info?.title ?? info?.name;
+      return title === undefined ? { kind: "open" } : { kind: "open", title };
+    } catch {
+      return { kind: "unreachable" };
+    } finally {
+      await client.close().catch(() => undefined);
+    }
+  }
+
   #provider(
     definition: AppConnectionDefinition,
+    client: ClientHolder,
     hooks: {
       readonly state?: string;
       readonly pending?: Pending;
@@ -308,20 +536,22 @@ export class ProductionAppConnections {
     },
   ): OAuthClientProvider {
     const redirectUrl = this.callbackUrl;
+    const clientMetadataUrl = this.clientMetadataUrl;
     const metadata: OAuthClientMetadata = {
       client_name: CLIENT_NAME,
       redirect_uris: [redirectUrl],
       grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],
       token_endpoint_auth_method:
-        definition.clientSecret === undefined ? "none" : "client_secret_post",
-    };
-    const secret = definition.clientSecret;
-    const information: StoredOAuthClientInformation = {
-      client_id: definition.clientId,
-      ...(secret === undefined ? {} : { client_secret: secret }),
+        client.information?.client_secret === undefined ? PUBLIC_CLIENT_AUTH : "client_secret_post",
     };
     const { pending } = hooks;
+    const discovery = () => pending?.discovery ?? hooks.grant?.().discovery;
+    const acceptsPublicClients = () => {
+      const methods =
+        discovery()?.authorizationServerMetadata?.token_endpoint_auth_methods_supported;
+      return Array.isArray(methods) && methods.includes(PUBLIC_CLIENT_AUTH);
+    };
     return {
       get redirectUrl() {
         return redirectUrl;
@@ -329,8 +559,16 @@ export class ProductionAppConnections {
       get clientMetadata() {
         return metadata;
       },
+      get clientMetadataUrl(): string {
+        return !client.fixed && acceptsPublicClients() ? clientMetadataUrl : "";
+      },
       ...(hooks.state === undefined ? {} : { state: () => hooks.state as string }),
-      clientInformation: () => information,
+      clientInformation: () => client.information,
+      saveClientInformation: async (information: OAuthClientInformationMixed) => {
+        if (client.fixed) return;
+        client.information = information as StoredOAuthClientInformation;
+        await this.#saveClient(definition.name, client.information);
+      },
       tokens: () => hooks.grant?.().tokens,
       saveTokens: async (tokens) => {
         await hooks.saveTokens?.(tokens);
@@ -348,7 +586,7 @@ export class ProductionAppConnections {
       saveDiscoveryState: (state) => {
         if (pending) pending.discovery = state;
       },
-      discoveryState: () => pending?.discovery ?? hooks.grant?.().discovery,
+      discoveryState: discovery,
       invalidateCredentials: async (scope) => {
         if (scope === "all" || scope === "tokens") await hooks.onInvalid?.();
       },
@@ -368,4 +606,23 @@ export class ProductionAppConnections {
     this.#states.set(state, { ...pending, expiresAt: now + STATE_TTL_MS });
     return state;
   }
+}
+
+function shortTitle(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed) return undefined;
+  return [...trimmed].slice(0, TITLE_MAXIMUM).join("");
+}
+
+function isRegistrationUnavailable(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    error.message.startsWith(
+      "Incompatible auth server: does not support dynamic client registration",
+    )
+  );
+}
+
+function typedClient(id: string, secret: string | undefined): StoredOAuthClientInformation {
+  return { client_id: id, ...(secret === undefined ? {} : { client_secret: secret }) };
 }

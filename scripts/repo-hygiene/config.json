@@ -28,6 +28,10 @@
     {
       "path": "docs/assets/apple-clients/",
       "reason": "Andy 批准的 Apple 客户端设计基线（ADR 0247、ADR 0258），和 docs/assets/control-center/ 的网页设计基线一样按版本另存、不覆盖；不是编译生成的截图"
+    },
+    {
+      "path": "clients/apple/Sources/HimawariChat/Resources/Fonts/",
+      "reason": "回答正文的中文衬线字（思源宋体 Noto Serif SC 常规和半粗两种字重，只保留 GB2312 的 7445 个字，每个约 2.8MB，SIL OFL 1.1 许可）；系统宋体在 iPhone 上要联网按需下载、下载完之前先显示苹方，所以随 App 打包"
     }
   ]
 }

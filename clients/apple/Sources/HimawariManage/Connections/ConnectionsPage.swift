@@ -6,6 +6,7 @@ struct ConnectionsPage: View {
     var actions: DeviceActionsModel? = nil
     var openSenses: (() -> Void)? = nil
     let open: (AppConnection) -> Void
+    var add: (() -> Void)? = nil
     let back: () -> Void
     @State private var primer: PermissionState?
 
@@ -28,6 +29,15 @@ struct ConnectionsPage: View {
                         .buttonStyle(.pressable)
                     }
                 }
+            }
+            if let add, store.phase == .loaded {
+                Button(action: add) {
+                    HStack(spacing: VL.buttonGap) {
+                        Icon(.plus, size: DesignTokens.IconSize.listRow)
+                        Text(M.connectionAdd)
+                    }
+                }
+                .buttonStyle(CapsuleButtonStyle(.secondary, height: VL.buttonHeight, fontSize: DesignTokens.TypeScale.body.size))
             }
             if !local.isEmpty || openSenses != nil {
                 SettingsGroup(label: M.connectionsThisDevice) {

@@ -105,7 +105,14 @@ describe("[CONN-1] an app is connected through its remote MCP server with the ow
   it("signs in with PKCE and the resource parameter, keeps the tokens sealed, and calls the app's tools", async () => {
     const h = await setup();
     expect(await h.connections.list()).toEqual([
-      { name: "github", title: "GitHub", status: "disconnected", account: null, connectedAt: null },
+      {
+        name: "github",
+        title: "GitHub",
+        status: "disconnected",
+        account: null,
+        connectedAt: null,
+        added: false,
+      },
     ]);
     const started = await h.connections.begin({
       deviceId: "device-a",
@@ -113,17 +120,24 @@ describe("[CONN-1] an app is connected through its remote MCP server with the ow
       callbackScheme: SCHEME,
     });
     expect(started?.kind).toBe("browser");
-    const page = new URL(started?.authorizationUrl ?? "");
+    const page = new URL(started?.kind === "browser" ? started.authorizationUrl : "");
     expect(page.searchParams.get("code_challenge_method")).toBe("S256");
     expect(page.searchParams.get("resource")).toBe(`${h.app.origin}/mcp`);
     expect(page.searchParams.get("redirect_uri")).toBe(CALLBACK);
     const state = page.searchParams.get("state") ?? "";
-    expect(await h.signIn(started?.authorizationUrl ?? "")).toBe(
+    expect(await h.signIn(started?.kind === "browser" ? started.authorizationUrl : "")).toBe(
       `${SCHEME}://${APP_CONNECTION_CALLBACK_HOST}?state=${state}`,
     );
     expect(await h.connections.complete({ deviceId: "device-a", state })).toBe("connected");
     expect(await h.connections.list()).toEqual([
-      { name: "github", title: "GitHub", status: "connected", account: null, connectedAt: NOW },
+      {
+        name: "github",
+        title: "GitHub",
+        status: "connected",
+        account: null,
+        connectedAt: NOW,
+        added: false,
+      },
     ]);
     const record = await h.store.read({ ...scope, name: "github" });
     const token = [...h.app.access.keys()][0] ?? "missing";
@@ -166,8 +180,11 @@ describe("[CONN-1] an app is connected through its remote MCP server with the ow
         callbackScheme: SCHEME,
       });
       return {
-        url: started?.authorizationUrl ?? "",
-        state: new URL(started?.authorizationUrl ?? "").searchParams.get("state") ?? "",
+        url: started?.kind === "browser" ? started.authorizationUrl : "",
+        state:
+          new URL(started?.kind === "browser" ? started.authorizationUrl : "").searchParams.get(
+            "state",
+          ) ?? "",
       };
     };
     expect(

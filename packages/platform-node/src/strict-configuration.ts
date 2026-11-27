@@ -1162,15 +1162,23 @@ function parseAppConnections(
       }
       if (parsed.protocol !== "https:" || parsed.username || parsed.password || parsed.hash)
         throw invalid(`${at}.serverUrl`, "must be an https URL");
-      const clientId = string(item["clientId"], `${at}.clientId`);
-      if (clientId.length > 256 || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(clientId))
+      const clientId =
+        item["clientId"] === undefined ? undefined : string(item["clientId"], `${at}.clientId`);
+      if (
+        clientId !== undefined &&
+        (clientId.length > 256 || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(clientId))
+      )
         throw invalid(`${at}.clientId`, "must be an OAuth client id");
+      if (item["clientSecretRef"] !== undefined && clientId === undefined)
+        throw invalid(`${at}.clientSecretRef`, "needs a clientId");
       return Object.freeze({
         name,
         title,
         serverUrl: parsed.href,
-        clientId,
-        clientSecretRef: safeReference(item["clientSecretRef"], `${at}.clientSecretRef`),
+        ...(clientId === undefined ? {} : { clientId }),
+        ...(item["clientSecretRef"] === undefined
+          ? {}
+          : { clientSecretRef: safeReference(item["clientSecretRef"], `${at}.clientSecretRef`) }),
         trustsReadOnlyLabels: boolean(item["trustsReadOnlyLabels"], `${at}.trustsReadOnlyLabels`),
       });
     }),
@@ -2146,12 +2154,13 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       "configuration.runPolicy.importDuplicates.secretRef",
     );
   for (const [index, connection] of (runPolicy?.appConnections ?? []).entries())
-    assertIdentitySecretReference(
-      secretReferences,
-      connection.clientSecretRef,
-      APP_CONNECTION_CLIENT_SECRET_PURPOSE,
-      `configuration.runPolicy.appConnections[${index}].clientSecretRef`,
-    );
+    if (connection.clientSecretRef !== undefined)
+      assertIdentitySecretReference(
+        secretReferences,
+        connection.clientSecretRef,
+        APP_CONNECTION_CLIENT_SECRET_PURPOSE,
+        `configuration.runPolicy.appConnections[${index}].clientSecretRef`,
+      );
   const proactive = runPolicy?.proactive;
   if (proactive) {
     assertIdentitySecretReference(
