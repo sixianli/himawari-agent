@@ -15,5 +15,6 @@ public enum ThirdPartyLicenses {
         ThirdPartyLicense(name: "FluidAudio", license: "Apache-2.0", repository: "https://github.com/FluidInference/FluidAudio"),
         ThirdPartyLicense(name: "swift-crypto", license: "Apache-2.0", repository: "https://github.com/apple/swift-crypto"),
         ThirdPartyLicense(name: "swift-asn1", license: "Apache-2.0", repository: "https://github.com/apple/swift-asn1"),
+        ThirdPartyLicense(name: "Sparkle", license: "MIT", repository: "https://github.com/sparkle-project/Sparkle"),
     ]
 }
