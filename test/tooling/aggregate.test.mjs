@@ -257,6 +257,18 @@ describe("complete-attempt gate", () => {
       }).status,
     ).toBe("failed");
   });
+  it.each(["policy", "tooling"])(
+    "反向：%s 失败时 ci/required 一定失败，即使各成员报告都写着通过",
+    (id) => {
+      for (const status of ["failure", "cancelled", "skipped"]) {
+        expect(
+          run((input) => {
+            input.needs[id].result = status;
+          }).status,
+        ).toBe("failed");
+      }
+    },
+  );
   it.each([
     [
       "missing upstream",
