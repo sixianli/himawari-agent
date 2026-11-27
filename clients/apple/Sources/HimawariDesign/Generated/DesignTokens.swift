@@ -13,7 +13,7 @@ public enum DesignTokens {
         public static let glow = PaletteToken(light: RGBA(red: 232 / 255, green: 176 / 255, blue: 74 / 255, alpha: 0.34), dark: RGBA(red: 239 / 255, green: 178 / 255, blue: 60 / 255, alpha: 0.18))
         public static let glyph = PaletteToken(light: RGBA(red: 138 / 255, green: 90 / 255, blue: 0 / 255, alpha: 1), dark: RGBA(red: 242 / 255, green: 187 / 255, blue: 79 / 255, alpha: 1))
         public static let highlight = PaletteToken(light: RGBA(red: 248 / 255, green: 235 / 255, blue: 203 / 255, alpha: 1), dark: RGBA(red: 75 / 255, green: 63 / 255, blue: 37 / 255, alpha: 1))
-        public static let muted = PaletteToken(light: RGBA(red: 107 / 255, green: 113 / 255, blue: 100 / 255, alpha: 1), dark: RGBA(red: 160 / 255, green: 160 / 255, blue: 154 / 255, alpha: 1))
+        public static let muted = PaletteToken(light: RGBA(red: 86 / 255, green: 91 / 255, blue: 80 / 255, alpha: 1), dark: RGBA(red: 180 / 255, green: 180 / 255, blue: 174 / 255, alpha: 1))
         public static let onSpeak = PaletteToken(light: RGBA(red: 252 / 255, green: 252 / 255, blue: 251 / 255, alpha: 1), dark: RGBA(red: 228 / 255, green: 228 / 255, blue: 225 / 255, alpha: 1))
         public static let onText = PaletteToken(light: RGBA(red: 252 / 255, green: 252 / 255, blue: 251 / 255, alpha: 1), dark: RGBA(red: 30 / 255, green: 30 / 255, blue: 30 / 255, alpha: 1))
         public static let scrim = PaletteToken(light: RGBA(red: 0 / 255, green: 0 / 255, blue: 0 / 255, alpha: 0.28), dark: RGBA(red: 0 / 255, green: 0 / 255, blue: 0 / 255, alpha: 0.5))
@@ -202,6 +202,7 @@ public enum DesignTokens {
         public static let buttonPaddingX: CGFloat = 16
         public static let cardButtonGap: CGFloat = 6
         public static let cardButtonHeight: CGFloat = 32
+        public static let chatColumnMaxWidth: CGFloat = 760
         public static let checklistGap: CGFloat = 14
         public static let checklistIcon: CGFloat = 20
         public static let checklistPadding: CGFloat = 24
@@ -248,10 +249,16 @@ public enum DesignTokens {
         public static let settingsPaddingX: CGFloat = 18
         public static let settingsRowPadding: CGFloat = 8
         public static let settingsWidth: CGFloat = 500
+        public static let settingsWindowWidth: CGFloat = 520
+        public static let sidebarMaxWidth: CGFloat = 280
+        public static let sidebarMinWidth: CGFloat = 200
+        public static let sidebarWidth: CGFloat = 220
         public static let smallButtonHeight: CGFloat = 28
         public static let statusBadgeGap: CGFloat = 5
         public static let statusIcon: CGFloat = 17
         public static let talkRowHeight: CGFloat = 38
+        public static let windowMinHeight: CGFloat = 520
+        public static let windowMinWidth: CGFloat = 760
     }
 
     public enum Watch {

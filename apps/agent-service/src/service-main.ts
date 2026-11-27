@@ -92,6 +92,7 @@ import {
   readAuthorityFile,
   readGmailAccount,
   readRestrictedExecutionTokenFile,
+  readRestrictedPrivateKeyPem,
   readWorkerServiceBootBinding,
   SERVICE_RUNTIME_ERROR_CODES,
   SystemdCredentialSecretSource,
@@ -143,7 +144,7 @@ import {
 } from "./production-http-composition.js";
 import { InboxRunRegistry } from "./production-inbox-delivery.js";
 import { expandConfigurationWithMagpieModels, priceTiers } from "./production-magpie-models.js";
-import { ProductionAppTools } from "./production-app-tools.js";
+import { configuredAppCode, ProductionAppTools } from "./production-app-tools.js";
 import { ProductionMailRead } from "./production-mail-read.js";
 import { ProductionMcpMemoryWriter } from "./production-mcp-memory-writer.js";
 import { MCP_READ_PATH, ProductionMcpRead } from "./production-mcp-read.js";
@@ -1972,6 +1973,7 @@ export async function startTenantRuntime(
             code: stableErrorCode(error),
           }),
       });
+      const appCode = configuredAppCode(configuration);
       const browser = createConfiguredBrowserTools(configuration, {
         now: () => Date.parse(clock.now()),
         acceptsImages: async (modelRef) => {
@@ -2006,10 +2008,11 @@ export async function startTenantRuntime(
         apps: new ProductionAppTools({
           connections: {
             list: async () => (await appConnections?.list()) ?? [],
-            definition: (name) => appConnections?.definition(name),
+            definition: async (name) => appConnections?.definition(name),
             tools: async (name) => appConnections?.tools(name),
             call: async (name, tool, input) => appConnections?.call(name, tool, input),
           },
+          ...(appCode === undefined ? {} : { code: appCode }),
         }),
         vault: new ProductionVaultTools({
           scope: perceptionScope,
@@ -2335,23 +2338,31 @@ export async function startTenantRuntime(
             })
           : undefined;
       const appConnectionConfigurations = configuration.runPolicy?.appConnections ?? [];
-      if (appConnectionConfigurations.length > 0 && protector) {
+      if (protector) {
         const definitions = [];
         for (const entry of appConnectionConfigurations) {
-          const secret = configuration.secretReferences.find(
-            ({ ref, purpose }) =>
-              ref === entry.clientSecretRef && purpose === APP_CONNECTION_CLIENT_SECRET_PURPOSE,
-          );
-          if (!secret) continue;
+          const secret =
+            entry.clientSecretRef === undefined
+              ? undefined
+              : configuration.secretReferences.find(
+                  ({ ref, purpose }) =>
+                    ref === entry.clientSecretRef &&
+                    purpose === APP_CONNECTION_CLIENT_SECRET_PURPOSE,
+                );
+          if (entry.clientSecretRef !== undefined && !secret) continue;
           definitions.push({
             name: entry.name,
             title: entry.title,
             serverUrl: entry.serverUrl,
-            clientId: entry.clientId,
-            clientSecret: await hostModelSources(configuration).provider.resolve(
-              secret.ref,
-              secret.version,
-            ),
+            ...(entry.clientId === undefined ? {} : { clientId: entry.clientId }),
+            ...(secret === undefined
+              ? {}
+              : {
+                  clientSecret: await hostModelSources(configuration).provider.resolve(
+                    secret.ref,
+                    secret.version,
+                  ),
+                }),
             trustsReadOnlyLabels: entry.trustsReadOnlyLabels,
           });
         }
@@ -3040,10 +3051,14 @@ export async function startTenantRuntime(
           applePushSender = createApplePushSender({
             teamId: applePushConfiguration.teamId,
             keyId: applePushConfiguration.keyId,
-            signingKey: await pushSources.keys.resolve(
-              applePushSecret.ref,
-              applePushSecret.version,
-            ),
+            signingKey:
+              process.platform === "darwin"
+                ? await pushSources.keys.resolve(applePushSecret.ref, applePushSecret.version)
+                : await readRestrictedPrivateKeyPem(
+                    path.join(configuration.stateRoot, "secrets"),
+                    applePushSecret.ref,
+                    applePushSecret.version,
+                  ),
             requestTimeoutSeconds: applePushConfiguration.requestTimeoutSeconds,
           });
           applePush = new ProductionApplePush({

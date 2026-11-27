@@ -52,6 +52,71 @@ enum M {
     }
     static var privacy: String { text("隐私", ja: "プライバシー", en: "Privacy") }
     static var devicesTitle: String { text("设备", ja: "デバイス", en: "Devices") }
+    static var nameTitle: String { text("你的称呼", ja: "呼び名", en: "What she calls you") }
+    static var namePlaceholder: String { text("比如 Andy", ja: "例：Andy", en: "For example, Andy") }
+    static var nameFooter: String {
+        text(
+            "她跟你说话时用这个称呼。留空就不用称呼。最多 40 个字。",
+            ja: "話しかけるときにこの名前で呼びます。空欄なら名前で呼びません。40 文字まで。",
+            en: "She uses this name when she talks to you. Leave it empty for no name. Up to 40 characters."
+        )
+    }
+    static var nameUnset: String { text("未设置", ja: "未設定", en: "Not set") }
+    static var modelTitle: String { text("她用的模型", ja: "使うモデル", en: "Her model") }
+    static var modelFooter: String {
+        text(
+            "从下一条消息起，她用选中的模型回答你从 App 发的消息。选项由服务器提供。",
+            ja: "次のメッセージから、アプリから送ったメッセージに選んだモデルで答えます。選択肢はサーバーから届きます。",
+            en: "From your next message, she answers what you send from the app with this model. The list comes from the server."
+        )
+    }
+    static var priceNote: String {
+        text(
+            "价格是 Magpie 清单里的标价（美元 / 百万 token）。“便宜”“适中”“较贵”按清单里所有有标价的模型，用“输入价 + 输出价”从低到高平分三档。已付费套餐内使用不另外扣费，但越贵越快用完套餐额度。",
+            ja: "価格は Magpie の一覧にある定価です（米ドル / 100 万トークン）。「安い」「中程度」「高め」は、定価のあるモデルを「入力 + 出力」の安い順に三等分したものです。契約済みプランの範囲内なら追加料金はかかりませんが、高いほど早く枠を使い切ります。",
+            en: "Prices are list prices from Magpie (USD per million tokens). Cheap, Mid and Pricey split every priced model into thirds by input plus output price. Use inside a paid plan costs nothing extra, but pricier models use up the plan sooner."
+        )
+    }
+    static var thinkingTitle: String { text("思考深度", ja: "考える深さ", en: "Thinking depth") }
+    static var thinkingFooter: String {
+        text("想得越深，回答越慢。", ja: "深く考えるほど、答えは遅くなります。", en: "Deeper thinking answers more slowly.")
+    }
+    static func thinkingLevel(_ level: String) -> String {
+        switch level {
+        case "off": text("关闭", ja: "オフ", en: "Off")
+        case "minimal": text("最低", ja: "最小", en: "Minimal")
+        case "low": text("低", ja: "低", en: "Low")
+        case "medium": text("标准", ja: "標準", en: "Standard")
+        case "high": text("高", ja: "高", en: "High")
+        case "xhigh": text("很高", ja: "非常に高", en: "Very high")
+        case "max": text("最高", ja: "最大", en: "Maximum")
+        default: level
+        }
+    }
+    static func modelName(_ model: ChatModel) -> String {
+        model.automatic == true ? text("自动", ja: "自動", en: "Auto") : model.name
+    }
+    static func modelDetail(_ model: ChatModel) -> String? {
+        if model.automatic == true {
+            return text("额度用完时自动换来源", ja: "枠が尽きたら別の提供元へ切り替え", en: "Switches source when a quota runs out")
+        }
+        guard let price = model.price else { return nil }
+        func dollars(_ value: Double) -> String {
+            value == 0 ? "0" : value >= 10 ? String(format: "%.0f", value) : value >= 1 ? String(format: "%.2f", value) : String(format: "%.2g", value)
+        }
+        return text(
+            "输入 $\(dollars(price.input)) · 输出 $\(dollars(price.output)) / 百万 token",
+            ja: "入力 $\(dollars(price.input)) · 出力 $\(dollars(price.output)) / 100 万トークン",
+            en: "Input $\(dollars(price.input)) · output $\(dollars(price.output)) per million tokens"
+        )
+    }
+    static func priceTier(_ tier: ChatModel.PriceTier) -> String {
+        switch tier {
+        case .low: text("便宜", ja: "安い", en: "Cheap")
+        case .mid: text("适中", ja: "中程度", en: "Mid")
+        case .high: text("较贵", ja: "高め", en: "Pricey")
+        }
+    }
     static var aboutTitle: String { text("关于", ja: "このアプリについて", en: "About") }
     static var aboutVersion: String { text("版本", ja: "バージョン", en: "Version") }
     static var aboutServer: String { text("服务器", ja: "サーバー", en: "Server") }
@@ -438,6 +503,52 @@ enum M {
     static var connectionsThisDevice: String { text("这台 iPhone", ja: "この iPhone", en: "This iPhone") }
     static var connectionHealth: String { text("健康", ja: "ヘルスケア", en: "Health") }
     static var connectionHealthInSenses: String { text("点这里打开感知设置，在里面开关", ja: "ここから感知の設定を開いてオン・オフします", en: "Opens sensing settings, where you turn it on or off") }
+    static var connectionAdd: String { text("添加应用", ja: "アプリを追加", en: "Add App") }
+    static var connectionAddAddress: String { text("MCP 服务器网址", ja: "MCP サーバーの URL", en: "MCP server URL") }
+    static var connectionAddName: String { text("名字（可不填）", ja: "名前（任意）", en: "Name (optional)") }
+    static var connectionAddNameNote: String { text("不填就用对方服务器自报的名字", ja: "空欄ならサーバーが名乗る名前を使います", en: "Leave blank to use the name the server gives") }
+    static var connectionAddAdvanced: String { text("高级", ja: "詳細", en: "Advanced") }
+    static var connectionAddClientId: String { text("客户端编号", ja: "クライアント ID", en: "Client ID") }
+    static var connectionAddClientSecret: String { text("客户端密钥", ja: "クライアントシークレット", en: "Client secret") }
+    static var connectionAddAdvancedNote: String {
+        text(
+            "一般不用填。只有对方不能自动给 Himawari 发编号时，才去对方后台建一个应用，把它给的编号填在这里。",
+            ja: "通常は空欄のままで大丈夫です。相手が Himawari に ID を自動で発行できないときだけ、相手の管理画面でアプリを作り、その ID をここに入れます。",
+            en: "Usually left blank. Only if the service can’t issue Himawari an ID on its own, create an app in its developer settings and enter the ID it gives here."
+        )
+    }
+    static var connectionAddWarning: String {
+        text(
+            "这是没经过审核的服务，只添加你信任的。Himawari 用它的每个工具之前都会先问你。",
+            ja: "審査されていないサービスです。信頼できるものだけを追加してください。Himawari はそのツールを使う前に毎回確認します。",
+            en: "This service hasn’t been reviewed. Only add ones you trust. Himawari asks you before using any of its tools."
+        )
+    }
+    static var connectionAddReason: String { text("添加应用", ja: "アプリを追加", en: "Add an app") }
+    static var connectionAddInvalid: String {
+        text("网址要以 https:// 开头，不能写账号密码，也不能是内网地址", ja: "URL は https:// で始まり、アカウント情報や社内ネットワークのアドレスを含めないでください", en: "The URL must start with https:// and can’t include a sign-in or a private network address")
+    }
+    static var connectionAddUnreachable: String { text("连不上这个网址，或者它不是 MCP 服务器", ja: "この URL に接続できないか、MCP サーバーではありません", en: "Couldn’t reach this URL, or it isn’t an MCP server") }
+    static var connectionAddFailed: String { text("没加上，再试一次", ja: "追加できませんでした。もう一度お試しください", en: "Couldn’t add it. Try again") }
+    static func connectionAddedAbout(_ title: String) -> String {
+        text(
+            "\(title) 是你自己添加的。连接后 Himawari 每次用它的工具之前都先问你，包括只是查东西的。",
+            ja: "\(title) はあなたが追加したアプリです。接続後、Himawari はそのツールを使う前に、調べるだけのものも含めて毎回確認します。",
+            en: "You added \(title) yourself. Once connected, Himawari asks you before using any of its tools, even ones that only look things up."
+        )
+    }
+    static func connectionRemove(_ title: String) -> String { text("移除 \(title)", ja: "\(title) を削除", en: "Remove \(title)") }
+    static var connectionRemoveDetail: String {
+        text("这个应用从列表里去掉，存在服务器上的登录和客户端编号也一并删掉。", ja: "このアプリを一覧から外し、サーバーに保存したログインとクライアント ID も削除します。", en: "The app leaves the list, and the sign-in and client ID kept on the server are deleted.")
+    }
+    static func connectionClientRequired(_ title: String) -> String { text("\(title) 要你提供客户端编号", ja: "\(title) にはクライアント ID が必要です", en: "\(title) needs a client ID") }
+    static func connectionClientRequiredDetail(_ title: String, _ redirectUri: String) -> String {
+        text(
+            "\(title) 不能自动给 Himawari 发编号。去它的开发者后台建一个应用，回调地址填 \(redirectUri)；然后移除这个应用，重新添加时在“高级”里填上编号。",
+            ja: "\(title) は Himawari に ID を自動で発行できません。開発者向け設定でアプリを作り、コールバック URL に \(redirectUri) を入れてください。そのあとこのアプリを削除し、追加し直すときに「詳細」に ID を入れます。",
+            en: "\(title) can’t issue Himawari an ID on its own. Create an app in its developer settings with the callback URL \(redirectUri), then remove this app and add it again with the ID under Advanced."
+        )
+    }
     static var connectionsNoneConnected: String { text("还没连接应用", ja: "まだアプリを接続していません", en: "No apps connected yet") }
     static var gmailDisconnect: String { text("断开 Gmail", ja: "Gmail の接続を解除", en: "Disconnect Gmail") }
     static var gmailDisconnectDetail: String {

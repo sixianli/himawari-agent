@@ -655,6 +655,8 @@ export const governanceMessages = [
       { name: "sqlite", required: true, status: "healthy", reasonCode: null },
       { name: "worker", required: true, status: "blocked", reasonCode: "WORKER_STARTING" },
     ],
+    release: { commit: "25bf7041", installedAt: "2026-11-26T07:40:00.000Z" },
+    disk: { availableBytes: 21474836480, totalBytes: 50000000000 },
     generatedAt: "2026-11-12T03:06:30.000Z",
   }),
   fixture("query", "files.list.read", {
@@ -1065,6 +1067,38 @@ export const governanceMessages = [
     items: [
       { contentRef: "payload-05", verdict: "same", memoryId: "memory-insight" },
       { contentRef: "payload-06", verdict: "skipped", memoryId: null },
+    ],
+  }),
+  fixture("query", "memory.import.preview.read", {
+    source: "codex",
+    files: [{ name: "MEMORY.md", contentRef: "payload-07" }],
+  }),
+  fixture("snapshot", "memory.import.preview.snapshot", {
+    files: [{ name: "MEMORY.md", state: "read", found: 2 }],
+    found: 2,
+    items: [
+      {
+        contentRef: "memory-import:private:abc",
+        text: "喜欢早上跑步",
+        from: "MEMORY.md · User Profile",
+        category: "preference",
+        subCategory: null,
+        topic: null,
+        flag: null,
+        selectable: true,
+        checked: true,
+      },
+      {
+        contentRef: "memory-import:private:def",
+        text: "住在东京",
+        from: "MEMORY.md · User Profile",
+        category: "identity",
+        subCategory: null,
+        topic: null,
+        flag: "duplicate",
+        selectable: false,
+        checked: false,
+      },
     ],
   }),
   fixture("query", "memory.basis.read", { memoryId: "memory-insight" }),

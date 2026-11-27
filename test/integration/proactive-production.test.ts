@@ -703,6 +703,7 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
       status: "disconnected",
       account: null,
       connectedAt: null,
+      added: false,
     });
 
     expect(await h.proactive.completeAppAuthorization({ deviceId: "device-a", state })).toBe(

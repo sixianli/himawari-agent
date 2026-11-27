@@ -1,6 +1,7 @@
 import { createHash, createHmac, randomBytes } from "node:crypto";
 import { lstat } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type {
   CancelCoordinatedRunInput,
   CapabilityReactivationVerifierPort,
@@ -63,6 +64,7 @@ import {
 import {
   CloudflareAccessJwtVerifier as AccessJwtVerifier,
   APP_CONNECTIONS_CALLBACK_PATH,
+  APP_CONNECTIONS_CLIENT_METADATA_PATH,
   assertProductionSecretSource,
   assertUnixSocketPathLength,
   authenticateHttpRequest,
@@ -182,6 +184,7 @@ import {
   PRODUCTION_OBSERVATION_OPERATIONS,
   type ProductionObservation,
 } from "./production-observation.js";
+import { deviceChatModels } from "./production-device-chat-models.js";
 import {
   PRODUCTION_OWNER_PREFERENCE_OPERATIONS,
   ProductionOwnerPreferencesControl,
@@ -215,6 +218,8 @@ import {
 import {
   PRODUCTION_SERVER_STATUS_OPERATIONS,
   ProductionServerStatusControl,
+  readServerDisk,
+  readServerRelease,
 } from "./production-server-status-control.js";
 import { createProductionSpeech } from "./production-speech.js";
 import {
@@ -746,7 +751,9 @@ function deviceConnections(
           ? proactive.completeAppAuthorization(input)
           : Promise.resolve("failed"),
     disconnect: async ({ connection }) =>
-      apps?.definition(connection) ? apps.disconnect(connection) : undefined,
+      apps && (await apps.definition(connection)) ? apps.disconnect(connection) : undefined,
+    add: async (input) => apps?.add(input),
+    remove: async ({ connection }) => apps?.remove(connection),
   };
 }
 
@@ -754,6 +761,12 @@ export function registerAppConnectionRoutes(
   app: FastifyInstance,
   connections: ProductionAppConnections,
 ): void {
+  app.get(APP_CONNECTIONS_CLIENT_METADATA_PATH, async (_request, reply) =>
+    reply
+      .header("cache-control", "public, max-age=300")
+      .type("application/json")
+      .send(JSON.stringify(connections.clientMetadataDocument())),
+  );
   app.get(APP_CONNECTIONS_CALLBACK_PATH, async (request, reply) => {
     const query = request.query as Record<string, unknown>;
     const text = (key: string) =>
@@ -990,6 +1003,11 @@ export async function createProductionHttpComposition(
       options.modelCatalog?.find((entry) => entry.ref === chatModel?.ref)?.images ??
       chatModel?.input.includes("image") ??
       false,
+  });
+  const deviceModels = deviceChatModels({
+    catalog: options.modelCatalog,
+    configuration,
+    preferences: repository.ownerPreferences(),
   });
   const speech = createProductionSpeech(configuration, (ref, version) =>
     secretSources.provider.resolve(ref, version),
@@ -1908,6 +1926,8 @@ export async function createProductionHttpComposition(
       configuration,
       health,
       clock: { now: clock },
+      release: () => readServerRelease(fileURLToPath(import.meta.url)),
+      disk: () => readServerDisk(configuration.stateRoot),
     }),
     dataExportControl: new ProductionDataExportControl({
       configuration,
@@ -1981,6 +2001,7 @@ export async function createProductionHttpComposition(
       home: { resolveAction: (input) => home.resolveAction(input) },
       configuration: () => deviceConfiguration,
       chatAttachments: () => chatAttachments,
+      ...(deviceModels ? { chatModels: deviceModels } : {}),
       recordVoiceTiming: (input) => recordVoiceTiming(input),
       listVoiceTiming: (limit) => listVoiceTiming(limit),
       audit: repository.auditLedger(),

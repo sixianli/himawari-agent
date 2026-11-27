@@ -126,16 +126,8 @@ vi.mock("../../scripts/ci/build.mjs", () => ({
     };
   },
 }));
-vi.mock("../../scripts/ci/browser.mjs", () => ({
-  runBrowser: async ({ output, artifact, engine }) => {
-    const report = write(path.join(output, "browser.json"), { engine, status: "passed" });
-    return {
-      exitCode: state.exitCode,
-      artifact: { path: artifact },
-      counts: count(),
-      reports: [{ path: report, kind: "json" }],
-    };
-  },
+vi.mock("../../scripts/ci/verify-artifact.mjs", () => ({
+  verifyArtifact: async () => ({}),
 }));
 
 import { aggregate, readReportEnvelopes } from "../../scripts/ci/aggregate.mjs";
@@ -243,7 +235,7 @@ function gateFixture(event = "workflow_dispatch") {
     const output = path.join(reports, check.id, member.key),
       projects = (member.projects ?? check.projects).map((id) => ({ id, counts: count() })),
       total = Math.max(1, projects.length),
-      artifactPlatform = ["browser", "tests"].includes(check.id) ? "linux-x64" : member.key;
+      artifactPlatform = check.id === "tests" ? "linux-x64" : member.key;
     const items = check.outputs.map((kind) => {
       const name = check.id === "security" ? "security-report.json" : `report.${kind}`;
       const contents =
@@ -481,7 +473,7 @@ describe("publication admission is atomic and workflow-bound", { timeout: 30000 
         for (const step of summaries)
           expect(step.if).toBe(githubExpression("always() && steps.publish.outcome == 'success'"));
       }
-      expect(publishers).toBe(name === "ci.yml" ? 7 : 6);
+      expect(publishers).toBe(6);
     }
   });
 });
@@ -619,23 +611,23 @@ describe(
       await entry("run.mjs", [
         ...common,
         "--check",
-        "browser",
+        "tests",
         "--matrix",
-        "chromium",
+        "others",
         "--output",
-        ".ci-output/browser",
+        ".ci-output/tests",
         "--input",
         producerPath,
       ]);
       expect(
-        readJson(path.join(state.root, ".ci-output/browser/result.json")).artifacts[0].sha256,
+        readJson(path.join(state.root, ".ci-output/tests/result.json")).artifacts[0].sha256,
       ).toBe(producer.artifacts[0].sha256);
       await entry("run.mjs", [
         ...common,
         "--check",
-        "browser",
+        "tests",
         "--matrix",
-        "chromium",
+        "others",
         "--output",
         ".ci-output/ambiguous",
         "--input",
@@ -648,9 +640,9 @@ describe(
       await entry("run.mjs", [
         ...common,
         "--check",
-        "browser",
+        "tests",
         "--matrix",
-        "chromium",
+        "others",
         "--output",
         ".ci-output/wrong-attempt",
         "--input",
@@ -659,13 +651,13 @@ describe(
       expect(process.stderr.write).toHaveBeenCalledWith(
         expect.stringContaining("CONTEXT_MISMATCH:attempt"),
       );
-      write(producerPath, { ...producer, checkId: "browser" });
+      write(producerPath, { ...producer, checkId: "tests" });
       await entry("run.mjs", [
         ...common,
         "--check",
-        "browser",
+        "tests",
         "--matrix",
-        "chromium",
+        "others",
         "--output",
         ".ci-output/wrong-producer",
         "--input",
@@ -679,9 +671,9 @@ describe(
       await entry("run.mjs", [
         ...common,
         "--check",
-        "browser",
+        "tests",
         "--matrix",
-        "chromium",
+        "others",
         "--output",
         ".ci-output/tampered",
         "--input",

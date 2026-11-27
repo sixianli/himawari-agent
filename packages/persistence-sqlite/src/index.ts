@@ -27,6 +27,7 @@ export {
   THREAD_PROMPT_REBUILD_ERROR_CODES,
 } from "./sqlite-thread-prompt-bundle-operations.js";
 export * from "./sqlite-sandbox-reservation-administration.js";
+export * from "./sqlite-outage-alert-registrations.js";
 export * from "./sqlite-run-dispatch-operations.js";
 export * from "./sqlite-model-budget-operations.js";
 export * from "./sqlite-model-invocation-operations.js";

@@ -14,7 +14,7 @@ def preflight():
 
 
 REMOTE = r'''
-import os, pathlib, subprocess, sys, tempfile
+import os, pathlib, shutil, subprocess, sys, tempfile
 settings = json.loads(SETTINGS)
 environment = {**os.environ, 'DEBIAN_FRONTEND': 'noninteractive', 'LANG': 'C.UTF-8'}
 
@@ -25,7 +25,10 @@ def fail(code, detail):
 
 
 def run(arguments):
-    child = subprocess.run(arguments, capture_output=True, text=True, env=environment)
+    try:
+        child = subprocess.run(arguments, capture_output=True, text=True, env=environment)
+    except OSError as error:
+        fail('COMMAND_NOT_RUNNABLE', arguments[0] + ' ' + str(error))
     if child.returncode != 0:
         fail('COMMAND_FAILED', ' '.join(arguments) + ' exit=' + str(child.returncode) + ' ' + (child.stderr or child.stdout).strip()[-600:])
     return child.stdout
@@ -73,18 +76,26 @@ def running_entry_path(running):
     fail('RUNNING_KERNEL_NOT_IN_GRUB', running + ' has no GRUB entry in ' + settings['bootPaths'][0])
 
 
+def system_tool(name):
+    found = shutil.which(name, path='/usr/sbin:/usr/bin:/sbin:/bin')
+    if found is None:
+        fail('GRUB_TOOL_MISSING', name + ' is not in /usr/sbin, /usr/bin, /sbin or /bin')
+    return found
+
+
 def ensure_boot_pinned():
     running = run(['/usr/bin/uname', '-r']).strip()
     if boot_facts() == (running, running):
         print('HOST_SYSTEM_BOOT already ' + running, flush=True)
         return
-    if not pathlib.Path(settings['bootPaths'][0]).is_file() or not pathlib.Path('/usr/sbin/update-grub').is_file():
+    if not pathlib.Path(settings['bootPaths'][0]).is_file():
         fail('GRUB_NOT_FOUND', 'this host does not boot through GRUB at ' + settings['bootPaths'][0])
+    update_grub, set_default, edit_environment = (system_tool(name) for name in ('update-grub', 'grub-set-default', 'grub-editenv'))
     pathlib.Path('/etc/default/grub.d').mkdir(exist_ok=True)
     pathlib.Path('/etc/default/grub.d/99-himawari-saved-default.cfg').write_text('GRUB_DEFAULT=saved\n')
-    run(['/usr/sbin/update-grub'])
-    run(['/usr/bin/grub-set-default', running_entry_path(running)])
-    run(['/usr/bin/grub-editenv', settings['bootPaths'][1], 'unset', 'next_entry'])
+    run([update_grub])
+    run([set_default, running_entry_path(running)])
+    run([edit_environment, settings['bootPaths'][1], 'unset', 'next_entry'])
     if boot_facts() != (running, running):
         fail('BOOT_NOT_PINNED', 'GRUB still would not start ' + running + ' on the next reboot')
     print('HOST_SYSTEM_BOOT pinned ' + running, flush=True)

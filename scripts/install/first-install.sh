@@ -46,7 +46,7 @@ apt-get install -y -qq git build-essential python3 curl ca-certificates bubblewr
 
 step accounts
 id "$build_user" >/dev/null 2>&1 || useradd --system --create-home --home-dir "$build_home" --shell /bin/bash "$build_user"
-id "$service_user" >/dev/null 2>&1 || useradd --system --no-create-home --home-dir "$state_parent" --shell /usr/sbin/nologin "$service_user"
+id "$service_user" >/dev/null 2>&1 || useradd --system --no-create-home --home-dir "$state_parent/state" --shell /usr/sbin/nologin "$service_user"
 service_uid=$(id -u "$service_user")
 service_gid=$(id -g "$service_user")
 echo "FIRST_INSTALL_ACCOUNTS service=$service_user uid=$service_uid gid=$service_gid build=$build_user"

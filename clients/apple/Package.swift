@@ -26,6 +26,7 @@ let interfaceDependencies: [Package.Dependency] = []
 let interfaceDependencies: [Package.Dependency] = [
     .package(url: "https://github.com/FluidInference/FluidAudio.git", exact: "0.18.3", traits: ["Diarizer"]),
     .package(url: "https://github.com/appstefan/HighlightSwift.git", exact: "1.2.0"),
+    .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.1"),
 ]
 let interfaceTargets: [Target] = [
     .target(name: "HimawariDesign", dependencies: ["HimawariCore"], resources: [.process("Resources")]),
@@ -48,9 +49,17 @@ let interfaceTargets: [Target] = [
         resources: [.process("Resources")]
     ),
     .testTarget(name: "HimawariManageTests", dependencies: ["HimawariManage", "HimawariCore"]),
+    .testTarget(name: "HimawariChatTests", dependencies: ["HimawariChat"]),
     .target(
         name: "HimawariMacUI",
-        dependencies: ["HimawariCore", "HimawariDesign", "HimawariChat", "HimawariShell"],
+        dependencies: [
+            "HimawariCore",
+            "HimawariDesign",
+            "HimawariChat",
+            "HimawariManage",
+            "HimawariShell",
+            .product(name: "Sparkle", package: "Sparkle", condition: .when(platforms: [.macOS])),
+        ],
         resources: [.process("Resources")]
     ),
     .target(

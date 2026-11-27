@@ -9,7 +9,27 @@ interface Grant {
   readonly resource: string;
 }
 
-export function loopbackMcpApp(client: { readonly id: string; readonly secret: string }) {
+export type LoopbackRegistration = "preregistered" | "dynamic" | "metadata_document" | "none";
+
+export function loopbackMcpApp(
+  client: { readonly id: string; readonly secret: string },
+  options: {
+    readonly registration?: LoopbackRegistration;
+    readonly signIn?: boolean;
+    readonly title?: string;
+  } = {},
+) {
+  const registration = options.registration ?? "preregistered";
+  const signIn = options.signIn ?? true;
+  const registered = new Set<string>();
+  const registrations: Record<string, unknown>[] = [];
+  const authorizedClients: string[] = [];
+  const knownClient = (id: string | null) =>
+    registration === "preregistered" || registration === "none"
+      ? id === client.id
+      : registration === "dynamic"
+        ? id !== null && registered.has(id)
+        : id?.startsWith("https://") === true;
   const grants = new Map<string, Grant>();
   const access = new Map<string, number>();
   const refresh = new Set<string>();
@@ -17,7 +37,11 @@ export function loopbackMcpApp(client: { readonly id: string; readonly secret: s
   const calls: string[] = [];
   let origin = "";
   const mcp = createMcpHandler(() => {
-    const server = new McpServer({ name: "loopback-github", version: "1.0.0" });
+    const server = new McpServer({
+      name: "loopback-github",
+      version: "1.0.0",
+      ...(options.title === undefined ? {} : { title: options.title }),
+    });
     server.registerTool(
       "get_me",
       { description: "Who is signed in", annotations: { readOnlyHint: true } },
@@ -72,13 +96,28 @@ export function loopbackMcpApp(client: { readonly id: string; readonly secret: s
         response_types_supported: ["code"],
         grant_types_supported: ["authorization_code", "refresh_token"],
         code_challenge_methods_supported: ["S256"],
-        token_endpoint_auth_methods_supported: ["client_secret_post"],
+        token_endpoint_auth_methods_supported:
+          registration === "dynamic" || registration === "metadata_document"
+            ? ["none"]
+            : ["client_secret_post"],
         authorization_response_iss_parameter_supported: true,
+        ...(registration === "dynamic" ? { registration_endpoint: `${origin}/register` } : {}),
+        ...(registration === "metadata_document"
+          ? { client_id_metadata_document_supported: true }
+          : {}),
       });
+    if (url.pathname === "/register" && registration === "dynamic") {
+      const submitted = JSON.parse(await body(request)) as Record<string, unknown>;
+      registrations.push(submitted);
+      const id = `dyn-${randomBytes(6).toString("hex")}`;
+      registered.add(id);
+      return json(response, 201, { ...submitted, client_id: id });
+    }
     if (url.pathname === "/authorize") {
       const query = url.searchParams;
       const target = new URL(query.get("redirect_uri") ?? "");
-      if (query.get("client_id") !== client.id || query.get("code_challenge_method") !== "S256") {
+      authorizedClients.push(query.get("client_id") ?? "");
+      if (!knownClient(query.get("client_id")) || query.get("code_challenge_method") !== "S256") {
         target.searchParams.set("error", "invalid_request");
       } else if (url.searchParams.get("deny") === "1") {
         target.searchParams.set("error", "access_denied");
@@ -99,7 +138,11 @@ export function loopbackMcpApp(client: { readonly id: string; readonly secret: s
     if (url.pathname === "/token") {
       const form = new URLSearchParams(await body(request));
       tokenRequests.push(form);
-      if (form.get("client_id") !== client.id || form.get("client_secret") !== client.secret)
+      const publicClient = registration === "dynamic" || registration === "metadata_document";
+      if (
+        !knownClient(form.get("client_id")) ||
+        (!publicClient && form.get("client_secret") !== client.secret)
+      )
         return json(response, 401, { error: "invalid_client" });
       if (form.get("grant_type") === "refresh_token") {
         const renewal = form.get("refresh_token") ?? "";
@@ -123,7 +166,7 @@ export function loopbackMcpApp(client: { readonly id: string; readonly secret: s
     if (url.pathname === "/mcp") {
       const bearer = /^Bearer (.+)$/u.exec(request.headers.authorization ?? "")?.[1];
       const expires = bearer === undefined ? undefined : access.get(bearer);
-      if (expires === undefined || expires <= Date.now()) {
+      if (signIn && (expires === undefined || expires <= Date.now())) {
         response.writeHead(401, {
           "www-authenticate": `Bearer realm="mcp", resource_metadata="${origin}/.well-known/oauth-protected-resource/mcp"`,
         });
@@ -148,6 +191,8 @@ export function loopbackMcpApp(client: { readonly id: string; readonly secret: s
     response.end();
   });
   return {
+    registrations,
+    authorizedClients,
     grants,
     access,
     tokenRequests,

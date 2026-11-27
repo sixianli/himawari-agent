@@ -59,12 +59,23 @@ if [[ "${HIMAWARI_DEPLOY_FORCE:-0}" != 1 ]]; then
   fi
 fi
 
+previous_packet="$(find "$output_root" -mindepth 1 -maxdepth 1 -type d -name '*-change-packet-*' 2>/dev/null | sort | tail -1)"
+echo "CI_DEPLOY_LAST_FAILURE_REPORT ${previous_packet:-none}"
+remote "/usr/bin/python3 -I - ${previous_packet:+'$previous_packet'}" < "$here/last-failure-report.py" || echo "CI_DEPLOY_LAST_FAILURE_REPORT_UNAVAILABLE" >&2
+
 if remote "test -f /etc/himawari-backup/settings.json"; then
   remote "cat > /usr/local/sbin/himawari-backup.new && chmod 0755 /usr/local/sbin/himawari-backup.new && mv /usr/local/sbin/himawari-backup.new /usr/local/sbin/himawari-backup" < "$repo/scripts/operations/backup/himawari-backup.py" || refuse BACKUP_REFRESH_FAILED "could not update /usr/local/sbin/himawari-backup on $host" 6
   echo "CI_DEPLOY_BACKUP_START"
   remote "/usr/bin/python3 -I /usr/local/sbin/himawari-backup run --reason pre-deploy" || refuse BACKUP_FAILED "the backup before deploying failed, so nothing was deployed; see journalctl -t himawari-backup or run himawari-backup run --reason pre-deploy on $host" 6
 else
   echo "CI_DEPLOY_BACKUP_NOT_INSTALLED: no /etc/himawari-backup/settings.json on $host; install it with scripts/operations/backup/install-backup.sh" >&2
+fi
+
+if remote "test -f /etc/himawari-heartbeat/healthcheck-url"; then
+  echo "CI_DEPLOY_HEARTBEAT_REFRESH"
+  remote "bash '$repo/scripts/operations/heartbeat/install-heartbeat.sh' install --keep-url --instance '$repo/scripts/delivery-mode/instances/$instance_name.json'" || refuse HEARTBEAT_REFRESH_FAILED "could not reinstall the heartbeat and its outage push on $host; see the HEARTBEAT_ line above" 3
+else
+  echo "CI_DEPLOY_HEARTBEAT_NOT_INSTALLED: no /etc/himawari-heartbeat/healthcheck-url on $host; install it with scripts/operations/heartbeat/install-heartbeat.sh" >&2
 fi
 
 echo "CI_DEPLOY_DB_PERMISSIONS"
@@ -78,6 +89,11 @@ remote "chown -R root:root /opt/himawari/node && chmod -R go-w /opt/himawari/nod
 
 echo "CI_DEPLOY_HOST_SYSTEM"
 /usr/bin/python3 -I "$here/host-system.py" | remote "/usr/bin/python3 -I -" || refuse HOST_SYSTEM_FAILED "could not install the document tools or pin the next boot to the running kernel on $host; see the HOST_SYSTEM_FAILED line above" 3
+
+if [[ -n "$previous_packet" && -f "$previous_packet/inputs/bindings.json" && -f "$previous_packet/freeze-manifest.json" ]]; then
+  echo "CI_DEPLOY_PREVIOUS_CLEANUP $previous_packet"
+  /usr/bin/python3 -I "$here/release-cleanup.py" "$previous_packet" apply || echo "CI_DEPLOY_PREVIOUS_CLEANUP_INCOMPLETE: leftovers of the last attempt may still block this one; see the CLEANUP_ lines above" >&2
+fi
 
 echo "CI_DEPLOY_PREPARE $commit"
 prepare_log="$(mktemp)"
