@@ -46,7 +46,16 @@ function workspace() {
   directories.push(repo);
   git(repo, "init", "-q");
   mkdirSync(path.join(repo, "scripts/delivery-mode/instances"), { recursive: true });
-  cpSync(path.join(source, "ci-deploy.sh"), path.join(repo, "scripts/delivery-mode/ci-deploy.sh"));
+  for (const file of [
+    "ci-deploy.sh",
+    "host-system.py",
+    "deploy-preflight.py",
+    "document-python-requirements.txt",
+    "sandbox-command-links.py",
+    "embedding-artifact-check.py",
+    "deploy-target-paths.py",
+  ])
+    cpSync(path.join(source, file), path.join(repo, "scripts/delivery-mode", file));
   cpSync(
     path.join(source, "instances/andy-production.json"),
     path.join(repo, "scripts/delivery-mode/instances/andy-production.json"),
@@ -58,7 +67,7 @@ function workspace() {
   );
   const first = commitFile(repo, "src/app.ts", "one");
   const fakeSsh = `${repo}-fake-ssh.sh`;
-  directories.push(`${repo}-remote.log`, `${repo}-refreshed.py`);
+  directories.push(`${repo}-remote.log`, `${repo}-refreshed.py`, `${repo}-host-system.py`);
   writeFileSync(
     fakeSsh,
     [
@@ -66,11 +75,13 @@ function workspace() {
       "for command; do :; done",
       '[ -n "$FAKE_BACKUP_INSTALLED" ] || FAKE_BACKUP_INSTALLED=1',
       '[ -n "$FAKE_BACKUP_EXIT" ] || FAKE_BACKUP_EXIT=0',
+      '[ -n "$FAKE_HOST_SYSTEM_EXIT" ] || FAKE_HOST_SYSTEM_EXIT=0',
       `echo "$command" >> ${repo}-remote.log`,
       'case "$command" in',
       '  "test -f /etc/himawari-backup/settings.json") exit "$FAKE_BACKUP_INSTALLED" ;;',
       `  *himawari-backup.new*) cat > ${repo}-refreshed.py; exit 0 ;;`,
       '  *"himawari-backup run"*) exit "$FAKE_BACKUP_EXIT" ;;',
+      `  "/usr/bin/python3 -I -") cat > ${repo}-host-system.py; exit "$FAKE_HOST_SYSTEM_EXIT" ;;`,
       "esac",
       `echo /opt/himawari/releases/2026-11-25-${first.slice(0, 8)}`,
       "",
@@ -205,7 +216,7 @@ describe("ci-deploy.sh", () => {
     const recorder = `${repo}-fake-ssh.sh`;
     writeFileSync(
       recorder,
-      `#!/bin/bash\necho "$@" >> ${log}\necho /opt/himawari/releases/2026-11-25-${first.slice(0, 8)}\n`,
+      `#!/bin/bash\necho "$@" >> ${log}\ncat > /dev/null\necho /opt/himawari/releases/2026-11-25-${first.slice(0, 8)}\n`,
     );
     const child = run(repo, {
       HIMAWARI_PACKET_HOST: "198.51.100.9",
@@ -227,6 +238,37 @@ describe("ci-deploy.sh", () => {
       child.stdout.indexOf("CI_DEPLOY_PREPARE"),
     );
     expect(readFileSync(log, "utf8")).toContain("chown -R himawari-build:himawari-build");
+  });
+
+  it("installs the document tools and pins the next boot before building the packet", () => {
+    const { repo, fakeSsh } = workspace();
+    const second = commitFile(repo, "src/app.ts", "changed");
+    const child = run(repo, {
+      HIMAWARI_PACKET_HOST: "198.51.100.9",
+      HIMAWARI_PACKET_SSH: fakeSsh,
+      HIMAWARI_DEPLOY_COMMIT: second,
+    });
+    expect(child.stdout.indexOf("CI_DEPLOY_HOST_SYSTEM")).toBeGreaterThan(-1);
+    expect(child.stdout.indexOf("CI_DEPLOY_HOST_SYSTEM")).toBeLessThan(
+      child.stdout.indexOf("CI_DEPLOY_PREPARE"),
+    );
+    const program = readFileSync(`${repo}-host-system.py`, "utf8");
+    expect(program).toContain("HOST_SYSTEM_OK");
+    expect(program).toContain("weasyprint==70.0");
+  });
+
+  it("deploys nothing when the host system step fails", () => {
+    const { repo, fakeSsh } = workspace();
+    const second = commitFile(repo, "src/app.ts", "changed");
+    const child = run(repo, {
+      HIMAWARI_PACKET_HOST: "198.51.100.9",
+      HIMAWARI_PACKET_SSH: fakeSsh,
+      HIMAWARI_DEPLOY_COMMIT: second,
+      FAKE_HOST_SYSTEM_EXIT: "1",
+    });
+    expect(child.status).toBe(3);
+    expect(child.stderr).toContain("CI_DEPLOY_REFUSED HOST_SYSTEM_FAILED");
+    expect(child.stdout).not.toContain("CI_DEPLOY_PREPARE");
   });
 
   it("refuses when the running release is not a known commit", () => {

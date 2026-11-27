@@ -1,6 +1,7 @@
 import { createHash, createHmac, randomBytes } from "node:crypto";
 import { lstat } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type {
   CancelCoordinatedRunInput,
   CapabilityReactivationVerifierPort,
@@ -216,6 +217,8 @@ import {
 import {
   PRODUCTION_SERVER_STATUS_OPERATIONS,
   ProductionServerStatusControl,
+  readServerDisk,
+  readServerRelease,
 } from "./production-server-status-control.js";
 import { createProductionSpeech } from "./production-speech.js";
 import {
@@ -1914,6 +1917,8 @@ export async function createProductionHttpComposition(
       configuration,
       health,
       clock: { now: clock },
+      release: () => readServerRelease(fileURLToPath(import.meta.url)),
+      disk: () => readServerDisk(configuration.stateRoot),
     }),
     dataExportControl: new ProductionDataExportControl({
       configuration,

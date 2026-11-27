@@ -83,10 +83,12 @@ READ_QUALIFIED_KERNEL = (
     'try:\n'
     '    receipts = sorted(pathlib.Path(sys.argv[1]).glob("*/installation-receipt.json"), key=lambda path: (path.stat().st_mtime, path.parent.name))\n'
     '    release = json.loads(receipts[-1].read_text()).get("osRelease", "") if receipts else ""\n'
-    '    print(release if isinstance(release, str) and re.fullmatch(r"[0-9A-Za-z.+~_-]+", release) else "")\n'
+    '    print("none" if not receipts else release if isinstance(release, str) and re.fullmatch(r"[0-9A-Za-z.+~_-]+", release) else "")\n'
     'except Exception:\n'
     '    print("")\n'
 )
+DOCUMENT_PACKAGES = ('python3-docx', 'python3-openpyxl', 'python3-pypdf', 'python3-pdfminer', 'weasyprint', 'fonts-noto-cjk', 'pandoc', 'python3-markdown', 'libharfbuzz-subset0', 'fonts-lxgw-wenkai', 'python3-venv')
+DOCUMENT_PYTHON = '/usr/lib/himawari-document-python'
 DOCUMENT_TOOLS_CHECK = 'if /usr/bin/python3 -I -c "import docx, openpyxl, pypdf, pdfminer, weasyprint, markdown" >/dev/null 2>&1 && /usr/bin/pandoc --version >/dev/null 2>&1 && /usr/bin/fc-list :lang=zh family 2>/dev/null | /usr/bin/grep -q "Noto Sans CJK" && /usr/bin/fc-list :lang=zh family 2>/dev/null | /usr/bin/grep -q "LXGW WenKai" && /usr/lib/himawari-document-python/bin/python -I -c "import weasyprint, pypdf; from weasyprint.text.ffi import harfbuzz_subset; assert weasyprint.__version__.split(chr(46))[0] == str(70) and harfbuzz_subset" >/dev/null 2>&1; then echo documentTools=ok; else echo documentTools=missing; fi'
 SANDBOX_LINKS_SCRIPT = (Path(__file__).resolve().parent / 'sandbox-command-links.py').read_text()
 EMBEDDING_ARTIFACT_SCRIPT = (Path(__file__).resolve().parent / 'embedding-artifact-check.py').read_text()
@@ -179,7 +181,12 @@ def space(facts, size):
     return {'rootFree': free, 'predictedInstall': install, 'predictedFreeAfterInstall': free - install, 'needAfterInstall': ACCEPTANCE_ROOT_FREE_BYTES + ROOT_RESERVE_BYTES, 'measuredFromLastInstall': int(facts.get('lastInstallUsed') or 0) > 0}
 
 
-def checks(binding, facts, size, units=(), paths=(), base='', embedding=None):
+def first_tools(packet):
+    path = packet / 'packet-parameters.json'
+    return path.is_file() and json.loads(path.read_text()).get('FIRST_TOOLS') == '1'
+
+
+def checks(binding, facts, size, units=(), paths=(), base='', embedding=None, first=False):
     needed = size * MINIMUM_FREE_FACTOR
     room = space(facts, size)
     authority = str(binding['authority']['authorityEpoch']) + ' ' + str(binding['authority']['fencingToken'])
@@ -196,7 +203,7 @@ def checks(binding, facts, size, units=(), paths=(), base='', embedding=None):
         ('TMP_SCRATCH_WITHIN_LIMIT', int(facts.get('scratchScenes') or 0) <= MAX_FAILURE_SCENES),
         ('DOCUMENT_TOOLS_INSTALLED', facts.get('documentTools') == 'ok'),
         ('NEXT_BOOT_KERNEL_IS_RUNNING_KERNEL', bool(facts.get('runningKernel')) and facts.get('nextBootKernel') == facts.get('runningKernel') == facts.get('savedBootKernel')),
-        ('RUNNING_KERNEL_MATCHES_QUALIFICATION', bool(facts.get('runningKernel')) and facts.get('qualifiedKernel') == facts.get('runningKernel')),
+        ('RUNNING_KERNEL_MATCHES_QUALIFICATION', bool(facts.get('runningKernel')) and (facts.get('qualifiedKernel') == facts.get('runningKernel') or (first and facts.get('qualifiedKernel') == 'none'))),
         *([('SOURCE_CACHE_HAS_BASE', facts.get('sourceCacheBase') == 'present')] if base else []),
         ('SANDBOX_COMMAND_LINKS_REACHABLE', facts.get('sandboxLinks') == 'ok'),
         *([('LOCAL_EMBEDDING_ARTIFACT_INSTALLED', facts.get('embeddingArtifact') == 'ok')] if embedding else []),
@@ -215,7 +222,8 @@ def main():
         return 1
     facts = dict(line.split('=', 1) for line in child.stdout.splitlines() if '=' in line)
     failed = False
-    results = checks(binding, facts, packet_bytes(packet), units, paths, base, embedding)
+    first = first_tools(packet)
+    results = checks(binding, facts, packet_bytes(packet), units, paths, base, embedding, first)
     for name, passed in results:
         print('PREFLIGHT_CHECK ' + name + ' ' + ('passed' if passed else 'failed'))
         failed = failed or not passed
@@ -229,9 +237,9 @@ def main():
     if any(name == 'TMP_SCRATCH_WITHIN_LIMIT' and not passed for name, passed in results):
         print('PREFLIGHT_TMP_SCRATCH /tmp holds ' + facts.get('scratchScenes', '?') + ' acceptance scratch directories (h plus 4 characters) after the cleanup, more than the ' + str(MAX_FAILURE_SCENES) + ' failure scene allowed; see them with: ls -ld /tmp/h????, and see what the cleanup would remove with: python3 ' + str(Path(__file__).resolve().parent / 'release-cleanup.py') + ' ' + str(packet) + ' plan')
     if any(name == 'DOCUMENT_TOOLS_INSTALLED' and not passed for name, passed in results):
-        print('PREFLIGHT_DOCUMENT_TOOLS the model sandbox needs these system packages; with the owner\'s approval run as root: apt-get update && apt-get install --no-install-recommends python3-docx python3-openpyxl python3-pypdf python3-pdfminer weasyprint fonts-noto-cjk pandoc python3-markdown libharfbuzz-subset0 fonts-lxgw-wenkai python3-venv, then install the pinned WeasyPrint 70 into /usr/lib/himawari-document-python as ADR 0118 describes')
+        print('PREFLIGHT_DOCUMENT_TOOLS the model sandbox needs these system packages; with the owner\'s approval run as root: apt-get update && apt-get install --no-install-recommends ' + ' '.join(DOCUMENT_PACKAGES) + ', then install the pinned WeasyPrint 70 into /usr/lib/himawari-document-python as ADR 0118 describes')
     if any(name == 'NEXT_BOOT_KERNEL_IS_RUNNING_KERNEL' and not passed for name, passed in results):
-        print('PREFLIGHT_NEXT_BOOT_KERNEL ' + ('first resolve PREFLIGHT_QUALIFIED_KERNEL below, then point GRUB at the kernel it settles on; ' if facts.get('qualifiedKernel') != facts.get('runningKernel') else '') + 'the server runs kernel ' + facts.get('runningKernel', '?') + ' but GRUB would start ' + (facts.get('nextBootKernel') or 'an unknown kernel') + ' on the next reboot and ' + (facts.get('savedBootKernel') or 'an unknown kernel') + ' on the reboots after it (unknown means ' + GRUB_CONFIG + ' or ' + GRUB_ENVIRONMENT + ' could not be read or parsed, grub.cfg does not boot only the saved entry, or the entry boots no kernel in ' + BOOT_DIRECTORY + '); the sandbox qualification is bound to the running kernel and the service would refuse to start on any other one. The running release, the service and GRUB were not changed. With the owner\'s approval, as root, follow the rollback section of docs/runbooks/production-server-access-runbook.md: if grub.cfg does not boot the saved entry, first set GRUB_DEFAULT=saved in /etc/default/grub and run update-grub; run grub-editenv ' + GRUB_ENVIRONMENT + ' list; point GRUB at the running kernel with its full quoted entry path, submenu id, then >, then entry id, replacing both ids with the real ones from: grep menuentry_id_option ' + GRUB_CONFIG + ', for example: grub-set-default \'gnulinux-advanced-<uuid>>gnulinux-' + facts.get('runningKernel', '<kernel>') + '-advanced-<uuid>\'; remove a one-time choice with: grub-editenv ' + GRUB_ENVIRONMENT + ' unset next_entry; run grub-editenv list again and run this check again. Keep the other installed kernels, they are the fallback')
+        print('PREFLIGHT_NEXT_BOOT_KERNEL ' + ('first resolve PREFLIGHT_QUALIFIED_KERNEL below, then point GRUB at the kernel it settles on; ' if facts.get('qualifiedKernel') != facts.get('runningKernel') and not (first and facts.get('qualifiedKernel') == 'none') else '') + 'the server runs kernel ' + facts.get('runningKernel', '?') + ' but GRUB would start ' + (facts.get('nextBootKernel') or 'an unknown kernel') + ' on the next reboot and ' + (facts.get('savedBootKernel') or 'an unknown kernel') + ' on the reboots after it (unknown means ' + GRUB_CONFIG + ' or ' + GRUB_ENVIRONMENT + ' could not be read or parsed, grub.cfg does not boot only the saved entry, or the entry boots no kernel in ' + BOOT_DIRECTORY + '); the sandbox qualification is bound to the running kernel and the service would refuse to start on any other one. The running release, the service and GRUB were not changed. With the owner\'s approval, as root, follow the rollback section of docs/runbooks/production-server-access-runbook.md: if grub.cfg does not boot the saved entry, first set GRUB_DEFAULT=saved in /etc/default/grub and run update-grub; run grub-editenv ' + GRUB_ENVIRONMENT + ' list; point GRUB at the running kernel with its full quoted entry path, submenu id, then >, then entry id, replacing both ids with the real ones from: grep menuentry_id_option ' + GRUB_CONFIG + ', for example: grub-set-default \'gnulinux-advanced-<uuid>>gnulinux-' + facts.get('runningKernel', '<kernel>') + '-advanced-<uuid>\'; remove a one-time choice with: grub-editenv ' + GRUB_ENVIRONMENT + ' unset next_entry; run grub-editenv list again and run this check again. Keep the other installed kernels, they are the fallback')
     if any(name == 'RUNNING_KERNEL_MATCHES_QUALIFICATION' and not passed for name, passed in results):
         print('PREFLIGHT_QUALIFIED_KERNEL the running kernel ' + facts.get('runningKernel', '?') + ' differs from the kernel the latest installation receipt records (' + (facts.get('qualifiedKernel') or 'unreadable') + '); the sandbox qualification is bound to that kernel, and the service would refuse to start on any other one. With the owner\'s approval, either boot the kernel the receipt records following the rollback section of docs/runbooks/production-server-access-runbook.md (keep the running kernel as the fallback), or qualify the running kernel first with the sandbox qualification procedure before deploying; the running release, the service and GRUB were not changed')
     if any(name == 'SANDBOX_COMMAND_LINKS_REACHABLE' and not passed for name, passed in results):
