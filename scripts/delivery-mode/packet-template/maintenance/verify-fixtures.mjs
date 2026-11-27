@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { Worker } from "node:worker_threads";
 import { readGrantsWithoutSnapshot, historyDigests, historyRow, readS0State, unresolvedQuery, readRouteAuthorization, readExistingWorkspace, historyTables, catalogRegistrationPrefix } from "../s0-db/read-s0-db.mjs";
-import { oldPrefix, newPrefix, spaceSamplingWarnings, cli as maintenanceCli, strictCapabilityKeys, verifyHistoryUnchanged, configurationStage, staticRootConfiguration, staticRootConfigurationBytes, approvedEmbeddingDescriptor, approvedSpeech, approvedRunPolicyAdditions, oldStaticRoot, newStaticRoot, verifyStartupAuthority, verifyAuthorizationUsable, readCatalogRecords, verifyCatalogRecordsAtS0, catalogStrictView, verifyUpgradedCatalog as verifyUpgradedCatalogWith, verifyUpgradePlan, verifyPreparedCapabilities, verifyPendingCapabilities as verifyPendingCapabilitiesWith, upgradeResultExpectation as upgradeResultExpectationWith, isFirstTools, routeIdentity, definitionsForLedger, historyIgnoredColumns, historyIgnoredColumnsFor, migrationExpectedLedger } from "./maintenance-common.mjs";
+import { oldPrefix, newPrefix, spaceSamplingWarnings, cli as maintenanceCli, strictCapabilityKeys, verifyHistoryUnchanged, configurationStage, staticRootConfiguration, staticRootConfigurationBytes, approvedEmbeddingDescriptor, approvedSpeech, approvedRunPolicyAdditions, approvedSecretReferences, oldStaticRoot, newStaticRoot, verifyStartupAuthority, verifyAuthorizationUsable, readCatalogRecords, verifyCatalogRecordsAtS0, catalogStrictView, verifyUpgradedCatalog as verifyUpgradedCatalogWith, verifyUpgradePlan, verifyPreparedCapabilities, verifyPendingCapabilities as verifyPendingCapabilitiesWith, upgradeResultExpectation as upgradeResultExpectationWith, isFirstTools, routeIdentity, definitionsForLedger, historyIgnoredColumns, historyIgnoredColumnsFor, migrationExpectedLedger } from "./maintenance-common.mjs";
 import { validateWorkspacePlan, verifyExistingGrant, verifyWorkspaceIdentity } from "./workspace-grant.mjs";
 
 const verifyUpgradedCatalog = (current, previousAudit, newRefs = []) => verifyUpgradedCatalogWith(current, previousAudit, newRefs);
@@ -61,6 +61,7 @@ if (approvedEmbeddingDescriptor !== null) {
 }
 if (approvedSpeech !== null) expectedStaticConfiguration.speech = structuredClone(approvedSpeech);
 for (const [key, value] of Object.entries(approvedRunPolicyAdditions)) expectedStaticConfiguration.runPolicy[key] = structuredClone(value);
+for (const secret of approvedSecretReferences) expectedStaticConfiguration.secretReferences = [...expectedStaticConfiguration.secretReferences.filter((entry) => entry.ref !== secret.ref), structuredClone(secret)];
 assert.deepEqual(staticConfiguration, expectedStaticConfiguration, "STATIC_ROOT_CONFIGURATION_SHAPE_CHANGED");
 assert.deepEqual(Object.keys(staticConfiguration), Object.keys(expectedStaticConfiguration), "STATIC_ROOT_CONFIGURATION_KEY_ORDER_CHANGED");
 assert.deepEqual(Object.keys(staticConfiguration.modelDescriptors[0]), Object.keys(original.modelDescriptors[0]), "STATIC_ROOT_CONFIGURATION_MODEL_KEY_ORDER_CHANGED");

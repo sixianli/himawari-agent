@@ -87,6 +87,10 @@ import { expect } from "vitest";
 import { ContextExternalContent } from "../../apps/agent-service/src/context-external-content.ts";
 import { createProductionApprovalGateway } from "../../apps/agent-service/src/production-approval-gateway.ts";
 import { createProductionDeviceActions } from "../../apps/agent-service/src/production-device-actions.ts";
+import {
+  type DeviceChatCatalogEntry,
+  deviceChatModels,
+} from "../../apps/agent-service/src/production-device-chat-models.ts";
 import { ProductionHomeControl } from "../../apps/agent-service/src/production-home.ts";
 import { ProductionSensitiveInterceptionsControl } from "../../apps/agent-service/src/production-sensitive-interceptions-control.ts";
 import { WebPushPresence } from "../../apps/agent-service/src/production-web-push.ts";
@@ -198,6 +202,11 @@ export async function harness(
       Parameters<typeof buildHttpGatewayServer>[0]["devices"]
     >["speech"];
     readonly chatAttachments?: { readonly images: boolean };
+    readonly chatModels?: {
+      readonly primaryRef: string;
+      readonly catalog: readonly DeviceChatCatalogEntry[];
+      readonly privateRefs: readonly string[];
+    };
   } = {},
 ): Promise<Harness> {
   const publicOrigin = options.origin ?? origin;
@@ -336,6 +345,14 @@ export async function harness(
           protector,
         }),
         clock,
+        ...(options.chatModels
+          ? {
+              validateModelSelection: (selection: { readonly modelRef: string }) => {
+                if (!options.chatModels?.catalog.some((entry) => entry.ref === selection.modelRef))
+                  throw new Error("MODEL_SELECTION_NOT_ALLOWED");
+              },
+            }
+          : {}),
         waitForEvents: async () => new Promise((resolve) => setTimeout(resolve, 20)),
       });
       return { controlPlane: adapter, reads: adapter };
@@ -627,6 +644,28 @@ export async function harness(
       ...(options.chatAttachments
         ? { chatAttachments: () => options.chatAttachments as { readonly images: boolean } }
         : {}),
+      ...(() => {
+        if (!options.chatModels) return {};
+        const models = options.chatModels;
+        const port = deviceChatModels({
+          catalog: models.catalog,
+          configuration: {
+            ownerId,
+            agentId,
+            modelDescriptors: models.catalog.map((entry) => ({
+              ref: entry.ref,
+              role: entry.ref === models.primaryRef ? "primary" : "specialist",
+              allowedDataClassifications: models.privateRefs.includes(entry.ref)
+                ? ["public", "private"]
+                : ["public"],
+            })) as unknown as Parameters<
+              typeof deviceChatModels
+            >[0]["configuration"]["modelDescriptors"],
+          },
+          preferences: repository.ownerPreferences(),
+        });
+        return port ? { chatModels: port } : {};
+      })(),
       listVoiceTiming: deviceVoiceTimingLister({
         ownerId,
         agentId,

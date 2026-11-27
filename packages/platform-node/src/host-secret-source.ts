@@ -1,4 +1,5 @@
 import { execFile as execFileCallback } from "node:child_process";
+import { createPrivateKey } from "node:crypto";
 import { constants } from "node:fs";
 import { access, lstat, readFile, stat } from "node:fs/promises";
 import path from "node:path";
@@ -208,6 +209,38 @@ export class RestrictedSecretFileSource implements HostSecretMaterialSource {
       await readRestrictedSecretFile(this.#directory, secretRef, secretVersion),
     );
   }
+}
+
+const PRIVATE_KEY_PEM_MAXIMUM_BYTES = 4_096;
+
+export async function readRestrictedPrivateKeyPem(
+  directory: string,
+  secretRef: string,
+  secretVersion: string,
+): Promise<Uint8Array> {
+  if (!path.isAbsolute(directory))
+    throw new HostSecretError(
+      HOST_SECRET_ERROR_CODES.SOURCE_UNSAFE,
+      "Secret directory must be an absolute path",
+    );
+  const material = await readRestrictedSecretFile(
+    path.resolve(directory),
+    secretRef,
+    secretVersion,
+  );
+  const text = new TextDecoder().decode(material);
+  let valid = material.byteLength <= PRIVATE_KEY_PEM_MAXIMUM_BYTES;
+  try {
+    if (valid) createPrivateKey({ key: text, format: "pem" });
+  } catch {
+    valid = false;
+  }
+  if (!valid)
+    throw new HostSecretError(
+      HOST_SECRET_ERROR_CODES.INVALID_KEY_MATERIAL,
+      "Secret material must be one PEM private key",
+    );
+  return material;
 }
 
 export class SystemdCredentialSecretSource extends RestrictedSecretFileSource {

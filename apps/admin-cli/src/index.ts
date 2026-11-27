@@ -38,6 +38,8 @@ import { lockStoppedTarget } from "./stopped-target-lock.js";
 import { runThreadCommand } from "./thread-command.js";
 import { runWorkspaceCommand } from "./workspace-command.js";
 
+export { runOutagePush } from "./outage-push-command.js";
+
 export const adminCliWorkspace = {
   applicationKind: "offline-admin",
   networkListener: false,

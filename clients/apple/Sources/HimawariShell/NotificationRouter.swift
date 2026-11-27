@@ -12,6 +12,7 @@ public final class NotificationRouter: NSObject, UNUserNotificationCenterDelegat
     @ObservationIgnored var transport: (any ApprovalPushTransport)?
     @ObservationIgnored var mainChatOnScreen = false
     var approvalsRequested = false
+    var agentGrantRequested = false
 
     private static let approveAction = HimawariPush.ActionKind.approve.rawValue
     private static let denyAction = HimawariPush.ActionKind.deny.rawValue
@@ -39,7 +40,7 @@ public final class NotificationRouter: NSObject, UNUserNotificationCenterDelegat
     nonisolated static func presentation(category: String, push: HimawariPush?, mainChatOnScreen: Bool) -> UNNotificationPresentationOptions {
         if ListenNotificationRouting.handles(category: category) { return [.banner, .sound] }
         guard let push else { return [.banner, .list, .sound] }
-        if push.kind == HimawariPush.approvalKind || !mainChatOnScreen { return [.banner, .list, .sound] }
+        if push.kind == HimawariPush.approvalKind || push.kind == HimawariPush.agentGrantKind || !mainChatOnScreen { return [.banner, .list, .sound] }
         return []
     }
 
@@ -47,7 +48,10 @@ public final class NotificationRouter: NSObject, UNUserNotificationCenterDelegat
         let content = notification.request.content
         let push = HimawariPush(userInfo: content.userInfo)
         let category = content.categoryIdentifier
-        let onScreen = await MainActor.run { mainChatOnScreen }
+        let onScreen = await MainActor.run {
+            if push?.kind == HimawariPush.agentGrantKind { agentGrantRequested = true }
+            return mainChatOnScreen
+        }
         return Self.presentation(category: category, push: push, mainChatOnScreen: onScreen)
     }
 
@@ -66,6 +70,7 @@ public final class NotificationRouter: NSObject, UNUserNotificationCenterDelegat
     private func handle(push: HimawariPush, actionIdentifier: String) async {
         guard let kind = HimawariPush.ActionKind(rawValue: actionIdentifier) else {
             if push.kind == HimawariPush.approvalKind { approvalsRequested = true }
+            if push.kind == HimawariPush.agentGrantKind { agentGrantRequested = true }
             return
         }
         guard let transport else {
