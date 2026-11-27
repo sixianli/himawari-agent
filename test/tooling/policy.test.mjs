@@ -456,7 +456,7 @@ describe("[ci-new-qualification] accepted policy admits only brand-new qualifica
       "Vitest file selection differs from policy: integration",
     );
     const admitted = admitNewQualificationTests(accepted, policy, [existing]);
-    expect(validateVitestProjects(admitted, vitestConfig()).projects).toBe(19);
+    expect(validateVitestProjects(admitted, vitestConfig()).projects).toBe(20);
     expect(accepted.registeredTests.some((entry) => entry.path === added)).toBe(false);
   });
 
@@ -501,7 +501,7 @@ describe("[ci-new-qualification] accepted policy admits only brand-new qualifica
 
 describe("CI policy contract", () => {
   it("accepts Vitest main and qualification projects only when they agree with policy", () => {
-    expect(validateVitestProjects(policy, vitestConfig()).projects).toBe(19);
+    expect(validateVitestProjects(policy, vitestConfig()).projects).toBe(20);
   });
   it.each([
     [

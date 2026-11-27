@@ -5,6 +5,7 @@ public enum DesignTokens {
         public static let bg = PaletteToken(light: RGBA(red: 252 / 255, green: 252 / 255, blue: 251 / 255, alpha: 1), dark: RGBA(red: 30 / 255, green: 30 / 255, blue: 30 / 255, alpha: 1))
         public static let bubble = PaletteToken(light: RGBA(red: 239 / 255, green: 239 / 255, blue: 236 / 255, alpha: 1), dark: RGBA(red: 44 / 255, green: 44 / 255, blue: 43 / 255, alpha: 1))
         public static let bubbleCode = PaletteToken(light: RGBA(red: 37 / 255, green: 41 / 255, blue: 33 / 255, alpha: 0.11), dark: RGBA(red: 255 / 255, green: 255 / 255, blue: 255 / 255, alpha: 0.06))
+        public static let bubbleOwner = PaletteToken(light: RGBA(red: 154 / 255, green: 98 / 255, blue: 0 / 255, alpha: 1), dark: RGBA(red: 154 / 255, green: 98 / 255, blue: 0 / 255, alpha: 1))
         public static let danger = PaletteToken(light: RGBA(red: 167 / 255, green: 60 / 255, blue: 48 / 255, alpha: 1), dark: RGBA(red: 239 / 255, green: 160 / 255, blue: 149 / 255, alpha: 1))
         public static let fill = PaletteToken(light: RGBA(red: 37 / 255, green: 41 / 255, blue: 33 / 255, alpha: 0.06), dark: RGBA(red: 228 / 255, green: 228 / 255, blue: 225 / 255, alpha: 0.08))
         public static let fill2 = PaletteToken(light: RGBA(red: 37 / 255, green: 41 / 255, blue: 33 / 255, alpha: 0.11), dark: RGBA(red: 228 / 255, green: 228 / 255, blue: 225 / 255, alpha: 0.15))
@@ -14,6 +15,7 @@ public enum DesignTokens {
         public static let glyph = PaletteToken(light: RGBA(red: 138 / 255, green: 90 / 255, blue: 0 / 255, alpha: 1), dark: RGBA(red: 242 / 255, green: 187 / 255, blue: 79 / 255, alpha: 1))
         public static let highlight = PaletteToken(light: RGBA(red: 248 / 255, green: 235 / 255, blue: 203 / 255, alpha: 1), dark: RGBA(red: 75 / 255, green: 63 / 255, blue: 37 / 255, alpha: 1))
         public static let muted = PaletteToken(light: RGBA(red: 86 / 255, green: 91 / 255, blue: 80 / 255, alpha: 1), dark: RGBA(red: 180 / 255, green: 180 / 255, blue: 174 / 255, alpha: 1))
+        public static let onBubbleOwner = PaletteToken(light: RGBA(red: 252 / 255, green: 252 / 255, blue: 251 / 255, alpha: 1), dark: RGBA(red: 252 / 255, green: 252 / 255, blue: 251 / 255, alpha: 1))
         public static let onSpeak = PaletteToken(light: RGBA(red: 252 / 255, green: 252 / 255, blue: 251 / 255, alpha: 1), dark: RGBA(red: 228 / 255, green: 228 / 255, blue: 225 / 255, alpha: 1))
         public static let onText = PaletteToken(light: RGBA(red: 252 / 255, green: 252 / 255, blue: 251 / 255, alpha: 1), dark: RGBA(red: 30 / 255, green: 30 / 255, blue: 30 / 255, alpha: 1))
         public static let scrim = PaletteToken(light: RGBA(red: 0 / 255, green: 0 / 255, blue: 0 / 255, alpha: 0.28), dark: RGBA(red: 0 / 255, green: 0 / 255, blue: 0 / 255, alpha: 0.5))
@@ -322,15 +324,12 @@ public enum DesignTokens {
         public static let bubbleEdge: CGFloat = 16
         public static let bubbleGroupGap: CGFloat = 2
         public static let bubbleHerRoom: CGFloat = 40
-        public static let bubbleOwnerQuoteOpacity: CGFloat = 0.7
         public static let bubbleOwnerShare: CGFloat = 0.78
         public static let bubblePaddingX: CGFloat = 14
         public static let bubblePaddingY: CGFloat = 9
         public static let bubbleRadius: CGFloat = 20
         public static let bubbleSpeakerGap: CGFloat = 14
         public static let bubbleStepGap: CGFloat = 6
-        public static let bubbleTailHeight: CGFloat = 16
-        public static let bubbleTailWidth: CGFloat = 6
         public static let bubbleTimePaddingY: CGFloat = 6
         public static let codeHeaderPaddingTop: CGFloat = 8
         public static let codePadding: CGFloat = 12

@@ -164,6 +164,34 @@ describe("ci-deploy.sh", () => {
     expect(child.status).toBe(3);
   });
 
+  it("[I-120] asks deploy.sh to rehearse the steps after the stop in the shadow machine before it stops production", () => {
+    const { repo, fakeSsh } = workspace();
+    const scripts = path.join(repo, "scripts/delivery-mode");
+    const packet = path.join(repo, "built-packet");
+    const seen = `${repo}-deploy-environment`;
+    directories.push(seen);
+    writeFileSync(
+      path.join(scripts, "make-packet.py"),
+      `import json\nprint("PACKET_READY " + json.dumps({"packet": ${JSON.stringify(packet)}}))\n`,
+    );
+    writeFileSync(
+      path.join(scripts, "deploy.sh"),
+      `echo "shadow=$HIMAWARI_DEPLOY_SHADOW_REHEARSAL packet=$1" > ${JSON.stringify(seen)}\necho "DEPLOY_STOPPED_AT SHADOW_REHEARSAL" >&2\nexit 10\n`,
+    );
+    mkdirSync(packet, { recursive: true });
+    writeFileSync(path.join(packet, "keep"), "");
+    const second = commitFile(repo, "src/app.ts", "changed");
+    const child = run(repo, {
+      HIMAWARI_PACKET_HOST: "198.51.100.9",
+      HIMAWARI_PACKET_SSH: fakeSsh,
+      HIMAWARI_DEPLOY_COMMIT: second,
+    });
+    expect(readFileSync(seen, "utf8")).toBe(`shadow=1 packet=${packet}\n`);
+    expect(child.stderr).toContain("CI_DEPLOY_FAILED exit=10");
+    expect(child.stdout).not.toContain("CI_DEPLOY_READBACK");
+    expect(child.status).toBe(4);
+  });
+
   it("warns and goes on when the backup is not installed yet", () => {
     const { repo, fakeSsh } = workspace();
     const second = commitFile(repo, "src/app.ts", "changed");

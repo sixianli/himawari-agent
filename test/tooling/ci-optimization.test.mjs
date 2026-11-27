@@ -87,12 +87,98 @@ it("完整 CI 只用 GitHub 缓存在本次运行的作业之间传报告和构�
   for (const job of Object.values(workflow.jobs))
     for (const step of job.steps.filter(usesGitHubCache)) {
       expect(step.uses).toMatch(/^actions\/cache\/(?:save|restore)@[0-9a-f]{40}$/u);
-      expect(step.with.key.startsWith(`ci-share-${runScoped}-`)).toBe(true);
-      expect(
-        step.with.path.startsWith(`${githubExpression("runner.temp")}/ci-share/${runScoped}/`),
-      ).toBe(true);
-      expect(step.with["restore-keys"]).toBeUndefined();
+      if (step.with.key.startsWith("ci-share-")) {
+        expect(step.with.key.startsWith(`ci-share-${runScoped}-`)).toBe(true);
+        expect(
+          step.with.path.startsWith(`${githubExpression("runner.temp")}/ci-share/${runScoped}/`),
+        ).toBe(true);
+        expect(step.with["restore-keys"]).toBeUndefined();
+      } else {
+        expect(step.uses.startsWith("actions/cache/restore@")).toBe(true);
+        expect(downloadCaches[step.with.key.split("-v1-")[0]]).toBe(step.with.path);
+      }
     }
+});
+
+const downloadCaches = {
+  "ci-tools": "~/.cache/himawari-ci/downloads",
+  "ci-deps": "~/.cache/himawari-ci/npm\n.ci-output/browsers\n",
+};
+
+describe("依赖、工具和浏览器的下载缓存", () => {
+  const ci = parse(readFileSync(".github/workflows/ci.yml", "utf8"));
+  const warm = parse(readFileSync(".github/workflows/ci-cache.yml", "utf8"));
+  const restores = (job) =>
+    job.steps.filter(
+      (step) =>
+        step.uses?.startsWith("actions/cache/restore@") && !step.with.key.startsWith("ci-share-"),
+    );
+  const cacheKind = (step) => step.with.key.split("-v1-")[0];
+
+  it("PR 上的作业只读不写：装工具的作业都先取工具缓存，装依赖的作业再取依赖缓存", () => {
+    for (const [id, job] of Object.entries(ci.jobs)) {
+      const runs = job.steps.map((step) => step.run ?? "");
+      const kinds = restores(job).map(cacheKind);
+      const installsTools = runs.some((run) => run.includes("install-tools.mjs"));
+      const installsDependencies = runs.some((run) => run.includes("install-dependencies.mjs"));
+      expect([id, kinds]).toEqual([
+        id,
+        [...(installsTools ? ["ci-tools"] : []), ...(installsDependencies ? ["ci-deps"] : [])],
+      ]);
+      const firstInstall = runs.findIndex((run) => run.includes("install-tools.mjs"));
+      for (const step of restores(job)) expect(job.steps.indexOf(step)).toBeLessThan(firstInstall);
+      expect(
+        job.steps.filter(
+          (step) =>
+            step.uses?.startsWith("actions/cache/save@") && !step.with.key.startsWith("ci-share-"),
+        ),
+      ).toEqual([]);
+    }
+  });
+
+  it("只有 main 写缓存：预热工作流只在 main 推送和手动触发时跑，并且作业限定 main", () => {
+    expect(Object.keys(warm.on).sort()).toEqual(["push", "workflow_dispatch"]);
+    expect(warm.on.push.branches).toEqual(["main"]);
+    expect(warm.permissions).toEqual({ contents: "read" });
+    expect(warm.jobs.warm.if).toBe(githubExpression("github.ref == 'refs/heads/main'"));
+    expect(warm.jobs.warm.strategy.matrix.include.map((entry) => entry.runner).sort()).toEqual([
+      "ubuntu-24.04",
+      "ubuntu-24.04-arm",
+    ]);
+  });
+
+  it("预热和取用用同一组路径和键，键里带锁文件摘要和周号，换锁文件或过一周就存新的一份", () => {
+    const saves = warm.jobs.warm.steps.filter((step) =>
+      step.uses?.startsWith("actions/cache/save@"),
+    );
+    expect(saves.map(cacheKind).sort()).toEqual(["ci-deps", "ci-tools"]);
+    for (const save of saves) {
+      expect(save.with.path).toBe(downloadCaches[cacheKind(save)]);
+      expect(save.with.key).toMatch(/hashFiles\([^)]*'ci\/toolchain-lock\.json'\)/u);
+      expect(save.with.key.endsWith(githubExpression("steps.week.outputs.week"))).toBe(true);
+      for (const job of Object.values(ci.jobs))
+        for (const restore of restores(job).filter((step) => cacheKind(step) === cacheKind(save))) {
+          expect(restore.with.key).toBe(save.with.key);
+          expect(save.with.key.startsWith(restore.with["restore-keys"])).toBe(true);
+        }
+    }
+    expect(saves.find((step) => cacheKind(step) === "ci-deps").with.key).toContain(
+      "package-lock.json",
+    );
+  });
+
+  it("取回的东西照样逐个核对：工具按锁文件摘要、npm 包按锁文件完整性校验，都不跳过", () => {
+    for (const job of Object.values(ci.jobs)) {
+      const runs = job.steps.map((step) => step.run ?? "");
+      if (runs.some((run) => run.includes("install-dependencies.mjs")))
+        expect(runs.find((run) => run.includes("install-dependencies.mjs"))).toContain(
+          "--cache runner",
+        );
+    }
+    const download = readFileSync("scripts/ci/verified-download.mjs", "utf8");
+    expect(download).toContain("sha256Of(bytes) !== sha256");
+    expect(readFileSync("scripts/ci/install-dependencies.mjs", "utf8")).toContain('"ci"');
+  });
 });
 
 it("main 和质量工作流不用 GitHub 缓存，所有工作流都不上传或下载 GitHub 产物", () => {
@@ -253,8 +339,8 @@ describe("[I-93] main 调用完整 CI 时授予的权限覆盖 ci.yml 每个 job
   });
   it("完整 CI 的某个 job 重新申请 actions: write 时调用检查失败", () => {
     const writing = ci.replace(
-      "  required:\n",
-      "  required:\n    permissions:\n      contents: read\n      actions: write\n",
+      "    permissions:\n      contents: read\n      pull-requests: read\n      actions: read\n",
+      "    permissions:\n      contents: read\n      pull-requests: read\n      actions: write\n",
     );
     expect(writing).not.toBe(ci);
     expect(() => validateCallerGrantsCalledPermissions(main, writing)).toThrow(
@@ -274,7 +360,9 @@ describe("[I-93] main 调用完整 CI 时授予的权限覆盖 ci.yml 每个 job
 it("job 之间的文件经本次运行的缓存传递：汇总先取回再收齐再判定，任何 job 都没有写权限", () => {
   const workflow = parse(readFileSync(".github/workflows/ci.yml", "utf8"));
   const steps = workflow.jobs.required.steps;
-  const restores = steps.flatMap((step, index) => (usesGitHubCache(step) ? [index] : []));
+  const restores = steps.flatMap((step, index) =>
+    usesGitHubCache(step) && step.with.key.startsWith("ci-share-") ? [index] : [],
+  );
   const collect = steps.findIndex((step) => step.run?.includes("run-share.mjs collect"));
   const gate = steps.findIndex((step) => step.run?.includes("required.mjs"));
   expect(restores.length).toBe(8);

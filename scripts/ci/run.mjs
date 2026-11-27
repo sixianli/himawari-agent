@@ -293,6 +293,7 @@ export async function runCheck({
         ".github/workflows/merge-queue.yml",
         ".github/workflows/pr-closed.yml",
         ".github/workflows/apple.yml",
+        ".github/workflows/ci-cache.yml",
         ".github/workflows/docs-drift.yml",
         ".github/workflows/real-sites.yml",
       ]);
@@ -315,12 +316,19 @@ export async function runCheck({
         skipped: 0,
       };
       for (const entry of security.checks)
-        if (entry.status !== "passed")
+        if (entry.status !== "passed") {
           process.stdout.write(
             redactText(
               `security scan ${entry.id}: ${entry.status}${/^[A-Z_]+$/.test(entry.error ?? "") ? ` ${entry.error}` : ""}\n`,
             ),
           );
+          for (const finding of entry.blocking ?? [])
+            process.stdout.write(
+              redactText(
+                `security finding ${entry.id} ${finding.id} ${finding.path}${finding.line ? `:${finding.line}` : ""}${finding.scope ? ` ${finding.scope}` : ""}${finding.commit ? ` ${finding.commit.slice(0, 12)}` : ""}\n`,
+              ),
+            );
+        }
       if (security.status !== "passed") {
         result.status = security.status;
         throw new Error("CI_SECURITY_FAILED");

@@ -31,6 +31,9 @@ export const VAULT_LIMITS = Object.freeze({
   usageListed: 50,
   totpCodes: 6,
   requestTtlSeconds: 120,
+  codeRequestTtlSeconds: 300,
+  codeCharacters: 12,
+  pendingCodeRequests: 8,
 });
 
 export interface VaultScope {
@@ -155,8 +158,24 @@ export interface VaultCryptoPort {
   randomToken(bytes: number): string;
 }
 
+export interface VaultCodeRequestRecord {
+  readonly id: string;
+  readonly origin: string;
+  readonly purpose: string;
+  readonly createdAt: string;
+  readonly expiresAt: string;
+}
+
 export interface VaultNotifierPort {
   approvalNeeded(
     input: VaultScope & { readonly requestId: string; readonly expiresAt: string },
+  ): Promise<void>;
+  codeNeeded?(
+    input: VaultScope & {
+      readonly requestId: string;
+      readonly origin: string;
+      readonly purpose: string;
+      readonly expiresAt: string;
+    },
   ): Promise<void>;
 }

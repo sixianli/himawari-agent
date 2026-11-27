@@ -183,6 +183,7 @@ describe("npm run check", () => {
     for (const [name, file] of [
       ["check:delivery-packet", "test_make_packet.py"],
       ["check:delivery-deploy", "test_deploy.py"],
+      ["check:delivery-shadow", "test_shadow_rehearsal.py"],
       ["check:delivery-rollback", "test_rollback.py"],
       ["check:delivery-cleanup", "test_release_cleanup.py"],
       ["check:untested-claims", "test_untested_claims.py"],

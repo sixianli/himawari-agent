@@ -181,7 +181,8 @@
         "test/integration/container-browser-qualification.test.ts",
         "test/integration/container-pi-runner-qualification.test.ts",
         "test/integration/product-path-browser.test.ts",
-        "test/integration/browser-tool-real-sites.test.ts"
+        "test/integration/browser-tool-real-sites.test.ts",
+        "test/integration/browser-vault.test.ts"
       ],
       "fileParallelism": true,
       "workerLimits": {
@@ -299,6 +300,13 @@
       "kind": "qualification",
       "project": "qualification-browser-real-sites",
       "reason": "浏览器工具访问 en.wikipedia.org、example.com 等真实外网，外网慢或改版会让和本 PR 无关的合并被拦；只在 main 推送后由 real-sites.yml 跑，失败在合进来的 PR 上留言认领",
+      "allowedModifiers": []
+    },
+    {
+      "path": "test/integration/browser-vault.test.ts",
+      "kind": "qualification",
+      "project": "qualification-browser-vault-real-sites",
+      "reason": "浏览器工具用保险箱在真实网站 the-internet.herokuapp.com 上登录和填验证码，外网慢或改版会让和本 PR 无关的合并被拦；只在 main 推送后由 real-sites.yml 跑，失败在合进来的 PR 上留言认领",
       "allowedModifiers": []
     },
     {

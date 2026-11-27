@@ -677,7 +677,7 @@ describe("subthreads opened by the main conversation", () => {
     expect(timerEvents(f)).toHaveLength(1);
   });
 
-  it("[I-124] sends the timer list to the App when the owner's words, the task and the last result span several lines", async () => {
+  it("[I-126] sends the timer list to the App when the owner's words, the task and the last result span several lines", async () => {
     const f = await fixture();
     const first = await f.ownerSays("lines-1", "每晚九点查一下明天要不要带伞");
     const second = await f.ownerSays("lines-2", "下雨的话顺便提醒我穿厚点");

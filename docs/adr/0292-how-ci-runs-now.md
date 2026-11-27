@@ -5,7 +5,7 @@ decision_status: accepted
 supersedes: "https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0157-gitleaks-allowlist-for-evidence-digests.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0177-gitleaks-exact-value-allowlist.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0189-drop-node-floor-and-fold-test-into-coverage.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0241-draft-prs-skip-ci-and-merge-waits-for-green.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0243-ci-uses-no-github-artifacts.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0267-ci-tests-without-coverage-on-prs.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0268-merge-queue-and-related-tests-on-prs.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0275-tests-job-runs-on-three-runners.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0287-ci-runs-on-github-hosted-runners.md"
 superseded_by: ""
 date: "2026-11-26"
-covers: ".github/workflows/ci.yml, .github/workflows/main.yml, .github/workflows/merge-queue.yml, .github/workflows/apple.yml, .github/workflows/real-sites.yml, ci/policy.json, scripts/ci/check-policy.mjs, scripts/ci/run.mjs, scripts/ci/test-scope.mjs, scripts/ci/aggregate.mjs, scripts/ci/required.mjs, scripts/ci/gate-log.mjs, scripts/ci/ci-summary.mjs, scripts/ci/main-evidence.mjs, scripts/ci/merge-queue.mjs, scripts/ci/prepare-hosted.sh, scripts/ci/apple-scope.mjs, scripts/ci/main-claim.mjs, scripts/ci/install-gate-dependencies.mjs"
+covers: ".github/workflows/ci.yml, .github/workflows/ci-cache.yml, .github/workflows/main.yml, .github/workflows/merge-queue.yml, .github/workflows/apple.yml, ci/policy.json, scripts/ci/check-policy.mjs, scripts/ci/run.mjs, scripts/ci/test-scope.mjs, scripts/ci/aggregate.mjs, scripts/ci/install-gate-dependencies.mjs, scripts/ci/required.mjs, scripts/ci/gate-log.mjs, scripts/ci/ci-summary.mjs, scripts/ci/main-evidence.mjs, scripts/ci/merge-queue.mjs, scripts/ci/prepare-hosted.sh, scripts/ci/apple-scope.mjs, .github/workflows/real-sites.yml, scripts/ci/main-claim.mjs"
 verified_at: "7c8521fe5f55e7dd57c5bd52badd16eef647502e"
 ---
 
@@ -64,7 +64,10 @@ CI（持续集成，每次推送和开 PR 时自动跑检查和测试的那套�
 - PR 上不统计覆盖率。`scripts/ci/run.mjs` 只有传 `--coverage measure` 或仓库还没有覆盖率基线时才统计，统计时不分片，在一台机器上跑全部项目。
 - 支持的 Node 版本是 `package.json` 里 `engines.node` 写的 `>=22.22.3`，等于生产实际用的版本，不再有检查最低版本 Node 的作业。
 - 本地入口：`npm test` 运行 `scripts/ci/local.mjs --check tests`（在本机依次跑三个成员），`npm run test:tooling` 运行 `--check tooling`。
-- npm 的下载缓存放在机器账号目录 `~/.cache/himawari-ci/npm`（`install-dependencies.mjs --cache runner`），只缓存下载的包，不缓存 `node_modules`；npm 照旧按锁文件里的摘要核对每个包，缓存被改坏只会让安装失败。托管机器每次都是新的，所以这份缓存实际上只在同一个作业里有用。
+- 下载缓存（2026-11-27，CI 优化任务 7）：工具下载放在机器账号目录 `~/.cache/himawari-ci/downloads`，npm 下载的包放在 `~/.cache/himawari-ci/npm`（`install-dependencies.mjs --cache runner`），测试用的 Chromium 放在 `.ci-output/browsers`。三者都只是下载缓存，不缓存装好的 `node_modules`，也不缓存编译出来的 `better-sqlite3`；取回后照样逐个核对：工具按 `ci/toolchain-lock.json` 里的 SHA-256 核对，对不上就删掉重下（`verified-download.mjs`），npm 按 `package-lock.json` 里的完整性摘要核对每个包。
+  - 只有 main 写缓存：`.github/workflows/ci-cache.yml` 在每次推送到 main 和手动触发时运行（作业限定 `refs/heads/main`），在 x64 和 ARM 各一台机器上下载一遍，用 `actions/cache/save` 存成两份：`ci-tools-v1-<系统>-<架构>-<工具锁摘要>-<周号>` 和 `ci-deps-v1-<系统>-<架构>-<依赖锁和工具锁摘要>-<周号>`。同一个键已经存过就不再下载。键里带周号（`date -u +%G-%V`），是因为 `install-dependencies.mjs` 会清掉超过 7 天的 npm 缓存，每周存一份新的才不会被它清掉。
+  - PR 上的作业只读：`ci.yml` 里每个装工具的作业先用 `actions/cache/restore` 取工具缓存，装依赖的五个作业（`static`、`build`、`tests`、`tooling`、`security`）再取依赖缓存；精确的键取不到时，按 `restore-keys` 取同一系统和架构下最新的一份，换了锁文件也能用上大部分旧包。PR 上没有任何作业写这两类缓存。PR 分支写的缓存本来也只有这个分支自己能取到（<https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching#restrictions-for-accessing-a-cache>），只让 main 写，是为了让所有 PR 共用同一份、不在缓存里各存一份。
+  - 10 GB 上限：GitHub 每个仓库的缓存总共 10 GB，超了就先删最久没用的（同一份文档的 Usage limits and eviction policy 一节）。本次运行内部传报告和构建的缓存（`ci-share-…`）也占这 10 GB。下载缓存每周每种架构各两份，被每个 PR 读到，所以不会先被删；被删了也只是那次作业回到全部重新下载，不会出错。超过 10 GB 的部分只有在仓库设置里把上限调高后才收费；上限保持默认，GitHub 只会删旧缓存，不收钱（同一节原文：“Increasing the limit beyond the default 10 GB will incur additional costs, if that storage is used.”）。
 
 <a id="drafts"></a>
 
@@ -83,14 +86,14 @@ CI（持续集成，每次推送和开 PR 时自动跑检查和测试的那套�
 - unit 和 contracts 照跑全量。integration、e2e、pi-compat、tooling 只跑 `vitest list --changed <PR 基线>` 选出的测试，可以是零个（`scripts/ci/test-scope.mjs`）。
 - 改动里只要有一个文件不是 `apps/`、`packages/`、`test/` 下的源码（配置文件 `*.config.*`、`vitest.*` 不算源码），也不是 `.md` 或 `.agents/` 下的记录，就全部全量。所以改依赖、SQL、JSON、`scripts/`、`ci/`、`.github/` 都跑全量。某个项目的 `vitest list` 出错时，那个项目退回全量。
 - 汇总结果标 `scope: related`，只在 PR 上接受这种范围。完整测试在合进 `main` 后由 `Main confirmation` 补上。
-- 访问真实外网的测试不进合并门槛（2026-11-27 协调者在本线程定“真联网的移到 main 上跑”，依据见 Andy 的 CI 优化任务说明第 8 项“找出重跑才通过的测试并按项目测试规则修”）：外网慢或改版时它们会让和本 PR 无关的合并失败，而测试本身没有错。这类文件从 `integration` 排除、在 `ci/policy.json` 登记成单独的 `qualification-*` 项目，由 `.github/workflows/real-sites.yml` 在 main 每次推送后跑（也可手动触发），不重试；失败时同一次运行里的 `real-sites/claim` 用 `scripts/ci/main-claim.mjs` 在上次通过以来合进 `main` 的每个 PR 上留言请它的线程认领（苹果检查用同一个脚本，只找改了苹果客户端的 PR）；轻量确认复用的是 PR 的结果，所以必须单独跑。现在只有 `test/integration/browser-tool-real-sites.test.ts`（打开 `en.wikipedia.org` 搜索、在 `example.com` 点到没放行的网站）；不碰外网的浏览器工具测试留在 `test/integration/browser-tool.test.ts`，照常进门槛。
+- 访问真实外网的测试不进合并门槛（2026-11-27 协调者在本线程定“真联网的移到 main 上跑”，依据见 Andy 的 CI 优化任务说明第 8 项“找出重跑才通过的测试并按项目测试规则修”）：外网慢或改版时它们会让和本 PR 无关的合并失败，而测试本身没有错。这类文件从 `integration` 排除、在 `ci/policy.json` 登记成单独的 `qualification-*` 项目，由 `.github/workflows/real-sites.yml` 在 main 每次推送后跑（也可手动触发），不重试；失败时同一次运行里的 `real-sites/claim` 用 `scripts/ci/main-claim.mjs` 在上次通过以来合进 `main` 的每个 PR 上留言请它的线程认领（苹果检查用同一个脚本，只找改了苹果客户端的 PR）；轻量确认复用的是 PR 的结果，所以必须单独跑。现在有 `test/integration/browser-tool-real-sites.test.ts`（打开 `en.wikipedia.org` 搜索、在 `example.com` 点到没放行的网站）和 `test/integration/browser-vault.test.ts`（用保险箱在 `the-internet.herokuapp.com` 上登录、填验证码）；不碰外网的浏览器工具测试留在 `test/integration/browser-tool.test.ts`，照常进门槛。
 
 <a id="results"></a>
 
 ### 作业之间传文件、结果放哪里
 
 - 不用 GitHub 产物：`check-policy.mjs` 拒绝任何作业用 `actions/upload-artifact` 或 `actions/download-artifact`。
-- 作业之间传文件用本次运行内部的缓存：每个检查作业把自己的报告用 `actions/cache/save` 存进去，键带 `run_id` 和 `run_attempt`；`tests` 先取回本次的 Linux 构建（取不到就失败），汇总作业逐个取回各成员的报告。取回后按作业输出里的摘要逐字节核对（`run-share.mjs`），共享目录是每台机器自己的 `$RUNNER_TEMP/ci-share`。依赖和工具不放进 GitHub 缓存。
+- 作业之间传文件用本次运行内部的缓存：每个检查作业把自己的报告用 `actions/cache/save` 存进去，键带 `run_id` 和 `run_attempt`；`tests` 先取回本次的 Linux 构建（取不到就失败），汇总作业逐个取回各成员的报告。取回后按作业输出里的摘要逐字节核对（`run-share.mjs`），共享目录是每台机器自己的 `$RUNNER_TEMP/ci-share`。依赖、工具和浏览器的下载另有一份只由 main 写的缓存，见上文“下载缓存”。
 - 汇总结论写进 `ci/required` 的步骤日志：`required.mjs` 把 `{context, summary}` 先遮盖像密钥的内容，再按 base64 打印在 `HIMAWARI_GATE_BEGIN v1 <SHA-256>` 和 `HIMAWARI_GATE_END` 两行之间（`gate-log.mjs`），上限 256 KiB；每个检查的结果和失败原因另写成一张表放进作业摘要。
 - 每个检查作业用 `scripts/ci/ci-summary.mjs` 把诊断写进作业摘要，并同样打印到作业日志（云端线程只读得到日志）：截图、trace 只列名字和大小；检查失败时再加失败的用例（文件、名字、报错前 20 行，最多 30 条）和命令日志末尾。全部先遮盖，每段总量不超过 64 KiB，日志里每行前加 `| `，免得被当成工作流命令或冒充汇总结论标记。
 - 日志和运行记录在仓库设置里保留 3 天。
