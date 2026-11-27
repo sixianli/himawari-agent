@@ -83,6 +83,7 @@ describe("[IOS-4] push channels", () => {
     overrides: Partial<ApplePushConfiguration> = {},
     pushOptions: Partial<ConstructorParameters<typeof ProductionWebPush>[0]> = {},
     appleOptions: Partial<ConstructorParameters<typeof ProductionApplePush>[0]> = {},
+    webSenderConfigured = true,
   ) {
     const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-push-channels-"));
     directories.push(stateRoot);
@@ -269,7 +270,7 @@ describe("[IOS-4] push channels", () => {
     const push = new ProductionWebPush({
       ...scope,
       store,
-      sender: webSender,
+      ...(webSenderConfigured ? { sender: webSender } : {}),
       presence,
       ...pushOptions,
       awaitingCount: async () => {
@@ -396,6 +397,31 @@ describe("[IOS-4] push channels", () => {
       },
     };
   }
+
+  it("[ADR-0309] with Apple push configured and no web push, reminders and approvals still reach the iPhone", async () => {
+    const context = await setup({}, {}, {}, false);
+    context.device(IPHONE, "iphone");
+    await context.register(IPHONE, "alert");
+    await context.subscribe("old-browser");
+    context.setClock(T0);
+    context.reminder("r1");
+    context.approval("a1", false);
+    await context.push.tick();
+    await context.push.tick();
+
+    const kinds = context.apns
+      .ofType("alert")
+      .map((alert) => (alert.json as { himawari: { kind: string } }).himawari.kind)
+      .sort();
+    expect(kinds).toEqual(["approval", "reminder"]);
+    expect(context.webRequests).toEqual([]);
+    expect(context.failures).toEqual([]);
+    expect(context.push.publicKey).toBeNull();
+    expect(await context.push.sendTest("old-browser")).toEqual({
+      kind: "gone",
+      code: "WEB_PUSH_NOT_CONFIGURED",
+    });
+  });
 
   it("[IOS-4] sends a reminder to the iPhone through APNs with a valid provider token, and not through web push", async () => {
     const context = await setup();

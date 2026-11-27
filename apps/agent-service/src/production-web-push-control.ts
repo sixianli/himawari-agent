@@ -46,9 +46,14 @@ export class ProductionWebPushControl {
     return { ownerId, agentId };
   }
 
+  #webPush() {
+    const push = this.#options.push;
+    return push?.publicKey ? push : undefined;
+  }
+
   async query(query: GatewayV2Query): Promise<GatewayV2Snapshot> {
     if (query.type !== "push.status.read") throw new Error("WEB_PUSH_OPERATION_NOT_INSTALLED");
-    const push = this.#options.push;
+    const push = this.#webPush();
     const subscriptions = push ? await this.#options.store.listSubscriptions(this.#scope()) : [];
     const kinds = await this.#options.store.readKinds(this.#scope());
     return {
@@ -112,7 +117,7 @@ export class ProductionWebPushControl {
       });
       return { resultRef: `web-push-kinds:${saved.length}`, replayed: false };
     }
-    const push = this.#options.push;
+    const push = this.#webPush();
     if (!push)
       throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, "WEB_PUSH_NOT_CONFIGURED");
     if (command.type === "push.test") {

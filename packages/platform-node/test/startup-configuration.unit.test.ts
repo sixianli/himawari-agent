@@ -1768,7 +1768,7 @@ it("[IOS-4] accepts Apple push only with an apple-push secret, web push, Apple i
   ])
     expect(() => parse(applePush), JSON.stringify(applePush)).toThrow();
   const { webPush: _webPush, ...withoutWebPush } = policy;
-  expect(() => parse(base, withoutWebPush)).toThrow();
+  expect(parse(base, withoutWebPush)).toMatchObject(base);
 });
 
 it("[P1-1] parses the ten device hard limits with defaults and rejects unknown or out-of-range keys", () => {

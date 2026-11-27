@@ -2117,11 +2117,6 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       "configuration.runPolicy.browser",
       "requires configuration.runPolicy.userComputers, because the browser runs in each user's computer",
     );
-  if (runPolicy?.applePush && !runPolicy.webPush)
-    throw invalid(
-      "configuration.runPolicy.applePush",
-      "requires configuration.runPolicy.webPush, which produces the notifications both channels send",
-    );
   if (runPolicy?.applePush)
     assertIdentitySecretReference(
       secretReferences,
