@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+trap 'echo "ACCEPTANCE_COMMAND_FAILED S6-limited-host-acceptance line=$LINENO exit=$? command=$BASH_COMMAND" >&2' ERR
 umask 077
 export PATH=/usr/bin:/bin:/usr/sbin:/sbin
 test "$#" -eq 1
