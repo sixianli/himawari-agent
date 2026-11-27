@@ -90,7 +90,7 @@ struct RulesPage: View {
         }
     }
 
-    static func ownPageRules(_ rules: [RuleSummary], quietHours: QuietHours?) -> [RuleSummary] {
+    nonisolated static func ownPageRules(_ rules: [RuleSummary], quietHours: QuietHours?) -> [RuleSummary] {
         let shownInSettings = Set(quietHours?.rules.map(\.ruleId) ?? [])
         return rules.filter { !shownInSettings.contains($0.ruleId) }
     }
