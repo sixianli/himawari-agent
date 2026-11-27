@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
-trap 'echo "ACCEPTANCE_COMMAND_FAILED run-cloud-acceptance line=$LINENO exit=$? command=$BASH_COMMAND" >&2' ERR
+trap 'echo "SCRIPT_COMMAND_FAILED file=${BASH_SOURCE[0]} line=$LINENO exit=$? command=$BASH_COMMAND" >&2' ERR
 umask 077
 export PATH=/usr/bin:/bin:/usr/sbin:/sbin
 test "$#" -eq 1
@@ -119,21 +119,7 @@ print(json.dumps({'receipt': {'path': str(receipt), 'bytes': len(payload), 'sha2
 sys.exit(0 if exit_code != 0 or record['passed'] else 1)
 PY
 }
-report_failure() {
-  local file
-  for file in "$target"/*.stderr; do
-    test "${file##*/}" != console.stderr || continue
-    test -f "$file" && test ! -L "$file" && test -s "$file" || continue
-    echo "ACCEPTANCE_ERROR_FILE $file" >&2
-    tail -n 8 -- "$file" | sed "s|^|ACCEPTANCE_ERROR_TAIL ${file##*/} |" >&2
-  done
-  file=$target/console.stderr
-  if test -f "$file" && test ! -L "$file" && test -s "$file"; then
-    echo "ACCEPTANCE_ERROR_FILE $file" >&2
-    tail -n 15 -- "$file" | sed "s|^|ACCEPTANCE_ERROR_TAIL console.stderr |" >&2
-  fi
-}
-trap 'outcome=$?; trap - EXIT ERR; test "$outcome" -eq 0 || report_failure || true; write_receipt "$outcome" || exit 1; exit "$outcome"' EXIT
+trap 'outcome=$?; trap - EXIT ERR; write_receipt "$outcome" || exit 1; exit "$outcome"' EXIT
 as_service /usr/bin/python3 -I -c 'import os,sys; os.umask(0o077); os.mkdir(sys.argv[1],0o700)' "$target" < /dev/null
 created_identity=$(stat -c '%d:%i' "$target")
 test "$(stat -c '%u:%g:%a' "$target")" = "$service_uid:$service_gid:700"

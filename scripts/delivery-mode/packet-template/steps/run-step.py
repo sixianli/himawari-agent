@@ -6,6 +6,7 @@ from pathlib import Path
 import pwd
 import re
 import socket
+import stat
 import subprocess
 import sys
 import time
@@ -59,17 +60,29 @@ def failure_tail(path, lines=40, width=300):
     return [line[:width] for line in text.splitlines() if line.strip()][-lines:]
 
 
-def helper_error_files(directory, since_ns, own_name, limit=10):
+FAILURE_FILE_SUFFIXES = ('.stderr', '.err', '.log')
+FAILURE_FILE_SKIPPED_DIRECTORIES = {'node_modules', '.git'}
+
+
+def failure_files(roots, since_ns, own_name, limit=12):
     found = []
-    for path in sorted(directory.glob('*.stderr')):
-        try:
-            info = path.lstat()
-        except OSError:
+    for root in roots:
+        if not root.is_dir() or root.is_symlink():
             continue
-        if path.name.startswith(own_name + '.') or not path.is_file() or path.is_symlink() or info.st_mtime_ns < since_ns or info.st_size == 0:
-            continue
-        found.append(path)
-    return found[:limit]
+        for parent, directories, files in os.walk(root):
+            directories[:] = sorted(name for name in directories if name not in FAILURE_FILE_SKIPPED_DIRECTORIES)
+            for filename in files:
+                path = Path(parent) / filename
+                if not filename.endswith(FAILURE_FILE_SUFFIXES) or filename.startswith(own_name + '.'):
+                    continue
+                try:
+                    info = path.lstat()
+                except OSError:
+                    continue
+                if not stat.S_ISREG(info.st_mode) or info.st_mtime_ns < since_ns or info.st_size == 0:
+                    continue
+                found.append((info.st_mtime_ns, str(path), path))
+    return [path for _, _, path in sorted(found)][-limit:]
 
 
 def main():
@@ -112,7 +125,7 @@ def main():
         for extension in ('stderr', 'stdout'):
             for line in failure_tail(common.EVIDENCE / (name + '.' + extension), lines=80 if extension == 'stderr' else 40):
                 print('STEP_FAILURE_TAIL ' + extension + ' ' + line)
-        for path in helper_error_files(common.EVIDENCE, started_ns, name):
+        for path in failure_files([common.EVIDENCE, common.STAGE.parent], started_ns, name):
             print('STEP_FAILURE_FILE ' + str(path))
             for line in failure_tail(path, lines=20):
                 print('STEP_FAILURE_TAIL ' + path.name + ' ' + line)
