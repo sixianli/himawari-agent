@@ -84,8 +84,7 @@ struct PairingView: View {
                         .padding(.vertical, 12)
                         .padding(.horizontal, 18)
                         .frame(maxWidth: .infinity)
-                        .background(Color.hmSurface, in: RoundedRectangle(cornerRadius: DesignTokens.Pairing.bannerRadius, style: .continuous))
-                        .hmShadow(DesignTokens.Shadows.lift)
+                        .hmRaised(RoundedRectangle(cornerRadius: DesignTokens.Pairing.bannerRadius, style: .continuous), fill: Color.hmSurface, shadow: DesignTokens.Shadows.lift)
                         .padding(.bottom, -7)
                 }
                 SunflowerMark(growing: model.phase == .submitting)
@@ -138,8 +137,7 @@ struct PairingView: View {
             }
         }
         .padding(.horizontal, 18)
-        .background(Color.hmSurface, in: RoundedRectangle(cornerRadius: DesignTokens.Pairing.stepCardRadius, style: .continuous))
-        .hmShadow(DesignTokens.Shadows.lift)
+        .hmRaised(RoundedRectangle(cornerRadius: DesignTokens.Pairing.stepCardRadius, style: .continuous), fill: Color.hmSurface, shadow: DesignTokens.Shadows.lift)
     }
 
     private func confirmServer(_ host: String) -> some View {

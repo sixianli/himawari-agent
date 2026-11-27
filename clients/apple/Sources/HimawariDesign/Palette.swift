@@ -159,8 +159,10 @@ struct ScaledType: ViewModifier {
 }
 
 extension View {
-    public func hmShadow(_ token: ShadowToken) -> some View {
-        shadow(color: token.color.color, radius: token.blur / 2, x: token.x, y: token.y)
+    public func hmRaised<S: Shape, F: ShapeStyle>(_ shape: S, fill: F, shadow token: ShadowToken) -> some View {
+        background {
+            shape.fill(fill).shadow(color: token.color.color, radius: token.blur / 2, x: token.x, y: token.y)
+        }
     }
 
     @MainActor

@@ -40,9 +40,8 @@ struct GlassPanel<Content: View>: View {
     var body: some View {
         content
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
-            .background(Color.hmGlass, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
+            .hmRaised(RoundedRectangle(cornerRadius: radius, style: .continuous), fill: Color.hmGlass, shadow: DesignTokens.Shadows.liftBig)
             .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous).strokeBorder(Color.hmGlassLine))
-            .hmShadow(DesignTokens.Shadows.liftBig)
     }
 }
 

@@ -152,8 +152,7 @@ struct ProcessStepsSheet: View {
                     }
                 }
                 .padding(.horizontal, DesignTokens.Size.cardPaddingX)
-                .background(Color.hmSurface, in: RoundedRectangle(cornerRadius: DesignTokens.Radius.card, style: .continuous))
-                .hmShadow(DesignTokens.Shadows.lift)
+                .hmRaised(RoundedRectangle(cornerRadius: DesignTokens.Radius.card, style: .continuous), fill: Color.hmSurface, shadow: DesignTokens.Shadows.lift)
             }
             .scrollIndicators(.hidden)
         }

@@ -107,9 +107,8 @@ public struct ListenOverlay: View {
                     }
                 }
             }
-            .background(Color.hmSurface, in: RoundedRectangle(cornerRadius: DesignTokens.Radius.card, style: .continuous))
+            .hmRaised(RoundedRectangle(cornerRadius: DesignTokens.Radius.card, style: .continuous), fill: Color.hmSurface, shadow: DesignTokens.Shadows.liftBig)
             .environment(\.colorScheme, .dark)
-            .hmShadow(DesignTokens.Shadows.liftBig)
             .padding(.horizontal, 12)
             .padding(.bottom, 34)
             .transition(.move(edge: .bottom).combined(with: .opacity))
