@@ -59,6 +59,16 @@ describe("iPhone 工作流", () => {
   const workflow = parse(
     readFileSync(path.join(repositoryRoot, ".github/workflows/apple.yml"), "utf8"),
   );
+  it("main 上每次推送各自排队，排队中的运行不会被下一次推送顶掉", () => {
+    const group = workflow.concurrency.group;
+    expect(group).toContain("github.event.pull_request.number");
+    expect(group).toContain("github.sha");
+    expect(group).not.toContain("github.ref");
+    expect(workflow.concurrency["cancel-in-progress"]).toContain(
+      "github.event_name == 'pull_request'",
+    );
+  });
+
   it("只在免费的标准机器上跑，只读权限，跳过草稿，没碰 iPhone 客户端时不占 Mac 机器", () => {
     expect(Object.keys(workflow.jobs)).toEqual([
       "changes",
