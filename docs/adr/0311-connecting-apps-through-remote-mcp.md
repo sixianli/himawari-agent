@@ -60,7 +60,7 @@ verified_at: "b08a65a20cda4f6bc90c2a5946b3e5123b88f032"
 
 ### Himawari 怎样用
 
-4. **一个固定的 `app_action` 工具**，不按应用加工具：`describe` 列出接着的应用和工具（带上 app 和 tool 时给完整参数），`call` 调用。工具定义是提示词目录里的固定文字，接多少应用、应用有多少工具都不改它，也不改已经发出的请求开头。
+4. **一个固定的 `app_action` 工具**，不按应用加工具：`describe` 列出接着的应用和工具（带上 app 和 tool 时给完整参数），`call` 调用，`run` 运行模型写的代码（Code Mode，见 [ADR 0313](0313-app-code-mode.md)）。工具定义是提示词目录里的固定文字，接多少应用、应用有多少工具都不改它，也不改已经发出的请求开头。
 5. 应用返回的内容和应用写的工具说明都是外来内容：调用和列出工具时给这一轮记上外来内容，之后有后果的动作照 [ADR 0285](0285-one-main-thread-subthreads-and-one-inbox.md) 的规则先问。
 
 <a id="ask"></a>

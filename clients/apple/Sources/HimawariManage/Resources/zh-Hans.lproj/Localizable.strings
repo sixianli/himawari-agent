@@ -49,6 +49,7 @@
 "allowance.thisTask" = "这件事里";
 "allowance.days" = "%d 天内";
 "allowance.always" = "以后都行";
+"allowance.title" = "这次同意管多久";
 "allowance.locked.spending" = "花钱只能“只这一次”";
 "allowance.locked.credential" = "改密钥和权限只能“只这一次”";
 "allowance.locked.ownerPresence" = "要你本人在场的事只能“只这一次”";

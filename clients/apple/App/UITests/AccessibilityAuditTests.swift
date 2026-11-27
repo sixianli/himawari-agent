@@ -21,7 +21,7 @@ final class AccessibilityAuditTests: XCTestCase {
         for scene in try Self.scenes() {
             for mode in modes {
                 XCUIDevice.shared.appearance = mode.appearance
-                let app = launch(scene)
+                let app = launch(scene, appearance: mode.name)
                 found += audit(app, scene: scene, mode: mode.name, types: mode.types)
                 app.terminate()
             }
@@ -30,9 +30,9 @@ final class AccessibilityAuditTests: XCTestCase {
         try judge(found)
     }
 
-    private func launch(_ scene: String) -> XCUIApplication {
+    private func launch(_ scene: String, appearance: String) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["-HimawariDemoScene", scene, "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+        app.launchArguments = ["-HimawariDemoScene", scene, "-HimawariDemoAppearance", appearance, "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
         app.launch()
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 20), "\(scene) did not reach the foreground")
         _ = app.windows.firstMatch.waitForExistence(timeout: 10)

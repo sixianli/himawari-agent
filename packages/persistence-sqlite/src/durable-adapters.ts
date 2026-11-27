@@ -23,8 +23,8 @@ import type {
   InboxStorePort,
   LedgerObservationPort,
   McpConnectionStorePort,
-  McpOAuthStorePort,
   McpMemorySyncStorePort,
+  McpOAuthStorePort,
   MemoryBookStorePort,
   MemoryCaptureBacklogPort,
   MemoryCheckupStorePort,
@@ -1243,6 +1243,11 @@ export class SqliteDurableAdapters {
       save: (input) => this.context.write("appConnections.save", input),
       mark: (input) => this.context.write("appConnections.mark", input),
       remove: (input) => this.context.write("appConnections.remove", input),
+      listApps: (input) => this.context.read("appConnections.listApps", input),
+      addApp: (input) => this.context.write("appConnections.addApp", input),
+      removeApp: (input) => this.context.write("appConnections.removeApp", input),
+      readClient: (input) => this.context.read("appConnections.readClient", input),
+      saveClient: (input) => this.context.write("appConnections.saveClient", input),
     });
   }
   ownerPreferences(): OwnerPreferencesStorePort {

@@ -26,6 +26,7 @@ public struct HerPage: View {
         case agent(String)
         case gmail
         case app(String)
+        case addApp
         case devices
         case device(String)
         case approvals
@@ -304,7 +305,7 @@ public struct HerPage: View {
                 case .connections:
                     ConnectionsPage(store: connections, actions: actions, openSenses: senses == nil ? nil : { sensesOpen = true }, open: { connection in
                         path.append(connection.name == GmailStore.source ? .gmail : .app(connection.name))
-                    }) { path.removeLast() }
+                    }, add: { path.append(.addApp) }) { path.removeLast() }
                 case .agents:
                     AgentsPage(store: agents, open: { path.append(.agent($0)) }) { path.removeLast() }
                 case .agent(let id):
@@ -314,6 +315,11 @@ public struct HerPage: View {
                         .onDisappear { Task { await connections.load() } }
                 case .app(let name):
                     AppConnectionPage(store: connections, name: name) { path.removeLast() }
+                case .addApp:
+                    AddAppConnectionPage(store: connections, added: { connection in
+                        path.removeLast()
+                        path.append(.app(connection.name))
+                    }) { path.removeLast() }
                 case .devices:
                     HerDevicesPage(store: settings, open: { path.append(.device($0.id)) }, removedThisDevice: removedThisDevice) { path.removeLast() }
                 case .device(let id):

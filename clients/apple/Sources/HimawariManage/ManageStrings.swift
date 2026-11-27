@@ -507,6 +507,52 @@ enum M {
     static var connectionsThisDevice: String { text("这台 iPhone", ja: "この iPhone", en: "This iPhone") }
     static var connectionHealth: String { text("健康", ja: "ヘルスケア", en: "Health") }
     static var connectionHealthInSenses: String { text("点这里打开感知设置，在里面开关", ja: "ここから感知の設定を開いてオン・オフします", en: "Opens sensing settings, where you turn it on or off") }
+    static var connectionAdd: String { text("添加应用", ja: "アプリを追加", en: "Add App") }
+    static var connectionAddAddress: String { text("MCP 服务器网址", ja: "MCP サーバーの URL", en: "MCP server URL") }
+    static var connectionAddName: String { text("名字（可不填）", ja: "名前（任意）", en: "Name (optional)") }
+    static var connectionAddNameNote: String { text("不填就用对方服务器自报的名字", ja: "空欄ならサーバーが名乗る名前を使います", en: "Leave blank to use the name the server gives") }
+    static var connectionAddAdvanced: String { text("高级", ja: "詳細", en: "Advanced") }
+    static var connectionAddClientId: String { text("客户端编号", ja: "クライアント ID", en: "Client ID") }
+    static var connectionAddClientSecret: String { text("客户端密钥", ja: "クライアントシークレット", en: "Client secret") }
+    static var connectionAddAdvancedNote: String {
+        text(
+            "一般不用填。只有对方不能自动给 Himawari 发编号时，才去对方后台建一个应用，把它给的编号填在这里。",
+            ja: "通常は空欄のままで大丈夫です。相手が Himawari に ID を自動で発行できないときだけ、相手の管理画面でアプリを作り、その ID をここに入れます。",
+            en: "Usually left blank. Only if the service can’t issue Himawari an ID on its own, create an app in its developer settings and enter the ID it gives here."
+        )
+    }
+    static var connectionAddWarning: String {
+        text(
+            "这是没经过审核的服务，只添加你信任的。Himawari 用它的每个工具之前都会先问你。",
+            ja: "審査されていないサービスです。信頼できるものだけを追加してください。Himawari はそのツールを使う前に毎回確認します。",
+            en: "This service hasn’t been reviewed. Only add ones you trust. Himawari asks you before using any of its tools."
+        )
+    }
+    static var connectionAddReason: String { text("添加应用", ja: "アプリを追加", en: "Add an app") }
+    static var connectionAddInvalid: String {
+        text("网址要以 https:// 开头，不能写账号密码，也不能是内网地址", ja: "URL は https:// で始まり、アカウント情報や社内ネットワークのアドレスを含めないでください", en: "The URL must start with https:// and can’t include a sign-in or a private network address")
+    }
+    static var connectionAddUnreachable: String { text("连不上这个网址，或者它不是 MCP 服务器", ja: "この URL に接続できないか、MCP サーバーではありません", en: "Couldn’t reach this URL, or it isn’t an MCP server") }
+    static var connectionAddFailed: String { text("没加上，再试一次", ja: "追加できませんでした。もう一度お試しください", en: "Couldn’t add it. Try again") }
+    static func connectionAddedAbout(_ title: String) -> String {
+        text(
+            "\(title) 是你自己添加的。连接后 Himawari 每次用它的工具之前都先问你，包括只是查东西的。",
+            ja: "\(title) はあなたが追加したアプリです。接続後、Himawari はそのツールを使う前に、調べるだけのものも含めて毎回確認します。",
+            en: "You added \(title) yourself. Once connected, Himawari asks you before using any of its tools, even ones that only look things up."
+        )
+    }
+    static func connectionRemove(_ title: String) -> String { text("移除 \(title)", ja: "\(title) を削除", en: "Remove \(title)") }
+    static var connectionRemoveDetail: String {
+        text("这个应用从列表里去掉，存在服务器上的登录和客户端编号也一并删掉。", ja: "このアプリを一覧から外し、サーバーに保存したログインとクライアント ID も削除します。", en: "The app leaves the list, and the sign-in and client ID kept on the server are deleted.")
+    }
+    static func connectionClientRequired(_ title: String) -> String { text("\(title) 要你提供客户端编号", ja: "\(title) にはクライアント ID が必要です", en: "\(title) needs a client ID") }
+    static func connectionClientRequiredDetail(_ title: String, _ redirectUri: String) -> String {
+        text(
+            "\(title) 不能自动给 Himawari 发编号。去它的开发者后台建一个应用，回调地址填 \(redirectUri)；然后移除这个应用，重新添加时在“高级”里填上编号。",
+            ja: "\(title) は Himawari に ID を自動で発行できません。開発者向け設定でアプリを作り、コールバック URL に \(redirectUri) を入れてください。そのあとこのアプリを削除し、追加し直すときに「詳細」に ID を入れます。",
+            en: "\(title) can’t issue Himawari an ID on its own. Create an app in its developer settings with the callback URL \(redirectUri), then remove this app and add it again with the ID under Advanced."
+        )
+    }
     static var connectionsNoneConnected: String { text("还没连接应用", ja: "まだアプリを接続していません", en: "No apps connected yet") }
     static var gmailDisconnect: String { text("断开 Gmail", ja: "Gmail の接続を解除", en: "Disconnect Gmail") }
     static var gmailDisconnectDetail: String {

@@ -86,6 +86,23 @@ it("rejects plain buttons whose empty space cannot be tapped", () => {
   expect(findViolations(".buttonStyle(.pressable)", "X.swift")).toEqual([]);
 });
 
+it("lets only the answer body use the system serif, New York, and still rejects custom fonts there", () => {
+  const answer = "Sources/HimawariChat/AnswerFont.swift";
+  expect(findFontViolations(".hmType(Self.voice, design: .serif)", answer)).toEqual([]);
+  expect(
+    findFontViolations(
+      '.font(.custom("STSongti-SC-Regular", size: 18, relativeTo: .body))',
+      answer,
+    ).map((v) => v.code),
+  ).toEqual(["custom-font"]);
+  expect(
+    findFontViolations(
+      ".hmType(Self.voice, design: .serif)",
+      "Sources/HimawariChat/AnswerText.swift",
+    ).map((v) => v.code),
+  ).toEqual(["custom-font"]);
+});
+
 it("rejects custom and serif fonts so text stays on the system font", () => {
   for (const line of [
     '.font(.custom("STSongti-SC-Regular", size: 18, relativeTo: .body))',
