@@ -2006,7 +2006,7 @@ export async function startTenantRuntime(
         apps: new ProductionAppTools({
           connections: {
             list: async () => (await appConnections?.list()) ?? [],
-            definition: (name) => appConnections?.definition(name),
+            definition: async (name) => appConnections?.definition(name),
             tools: async (name) => appConnections?.tools(name),
             call: async (name, tool, input) => appConnections?.call(name, tool, input),
           },
@@ -2335,23 +2335,31 @@ export async function startTenantRuntime(
             })
           : undefined;
       const appConnectionConfigurations = configuration.runPolicy?.appConnections ?? [];
-      if (appConnectionConfigurations.length > 0 && protector) {
+      if (protector) {
         const definitions = [];
         for (const entry of appConnectionConfigurations) {
-          const secret = configuration.secretReferences.find(
-            ({ ref, purpose }) =>
-              ref === entry.clientSecretRef && purpose === APP_CONNECTION_CLIENT_SECRET_PURPOSE,
-          );
-          if (!secret) continue;
+          const secret =
+            entry.clientSecretRef === undefined
+              ? undefined
+              : configuration.secretReferences.find(
+                  ({ ref, purpose }) =>
+                    ref === entry.clientSecretRef &&
+                    purpose === APP_CONNECTION_CLIENT_SECRET_PURPOSE,
+                );
+          if (entry.clientSecretRef !== undefined && !secret) continue;
           definitions.push({
             name: entry.name,
             title: entry.title,
             serverUrl: entry.serverUrl,
-            clientId: entry.clientId,
-            clientSecret: await hostModelSources(configuration).provider.resolve(
-              secret.ref,
-              secret.version,
-            ),
+            ...(entry.clientId === undefined ? {} : { clientId: entry.clientId }),
+            ...(secret === undefined
+              ? {}
+              : {
+                  clientSecret: await hostModelSources(configuration).provider.resolve(
+                    secret.ref,
+                    secret.version,
+                  ),
+                }),
             trustsReadOnlyLabels: entry.trustsReadOnlyLabels,
           });
         }

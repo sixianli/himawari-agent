@@ -795,6 +795,7 @@ function web() {
     "deviceActions",
     "vault",
     "subthreads",
+    "appConnections",
   ])
     repository[key] = vi.fn(() => port);
   const memory = {

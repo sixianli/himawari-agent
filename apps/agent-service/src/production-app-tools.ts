@@ -152,8 +152,8 @@ export class ProductionAppTools {
       : this.#call(request as Request & { app: string; tool: string }, hooks);
   }
 
-  #asksOwner(app: string, tool: AppTool): boolean {
-    return !(this.#connections.definition(app)?.trustsReadOnlyLabels === true && tool.readOnly);
+  #asksOwner(definition: { readonly trustsReadOnlyLabels: boolean }, tool: AppTool): boolean {
+    return !(definition.trustsReadOnlyLabels && tool.readOnly);
   }
 
   async #tools(app: string): Promise<readonly AppTool[]> {
@@ -174,7 +174,7 @@ export class ProductionAppTools {
     if (listed.length === 0)
       throw new AppToolError("APP_ACTION_NO_APP", TOOL_RESULT_APP_ACTION_NO_APP.text);
     if (request.app !== undefined) {
-      const definition = this.#connections.definition(request.app);
+      const definition = await this.#connections.definition(request.app);
       if (!definition) throw unknown();
       const tools = await this.#tools(request.app);
       const chosen =
@@ -191,7 +191,7 @@ export class ProductionAppTools {
             tools: chosen.map((tool) => ({
               name: tool.name,
               description: tool.description,
-              asksOwner: this.#asksOwner(definition.name, tool),
+              asksOwner: this.#asksOwner(definition, tool),
               inputSchema: tool.inputSchema,
             })),
           },
@@ -214,6 +214,7 @@ export class ProductionAppTools {
         apps.push({ app: connection.name, title: connection.title, status: "needs_reconnect" });
         continue;
       }
+      const definition = await this.#connections.definition(connection.name);
       apps.push({
         app: connection.name,
         title: connection.title,
@@ -221,7 +222,7 @@ export class ProductionAppTools {
         tools: tools.map((tool) => ({
           name: tool.name,
           description: clip(tool.description, SUMMARY_LIMIT),
-          asksOwner: this.#asksOwner(connection.name, tool),
+          asksOwner: definition === undefined || this.#asksOwner(definition, tool),
         })),
       });
     }
@@ -233,11 +234,11 @@ export class ProductionAppTools {
     request: Request & { readonly app: string; readonly tool: string },
     hooks: AppActionHooks,
   ): Promise<unknown> {
-    const definition = this.#connections.definition(request.app);
+    const definition = await this.#connections.definition(request.app);
     if (!definition) throw unknown();
     const tool = (await this.#tools(request.app)).find(({ name }) => name === request.tool);
     if (!tool) throw unknown();
-    if (this.#asksOwner(request.app, tool))
+    if (this.#asksOwner(definition, tool))
       await hooks.authorize({
         app: definition.name,
         title: definition.title,
