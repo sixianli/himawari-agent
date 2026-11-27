@@ -41,6 +41,7 @@ function repository(count = "1") {
 const run = (id, name = "Deploy production", extra = {}) => ({
   id,
   name,
+  path: ".github/workflows/deploy.yml",
   event: "workflow_run",
   head_branch: "main",
   conclusion: "failure",
@@ -68,11 +69,40 @@ async function github(runs) {
   return { api: `http://127.0.0.1:${server.address().port}`, requests };
 }
 
-function check(root, api) {
+function head(root) {
+  return execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+}
+
+function pullRequest(root, base) {
+  const event = join(root, "..", `${root.split("/").at(-1)}-event.json`);
+  writeFileSync(event, JSON.stringify({ pull_request: { base: { sha: base } } }));
+  roots.push(event);
+  return event;
+}
+
+function deployWorkflow(root) {
+  mkdirSync(join(root, ".github/workflows"), { recursive: true });
+  mkdirSync(join(root, "scripts/deploy"), { recursive: true });
+  writeFileSync(
+    join(root, ".github/workflows/deploy.yml"),
+    "jobs:\n  deploy:\n    steps:\n      - run: bash scripts/deploy/run.sh\n",
+  );
+  writeFileSync(join(root, "scripts/deploy/run.sh"), "echo deploy\n");
+  commit(root, "add deploy\n\nIncident: none");
+}
+
+function check(root, api, { event = "", args = [] } = {}) {
   return new Promise((done) => {
-    const child = spawn("node", [join(root, RUN_RULE_FILE)], {
+    const child = spawn("node", [join(root, RUN_RULE_FILE), ...args], {
       cwd: root,
-      env: { ...process.env, GITHUB_API_URL: api, GITHUB_REPOSITORY: "owner/name", GH_TOKEN: "" },
+      env: {
+        ...process.env,
+        GITHUB_API_URL: api,
+        GITHUB_REPOSITORY: "owner/name",
+        GITHUB_EVENT_PATH: event,
+        GITHUB_STEP_SUMMARY: "",
+        GH_TOKEN: "",
+      },
     });
     let stdout = "";
     let stderr = "";
@@ -149,6 +179,37 @@ describe("failed runs on the default branch are counted without anyone rememberi
     expect(result.stderr).toContain("INCIDENT_RUN_CLAIM_UNKNOWN run=11 I-77");
   });
 
+  it("blocks only a PR that touches the failing workflow or the files it runs", async () => {
+    const root = repository();
+    deployWorkflow(root);
+    const base = head(root);
+    commit(root, "docs: unrelated\n\nIncident: none");
+    const { api } = await github([run(11), run(12), run(13)]);
+    const unrelated = await check(root, api, { event: pullRequest(root, base) });
+    expect(unrelated.status).toBe(0);
+    expect(unrelated.stdout).toContain(
+      'INCIDENT_RUNS_UNCLAIMED_ELSEWHERE workflow="Deploy production" failures=3 runs=11,12,13',
+    );
+    writeFileSync(join(root, "scripts/deploy/run.sh"), "echo fixed\n");
+    commit(root, "fix: deploy\n\nIncident: none");
+    const related = await check(root, api, { event: pullRequest(root, base) });
+    expect(related.status).toBe(1);
+    expect(related.stderr).toContain(
+      'INCIDENT_RUNS_UNCLAIMED workflow="Deploy production" failures=3',
+    );
+  });
+
+  it("lists unclaimed failures in report mode without failing", async () => {
+    const root = repository();
+    deployWorkflow(root);
+    const { api } = await github([run(11), run(12), run(13)]);
+    const result = await check(root, api, { args: ["--report"] });
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain(
+      'INCIDENT_RUNS_UNCLAIMED_ELSEWHERE workflow="Deploy production"',
+    );
+  });
+
   it("fails closed when GitHub cannot be read", async () => {
     const root = repository();
     const result = await check(root, "http://127.0.0.1:9");
@@ -176,5 +237,9 @@ describe("failed runs on the default branch are counted without anyone rememberi
       'run: if [ "$GITHUB_EVENT_NAME" = pull_request ]; then node scripts/check-incident-runs.mjs; fi',
     );
     expect(workflow).toMatch(/name: ci\/required[\s\S]*?permissions:[\s\S]*?actions: read/);
+    const report = readFileSync(".github/workflows/incident-runs-report.yml", "utf8");
+    expect(report).toMatch(/schedule:\n\s+- cron:/);
+    expect(report).toContain("run: node scripts/check-incident-runs.mjs --report");
+    expect(report).toMatch(/permissions:[\s\S]*?actions: read/);
   });
 });

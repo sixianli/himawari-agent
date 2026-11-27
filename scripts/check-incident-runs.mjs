@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { appendFileSync, existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -12,6 +13,8 @@ const PAGE_SIZE = 100;
 const CLAIM_LINE = /^Incident-run:[ \t]*(.*?)[ \t]*$/gm;
 const RUN_ID = /^\d+$/;
 const INCIDENT_ID = /^I-\d{2,}$/;
+const REPOSITORY_TOKEN =
+  /(?<![A-Za-z0-9_./-])((?:\.?[A-Za-z0-9_-][A-Za-z0-9_.-]*\/)+[A-Za-z0-9_.-]+)/g;
 
 function git(root, args) {
   return execFileSync("git", args, {
@@ -104,13 +107,43 @@ export async function failedRuns({ api, token, repository, since }) {
         run.event !== "pull_request" &&
         run.head_branch === branch
       )
-        runs.push({ id: String(run.id), workflow: run.name, url: run.html_url });
+        runs.push({ id: String(run.id), workflow: run.name, path: run.path, url: run.html_url });
     if (pageRuns.length < PAGE_SIZE) break;
   }
   return runs;
 }
 
-export function judgeRuns({ runs, claims, incidents }) {
+export function workflowScope(root, workflowPath) {
+  const scope = new Set();
+  if (!workflowPath) return scope;
+  const file = path.join(root, workflowPath);
+  scope.add(workflowPath);
+  if (!existsSync(file)) return scope;
+  for (const match of readFileSync(file, "utf8").matchAll(REPOSITORY_TOKEN)) {
+    const relative = match[1].replace(/\/+$/, "");
+    const full = path.join(root, relative);
+    if (relative === workflowPath || !existsSync(full)) continue;
+    scope.add(statSync(full).isDirectory() ? `${relative}/` : `${path.posix.dirname(relative)}/`);
+  }
+  return scope;
+}
+
+export function touchesScope(changed, scope) {
+  return changed.some((file) =>
+    [...scope].some((entry) => (entry.endsWith("/") ? file.startsWith(entry) : file === entry)),
+  );
+}
+
+export function changedFiles(root, eventPath) {
+  if (!eventPath || !existsSync(eventPath)) return undefined;
+  const base = JSON.parse(readFileSync(eventPath, "utf8")).pull_request?.base?.sha;
+  if (!/^[0-9a-f]{40}$/.test(base ?? "")) return undefined;
+  return git(root, ["diff", "--name-only", `${base}...HEAD`])
+    .split("\n")
+    .filter(Boolean);
+}
+
+export function judgeRuns({ runs, claims, incidents, related = () => true }) {
   const errors = [];
   const table = new Map(
     incidents.map((incident) => [incident.id, Number.parseInt(incident.count ?? "", 10)]),
@@ -135,8 +168,12 @@ export function judgeRuns({ runs, claims, incidents }) {
   const notices = [];
   for (const [workflow, list] of [...unclaimed].sort(([a], [b]) => a.localeCompare(b))) {
     const ids = list.map((run) => run.id).join(",");
-    if (list.length >= REPEAT_LIMIT)
+    if (list.length >= REPEAT_LIMIT && related(list[0]))
       errors.push(`${RUN_RULE_MARK} workflow="${workflow}" failures=${list.length} runs=${ids}`);
+    else if (list.length >= REPEAT_LIMIT)
+      notices.push(
+        `INCIDENT_RUNS_UNCLAIMED_ELSEWHERE workflow="${workflow}" failures=${list.length} runs=${ids} not blocking changes that leave this workflow alone; the change that fixes it must claim them`,
+      );
     else
       notices.push(
         `INCIDENT_RUNS_PENDING workflow="${workflow}" failures=${list.length} runs=${ids}`,
@@ -150,6 +187,8 @@ export async function checkIncidentRuns({
   api = process.env.GITHUB_API_URL ?? "https://api.github.com",
   token = process.env.GH_TOKEN ?? process.env.GITHUB_TOKEN ?? "",
   repository = process.env.GITHUB_REPOSITORY ?? "",
+  eventPath = process.env.GITHUB_EVENT_PATH ?? "",
+  report = false,
 } = {}) {
   const { incidents, errors: listErrors } = checkIncidentGates({ root });
   if (listErrors.length > 0) return { errors: listErrors, notices: [] };
@@ -175,7 +214,18 @@ export async function checkIncidentRuns({
   } catch (error) {
     return { errors: [...history.errors, error.message], notices: [] };
   }
-  const judged = judgeRuns({ runs, claims: history.claims, incidents });
+  let changed;
+  try {
+    changed = report ? [] : changedFiles(root, eventPath);
+  } catch (error) {
+    return {
+      errors: [...history.errors, `INCIDENT_RUNS_DIFF_UNAVAILABLE ${error.message}`],
+      notices: [],
+    };
+  }
+  const related = (run) =>
+    changed === undefined || touchesScope(changed, workflowScope(root, run.path));
+  const judged = judgeRuns({ runs, claims: history.claims, incidents, related });
   return {
     errors: [...history.errors, ...judged.errors],
     notices: [`INCIDENT_RUNS_SINCE ${history.since} failed=${runs.length}`, ...judged.notices],
@@ -183,11 +233,24 @@ export async function checkIncidentRuns({
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  if (process.argv.length > 2) {
-    process.stderr.write(`INCIDENT_ARGUMENT_UNKNOWN ${process.argv.slice(2).join(" ")}\n`);
+  const extra = process.argv.slice(2);
+  const report = extra.length === 1 && extra[0] === "--report";
+  if (extra.length > 0 && !report) {
+    process.stderr.write(`INCIDENT_ARGUMENT_UNKNOWN ${extra.join(" ")}\n`);
     process.exit(2);
   }
-  const { errors, notices } = await checkIncidentRuns();
+  const { errors, notices } = await checkIncidentRuns({ report });
+  if (report && process.env.GITHUB_STEP_SUMMARY) {
+    const lines = notices.filter(
+      (notice) =>
+        notice.startsWith("INCIDENT_RUNS_UNCLAIMED_ELSEWHERE") ||
+        notice.startsWith("INCIDENT_RUNS_PENDING"),
+    );
+    appendFileSync(
+      process.env.GITHUB_STEP_SUMMARY,
+      `## main 上还没认领的失败运行\n\n${lines.length === 0 ? "没有。" : lines.map((line) => `- ${line}`).join("\n")}\n`,
+    );
+  }
   for (const notice of notices) process.stdout.write(`${notice}\n`);
   for (const error of errors) process.stderr.write(`${error}\n`);
   if (errors.some((error) => error.startsWith(RUN_RULE_MARK)))

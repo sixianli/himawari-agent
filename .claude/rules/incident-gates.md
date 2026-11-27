@@ -29,7 +29,7 @@
 
 - 提交钩子 `scripts/git-hooks/commit-msg` 运行 `node scripts/check-incident-gates.mjs --commit-msg`：没有事故标记、写法不对、或写的编号清单里没有，提交直接失败。
 - `npm run check:incident-gates`（CI 每次都跑）读完整的提交记录：规则生效之后的提交缺标记、标记的编号不在清单里、清单里的次数少于提交记录里 `Incident:` 指向它的提交数，都失败；次数一到 3，原有的“没有硬门槛就失败”随之生效。浅克隆读不全记录，直接失败，先运行 `git fetch --unshallow origin`。
-- main（默认分支）上失败的运行也由程序自动数，不靠人发现：CI 的 `ci/required` 在每个 PR 上运行 `node scripts/check-incident-runs.mjs`，向 GitHub 读这条规则生效以来 main 上结论为失败的全部运行（自动上线、main 上的 CI、iPhone 作业等所有工作流）。同一个工作流有 3 次或以上失败没有被认领，PR 就合不进去。认领的写法是在提交说明里加一行 `Incident-run: <运行编号> [<运行编号> ...] I-<编号>`（运行编号是 Actions 网址里 `runs/` 后面的数字），并且这条事故的次数不少于认领到它名下的运行数；次数到 3 时，上面的门槛规则同样生效。读不到 GitHub 时检查直接失败。
+- main（默认分支）上失败的运行也由程序自动数，不靠人发现：CI 的 `ci/required` 在每个 PR 上运行 `node scripts/check-incident-runs.mjs`，向 GitHub 读这条规则生效以来 main 上结论为失败的全部运行（自动上线、main 上的 CI、iPhone 作业等所有工作流）。同一个工作流有 3 次或以上失败没有被认领时，改到这个工作流或它运行的文件（工作流文件本身，以及工作流里写到的仓库路径所在的目录，例如上线工作流的 `scripts/delivery-mode/`）的 PR 合不进去；没碰它的 PR 不拦，只在日志里列出来，免得一个工作流的失败卡住全仓库。每天 09:17 JST 还有一个定时作业（`.github/workflows/incident-runs-report.yml`）把全部没认领的失败列在运行摘要里。认领的写法是在提交说明里加一行 `Incident-run: <运行编号> [<运行编号> ...] I-<编号>`（运行编号是 Actions 网址里 `runs/` 后面的数字），并且这条事故的次数不少于认领到它名下的运行数；次数到 3 时，上面的门槛规则同样生效。读不到 GitHub 时检查直接失败。
 - 次数达到 3 的“已落门槛”条目，门槛一栏至少要有一个会自动运行的文件：测试文件，或者 `package.json`、`scripts/git-hooks/`、`.github/workflows/` 里会调用的脚本；只点名一个没有任何东西运行的文件，检查失败。
 
 <a id="keeping-the-list"></a>
