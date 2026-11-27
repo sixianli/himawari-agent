@@ -17,9 +17,12 @@ systemctl="$tools/systemctl"
 unshare="$tools/unshare"
 mount="$tools/mount"
 mkfs="${HIMAWARI_SHADOW_SBIN:-/usr/sbin}/mkfs.ext4"
-upper_size="${HIMAWARI_SHADOW_UPPER_SIZE:-32G}"
+findmnt="$tools/findmnt"
+proc_filesystems="${HIMAWARI_SHADOW_PROC_FILESYSTEMS:-/proc/filesystems}"
+loop_control="${HIMAWARI_SHADOW_LOOP_CONTROL:-/dev/loop-control}"
+upper_size="${HIMAWARI_SHADOW_UPPER_SIZE:-8G}"
 machine="himawari-shadow"
-boot_wait="${HIMAWARI_SHADOW_BOOT_WAIT:-180}"
+boot_wait="${HIMAWARI_SHADOW_BOOT_WAIT:-300}"
 service_wait="${HIMAWARI_SHADOW_SERVICE_WAIT:-120}"
 shadow=""
 booted=0
@@ -30,6 +33,10 @@ fail() {
   exit 1
 }
 
+launcher_alive() {
+  [[ -n "$launcher" && -r "/proc/$launcher/stat" && "$(cut -d' ' -f3 "/proc/$launcher/stat" 2> /dev/null)" != Z ]]
+}
+
 finish() {
   if [[ "$booted" -eq 1 ]]; then
     "$machinectl" terminate "$machine" > /dev/null 2>&1 || true
@@ -38,7 +45,7 @@ finish() {
       sleep 1
     done
     for _ in $(seq 1 60); do
-      [[ -n "$launcher" ]] && kill -0 "$launcher" 2> /dev/null || break
+      launcher_alive || break
       sleep 1
     done
   fi
@@ -56,7 +63,16 @@ if [[ ! -x "$nspawn" || ! -x "$machinectl" ]]; then
 fi
 "$machinectl" show "$machine" > /dev/null 2>&1 && "$machinectl" terminate "$machine" > /dev/null 2>&1 || true
 
-needed=$(( $(du -sb "$state_data" | cut -f1) * 2 + 1073741824 ))
+/usr/sbin/modprobe overlay > /dev/null 2>&1 || true
+/usr/sbin/modprobe loop > /dev/null 2>&1 || true
+echo "SHADOW_HOST arch=$(uname -m) kernel=$(uname -r) overlay=$(grep -qw overlay "$proc_filesystems" && echo yes || echo no) loop=$([[ -e "$loop_control" ]] && echo yes || echo no) memAvailableKiB=$(awk '/^MemAvailable:/{print $2}' /proc/meminfo) nspawn=$("$nspawn" --version 2>/dev/null | head -1 | tr ' ' '_')"
+grep -qw overlay "$proc_filesystems" || fail OVERLAY_UNSUPPORTED "this kernel has no overlay filesystem"
+[[ -e "$loop_control" ]] || fail LOOP_UNSUPPORTED "this kernel has no loop devices"
+not_copied="$("$findmnt" -rn -o TARGET,FSTYPE | awk '$1 != "/" && $1 !~ "^/boot(/|$)" && $2 ~ /^(ext[234]|xfs|btrfs|f2fs|zfs)$/ {print $1}' | tr '\n' ' ')"
+[[ -z "$not_copied" ]] || fail SUBMOUNTS_NOT_COPIED "these filesystems are mounted under / and would be missing from the shadow machine: $not_copied"
+
+upper_bytes="$(numfmt --from=iec "$upper_size")"
+needed=$(( $(du -sb "$state_data" | cut -f1) * 2 + upper_bytes + 1073741824 ))
 available=$(df --output=avail -B1 "$shadow_parent" | tail -1 | tr -d ' ')
 [[ "$available" -ge "$needed" ]] || fail DISK_LOW "need $needed bytes under $shadow_parent, have $available"
 
@@ -90,7 +106,7 @@ for _ in $(seq 1 "$boot_wait"); do
     ready=1
     break
   fi
-  kill -0 "$launcher" 2> /dev/null || fail BOOT_EXITED "the shadow machine exited while booting: $(tail -5 "$shadow/boot.log" | tr '\n' ' ')"
+  launcher_alive || fail BOOT_EXITED "the shadow machine exited while booting: $(tail -5 "$shadow/boot.log" | tr '\n' ' ')"
   sleep 1
 done
 [[ "$ready" -eq 1 ]] || fail BOOT_TIMEOUT "the shadow machine did not finish booting in $boot_wait seconds: $(tail -5 "$shadow/boot.log" | tr '\n' ' ')"
@@ -107,7 +123,12 @@ echo "SHADOW_BOOTED"
 
 echo "SHADOW_DEPLOY_START $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 set +e
-inside --setenv=HIMAWARI_DEPLOY_ON_FAILURE=keep /bin/bash "$here/deploy.sh" "$packet" > "$shadow/deploy.log" 2>&1
+passed_environment=("--setenv=PATH=$PATH")
+while IFS= read -r name; do
+  passed_environment+=("--setenv=$name=${!name}")
+done < <(compgen -e | grep -E '^HIMAWARI_' | grep -vE '^HIMAWARI_(SHADOW_|DEPLOY_SHADOW_REHEARSAL$|DEPLOY_ON_FAILURE$|DEPLOY_FROM_STEP$)' | sort)
+inside /bin/rm -rf -- "$(dirname "$packet")/.$(basename "$packet").deploy.lock"
+inside --property=RuntimeMaxSec=3600 "${passed_environment[@]}" --setenv=HIMAWARI_DEPLOY_ON_FAILURE=keep --setenv=HIMAWARI_DEPLOY_FROM_STEP=S2_STOP /bin/bash "$here/deploy.sh" "$packet" > "$shadow/deploy.log" 2>&1
 code=$?
 set -e
 sed 's/^/SHADOW| /' "$shadow/deploy.log" | tail -200

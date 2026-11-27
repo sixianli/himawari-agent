@@ -1157,6 +1157,40 @@ class DeployOrderTest(DeployHarness):
         self.assertIn('make-packet.py freeze', Path(result['log']).read_text())
 
 
+class ShadowRehearsalStepTest(DeployHarness):
+    def fake_shadow(self):
+        (self.scripts / 'shadow-rehearsal.sh').write_text('echo "shadow $1" >> ' + str(self.calls) + '\nexit "${FAKE_SHADOW_EXIT:-0}"\n')
+
+    def test_I120_a_failed_shadow_rehearsal_stops_before_the_service_stop_after_the_steps_that_need_the_network(self):
+        self.fake_shadow()
+        code, result, calls = self.deploy(HIMAWARI_DEPLOY_SHADOW_REHEARSAL='1', FAKE_SHADOW_EXIT='1')
+        self.assertEqual((code, result['result'], result['stoppedAt']), (10, 'stopped-before-service-stop', 'SHADOW_REHEARSAL'))
+        self.assertEqual(calls, ['S1_TRANSPORT', 'S1_INSTALL', 'S6_ACCEPTANCE', 'shadow', str(self.packet)])
+        self.assertNotIn('rollback', calls)
+
+    def test_a_passed_shadow_rehearsal_runs_right_before_the_stop(self):
+        self.fake_shadow()
+        code, result, calls = self.deploy(HIMAWARI_DEPLOY_SHADOW_REHEARSAL='1')
+        self.assertEqual((code, result['result']), (0, 'passed'))
+        self.assertEqual(calls[2:6], ['S6_ACCEPTANCE', 'shadow', str(self.packet), 'S2_STOP'])
+
+    def test_the_shadow_machine_resumes_at_the_stop_without_cleaning_or_rechecking_what_ran_on_the_host(self):
+        code, result, calls = self.deploy_with_cleanup(HIMAWARI_DEPLOY_FROM_STEP='S2_STOP', FAKE_FACTS=GOOD_FACTS.replace('authority=1 31', 'authority=1 32'))
+        self.assertEqual((code, result['result']), (0, 'passed'), Path(result['log']).read_text())
+        self.assertEqual(calls[0], 'S2_STOP')
+        self.assertNotIn('S6_ACCEPTANCE', calls)
+        self.assertEqual(calls[-2:], ['S8_READBACK', 'cleanup-apply'])
+        self.assertEqual(calls.count('cleanup-apply'), 1)
+
+    def test_only_the_stop_can_be_resumed_and_acceptance_after_the_stop_cannot_be_rehearsed(self):
+        code, result, calls = self.deploy(HIMAWARI_DEPLOY_FROM_STEP='S1_INSTALL')
+        self.assertEqual((code, result['result']), (9, 'invalid-from-step'))
+        self.assertEqual(calls, [])
+        code, result, calls = self.deploy(HIMAWARI_DEPLOY_SHADOW_REHEARSAL='1', HIMAWARI_DEPLOY_ACCEPTANCE_AFTER_STOP='1')
+        self.assertEqual((code, result['result']), (9, 'options-conflict'))
+        self.assertEqual(calls, [])
+
+
 class KernelPreflightHintTest(DeployHarness):
     TAG = '[I-83]'
 

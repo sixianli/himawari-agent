@@ -90,20 +90,47 @@ if ! /usr/bin/python3 -I "$here/browser-acceptance-gate.py" "$packet"; then
   result no-browser-acceptance ACCEPTANCE 5
 fi
 
-cleanup before 1
-echo "DEPLOY_PREFLIGHT_START $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-if ! /usr/bin/python3 -I "$here/deploy-preflight.py" "$packet"; then
-  echo "DEPLOY_PREFLIGHT_FAILED: the running release was not changed" >&2
-  result preflight-failed PREFLIGHT 4
+from_step="${HIMAWARI_DEPLOY_FROM_STEP:-}"
+shadow_rehearsal="${HIMAWARI_DEPLOY_SHADOW_REHEARSAL:-0}"
+acceptance_after_stop="${HIMAWARI_DEPLOY_ACCEPTANCE_AFTER_STOP:-0}"
+if [[ -n "$from_step" && "$from_step" != S2_STOP ]]; then
+  echo "DEPLOY_FROM_STEP_INVALID $from_step: only S2_STOP can be resumed from, after the steps before it passed on this host" >&2
+  result invalid-from-step OPTION 9
 fi
-echo "DEPLOY_PREFLIGHT_PASSED"
+if [[ "$acceptance_after_stop" == 1 && ( -n "$from_step" || "$shadow_rehearsal" == 1 ) ]]; then
+  echo "DEPLOY_OPTIONS_CONFLICT: the shadow rehearsal starts at S2_STOP, so S6_ACCEPTANCE cannot move after the stop" >&2
+  result options-conflict OPTION 9
+fi
+
+if [[ -z "$from_step" ]]; then
+  cleanup before 1
+  echo "DEPLOY_PREFLIGHT_START $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  if ! /usr/bin/python3 -I "$here/deploy-preflight.py" "$packet"; then
+    echo "DEPLOY_PREFLIGHT_FAILED: the running release was not changed" >&2
+    result preflight-failed PREFLIGHT 4
+  fi
+  echo "DEPLOY_PREFLIGHT_PASSED"
+fi
 
 stopped=0
 actions=(S1_TRANSPORT S1_INSTALL S6_ACCEPTANCE S2_STOP S3_COPY51 S6_PUBLISH_MATERIALS S6_FINALIZE_BINDINGS S6_SIGN S6_RUNTIME_PROTECTION S6_READ S7_DB_STATUS S7_CONFIG_APPLY S7_CATALOG_UPGRADE S7_SWITCH_START S8_READBACK)
-if [[ "${HIMAWARI_DEPLOY_ACCEPTANCE_AFTER_STOP:-0}" == 1 ]]; then
+if [[ "$acceptance_after_stop" == 1 ]]; then
   actions=(S1_TRANSPORT S1_INSTALL S2_STOP S3_COPY51 S6_ACCEPTANCE S6_PUBLISH_MATERIALS S6_FINALIZE_BINDINGS S6_SIGN S6_RUNTIME_PROTECTION S6_READ S7_DB_STATUS S7_CONFIG_APPLY S7_CATALOG_UPGRADE S7_SWITCH_START S8_READBACK)
 fi
+if [[ -n "$from_step" ]]; then
+  echo "DEPLOY_FROM_STEP $from_step"
+  actions=("${actions[@]:3}")
+fi
 for action in "${actions[@]}"; do
+  if [[ "$action" == S2_STOP && "$shadow_rehearsal" == 1 ]]; then
+    echo "DEPLOY_SHADOW_REHEARSAL_START $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    if ! bash "$here/shadow-rehearsal.sh" "$packet"; then
+      echo "DEPLOY_STOPPED_AT SHADOW_REHEARSAL: the steps from S2_STOP on failed on a copy of production in an offline shadow machine; see the SHADOW_ lines above" >&2
+      echo "DEPLOY_SERVICE_UNTOUCHED: the old release is still running" >&2
+      result stopped-before-service-stop SHADOW_REHEARSAL 10
+    fi
+    echo "DEPLOY_SHADOW_REHEARSAL_PASSED"
+  fi
   [[ "$action" == S2_STOP ]] && stopped=1
   echo "DEPLOY_STEP_START $action $(date -u +%Y-%m-%dT%H:%M:%SZ)"
   /bin/bash "$packet/steps/run-user-step.sh" "$action"

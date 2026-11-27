@@ -11,6 +11,10 @@ sys.dont_write_bytecode = True
 HERE = Path(__file__).resolve().parent
 
 FAKE_NSPAWN = '''#!/bin/bash
+if [ "$1" = --version ]; then
+  echo "systemd 255 (255.4-1ubuntu8)"
+  exit 0
+fi
 printf '%s\\n' "$@" > "$FAKE_LOG/nspawn.args"
 if [ -n "$FAKE_NSPAWN_REFUSES" ]; then
   echo "$FAKE_NSPAWN_REFUSES" >&2
@@ -30,6 +34,13 @@ FAKE_MOUNT = '''#!/bin/bash
 echo "mount $*" >> "$FAKE_LOG/calls"
 '''
 
+FAKE_FINDMNT = '''#!/bin/bash
+echo "/ ext4"
+echo "/boot/efi vfat"
+echo "/snap/core22/1 squashfs"
+[ -z "$FAKE_SUBMOUNT" ] || echo "$FAKE_SUBMOUNT ext4"
+'''
+
 FAKE_MKFS = '''#!/bin/bash
 echo "mkfs.ext4 $*" >> "$FAKE_LOG/calls"
 '''
@@ -45,11 +56,13 @@ esac
 FAKE_SYSTEMD_RUN = '''#!/bin/bash
 echo "systemd-run $*" >> "$FAKE_LOG/calls"
 [ -e "$FAKE_LOG/machine.up" ] || exit 1
+inside=()
+while IFS= read -r name; do inside+=("$name=${!name}"); done < <(compgen -e | grep -E '^FAKE_')
 while [[ "$1" == --* ]]; do
-  case "$1" in --setenv=*) export "${1#--setenv=}" ;; esac
+  case "$1" in --setenv=*) inside+=("${1#--setenv=}") ;; esac
   shift
 done
-exec "$@"
+exec env -i "${inside[@]}" "$@"
 '''
 
 FAKE_SYSTEMCTL = '''#!/bin/bash
@@ -60,7 +73,7 @@ esac
 '''
 
 FAKE_DEPLOY = '''#!/bin/bash
-echo "deploy on_failure=$HIMAWARI_DEPLOY_ON_FAILURE packet=$1"
+echo "deploy on_failure=$HIMAWARI_DEPLOY_ON_FAILURE from=$HIMAWARI_DEPLOY_FROM_STEP host=${HIMAWARI_PACKET_HOST:-} shadow=${HIMAWARI_DEPLOY_SHADOW_REHEARSAL:-} path=$PATH packet=$1"
 if [ -n "$FAKE_DEPLOY_FAIL_AT" ]; then
   echo "DEPLOY_STEP_START $FAKE_DEPLOY_FAIL_AT"
   echo "MIGRATION_REFUSED bad timestamp in row 7" >&2
@@ -89,9 +102,11 @@ class ShadowRehearsalTest(unittest.TestCase):
         self.log.mkdir()
         tools = self.log / 'tools'
         tools.mkdir()
-        for name, text in (('systemd-nspawn', FAKE_NSPAWN), ('machinectl', FAKE_MACHINECTL), ('systemd-run', FAKE_SYSTEMD_RUN), ('systemctl', FAKE_SYSTEMCTL), ('unshare', FAKE_UNSHARE), ('mount', FAKE_MOUNT), ('mkfs.ext4', FAKE_MKFS)):
+        for name, text in (('systemd-nspawn', FAKE_NSPAWN), ('machinectl', FAKE_MACHINECTL), ('systemd-run', FAKE_SYSTEMD_RUN), ('systemctl', FAKE_SYSTEMCTL), ('unshare', FAKE_UNSHARE), ('mount', FAKE_MOUNT), ('mkfs.ext4', FAKE_MKFS), ('findmnt', FAKE_FINDMNT)):
             executable(tools / name, text)
         self.tools = tools
+        (self.log / 'filesystems').write_text('nodev\ttmpfs\nnodev\toverlay\n\text4\n')
+        (self.log / 'loop-control').write_text('')
         self.data = self.directory / 'state' / 'data'
         (self.data / 'memory').mkdir(parents=True)
         (self.data / 'memory' / 'notes.json').write_text('{"a": 1}')
@@ -112,7 +127,7 @@ class ShadowRehearsalTest(unittest.TestCase):
         return database
 
     def run_rehearsal(self, **extra):
-        environment = {'PATH': '/usr/bin:/bin', 'FAKE_LOG': str(self.log), 'HIMAWARI_SHADOW_TOOLS': str(self.tools), 'HIMAWARI_SHADOW_SBIN': str(self.tools), 'HIMAWARI_SHADOW_UPPER_SIZE': '1M', 'HIMAWARI_SHADOW_STATE_DATA': str(self.data), 'HIMAWARI_SHADOW_PARENT': str(self.parent), 'HIMAWARI_SHADOW_BOOT_WAIT': '5', 'HIMAWARI_SHADOW_SERVICE_WAIT': '3', **extra}
+        environment = {'PATH': '/usr/bin:/bin', 'FAKE_LOG': str(self.log), 'HIMAWARI_SHADOW_TOOLS': str(self.tools), 'HIMAWARI_SHADOW_SBIN': str(self.tools), 'HIMAWARI_SHADOW_UPPER_SIZE': '1M', 'HIMAWARI_SHADOW_PROC_FILESYSTEMS': str(self.log / 'filesystems'), 'HIMAWARI_SHADOW_LOOP_CONTROL': str(self.log / 'loop-control'), 'HIMAWARI_PACKET_HOST': '127.0.0.1', 'HIMAWARI_DEPLOY_SHADOW_REHEARSAL': '1', 'HIMAWARI_SHADOW_STATE_DATA': str(self.data), 'HIMAWARI_SHADOW_PARENT': str(self.parent), 'HIMAWARI_SHADOW_BOOT_WAIT': '5', 'HIMAWARI_SHADOW_SERVICE_WAIT': '3', **extra}
         return subprocess.run(['/bin/bash', str(self.scripts / 'shadow-rehearsal.sh'), str(self.packet)], capture_output=True, text=True, env=environment, timeout=120)
 
     def test_the_copy_holds_rows_still_in_the_write_ahead_log_and_keeps_owner_and_mode(self):
@@ -146,7 +161,10 @@ class ShadowRehearsalTest(unittest.TestCase):
         result = self.run_rehearsal()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('SHADOW_REHEARSAL_PASSED', result.stdout)
-        self.assertIn('SHADOW| deploy on_failure=keep packet=' + str(self.packet), result.stdout)
+        self.assertIn('SHADOW| deploy on_failure=keep from=S2_STOP host=127.0.0.1 shadow= path=/usr/bin:/bin packet=' + str(self.packet), result.stdout)
+        self.assertIn('SHADOW_HOST arch=', result.stdout)
+        self.assertIn('overlay=yes loop=yes', result.stdout)
+        self.assertIn('nspawn=systemd_255_(255.4-1ubuntu8)', result.stdout)
         arguments = (self.log / 'nspawn.args').read_text().splitlines()
         for expected in ('--private-network', '--boot', '--machine=himawari-shadow', '--link-journal=no'):
             self.assertIn(expected, arguments)
@@ -175,6 +193,23 @@ class ShadowRehearsalTest(unittest.TestCase):
         arguments = (self.log / 'nspawn.args').read_text().splitlines()
         self.assertNotIn('--directory=/', arguments)
         self.assertEqual(list(self.parent.iterdir()), [])
+
+    def test_I120_a_filesystem_mounted_under_the_root_that_the_overlay_would_miss_is_named_before_booting(self):
+        self.live_database()
+        result = self.run_rehearsal(FAKE_SUBMOUNT='/var/lib/himawari')
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('SHADOW_REHEARSAL_FAILED SUBMOUNTS_NOT_COPIED', result.stderr)
+        self.assertIn('/var/lib/himawari', result.stderr)
+        self.assertNotIn('/boot/efi', result.stderr)
+        self.assertFalse((self.log / 'nspawn.args').exists())
+
+    def test_a_kernel_without_overlay_is_refused_before_copying(self):
+        self.live_database()
+        (self.log / 'filesystems').write_text('nodev\ttmpfs\n\text4\n')
+        result = self.run_rehearsal()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('SHADOW_REHEARSAL_FAILED OVERLAY_UNSUPPORTED', result.stderr)
+        self.assertNotIn('SHADOW_COPY_START', result.stdout)
 
     def test_the_old_release_must_start_on_the_copy_before_the_deploy_is_rehearsed(self):
         self.live_database()
