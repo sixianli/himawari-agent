@@ -75,7 +75,7 @@
 "demo.request" = "明日の午前、田中さんと約束を入れて、";
 "demo.requestTail" = "十時ごろ";
 "demo.askHeard" = "田中さんと約束を入れて";
-"live.talk.title" = "彼女と話す";
+"live.talk.title" = "Himawari と話す";
 "live.talk.listening" = "聞いています";
 "live.talk.speaking" = "話しています";
 "live.talk.muted" = "ミュート中";
@@ -86,3 +86,14 @@
 "live.work.working" = "対応中";
 "live.work.waiting" = "あなたの返事待ち";
 "live.work.finished" = "完了";
+"live.stopped" = "停止しました";
+"enroll.preparing" = "声紋認識を準備しています…";
+"enroll.tooShort" = "聞き取れませんでした。もう一度全文を読んでください。";
+"enroll.failed.title" = "録音できませんでした";
+"enroll.failed.microphone" = "マイクを使えません。「設定 > Himawari」でマイクを許可してから、もう一度お試しください。";
+"enroll.failed.speech" = "この iPhone では今、音声認識を使えません。しばらくしてからお試しください。";
+"enroll.failed.model" = "声紋認識の準備ができていません。初回はダウンロードが必要なので、ネットにつないでからお試しください。";
+"enroll.failed.interrupted" = "録音が途中で中断されました（電話など）。もう一度お試しください。";
+"enroll.failed.save" = "声紋を保存できませんでした。もう一度お試しください。";
+"enroll.retry" = "もう一度";
+"enroll.openSettings" = "設定を開く";

@@ -322,10 +322,12 @@ public struct ToggleRow<Leading: View>: View {
                     title
                         .hmType(DesignTokens.TypeScale.body)
                         .foregroundStyle(Color.hmText)
+                        .fixedSize(horizontal: false, vertical: true)
                     if let detail {
                         detail
                             .hmType(DesignTokens.TypeScale.caption)
                             .foregroundStyle(Color.hmMuted)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
             }

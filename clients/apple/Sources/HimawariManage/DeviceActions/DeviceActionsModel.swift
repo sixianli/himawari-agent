@@ -20,6 +20,7 @@ public final class DeviceActionsModel {
     public internal(set) var policy: DevicePolicyView?
     public internal(set) var permissions: [PermissionState] = []
     public internal(set) var sourceNames: [String: String] = [:]
+    public internal(set) var permissionOfAction: [String: String] = [:]
     public internal(set) var approvalsAvailable = true
     public internal(set) var allowanceDays: Int?
     public internal(set) var busy: Set<String> = []
@@ -110,7 +111,9 @@ public final class DeviceActionsModel {
         }
         permissions = states
         let names = Dictionary(uniqueKeysWithValues: states.map { ($0.id, $0.name) })
-        sourceNames = await executor.permissionIds().compactMapValues { names[$0] }
+        let ids = await executor.permissionIds()
+        permissionOfAction = ids
+        sourceNames = ids.compactMapValues { names[$0] }
     }
 
     public func request(_ permissionId: String) async {

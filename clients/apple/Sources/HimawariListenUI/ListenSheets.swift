@@ -92,28 +92,34 @@ public struct ListenIntroView: View {
     public var body: some View {
         VStack(spacing: 22) {
             ListenSheetHeader(title: L.text("intro.title"), leading: .chevronLeft, leadingLabel: L.text("back"), action: onLater)
-            VStack(spacing: 18) {
-                Icon(.earLarge, size: 72)
-                    .foregroundStyle(Color.hmSun)
-                Text(L.text("intro.hero"))
-                    .font(.system(.title, weight: .semibold))
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(Color.hmText)
+            ScrollView {
+                VStack(spacing: 22) {
+                    VStack(spacing: 18) {
+                        Icon(.earLarge, size: 72)
+                            .foregroundStyle(Color.hmSun)
+                        Text(L.text("intro.hero"))
+                            .font(.system(.title, weight: .semibold))
+                            .multilineTextAlignment(.center)
+                            .foregroundStyle(Color.hmText)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(.top, 30)
+                    ListenFactCard {
+                        ListenFactRow(icon: .eye, label: L.text("intro.what.label"), value: L.text("intro.what.value"))
+                        ListenFactRow(icon: .users, label: L.text("intro.others.label"), value: L.text("intro.others.value"))
+                        ListenFactRow(icon: .clock, label: L.text("intro.keep.label"), value: L.text("intro.keep.value"))
+                        ListenFactRow(icon: .point, label: L.text("intro.know.label"), value: L.text("intro.know.value"))
+                    }
+                    Text(L.text("intro.note"))
+                        .font(.system(size: 13))
+                        .lineSpacing(13 * 0.5 - 4)
+                        .foregroundStyle(Color.hmMuted)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 8)
+                }
             }
-            .padding(.top, 30)
-            ListenFactCard {
-                ListenFactRow(icon: .eye, label: L.text("intro.what.label"), value: L.text("intro.what.value"))
-                ListenFactRow(icon: .users, label: L.text("intro.others.label"), value: L.text("intro.others.value"))
-                ListenFactRow(icon: .clock, label: L.text("intro.keep.label"), value: L.text("intro.keep.value"))
-                ListenFactRow(icon: .point, label: L.text("intro.know.label"), value: L.text("intro.know.value"))
-            }
-            Text(L.text("intro.note"))
-                .font(.system(size: 13))
-                .lineSpacing(13 * 0.5 - 4)
-                .foregroundStyle(Color.hmMuted)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 8)
-            Spacer(minLength: 0)
+            .scrollBounceBehavior(.basedOnSize)
             VStack(spacing: 6) {
                 Button(L.text("intro.start"), action: onStart)
                     .buttonStyle(CapsuleButtonStyle(.primary, height: 56, fontSize: 17))
@@ -130,13 +136,25 @@ public struct EnrollmentProgress: Sendable, Equatable {
     public let total: Int
     public let prompt: String
     public let levels: [Double]
+    public let tooShort: Bool
 
-    public init(index: Int, total: Int, prompt: String, levels: [Double]) {
+    public init(index: Int, total: Int, prompt: String, levels: [Double], tooShort: Bool = false) {
         self.index = index
         self.total = total
         self.prompt = prompt
         self.levels = levels
+        self.tooShort = tooShort
     }
+}
+
+public enum EnrollmentFailure: String, Sendable, Equatable, CaseIterable {
+    case microphone
+    case speech
+    case model
+    case interrupted
+    case save
+
+    public var message: String { L.text("enroll.failed.\(rawValue)") }
 }
 
 public struct VoiceprintEnrollView: View {
@@ -153,31 +171,97 @@ public struct VoiceprintEnrollView: View {
     public var body: some View {
         VStack(spacing: 22) {
             ListenSheetHeader(title: L.text("enroll.title"), leading: .x, leadingLabel: L.text("close"), action: onClose)
-            VStack(spacing: 8) {
-                Text(L.format("enroll.progress", progress.index + 1, progress.total))
-                    .font(.rounded(15, weight: .semibold))
+            ScrollView {
+                VStack(spacing: 22) {
+                    VStack(spacing: 8) {
+                        Text(L.format("enroll.progress", progress.index + 1, progress.total))
+                            .font(.rounded(15, weight: .semibold))
+                            .foregroundStyle(Color.hmMuted)
+                        Text(progress.prompt)
+                            .font(.system(.title, weight: .semibold))
+                            .lineSpacing(26 * 0.5 - 8)
+                            .multilineTextAlignment(.center)
+                            .foregroundStyle(Color.hmText)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.horizontal, 12)
+                    }
+                    .padding(.top, 14)
+                    VoiceLevels(levels: progress.levels, color: .hmSunBright)
+                        .frame(height: 56)
+                    Text(L.text(progress.tooShort ? "enroll.tooShort" : "enroll.hint"))
+                        .font(.subheadline)
+                        .foregroundStyle(progress.tooShort ? Color.hmText : Color.hmMuted)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                    ListenFactCard {
+                        ListenFactRow(icon: .shieldLock, label: L.text("enroll.purpose.label"), value: L.text("enroll.purpose.value"))
+                        ListenFactRow(icon: .deviceMobile, label: L.text("enroll.where.label"), value: L.text("enroll.where.value"))
+                        ListenFactRow(icon: .trash, label: L.text("enroll.delete.label"), value: L.text("enroll.delete.value"))
+                    }
+                }
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            ListenLink(title: L.text("enroll.later"), action: onLater)
+        }
+        .padding(EdgeInsets(top: 16, leading: 16, bottom: 40, trailing: 16))
+        .background(Color.hmBackground)
+    }
+}
+
+public struct VoiceprintEnrollStatusView: View {
+    public enum Status: Equatable {
+        case preparing
+        case failed(EnrollmentFailure)
+    }
+
+    private let status: Status
+    private let onClose: () -> Void
+    private let onRetry: () -> Void
+    private let onOpenSettings: () -> Void
+
+    public init(status: Status, onClose: @escaping () -> Void, onRetry: @escaping () -> Void, onOpenSettings: @escaping () -> Void) {
+        self.status = status
+        self.onClose = onClose
+        self.onRetry = onRetry
+        self.onOpenSettings = onOpenSettings
+    }
+
+    public var body: some View {
+        VStack(spacing: 22) {
+            ListenSheetHeader(title: L.text("enroll.title"), leading: .x, leadingLabel: L.text("close"), action: onClose)
+            Spacer(minLength: 0)
+            switch status {
+            case .preparing:
+                ProgressView()
+                    .controlSize(.large)
+                Text(L.text("enroll.preparing"))
+                    .font(.body)
                     .foregroundStyle(Color.hmMuted)
-                Text(progress.prompt)
-                    .font(.system(.title, weight: .semibold))
-                    .lineSpacing(26 * 0.5 - 8)
                     .multilineTextAlignment(.center)
+            case let .failed(failure):
+                Icon(.alertCircle, size: DesignTokens.Size.minTapTarget)
+                    .foregroundStyle(Color.hmSun)
+                    .accessibilityHidden(true)
+                Text(L.text("enroll.failed.title"))
+                    .font(.title2.weight(.semibold))
                     .foregroundStyle(Color.hmText)
+                Text(failure.message)
+                    .font(.body)
+                    .foregroundStyle(Color.hmMuted)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 12)
             }
-            .padding(.top, 14)
-            VoiceLevels(levels: progress.levels, color: .hmSunBright)
-                .frame(height: 56)
-            Text(L.text("enroll.hint"))
-                .font(.system(size: 15))
-                .foregroundStyle(Color.hmMuted)
-                .multilineTextAlignment(.center)
-            ListenFactCard {
-                ListenFactRow(icon: .shieldLock, label: L.text("enroll.purpose.label"), value: L.text("enroll.purpose.value"))
-                ListenFactRow(icon: .deviceMobile, label: L.text("enroll.where.label"), value: L.text("enroll.where.value"))
-                ListenFactRow(icon: .trash, label: L.text("enroll.delete.label"), value: L.text("enroll.delete.value"))
-            }
             Spacer(minLength: 0)
-            ListenLink(title: L.text("enroll.later"), action: onLater)
+            if case let .failed(failure) = status {
+                VStack(spacing: 6) {
+                    Button(L.text("enroll.retry"), action: onRetry)
+                        .buttonStyle(CapsuleButtonStyle(.primary, height: DesignTokens.Size.pillBig))
+                    if failure == .microphone {
+                        ListenLink(title: L.text("enroll.openSettings"), action: onOpenSettings)
+                    }
+                }
+            }
         }
         .padding(EdgeInsets(top: 16, leading: 16, bottom: 40, trailing: 16))
         .background(Color.hmBackground)

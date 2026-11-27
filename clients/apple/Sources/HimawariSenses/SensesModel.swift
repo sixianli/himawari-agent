@@ -152,6 +152,18 @@ public final class SensesModel {
         update(item) { $0.on = true }
         await reconcile(item)
         await loadDay(item)
+        if let reason = Self.notOnReason(state(item)) {
+            notice = L.format(reason, item.name)
+        }
+    }
+
+    static func notOnReason(_ state: SenseState) -> String? {
+        switch state {
+        case .on, .serverPaused: nil
+        case .systemDenied: "detail.notOn.systemDenied"
+        case .serverUnsupported: "detail.notOn.unsupported"
+        case .off: "detail.notOn.off"
+        }
     }
 
     public func turnOff(_ item: SenseItem) async {
@@ -209,7 +221,11 @@ public final class SensesModel {
     }
 
     private func update(_ item: SenseItem, _ change: (inout SenseSwitchState) -> Void) {
-        try? switches.update(item, change)
+        do {
+            try switches.update(item, change)
+        } catch {
+            notice = L.text("detail.failed")
+        }
         switchStates[item] = switches.state(item)
     }
 }

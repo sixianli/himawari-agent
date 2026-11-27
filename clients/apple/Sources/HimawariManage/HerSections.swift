@@ -184,6 +184,7 @@ public struct HerSectionView: View {
                 memory: workspace.memory,
                 listening: nil,
                 openListening: {},
+                openVoiceprint: {},
                 openSenses: senses == nil ? nil : { sensesOpen = true },
                 openDeletion: perceptionDeletion == nil ? nil : { deletionOpen = true },
                 sensesSummary: sensesOn().map(M.sensesOn),
