@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 import XCTest
 
 @MainActor
@@ -19,12 +20,23 @@ final class AccessibilityAuditTests: XCTestCase {
             ("dark", .dark, .contrast),
         ]
         for scene in try Self.scenes() {
+            var brightness: [String: Double] = [:]
             for mode in modes {
                 XCUIDevice.shared.appearance = mode.appearance
                 let app = launch(scene, appearance: mode.name)
+                brightness[mode.name] = Self.brightness(of: app)
                 found += audit(app, scene: scene, mode: mode.name, types: mode.types)
                 app.terminate()
             }
+            let light = brightness["light"] ?? .nan
+            let dark = brightness["dark"] ?? .nan
+            print("A11Y_APPEARANCE \(scene) light=\(light) dark=\(dark)")
+            guard light >= Self.midLuminance else { continue }
+            XCTAssertLessThan(
+                dark,
+                light,
+                "I-121 \(scene): the dark run was not darker than the light run, so the dark contrast audit did not actually look at the dark appearance"
+            )
         }
         XCUIDevice.shared.appearance = .light
         try judge(found)
@@ -65,6 +77,32 @@ final class AccessibilityAuditTests: XCTestCase {
     }
 
     private static let auditAttempts = 2
+    private static let midLuminance = 0.5
+
+    private static func brightness(of app: XCUIApplication) -> Double {
+        guard let image = app.windows.firstMatch.screenshot().image.cgImage else { return .nan }
+        let side = 32
+        var pixels = [UInt8](repeating: 0, count: side * side * 4)
+        let drawn = pixels.withUnsafeMutableBytes { buffer -> Bool in
+            guard let context = CGContext(
+                data: buffer.baseAddress,
+                width: side,
+                height: side,
+                bitsPerComponent: 8,
+                bytesPerRow: side * 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { return false }
+            context.draw(image, in: CGRect(x: 0, y: 0, width: side, height: side))
+            return true
+        }
+        guard drawn else { return .nan }
+        var total = 0.0
+        for index in stride(from: 0, to: pixels.count, by: 4) {
+            total += 0.2126 * Double(pixels[index]) + 0.7152 * Double(pixels[index + 1]) + 0.0722 * Double(pixels[index + 2])
+        }
+        return total / Double(side * side) / 255
+    }
 
     private func judge(_ found: [AuditFinding]) throws {
         let baseline = try AuditBaseline.load(from: Self.appleRoot.appendingPathComponent(AuditBaseline.path))

@@ -1,0 +1,32 @@
+name: Incident runs report
+on:
+  schedule:
+    - cron: "17 0 * * *"
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: incident-runs-report
+  cancel-in-progress: true
+defaults:
+  run:
+    shell: bash
+jobs:
+  report:
+    name: incident-runs/report
+    if: ${{ github.repository == 'sixianli/himawari-agent' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.22.3
+      - name: 列出 main 上还没认领到事故清单的失败运行
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/check-incident-runs.mjs --report
