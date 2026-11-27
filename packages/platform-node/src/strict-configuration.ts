@@ -1848,6 +1848,15 @@ function retiredRunPolicyKeys(input: JsonRecord): {
   return retired.length === 0 ? {} : { retiredKeys: Object.freeze(retired) };
 }
 
+export function storedProductConfiguration(
+  configuration: ProductConfiguration,
+): Omit<ProductConfiguration, "loadedAt"> {
+  const { loadedAt: _loadedAt, ...stored } = configuration;
+  if (!stored.runPolicy?.retiredKeys) return stored;
+  const { retiredKeys: _retiredKeys, ...runPolicy } = stored.runPolicy;
+  return { ...stored, runPolicy };
+}
+
 export const DEVICE_ACCESS_SECRET_PURPOSES = [
   "device-access-client-id",
   "device-access-client-secret",
