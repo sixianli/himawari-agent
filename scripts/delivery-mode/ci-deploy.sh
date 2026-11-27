@@ -86,6 +86,12 @@ remote "chown -R root:root /opt/himawari/node && chmod -R go-w /opt/himawari/nod
 echo "CI_DEPLOY_HOST_SYSTEM"
 /usr/bin/python3 -I "$here/host-system.py" | remote "/usr/bin/python3 -I -" || refuse HOST_SYSTEM_FAILED "could not install the document tools or pin the next boot to the running kernel on $host; see the HOST_SYSTEM_FAILED line above" 3
 
+previous_packet="$(find "$output_root" -mindepth 1 -maxdepth 1 -type d -name '*-change-packet-*' 2>/dev/null | sort | tail -1)"
+if [[ -n "$previous_packet" && -f "$previous_packet/inputs/bindings.json" && -f "$previous_packet/freeze-manifest.json" ]]; then
+  echo "CI_DEPLOY_PREVIOUS_CLEANUP $previous_packet"
+  /usr/bin/python3 -I "$here/release-cleanup.py" "$previous_packet" apply || echo "CI_DEPLOY_PREVIOUS_CLEANUP_INCOMPLETE: leftovers of the last attempt may still block this one; see the CLEANUP_ lines above" >&2
+fi
+
 echo "CI_DEPLOY_PREPARE $commit"
 prepare_log="$(mktemp)"
 trap 'rm -f "$prepare_log"' EXIT

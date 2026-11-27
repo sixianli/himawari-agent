@@ -302,6 +302,45 @@ describe("ci-deploy.sh", () => {
     expect(program).toContain("weasyprint==70.0");
   });
 
+  it("[I-120] clears what the last failed attempt left on the host before building the next packet", () => {
+    const { repo, fakeSsh } = workspace();
+    const second = commitFile(repo, "src/app.ts", "changed");
+    const outputRoot = path.join(repo, ".ci-output/production");
+    for (const name of ["2026-11-27-first-change-packet-06", "2026-11-27-first-change-packet-07"]) {
+      mkdirSync(path.join(outputRoot, name, "inputs"), { recursive: true });
+      writeFileSync(path.join(outputRoot, name, "inputs/bindings.json"), "{}");
+      writeFileSync(path.join(outputRoot, name, "freeze-manifest.json"), "{}");
+    }
+    directories.push(`${repo}-cleanup.log`);
+    writeFileSync(
+      path.join(repo, "scripts/delivery-mode/release-cleanup.py"),
+      `import sys\nopen(${JSON.stringify(`${repo}-cleanup.log`)}, "a").write(" ".join(sys.argv[1:]) + "\\n")\n`,
+    );
+    const child = run(repo, {
+      HIMAWARI_PACKET_HOST: "198.51.100.9",
+      HIMAWARI_PACKET_SSH: fakeSsh,
+      HIMAWARI_DEPLOY_COMMIT: second,
+    });
+    const cleanup = child.stdout.indexOf("CI_DEPLOY_PREVIOUS_CLEANUP ");
+    expect(cleanup).toBeGreaterThan(-1);
+    expect(cleanup).toBeLessThan(child.stdout.indexOf("CI_DEPLOY_PREPARE"));
+    expect(readFileSync(`${repo}-cleanup.log`, "utf8")).toBe(
+      `${path.join(outputRoot, "2026-11-27-first-change-packet-07")} apply\n`,
+    );
+  });
+
+  it("skips the previous-attempt cleanup when no packet was built before", () => {
+    const { repo, fakeSsh } = workspace();
+    const second = commitFile(repo, "src/app.ts", "changed");
+    const child = run(repo, {
+      HIMAWARI_PACKET_HOST: "198.51.100.9",
+      HIMAWARI_PACKET_SSH: fakeSsh,
+      HIMAWARI_DEPLOY_COMMIT: second,
+    });
+    expect(child.stdout).not.toContain("CI_DEPLOY_PREVIOUS_CLEANUP");
+    expect(child.stdout).toContain("CI_DEPLOY_PREPARE");
+  });
+
   it("deploys nothing when the host system step fails", () => {
     const { repo, fakeSsh } = workspace();
     const second = commitFile(repo, "src/app.ts", "changed");
