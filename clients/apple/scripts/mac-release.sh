@@ -121,24 +121,75 @@ PLIST
   }
 }
 
-notarize_app() {
+submit_for_notarization() {
   local upload="$work/notarize.zip"
   rm -f "$upload"
   ditto -c -k --keepParent "$export_dir/$app_name" "$upload"
-  xcrun notarytool submit "$upload" \
+  local submitted
+  submitted="$(xcrun notarytool submit "$upload" \
     --key "$key" \
     --key-id "$ASC_KEY_ID" \
     --issuer "$ASC_ISSUER_ID" \
-    --wait \
-    --timeout 3h
+    --output-format json)"
+  rm -f "$upload"
+  submission="$(printf '%s' "$submitted" | /usr/bin/python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')"
+  echo "MAC_RELEASE_SUBMITTED $submission"
+}
+
+notary_status() {
+  xcrun notarytool info "$submission" \
+    --key "$key" \
+    --key-id "$ASC_KEY_ID" \
+    --issuer "$ASC_ISSUER_ID" \
+    --output-format json | /usr/bin/python3 -c 'import json,sys; print(json.load(sys.stdin)["status"])'
+}
+
+wait_briefly() {
+  local deadline=$((SECONDS + ${HIMAWARI_NOTARY_WAIT_SECONDS:-900}))
+  local status
+  while :; do
+    status="$(notary_status)"
+    echo "MAC_RELEASE_NOTARY_STATUS $status"
+    case "$status" in
+      Accepted) return 0 ;;
+      Invalid|Rejected)
+        xcrun notarytool log "$submission" --key "$key" --key-id "$ASC_KEY_ID" --issuer "$ASC_ISSUER_ID" || true
+        echo "MAC_RELEASE_NOTARY_REJECTED $submission" >&2
+        exit 1
+        ;;
+    esac
+    [ "$SECONDS" -lt "$deadline" ] || return 1
+    sleep 30
+  done
+}
+
+staple_app() {
   xcrun stapler staple "$export_dir/$app_name"
   spctl --assess --type execute --verbose=2 "$export_dir/$app_name"
-  rm -f "$upload"
+}
+
+park_pending() {
+  local pending="$work/pending"
+  rm -rf "$pending"
+  mkdir -p "$pending"
+  ditto -c -k --sequesterRsrc --keepParent "$export_dir/$app_name" "$pending/app.zip"
+  printf '%s\n' "$submission" > "$pending/submission-id"
+  printf '%s\n' "$HIMAWARI_BUILD_NUMBER" > "$pending/build-number"
+  echo "pending=$pending" >> "${GITHUB_OUTPUT:-/dev/null}"
+  echo "MAC_RELEASE_PARKED $submission build $HIMAWARI_BUILD_NUMBER"
+}
+
+resolve_packages() {
+  xcodebuild -resolvePackageDependencies \
+    -project "$project" \
+    -scheme HimawariMac \
+    -clonedSourcePackagesDirPath "$packages"
 }
 
 package_update() {
   need SPARKLE_PRIVATE_KEY
-  need HIMAWARI_DOWNLOAD_BASE
+  need HIMAWARI_RELEASE_BASE
+  need HIMAWARI_BUILD_NUMBER
   local version
   version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$export_dir/$app_name/Contents/Info.plist")"
   local minimum
@@ -166,7 +217,7 @@ package_update() {
       <sparkle:version>$HIMAWARI_BUILD_NUMBER</sparkle:version>
       <sparkle:shortVersionString>$version</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>$minimum</sparkle:minimumSystemVersion>
-      <enclosure url="$HIMAWARI_DOWNLOAD_BASE/$zip_name" type="application/octet-stream" $signature />
+      <enclosure url="$HIMAWARI_RELEASE_BASE/mac-$HIMAWARI_BUILD_NUMBER/$zip_name" type="application/octet-stream" $signature />
     </item>
   </channel>
 </rss>
@@ -184,11 +235,33 @@ release() {
   import_certificate
   write_key
   export_app
-  notarize_app
+  submit_for_notarization
+  if wait_briefly; then
+    staple_app
+    package_update
+    echo "notarized=true" >> "${GITHUB_OUTPUT:-/dev/null}"
+  else
+    park_pending
+    echo "notarized=false" >> "${GITHUB_OUTPUT:-/dev/null}"
+  fi
+}
+
+finish() {
+  need HIMAWARI_PENDING_DIR
+  [ -f "$HIMAWARI_PENDING_DIR/app.zip" ] || { echo "MAC_RELEASE_NO_PENDING $HIMAWARI_PENDING_DIR" >&2; exit 1; }
+  HIMAWARI_BUILD_NUMBER="$(tr -d '[:space:]' < "$HIMAWARI_PENDING_DIR/build-number")"
+  export HIMAWARI_BUILD_NUMBER
+  echo "build=$HIMAWARI_BUILD_NUMBER" >> "${GITHUB_OUTPUT:-/dev/null}"
+  rm -rf "$export_dir"
+  mkdir -p "$export_dir"
+  ditto -x -k "$HIMAWARI_PENDING_DIR/app.zip" "$export_dir"
+  resolve_packages
+  staple_app
   package_update
 }
 
 case "${1:-}" in
   release) mkdir -p "$work"; release ;;
-  *) echo "usage: clients/apple/scripts/mac-release.sh release" >&2; exit 2 ;;
+  finish) mkdir -p "$work"; finish ;;
+  *) echo "usage: clients/apple/scripts/mac-release.sh release|finish" >&2; exit 2 ;;
 esac
