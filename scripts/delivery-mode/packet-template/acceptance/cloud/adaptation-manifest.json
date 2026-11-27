@@ -6,18 +6,18 @@
   "adapters": [
     {
       "source": "packages/runtime-pi/scripts/probe-foreground.mjs",
-      "sourceSha256": "86870af8d9f589a5f5cf0a136da83d522ec3c8d07b37c63df3bf47b37c0a7015",
+      "sourceSha256": "837c68b6f21dc8aee98bb5327902b31af5c5e5be0313b39b17b4710136668de5",
       "adapter": "adapters/probe-foreground.mjs",
-      "adapterSha256": "45248cdd1054435aa9e308ee411afd0ab717852f07a29e269ea05379afe72df6",
+      "adapterSha256": "b5052e38dea535d6b6e4930a346ea69e59b88f425af6b3ca0aeb6d87e09fb790",
       "oldGuard": "const scratch = process.env.HIMAWARI_PROBE_SCRATCH ?? os.tmpdir();\nif (process.platform === \"linux\" && !scratch.startsWith(\"/data/\"))\n  throw new Error(\"LINUX_PROBE_REQUIRES_DATA_DISK\");",
       "newGuard": "const scratch = await validateScratchRoot(process.env.HIMAWARI_PROBE_SCRATCH);",
       "unchangedBeyondGuardAndImport": false
     },
     {
       "source": "packages/runtime-sandbox/scripts/probe-linux-worker-loss.mjs",
-      "sourceSha256": "464568e8d49930f7fb1b94031c631d129c1dd81c082eb23ec30cbd7b9e6f5722",
+      "sourceSha256": "08d9ddb66cdf4733bab7a3bbb3d23e4d214ab5921e68fdbf0ea6a861444cb9dc",
       "adapter": "adapters/probe-linux-worker-loss.mjs",
-      "adapterSha256": "459d6145338807e0a440599ec313f4d5416f8e2c770902c99986752cd26a29e5",
+      "adapterSha256": "abfe5064fe6c0d514de8cdc1e1694b877e73a2220c1b18c7c9615b20551cccdd",
       "oldGuard": "  const parent = await realpath(process.env.HIMAWARI_PROBE_SCRATCH);\n  assert.ok(parent.startsWith(\"/data/himawari-r8-\"));\n  assert.equal((await lstat(parent)).uid, process.getuid());",
       "newGuard": "  const parent = await validateScratchRoot(process.env.HIMAWARI_PROBE_SCRATCH);",
       "unchangedBeyondGuardAndImport": false,
@@ -27,9 +27,9 @@
     },
     {
       "source": "packages/runtime-sandbox/scripts/probe-network-boundary.mjs",
-      "sourceSha256": "3ef3cf429a1e2f066a224ecfa454e1c0bcdba30885221685e45e2142eb520769",
+      "sourceSha256": "6639a830c40a97117e97c64872b46c40585d122e3e67e34a9c104cb1794e935e",
       "adapter": "adapters/probe-network-boundary.mjs",
-      "adapterSha256": "cd0bfff0bd8defafef48559e970decf839d019af3daba72b8c70d94bfa5033d5",
+      "adapterSha256": "ecbdd0ed45c8eb228bd0a56eb9fea9201e9c80d39798fac8ad977c81e56f04d9",
       "oldGuard": "const scratchParent =\n  process.platform === \"linux\" ? await realpath(process.env.HIMAWARI_PROBE_SCRATCH) : \"/tmp\";\nif (process.platform === \"linux\" && !scratchParent.startsWith(\"/data/himawari-r8-\"))\n  throw new Error(\"LINUX_PROBE_REQUIRES_OWNED_DATA_DIRECTORY\");\nif (process.platform === \"linux\" && (await lstat(scratchParent)).uid !== process.getuid())\n  throw new Error(\"LINUX_PROBE_DIRECTORY_OWNER_MISMATCH\");",
       "newGuard": "const scratchParent = await validateScratchRoot(process.env.HIMAWARI_PROBE_SCRATCH);",
       "unchangedBeyondGuardAndImport": false,
@@ -39,9 +39,9 @@
     },
     {
       "source": "packages/runtime-sandbox/scripts/probe-authorized-network.mjs",
-      "sourceSha256": "b9d308220215e005d14bd64ebd05405cce19fa30e188b2fafa0eea837bc206ea",
+      "sourceSha256": "ead7d4b74f4d22638d3f7cd6e549e775d15a87b8de3c93b3ce1f800d7c17676f",
       "adapter": "adapters/probe-authorized-network.mjs",
-      "adapterSha256": "d19739fa2a92357d76590d71ec208133a38abd002e5e6fede152417649a94029",
+      "adapterSha256": "da403a3917bc194da56b6c9acf1d570f131d3db4d63f4b9cff214b521e160635",
       "oldGuard": "const scratchParent =\n  process.platform === \"linux\" ? await realpath(process.env.HIMAWARI_PROBE_SCRATCH) : \"/tmp\";\nif (process.platform === \"linux\" && !scratchParent.startsWith(\"/data/himawari-r8-\"))\n  throw new Error(\"LINUX_PROBE_REQUIRES_OWNED_DATA_DIRECTORY\");\nif (process.platform === \"linux\" && (await lstat(scratchParent)).uid !== process.getuid())\n  throw new Error(\"LINUX_PROBE_DIRECTORY_OWNER_MISMATCH\");",
       "newGuard": "const scratchParent = await validateScratchRoot(process.env.HIMAWARI_PROBE_SCRATCH);",
       "unchangedBeyondGuardAndImport": false,
@@ -59,9 +59,9 @@
   "addedAdapters": [
     {
       "source": "packages/runtime-sandbox/scripts/probe-public-search.mjs",
-      "sourceSha256": "9075ee028483f184a13ae5cac65f366062959b65173be66511ad95a5dd909b6e",
+      "sourceSha256": "51c94d0a9f2b233a1b73fae3eb02afdca4020c1b24dc82ef659849fd6d8215dc",
       "adapter": "adapters/probe-public-search.mjs",
-      "adapterSha256": "57cdd070d81646e1020dd5d91caf577063f0d98a54e43a29c937e38341d8b2d9",
+      "adapterSha256": "1752753a1c7ac3a9e9db1bc23eacaa17b86db50099096d73a09b0cf292a0d339",
       "changesBeyondTimingChanges": "Import same -04 scratch validator and replace old /data scratch prefix assertion; public-query retries in a fresh job host only when the runner exits non-zero with stderr exactly WEB_SEARCH_RATE_LIMITED, at most three times after waiting 15, 60 and 120 seconds, and records each rate-limited attempt in rateLimitedAttempts",
       "timingChanges": [
         "revision-04 (G174, G175): cleanupTimeoutMs 1000 -> 5000, the production value; two comments are removed (project no-comment rule); any failed scenario prints the job host result summary (reason, exit code, diagnostic, supervision, stderr) on stderr before rethrowing"

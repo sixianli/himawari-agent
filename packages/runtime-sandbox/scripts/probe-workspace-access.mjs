@@ -1,6 +1,7 @@
 // Synthetic current-directory access checks through the installed Job Host.
 // Passing this probe does not issue a production qualification.
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
 import {
   mkdir,
   mkdtemp,
@@ -77,7 +78,7 @@ try {
               ? ["/System"]
               : [
                   "/lib",
-                  "/lib64",
+                  ...["/lib64"].filter(existsSync),
                   "/proc",
                   path.join(runtime, "node_modules/@anthropic-ai/sandbox-runtime/vendor/seccomp"),
                 ]),

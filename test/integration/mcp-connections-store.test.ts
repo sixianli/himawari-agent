@@ -1,7 +1,11 @@
+import { createHash } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { MCP_CONNECTION_MAXIMUM } from "@himawari-agent/application";
+import {
+  MCP_CONNECTION_MAXIMUM,
+  MCP_OAUTH_UNBOUND_CLIENT_MAXIMUM,
+} from "@himawari-agent/application";
 import { createAgentId, createOwnerId } from "@himawari-agent/domain";
 import {
   applyMigrations,
@@ -10,11 +14,7 @@ import {
   SqliteProductStateRepository,
 } from "@himawari-agent/persistence-sqlite";
 import { afterEach, describe, expect, it } from "vitest";
-import {
-  mcpConnectionSecretDigest,
-  newMcpConnectionId,
-  newMcpConnectionSecret,
-} from "../../apps/agent-service/src/production-mcp-connections.ts";
+import { newMcpConnectionId } from "../../apps/agent-service/src/production-mcp-connections.ts";
 
 const OWNER_ID = createOwnerId("owner-mcp-connections");
 const AGENT_ID = createAgentId("agent-mcp-connections");
@@ -50,6 +50,7 @@ describe("[P5-B] MCP connection store through the SQLite worker", () => {
     });
     closers.push(() => repository.close());
     const store = repository.mcpConnections();
+    const oauth = repository.mcpOAuth();
     const create = async (
       input: {
         readonly id?: string;
@@ -57,87 +58,84 @@ describe("[P5-B] MCP connection store through the SQLite worker", () => {
         readonly name?: string;
       } = {},
     ) => {
-      const secret = newMcpConnectionSecret();
-      const record = await store.create({
+      const id = input.id ?? newMcpConnectionId();
+      const record = await oauth.bindGrant({
         ownerId: OWNER_ID,
         agentId: input.agentId ?? AGENT_ID,
-        id: input.id ?? newMcpConnectionId(),
-        name: input.name ?? "Claude Code",
-        secretSha256: mcpConnectionSecretDigest(secret),
-        capabilities: ["scheduled_tasks", "mcp"],
-        readCeiling: "private",
-        pushPolicy: "ask",
-        createdAt: NOW,
+        clientId: `client-${id}`,
+        registration: "dynamic",
+        clientName: input.name ?? "Claude Code",
+        redirectUris: ["http://127.0.0.1/callback"],
+        newConnection: {
+          id,
+          name: input.name ?? "Claude Code",
+          readCeiling: "private",
+          pushPolicy: "ask",
+        },
+        now: NOW,
       });
-      return { record, secret };
+      return { record };
     };
-    return { store, create };
+    return { store, oauth, create };
   }
 
-  it("creates a connection with the default settings and finds it only by its own key", async () => {
+  it("binds a client to a new connection with the chosen settings, and only within its own agent", async () => {
     const { store, create } = await setup();
-    const { record, secret } = await create({ id: "conn-a" });
+    const { record } = await create({ id: "conn-a" });
     expect(record).toMatchObject({
       id: "conn-a",
       name: "Claude Code",
-      capabilities: ["mcp", "scheduled_tasks"],
+      capabilities: ["mcp"],
       readCeiling: "private",
       pushPolicy: "ask",
       status: "active",
       reportedClient: null,
       lastSeenAt: null,
-      secretRotatedAt: null,
+      oauthClientId: "client-conn-a",
     });
     expect(record).not.toHaveProperty("secretSha256");
-    expect(
-      await store.findBySecret({ ...scope, secretSha256: mcpConnectionSecretDigest(secret) }),
-    ).toMatchObject({ id: "conn-a" });
-    expect(
-      await store.findBySecret({
-        ...scope,
-        secretSha256: mcpConnectionSecretDigest(newMcpConnectionSecret()),
-      }),
-    ).toBeNull();
-    expect(
-      await store.findBySecret({
-        ownerId: OWNER_ID,
-        agentId: OTHER_AGENT_ID,
-        secretSha256: mcpConnectionSecretDigest(secret),
-      }),
-    ).toBeNull();
+    expect(await store.read({ ...scope, id: "conn-a" })).toMatchObject({
+      oauthClientId: "client-conn-a",
+    });
     expect(await store.list({ ownerId: OWNER_ID, agentId: OTHER_AGENT_ID })).toEqual([]);
   });
 
   it("refuses ids that do not start with a letter or digit, names that are too long or hide characters, and unknown settings", async () => {
-    const { store } = await setup();
-    const base = {
-      ...scope,
-      name: "x",
-      secretSha256: mcpConnectionSecretDigest(newMcpConnectionSecret()),
-      capabilities: ["mcp"] as const,
-      readCeiling: "private" as const,
-      pushPolicy: "ask" as const,
-      createdAt: NOW,
-    };
-    for (const input of [
-      { ...base, id: "-conn" },
-      { ...base, id: "c".repeat(129) },
-      { ...base, id: "conn a" },
-      { ...base, id: "conn-ok", name: "" },
-      { ...base, id: "conn-ok", name: "n".repeat(65) },
-      { ...base, id: "conn-ok", name: "Claude\u200bCode" },
-      { ...base, id: "conn-ok", name: "Claude\u202eCode" },
-      { ...base, id: "conn-ok", name: "Claude\u{E0001}Code" },
-      { ...base, id: "conn-ok", name: "\u{1F600}".repeat(65) },
-      { ...base, id: "conn-ok", readCeiling: "restricted" },
-      { ...base, id: "conn-ok", capabilities: ["mcp", "mcp"] },
-      { ...base, id: "conn-ok", secretSha256: "not-a-digest" },
-    ])
-      await expect(store.create(input as never)).rejects.toMatchObject({
+    const { store, oauth } = await setup();
+    const bind = (id: string, connection: Record<string, unknown> = {}) =>
+      oauth.bindGrant({
+        ...scope,
+        clientId: `client-${id.length}-${Object.keys(connection).join("")}`,
+        registration: "dynamic",
+        clientName: "x",
+        redirectUris: ["http://127.0.0.1/callback"],
+        newConnection: {
+          id,
+          name: "x",
+          readCeiling: "private",
+          pushPolicy: "ask",
+          ...connection,
+        } as never,
+        now: NOW,
+      });
+    for (const [id, connection] of [
+      ["-conn", {}],
+      ["c".repeat(129), {}],
+      ["conn a", {}],
+      ["conn-ok", { name: "" }],
+      ["conn-ok", { name: "n".repeat(65) }],
+      ["conn-ok", { name: "Claude\u200bCode" }],
+      ["conn-ok", { name: "Claude\u202eCode" }],
+      ["conn-ok", { name: "Claude\u{E0001}Code" }],
+      ["conn-ok", { name: "\u{1F600}".repeat(65) }],
+      ["conn-ok", { readCeiling: "restricted" }],
+      ["conn-ok", { pushPolicy: "sometimes" }],
+    ] as const)
+      await expect(bind(id, connection)).rejects.toMatchObject({
         code: "PORT_INVALID_OPERATION",
       });
     expect(await store.list(scope)).toEqual([]);
-    await store.create({ ...base, id: "conn-64", name: "\u{1F600}".repeat(64) });
+    await bind("conn-64", { name: "\u{1F600}".repeat(64) });
     expect((await store.list(scope)).map(({ name }) => [...name].length)).toEqual([64]);
     expect(newMcpConnectionId()).toMatch(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u);
   });
@@ -163,9 +161,9 @@ describe("[P5-B] MCP connection store through the SQLite worker", () => {
     expect(await store.list(scope)).toHaveLength(MCP_CONNECTION_MAXIMUM + 1);
   });
 
-  it("renames, pauses and rotates, and refuses any change once revoked", async () => {
+  it("renames and pauses, and refuses any change once revoked", async () => {
     const { store, create } = await setup();
-    const { secret } = await create({ id: "conn-a" });
+    await create({ id: "conn-a" });
     expect(
       await store.change({
         ...scope,
@@ -175,29 +173,9 @@ describe("[P5-B] MCP connection store through the SQLite worker", () => {
         status: "paused",
       }),
     ).toMatchObject({ name: "Codex", status: "paused", updatedAt: LATER });
-    const rotated = newMcpConnectionSecret();
-    expect(
-      await store.rotateSecret({
-        ...scope,
-        id: "conn-a",
-        secretSha256: mcpConnectionSecretDigest(rotated),
-        rotatedAt: LATER,
-      }),
-    ).toMatchObject({ id: "conn-a", secretRotatedAt: LATER, name: "Codex" });
-    expect(
-      await store.findBySecret({ ...scope, secretSha256: mcpConnectionSecretDigest(secret) }),
-    ).toBeNull();
     await store.change({ ...scope, id: "conn-a", updatedAt: LATER, status: "revoked" });
     await expect(
       store.change({ ...scope, id: "conn-a", updatedAt: LATER, status: "active" }),
-    ).rejects.toMatchObject({ code: "PORT_CONFLICT" });
-    await expect(
-      store.rotateSecret({
-        ...scope,
-        id: "conn-a",
-        secretSha256: mcpConnectionSecretDigest(newMcpConnectionSecret()),
-        rotatedAt: LATER,
-      }),
     ).rejects.toMatchObject({ code: "PORT_CONFLICT" });
     expect(await store.change({ ...scope, id: "conn-missing", updatedAt: LATER })).toBeNull();
   });
@@ -262,5 +240,189 @@ describe("[P5-B] MCP connection store through the SQLite worker", () => {
         toDay: "2026-11-30",
       }),
     ).toEqual([]);
+  });
+
+  describe("OAuth clients and tokens", () => {
+    const digest = (seed: string) => createHash("sha256").update(seed).digest("hex");
+    const RESOURCE = "https://agent.example.test/api/mcp/v1";
+    const pair = (connectionId: string, clientId: string, seed: string, familyId: string) => ({
+      ...scope,
+      connectionId,
+      clientId,
+      familyId,
+      scopes: ["himawari:read"],
+      resource: RESOURCE,
+      access: { tokenSha256: digest(`${seed}-access`), expiresAt: LATER },
+      refresh: { tokenSha256: digest(`${seed}-refresh`), expiresAt: "2026-12-13T03:00:00.000Z" },
+      now: NOW,
+    });
+
+    it("keeps registered clients unbound until a grant, then reuses the same connection", async () => {
+      const { store, oauth, create } = await setup();
+      const registered = await oauth.registerClient({
+        ...scope,
+        clientId: "client-dyn",
+        clientName: "Muse",
+        redirectUris: ["https://muse.example/callback"],
+        createdAt: NOW,
+      });
+      expect(registered).toMatchObject({ registration: "dynamic", connectionId: null });
+      expect(await store.list(scope)).toEqual([]);
+      const first = await oauth.bindGrant({
+        ...scope,
+        clientId: "client-dyn",
+        registration: "dynamic",
+        clientName: "Muse",
+        redirectUris: ["https://muse.example/callback"],
+        newConnection: { id: "conn-muse", name: "Muse", readCeiling: "private", pushPolicy: "ask" },
+        now: NOW,
+      });
+      const again = await oauth.bindGrant({
+        ...scope,
+        clientId: "client-dyn",
+        registration: "dynamic",
+        clientName: "Muse 2",
+        redirectUris: ["https://muse.example/callback2"],
+        newConnection: {
+          id: "conn-other",
+          name: "Other",
+          readCeiling: "public",
+          pushPolicy: "ask",
+        },
+        now: LATER,
+      });
+      expect(again.id).toBe(first.id);
+      expect(await oauth.readClient({ ...scope, clientId: "client-dyn" })).toMatchObject({
+        clientName: "Muse 2",
+        redirectUris: ["https://muse.example/callback2"],
+        connectionId: "conn-muse",
+      });
+      await expect(
+        oauth.bindGrant({
+          ...scope,
+          clientId: "client-dyn",
+          registration: "metadata_document",
+          clientName: "Muse",
+          redirectUris: ["https://muse.example/callback"],
+          newConnection: { id: "conn-x", name: "x", readCeiling: "private", pushPolicy: "ask" },
+          now: LATER,
+        }),
+      ).rejects.toMatchObject({ code: "PORT_CONFLICT" });
+      await create({ id: "conn-b" });
+      expect((await store.list(scope)).map(({ id }) => id).sort()).toEqual(["conn-b", "conn-muse"]);
+    });
+
+    it("finds access only for live tokens of a live connection still bound to the same client", async () => {
+      const { store, oauth, create } = await setup();
+      await create({ id: "conn-a" });
+      await oauth.issueTokens(pair("conn-a", "client-conn-a", "one", "family-one-aaaaaaaa"));
+      const find = (seed: string, now = NOW) =>
+        oauth.findAccess({ ...scope, tokenSha256: digest(seed), now });
+      expect(await find("one-access")).toMatchObject({
+        token: { kind: "access", scopes: ["himawari:read"], resource: RESOURCE },
+        connection: { id: "conn-a" },
+      });
+      expect(await find("one-refresh")).toBeNull();
+      expect(await find("one-access", LATER)).toBeNull();
+      expect(
+        await oauth.findAccess({
+          ownerId: OWNER_ID,
+          agentId: OTHER_AGENT_ID,
+          tokenSha256: digest("one-access"),
+          now: NOW,
+        }),
+      ).toBeNull();
+      await store.change({ ...scope, id: "conn-a", status: "revoked", updatedAt: NOW });
+      expect(await find("one-access")).toBeNull();
+      await expect(
+        oauth.issueTokens(pair("conn-a", "client-conn-a", "two", "family-two-aaaaaaaa")),
+      ).rejects.toMatchObject({ code: "PORT_CONFLICT" });
+      const rebound = await create({ id: "conn-a2" });
+      expect(rebound.record.oauthClientId).toBe("client-conn-a2");
+    });
+
+    it("rotates a refresh token once, and a second use revokes the whole family", async () => {
+      const { oauth, create } = await setup();
+      await create({ id: "conn-a" });
+      await oauth.issueTokens(pair("conn-a", "client-conn-a", "one", "family-one-aaaaaaaa"));
+      const next = (seed: string) => ({
+        access: { tokenSha256: digest(`${seed}-access`), expiresAt: LATER },
+        refresh: { tokenSha256: digest(`${seed}-refresh`), expiresAt: "2026-12-13T03:00:00.000Z" },
+      });
+      const rotate = (seed: string, nextSeed: string, clientId = "client-conn-a") =>
+        oauth.rotateRefresh({
+          ...scope,
+          refreshSha256: digest(`${seed}-refresh`),
+          clientId,
+          next: next(nextSeed),
+          now: NOW,
+        });
+      expect(await rotate("one", "x", "client-other")).toEqual({ status: "not_found" });
+      expect(await rotate("one", "two")).toMatchObject({ status: "rotated" });
+      const find = (seed: string) =>
+        oauth.findAccess({ ...scope, tokenSha256: digest(seed), now: NOW });
+      expect(await find("one-access")).toBeNull();
+      expect(await find("two-access")).not.toBeNull();
+      expect(await rotate("one", "three")).toEqual({ status: "reused" });
+      expect(await find("two-access")).toBeNull();
+      expect(await rotate("two", "four")).toEqual({ status: "not_found" });
+    });
+
+    it("revokes an access token alone and a refresh token with its family, then prunes expired rows", async () => {
+      const { oauth, create } = await setup();
+      await create({ id: "conn-a" });
+      await oauth.issueTokens(pair("conn-a", "client-conn-a", "one", "family-one-aaaaaaaa"));
+      await oauth.issueTokens(pair("conn-a", "client-conn-a", "two", "family-two-aaaaaaaa"));
+      const find = (seed: string) =>
+        oauth.findAccess({ ...scope, tokenSha256: digest(seed), now: NOW });
+      await oauth.revokeToken({
+        ...scope,
+        tokenSha256: digest("one-access"),
+        clientId: "client-other",
+        now: NOW,
+      });
+      expect(await find("one-access")).not.toBeNull();
+      await oauth.revokeToken({
+        ...scope,
+        tokenSha256: digest("one-access"),
+        clientId: "client-conn-a",
+        now: NOW,
+      });
+      expect(await find("one-access")).toBeNull();
+      await oauth.revokeToken({
+        ...scope,
+        tokenSha256: digest("two-refresh"),
+        clientId: "client-conn-a",
+        now: NOW,
+      });
+      expect(await find("two-access")).toBeNull();
+      expect(await oauth.pruneExpired({ ...scope, now: LATER })).toBe(2);
+    });
+
+    it("forgets unused dynamic registrations after a day and caps how many wait unbound", async () => {
+      const { oauth } = await setup();
+      const register = (index: number, createdAt = NOW) =>
+        oauth.registerClient({
+          ...scope,
+          clientId: `client-${index}`,
+          clientName: "Spam",
+          redirectUris: ["https://spam.example/callback"],
+          createdAt,
+        });
+      for (let index = 0; index < MCP_OAUTH_UNBOUND_CLIENT_MAXIMUM; index += 1)
+        await register(index);
+      await expect(register(-1)).rejects.toMatchObject({ code: "PORT_CONFLICT" });
+      await register(-2, "2026-11-14T03:00:01.000Z");
+      expect(await oauth.readClient({ ...scope, clientId: "client-0" })).toBeNull();
+      await expect(
+        oauth.registerClient({
+          ...scope,
+          clientId: "client bad",
+          clientName: "Bad",
+          redirectUris: ["https://spam.example/callback"],
+          createdAt: NOW,
+        }),
+      ).rejects.toMatchObject({ code: "PORT_INVALID_OPERATION" });
+    });
   });
 });

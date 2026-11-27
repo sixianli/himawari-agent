@@ -158,11 +158,11 @@ import {
   ProductionLoginDevicesControl,
 } from "./production-login-devices-control.js";
 import { ProductionMainThread } from "./production-main-thread.js";
+import type { ProductionMcpAuthorization } from "./production-mcp-authorization.js";
+import { registerMcpAuthorizationRoutes } from "./production-mcp-authorization-routes.js";
 import {
-  McpConnectionAddresses,
   PRODUCTION_MCP_CONNECTION_OPERATIONS,
   ProductionMcpConnectionsControl,
-  registerMcpConnectionAddressRoute,
 } from "./production-mcp-connections-control.js";
 import type { ProductionMcpMemoryWriter } from "./production-mcp-memory-writer.js";
 import { type ProductionMcpRead, registerMcpReadRoute } from "./production-mcp-read.js";
@@ -220,6 +220,11 @@ import {
   readServerRelease,
 } from "./production-server-status-control.js";
 import { createProductionSpeech } from "./production-speech.js";
+import {
+  PRODUCTION_SPOKEN_DECISION_OPERATIONS,
+  ProductionSpokenDecisions,
+  spokenMessagesReader,
+} from "./production-spoken-decisions.js";
 import {
   DEFAULT_TIMER_TIME_ZONE,
   localTime,
@@ -367,7 +372,11 @@ export interface ProductionHttpCompositionOptions {
   };
   readonly threadDeletionDiagnostic?: (event: Record<string, string>) => void;
   readonly queryPrefetch?: ProductionQueryPrefetch;
-  readonly mcpRead?: ProductionMcpRead;
+  readonly mcpRead?: {
+    readonly read: ProductionMcpRead;
+    readonly authorization: ProductionMcpAuthorization;
+    readonly onAuthorizationFailure: (error: unknown) => void;
+  };
   readonly observation?: ProductionObservation;
   readonly configuration: ProductConfiguration;
   readonly repository: SqliteProductStateRepository;
@@ -912,6 +921,7 @@ function routeOptions(
         ...(searchAvailable ? PRODUCTION_MEMORY_SEARCH_OPERATIONS : []),
         ...PRODUCTION_DATA_EXPORT_OPERATIONS,
         ...PRODUCTION_FILES_OPERATIONS,
+        ...PRODUCTION_SPOKEN_DECISION_OPERATIONS,
         ...PRODUCTION_LOGIN_DEVICE_OPERATIONS,
         ...(mcpConnectionsAvailable ? PRODUCTION_MCP_CONNECTION_OPERATIONS : []),
         ...PRODUCTION_PERCEPTION_OPERATIONS,
@@ -1163,6 +1173,7 @@ export async function createProductionHttpComposition(
   const threadAdapter = new ProductThreadGatewayAdapter({
     ...(backgroundWork ? { backgroundWork: { read: () => backgroundWork.backgroundWork() } } : {}),
     ...(options.messageOptions ? { messageOptions: options.messageOptions } : {}),
+    spokenMessages: spokenMessagesReader(repository.decisionLedger()),
     validateModelSelection: (selection, classification) => {
       const model = options.modelCatalog?.find((entry) => entry.ref === selection.modelRef);
       const descriptor = configuration.modelDescriptors.find(
@@ -1645,7 +1656,6 @@ export async function createProductionHttpComposition(
               : "unknown",
       }),
   });
-  const mcpConnectionAddresses = new McpConnectionAddresses({ now: clock });
   const searchControl = options.memory?.search
     ? new ProductionSearchControl({
         ownerId,
@@ -1871,6 +1881,19 @@ export async function createProductionHttpComposition(
           }),
         }
       : {}),
+    spokenControl: new ProductionSpokenDecisions({
+      scope: { ownerId, agentId },
+      ledger: repository.decisionLedger(),
+      readText: async (ref) => {
+        const payload = await repository.payloadStore(ownerId, agentId).get(ref as never);
+        if (!payload || payload.contentType !== "text/plain") return null;
+        return new TextDecoder("utf-8", { fatal: true }).decode(
+          await payloadProtector.unprotect({ ownerId, agentId, payload }),
+        );
+      },
+      recallRuns: (limit) => repository.realEval().listRuns({ ownerId, agentId, limit }),
+      clock: { now: clock },
+    }),
     perceptionControl: new ProductionPerceptionControl({
       configuration,
       perception,
@@ -1918,13 +1941,13 @@ export async function createProductionHttpComposition(
           mcpConnectionsControl: new ProductionMcpConnectionsControl({
             configuration,
             store: repository.mcpConnections(),
-            addresses: mcpConnectionAddresses,
+            authorization: options.mcpRead.authorization,
             minute: (connectionId) =>
-              options.mcpRead?.minuteUsage(connectionId) ?? {
+              options.mcpRead?.read.minuteUsage(connectionId) ?? {
                 reads: 0,
                 hookReads: 0,
               },
-            hookReadsPerMinute: options.mcpRead.hookReadsPerMinute,
+            hookReadsPerMinute: options.mcpRead.read.hookReadsPerMinute,
             timeZone: configuration.runPolicy?.timeZone ?? "UTC",
             clock: { now: clock },
           }),
@@ -2058,12 +2081,10 @@ export async function createProductionHttpComposition(
     now: clock,
   });
   if (options.mcpRead) {
-    registerMcpReadRoute(app, options.mcpRead);
-    registerMcpConnectionAddressRoute(app, {
-      authentication,
-      sessionCookieName: httpConfiguration.sessionCookieName,
-      ownerId,
-      addresses: mcpConnectionAddresses,
+    registerMcpReadRoute(app, options.mcpRead.read);
+    registerMcpAuthorizationRoutes(app, options.mcpRead.authorization, {
+      clock: { now: clock },
+      onFailure: options.mcpRead.onAuthorizationFailure,
     });
   }
   registerAuthentication(app, csrf, recentAuthentication);

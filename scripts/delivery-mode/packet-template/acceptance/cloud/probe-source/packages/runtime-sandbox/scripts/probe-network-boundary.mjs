@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 // Bounded synthetic-data counterexample probe. Never issues a qualification.
 import { createHash } from "node:crypto";
 import { lookup } from "node:dns/promises";
@@ -75,7 +76,7 @@ try {
             ? ["/System", "/private/etc/ssl/openssl.cnf"]
             : [
                 "/lib",
-                "/lib64",
+                ...["/lib64"].filter(existsSync),
                 "/proc",
                 "/etc/ssl",
                 path.join(runtimeRoot, "node_modules/@anthropic-ai/sandbox-runtime/vendor/seccomp"),

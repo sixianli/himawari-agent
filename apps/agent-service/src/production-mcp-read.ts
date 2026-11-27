@@ -9,7 +9,6 @@ import type {
   McpConnectionPushPolicy,
   McpConnectionStorePort,
   McpUsageCounter,
-  OwnerIdentityStatePort,
   OwnerProfileOutline,
   ProactiveSettings,
   RuleRecord,
@@ -50,7 +49,6 @@ import {
   MCP_PROPOSE_RULE_REPLAY,
   MCP_PROPOSE_RULE_REPLAY_UNAVAILABLE,
   MCP_PROPOSE_RULE_SAVED,
-  MCP_SERVER_CONNECTION_REQUIRED,
   MCP_SERVER_INSTRUCTIONS,
   MCP_START_HERE_OMITTED,
   MCP_START_HERE_RULES_NOTE,
@@ -92,9 +90,12 @@ import {
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { AdmissionWindows } from "./bearer-admission.js";
 import {
-  MCP_CONNECTION_SECRET_PATTERN,
+  type McpBearerAccess,
+  MCP_READ_SCOPE,
+  MCP_WRITE_SCOPE,
+} from "./production-mcp-authorization.js";
+import {
   type McpUsageRecorder,
-  mcpConnectionSecretDigest,
   mcpConnectionSubject,
   recordMcpUsage,
   touchMcpConnection,
@@ -134,12 +135,9 @@ import type { MailEmbeddingContext } from "./production-run-memory.js";
 
 export const MCP_READ_PATH = "/api/mcp/v1";
 export const MCP_READ_BODY_LIMIT = 65_536;
-const MCP_ACCESS_OWNER_NOT_BOUND = Object.freeze({ code: "MCP_ACCESS_OWNER_NOT_BOUND" });
-const MCP_CONNECTION_NOT_FOUND = Object.freeze({ code: "MCP_CONNECTION_NOT_FOUND" });
 const MCP_CONNECTION_PAUSED = Object.freeze({ code: "MCP_CONNECTION_PAUSED" });
 export const MCP_HOOK_READS_PER_MINUTE = 60;
 
-export const MCP_ACCESS_ASSERTION_HEADER = "cf-access-jwt-assertion";
 export const MCP_WRITE_TOOL_NAMES = [
   "propose_memory",
   "propose_memories",
@@ -150,8 +148,8 @@ export const MCP_PROPOSE_MEMORIES_MAXIMUM = 50;
 export const MCP_PROPOSAL_CONFIRM_KEY = "confirm";
 export const MCP_PROPOSAL_UNSEEN_ANSWER_MS = 1_500;
 export const MCP_PROPOSAL_STATE_TTL_SECONDS = 600;
-const WRITE_ACCESS = "himawari:write";
-const READ_ACCESS = "himawari:read";
+const WRITE_ACCESS = MCP_WRITE_SCOPE;
+const READ_ACCESS = MCP_READ_SCOPE;
 export const TODAY_CONTEXT_REMINDER_WINDOW_MS = 48 * 3_600_000;
 export const TODAY_CONTEXT_SUMMARY_DAYS = 2;
 export const TODAY_CONTEXT_SUMMARY_LIMIT = 8;
@@ -350,14 +348,15 @@ export interface McpWriteAccess {
   readonly sync?: McpSyncAccess;
 }
 
-export interface McpAccessVerifier {
-  readonly verify: (assertion: string) => Promise<{ readonly externalSubjectRef: string }>;
+export interface McpAccessTokens {
+  readonly verifyAccessToken: (token: string) => Promise<McpBearerAccess | null>;
+  readonly resourceMetadataUrl: string;
 }
 
 export type McpAdmission =
   | { readonly status: "ok"; readonly authInfo: AuthInfo }
   | {
-      readonly status: "unauthorized" | "not_found" | "paused" | "rate_limited" | "unavailable";
+      readonly status: "unauthorized" | "paused" | "rate_limited" | "unavailable";
     };
 
 interface ConnectionRef {
@@ -391,11 +390,10 @@ export function mcpProposalAnswer(
 export interface ProductionMcpReadOptions {
   readonly scope: Pick<DecisionLedgerWrite, "ownerId" | "agentId">;
   readonly clock: ClockPort;
-  readonly access: McpAccessVerifier;
-  readonly owners: Pick<OwnerIdentityStatePort, "readBySubject">;
+  readonly tokens: McpAccessTokens;
   readonly write?: McpWriteAccess;
   readonly timeZone: string;
-  readonly connections: Pick<McpConnectionStorePort, "findBySecret" | "touch" | "addUsage">;
+  readonly connections: Pick<McpConnectionStorePort, "touch" | "addUsage">;
   readonly hookReadsPerMinute?: number;
   readonly readTools?: readonly McpReadToolEntry[];
   readonly requestTimeoutMs: number;
@@ -597,59 +595,35 @@ export class ProductionMcpRead {
     });
   }
 
-  async admit(assertion: string | undefined, secret?: string): Promise<McpAdmission> {
-    let subject: string | undefined;
-    let rejection: unknown;
-    if (assertion) {
-      let verified: string | undefined;
-      try {
-        verified = (await this.#options.access.verify(assertion)).externalSubjectRef;
-      } catch (error) {
-        rejection = error;
-      }
-      if (verified !== undefined) {
-        let binding: Awaited<ReturnType<OwnerIdentityStatePort["readBySubject"]>>;
-        try {
-          binding = await this.#options.owners.readBySubject(verified);
-        } catch (error) {
-          if (this.#windows.admit(true) === "rate_limited") return { status: "rate_limited" };
-          this.#options.onFailure(error);
-          return { status: "unavailable" };
-        }
-        if (binding?.ownerId === this.#options.scope.ownerId && binding.status === "active")
-          subject = verified;
-        else rejection = MCP_ACCESS_OWNER_NOT_BOUND;
-      }
-    }
-    if (subject === undefined) return this.#reject("unauthorized", assertion ? rejection : null);
-    if (secret === undefined) {
-      if (this.#windows.admit(true) === "rate_limited") return { status: "rate_limited" };
-      return { status: "ok", authInfo: { token: "", clientId: "", scopes: [], extra: {} } };
-    }
-    if (!MCP_CONNECTION_SECRET_PATTERN.test(secret))
-      return this.#reject("not_found", MCP_CONNECTION_NOT_FOUND);
-    let connection: Awaited<ReturnType<McpConnectionStorePort["findBySecret"]>>;
+  get resourceMetadataUrl(): string {
+    return this.#options.tokens.resourceMetadataUrl;
+  }
+
+  async admit(authorization: string | undefined): Promise<McpAdmission> {
+    const match = /^Bearer ([A-Za-z0-9._~+/-]+=*)$/u.exec(authorization ?? "");
+    if (!match?.[1]) return this.#reject("unauthorized", null);
+    let access: McpBearerAccess | null;
     try {
-      connection = await this.#options.connections.findBySecret({
-        ...this.#options.scope,
-        secretSha256: mcpConnectionSecretDigest(secret),
-      });
+      access = await this.#options.tokens.verifyAccessToken(match[1]);
     } catch (error) {
       if (this.#windows.admit(true) === "rate_limited") return { status: "rate_limited" };
       this.#options.onFailure(error);
       return { status: "unavailable" };
     }
-    if (connection === null || connection.status === "revoked")
-      return this.#reject("not_found", MCP_CONNECTION_NOT_FOUND);
+    if (access === null) return this.#reject("unauthorized", null);
+    const { connection } = access;
     if (connection.status === "paused")
       return this.#reject("paused", { ...MCP_CONNECTION_PAUSED, connectionId: connection.id });
-    const scopes = this.#options.write ? [READ_ACCESS, WRITE_ACCESS] : [READ_ACCESS];
+    const scopes = access.scopes.filter(
+      (scope) => scope === READ_ACCESS || (scope === WRITE_ACCESS && this.#options.write),
+    );
     return {
       status: "ok",
       authInfo: {
         token: "",
         clientId: connection.id,
         scopes,
+        expiresAt: access.expiresAt,
         extra: {
           [READ_CEILING_KEY]: connection.readCeiling,
           [ENTRY_KEY]: "oauth" satisfies McpConnectionEntry,
@@ -659,7 +633,7 @@ export class ProductionMcpRead {
     };
   }
 
-  #reject(status: "unauthorized" | "not_found" | "paused", rejection: unknown): McpAdmission {
+  #reject(status: "unauthorized" | "paused", rejection: unknown): McpAdmission {
     if (this.#windows.admit(false) === "rate_limited") return { status: "rate_limited" };
     if (rejection !== null) this.#options.onFailure(rejection);
     return { status };
@@ -783,9 +757,7 @@ export class ProductionMcpRead {
     const server = new McpServer(
       { name: SERVER_NAME, version: SERVER_VERSION },
       {
-        instructions: connection
-          ? MCP_SERVER_INSTRUCTIONS.text
-          : MCP_SERVER_CONNECTION_REQUIRED.text,
+        instructions: MCP_SERVER_INSTRUCTIONS.text,
         requestState: { verify: this.#stateCodec.verify },
         inputRequired: { legacyShim: false },
       },
@@ -2051,7 +2023,6 @@ async function sendWebResponse(
 const MCP_ADMISSION_STATUS = {
   unauthorized: 401,
   paused: 403,
-  not_found: 404,
   rate_limited: 429,
   unavailable: 503,
 } as const;
@@ -2077,16 +2048,17 @@ export function registerMcpReadRoute(app: FastifyInstance, mcp: ProductionMcpRea
         bodyLimit: MCP_READ_BODY_LIMIT,
         logLevel: "silent",
         onRequest: async (request, reply) => {
-          const header = request.headers[MCP_ACCESS_ASSERTION_HEADER];
-          const params = request.params as { readonly secret?: unknown };
-          const gate = await mcp.admit(
-            typeof header === "string" ? header : undefined,
-            typeof params.secret === "string" ? params.secret : undefined,
-          );
+          const header = request.headers.authorization;
+          const gate = await mcp.admit(typeof header === "string" ? header : undefined);
           if (gate.status === "ok") {
             admitted.set(request, gate.authInfo);
             return;
           }
+          if (gate.status === "unauthorized")
+            reply.header(
+              "www-authenticate",
+              `Bearer ${header ? 'error="invalid_token", ' : ""}resource_metadata="${mcp.resourceMetadataUrl}", scope="${READ_ACCESS} ${WRITE_ACCESS}"`,
+            );
           return reply
             .code(MCP_ADMISSION_STATUS[gate.status])
             .header("cache-control", "no-store")
@@ -2117,6 +2089,5 @@ export function registerMcpReadRoute(app: FastifyInstance, mcp: ProductionMcpRea
         },
       });
     route(MCP_READ_PATH);
-    route(`${MCP_READ_PATH}/:secret`);
   });
 }

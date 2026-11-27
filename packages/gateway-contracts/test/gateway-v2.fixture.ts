@@ -659,7 +659,13 @@ export const governanceMessages = [
     disk: { availableBytes: 21474836480, totalBytes: 50000000000 },
     generatedAt: "2026-11-12T03:06:30.000Z",
   }),
-  fixture("query", "files.list.read", { kind: null, origin: "uploaded", before: null, limit: 50 }),
+  fixture("query", "files.list.read", {
+    kind: null,
+    origin: "uploaded",
+    before: null,
+    limit: 50,
+    search: "大阪",
+  }),
   fixture("snapshot", "files.list.snapshot", {
     files: [
       {
@@ -710,7 +716,8 @@ export const governanceMessages = [
         reportedClient: "claude-code",
         createdAt: "2026-11-12T03:00:00.000Z",
         updatedAt: "2026-11-12T03:00:00.000Z",
-        secretRotatedAt: null,
+        registration: "metadata_document",
+        clientHost: "claude.ai",
         lastSeenAt: "2026-11-12T03:05:00.000Z",
         minute: { reads: 1, hookReads: 3 },
         usage: {
@@ -731,14 +738,7 @@ export const governanceMessages = [
     ],
     window: { fromDay: "2026-11-06", toDay: "2026-11-12", days: 7 },
     limits: [{ key: "mcp.connections", value: 200, used: 1 }],
-    addressPath: "/api/mcp-connections/address",
     generatedAt: "2026-11-12T03:06:30.000Z",
-  }),
-  fixture("command", "mcp.connection.create", {
-    name: "Claude Code",
-    capabilities: ["mcp"],
-    readCeiling: "private",
-    pushPolicy: "ask",
   }),
   fixture("command", "mcp.connection.change", {
     connectionId: "conn-0123456789abcdef01234567",
@@ -748,9 +748,33 @@ export const governanceMessages = [
     pushPolicy: null,
     status: "paused",
   }),
-  fixture("command", "mcp.connection.rotate", {
-    connectionId: "conn-0123456789abcdef01234567",
+  fixture("query", "mcp.grants.read", {}),
+  fixture("snapshot", "mcp.grants.snapshot", {
+    grants: [
+      {
+        id: "grant-AAAAAAAAAAAAAAAAAAAAAA",
+        clientName: "Claude Code",
+        registration: "metadata_document",
+        clientHost: "claude.ai",
+        redirectHost: "localhost:33418",
+        localRedirect: true,
+        wantsWrite: true,
+        existingConnection: null,
+        createdAt: "2026-11-12T03:00:00.000Z",
+        expiresAt: "2026-11-12T03:10:00.000Z",
+      },
+    ],
+    defaults: { readCeiling: "private", pushPolicy: "direct" },
+    generatedAt: "2026-11-12T03:00:01.000Z",
   }),
+  fixture("command", "mcp.grant.approve", {
+    grantId: "grant-AAAAAAAAAAAAAAAAAAAAAA",
+    name: null,
+    readCeiling: "private",
+    pushPolicy: "direct",
+    write: true,
+  }),
+  fixture("command", "mcp.grant.deny", { grantId: "grant-AAAAAAAAAAAAAAAAAAAAAA" }),
   fixture("command", "login.devices.revoke_others", { recentAuthenticationRef: "auth-ref-01" }),
   fixture("query", "search.ask.read", { query: "我对什么过敏", locale: "zh-CN" }),
   fixture("snapshot", "search.ask.snapshot", {
@@ -893,6 +917,50 @@ export const governanceMessages = [
       memoryIds: ["memory-01"],
       relatedMessages: 2,
     },
+  }),
+  fixture("query", "decision.spoken.read", { messageId: "message:said:1" }),
+  fixture("snapshot", "decision.spoken.snapshot", {
+    messageId: "message:said:1",
+    rating: "useful",
+    decisions: [
+      {
+        decisionId: "inbox:mail1",
+        decidedAt: "2026-11-09T00:01:00.000Z",
+        pushed: true,
+        reason: "会议改了时间",
+        cause: {
+          kind: "mail",
+          at: "2026-11-09T00:00:00.000Z",
+          summary: "会议改到明天上午",
+          memoryId: null,
+        },
+      },
+    ],
+  }),
+  fixture("command", "decision.spoken.rate", { messageId: "message:said:1", rating: null }),
+  fixture("query", "decision.stats.read", { span: "week" }),
+  fixture("snapshot", "decision.stats.snapshot", {
+    span: "week",
+    minimumSamples: 5,
+    current: {
+      start: "2026-11-02T00:00:00.000Z",
+      end: "2026-11-09T00:00:00.000Z",
+      spoken: 6,
+      rated: 4,
+      useful: 3,
+      unneeded: 1,
+    },
+    previous: {
+      start: "2026-10-26T00:00:00.000Z",
+      end: "2026-11-02T00:00:00.000Z",
+      spoken: 2,
+      rated: 0,
+      useful: 0,
+      unneeded: 0,
+    },
+    recall: { at: "2026-11-08T00:00:00.000Z", correct: 24, asked: 30 },
+    previousRecall: null,
+    generatedAt: "2026-11-09T00:00:00.000Z",
   }),
   fixture("query", "memory.overview.read", {}),
   fixture("query", "decision.chain.read", { decisionId: "proactive-decision:abc" }),

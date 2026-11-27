@@ -33,6 +33,8 @@ public struct HerPage: View {
         case transfer
         case importPaste
         case importPreview
+        case files
+        case evaluation
         case talkTiming
     }
 
@@ -40,6 +42,8 @@ public struct HerPage: View {
     @State private var memory: MemoryStore
     @State private var quietHours: QuietHoursStore
     @State private var timers: TimersStore
+    @State private var stats: DecisionStatsStore
+    @State private var files: OwnerFilesStore
     @State private var connections: ConnectionsStore
     @State private var gmail: GmailStore
     @State private var dataExport: DataExportStore
@@ -86,6 +90,8 @@ public struct HerPage: View {
         _memory = State(initialValue: MemoryStore(gateway: gateway))
         _quietHours = State(initialValue: QuietHoursStore(gateway: gateway))
         _timers = State(initialValue: TimersStore(gateway: gateway))
+        _stats = State(initialValue: DecisionStatsStore(gateway: gateway))
+        _files = State(initialValue: OwnerFilesStore(gateway: gateway, api: api))
         _connections = State(initialValue: ConnectionsStore(gateway: gateway))
         _gmail = State(initialValue: GmailStore(gateway: gateway))
         _dataExport = State(initialValue: DataExportStore(gateway: gateway, download: { try await api.dataExportArchive(exportId: $0) }))
@@ -122,6 +128,8 @@ public struct HerPage: View {
         _memory = State(initialValue: memory)
         _quietHours = State(initialValue: quietHours)
         _timers = State(initialValue: timers ?? TimersStore(timers: nil))
+        _stats = State(initialValue: DecisionStatsStore(stats: nil))
+        _files = State(initialValue: OwnerFilesStore(files: nil))
         _connections = State(initialValue: connections ?? ConnectionsStore(connections: nil))
         _gmail = State(initialValue: gmail ?? GmailStore(overview: nil))
         let demoGateway = gateway ?? ManageGateway(transport: NoTransport())
@@ -160,9 +168,21 @@ public struct HerPage: View {
                     }
                     SettingsGroup(label: nil) {
                         Button { path.append(.memory) } label: {
-                            HerRow(icon: .brain, title: M.herMemory, subtitle: memory.summary(categoryLabel: M.category).map(M.memorySummary), last: true)
+                            HerRow(icon: .brain, title: M.herMemory, subtitle: memory.summary(categoryLabel: M.category).map(M.memorySummary), last: files.phase == .unsupported && stats.phase == .unsupported)
                         }
                         .buttonStyle(.pressable)
+                        if files.phase != .unsupported {
+                            Button { path.append(.files) } label: {
+                                HerRow(icon: .folder, title: M.filesTitle, last: stats.phase == .unsupported)
+                            }
+                            .buttonStyle(.pressable)
+                        }
+                        if stats.phase != .unsupported {
+                            Button { path.append(.evaluation) } label: {
+                                HerRow(icon: .listCheck, title: M.evalTitle, last: true)
+                            }
+                            .buttonStyle(.pressable)
+                        }
                     }
                     SettingsGroup(label: nil) {
                         if timers.phase != .unsupported {
@@ -280,6 +300,10 @@ public struct HerPage: View {
                     MemoryImportPastePage(store: memoryImport, openPreview: { path.append(.importPreview) }) { path.removeLast() }
                 case .importPreview:
                     MemoryImportPreviewPage(store: memoryImport, finish: finishImport) { path.removeLast() }
+                case .files:
+                    FilesPage(store: files)
+                case .evaluation:
+                    EvaluationPage(store: stats)
                 case .talkTiming:
                     TalkTimingPage(load: voiceTimings)
                 case .approvals:
@@ -329,9 +353,11 @@ public struct HerPage: View {
         async let memoryLoaded: Void = memory.load()
         async let quietLoaded: Void = quietHours.load()
         async let timersLoaded: Void = timers.load()
+        async let statsLoaded: Void = stats.load(.week)
+        async let filesLoaded: Void = files.load()
         async let connectionsLoaded: Void = connections.load()
         vaultCount = await countVault()
-        _ = await (settingsLoaded, memoryLoaded, quietLoaded, timersLoaded, connectionsLoaded)
+        _ = await (settingsLoaded, memoryLoaded, quietLoaded, timersLoaded, statsLoaded, filesLoaded, connectionsLoaded)
     }
 }
 
