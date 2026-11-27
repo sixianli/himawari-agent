@@ -28,6 +28,7 @@ INTENDED_CHANGES = {
     'measurement/probe/read-driver.mjs', 'signing/verify-finalize-capability-check.py', 'acceptance/cloud/adapters/probe-public-search.mjs', 'acceptance/cloud/adapters/probe-linux-worker-loss.mjs',
     'acceptance/cloud/probe-source/packages/runtime-sandbox/scripts/probe-linux-worker-loss.mjs', 'acceptance/cloud/probe-source/packages/runtime-sandbox/scripts/probe-authorized-network.mjs', 'acceptance/cloud/probe-source/packages/runtime-sandbox/scripts/probe-network-boundary.mjs', 'acceptance/cloud/probe-source/packages/runtime-sandbox/scripts/probe-public-search.mjs',
     'acceptance/helpers/collect-installer-dependencies.mjs', 'install/collect-installer-dependencies.mjs', 'steps/transport-packet.py', 'steps/packet-common.py',
+    'systemd/run-user-s7.sh', 'signing/sign-twelfth.sh', 'steps/run-user-step.sh', 'signing/prepare-twelfth-snapshot.sh', 'maintenance/run-user-maintenance.sh', 'maintenance/run-user-control-rollback.sh',
     'acceptance/OWNED-SHA256SUMS', 'acceptance/S6-limited-host-acceptance.sh', 'acceptance/cloud/adaptation-manifest.json',
     'acceptance/cloud/adapters/probe-authorized-network.mjs', 'acceptance/cloud/adapters/probe-foreground.mjs', 'acceptance/cloud/adapters/probe-network-boundary.mjs', 'acceptance/cloud/probe-source/packages/runtime-pi/scripts/probe-foreground.mjs', 'acceptance/cloud/cloud-inputs.draft.json',
     'acceptance/cloud/run-cloud-acceptance.sh', 'acceptance/cloud/run-stage-03.py', 'acceptance/cloud/run-question12-downloads.sh', 'inputs/bindings.draft.json',
@@ -1056,6 +1057,37 @@ class ServiceAccountContractTest(unittest.TestCase):
 
     def test_first_install_gives_the_service_account_the_state_root_as_home(self):
         self.assertEqual(self.first_install_account(), ('/var/lib/himawari/state', '/usr/sbin/nologin'))
+
+
+class DeployScriptErrorLineTest(unittest.TestCase):
+    TRAP = """trap 'echo "SCRIPT_COMMAND_FAILED file=${BASH_SOURCE[0]} line=$LINENO exit=$? command=$BASH_COMMAND" >&2' ERR"""
+
+    def scripts(self):
+        found = sorted((HERE / 'packet-template').rglob('*.sh')) + [HERE / 'rollback.sh']
+        self.assertGreaterEqual(len(found), 10)
+        return found
+
+    def header(self, path):
+        lines = path.read_text().splitlines()
+        index = next(index for index, line in enumerate(lines) if line.startswith('set -'))
+        return lines[index:index + 2]
+
+    def test_I120_every_deploy_script_turns_on_the_shared_error_line(self):
+        for path in self.scripts():
+            with self.subTest(script=path.name):
+                self.assertEqual(self.header(path), ['set -Eeuo pipefail', self.TRAP])
+
+    def test_I120_a_failure_inside_any_child_script_or_function_prints_the_failing_line(self):
+        for path in self.scripts():
+            with self.subTest(script=path.name), tempfile.TemporaryDirectory() as directory:
+                child = Path(directory) / 'child.sh'
+                child.write_text('\n'.join(self.header(path) + ['inner() {', '  false', '}', 'inner']) + '\n')
+                parent = Path(directory) / 'parent.sh'
+                parent.write_text('\n'.join(self.header(path) + ['run_child() {', '  /bin/bash "$1"', '}', 'run_child ' + str(child)]) + '\n')
+                result = subprocess.run(['/bin/bash', str(parent)], capture_output=True, text=True, env={'PATH': '/usr/bin:/bin'})
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('SCRIPT_COMMAND_FAILED file=' + str(child) + ' line=4 exit=1 command=false', result.stderr)
+                self.assertIn('SCRIPT_COMMAND_FAILED file=' + str(parent) + ' line=4 exit=1 command=/bin/bash "$1"', result.stderr)
 
 
 class ArmHostPathsTest(unittest.TestCase):

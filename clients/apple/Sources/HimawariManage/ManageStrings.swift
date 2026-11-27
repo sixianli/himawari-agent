@@ -52,22 +52,22 @@ enum M {
     }
     static var privacy: String { text("隐私", ja: "プライバシー", en: "Privacy") }
     static var devicesTitle: String { text("设备", ja: "デバイス", en: "Devices") }
-    static var nameTitle: String { text("你的称呼", ja: "呼び名", en: "What she calls you") }
+    static var nameTitle: String { text("你的称呼", ja: "呼び名", en: "What Himawari calls you") }
     static var namePlaceholder: String { text("比如 Andy", ja: "例：Andy", en: "For example, Andy") }
     static var nameFooter: String {
         text(
-            "她跟你说话时用这个称呼。留空就不用称呼。最多 40 个字。",
+            "Himawari 跟你说话时用这个称呼。留空就不用称呼。最多 40 个字。",
             ja: "話しかけるときにこの名前で呼びます。空欄なら名前で呼びません。40 文字まで。",
-            en: "She uses this name when she talks to you. Leave it empty for no name. Up to 40 characters."
+            en: "Himawari uses this name when talking to you. Leave it empty for no name. Up to 40 characters."
         )
     }
     static var nameUnset: String { text("未设置", ja: "未設定", en: "Not set") }
-    static var modelTitle: String { text("她用的模型", ja: "使うモデル", en: "Her model") }
+    static var modelTitle: String { text("Himawari 用的模型", ja: "Himawari が使うモデル", en: "Himawari's model") }
     static var modelFooter: String {
         text(
-            "从下一条消息起，她用选中的模型回答你从 App 发的消息。选项由服务器提供。",
+            "从下一条消息起，Himawari 用选中的模型回答你从 App 发的消息。选项由服务器提供。",
             ja: "次のメッセージから、アプリから送ったメッセージに選んだモデルで答えます。選択肢はサーバーから届きます。",
-            en: "From your next message, she answers what you send from the app with this model. The list comes from the server."
+            en: "From your next message, Himawari answers what you send from the app with this model. The list comes from the server."
         )
     }
     static var priceNote: String {

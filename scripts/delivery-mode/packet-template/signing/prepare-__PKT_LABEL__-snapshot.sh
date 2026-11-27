@@ -1,4 +1,5 @@
-set -euo pipefail
+set -Eeuo pipefail
+trap 'echo "SCRIPT_COMMAND_FAILED file=${BASH_SOURCE[0]} line=$LINENO exit=$? command=$BASH_COMMAND" >&2' ERR
 umask 022
 [[ ${1:-} == --approved-__PKT_LABEL__-snapshot && $# == 1 ]]
 [[ $(hostname) == __PKT_HOSTNAME__ && $(id -u) == 0 ]]

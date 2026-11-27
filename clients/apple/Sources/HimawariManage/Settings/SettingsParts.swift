@@ -12,9 +12,10 @@ struct SheetHeader: View {
     let title: String
     let leading: Leading
     let action: () -> Void
+    @Environment(\.herInSidebar) private var inSidebar
 
     var body: some View {
-        if leading == .back {
+        if leading == .back || inSidebar {
             SystemNavigationTitle(Text(title))
         } else {
             closeHeader
