@@ -3,12 +3,11 @@ import { appendFileSync, existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
-import { checkIncidentGates } from "./check-incident-gates.mjs";
+import { checkIncidentGates, REPEAT_LIMIT } from "./check-incident-gates.mjs";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 export const RUN_RULE_FILE = "scripts/check-incident-runs.mjs";
 export const RUN_RULE_MARK = "INCIDENT_RUNS_UNCLAIMED";
-export const REPEAT_LIMIT = 3;
 const PAGE_SIZE = 100;
 const CLAIM_LINE = /^Incident-run:[ \t]*(.*?)[ \t]*$/gm;
 const RUN_ID = /^\d+$/;
@@ -75,7 +74,7 @@ export function readHistory(root) {
   return { since, claims, errors };
 }
 
-async function getJson(api, token, route) {
+export async function getJson(api, token, route) {
   const response = await fetch(`${api}${route}`, {
     headers: {
       accept: "application/vnd.github+json",
