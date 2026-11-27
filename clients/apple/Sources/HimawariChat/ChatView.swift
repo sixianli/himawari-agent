@@ -934,8 +934,8 @@ struct OwnerBubble: View {
                             #endif
                     }
                 }
-                .foregroundStyle(Color.hmOnText)
-                .tint(Color.hmOnText)
+                .foregroundStyle(Color.hmOnBubbleOwner)
+                .tint(Color.hmOnBubbleOwner)
                 .bubble(.owner)
                 .frame(maxWidth: maxWidth, alignment: .trailing)
             }

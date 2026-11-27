@@ -15,7 +15,7 @@ struct BubbleBackground: ViewModifier {
     @ScaledMetric(relativeTo: .body) private var radius = DesignTokens.Chat.bubbleRadius
 
     func body(content: Content) -> some View {
-        let fill = side == .her ? Color.hmBubble : Color.hmText
+        let fill = side == .her ? Color.hmBubble : Color.hmBubbleOwner
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
         content
             .padding(.horizontal, paddingX)
@@ -87,5 +87,7 @@ enum BubbleDates {
 
 extension Color {
     static var hmBubble: Color { DesignTokens.Colors.bubble.color }
+    static var hmBubbleOwner: Color { DesignTokens.Colors.bubbleOwner.color }
+    static var hmOnBubbleOwner: Color { DesignTokens.Colors.onBubbleOwner.color }
     static var hmBubbleCode: Color { DesignTokens.Colors.bubbleCode.color }
 }
