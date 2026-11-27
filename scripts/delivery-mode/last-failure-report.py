@@ -3,10 +3,12 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import urllib.request
 
 TAIL_LINES = 20
 WIDTH = 300
 STATE = Path('/var/lib/himawari')
+TOOL_SOURCES = ['/usr/bin/bash', '/usr/bin/rg', '/usr/bin/bwrap', '/opt/himawari/node/bin/node']
 
 
 def say(kind, text):
@@ -91,12 +93,57 @@ def report_npm(packet):
         say('NPM', line)
 
 
+def probe(name, passed, detail):
+    say('READY', ('ok ' if passed else 'FAIL ') + name + ' ' + detail)
+
+
+def probe_downloads(packet):
+    source = packet / 'acceptance/cloud/download-question-12.py'
+    if not source.is_file():
+        probe('downloads', False, 'no download script in ' + str(packet))
+        return
+    for url in re.findall(r"_url = '(https://[^']+)'", source.read_text()):
+        try:
+            request = urllib.request.Request(url, method='HEAD', headers={'User-Agent': 'himawari-deploy-readiness'})
+            with urllib.request.urlopen(request, timeout=20) as response:
+                probe('download', response.status == 200, str(response.status) + ' ' + url)
+        except Exception as error:
+            probe('download', False, type(error).__name__ + ' ' + str(error)[:120] + ' ' + url)
+
+
+def probe_tool_sources():
+    for path in TOOL_SOURCES:
+        target = Path(path)
+        try:
+            target.lstat()
+            passed = target.is_file() and not target.is_symlink() and target.resolve() == target
+            probe('tool-source', passed, path + (' regular file' if passed else ' is a link or not a regular file'))
+        except FileNotFoundError:
+            probe('tool-source', False, path + ' missing')
+
+
+def probe_sandbox():
+    for key in ['kernel/apparmor_restrict_unprivileged_userns', 'kernel/unprivileged_userns_clone', 'user/max_user_namespaces']:
+        path = Path('/proc/sys') / key
+        say('READY', 'sysctl ' + key.replace('/', '.') + '=' + (path.read_text().strip() if path.exists() else 'absent'))
+    command = ['/usr/bin/setpriv', '--reuid=himawari-prod', '--regid=himawari-prod', '--init-groups', '--no-new-privs', '/usr/bin/env', '-i', 'PATH=/usr/bin:/bin', '/usr/bin/bwrap', '--unshare-all', '--die-with-parent', '--ro-bind', '/', '/', '--dev', '/dev', '--proc', '/proc', '--tmpfs', '/tmp', '/usr/bin/true']
+    try:
+        run = subprocess.run(command, capture_output=True, timeout=30)
+        error = run.stderr.decode('utf-8', 'replace').strip().splitlines()
+        probe('sandbox', run.returncode == 0, 'bwrap as himawari-prod exit=' + str(run.returncode) + (' ' + error[-1][:200] if error else ''))
+    except Exception as error:
+        probe('sandbox', False, type(error).__name__ + ' ' + str(error)[:160])
+
+
 def main():
     packet = Path(sys.argv[1]) if len(sys.argv) == 2 else None
     for directory in evidence_directories():
         report_evidence(directory)
     if packet is not None:
         report_npm(packet)
+        probe_downloads(packet)
+    probe_tool_sources()
+    probe_sandbox()
 
 
 if __name__ == '__main__':
