@@ -55,6 +55,57 @@ describe("托管机器的准备脚本", () => {
   });
 });
 
+describe("Mac 安装包发布工作流", () => {
+  const text = readFileSync(path.join(repositoryRoot, ".github/workflows/mac-release.yml"), "utf8");
+  const workflow = parse(text);
+  const job = workflow.jobs.publish;
+  it("只在 main 上、免费的标准 Mac 机器上跑，只有发布这一步能写仓库", () => {
+    expect(Object.keys(workflow.jobs)).toEqual(["publish"]);
+    expect(workflow.on.push.branches).toEqual(["main"]);
+    expect(workflow.on.pull_request).toBeUndefined();
+    expect(job["runs-on"]).toBe(macRunnerLabel);
+    expect(job.if).toContain("github.ref == 'refs/heads/main'");
+    expect(workflow.permissions).toEqual({ contents: "read" });
+    expect(job.permissions).toEqual({ contents: "write" });
+    expect(() => validateHostedRunners({ "mac-release.yml": text })).not.toThrow();
+  });
+  it("缺任何一把密钥就只警告、不出包", () => {
+    const check = job.steps.find((step) => step.id === "keys");
+    for (const name of [
+      "ASC_KEY_ID",
+      "ASC_ISSUER_ID",
+      "ASC_KEY_P8",
+      "MAC_DEVELOPER_ID_P12",
+      "MAC_DEVELOPER_ID_P12_PASSWORD",
+      "SPARKLE_PRIVATE_KEY",
+      "HIMAWARI_UPDATE_KEY",
+    ]) {
+      expect(check.run).toContain(name);
+      expect(Object.keys(check.env)).toContain(name);
+    }
+    for (const step of job.steps.slice(job.steps.indexOf(check) + 1)) {
+      expect(step.if).toContain("steps.keys.outputs.ready == 'true'");
+    }
+  });
+  it("App 读的更新清单地址就是发布步骤上传 appcast.xml 的那个 release", () => {
+    expect(workflow.env.HIMAWARI_UPDATE_FEED).toContain(
+      "/releases/download/mac-updates/appcast.xml",
+    );
+    const publish = job.steps.at(-1).run;
+    expect(publish).toContain("gh release upload mac-updates");
+    expect(publish).toContain('gh release create "mac-$HIMAWARI_BUILD_NUMBER"');
+    expect(workflow.env.HIMAWARI_DOWNLOAD_BASE).toMatch(
+      /\/releases\/download\/mac-\$\{\{ github\.run_number \}\}$/u,
+    );
+    const plist = readFileSync(
+      path.join(repositoryRoot, "clients/apple/App/macOS/Info.plist"),
+      "utf8",
+    );
+    expect(plist).toContain("<string>$(HIMAWARI_UPDATE_FEED)</string>");
+    expect(plist).toContain("<string>$(HIMAWARI_UPDATE_KEY)</string>");
+  });
+});
+
 describe("iPhone 工作流", () => {
   const workflow = parse(
     readFileSync(path.join(repositoryRoot, ".github/workflows/apple.yml"), "utf8"),
@@ -73,6 +124,7 @@ describe("iPhone 工作流", () => {
     expect(Object.keys(workflow.jobs)).toEqual([
       "changes",
       "iphone",
+      "mac",
       "iphone-accessibility",
       "required",
       "scroll",
@@ -138,6 +190,23 @@ describe("iPhone 工作流", () => {
     );
     expect(scenes).toContain('static let appearanceArgument = "-HimawariDemoAppearance"');
     expect(scenes).toContain(".preferredColorScheme(DemoScene.requestedColorScheme)");
+  });
+  it("不签名编译原生 Mac App 的 HimawariMac scheme", () => {
+    const build =
+      workflow.jobs.mac.steps.find((step) => step.run?.startsWith("xcodebuild build"))?.run ?? "";
+    expect(workflow.jobs.mac.name).toBe("apple/mac");
+    expect(build).toContain("-scheme HimawariMac");
+    expect(build).toContain("generic/platform=macOS");
+    expect(build).toContain("CODE_SIGNING_ALLOWED=NO");
+    expect(
+      readFileSync(
+        path.join(
+          repositoryRoot,
+          "clients/apple/App/Himawari.xcodeproj/xcshareddata/xcschemes/HimawariMac.xcscheme",
+        ),
+        "utf8",
+      ),
+    ).toContain('BlueprintName = "HimawariMac"');
   });
   it("每个示例场景都跑苹果的无障碍审计，审计测试在 Himawari scheme 里", () => {
     const job = workflow.jobs["iphone-accessibility"];

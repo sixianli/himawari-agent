@@ -14,6 +14,7 @@ const run = (needs) =>
 const needs = (client, iphone, audit) => ({
   changes: { result: "success", outputs: { client: String(client) } },
   iphone: { result: iphone, outputs: {} },
+  mac: { result: iphone, outputs: {} },
   "iphone-accessibility": { result: audit, outputs: {} },
 });
 
@@ -33,6 +34,14 @@ describe("apple/required：iPhone 编译和三片无障碍审计汇成一项检�
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("APPLE_REQUIRED_FAILED");
   });
+  it("改了客户端时 Mac App 编译失败也判失败", () => {
+    const result = run({
+      ...needs(true, "success", "success"),
+      mac: { result: "failure", outputs: {} },
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("APPLE_REQUIRED_FAILED mac=failure");
+  });
   it("没改 iPhone 客户端时，Mac 作业跳过也通过", () => {
     const result = run(needs(false, "skipped", "skipped"));
     expect(result.status).toBe(0);
@@ -42,6 +51,7 @@ describe("apple/required：iPhone 编译和三片无障碍审计汇成一项检�
     const result = run({
       changes: { result: "skipped", outputs: {} },
       iphone: { result: "skipped", outputs: {} },
+      mac: { result: "skipped", outputs: {} },
       "iphone-accessibility": { result: "skipped", outputs: {} },
     });
     expect(result.status).toBe(1);
@@ -55,7 +65,7 @@ describe("apple/required：iPhone 编译和三片无障碍审计汇成一项检�
     expect(job.name).toBe("apple/required");
     expect(job["runs-on"]).toBe("ubuntu-24.04");
     expect(job.if).toContain("always()");
-    expect(job.needs).toEqual(["changes", "iphone", "iphone-accessibility"]);
+    expect(job.needs).toEqual(["changes", "iphone", "mac", "iphone-accessibility"]);
     const step = job.steps.find((s) =>
       String(s.run ?? "").includes("scripts/ci/apple-required.mjs"),
     );

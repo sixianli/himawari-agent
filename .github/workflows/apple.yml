@@ -29,7 +29,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
-      - name: 看这次改动有没有碰 iPhone 客户端，没碰就不占 Mac 机器
+      - name: 看这次改动有没有碰苹果客户端（iPhone 和 Mac），没碰就不占 Mac 机器
         id: scope
         env:
           BASE: ${{ github.event_name != 'workflow_dispatch' && (github.event.pull_request.base.sha || github.event.before) || '' }}
@@ -56,6 +56,26 @@ jobs:
           -scheme Himawari
           -configuration Debug
           -destination 'generic/platform=iOS Simulator'
+          CODE_SIGNING_ALLOWED=NO
+  mac:
+    name: apple/mac
+    needs: changes
+    if: ${{ needs.changes.outputs.client == 'true' }}
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: 显示 Xcode 版本
+        run: xcodebuild -version
+      - name: 不签名编译原生 Mac App
+        run: >-
+          xcodebuild build
+          -project clients/apple/App/Himawari.xcodeproj
+          -scheme HimawariMac
+          -configuration Debug
+          -destination 'generic/platform=macOS'
           CODE_SIGNING_ALLOWED=NO
   iphone-accessibility:
     name: apple/iphone-accessibility ${{ matrix.shard }}
@@ -125,7 +145,7 @@ jobs:
           retention-days: 7
   required:
     name: apple/required
-    needs: [changes, iphone, iphone-accessibility]
+    needs: [changes, iphone, mac, iphone-accessibility]
     if: ${{ always() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -133,7 +153,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
-      - name: iPhone 编译和三片无障碍审计都过了才算过
+      - name: iPhone 和 Mac 编译、三片无障碍审计都过了才算过
         env:
           APPLE_NEEDS: ${{ toJSON(needs) }}
         run: node scripts/ci/apple-required.mjs
