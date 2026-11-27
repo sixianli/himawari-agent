@@ -68,3 +68,34 @@ final class FakeApprovalTransport: ApprovalPushTransport, @unchecked Sendable {
         #expect(HimawariPush(userInfo: ["himawari": ["v": 2, "kind": "approval", "actions": []]]) == nil)
     }
 }
+
+@Suite struct VaultCodePushTests {
+    @Test func readsTheCodeRequestTheServerPushes() throws {
+        let json = """
+        {"aps":{"alert":{"title":"Himawari 需要一个验证码","body":"招商银行发到你手机的短信验证码（bank.example.com）"},"sound":"default","thread-id":"vault_code","interruption-level":"time-sensitive","category":"himawari.vault-code"},
+         "himawari":{"v":1,"tag":"vault-code-vc_AAAAAAAAAAAAAAAAAAAAAA","kind":"vault_code","navigate":"/","vaultCodeRequestId":"vc_AAAAAAAAAAAAAAAAAAAAAA","actions":[]}}
+        """
+        let userInfo = try #require(JSONSerialization.jsonObject(with: Data(json.utf8)) as? [AnyHashable: Any])
+        let push = try #require(HimawariPush(userInfo: userInfo))
+        #expect(push.kind == HimawariPush.vaultCodeKind)
+        #expect(push.vaultCodeRequestId == "vc_AAAAAAAAAAAAAAAAAAAAAA")
+        #expect(push.vaultRequestId == nil)
+    }
+
+    @Test func readsTheApprovalRequestTheServerPushes() throws {
+        let userInfo: [AnyHashable: Any] = ["himawari": ["v": 1, "kind": "vault_approval", "vaultRequestId": "vr_AAAAAAAAAAAAAAAAAAAAAA", "actions": []]]
+        let push = try #require(HimawariPush(userInfo: userInfo))
+        #expect(push.kind == HimawariPush.vaultApprovalKind)
+        #expect(push.vaultRequestId == "vr_AAAAAAAAAAAAAAAAAAAAAA")
+    }
+
+    @Test func cleansWhatTheOwnerTypedTheWayTheServerAccepts() {
+        #expect(VaultCode.cleaned(" 482 910 ") == "482910")
+        #expect(VaultCode.cleaned("48-29-10") == "482910")
+        #expect(VaultCode.cleaned("AB12cd") == "AB12cd")
+        #expect(VaultCode.cleaned("123") == nil)
+        #expect(VaultCode.cleaned("1234567890123") == nil)
+        #expect(VaultCode.cleaned("12<34>") == nil)
+        #expect(VaultCode.cleaned("１２３４５６") == nil)
+    }
+}

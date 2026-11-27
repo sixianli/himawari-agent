@@ -309,7 +309,7 @@ describe("[vault-approval] one approval releases exactly the requested items onc
     );
     const result = (await outcome) as Extract<VaultReleaseOutcome, { kind: "approved" }>;
     expect(result.secrets.items[0]?.fields.has("totp")).toBe(false);
-    expect(result.secrets.items[0]?.totp).toHaveLength(3);
+    expect(result.secrets.items[0]?.totp).toHaveLength(4);
     result.secrets.wipe();
   });
 

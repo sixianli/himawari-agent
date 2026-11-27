@@ -164,3 +164,62 @@ extension DeviceAPI {
         }
     }
 }
+
+public struct VaultCodeRequest: Codable, Sendable, Equatable, Identifiable {
+    public let id: String
+    public let origin: String
+    public let purpose: String
+    public let createdAt: String
+    public let expiresAt: String
+
+    public init(id: String, origin: String, purpose: String, createdAt: String, expiresAt: String) {
+        self.id = id
+        self.origin = origin
+        self.purpose = purpose
+        self.createdAt = createdAt
+        self.expiresAt = expiresAt
+    }
+}
+
+public enum VaultCode {
+    public static let allowedLength = 4...12
+
+    public static func cleaned(_ typed: String) -> String? {
+        let code = typed.filter { !$0.isWhitespace && $0 != "-" }
+        guard allowedLength.contains(code.count), code.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber) }) else { return nil }
+        return code
+    }
+}
+
+public protocol VaultCodeTransport: Sendable {
+    func vaultCodeRequests() async throws -> [VaultCodeRequest]
+    func answerVaultCode(requestId: String, code: String) async throws -> VaultDecisionOutcome
+    func declineVaultCode(requestId: String) async throws -> VaultDecisionOutcome
+}
+
+extension DeviceAPI: VaultCodeTransport {
+    public func vaultCodeRequests() async throws -> [VaultCodeRequest] {
+        struct Reply: Decodable { let requests: [VaultCodeRequest] }
+        return try decode(Reply.self, try await http.send(DeviceRequest(method: "GET", path: "vault/codes"))).requests
+    }
+
+    public func answerVaultCode(requestId: String, code: String) async throws -> VaultDecisionOutcome {
+        struct Body: Encodable { let requestId: String; let code: String }
+        do {
+            _ = try await http.send(DeviceRequest(method: "POST", path: "vault/codes/answer", body: try JSONEncoder().encode(Body(requestId: requestId, code: code))))
+            return .recorded
+        } catch let DeviceAPIError.server(status, _, _, _) where status == 404 || status == 410 {
+            return .gone
+        }
+    }
+
+    public func declineVaultCode(requestId: String) async throws -> VaultDecisionOutcome {
+        struct Body: Encodable { let requestId: String }
+        do {
+            _ = try await http.send(DeviceRequest(method: "POST", path: "vault/codes/decline", body: try JSONEncoder().encode(Body(requestId: requestId))))
+            return .recorded
+        } catch let DeviceAPIError.server(status, _, _, _) where status == 404 || status == 410 {
+            return .gone
+        }
+    }
+}
