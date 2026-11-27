@@ -3,6 +3,7 @@ import SwiftUI
 public struct SunflowerMark: View {
     public enum Motion: Equatable, Sendable {
         case still
+        case idling
         case growing
         case breathing(low: Double)
         case growingOnce(from: Date)
@@ -36,7 +37,7 @@ public struct SunflowerMark: View {
     private var startsEmpty: Bool {
         switch motion {
         case .breathing, .growingOnce: true
-        case .still, .growing: false
+        case .still, .idling, .growing: false
         }
     }
 
@@ -44,6 +45,8 @@ public struct SunflowerMark: View {
         switch motion {
         case .still:
             return SunflowerSeeds.resting(seeds: seeds)
+        case .idling:
+            return SunflowerSeeds.idling(seconds: date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 10_000), seeds: seeds)
         case .growing:
             let seconds = date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 10_000)
             return SunflowerSeeds.resting(seeds: seeds) + seconds * SunflowerSeeds.growthPerSecond(seeds: seeds)

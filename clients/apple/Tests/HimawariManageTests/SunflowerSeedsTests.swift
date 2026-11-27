@@ -76,4 +76,15 @@ final class SunflowerSeedsTests: XCTestCase {
         XCTAssertEqual(SunflowerSeeds.growingOnce(seconds: 1000, seeds: 144), SunflowerSeeds.resting(seeds: 144))
         XCTAssertEqual(visible(SunflowerSeeds.growingOnce(seconds: 1000, seeds: 144), 144), 144)
     }
+
+    func testAnIdleMarkKeepsGrowingNewSeedsMoreSlowlyThanAnAnsweringOne() {
+        let seeds = 89
+        let rest = SunflowerSeeds.resting(seeds: seeds)
+        XCTAssertEqual(SunflowerSeeds.idling(seconds: 0, seeds: seeds), rest)
+        let idleAfterTen = SunflowerSeeds.idling(seconds: 10, seeds: seeds)
+        let busyAfterTen = rest + 10 * SunflowerSeeds.growthPerSecond(seeds: seeds)
+        XCTAssertGreaterThan(idleAfterTen, rest + 1)
+        XCTAssertLessThan(idleAfterTen, busyAfterTen)
+        XCTAssertGreaterThan(SunflowerSeeds.idling(seconds: 60, seeds: seeds), idleAfterTen)
+    }
 }
