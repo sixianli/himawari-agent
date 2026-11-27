@@ -82,5 +82,11 @@
     "code": "number-literal",
     "count": 19,
     "why": "收听功能的界面早于 2026-11-12 的设计令牌，颜色和尺寸还是写死的；收听界面重做时一并清掉"
+  },
+  {
+    "file": "Sources/HimawariShell/DemoScenes.swift",
+    "code": "app-color-scheme",
+    "count": 1,
+    "why": "只在 DEBUG 编译的演示场景里生效：无障碍审计用启动参数 -HimawariDemoAppearance 指定深浅色，让深色那一遍确定是深色（I-121，系统外观切换在测试里不生效）。不带参数时传 nil，仍跟系统走"
   }
 ]
