@@ -643,18 +643,25 @@ class LastFailureReportTest(unittest.TestCase):
             for run in (older, newest):
                 run.mkdir(parents=True)
             (older / 'console.stderr').write_text('old failure\n')
-            (newest / 'run-report.json').write_text(json.dumps({'exitCode': 1, 'runnerErrors': [{'type': 'RuntimeError', 'message': 'ACCEPTANCE_SUBCOMMAND_FAILED'}]}))
-            (newest / 'acceptance-report.json').write_text(json.dumps({'commands': [{'name': 'scratch-guard', 'exitCode': 0}, {'name': 'r2l6-console', 'exitCode': 1}]}))
+            (newest / 'run-report.json').write_text(json.dumps({'passed': False, 'exitCode': 1, 'runnerErrors': [{'type': 'RuntimeError', 'message': 'ACCEPTANCE_SUBCOMMAND_FAILED'}]}))
+            (newest / 'acceptance-report.json').write_text(json.dumps({'passed': False, 'commands': [{'name': 'scratch-guard', 'exitCode': 0}, {'name': 'r2l6-console', 'exitCode': 1}]}))
+            (newest / 'r2l6').mkdir()
+            (newest / 'r2l6/report.json').write_text(json.dumps({'passed': False, 'failure': {'reason': 'Error: R2_L6_CONTROLLER_FAILED_EXIT', 'phase': 'restart'}, 'assertions': [{'id': 'install', 'passed': True}, {'id': 'restart', 'passed': False}]}))
+            (newest / 'r2l6/passed.json').write_text(json.dumps({'passed': True, 'failure': 'ignored'}))
+            copied = newest / 'scratch-failure-files/source/test/qualification/evidence'
+            copied.mkdir(parents=True)
+            (copied / 'contracts-before.log').write_text('FAIL old committed evidence\n')
             (newest / 'r2l6-console.stderr').write_text('Error: sandbox refused\n')
             (newest / 'scratch-guard.stderr').write_text('')
             output = io.StringIO()
             with contextlib.redirect_stdout(output):
                 module.report_failed_acceptance()
         lines = output.getvalue().splitlines()
-        self.assertIn('LAST_FAILURE_ACCEPTANCE run exitCode=1 runnerErrors=[{"type": "RuntimeError", "message": "ACCEPTANCE_SUBCOMMAND_FAILED"}]', lines)
-        self.assertIn('LAST_FAILURE_ACCEPTANCE command r2l6-console exitCode=1', lines)
+        self.assertIn('LAST_FAILURE_REPORT run-01/run-report.json {"runnerErrors": [{"message": "ACCEPTANCE_SUBCOMMAND_FAILED", "type": "RuntimeError"}]}', lines)
+        self.assertIn('LAST_FAILURE_REPORT run-01/acceptance-report.json {"failedCommands": [{"exitCode": 1, "name": "r2l6-console"}]}', lines)
+        self.assertIn('LAST_FAILURE_REPORT run-01/r2l6/report.json {"failedAssertions": ["restart"], "failure": {"phase": "restart", "reason": "Error: R2_L6_CONTROLLER_FAILED_EXIT"}}', lines)
         self.assertIn('LAST_FAILURE_TAIL r2l6-console.stderr Error: sandbox refused', lines)
-        self.assertFalse(any('scratch-guard' in line or 'old failure' in line for line in lines))
+        self.assertFalse(any('scratch-guard' in line or 'old failure' in line or 'ignored' in line or 'old committed evidence' in line for line in lines))
 
     def test_npm_differences_name_the_exact_field_that_moved(self):
         module = load('last_failure_report', 'last-failure-report.py')

@@ -135,7 +135,6 @@ struct SettingsPage<Content: View>: View {
                 .padding(.top, systemBar ? SL.groupGap : DesignTokens.Size.sheetPaddingTop)
                 .padding(.horizontal, DesignTokens.Size.sheetPaddingHorizontal)
                 .padding(.bottom, DesignTokens.Size.sheetPaddingBottom)
-                .containerRelativeFrame(.vertical, alignment: .top)
         }
         .scrollIndicators(.hidden)
         .himawariScreenBackground()
