@@ -51,6 +51,8 @@ export const APPLE_PUSH_TEXT = {
     openBody: "这台设备上有一件事在等着做",
     vaultTitle: "Himawari 请你批准一次使用",
     vaultBody: "点开后刷脸批准或拒绝",
+    codeTitle: "Himawari 需要一个验证码",
+    codeBody: (purpose: string, host: string) => `${purpose}（${host}）`,
     mcpGrantTitle: "有 agent 想接入 Himawari",
     mcpGrantBody: (name: string, host: string) =>
       `「${name}」（${host}）。点开后用面容 ID 批准或拒绝`,
@@ -66,6 +68,8 @@ export const APPLE_PUSH_TEXT = {
     openBody: "Something is waiting to be done on this device",
     vaultTitle: "Himawari needs your approval",
     vaultBody: "Open to approve or decline with Face ID",
+    codeTitle: "Himawari needs a verification code",
+    codeBody: (purpose: string, host: string) => `${purpose} (${host})`,
     mcpGrantTitle: "An agent wants to connect to Himawari",
     mcpGrantBody: (name: string, host: string) =>
       `“${name}” (${host}). Open to approve or decline with Face ID`,
@@ -81,6 +85,8 @@ export const APPLE_PUSH_TEXT = {
     openBody: "このデバイスで行う操作が待っています",
     vaultTitle: "Himawari が使用の承認を求めています",
     vaultBody: "開いて Face ID で承認または拒否",
+    codeTitle: "Himawari が確認コードを求めています",
+    codeBody: (purpose: string, host: string) => `${purpose}（${host}）`,
     mcpGrantTitle: "エージェントが Himawari への接続を求めています",
     mcpGrantBody: (name: string, host: string) =>
       `「${name}」（${host}）。開いて Face ID で承認または拒否`,
@@ -234,6 +240,34 @@ export function applePushVaultApprovalPayload(input: {
       kind: VAULT_APPROVAL_PUSH_KIND,
       navigate: "/",
       vaultRequestId: input.requestId,
+      actions: [],
+    },
+  });
+}
+
+export const VAULT_CODE_PUSH_KIND = "vault_code" as const;
+export const VAULT_CODE_PUSH_CATEGORY = "himawari.vault-code" as const;
+const VAULT_CODE_BODY_BYTES = 360;
+
+export function applePushVaultCodePayload(input: {
+  readonly title: string;
+  readonly body: string;
+  readonly requestId: string;
+}): string {
+  return JSON.stringify({
+    aps: {
+      alert: { title: input.title, body: clip(input.body, VAULT_CODE_BODY_BYTES) },
+      sound: "default",
+      "thread-id": VAULT_CODE_PUSH_KIND,
+      "interruption-level": "time-sensitive",
+      category: VAULT_CODE_PUSH_CATEGORY,
+    },
+    himawari: {
+      v: 1,
+      tag: `vault-code-${input.requestId}`,
+      kind: VAULT_CODE_PUSH_KIND,
+      navigate: "/",
+      vaultCodeRequestId: input.requestId,
       actions: [],
     },
   });
@@ -461,6 +495,41 @@ export class ProductionApplePush implements PushCompanionChannel {
     } catch (error) {
       this.#options.onFailure(error);
     }
+  }
+
+  async requestVaultCode(input: {
+    readonly requestId: string;
+    readonly origin: string;
+    readonly purpose: string;
+    readonly expiresAt: string;
+  }): Promise<void> {
+    const registrations = (
+      await this.#options.store.listRegistrations({ ...this.#scope(), pushType: "alert" })
+    ).filter((registration) => registration.status === "active" && this.#configured(registration));
+    if (registrations.length === 0) throw new Error("VAULT_CODE_NO_PHONE");
+    const now = this.#options.now();
+    const host = new URL(input.origin).host;
+    let delivered = 0;
+    for (const registration of registrations) {
+      const text = APPLE_PUSH_TEXT[registration.locale];
+      const result = await this.#transmit("alert", VAULT_CODE_PUSH_KIND, {
+        token: registration.token,
+        environment: registration.environment,
+        topic: registration.topic,
+        pushType: "alert",
+        priority: 10,
+        expiresAtSeconds: Math.floor(Date.parse(input.expiresAt) / 1_000),
+        collapseId: `vault-code-${input.requestId}`,
+        payload: applePushVaultCodePayload({
+          title: text.codeTitle,
+          body: text.codeBody(input.purpose, host),
+          requestId: input.requestId,
+        }),
+      });
+      if (result.kind === "sent") delivered += 1;
+      await this.#applyRegistrationOutcome(registration, result, now);
+    }
+    if (delivered === 0) throw new Error("VAULT_CODE_NOT_DELIVERED");
   }
 
   async requestMcpGrant(input: {

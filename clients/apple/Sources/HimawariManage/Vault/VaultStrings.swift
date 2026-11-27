@@ -119,6 +119,33 @@ extension M {
     static var vaultSaveFailed: String { text("没存上，再试一次", ja: "保存できませんでした。もう一度お試しください", en: "Couldn't save. Try again") }
     static var vaultConflict: String { text("别的设备刚改过，已刷新，再试一次", ja: "別のデバイスが変更しました。更新したのでもう一度", en: "Another device just changed it. Refreshed; try again") }
     static var vaultScan: String { text("扫码", ja: "スキャン", en: "Scan") }
+    static var vaultScanMenu: String { text("从二维码读取", ja: "QR コードから読み取る", en: "Read from a QR code") }
+    static var vaultScanPhoto: String { text("从照片里找二维码", ja: "写真から QR コードを探す", en: "Find a QR code in a photo") }
+    static var vaultScanPhotoNone: String {
+        text("这张图里没找到两步验证二维码", ja: "この画像に 2 段階認証の QR コードが見つかりません", en: "No two-step QR code in that image")
+    }
+    static var vaultOTPAuthLinkNote: String {
+        text(
+            "网站给的两步验证密钥已经填好。补上网站地址和密码就能存。",
+            ja: "サイトの 2 段階認証の鍵を入力済みです。サイトのアドレスとパスワードを足せば保存できます。",
+            en: "The site's two-step key is filled in. Add the site address and password to save."
+        )
+    }
+    static var vaultCodeTitle: String { text("输入验证码", ja: "確認コードを入力", en: "Enter the code") }
+    static var vaultCodeField: String { text("验证码", ja: "確認コード", en: "Code") }
+    static var vaultCodeSend: String { text("填入", ja: "入力する", en: "Fill in") }
+    static var vaultCodeDecline: String { text("不填", ja: "入力しない", en: "Don't fill") }
+    static func vaultCodeSite(_ origin: String) -> String {
+        text("只填进 \(origin)", ja: "\(origin) にだけ入力します", en: "Filled only into \(origin)")
+    }
+    static var vaultCodeInvalid: String {
+        let low = VaultCode.allowedLength.lowerBound
+        let high = VaultCode.allowedLength.upperBound
+        return text("验证码是 \(low) 到 \(high) 位字母或数字", ja: "確認コードは \(low)〜\(high) 文字の英数字です", en: "Codes are \(low) to \(high) letters or digits")
+    }
+    static var vaultCodeGone: String {
+        text("这个验证码已经不用填了", ja: "このコードはもう不要です", en: "This code is no longer needed")
+    }
     static var vaultScanAim: String { text("对准网站给的两步验证二维码", ja: "サイトの 2 段階認証 QR コードに向けてください", en: "Point at the site's two-step QR code") }
     static var vaultTOTPInvalid: String {
         text("两步验证密钥只能是字母 A–Z 和数字 2–7", ja: "2 段階認証の鍵は A–Z と 2–7 だけです", en: "A two-step key only has letters A–Z and digits 2–7")

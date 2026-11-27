@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { openSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { connect, createServer } from "node:net";
@@ -6,7 +7,22 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 
-const ACTIONS = new Set(["open", "read", "click", "type", "press", "back", "screenshot", "status"]);
+const ACTIONS = new Set([
+  "open",
+  "read",
+  "click",
+  "type",
+  "press",
+  "back",
+  "screenshot",
+  "status",
+  "vault_check",
+  "vault_fill",
+]);
+const VAULT_FIELDS = ["username", "password", "code"];
+const VAULT_VALUE_LIMIT = 4096;
+const TEXT_INPUT_TYPES = new Set(["", "text", "email", "tel", "number", "search", "url"]);
+const HIDDEN_MARK = "[hidden]";
 const REF_ATTRIBUTE = "data-himawari-ref";
 const REF_PATTERN = /^(?:f([1-9][0-9]{0,2}))?e([1-9][0-9]{0,5})$/;
 const EGRESS_DENIED_HEADER = "x-himawari-egress-error";
@@ -84,7 +100,91 @@ export function validateRequest(request) {
     throw new BrowserError("BROWSER_INPUT_INVALID", "submit");
   if (action === "press" && !KEY_PATTERN.test(String(request.key)))
     throw new BrowserError("BROWSER_INPUT_INVALID", "key");
+  if (action === "vault_check" || action === "vault_fill") validateVaultRequest(request);
   return request;
+}
+
+function validateVaultRequest(request) {
+  const fields = request.fields;
+  if (!fields || typeof fields !== "object" || Array.isArray(fields))
+    throw new BrowserError("BROWSER_INPUT_INVALID", "fields");
+  const names = Object.keys(fields);
+  if (names.length === 0 || names.some((name) => !VAULT_FIELDS.includes(name)))
+    throw new BrowserError("BROWSER_INPUT_INVALID", "fields");
+  for (const name of names) {
+    const match = REF_PATTERN.exec(String(fields[name]));
+    if (!match || match[1]) throw new BrowserError("VAULT_FIELD_NOT_ALLOWED", name);
+  }
+  if (new Set(names.map((name) => fields[name])).size !== names.length)
+    throw new BrowserError("BROWSER_INPUT_INVALID", "fields");
+  if (request.action === "vault_check") return;
+  const values = request.values;
+  if (!values || typeof values !== "object" || Array.isArray(values))
+    throw new BrowserError("BROWSER_INPUT_INVALID", "values");
+  const valueNames = Object.keys(values);
+  if (
+    valueNames.length !== names.length ||
+    valueNames.some(
+      (name) =>
+        !names.includes(name) ||
+        typeof values[name] !== "string" ||
+        values[name].length === 0 ||
+        values[name].length > VAULT_VALUE_LIMIT,
+    )
+  )
+    throw new BrowserError("BROWSER_INPUT_INVALID", "values");
+  if (typeof request.origin !== "string" || typeof request.pageVersion !== "string")
+    throw new BrowserError("BROWSER_INPUT_INVALID", "expected");
+  if (request.submit !== undefined && typeof request.submit !== "boolean")
+    throw new BrowserError("BROWSER_INPUT_INVALID", "submit");
+}
+
+function secretVariants(value) {
+  const variants = new Set([
+    value,
+    encodeURIComponent(value),
+    Buffer.from(value, "utf8").toString("base64"),
+    Buffer.from(value, "utf8").toString("base64url"),
+    Buffer.from(value, "utf8").toString("hex"),
+    JSON.stringify(value).slice(1, -1),
+  ]);
+  return [...variants].filter((variant) => variant.length > 0).sort((a, b) => b.length - a.length);
+}
+
+export function maskSecrets(text, values) {
+  let masked = text;
+  for (const value of values)
+    for (const variant of secretVariants(value)) masked = masked.split(variant).join(HIDDEN_MARK);
+  return masked;
+}
+
+function describeVaultTarget(element) {
+  const style = getComputedStyle(element);
+  const box = element.getBoundingClientRect();
+  const visible =
+    style.display !== "none" &&
+    style.visibility !== "hidden" &&
+    Number(style.opacity) > 0 &&
+    box.width > 0 &&
+    box.height > 0;
+  const form = element.form ?? null;
+  let formOrigin = location.origin;
+  if (form) {
+    try {
+      formOrigin = new URL(form.action, location.href).origin;
+    } catch {
+      formOrigin = "";
+    }
+  }
+  return {
+    tag: element.tagName,
+    type: (element.getAttribute("type") || "").toLowerCase(),
+    inDocument: element.getRootNode() === document,
+    visible,
+    disabled: Boolean(element.disabled || element.readOnly),
+    formOrigin,
+    formIndex: form ? [...document.forms].indexOf(form) : -1,
+  };
 }
 
 function snapshotScript({ attribute, prefix }) {
@@ -299,6 +399,11 @@ class BrowserSession {
       );
       return this.#result(request, true);
     }
+    if (request.action === "vault_check") {
+      const checked = await this.#vaultCheck(request);
+      return { ...(await this.#result(request, false)), ...checked };
+    }
+    if (request.action === "vault_fill") return this.#vaultFill(request);
     if (request.action === "read") return this.#result(request, true);
     if (request.action === "status") return this.#result(request, false);
     if (request.action === "screenshot") {
@@ -335,6 +440,80 @@ class BrowserSession {
       if (request.submit) await target.press("Enter", { timeout: request.timeoutMs });
     });
     return this.#result(request, true);
+  }
+
+  async #vaultCheck(request) {
+    const page = this.page();
+    let origin;
+    try {
+      const url = new URL(page.url());
+      if (url.protocol !== "https:") throw new Error("scheme");
+      origin = url.origin;
+    } catch {
+      throw new BrowserError("VAULT_PAGE_NOT_HTTPS");
+    }
+    const described = [];
+    for (const name of VAULT_FIELDS) {
+      const ref = request.fields[name];
+      if (ref === undefined) continue;
+      const target = await this.#locate(page, ref);
+      const facts = await target.evaluate(describeVaultTarget);
+      const textual =
+        facts.tag === "TEXTAREA" || (facts.tag === "INPUT" && TEXT_INPUT_TYPES.has(facts.type));
+      const fits =
+        name === "password"
+          ? facts.tag === "INPUT" && facts.type === "password"
+          : name === "username"
+            ? textual && facts.tag === "INPUT"
+            : textual || (facts.tag === "INPUT" && facts.type === "password");
+      if (!fits) throw new BrowserError("VAULT_FIELD_NOT_ALLOWED", name);
+      if (!facts.inDocument || !facts.visible || facts.disabled)
+        throw new BrowserError("VAULT_FIELD_NOT_ALLOWED", name);
+      if (facts.formOrigin !== origin) throw new BrowserError("VAULT_FORM_ELSEWHERE", name);
+      described.push([name, ref, facts.tag, facts.type, facts.formOrigin, facts.formIndex]);
+    }
+    const pageVersion = createHash("sha256")
+      .update(JSON.stringify([page.url(), described]))
+      .digest("hex");
+    return { origin, pageVersion };
+  }
+
+  async #vaultFill(request) {
+    const checked = await this.#vaultCheck(request);
+    if (checked.origin !== request.origin || checked.pageVersion !== request.pageVersion)
+      throw new BrowserError("VAULT_PAGE_CHANGED");
+    const page = this.page();
+    const before = page.url();
+    const values = Object.values(request.values);
+    const filled = [];
+    const ordered = VAULT_FIELDS.filter((name) => request.fields[name] !== undefined);
+    try {
+      await this.#acting(page, request, async () => {
+        for (const name of ordered) {
+          const target = await this.#locate(page, request.fields[name]);
+          await target.fill(request.values[name], { timeout: request.timeoutMs });
+          filled.push(target);
+        }
+        if (request.submit) await filled.at(-1).press("Enter", { timeout: request.timeoutMs });
+      });
+    } catch (error) {
+      if (!page.isClosed() && page.url() === before)
+        for (const target of filled) await target.fill("").catch(() => undefined);
+      throw new BrowserError(
+        error instanceof BrowserError ? error.code : "BROWSER_ACTION_FAILED",
+        error instanceof BrowserError ? error.detail : firstLine(error),
+      );
+    }
+    const result = await this.#result(request, true);
+    return {
+      ...result,
+      page: {
+        url: maskSecrets(result.page.url, values),
+        title: maskSecrets(result.page.title, values),
+      },
+      text: maskSecrets(result.text, values),
+      filled: ordered,
+    };
   }
 
   async #locate(page, ref) {

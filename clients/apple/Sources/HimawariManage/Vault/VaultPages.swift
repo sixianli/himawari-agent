@@ -1,6 +1,7 @@
 #if canImport(CryptoKit) && canImport(Security) && canImport(LocalAuthentication)
 import HimawariCore
 import HimawariDesign
+import PhotosUI
 import SwiftUI
 
 typealias VL = ManageLayout.VaultSheet
@@ -226,28 +227,45 @@ struct VaultSecretField: View {
     var scannable = false
     var last = false
     @State private var scanning = false
+    @State private var choosingPhoto = false
+    @State private var photo: PhotosPickerItem?
+    @State private var photoNote: String?
 
     var body: some View {
-        VaultFieldRow(label: label, last: last) {
+        VaultFieldRow(label: label, note: photoNote, noteIsWarning: photoNote != nil, last: last) {
             HStack(spacing: VL.buttonGap) {
                 SecureField("", text: $value)
                     #if os(iOS)
                     .textContentType(.oneTimeCode)
                     #endif
-                if scannable && QRCodeScannerAvailability.available {
-                    Button { scanning = true } label: {
-                        Icon(.scan, size: DesignTokens.IconSize.listRow).foregroundStyle(Color.hmSun)
+                if scannable {
+                    Menu {
+                        if QRCodeScannerAvailability.available {
+                            Button { scanning = true } label: { Label(M.vaultScan, systemImage: "qrcode.viewfinder") }
+                        }
+                        Button { choosingPhoto = true } label: { Label(M.vaultScanPhoto, systemImage: "photo") }
+                    } label: {
+                        Icon(.scan, size: DesignTokens.IconSize.listRow)
+                            .foregroundStyle(Color.hmSun)
+                            .frame(minWidth: DesignTokens.Size.minTapTarget, minHeight: DesignTokens.Size.minTapTarget)
+                            .contentShape(Rectangle())
                     }
-                    .buttonStyle(.pressable)
-                    .accessibilityLabel(Text(M.vaultScan))
+                    .menuIndicator(.hidden)
+                    .accessibilityLabel(Text(M.vaultScanMenu))
                 }
             }
+        }
+        .photosPicker(isPresented: $choosingPhoto, selection: $photo, matching: .images)
+        .onChange(of: photo) { _, item in
+            guard let item else { return }
+            Task { await read(item) }
         }
         #if canImport(VisionKit) && os(iOS)
         .fullScreenCover(isPresented: $scanning) {
             ZStack(alignment: .topLeading) {
                 QRCodeScanner(accepts: { VaultOTPAuth.seed(from: $0) != nil }, found: { scanned in
                     value = VaultOTPAuth.seed(from: scanned) ?? ""
+                    photoNote = nil
                     scanning = false
                 })
                 .ignoresSafeArea()
@@ -258,6 +276,21 @@ struct VaultSecretField: View {
             }
         }
         #endif
+    }
+
+    private func read(_ item: PhotosPickerItem) async {
+        defer { photo = nil }
+        guard let data = try? await item.loadTransferable(type: Data.self) else {
+            photoNote = M.vaultScanPhotoNone
+            return
+        }
+        let found = await QRCodeImageReader.payloads(in: data).lazy.compactMap(VaultOTPAuth.seed(from:)).first
+        if let found {
+            value = found
+            photoNote = nil
+        } else {
+            photoNote = M.vaultScanPhotoNone
+        }
     }
 }
 
@@ -271,26 +304,67 @@ enum QRCodeScannerAvailability {
     }
 }
 
+struct VaultFormPrefill: Equatable, Sendable {
+    var name = ""
+    var site = ""
+    var username = ""
+    var totp = ""
+    var note: String?
+
+    init(name: String = "", site: String = "", username: String = "", totp: String = "", note: String? = nil) {
+        self.name = name
+        self.site = site
+        self.username = username
+        self.totp = totp
+        self.note = note
+    }
+
+    init?(otpauth link: String) {
+        guard let parsed = VaultOTPAuth.parse(link) else { return nil }
+        let issuer = parsed.issuer ?? ""
+        self.init(
+            name: String(issuer.prefix(VaultContract.nameCharacters)),
+            site: "",
+            username: parsed.account ?? "",
+            totp: parsed.parameters.stored,
+            note: M.vaultOTPAuthLinkNote
+        )
+    }
+}
+
 struct VaultFormPage: View {
     let model: VaultModel
     let done: () -> Void
     let back: () -> Void
     @State private var kind: VaultItemKind = .login
-    @State private var name = ""
-    @State private var site = ""
-    @State private var username = ""
+    @State private var name: String
+    @State private var site: String
+    @State private var username: String
     @State private var secret = ""
-    @State private var totp = ""
+    @State private var totp: String
+    private let note: String?
+
+    init(model: VaultModel, prefill: VaultFormPrefill = VaultFormPrefill(), done: @escaping () -> Void, back: @escaping () -> Void) {
+        self.model = model
+        self.done = done
+        self.back = back
+        _name = State(initialValue: prefill.name)
+        _site = State(initialValue: prefill.site)
+        _username = State(initialValue: prefill.username)
+        _totp = State(initialValue: prefill.totp)
+        note = prefill.note
+    }
     @State private var busy = false
     @State private var failure: String?
 
     private var origin: String? { VaultContract.origin(site.trimmingCharacters(in: .whitespacesAndNewlines)) }
-    private var totpValid: Bool { totp.isEmpty || VaultTOTP.base32Decode(totp).map { !$0.isEmpty } == true }
+    private var totpValid: Bool { totp.isEmpty || VaultTOTP.normalized(totp) != nil }
     private var valid: Bool { VaultContract.name(name) != nil && origin != nil && !secret.isEmpty && totpValid }
 
     var body: some View {
         SettingsPage(gap: VL.formGap) {
             SheetHeader(title: M.vaultManual, leading: .back, action: back)
+            if let note { VaultNote(note) }
             Picker("", selection: $kind) {
                 Text(M.vaultKindLogin).tag(VaultItemKind.login)
                 Text(M.vaultKindKey).tag(VaultItemKind.apiKey)
@@ -338,7 +412,7 @@ struct VaultFormPage: View {
         if kind == .login {
             values["password"] = secret
             if !username.isEmpty { values["username"] = username }
-            if !totp.isEmpty { values["totp"] = totp.replacingOccurrences(of: " ", with: "").uppercased() }
+            if !totp.isEmpty, let stored = VaultTOTP.normalized(totp) { values["totp"] = stored }
         } else {
             values["api_key"] = secret
         }
@@ -464,7 +538,7 @@ struct VaultReplacePage: View {
 
     private var valid: Bool {
         guard !value.isEmpty else { return false }
-        return field != .totp || VaultTOTP.base32Decode(value).map { !$0.isEmpty } == true
+        return field != .totp || VaultTOTP.normalized(value) != nil
     }
 
     var body: some View {
@@ -484,7 +558,7 @@ struct VaultReplacePage: View {
     private func save() {
         busy = true
         failure = nil
-        let replacement = field == .totp ? value.replacingOccurrences(of: " ", with: "").uppercased() : value
+        let replacement = field == .totp ? (VaultTOTP.normalized(value) ?? value) : value
         Task {
             defer { busy = false }
             do {

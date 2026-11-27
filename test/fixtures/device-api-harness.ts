@@ -259,6 +259,9 @@ export async function harness(
       approvalNeeded: async (input) => {
         vaultNotified.push(input.requestId);
       },
+      codeNeeded: async (input) => {
+        vaultNotified.push(input.requestId);
+      },
     },
     now,
   });

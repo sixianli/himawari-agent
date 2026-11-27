@@ -1730,15 +1730,25 @@
     "changedIn": "浏览器工具",
     "reason": "新增浏览器工具的定义和结果文字"
   },
+  "tool-result.browser-vault-declined": {
+    "sha256": "e9f5b7039dd235f66be435908af5d7d9acbd79aa191f7d8947888fc00bb0af67",
+    "changedIn": "ADR 0288",
+    "reason": "保险箱第三步：浏览器用保险箱登录（刷一次脸，密码和两步验证码一起填），以及推送到 iPhone 请主人输入验证码"
+  },
+  "tool-result.browser-vault-refused": {
+    "sha256": "0598e133f4c3526059abf7175f0a3eba481f8166fd590d563525140ad8b596c2",
+    "changedIn": "ADR 0288",
+    "reason": "保险箱第三步：浏览器用保险箱登录（刷一次脸，密码和两步验证码一起填），以及推送到 iPhone 请主人输入验证码"
+  },
   "tools.browser": {
-    "sha256": "d67b9041524390f82b662b72161b2a4e7f3c6c80a50a3d562f370213ebd667f2",
-    "changedIn": "浏览器工具",
-    "reason": "新增浏览器工具的定义和结果文字"
+    "sha256": "419f6a9384605fa2d54d7fc2e2cb57eaea4a16960cb38b6e53fa89fb05b053ac",
+    "changedIn": "ADR 0288",
+    "reason": "保险箱第三步：浏览器用保险箱登录（刷一次脸，密码和两步验证码一起填），以及推送到 iPhone 请主人输入验证码"
   },
   "tools.browser.action": {
-    "sha256": "592cdbbc600e6dde06ec3298853dbb961c3e546dee51ae9f08172ae072b3681c",
-    "changedIn": "浏览器工具",
-    "reason": "新增浏览器工具的定义和结果文字"
+    "sha256": "13f6fd3a69961992fb32d4934317aabc4e3927031a430332fee4e89e92911cb9",
+    "changedIn": "ADR 0288",
+    "reason": "保险箱第三步：浏览器用保险箱登录（刷一次脸，密码和两步验证码一起填），以及推送到 iPhone 请主人输入验证码"
   },
   "tools.browser.hosts": {
     "sha256": "4290e52ae1c4c9cf8f874603c8b9899a0519d96ee43adb9a384be168bfb6b85d",
@@ -1756,9 +1766,9 @@
     "reason": "新增浏览器工具的定义和结果文字"
   },
   "tools.browser.submit": {
-    "sha256": "9bdfe217889f6c5b512333d2cce498de2d6893d807fc652ffd77ad3f6c6be601",
-    "changedIn": "浏览器工具",
-    "reason": "新增浏览器工具的定义和结果文字"
+    "sha256": "4483fe952475bec8f97854e774f79f2afba4cd3bf54b5401527291a059f1040b",
+    "changedIn": "ADR 0288",
+    "reason": "保险箱第三步：浏览器用保险箱登录（刷一次脸，密码和两步验证码一起填），以及推送到 iPhone 请主人输入验证码"
   },
   "tools.browser.text": {
     "sha256": "f0e2ec1e37f66d4338c76132a69451e9da2dc1539c5124378055f8e9eb687dd8",
@@ -1774,6 +1784,21 @@
     "sha256": "6d9655ee59c4196a4ea6edf1e2ffc40e46980cdd114a30a8810e1c8b00743556",
     "changedIn": "ADR 0313",
     "reason": "新增：app_action 的 run（Code Mode）用到的说明"
+  },
+  "tools.browser.fields": {
+    "sha256": "c7ec424f7c6ae725ccfb87d445778656f71c1ddaf878118241f279810a6defad",
+    "changedIn": "ADR 0288",
+    "reason": "保险箱第三步：浏览器用保险箱登录（刷一次脸，密码和两步验证码一起填），以及推送到 iPhone 请主人输入验证码"
+  },
+  "tools.browser.item": {
+    "sha256": "0a9fa9b9242b059e46d705f9b844c4535b78a3f235748e6f69d43a60c4bf8d8a",
+    "changedIn": "ADR 0288",
+    "reason": "保险箱第三步：浏览器用保险箱登录（刷一次脸，密码和两步验证码一起填），以及推送到 iPhone 请主人输入验证码"
+  },
+  "tools.browser.purpose": {
+    "sha256": "2d387f8ecdfe09387f26f51b2339efa0b70b5775d55ef9a616312e497e1c5ef0",
+    "changedIn": "ADR 0288",
+    "reason": "保险箱第三步：浏览器用保险箱登录（刷一次脸，密码和两步验证码一起填），以及推送到 iPhone 请主人输入验证码"
   },
   "tools.result.app-code.error": {
     "sha256": "95f930b257010da2183ed34a1463fbb51aac123664011e6c76d9fa6fc545656a",

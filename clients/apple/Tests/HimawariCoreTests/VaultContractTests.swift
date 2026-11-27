@@ -212,7 +212,8 @@ struct VaultFixture: Decodable {
         #expect(object["itemKey"] as? String == (try keyring.itemKey(sealed)).base64EncodedString())
         let codes = try #require(object["totp"] as? [[String: Any]])
         #expect(codes.first?["code"] as? String == "287082")
-        #expect(codes.count == 3)
+        #expect(codes.first?["at"] as? Int == 30)
+        #expect(codes.count == 5)
 
         let wrongOrigin = VaultPendingRequest(id: request.id, nonce: request.nonce, itemIds: request.itemIds, itemVersions: request.itemVersions, origin: "https://evil.example.com", pageVersion: nil, ephemeralPublicKey: request.ephemeralPublicKey, expiresAt: request.expiresAt, createdAt: request.createdAt, purpose: request.purpose)
         #expect(throws: VaultCryptoError.originNotAllowed) { _ = try keyring.release(request: wrongOrigin, items: [sealed], now: Date()) }
@@ -229,17 +230,74 @@ struct VaultFixture: Decodable {
     }
 }
 
+private func rfcSecret(bytes count: Int) -> String {
+    let ascii = Array("1234567890".utf8)
+    let bytes = (0..<count).map { ascii[$0 % ascii.count] }
+    let alphabet = Array("ABCDEFGHIJKLMNOPQRSTUVWXYZ234567")
+    var output = ""
+    var buffer: UInt32 = 0
+    var bits = 0
+    for byte in bytes {
+        buffer = (buffer << 8) | UInt32(byte)
+        bits += 8
+        while bits >= 5 {
+            bits -= 5
+            output.append(alphabet[Int((buffer >> UInt32(bits)) & 0x1f)])
+        }
+    }
+    if bits > 0 { output.append(alphabet[Int((buffer << UInt32(5 - bits)) & 0x1f)]) }
+    return output
+}
+
 @Suite struct VaultOTPAuthTests {
     @Test func readsTheSeedFromACommonQRCode() {
         #expect(VaultOTPAuth.seed(from: "otpauth://totp/GitHub:andy?secret=jbswy3dpehpk3pxp&issuer=GitHub") == "JBSWY3DPEHPK3PXP")
         #expect(VaultOTPAuth.seed(from: "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP&algorithm=SHA1&digits=6&period=30") == "JBSWY3DPEHPK3PXP")
     }
 
-    @Test func refusesCodesThePhoneCannotComputeTheSameWay() {
-        #expect(VaultOTPAuth.seed(from: "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP&digits=8") == nil)
-        #expect(VaultOTPAuth.seed(from: "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP&algorithm=SHA256") == nil)
+    @Test func readsTheSiteAndAccountForTheForm() throws {
+        let parsed = try #require(VaultOTPAuth.parse("otpauth://totp/Example%20Bank:andy@example.com?secret=JBSWY3DPEHPK3PXP"))
+        #expect(parsed.issuer == "Example Bank")
+        #expect(parsed.account == "andy@example.com")
+        let issuerWins = try #require(VaultOTPAuth.parse("otpauth://totp/old:andy?secret=JBSWY3DPEHPK3PXP&issuer=New"))
+        #expect(issuerWins.issuer == "New")
+        #expect(issuerWins.account == "andy")
+    }
+
+    @Test func keepsTheSiteSettingsTheQRCodeAsksFor() throws {
+        let stored = try #require(VaultOTPAuth.seed(from: "otpauth://totp/x?secret=\(rfcSecret(bytes: 32))&algorithm=SHA256&digits=8&period=60"))
+        let parameters = try #require(VaultTOTP.Parameters(stored: stored))
+        #expect(parameters.algorithm == .sha256)
+        #expect(parameters.digits == 8)
+        #expect(parameters.period == 60)
+        #expect(try parameters.code(at: 119) == "46119246")
+        #expect(VaultTOTP.normalized(stored) == stored)
+    }
+
+    @Test func matchesTheRFC6238VectorsForEveryAlgorithm() throws {
+        let sha1 = try #require(VaultTOTP.Parameters(secret: rfcSecret(bytes: 20), digits: 8))
+        #expect(try sha1.code(at: 1_111_111_109) == "07081804")
+        let sha256 = try #require(VaultTOTP.Parameters(secret: rfcSecret(bytes: 32), algorithm: .sha256, digits: 8))
+        #expect(try sha256.code(at: 1_111_111_109) == "68084774")
+        let sha512 = try #require(VaultTOTP.Parameters(secret: rfcSecret(bytes: 64), algorithm: .sha512, digits: 8))
+        #expect(try sha512.code(at: 1_111_111_109) == "25091201")
+    }
+
+    @Test func handsOverCodesForWholeWindowsCoveringTheApprovalTime() throws {
+        let thirty = try #require(VaultTOTP.Parameters(secret: "JBSWY3DPEHPK3PXP"))
+        #expect(thirty.upcoming(from: 95) == [90, 120, 150, 180, 210])
+        let sixty = try #require(VaultTOTP.Parameters(secret: "JBSWY3DPEHPK3PXP", period: 60))
+        #expect(sixty.upcoming(from: 95) == [60, 120, 180])
+        #expect(thirty.upcoming(from: 95).count <= VaultTOTP.maximumCodes)
+    }
+
+    @Test func refusesCodesThePhoneCannotCompute() {
+        #expect(VaultOTPAuth.seed(from: "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP&digits=9") == nil)
+        #expect(VaultOTPAuth.seed(from: "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP&algorithm=MD5") == nil)
         #expect(VaultOTPAuth.seed(from: "otpauth://hotp/x?secret=JBSWY3DPEHPK3PXP&counter=1") == nil)
         #expect(VaultOTPAuth.seed(from: "otpauth://totp/x?secret=not-base32!") == nil)
         #expect(VaultOTPAuth.seed(from: "https://example.com") == nil)
+        #expect(VaultTOTP.normalized("not base32!") == nil)
+        #expect(VaultTOTP.normalized("jbsw y3dp ehpk 3pxp") == "JBSWY3DPEHPK3PXP")
     }
 }

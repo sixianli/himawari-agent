@@ -153,6 +153,9 @@ export const DEVICE_API_ROUTES = Object.freeze([
   { method: "POST", path: "vault/change", signed: true },
   { method: "POST", path: "vault/approve", signed: true },
   { method: "POST", path: "vault/deny", signed: true },
+  { method: "GET", path: "vault/codes", signed: true },
+  { method: "POST", path: "vault/codes/answer", signed: true },
+  { method: "POST", path: "vault/codes/decline", signed: true },
   { method: "POST", path: "speech", signed: true },
   { method: "POST", path: "connections/list", signed: true },
   { method: "POST", path: "connections/authorization", signed: true },
@@ -1418,6 +1421,25 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
         const authenticated = await authenticate(request);
         await vault(authenticated).deny(scope(authenticated.authentication), json(request));
         return options.sendJson(reply, 200, { denied: true });
+      });
+
+      device.get("/vault/codes", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        return options.sendJson(reply, 200, {
+          requests: vault(authenticated).pendingCodes(scope(authenticated.authentication)),
+        });
+      });
+
+      device.post("/vault/codes/answer", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        vault(authenticated).answerCode(scope(authenticated.authentication), json(request));
+        return options.sendJson(reply, 200, { answered: true });
+      });
+
+      device.post("/vault/codes/decline", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        vault(authenticated).declineCode(scope(authenticated.authentication), json(request));
+        return options.sendJson(reply, 200, { declined: true });
       });
 
       const connections = (authenticated: AuthenticatedDeviceRequest): DeviceConnectionsPort =>

@@ -734,18 +734,35 @@ describe("[P1-1] device client routes", () => {
     expect(response.statusCode).toBe(200);
     const stream = response.stream();
     const chunks: string[] = [];
+    const streamErrors: string[] = [];
     const ended = new Promise<void>((resolve) => {
       stream.on("data", (chunk: Buffer) => chunks.push(chunk.toString("utf8")));
+      stream.on("error", (error: Error) => streamErrors.push(String(error)));
       stream.on("end", () => resolve());
     });
     await expect
       .poll(() => chunks.join(""), { timeout: 3000 })
       .toContain("event: thread.execution_changed");
     expect(chunks.join("")).toContain(`"threadId":"${threadId}"`);
-    await web(h, "revoke", { deviceId: client.deviceId, expectedRevision: client.revision });
-    await expect
-      .poll(() => chunks.join(""), { timeout: 15_000 })
-      .toMatch(/IDENTITY_SESSION_INVALID|DEVICE_REVOKED/u);
+    const revoked = await web(h, "revoke", {
+      deviceId: client.deviceId,
+      expectedRevision: client.revision,
+    });
+    expect({ status: revoked.status, body: revoked.body }).toMatchObject({
+      status: 200,
+      body: { device: { status: "revoked" } },
+    });
+    const revokedAt = Date.now();
+    try {
+      await expect
+        .poll(() => chunks.join(""), { timeout: 15_000 })
+        .toMatch(/IDENTITY_SESSION_INVALID|DEVICE_REVOKED/u);
+    } catch (error) {
+      throw new Error(
+        `stream did not report the revoke within ${Date.now() - revokedAt}ms; stream errors ${JSON.stringify(streamErrors)}; last output ${JSON.stringify(chunks.join("").slice(-2000))}`,
+        { cause: error },
+      );
+    }
     await ended;
     stream.destroy();
     await h.repository.close();
