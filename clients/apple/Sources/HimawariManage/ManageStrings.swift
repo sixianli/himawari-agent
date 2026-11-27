@@ -21,7 +21,6 @@ enum M {
     }
 
     static var memoryTitle: String { text("记忆", ja: "記憶", en: "Memory") }
-    static var remembered: String { text("记住的事", ja: "覚えていること", en: "Remembered") }
     static var rules: String { text("规则", ja: "ルール", en: "Rules") }
     static var search: String { text("搜索", ja: "検索", en: "Search") }
     static var searchPrompt: String { text("搜记住的事和规则", ja: "覚えていることとルールを検索", en: "Search memories and rules") }
@@ -31,6 +30,16 @@ enum M {
         text("还没有记住的事", ja: "まだ覚えていることはありません", en: "Nothing remembered yet")
     }
     static var noRules: String { text("还没有规则", ja: "まだルールはありません", en: "No rules yet") }
+    static var rulesFooter: String {
+        text(
+            "规则是你给 Himawari 定的硬设定，每次都照做，不是记忆。在主对话里说一句就能加、改或停用；像勿扰时段这样本来就是设置的，在对应的设置页里改。",
+            ja: "ルールはあなたが Himawari に決めた固い設定で、毎回必ず守ります。記憶ではありません。会話でひと言伝えれば追加・変更・停止できます。おやすみ時間のように設定そのものは、それぞれの設定ページで変えられます。",
+            en: "Rules are fixed settings you give Himawari, followed every time; they aren't memories. Say it in the chat to add, change, or pause one. Things that are settings already, like quiet hours, change on their own settings page."
+        )
+    }
+    static func rulesSummary(_ count: Int) -> String {
+        text("\(count) 条", ja: "\(count) 件", en: count == 1 ? "1 rule" : "\(count) rules")
+    }
     static var loadFailed: String {
         text("没读到，下拉再试一次", ja: "読み込めませんでした。引っ張ってもう一度", en: "Couldn't load. Pull to try again")
     }

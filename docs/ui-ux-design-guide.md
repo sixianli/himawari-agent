@@ -199,6 +199,7 @@ verified_at: "1be7af47faac63474bd1f56d065005155b814a52"
     - 滚到最上面时，第一条从小圆下方开始：顶部留白是安全区加 6 加 56 加 12（`tokens.json` 里 `chat` 下 `puck` 的 top、size、contentGap）。
 
 86. **全 App 只有一种强调色：向日葵金。** 开关、选中、“开着”“连着”这类状态字和对勾，iPhone、Mac 和分享面板一律用向日葵金（token `color.sun`，浅色 #9a6200 在白底上 5.1:1、深色 #f2bb4f 在卡片底 #2a2a2a 上 8.2:1，都可以当字用），不用系统默认的绿或蓝。做法是在每个界面的最外层设一次 `.tint(Color.hmSun)`，系统开关和按钮自己跟着变，页面代码里不再单独给开关上色。Andy 2026-11-26 试 build 145 的原话是开关和“连着”都是绿色，要求全 App 统一主题色。【官方】[Color](https://developer.apple.com/design/human-interface-guidelines/color)。门槛：`HimawariDesign` 里删掉了绿色的 `hmSuccess`，页面代码写不出绿色状态色。
+87. **规则不放在记忆页里。** 规则是 Andy 给 Himawari 定的硬设定，每次都照做（[产品愿景](product-vision.md) v2.2 起），不是记忆：记忆页只列记住的事，搜索也只搜记忆；规则在 Himawari 页里单独一页“规则”（Mac 侧栏同样一项，`RulesPage`）。本来就是设置的规则（例如勿扰时段）只在对应的设置页里显示，规则页按服务端在那个设置里返回的规则编号把它们拿掉，不在客户端按类型写死。规则详情里“你的原话”和规则本身一字不差时不再重复一遍。做法对照 ChatGPT 和 Claude：两家都把“你自己写给助手的指示”和“助手从对话里记下的东西”分成设置里并排的两项，指示不放进记忆列表（ChatGPT 在 Settings → Personalization 下分 Custom instructions 和 Memory，见 [Custom instructions](https://help.openai.com/en/articles/8096356-chat-preferences-for-chatgpt)、[Memory FAQ](https://help.openai.com/en/articles/8590148-memory-faq)；Claude 在 Settings → Your Claude 下分 preferences 和 memory，见 [chat search and memory](https://support.claude.com/en/articles/11817273-use-claude-s-chat-search-and-memory-to-build-on-previous-context)）。起因是 Andy 2026-11-26 试 build 145 时说记忆页里放“规则”不对（反馈第 26、30 条）。
 
 <a id="apple-acceptance"></a>
 

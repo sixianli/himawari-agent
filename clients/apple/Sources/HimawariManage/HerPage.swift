@@ -19,6 +19,7 @@ public enum HerVaultCount: Equatable, Sendable {
 public struct HerPage: View {
     enum Page: Hashable {
         case memory
+        case rules
         case notifications
         case privacy
         case connections
@@ -221,6 +222,10 @@ public struct HerPage: View {
                             }
                             .buttonStyle(.pressable)
                         }
+                        Button { path.append(.rules) } label: {
+                            HerRow(icon: .clipboardList, title: M.rules, subtitle: memory.phase == .loaded ? M.rulesSummary(RulesPage.ownPageRules(memory.rules, quietHours: quietHours.hours).count) : nil)
+                        }
+                        .buttonStyle(.pressable)
                         Button { path.append(.allowances) } label: {
                             HerRow(icon: .shieldCheck, title: M.allowancesTitle, subtitle: M.allowancesSummary(memory.allowances.count), last: vaultCount == .unsupported)
                         }
@@ -307,6 +312,8 @@ public struct HerPage: View {
                 switch page {
                 case .memory:
                     MemoryRootView(store: memory, talk: talk)
+                case .rules:
+                    RulesPage(store: memory, quietHours: quietHours.hours, talk: talk)
                 case .notifications:
                     NotificationsPage(store: quietHours) { path.removeLast() }
                 case .privacy:
