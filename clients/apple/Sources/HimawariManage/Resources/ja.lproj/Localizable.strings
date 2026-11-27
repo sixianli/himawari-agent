@@ -50,6 +50,7 @@
 "allowance.thisTask" = "この件の間";
 "allowance.days" = "%d日間";
 "allowance.always" = "今後ずっと";
+"allowance.title" = "この承認の有効範囲";
 "allowance.locked.spending" = "お金を使うことは「今回だけ」です";
 "allowance.locked.credential" = "鍵や権限の変更は「今回だけ」です";
 "allowance.locked.ownerPresence" = "あなた本人が必要なことは「今回だけ」です";
