@@ -293,6 +293,7 @@ public struct HandoverSheet: View {
                         .hmType(DesignTokens.TypeScale.body)
                         .foregroundStyle(Color.hmText)
                         .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, minHeight: DesignTokens.Size.pillBig)
                 if let title = model.followUpTitle {
