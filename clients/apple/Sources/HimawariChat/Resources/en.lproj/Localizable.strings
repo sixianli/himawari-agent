@@ -25,6 +25,7 @@
 "attach.camera" = "Camera";
 "attach.photos" = "Photos";
 "attach.files" = "Files";
+"attach.location" = "Where I am";
 "attach.remove" = "Remove %@";
 "attach.retry" = "Retry";
 "attach.problem.tooMany" = "Up to %d";
@@ -38,6 +39,7 @@
 "attach.problem.outdated" = "The server can not take attachments yet. Update the server first";
 "attach.problem.upload" = "Not uploaded. Try again later";
 "attach.problem.unreadable" = "She can not read this file yet";
+"attach.problem.location" = "Could not get your location. Check that Location is on";
 "chat.dictate" = "Dictate";
 "chat.talk" = "Talk to her";
 "chat.hold.hint" = "Release to send · slide up to cancel";

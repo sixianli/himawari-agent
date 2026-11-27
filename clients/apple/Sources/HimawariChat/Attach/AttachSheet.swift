@@ -17,6 +17,8 @@ struct AttachSheet: View {
     @State private var cameraOpen = false
     @State private var filesOpen = false
     @State private var photos: [PhotosPickerItem] = []
+    @State private var locating = false
+    @State private var place = CurrentPlace()
     @State private var recent = RecentPhotos()
     @State private var loading: Set<String> = []
     @Environment(\.openURL) private var openURL
@@ -45,6 +47,14 @@ struct AttachSheet: View {
                     }
                     Button { filesOpen = true } label: { row(.fileText, L.text("attach.files")) }
                         .disabled(full)
+                    Button(action: locate) {
+                        HStack {
+                            row(.mapPin, L.text("attach.location"))
+                            Spacer()
+                            if locating { ProgressView() }
+                        }
+                    }
+                    .disabled(full || locating)
                 } footer: {
                     if full, !allowsImages { Text(L.format("attach.problem.tooMany", limits.perMessage)) }
                 }
@@ -213,6 +223,19 @@ struct AttachSheet: View {
             }
         }
     }
+
+    private func locate() {
+        locating = true
+        Task {
+            defer { locating = false }
+            do {
+                add([try await place.attachment(name: L.text("attach.location"))])
+                close()
+            } catch {
+                failed(.noLocation)
+            }
+        }
+    }
 }
 
 private struct RecentPhotoTile: View {
@@ -316,7 +339,7 @@ struct AttachmentChips: View {
                 .frame(width: DesignTokens.Chat.attachRowTile, height: DesignTokens.Chat.attachRowTile)
                 .clipShape(Circle())
         } else {
-            Icon(.fileText, size: DesignTokens.Chat.attachRowIcon)
+            Icon(attachment.name == L.text("attach.location") ? .mapPin : .fileText, size: DesignTokens.Chat.attachRowIcon)
         }
     }
 }

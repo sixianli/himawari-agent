@@ -25,6 +25,7 @@
 "attach.camera" = "拍照";
 "attach.photos" = "照片";
 "attach.files" = "文件";
+"attach.location" = "我现在的位置";
 "attach.remove" = "去掉 %@";
 "attach.retry" = "重试";
 "attach.problem.tooMany" = "最多 %d 个";
@@ -38,6 +39,7 @@
 "attach.problem.outdated" = "服务器还不支持带东西，先更新服务器";
 "attach.problem.upload" = "没传上，稍后再试";
 "attach.problem.unreadable" = "这个文件她还看不了";
+"attach.problem.location" = "没拿到位置，看看定位是否打开";
 "chat.dictate" = "听写";
 "chat.talk" = "和她说话";
 "chat.hold.hint" = "松手发出 · 往上滑取消";
