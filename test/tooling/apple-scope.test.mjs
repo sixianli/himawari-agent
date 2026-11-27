@@ -3,7 +3,12 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { changedFiles, touchesAppleClient } from "../../scripts/ci/apple-scope.mjs";
+import {
+  changedFiles,
+  mainCheckPrefixes,
+  sinceGreenBase,
+  touchesAppleClient,
+} from "../../scripts/ci/apple-scope.mjs";
 import { repositoryRoot } from "../../scripts/ci/contracts.mjs";
 
 describe("Apple 工作流按改动决定要不要占 Mac 机器", () => {
@@ -11,6 +16,28 @@ describe("Apple 工作流按改动决定要不要占 Mac 机器", () => {
     expect(touchesAppleClient(["src/a.ts", "clients/apple/Sources/X.swift"])).toBe(true);
     expect(touchesAppleClient([".github/workflows/apple.yml"])).toBe(true);
     expect(touchesAppleClient(["scripts/ci/apple-scope.mjs"])).toBe(true);
+    expect(touchesAppleClient(["scripts/ci/main-green.mjs"])).toBe(true);
+  });
+  it("main 上从 Apple 检查上次全部通过的提交算起；查不到或查询出错时返回空，照跑", async () => {
+    const seen = [];
+    const find = async (input) => {
+      seen.push(input);
+      return "a".repeat(40);
+    };
+    expect(await sinceGreenBase({ repo: "o/r", runId: "9", find })).toBe("a".repeat(40));
+    expect(seen[0]).toMatchObject({ repo: "o/r", workflow: "apple.yml", runId: "9" });
+    expect(seen[0].prefixes).toEqual(mainCheckPrefixes);
+    expect(await sinceGreenBase({ repo: "o/r", runId: "9", find: async () => null })).toBeNull();
+    expect(
+      await sinceGreenBase({
+        repo: "o/r",
+        runId: "9",
+        find: async () => {
+          throw new Error("HTTP 502");
+        },
+      }),
+    ).toBeNull();
+    expect(touchesAppleClient(changedFiles(null, "HEAD"))).toBe(true);
   });
   it("只改服务端、网页、文档或别的工作流时不跑", () => {
     expect(touchesAppleClient(["src/server.ts", "docs/a.md", ".github/workflows/ci.yml"])).toBe(
@@ -63,10 +90,10 @@ describe("Apple 工作流按改动决定要不要占 Mac 机器", () => {
       ]);
     };
     commit("server.ts");
-    expect(run().stdout).toBe("client=false\n");
+    expect(run().stdout).toBe(`client=false\nbase=${base}\n`);
     commit("clients/apple/Sources/App.swift");
     const result = run();
-    expect(result.stdout).toBe("client=true\n");
-    expect(result.stderr).toContain("APPLE_SCOPE client=true files=2");
+    expect(result.stdout).toBe(`client=true\nbase=${base}\n`);
+    expect(result.stderr).toContain(`APPLE_SCOPE client=true base=${base} files=2`);
   });
 });

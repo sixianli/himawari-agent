@@ -121,8 +121,9 @@ jobs:
         with:
           path: |
             ~/.cache/himawari-ci/npm
+            ~/.cache/himawari-ci/native
             .ci-output/browsers
-          key: ci-deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json', 'ci/toolchain-lock.json') }}-${{ steps.week.outputs.week }}
+          key: ci-deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json', 'ci/toolchain-lock.json', 'scripts/ci/install-dependencies.mjs') }}-${{ steps.week.outputs.week }}
           restore-keys: ci-deps-v1-${{ runner.os }}-${{ runner.arch }}-
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
@@ -196,8 +197,9 @@ jobs:
         with:
           path: |
             ~/.cache/himawari-ci/npm
+            ~/.cache/himawari-ci/native
             .ci-output/browsers
-          key: ci-deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json', 'ci/toolchain-lock.json') }}-${{ steps.week.outputs.week }}
+          key: ci-deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json', 'ci/toolchain-lock.json', 'scripts/ci/install-dependencies.mjs') }}-${{ steps.week.outputs.week }}
           restore-keys: ci-deps-v1-${{ runner.os }}-${{ runner.arch }}-
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
@@ -295,8 +297,9 @@ jobs:
         with:
           path: |
             ~/.cache/himawari-ci/npm
+            ~/.cache/himawari-ci/native
             .ci-output/browsers
-          key: ci-deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json', 'ci/toolchain-lock.json') }}-${{ steps.week.outputs.week }}
+          key: ci-deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json', 'ci/toolchain-lock.json', 'scripts/ci/install-dependencies.mjs') }}-${{ steps.week.outputs.week }}
           restore-keys: ci-deps-v1-${{ runner.os }}-${{ runner.arch }}-
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
@@ -375,8 +378,9 @@ jobs:
         with:
           path: |
             ~/.cache/himawari-ci/npm
+            ~/.cache/himawari-ci/native
             .ci-output/browsers
-          key: ci-deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json', 'ci/toolchain-lock.json') }}-${{ steps.week.outputs.week }}
+          key: ci-deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json', 'ci/toolchain-lock.json', 'scripts/ci/install-dependencies.mjs') }}-${{ steps.week.outputs.week }}
           restore-keys: ci-deps-v1-${{ runner.os }}-${{ runner.arch }}-
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
@@ -445,8 +449,9 @@ jobs:
         with:
           path: |
             ~/.cache/himawari-ci/npm
+            ~/.cache/himawari-ci/native
             .ci-output/browsers
-          key: ci-deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json', 'ci/toolchain-lock.json') }}-${{ steps.week.outputs.week }}
+          key: ci-deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json', 'ci/toolchain-lock.json', 'scripts/ci/install-dependencies.mjs') }}-${{ steps.week.outputs.week }}
           restore-keys: ci-deps-v1-${{ runner.os }}-${{ runner.arch }}-
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
@@ -512,10 +517,15 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22.22.3
-      - name: main 上失败的运行满三次必须认领到事故清单
+      - name: main 上失败的运行满两次必须认领到事故清单
         env:
           GH_TOKEN: ${{ github.token }}
         run: if [ "$GITHUB_EVENT_NAME" = pull_request ]; then node scripts/check-incident-runs.mjs; fi
+      - name: PR 的 CI 红过两次必须在说明里写复盘
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_REFLECTION_AGGREGATE_JOB: ci/required
+        run: if [ "$GITHUB_EVENT_NAME" = pull_request ]; then node scripts/check-pr-reflection.mjs; fi
       - name: 把本次运行的共享目录指到本机临时目录
         run: mkdir -p "$RUNNER_TEMP/ci-share" && echo "HIMAWARI_CI_SHARE=$RUNNER_TEMP/ci-share" >> "$GITHUB_ENV"
       - name: 算出本周的缓存周号

@@ -3,11 +3,10 @@ import {
   alreadyClaimed,
   claimComment,
   failedJobs,
-  greenBase,
-  isGreen,
   marker,
   scopes,
 } from "../../scripts/ci/main-claim.mjs";
+import { findGreenBase, greenBase, isGreen } from "../../scripts/ci/main-green.mjs";
 
 const job = (name, conclusion) => ({ name, conclusion });
 const prefixes = ["apple/iphone", "apple/scroll"];
@@ -125,5 +124,36 @@ describe("main 上检查失败时找人认领", () => {
     expect(body).toContain("合进 main 的PR：#770");
     expect(body).toContain("不加重试");
     expect(body).not.toContain("登记表");
+  });
+
+  it("按时间从新往旧逐个取运行的作业，找到上一次全部通过就停", async () => {
+    const runs = [
+      { id: 9, head_sha: "c".repeat(40), created_at: "2026-11-27T03:00:00Z" },
+      { id: 8, head_sha: "b".repeat(40), created_at: "2026-11-27T02:00:00Z" },
+      { id: 7, head_sha: "a".repeat(40), created_at: "2026-11-27T01:00:00Z" },
+    ];
+    const jobs = {
+      9: [job("apple/iphone", "failure"), job("apple/scroll", "success")],
+      8: [job("apple/iphone", "success"), job("apple/scroll", "success")],
+      7: [job("apple/iphone", "success"), job("apple/scroll", "success")],
+    };
+    const fetched = [];
+    const base = await findGreenBase({
+      repo: "o/r",
+      workflow: "apple.yml",
+      prefixes,
+      runId: "10",
+      getJson: async (endpoint) => {
+        expect(endpoint).toContain("branch=main&event=push&status=completed");
+        return { workflow_runs: runs };
+      },
+      getPages: async (endpoint, pick) => {
+        const id = Number(endpoint.match(/runs\/(\d+)\/jobs/u)[1]);
+        fetched.push(id);
+        return pick({ jobs: jobs[id] });
+      },
+    });
+    expect(base).toBe("b".repeat(40));
+    expect(fetched).toEqual([9, 8]);
   });
 });

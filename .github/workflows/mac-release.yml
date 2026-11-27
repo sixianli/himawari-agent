@@ -6,28 +6,33 @@ on:
       - clients/apple/**
       - .github/workflows/mac-release.yml
   workflow_dispatch:
+  schedule:
+    - cron: "7,37 * * * *"
 permissions:
   contents: read
-concurrency:
-  group: mac-release
-  cancel-in-progress: false
 defaults:
   run:
     shell: bash
 env:
   APPLE_TEAM_ID: WS6PVS5YQP
-  HIMAWARI_BUILD_NUMBER: ${{ github.run_number }}
   HIMAWARI_UPDATE_FEED: https://github.com/${{ github.repository }}/releases/download/mac-updates/appcast.xml
-  HIMAWARI_DOWNLOAD_BASE: https://github.com/${{ github.repository }}/releases/download/mac-${{ github.run_number }}
+  HIMAWARI_RELEASE_BASE: https://github.com/${{ github.repository }}/releases/download
+  HIMAWARI_PENDING_ARTIFACT: mac-pending-notarization
 jobs:
   publish:
     name: mac-release/publish
-    if: ${{ github.ref == 'refs/heads/main' && github.repository == 'sixianli/himawari-agent' }}
+    if: ${{ github.event_name != 'schedule' && github.ref == 'refs/heads/main' && github.repository == 'sixianli/himawari-agent' }}
     runs-on: macos-26
-    timeout-minutes: 240
+    timeout-minutes: 90
     environment: testflight
+    concurrency:
+      group: mac-release-build
+      cancel-in-progress: false
     permissions:
       contents: write
+      actions: write
+    env:
+      HIMAWARI_BUILD_NUMBER: ${{ github.run_number }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -53,7 +58,7 @@ jobs:
             echo "::warning::testflight 环境还缺：$missing，这次不出 Mac 安装包"
             echo "ready=false" >> "$GITHUB_OUTPUT"
           fi
-      - name: 归档、用 Developer ID 签名、苹果公证、签自动更新
+      - name: 归档、用 Developer ID 签名、提交苹果公证，最多等 15 分钟
         id: build
         if: ${{ steps.keys.outputs.ready == 'true' }}
         env:
@@ -65,27 +70,97 @@ jobs:
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
           HIMAWARI_UPDATE_KEY: ${{ vars.SPARKLE_PUBLIC_KEY }}
         run: clients/apple/scripts/mac-release.sh release
+      - name: 公证还没好：把签好的 App 和公证编号存起来，定时检查通过后再发布
+        if: ${{ steps.keys.outputs.ready == 'true' && steps.build.outputs.notarized == 'false' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ env.HIMAWARI_PENDING_ARTIFACT }}
+          path: ${{ steps.build.outputs.pending }}
+          retention-days: 14
       - name: 发到 GitHub Releases，并更新自动更新清单
-        if: ${{ steps.keys.outputs.ready == 'true' }}
+        if: ${{ steps.keys.outputs.ready == 'true' && steps.build.outputs.notarized == 'true' }}
         env:
           GH_TOKEN: ${{ github.token }}
           ZIP: ${{ steps.build.outputs.zip }}
           APPCAST: ${{ steps.build.outputs.appcast }}
           VERSION: ${{ steps.build.outputs.version }}
+          BUILD: ${{ github.run_number }}
+          SUPERSEDES_RUN: ${{ github.run_id }}
+        run: clients/apple/scripts/mac-publish.sh
+  check:
+    name: mac-release/check-notarization
+    if: ${{ github.event_name == 'schedule' && github.repository == 'sixianli/himawari-agent' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: testflight
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      outcome: ${{ steps.status.outputs.outcome }}
+      run: ${{ steps.pending.outputs.run }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: 找最新一个还在等公证的 Mac 安装包
+        id: pending
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "mac-$HIMAWARI_BUILD_NUMBER" "$ZIP" \
-            --repo "$GITHUB_REPOSITORY" \
-            --target "$GITHUB_SHA" \
-            --title "Himawari for Mac $VERSION ($HIMAWARI_BUILD_NUMBER)" \
-            --notes "提交 ${GITHUB_SHA::8}。下载 zip，解压后把 HimawariMac 拖进“应用程序”。以后 App 会自己更新。" \
-            --latest
-          if ! gh release view mac-updates --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release create mac-updates \
-              --repo "$GITHUB_REPOSITORY" \
-              --target "$GITHUB_SHA" \
-              --title "Mac 自动更新清单" \
-              --notes "Mac App 每次检查更新读这里的 appcast.xml，不用手动下载。" \
-              --prerelease
+          found="$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=$HIMAWARI_PENDING_ARTIFACT&per_page=1" \
+            --jq '.artifacts[] | select(.expired == false) | "\(.id) \(.workflow_run.id)"')"
+          if [ -z "$found" ]; then
+            echo "没有等公证的 Mac 安装包" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
           fi
-          gh release upload mac-updates "$APPCAST" --repo "$GITHUB_REPOSITORY" --clobber
-          echo "已发布 Mac 版 $VERSION（build $HIMAWARI_BUILD_NUMBER，提交 ${GITHUB_SHA::8}）：https://github.com/$GITHUB_REPOSITORY/releases/tag/mac-$HIMAWARI_BUILD_NUMBER" >> "$GITHUB_STEP_SUMMARY"
+          read -r _ run <<< "$found"
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+          gh run download "$run" --repo "$GITHUB_REPOSITORY" --name "$HIMAWARI_PENDING_ARTIFACT" --dir "$RUNNER_TEMP/pending"
+          echo "submission=$(tr -d '[:space:]' < "$RUNNER_TEMP/pending/submission-id")" >> "$GITHUB_OUTPUT"
+      - name: 问苹果这次公证好了没有
+        id: status
+        if: ${{ steps.pending.outputs.submission != '' }}
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          SUBMISSION_ID: ${{ steps.pending.outputs.submission }}
+        run: node clients/apple/scripts/notary-status.mjs
+  finish:
+    name: mac-release/finish
+    needs: check
+    if: ${{ needs.check.outputs.outcome == 'accepted' }}
+    runs-on: macos-26
+    timeout-minutes: 45
+    environment: testflight
+    concurrency:
+      group: mac-release-finish
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: 取回签好的 App
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN: ${{ needs.check.outputs.run }}
+        run: gh run download "$RUN" --repo "$GITHUB_REPOSITORY" --name "$HIMAWARI_PENDING_ARTIFACT" --dir "$RUNNER_TEMP/pending"
+      - name: 钉上公证票据、签自动更新
+        id: build
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+          HIMAWARI_PENDING_DIR: ${{ runner.temp }}/pending
+        run: clients/apple/scripts/mac-release.sh finish
+      - name: 发到 GitHub Releases，并更新自动更新清单
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ZIP: ${{ steps.build.outputs.zip }}
+          APPCAST: ${{ steps.build.outputs.appcast }}
+          VERSION: ${{ steps.build.outputs.version }}
+          BUILD: ${{ steps.build.outputs.build }}
+          SUPERSEDES_RUN: ${{ needs.check.outputs.run }}
+        run: clients/apple/scripts/mac-publish.sh

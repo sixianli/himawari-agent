@@ -4,7 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { validateHostedRunners } from "../../scripts/ci/check-policy.mjs";
-import { macRunnerLabel, repositoryRoot } from "../../scripts/ci/contracts.mjs";
+import { linuxRunnerLabel, macRunnerLabel, repositoryRoot } from "../../scripts/ci/contracts.mjs";
 
 const script = path.join(repositoryRoot, "scripts/ci/prepare-hosted.sh");
 const run = (args, env = {}) =>
@@ -58,19 +58,29 @@ describe("托管机器的准备脚本", () => {
 describe("Mac 安装包发布工作流", () => {
   const text = readFileSync(path.join(repositoryRoot, ".github/workflows/mac-release.yml"), "utf8");
   const workflow = parse(text);
-  const job = workflow.jobs.publish;
-  it("只在 main 上、免费的标准 Mac 机器上跑，只有发布这一步能写仓库", () => {
-    expect(Object.keys(workflow.jobs)).toEqual(["publish"]);
+  const { publish, check, finish } = workflow.jobs;
+  const releaseScript = readFileSync(
+    path.join(repositoryRoot, "clients/apple/scripts/mac-release.sh"),
+    "utf8",
+  );
+  it("只在 main 上、免费的标准机器上跑；查公证状态用 Linux 机器，只有出包和收尾用 Mac 机器", () => {
+    expect(Object.keys(workflow.jobs)).toEqual(["publish", "check", "finish"]);
     expect(workflow.on.push.branches).toEqual(["main"]);
     expect(workflow.on.pull_request).toBeUndefined();
-    expect(job["runs-on"]).toBe(macRunnerLabel);
-    expect(job.if).toContain("github.ref == 'refs/heads/main'");
+    expect(publish["runs-on"]).toBe(macRunnerLabel);
+    expect(finish["runs-on"]).toBe(macRunnerLabel);
+    expect(check["runs-on"]).toBe(linuxRunnerLabel);
+    expect(publish.if).toContain("github.ref == 'refs/heads/main'");
+    expect(publish.if).toContain("github.event_name != 'schedule'");
+    expect(check.if).toContain("github.event_name == 'schedule'");
+    expect(finish.needs).toBe("check");
+    expect(finish.if).toContain("needs.check.outputs.outcome == 'accepted'");
     expect(workflow.permissions).toEqual({ contents: "read" });
-    expect(job.permissions).toEqual({ contents: "write" });
+    expect(check.permissions).toEqual({ contents: "read", actions: "read" });
     expect(() => validateHostedRunners({ "mac-release.yml": text })).not.toThrow();
   });
   it("缺任何一把密钥就只警告、不出包", () => {
-    const check = job.steps.find((step) => step.id === "keys");
+    const keys = publish.steps.find((step) => step.id === "keys");
     for (const name of [
       "ASC_KEY_ID",
       "ASC_ISSUER_ID",
@@ -80,22 +90,42 @@ describe("Mac 安装包发布工作流", () => {
       "SPARKLE_PRIVATE_KEY",
       "HIMAWARI_UPDATE_KEY",
     ]) {
-      expect(check.run).toContain(name);
-      expect(Object.keys(check.env)).toContain(name);
+      expect(keys.run).toContain(name);
+      expect(Object.keys(keys.env)).toContain(name);
     }
-    for (const step of job.steps.slice(job.steps.indexOf(check) + 1)) {
+    for (const step of publish.steps.slice(publish.steps.indexOf(keys) + 1)) {
       expect(step.if).toContain("steps.keys.outputs.ready == 'true'");
     }
   });
-  it("App 读的更新清单地址就是发布步骤上传 appcast.xml 的那个 release", () => {
+  it("Mac 机器上最多等公证 15 分钟；没好就把签好的 App 存起来，不再占着机器干等", () => {
+    expect(releaseScript).not.toContain("--wait");
+    expect(releaseScript).toContain("HIMAWARI_NOTARY_WAIT_SECONDS:-900");
+    expect(publish["timeout-minutes"]).toBeLessThanOrEqual(90);
+    const park = publish.steps.find((step) =>
+      String(step.uses ?? "").startsWith("actions/upload-artifact@"),
+    );
+    expect(park.if).toContain("steps.build.outputs.notarized == 'false'");
+    expect(park.with.name).toContain("env.HIMAWARI_PENDING_ARTIFACT");
+    const status = check.steps.find((step) => step.id === "status");
+    expect(status.run).toBe("node clients/apple/scripts/notary-status.mjs");
+    expect(workflow.on.schedule.length).toBe(1);
+  });
+  it("直接发布和收尾发布用同一个脚本，App 读的更新清单地址就是它上传 appcast.xml 的那个 release", () => {
     expect(workflow.env.HIMAWARI_UPDATE_FEED).toContain(
       "/releases/download/mac-updates/appcast.xml",
     );
-    const publish = job.steps.at(-1).run;
-    expect(publish).toContain("gh release upload mac-updates");
-    expect(publish).toContain('gh release create "mac-$HIMAWARI_BUILD_NUMBER"');
-    expect(workflow.env.HIMAWARI_DOWNLOAD_BASE).toMatch(
-      /\/releases\/download\/mac-\$\{\{ github\.run_number \}\}$/u,
+    for (const job of [publish, finish]) {
+      expect(job.steps.at(-1).run).toBe("clients/apple/scripts/mac-publish.sh");
+      expect(Object.keys(job.steps.at(-1).env)).toContain("SUPERSEDES_RUN");
+    }
+    const publishScript = readFileSync(
+      path.join(repositoryRoot, "clients/apple/scripts/mac-publish.sh"),
+      "utf8",
+    );
+    expect(publishScript).toContain("gh release upload mac-updates");
+    expect(publishScript).toContain('gh release create "mac-$BUILD"');
+    expect(releaseScript).toContain(
+      'url="$HIMAWARI_RELEASE_BASE/mac-$HIMAWARI_BUILD_NUMBER/$zip_name"',
     );
     const plist = readFileSync(
       path.join(repositoryRoot, "clients/apple/App/macOS/Info.plist"),
@@ -104,37 +134,32 @@ describe("Mac 安装包发布工作流", () => {
     expect(plist).toContain("<string>$(HIMAWARI_UPDATE_FEED)</string>");
     expect(plist).toContain("<string>$(HIMAWARI_UPDATE_KEY)</string>");
   });
-  it("等苹果公证至少 2 小时，整个任务比公证多留 1 小时给归档和发布", () => {
-    const script = readFileSync(
-      path.join(repositoryRoot, "clients/apple/scripts/mac-release.sh"),
-      "utf8",
-    );
-    const wait = script.match(/notarytool submit[\s\S]*?--timeout (\d+)([mh])/u);
-    expect(wait).not.toBeNull();
-    const waitMinutes = Number(wait[1]) * (wait[2] === "h" ? 60 : 1);
-    expect(waitMinutes).toBeGreaterThanOrEqual(120);
-    expect(job["timeout-minutes"]).toBeGreaterThanOrEqual(waitMinutes + 60);
-  });
 });
 
 describe("iPhone 工作流", () => {
   const workflow = parse(
     readFileSync(path.join(repositoryRoot, ".github/workflows/apple.yml"), "utf8"),
   );
-  it("main 上每次推送各自排队，排队中的运行不会被下一次推送顶掉", () => {
+  it("main 上同时只跑一次，排队的只留最新一次；最新一次从这些检查上次全部通过的提交算改动，跳过的推送不会漏审", () => {
     const group = workflow.concurrency.group;
-    expect(group).toContain("github.event.pull_request.number");
-    expect(group).toContain("github.sha");
-    expect(group).not.toContain("github.ref");
-    expect(workflow.concurrency["cancel-in-progress"]).toContain(
-      "github.event_name == 'pull_request'",
+    expect(group).toContain("github.event_name");
+    expect(group).toContain("github.event.pull_request.number || github.ref");
+    expect(group).not.toContain("github.sha");
+    expect(workflow.concurrency["cancel-in-progress"]).toMatch(
+      /^\$\{\{ github\.event_name == 'pull_request' \}\}$/u,
     );
+    const scope = workflow.jobs.changes.steps.at(-1);
+    expect(scope.env.BASE).toContain("github.event_name == 'push' && '--since-green'");
+    expect(scope.env.BASE).not.toContain("github.event.before");
+    expect(scope.env.GH_TOKEN).toContain("github.token");
+    expect(workflow.jobs.changes.permissions).toEqual({ contents: "read", actions: "read" });
   });
 
   it("只在免费的标准机器上跑，只读权限，跳过草稿，没碰 iPhone 客户端时不占 Mac 机器", () => {
     expect(Object.keys(workflow.jobs)).toEqual([
       "changes",
       "iphone",
+      "iphone-accessibility-build",
       "iphone-accessibility",
       "scroll",
       "claim",
@@ -146,10 +171,11 @@ describe("iPhone 工作流", () => {
     expect(changes.steps.at(-1).run).toContain("scripts/ci/apple-scope.mjs");
     for (const job of Object.values(macJobs)) {
       expect(job["runs-on"]).toBe(macRunnerLabel);
-      expect(job.needs).toBe("changes");
+      expect([job.needs].flat()).toContain("changes");
       expect(job.if).toContain("needs.changes.outputs.client == 'true'");
     }
     expect(workflow.permissions).toEqual({ contents: "read" });
+    expect(Object.values(macJobs).every((job) => job.permissions === undefined)).toBe(true);
     expect(() =>
       validateHostedRunners({
         "apple.yml": readFileSync(path.join(repositoryRoot, ".github/workflows/apple.yml"), "utf8"),
@@ -180,7 +206,12 @@ describe("iPhone 工作流", () => {
   it("main 上审计、测速或编译失败时，自动在改了苹果客户端的 PR 上留言请它的线程认领", () => {
     const claim = workflow.jobs.claim;
     expect(claim["runs-on"]).toBe("ubuntu-24.04");
-    expect(claim.needs).toEqual(["iphone", "iphone-accessibility", "scroll"]);
+    expect(claim.needs).toEqual([
+      "iphone",
+      "iphone-accessibility-build",
+      "iphone-accessibility",
+      "scroll",
+    ]);
     expect(claim.if).toContain("failure()");
     expect(claim.if).toContain("github.event_name == 'push'");
     expect(claim.if).toContain("refs/heads/main");
@@ -224,6 +255,27 @@ describe("iPhone 工作流", () => {
       ).length,
     ).toBeGreaterThan(0);
   });
+  it("三份审计共用同一次运行里编译一次的 App，只重跑审计时也找得到那次编译", () => {
+    const build = workflow.jobs["iphone-accessibility-build"];
+    expect(build.needs).toBe("changes");
+    expect(build.if).toContain("github.event_name != 'pull_request'");
+    const compile = build.steps.find((step) => step.run?.startsWith("xcodebuild"))?.run ?? "";
+    expect(compile).toContain("xcodebuild build-for-testing");
+    expect(compile).toContain("-scheme Himawari");
+    expect(compile).toContain("generic/platform=iOS Simulator");
+    expect(compile).toContain("CODE_SIGNING_ALLOWED=NO");
+    const upload = build.steps.find((step) => step.uses?.startsWith("actions/upload-artifact@"));
+    expect(upload.with.name).toMatch(/^accessibility-build-\$\{\{ github\.run_attempt \}\}$/u);
+    expect(upload.with["retention-days"]).toBe(1);
+    expect(build.outputs.artifact).toBe(upload.with.name);
+    const shards = workflow.jobs["iphone-accessibility"];
+    expect(shards.needs).toEqual(["changes", "iphone-accessibility-build"]);
+    const download = shards.steps.find((step) =>
+      step.uses?.startsWith("actions/download-artifact@"),
+    );
+    expect(download.with.name).toContain("needs.iphone-accessibility-build.outputs.artifact");
+    expect(shards.steps.some((step) => step.run?.includes("xcodebuild build"))).toBe(false);
+  });
   it("深色那一遍审计真的在深色下跑：App 按启动参数切深色，不只靠模拟器的外观设置", () => {
     const audit = readFileSync(
       path.join(repositoryRoot, "clients/apple/App/UITests/AccessibilityAuditTests.swift"),
@@ -260,8 +312,9 @@ describe("iPhone 工作流", () => {
     expect(job.strategy.matrix.shard.length).toBeGreaterThan(1);
     const shard = job.steps.find((step) => step.run?.includes("xcodebuild test"));
     expect(shard.env.TEST_RUNNER_HIMAWARI_AUDIT_SHARD).toContain("matrix.shard");
-    const audit = job.steps.find((step) => step.run?.includes("xcodebuild test"))?.run ?? "";
-    expect(audit).toContain("-scheme Himawari");
+    const audit = shard.run;
+    expect(audit).toContain("xcodebuild test-without-building");
+    expect(audit).toContain("-xctestrun");
     expect(audit).toContain("-only-testing:HimawariUITests");
     expect(audit).toContain("set -o pipefail");
     const scheme = readFileSync(

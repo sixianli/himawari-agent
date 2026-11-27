@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { INCIDENT_LIST } from "../../scripts/check-incident-gates.mjs";
-import { readRunClaims, RUN_RULE_FILE } from "../../scripts/check-incident-runs.mjs";
+import { RUN_RULE_FILE, readRunClaims } from "../../scripts/check-incident-runs.mjs";
 
 const roots = [];
 const servers = [];
@@ -16,7 +16,8 @@ afterEach(async () => {
 
 const header = `| 编号 | 日期 | 现象 | 根因 | 次数 | 门槛（文件或命令） | 状态 |
 | --- | --- | --- | --- | --- | --- | --- |`;
-const row = (count) => `| I-01 | 2026-11-27 | 现象 | 根因 | ${count} | 无 | 缺门槛 |`;
+const row = (count) =>
+  `| I-01 | 2026-11-27 | 现象 | 根因 | ${count} | 无 | ${Number(count) >= 2 ? "等 Andy" : "缺门槛"} |`;
 const identity = ["-c", "user.name=test", "-c", "user.email=test@example.invalid"];
 
 function commit(root, message) {
@@ -117,13 +118,13 @@ function check(root, api, { event = "", args = [] } = {}) {
 }
 
 describe("failed runs on the default branch are counted without anyone remembering to", () => {
-  it("refuses three unclaimed failures of one workflow and asks only for runs since the rule", async () => {
+  it("refuses two unclaimed failures of one workflow and asks only for runs since the rule", async () => {
     const root = repository();
-    const { api, requests } = await github([run(11), run(12), run(13)]);
+    const { api, requests } = await github([run(11), run(12)]);
     const result = await check(root, api);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain(
-      'INCIDENT_RUNS_UNCLAIMED workflow="Deploy production" failures=3 runs=11,12,13',
+      'INCIDENT_RUNS_UNCLAIMED workflow="Deploy production" failures=2 runs=11,12',
     );
     expect(result.stderr).toContain("INCIDENT_RUNS_HELP");
     const listed = new URL(
@@ -135,11 +136,10 @@ describe("failed runs on the default branch are counted without anyone rememberi
     expect(listed.searchParams.get("created")).toMatch(/^>=\d{4}-\d{2}-\d{2}T/);
   });
 
-  it("passes two failures, failures on other branches, pull requests and other conclusions", async () => {
+  it("passes one failure, failures on other branches, pull requests and other conclusions", async () => {
     const root = repository();
     const { api } = await github([
       run(11),
-      run(12),
       run(13, "Deploy production", { head_branch: "feature" }),
       run(14, "Deploy production", { event: "pull_request" }),
       run(15, "Deploy production", { conclusion: "cancelled" }),
@@ -148,7 +148,7 @@ describe("failed runs on the default branch are counted without anyone rememberi
     const result = await check(root, api);
     expect(result.status).toBe(0);
     expect(result.stdout).toContain(
-      'INCIDENT_RUNS_PENDING workflow="Deploy production" failures=2',
+      'INCIDENT_RUNS_PENDING workflow="Deploy production" failures=1',
     );
   });
 
@@ -161,7 +161,7 @@ describe("failed runs on the default branch are counted without anyone rememberi
     expect(result.stdout).toContain("INCIDENT_RUNS passed");
   });
 
-  it("refuses a claim the incident count does not cover, so the third run still needs a gate", async () => {
+  it("refuses a claim the incident count does not cover", async () => {
     const root = repository("2");
     commit(root, "fix: deploy\n\nIncident: I-01\nIncident-run: 11 12 13 I-01");
     const { api } = await github([run(11), run(12), run(13)]);

@@ -35,7 +35,7 @@ struct ChatTalkBar: View {
                     .lineLimit(1)
             }
             .frame(maxWidth: .infinity)
-            circle(.x, label: L.text("chat.talk.end"), fill: Color.hmSpeak, foreground: Color.hmOnSpeak, action: end)
+            circle(.x, label: L.text("chat.talk.end"), fill: Color.hmText, foreground: Color.hmOnText, action: end)
         }
         .padding(.horizontal, Self.inset)
         .frame(height: DesignTokens.Size.composerHeight)
