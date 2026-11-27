@@ -123,6 +123,20 @@ describe("iPhone 工作流", () => {
       ).length,
     ).toBeGreaterThan(0);
   });
+  it("深色那一遍审计真的在深色下跑：App 按启动参数切深色，不只靠模拟器的外观设置", () => {
+    const audit = readFileSync(
+      path.join(repositoryRoot, "clients/apple/App/UITests/AccessibilityAuditTests.swift"),
+      "utf8",
+    );
+    expect(audit).toContain('"-HimawariDemoAppearance", appearance');
+    expect(audit).toContain("launch(scene, appearance: mode.name)");
+    const scenes = readFileSync(
+      path.join(repositoryRoot, "clients/apple/Sources/HimawariShell/DemoScenes.swift"),
+      "utf8",
+    );
+    expect(scenes).toContain('static let appearanceArgument = "-HimawariDemoAppearance"');
+    expect(scenes).toContain(".preferredColorScheme(DemoScene.requestedColorScheme)");
+  });
   it("每个示例场景都跑苹果的无障碍审计，审计测试在 Himawari scheme 里", () => {
     const job = workflow.jobs["iphone-accessibility"];
     expect(job.name).toContain("apple/iphone-accessibility");
