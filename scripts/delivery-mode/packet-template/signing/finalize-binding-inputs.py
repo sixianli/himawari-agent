@@ -71,7 +71,7 @@ read(grant_validator_path, 0)
 grant_spec = importlib.util.spec_from_file_location('workspace_grant_binding', grant_validator_path)
 grant_validator = importlib.util.module_from_spec(grant_spec)
 grant_spec.loader.exec_module(grant_validator)
-checked, problems = grant_validator.check_production_authorization(frozen, s0, new_capability_refs=__PKT_NEW_CAPABILITY_REFS_JSON__, read_configuration=lambda: read(Path('/etc/himawari/config.json'), 0), service_uid=account.pw_uid, service_gid=account.pw_gid)
+checked, problems = grant_validator.check_production_authorization(frozen, s0, new_capability_refs=__PKT_NEW_CAPABILITY_REFS_JSON__, configuration_path='/etc/himawari/config.json', service_uid=account.pw_uid, service_gid=account.pw_gid)
 if problems:
     raise RuntimeError(' '.join(problems))
 grant_binding = checked['grantBinding']
