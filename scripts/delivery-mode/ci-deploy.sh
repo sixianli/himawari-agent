@@ -59,6 +59,10 @@ if [[ "${HIMAWARI_DEPLOY_FORCE:-0}" != 1 ]]; then
   fi
 fi
 
+previous_packet="$(find "$output_root" -mindepth 1 -maxdepth 1 -type d -name '*-change-packet-*' 2>/dev/null | sort | tail -1)"
+echo "CI_DEPLOY_LAST_FAILURE_REPORT ${previous_packet:-none}"
+remote "/usr/bin/python3 -I - ${previous_packet:+'$previous_packet'}" < "$here/last-failure-report.py" || echo "CI_DEPLOY_LAST_FAILURE_REPORT_UNAVAILABLE" >&2
+
 if remote "test -f /etc/himawari-backup/settings.json"; then
   remote "cat > /usr/local/sbin/himawari-backup.new && chmod 0755 /usr/local/sbin/himawari-backup.new && mv /usr/local/sbin/himawari-backup.new /usr/local/sbin/himawari-backup" < "$repo/scripts/operations/backup/himawari-backup.py" || refuse BACKUP_REFRESH_FAILED "could not update /usr/local/sbin/himawari-backup on $host" 6
   echo "CI_DEPLOY_BACKUP_START"
@@ -86,7 +90,6 @@ remote "chown -R root:root /opt/himawari/node && chmod -R go-w /opt/himawari/nod
 echo "CI_DEPLOY_HOST_SYSTEM"
 /usr/bin/python3 -I "$here/host-system.py" | remote "/usr/bin/python3 -I -" || refuse HOST_SYSTEM_FAILED "could not install the document tools or pin the next boot to the running kernel on $host; see the HOST_SYSTEM_FAILED line above" 3
 
-previous_packet="$(find "$output_root" -mindepth 1 -maxdepth 1 -type d -name '*-change-packet-*' 2>/dev/null | sort | tail -1)"
 if [[ -n "$previous_packet" && -f "$previous_packet/inputs/bindings.json" && -f "$previous_packet/freeze-manifest.json" ]]; then
   echo "CI_DEPLOY_PREVIOUS_CLEANUP $previous_packet"
   /usr/bin/python3 -I "$here/release-cleanup.py" "$previous_packet" apply || echo "CI_DEPLOY_PREVIOUS_CLEANUP_INCOMPLETE: leftovers of the last attempt may still block this one; see the CLEANUP_ lines above" >&2
