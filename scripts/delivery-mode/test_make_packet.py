@@ -1010,6 +1010,7 @@ class MigrateFixtureSeedTest(unittest.TestCase):
         self.assertNotIn('migrations.slice(0, from)', source)
         self.assertIn('const pendingNames = new Set(common.migrationExpectedLedger.map((row) => row.name));', source)
         self.assertIn('persistence.applyMigrations(seeded, productionApplied);', source)
+        self.assertIn('.map((migration, index) => ({ ...migration, sequence: index + 1 }))', source)
 
 
 class FinalizeCapabilityFixtureTest(unittest.TestCase):
@@ -2230,7 +2231,7 @@ class FirstToolsMaintenanceTest(RenderedPacket):
         upgrade = self.hashes(self.render())
         first = self.hashes(self.render(**FIRST_TOOLS_PARAMETERS))
         self.assertEqual(set(upgrade), set(first))
-        self.assertEqual({name for name in upgrade if upgrade[name] != first[name]}, {'signing/cloud-capability-manifest.mjs', 'signing/verify-capability-manifest.mjs', 'signing/finalize-binding-inputs.py', 'systemd/S2-stop-and-inspect.py', 'systemd/S7-switch-start-readback.py', 'systemd/S7-startup-readback.mjs', 'install/S9-clean-transport.py'})
+        self.assertEqual({name for name in upgrade if upgrade[name] != first[name]}, {'signing/cloud-capability-manifest.mjs', 'signing/verify-capability-manifest.mjs', 'signing/finalize-binding-inputs.py', 'inputs/finalize-bindings.py', 'inputs/verify-finalize-bindings.py', 'systemd/S2-stop-and-inspect.py', 'systemd/S7-switch-start-readback.py', 'systemd/S7-startup-readback.mjs', 'install/S9-clean-transport.py'})
 
     def test_maintenance_fixtures_pass_in_the_first_tools_render(self):
         packet = self.render(**FIRST_TOOLS_PARAMETERS)

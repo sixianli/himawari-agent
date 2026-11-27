@@ -19,6 +19,7 @@ reviewed_ref = 'round2/R2-L13/__PKT_LABEL__-__PKT_DATE_COMPACT__/reviewed'
 recovery_contract = {'recoveryMethod': 'stopped-raw-copy-v1', 'recovery__PKT_CURRENT_SCHEMA__Id': '__PKT_LABEL__-__PKT_DATE_COMPACT__-raw-schema__PKT_CURRENT_SCHEMA__'}
 workspace_plan = {'decisionRef': 'G90', 'routeKey': 'coding', 'grantId': 'directory:himawari-prod-workspace-20261015', 'canonicalPath': '/var/lib/himawari/workspace', 'subdirectories': ['files', 'repos']}
 strict_capability_keys = ['activeHealthy', 'versionMatchesSnapshot', 'operationsMatchSnapshot', 'scopesMatchSnapshot', 'costMatchesSnapshot', 'secretRefsMatchSnapshot', 'permissionRefsMatchSnapshot', 'declarationMatchesSnapshotExceptArtifact', 'snapshotIntegrityMatchesRunner', 'storedIntegrityMatchesDeclaration', 'runnerMatchesRecorded', 'integrityMatchesSnapshot', 'declarationInvariantMatchesSnapshot']
+new_capability_refs = __PKT_NEW_CAPABILITY_REFS_JSON__
 history_tables = ['runs', 'threads', 'thread_gateway_events', 'run_coordination_checkpoints', 'model_budget_accounts', 'model_budget_allocations', 'model_invocation_identities', 'run_payload_artifacts', 'capability_invocation_receipts', 'sandbox_execution_records', 'sandbox_release_receipts', 'sandbox_reservation_release_receipts']
 
 def require(condition, message):
@@ -113,7 +114,9 @@ def system_tools(observed, binding):
 def authorization(s0, binding):
     observations = s0['authorization']['capabilities']
     grants = s0['authorization']['directoryGrants']
-    require(isinstance(observations, list) and len(observations) > 0 and isinstance(grants, list) and len(grants) > 0, '__PKT_LABEL_UPPER___OLD_AUTHORIZATION_REQUIRED')
+    first_tools = len(new_capability_refs) > 0
+    require(isinstance(observations, list) and (len(observations) > 0 or first_tools) and isinstance(grants, list) and len(grants) > 0, '__PKT_LABEL_UPPER___OLD_AUTHORIZATION_REQUIRED')
+    require(not first_tools or observations == [], '__PKT_LABEL_UPPER___FIRST_TOOLS_CAPABILITIES_ALREADY_REGISTERED')
     capabilities = {}
     workers = set()
     for observation in observations:
@@ -124,12 +127,15 @@ def authorization(s0, binding):
         require(all(digest(observation[field]) for field in ['runnerSha256', 'actualRunnerSha256', 'manifestInvariantDigest', 'registryRecordSha256']) and observation['runnerSha256'] == observation['actualRunnerSha256'], '__PKT_LABEL_UPPER___OLD_CAPABILITY_DIGEST_INVALID')
         capabilities[observation['capabilityRef']] = observation
         workers.add(observation['workerInstanceId'])
-    require(len(workers) == 1, '__PKT_LABEL_UPPER___OLD_WORKER_IDENTITY_DIFFERENT')
+    require(len(workers) == (0 if first_tools else 1), '__PKT_LABEL_UPPER___OLD_WORKER_IDENTITY_DIFFERENT')
     require(binding.get('workspace') == workspace_plan, '__PKT_LABEL_UPPER___G90_WORKSPACE_PLAN_CHANGED')
     require(len(grants) == 1, '__PKT_LABEL_UPPER___OLD_GRANT_SET_CHANGED')
     grant = grants[0]
     require(all(text(grant[field]) for field in ['routeKey', 'grantId', 'capabilityRef', 'capabilityVersion', 'canonicalRootId']) and grant['routeKey'] == workspace_plan['routeKey'], '__PKT_LABEL_UPPER___OLD_GRANT_IDENTITY_INVALID')
-    require(grant['capabilityRef'] in capabilities and grant['capabilityVersion'] == capabilities[grant['capabilityRef']]['version'] and grant['hostId'] == s0['identity']['hostId'], '__PKT_LABEL_UPPER___OLD_GRANT_CAPABILITY_CHANGED')
+    if first_tools:
+        require(grant['capabilityRef'] in new_capability_refs and grant['hostId'] == s0['identity']['hostId'], '__PKT_LABEL_UPPER___OLD_GRANT_CAPABILITY_CHANGED')
+    else:
+        require(grant['capabilityRef'] in capabilities and grant['capabilityVersion'] == capabilities[grant['capabilityRef']]['version'] and grant['hostId'] == s0['identity']['hostId'], '__PKT_LABEL_UPPER___OLD_GRANT_CAPABILITY_CHANGED')
     require(positive(grant['revision']) and positive(grant['stateRevision']) and grant['revokedAt'] is None, '__PKT_LABEL_UPPER___OLD_GRANT_REVOKED_OR_REVISION_INVALID')
     require(all(grant[field] is True for field in ['readAllowed', 'hostMatchesRoute', 'rootMatchesSnapshot', 'currentlyUsable']) and date(grant['expiresAt']) > datetime.now(timezone.utc), '__PKT_LABEL_UPPER___OLD_GRANT_UNUSABLE')
     require(grant['grantId'] == workspace_plan['grantId'] and grant['displayPath'] == workspace_plan['canonicalPath'], '__PKT_LABEL_UPPER___G90_EXISTING_GRANT_CHANGED')
