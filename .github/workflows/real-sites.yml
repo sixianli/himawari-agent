@@ -35,7 +35,7 @@ jobs:
       - name: 安装浏览器工具测试用的 Chromium
         run: .ci-output/tools/bin/node node_modules/playwright/cli.js install --only-shell chromium
       - name: 让浏览器工具访问真实外网
-        run: .ci-output/tools/bin/node node_modules/vitest/vitest.mjs run --config vitest.workspace.ts --project qualification-browser-real-sites --retry 0
+        run: .ci-output/tools/bin/node node_modules/vitest/vitest.mjs run --config vitest.workspace.ts --project qualification-browser-real-sites --project qualification-browser-vault-real-sites --retry 0
   claim:
     name: real-sites/claim
     needs: run

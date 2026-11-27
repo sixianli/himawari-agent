@@ -1781,6 +1781,10 @@ export async function startTenantRuntime(
           approvalNeeded: async (input) => {
             await applePush?.requestVaultApproval(input);
           },
+          codeNeeded: async (input) => {
+            if (!applePush) throw new Error("VAULT_CODE_NO_PUSH");
+            await applePush.requestVaultCode(input);
+          },
         },
         now: () => new Date(clock.now()),
       });
@@ -1975,6 +1979,7 @@ export async function startTenantRuntime(
       });
       const appCode = configuredAppCode(configuration);
       const browser = createConfiguredBrowserTools(configuration, {
+        ...(vault ? { vault: { scope: perceptionScope, service: vault } } : {}),
         now: () => Date.parse(clock.now()),
         acceptsImages: async (modelRef) => {
           const models = modelComposition?.composition.piModels;
