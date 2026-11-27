@@ -60,6 +60,11 @@
 "chat.menu.reply" = "回复";
 "chat.menu.copy" = "复制";
 "chat.menu.select" = "选择文字";
+"chat.menu.why" = "为什么说这个";
+"chat.why" = "为什么";
+"chat.why.hide" = "收起";
+"chat.why.open" = "已展开";
+"chat.why.closed" = "已收起";
 "chat.reply.toAgent" = "回复 Himawari";
 "chat.reply.toOwner" = "回复你自己";
 "chat.reply.missing" = "原消息已不在";

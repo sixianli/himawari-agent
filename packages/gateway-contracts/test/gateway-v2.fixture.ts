@@ -657,7 +657,13 @@ export const governanceMessages = [
     ],
     generatedAt: "2026-11-12T03:06:30.000Z",
   }),
-  fixture("query", "files.list.read", { kind: null, origin: "uploaded", before: null, limit: 50 }),
+  fixture("query", "files.list.read", {
+    kind: null,
+    origin: "uploaded",
+    before: null,
+    limit: 50,
+    search: "大阪",
+  }),
   fixture("snapshot", "files.list.snapshot", {
     files: [
       {
@@ -909,6 +915,50 @@ export const governanceMessages = [
       memoryIds: ["memory-01"],
       relatedMessages: 2,
     },
+  }),
+  fixture("query", "decision.spoken.read", { messageId: "message:said:1" }),
+  fixture("snapshot", "decision.spoken.snapshot", {
+    messageId: "message:said:1",
+    rating: "useful",
+    decisions: [
+      {
+        decisionId: "inbox:mail1",
+        decidedAt: "2026-11-09T00:01:00.000Z",
+        pushed: true,
+        reason: "会议改了时间",
+        cause: {
+          kind: "mail",
+          at: "2026-11-09T00:00:00.000Z",
+          summary: "会议改到明天上午",
+          memoryId: null,
+        },
+      },
+    ],
+  }),
+  fixture("command", "decision.spoken.rate", { messageId: "message:said:1", rating: null }),
+  fixture("query", "decision.stats.read", { span: "week" }),
+  fixture("snapshot", "decision.stats.snapshot", {
+    span: "week",
+    minimumSamples: 5,
+    current: {
+      start: "2026-11-02T00:00:00.000Z",
+      end: "2026-11-09T00:00:00.000Z",
+      spoken: 6,
+      rated: 4,
+      useful: 3,
+      unneeded: 1,
+    },
+    previous: {
+      start: "2026-10-26T00:00:00.000Z",
+      end: "2026-11-02T00:00:00.000Z",
+      spoken: 2,
+      rated: 0,
+      useful: 0,
+      unneeded: 0,
+    },
+    recall: { at: "2026-11-08T00:00:00.000Z", correct: 24, asked: 30 },
+    previousRecall: null,
+    generatedAt: "2026-11-09T00:00:00.000Z",
   }),
   fixture("query", "memory.overview.read", {}),
   fixture("query", "decision.chain.read", { decisionId: "proactive-decision:abc" }),
