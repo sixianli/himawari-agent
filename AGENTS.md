@@ -117,6 +117,7 @@ Andy 的全局指令已复制到 [.claude/rules/owner-global-instructions.md](.c
 每个提交立即推送到 `origin` 上同名的分支（见全局指令的“Git 与操作”一节）。项目补充：
 
 - 它适用于所有代理做的提交。
+- 例外：PR 已标成“准备合并”后，一轮修改在本地改完、检查过再一次推送；PR 什么时候开成草稿、什么时候标准备合并，见[草稿和准备合并](.agents/instructions/delivery-mode.md#draft-then-ready)。
 - 已推送的提交不等于已充分测试的提交。提交说明仍必须写明实际运行了哪些测试层；第 3 层在 PR 或合并之前运行，而不是在每次推送之前。
 
 <a id="test-and-production-hosts"></a>

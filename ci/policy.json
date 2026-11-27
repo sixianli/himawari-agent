@@ -61,39 +61,6 @@
       "outputs": ["json", "artifact"]
     },
     {
-      "id": "browser",
-      "needs": ["build"],
-      "timeoutMinutes": 90,
-      "members": [
-        {
-          "key": "chromium",
-          "runner": "ubuntu-24.04",
-          "os": "linux",
-          "arch": "x64",
-          "node": "22.22.3",
-          "browser": "chromium"
-        },
-        {
-          "key": "firefox",
-          "runner": "ubuntu-24.04",
-          "os": "linux",
-          "arch": "x64",
-          "node": "22.22.3",
-          "browser": "firefox"
-        },
-        {
-          "key": "webkit",
-          "runner": "ubuntu-24.04",
-          "os": "linux",
-          "arch": "x64",
-          "node": "22.22.3",
-          "browser": "webkit"
-        }
-      ],
-      "projects": [],
-      "outputs": ["json", "artifact"]
-    },
-    {
       "id": "tests",
       "needs": ["policy", "build"],
       "timeoutMinutes": 60,
@@ -170,7 +137,7 @@
     },
     {
       "id": "required",
-      "needs": ["policy", "static", "build", "browser", "tests", "tooling", "security"],
+      "needs": ["policy", "static", "build", "tests", "tooling", "security"],
       "timeoutMinutes": 15,
       "members": [
         {

@@ -44,7 +44,7 @@ CI（持续集成，每次推送和开 PR 时自动跑检查和测试的那套�
 ### 跑在哪些机器上
 
 - 只用 GitHub 免费的三种托管机器：`ubuntu-24.04`（x64）、`ubuntu-24.04-arm`（ARM）、`macos-26`。`npm run check:ci-policy` 读 `.github/workflows/` 下全部工作流，`runs-on` 不是这三种之一（包括更大的付费机器、`self-hosted`、浮动标签和算出来的表达式）就以 `HOSTED_RUNNER_REQUIRED` 失败。仓库是公开的，这三种机器不花钱。
-- `policy`、`tooling`、`security` 跑在 ARM；`static`、`build`、`browser`、`tests`、汇总作业 `ci/required`、main 确认、合并队列和“关闭 PR 时取消 CI”跑在 x64。`static` 必须在 x64：`npm run check` 里的 `check:delivery-dependencies` 会真的运行只认 linux-x64 的依赖收集脚本，在 ARM 上会失败。
+- `policy`、`tooling`、`security` 跑在 ARM；`static`、`build`、`tests`、汇总作业 `ci/required`、main 确认、合并队列和“关闭 PR 时取消 CI”跑在 x64。`static` 必须在 x64：`npm run check` 里的 `check:delivery-dependencies` 会真的运行只认 linux-x64 的依赖收集脚本，在 ARM 上会失败。
 - `Apple` 工作流在 `macos-26` 上跑。PR 上只开一台 Mac：`apple/iphone` 一个作业里跑 `HimawariCore` 单元测试，再不签名编译 iPhone App 和原生 Mac App（`HimawariMac`）。推送到 `main` 和手动触发（`workflow_dispatch`，在 GitHub 的 Actions 页面点 “Run workflow”）时另外跑 `apple/iphone-accessibility` 三份并行，在模拟器里对每个示例场景跑苹果的无障碍审计（`clients/apple/App/UITests/AccessibilityAuditTests.swift`，见[界面设计规范的自动检查](../ui-ux-design-guide.md#gates)），以及长对话滚动测速 `apple/scroll`。这几个 Mac 作业之前先在 `ubuntu-24.04` 上跑一个几秒钟的 `apple/changes`：用 `scripts/ci/apple-scope.mjs` 看这次 PR 或推送有没有改 `clients/apple/`、`apple.yml` 或这个脚本，没改就跳过 Mac 作业，说不清改了什么时照跑。免费账号同时只给 5 台 Mac 机器，2026-11-25 到 11-26 的 Apple 运行里约一半来自没碰 iPhone 客户端的 PR，把 Mac 机器排满了。只有 `ci/required` 是合并必需的检查，所以被跳过的 Mac 作业不会卡住合并。
 - 审计、测速和 Release 归档移出 PR（2026-11-27，Andy 在“缩短 CI 合并门槛和排队”任务说明里的原话：“苹果客户端的无障碍审计移出 PR，只在 main 上跑”“这两项不需要再找 Andy 确认，按决定执行”）。起因：2026-11-24 10:30 到 11-27 10:30（UTC）PR 上的 Mac 机器时间共 138.8 小时，其中审计 70.2、`TestFlight` 工作流的 Release 归档 17.4、测速 11.6，`apple/iphone` 只占 39.4；审计在 PR 上 412 次被取消、92 次失败、87 次成功，大多没跑完就被下一次推送取消，却把 5 台 Mac 占满（数字来自 `node scripts/ci/actions-stats.mjs`）。`TestFlight` 工作流因此不再在 PR 上跑，只在 `main` 上跑 `testflight/upload`：有上传密钥时照旧归档、核对权限再上传；没有密钥时也打 Release 归档并核对权限（`clients/apple/scripts/testflight.sh archive`），只是不上传。
 - `main` 上苹果检查失败要有人认领：`Apple` 工作流的 `apple/iphone`、审计或测速失败，或 `TestFlight` 工作流的 `testflight/upload` 失败时，同一次运行里的 `apple/claim`、`testflight/claim`（`ubuntu-24.04`，只有这一步能在 PR 上写留言）运行 `scripts/ci/apple-main-claim.mjs`：往回找这些作业上一次在 `main` 上全部通过的提交，列出从那以后合进 `main`、改了苹果客户端的 PR，在每个 PR 上留言（带失败的作业名、运行链接和上次通过的提交），请做这个 PR 的线程认领并修；找不到上一次通过时，只留在这次提交所属的 PR 上。同一次运行不在同一个 PR 上留两次言。审计因页面改动多出问题时修页面，不调高登记表的数（[I-121](../incidents-and-gates.md#incidents)）。
@@ -55,7 +55,9 @@ CI（持续集成，每次推送和开 PR 时自动跑检查和测试的那套�
 
 ### 有哪些作业
 
-- `ci.yml` 有 `policy`、`static`、`build`、`browser`、`tests`、`tooling`、`security` 七个检查作业，加汇总作业 `ci/required`。合并只看 `ci/required`。
+- `ci.yml` 有 `policy`、`static`、`build`、`tests`、`tooling`、`security` 六个检查作业，加汇总作业 `ci/required`。合并只看 `ci/required`。
+- 网页专用的浏览器检查已去掉。Andy 2026-11-27 定，出处是他给 CI 提速线程的任务说明，原话：“网页端已决定全部删除，CI 不再需要跑网页相关的浏览器检查。”原来的 `browser` 作业在 Chromium、Firefox、WebKit 三个浏览器里各打开一遍网页，现在没有了，`ci/required` 也不再等它；`npm run check` 去掉了只查网页的三步：`check:layout`（用真浏览器检查网页排版）、`check:phone-layout`（手机网页的输入框字号和弹窗安全区）、`check:locale`（网页里日期和数字的格式化带不带界面语言）。这三个脚本和 `package.json` 里的命令名暂时留着，等[ADR 0309](0309-apps-sign-in-with-passkeys-and-the-web-is-removed.md#order)最后一步删网页代码时一起删，需要时仍可手动跑。基准提交上的策略文件还写着 `browser` 作业时，`check-policy.mjs` 的 `upgradeRetiredBrowserCheck` 在比较前把它去掉，只认原来那一种写法，别的写法照样被拒。
+- 仍要装浏览器的地方：`tests` 装 Chromium，integration 里 Himawari 自己的浏览器工具（`test/integration/browser-tool.test.ts`）要用它，另有一批打开网页的浏览器测试随网页代码一起删；`tooling` 装 Chromium，`test/tooling/safari-panel.test.ts` 要用它打开 Safari 扩展的面板页，这和网页无关；`prepare-hosted.sh` 只装 Chromium 需要的系统库；手动触发的 `quality.yml` 的 `brands` 检查用 Chrome 和 Edge 打开网页，也随网页代码一起删。
 - `tests` 跑 unit、contracts、integration、e2e、pi-compat 五个测试项目，拆成三个成员：`integration-1`、`integration-2` 各跑 integration 的一半，`others` 跑其余四个。分份办法：把该跑的、已提交的测试文件按路径排序，第 i 个（从 0 数）归第 `i % 2 + 1` 份，每份把文件名明确交给 vitest；多跑或少跑一个文件都以 `CI_TEST_FILE_SET_MISMATCH` 失败。`validatePolicy` 要求每个项目在成员之间恰好跑一次，分片成员只跑一个项目。
 - `tooling` 在 ARM 上和 `tests` 并行，只等 `policy`；`policy` 自己不跑测试。tooling 测试超时和 integration 一样是 30 秒（`vitest.workspace.ts`），因为这些测试会起子进程、建临时 git 仓库，在 4 核机器上会超过 5 秒。
 - PR 上不统计覆盖率。`scripts/ci/run.mjs` 只有传 `--coverage measure` 或仓库还没有覆盖率基线时才统计，统计时不分片，在一台机器上跑全部项目。
@@ -67,7 +69,7 @@ CI（持续集成，每次推送和开 PR 时自动跑检查和测试的那套�
 
 ### 草稿 PR 和触发
 
-- 草稿 PR 不跑任何检查：七个检查作业都带 `github.event_name != 'pull_request' || github.event.pull_request.draft != true`。
+- 草稿 PR 不跑任何检查：六个检查作业都带 `github.event_name != 'pull_request' || github.event.pull_request.draft != true`。
 - 汇总作业仍带 `always()`，第一步是一段不依赖任何安装的 bash：草稿 PR 打印 `CI_DRAFT_UNVERIFIED` 并失败，任何上游作业被取消时打印 `CI_UPSTREAM_CANCELLED` 并失败。草稿保持“失败”而不是“跳过”，因为跳过会显示成功，还可能被 main 的轻量确认当成证据。
 - `pull_request` 只在 `opened`、`synchronize`、`reopened`、`ready_for_review` 时触发；只改 PR 标题或正文不跑 CI。改了 PR 的目标分支后，要推一个新提交才会重跑。
 - `check-policy.mjs` 把上面三条写成硬规则，`test/tooling/policy.test.mjs` 有反向用例，`test/tooling/ci-optimization.test.mjs` 实际执行入口那段 bash。
@@ -86,7 +88,7 @@ CI（持续集成，每次推送和开 PR 时自动跑检查和测试的那套�
 ### 作业之间传文件、结果放哪里
 
 - 不用 GitHub 产物：`check-policy.mjs` 拒绝任何作业用 `actions/upload-artifact` 或 `actions/download-artifact`。
-- 作业之间传文件用本次运行内部的缓存：每个检查作业把自己的报告用 `actions/cache/save` 存进去，键带 `run_id` 和 `run_attempt`；`browser`、`tests` 先取回本次的 Linux 构建（取不到就失败），汇总作业逐个取回各成员的报告。取回后按作业输出里的摘要逐字节核对（`run-share.mjs`），共享目录是每台机器自己的 `$RUNNER_TEMP/ci-share`。依赖和工具不放进 GitHub 缓存。
+- 作业之间传文件用本次运行内部的缓存：每个检查作业把自己的报告用 `actions/cache/save` 存进去，键带 `run_id` 和 `run_attempt`；`tests` 先取回本次的 Linux 构建（取不到就失败），汇总作业逐个取回各成员的报告。取回后按作业输出里的摘要逐字节核对（`run-share.mjs`），共享目录是每台机器自己的 `$RUNNER_TEMP/ci-share`。依赖和工具不放进 GitHub 缓存。
 - 汇总结论写进 `ci/required` 的步骤日志：`required.mjs` 把 `{context, summary}` 先遮盖像密钥的内容，再按 base64 打印在 `HIMAWARI_GATE_BEGIN v1 <SHA-256>` 和 `HIMAWARI_GATE_END` 两行之间（`gate-log.mjs`），上限 256 KiB；每个检查的结果和失败原因另写成一张表放进作业摘要。
 - 每个检查作业用 `scripts/ci/ci-summary.mjs` 把诊断写进作业摘要，并同样打印到作业日志（云端线程只读得到日志）：截图、trace 只列名字和大小；检查失败时再加失败的用例（文件、名字、报错前 20 行，最多 30 条）和命令日志末尾。全部先遮盖，每段总量不超过 64 KiB，日志里每行前加 `| `，免得被当成工作流命令或冒充汇总结论标记。
 - 日志和运行记录在仓库设置里保留 3 天。
