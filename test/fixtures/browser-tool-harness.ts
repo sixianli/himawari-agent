@@ -49,9 +49,9 @@ const RESERVE_MS = 5_000;
 function chromiumEnv(): Record<string, string> {
   const browsers = {
     PLAYWRIGHT_BROWSERS_PATH:
-      process.env.PLAYWRIGHT_BROWSERS_PATH || path.join(homedir(), ".cache", "ms-playwright"),
+      process.env["PLAYWRIGHT_BROWSERS_PATH"] || path.join(homedir(), ".cache", "ms-playwright"),
   };
-  const configured = process.env.HIMAWARI_CHROMIUM_PATH;
+  const configured = process.env["HIMAWARI_CHROMIUM_PATH"];
   const managed = chromium.executablePath();
   const executable =
     configured ||
@@ -91,7 +91,7 @@ export class ComputerOnThisMachine implements BrowserComputer {
     return new Promise<BrowserComputerExecResult>((resolve, reject) => {
       const child = spawn(process.execPath, [PROGRAM, ...argv], {
         env: {
-          PATH: process.env.PATH ?? "",
+          PATH: process.env["PATH"] ?? "",
           HOME: this.home,
           HTTP_PROXY: proxy,
           HTTPS_PROXY: proxy,
