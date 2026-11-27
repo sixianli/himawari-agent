@@ -77,6 +77,11 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "decision.chain.snapshot",
   "decision.email.read",
   "decision.email.snapshot",
+  "decision.spoken.read",
+  "decision.spoken.snapshot",
+  "decision.spoken.rate",
+  "decision.stats.read",
+  "decision.stats.snapshot",
   "memory.approval.respond",
   "memory.tidy.undo",
   "memory.conversationReview.undo",
@@ -189,9 +194,11 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "login.device.revoke",
   "mcp.connections.read",
   "mcp.connections.snapshot",
-  "mcp.connection.create",
   "mcp.connection.change",
-  "mcp.connection.rotate",
+  "mcp.grants.read",
+  "mcp.grants.snapshot",
+  "mcp.grant.approve",
+  "mcp.grant.deny",
   "login.devices.revoke_others",
   "stream.event",
 ] as const;
@@ -1267,6 +1274,7 @@ const filesListQuerySchema = object({
     origin: nullable(enumeration(FILE_LIST_ORIGINS)),
     before: nullable(fileListCursorSchema),
     limit: integer(1, FILE_LIST_PAGE_LIMIT),
+    search: nullable(boundedString(200)),
   }),
 });
 const filesListSnapshotSchema = object({
@@ -1330,6 +1338,7 @@ export const MCP_CONNECTION_STATUS_NAMES = ["active", "paused", "revoked"] as co
 export const MCP_CONNECTION_READ_CEILING_NAMES = ["public", "private", "sensitive"] as const;
 export const MCP_CONNECTION_PUSH_POLICY_NAMES = ["ask", "direct"] as const;
 export const MCP_CONNECTION_CAPABILITY_NAMES = ["command_hooks", "mcp", "scheduled_tasks"] as const;
+export const MCP_OAUTH_REGISTRATION_NAMES = ["dynamic", "metadata_document"] as const;
 export const MCP_CONNECTION_LIMIT_KEYS = [
   "mcp.connections",
   "mcp.connection.name_characters",
@@ -1399,7 +1408,8 @@ const mcpConnectionsSnapshotSchema = object({
         reportedClient: nullable(boundedString(64)),
         createdAt: timestamp,
         updatedAt: timestamp,
-        secretRotatedAt: nullable(timestamp),
+        registration: nullable(enumeration(MCP_OAUTH_REGISTRATION_NAMES)),
+        clientHost: nullable(boundedString(256)),
         lastSeenAt: nullable(timestamp),
         minute: object({ reads: integer(0), hookReads: integer(0) }),
         usage: mcpConnectionUsageSchema,
@@ -1413,17 +1423,7 @@ const mcpConnectionsSnapshotSchema = object({
         used: nullable(integer(0)),
       }),
     ),
-    addressPath: boundedString(256),
     generatedAt: timestamp,
-  }),
-});
-const mcpConnectionCreateCommandSchema = object({
-  ...commandEnvelope("mcp.connection.create"),
-  payload: object({
-    name: mcpConnectionNameSchema,
-    capabilities: mcpConnectionCapabilitiesSchema,
-    readCeiling: enumeration(MCP_CONNECTION_READ_CEILING_NAMES),
-    pushPolicy: enumeration(MCP_CONNECTION_PUSH_POLICY_NAMES),
   }),
 });
 const mcpConnectionChangeCommandSchema = object({
@@ -1437,9 +1437,54 @@ const mcpConnectionChangeCommandSchema = object({
     status: nullable(enumeration(MCP_CONNECTION_STATUS_NAMES)),
   }),
 });
-const mcpConnectionRotateCommandSchema = object({
-  ...commandEnvelope("mcp.connection.rotate"),
-  payload: object({ connectionId: machineString }),
+const mcpGrantsQuerySchema = object({
+  ...envelope("query", "mcp.grants.read"),
+  payload: object({}),
+});
+const mcpGrantsSnapshotSchema = object({
+  ...envelope("snapshot", "mcp.grants.snapshot"),
+  payload: object({
+    grants: array(
+      object({
+        id: machineString,
+        clientName: boundedString(128),
+        registration: enumeration(MCP_OAUTH_REGISTRATION_NAMES),
+        clientHost: boundedString(256),
+        redirectHost: boundedString(256),
+        localRedirect: booleanValue,
+        wantsWrite: booleanValue,
+        existingConnection: nullable(
+          object({
+            id: machineString,
+            name: mcpConnectionNameSchema,
+            readCeiling: enumeration(MCP_CONNECTION_READ_CEILING_NAMES),
+            pushPolicy: enumeration(MCP_CONNECTION_PUSH_POLICY_NAMES),
+          }),
+        ),
+        createdAt: timestamp,
+        expiresAt: timestamp,
+      }),
+    ),
+    defaults: object({
+      readCeiling: enumeration(MCP_CONNECTION_READ_CEILING_NAMES),
+      pushPolicy: enumeration(MCP_CONNECTION_PUSH_POLICY_NAMES),
+    }),
+    generatedAt: timestamp,
+  }),
+});
+const mcpGrantApproveCommandSchema = object({
+  ...commandEnvelope("mcp.grant.approve"),
+  payload: object({
+    grantId: machineString,
+    name: nullable(mcpConnectionNameSchema),
+    readCeiling: nullable(enumeration(MCP_CONNECTION_READ_CEILING_NAMES)),
+    pushPolicy: nullable(enumeration(MCP_CONNECTION_PUSH_POLICY_NAMES)),
+    write: booleanValue,
+  }),
+});
+const mcpGrantDenyCommandSchema = object({
+  ...commandEnvelope("mcp.grant.deny"),
+  payload: object({ grantId: machineString }),
 });
 const proactiveSettingsSetCommandSchema = object({
   ...commandEnvelope("proactive.settings.set"),
@@ -2208,6 +2253,66 @@ const decisionEmailSnapshotSchema = object({
         relatedMessages: nullable(integer(0)),
       }),
     ),
+  }),
+});
+export const DECISION_STATS_SPANS = ["week", "four_weeks"] as const;
+const spokenRatingSchema = enumeration(["useful", "unneeded"]);
+const decisionSpokenQuerySchema = object({
+  ...envelope("query", "decision.spoken.read"),
+  payload: object({ messageId: machineString }),
+});
+const decisionSpokenSnapshotSchema = object({
+  ...envelope("snapshot", "decision.spoken.snapshot"),
+  payload: object({
+    messageId: machineString,
+    rating: nullable(spokenRatingSchema),
+    decisions: array(
+      object({
+        decisionId: machineString,
+        decidedAt: timestamp,
+        pushed: booleanValue,
+        reason: nullable(boundedString(1000)),
+        cause: object({
+          kind: boundedString(64),
+          at: timestamp,
+          summary: nullable(boundedString(4000)),
+          memoryId: nullable(machineString),
+        }),
+      }),
+    ),
+  }),
+});
+const decisionSpokenRateCommandSchema = object({
+  ...commandEnvelope("decision.spoken.rate"),
+  payload: object({ messageId: machineString, rating: nullable(spokenRatingSchema) }),
+});
+const decisionStatsPeriodSchema = object({
+  start: timestamp,
+  end: timestamp,
+  spoken: integer(0),
+  rated: integer(0),
+  useful: integer(0),
+  unneeded: integer(0),
+});
+const decisionStatsRecallSchema = object({
+  at: timestamp,
+  correct: integer(0),
+  asked: integer(0),
+});
+const decisionStatsQuerySchema = object({
+  ...envelope("query", "decision.stats.read"),
+  payload: object({ span: enumeration(DECISION_STATS_SPANS) }),
+});
+const decisionStatsSnapshotSchema = object({
+  ...envelope("snapshot", "decision.stats.snapshot"),
+  payload: object({
+    span: enumeration(DECISION_STATS_SPANS),
+    minimumSamples: integer(1),
+    current: decisionStatsPeriodSchema,
+    previous: decisionStatsPeriodSchema,
+    recall: nullable(decisionStatsRecallSchema),
+    previousRecall: nullable(decisionStatsRecallSchema),
+    generatedAt: timestamp,
   }),
 });
 const memoryOverviewSnapshotSchema = object({
@@ -3711,9 +3816,11 @@ const schemasByType = {
   "login.device.revoke": loginDeviceRevokeCommandSchema,
   "mcp.connections.read": mcpConnectionsQuerySchema,
   "mcp.connections.snapshot": mcpConnectionsSnapshotSchema,
-  "mcp.connection.create": mcpConnectionCreateCommandSchema,
   "mcp.connection.change": mcpConnectionChangeCommandSchema,
-  "mcp.connection.rotate": mcpConnectionRotateCommandSchema,
+  "mcp.grants.read": mcpGrantsQuerySchema,
+  "mcp.grants.snapshot": mcpGrantsSnapshotSchema,
+  "mcp.grant.approve": mcpGrantApproveCommandSchema,
+  "mcp.grant.deny": mcpGrantDenyCommandSchema,
   "login.devices.revoke_others": loginDevicesRevokeOthersCommandSchema,
   "sensitive.interceptions.read": sensitiveInterceptionsQuerySchema,
   "sensitive.interceptions.snapshot": sensitiveInterceptionsSnapshotSchema,
@@ -3730,6 +3837,11 @@ const schemasByType = {
   "decision.chain.snapshot": decisionChainSnapshotSchema,
   "decision.email.read": decisionEmailQuerySchema,
   "decision.email.snapshot": decisionEmailSnapshotSchema,
+  "decision.spoken.read": decisionSpokenQuerySchema,
+  "decision.spoken.snapshot": decisionSpokenSnapshotSchema,
+  "decision.spoken.rate": decisionSpokenRateCommandSchema,
+  "decision.stats.read": decisionStatsQuerySchema,
+  "decision.stats.snapshot": decisionStatsSnapshotSchema,
   "memory.approval.respond": memoryApprovalRespondCommandSchema,
   "memory.tidy.undo": memoryTidyUndoCommandSchema,
   "memory.conversationReview.undo": memoryConversationReviewUndoCommandSchema,

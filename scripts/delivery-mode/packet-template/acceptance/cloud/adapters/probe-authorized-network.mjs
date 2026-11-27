@@ -1,4 +1,5 @@
 import { validateScratchRoot } from "./scratch-root.mjs";
+import { existsSync } from "node:fs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import {
@@ -78,7 +79,7 @@ try {
             ? ["/System", "/private/etc/ssl/openssl.cnf", certificate, "/private/etc/hosts"]
             : [
                 "/lib",
-                "/lib64",
+                ...["/lib64"].filter(existsSync),
                 "/proc",
                 "/etc/ssl",
                 "/etc/hosts",

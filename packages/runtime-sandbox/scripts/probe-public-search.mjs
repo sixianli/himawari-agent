@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import path from "node:path";
+
 if (process.env.HIMAWARI_LIVE_SANDBOX_PROBE !== "1" || process.platform !== "linux")
   throw new Error("PUBLIC_SEARCH_PROBE_OPT_IN_REQUIRED");
 const runtime = await realpath(process.env.HIMAWARI_PROBE_RUNTIME);
@@ -35,9 +37,16 @@ try {
       writable: false,
       protectedPaths: [],
       readOnlyToolchainPaths: await Promise.all(
-        [runtime, "/usr/bin", "/usr/lib", "/lib64", "/dev", "/proc", "/etc/ssl", "/etc/hosts"].map(
-          (p) => realpath(p),
-        ),
+        [
+          runtime,
+          "/usr/bin",
+          "/usr/lib",
+          ...["/lib64"].filter(existsSync),
+          "/dev",
+          "/proc",
+          "/etc/ssl",
+          "/etc/hosts",
+        ].map((p) => realpath(p)),
       ),
       allowedDomains: scenario === "network-denied" ? [] : ["mcp.exa.ai:443"],
     });

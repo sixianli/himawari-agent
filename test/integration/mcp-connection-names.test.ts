@@ -16,11 +16,12 @@ describe("[P5-B] connection names", () => {
       let accepted = true;
       try {
         gatewayV2MessageSchema.parse(
-          fixture("command", "mcp.connection.create", {
+          fixture("command", "mcp.grant.approve", {
+            grantId: "grant-AAAAAAAAAAAAAAAAAAAAAA",
             name,
-            capabilities: ["mcp"],
             readCeiling: "private",
             pushPolicy: "ask",
+            write: true,
           }),
         );
       } catch {

@@ -13,10 +13,6 @@ import {
 import { createReferenceAdapterSet } from "@himawari-agent/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import {
-  mcpConnectionSecretDigest,
-  newMcpConnectionSecret,
-} from "../../apps/agent-service/src/production-mcp-connections.ts";
-import {
   MCP_SYNC_BATCH_TOO_LARGE,
   MCP_SYNC_FULL,
   ProductionMcpSync,
@@ -57,17 +53,16 @@ describe("[P5-C] sync_memories storage and deletion rules", () => {
     });
     closers.push(() => repository.close());
     const adapters = createReferenceAdapterSet();
-    const connections = repository.mcpConnections();
+    const oauth = repository.mcpOAuth();
     const connection = async (id: string) => {
-      await connections.create({
+      await oauth.bindGrant({
         ...scope,
-        id,
-        name: `接入-${id}`,
-        secretSha256: mcpConnectionSecretDigest(newMcpConnectionSecret()),
-        capabilities: ["mcp"],
-        readCeiling: "private",
-        pushPolicy: "ask",
-        createdAt: NOW,
+        clientId: `client-${id}`,
+        registration: "dynamic",
+        clientName: `接入-${id}`,
+        redirectUris: ["http://127.0.0.1/callback"],
+        newConnection: { id, name: `接入-${id}`, readCeiling: "private", pushPolicy: "ask" },
+        now: NOW,
       });
       return id;
     };

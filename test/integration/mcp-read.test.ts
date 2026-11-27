@@ -35,10 +35,6 @@ import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/cli
 import Fastify from "fastify";
 import { afterEach, describe, expect, it } from "vitest";
 import {
-  mcpConnectionSecretDigest,
-  newMcpConnectionSecret,
-} from "../../apps/agent-service/src/production-mcp-connections.ts";
-import {
   MCP_READ_PATH,
   MCP_READ_TOOL_CEILING_MISSING,
   MCP_READ_TOOLS,
@@ -49,7 +45,7 @@ import {
 } from "../../apps/agent-service/src/production-mcp-read.ts";
 import { ProductionMemoryRecall } from "../../apps/agent-service/src/production-memory-recall.ts";
 import { ProductionReminderWriter } from "../../apps/agent-service/src/production-reminder-writer.ts";
-import { createMcpAccess } from "../../apps/agent-service/test/fixtures/mcp-access.ts";
+import { createMcpOAuth } from "../../apps/agent-service/test/fixtures/mcp-oauth.ts";
 import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
 
 const OWNER_ID = createOwnerId("owner-mcp-read");
@@ -114,8 +110,7 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       readonly failReminders?: boolean;
       readonly loseTodaySummary?: boolean;
       readonly withoutSummaries?: boolean;
-      readonly binding?: { readonly status?: "disabled"; readonly ownerId?: string };
-      readonly failBinding?: boolean;
+      readonly failTokens?: boolean;
       readonly readCeiling?: Exclude<DataClassification, "restricted">;
       readonly hookReadsPerMinute?: number;
       readonly sensitiveSummary?: boolean;
@@ -370,24 +365,20 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
     const failures: unknown[] = [];
     const summaryFailures: unknown[] = [];
     const settingsStore = repository.proactive();
-    const access = await createMcpAccess(() => new Date(clock.now()));
-    const owners = repository.ownerIdentityState();
-    await owners.bindFirstOwner({
-      ownerId: OWNER_ID,
-      externalSubjectRef: await access.ownerSubjectRef(),
-      boundAt: clock.now(),
+    const oauth = createMcpOAuth({
+      scope,
+      clock,
+      store: repository.mcpOAuth(),
+      connections: repository.mcpConnections(),
     });
     const mcp = new ProductionMcpRead({
       scope,
       clock,
-      access: access.verifier,
-      owners: {
-        readBySubject: async (externalSubjectRef) => {
-          if (options.failBinding) throw new Error("OWNER_BINDING_STORE_DOWN");
-          const binding = await owners.readBySubject(externalSubjectRef);
-          return binding && options.binding
-            ? ({ ...binding, ...options.binding } as typeof binding)
-            : binding;
+      tokens: {
+        resourceMetadataUrl: oauth.authorization.resourceMetadataUrl,
+        verifyAccessToken: async (token) => {
+          if (options.failTokens) throw new Error("TOKEN_STORE_DOWN");
+          return oauth.authorization.verifyAccessToken(token);
         },
       },
       timeZone: TIME_ZONE,
@@ -480,41 +471,24 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
     const createConnection = async (
       id: string,
       readCeiling: Exclude<DataClassification, "restricted"> = "private",
-    ) => {
-      const secret = newMcpConnectionSecret();
-      await connections.create({
-        ...scope,
-        id,
-        name: id,
-        secretSha256: mcpConnectionSecretDigest(secret),
-        capabilities: ["mcp"],
-        readCeiling,
-        pushPolicy: "ask",
-        createdAt: clock.now(),
-      });
-      return secret;
-    };
-    const secret = await createConnection(CONNECTION_ID, options.readCeiling);
+    ) => (await oauth.connect({ id, readCeiling, pushPolicy: "ask", write: false })).token;
+    const token = await createConnection(CONNECTION_ID, options.readCeiling);
     const app = Fastify({ logger: false });
     registerMcpReadRoute(app, mcp);
     closers.push(() => app.close());
     await app.listen({ host: "127.0.0.1", port: 0 });
     const base = `http://127.0.0.1:${(app.server.address() as AddressInfo).port}${MCP_READ_PATH}`;
-    const bareUrl = new URL(base);
-    const urlFor = (key: string) => new URL(`${base}/${key}`);
-    const url = urlFor(secret);
+    const url = new URL(base);
     const usage = async () =>
       connections.usage({ ...scope, fromDay: "2000-01-01", toDay: "2100-01-01" });
-    const connect = async (era: Era, assertion?: string, target: URL = url) => {
+    const connect = async (era: Era, bearer: string = token) => {
       const client = new Client(
         { name: `mcp-read-test-${era}`, version: "1.0.0" },
         era === "modern" ? { versionNegotiation: { mode: { pin: "2026-07-28" } } } : {},
       );
       await client.connect(
-        new StreamableHTTPClientTransport(target, {
-          requestInit: {
-            headers: { "cf-access-jwt-assertion": assertion ?? (await access.sign()) },
-          },
+        new StreamableHTTPClientTransport(url, {
+          requestInit: { headers: { authorization: `Bearer ${bearer}` } },
         }),
       );
       closers.push(() => client.close());
@@ -582,16 +556,14 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       );
     return {
       url,
-      bareUrl,
-      urlFor,
-      secret,
+      token,
+      clock,
       createConnection,
       connections,
       usage,
       seedProfile,
       runProjection: () => memory.runProjectionBatch(20),
       connect,
-      access,
       call,
       ledger,
       recordFields,
@@ -827,126 +799,75 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
     expect(row).toMatchObject({ reasonCode: "rule_book", outcome: "read" });
   });
 
-  it("rejects requests without a valid Cloudflare Access assertion, and records nothing", async () => {
+  const listToolsBody = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} });
+  const postWith = (target: URL, authorization: string | null, body = listToolsBody) =>
+    fetch(target, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json, text/event-stream",
+        ...(authorization === null ? {} : { authorization }),
+      },
+      body,
+    });
+
+  it("rejects requests without a valid access token, points to the sign-in details, and records nothing", async () => {
     const f = await setup();
-    const bare = await fetch(f.url, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        accept: "application/json, text/event-stream",
-      },
-      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
-    });
+    const bare = await postWith(f.url, null);
     expect(bare.status).toBe(401);
-    expect(bare.headers.get("www-authenticate")).toBeNull();
-    const withBearer = await fetch(f.url, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        accept: "application/json, text/event-stream",
-        authorization: ["Bearer", "m".repeat(40)].join(" "),
-      },
-      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
-    });
-    expect(withBearer.status).toBe(401);
-    expect(withBearer.headers.get("www-authenticate")).toBeNull();
-    for (const assertion of [
-      await f.access.signWithForeignKey(),
-      await f.access.sign({ audience: "another-app" }),
-      await f.access.sign({ expiresInSeconds: -120 }),
-      await f.access.sign({ subject: "someone-else-in-the-access-team" }),
-    ]) {
-      const rejected = await fetch(f.url, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          accept: "application/json, text/event-stream",
-          "cf-access-jwt-assertion": assertion,
-        },
-        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
-      });
-      expect(rejected.status).toBe(401);
-      expect(rejected.headers.get("www-authenticate")).toBeNull();
-    }
-    await expect(f.connect("legacy", await f.access.signWithForeignKey())).rejects.toThrow();
-    await expect(
-      f.connect("modern", await f.access.sign({ audience: "another-app" })),
-    ).rejects.toThrow();
-    await expect(
-      f.connect("modern", await f.access.sign({ expiresInSeconds: -120 })),
-    ).rejects.toThrow();
-    expect(await f.ledger()).toEqual([]);
-    expect(f.failures).toHaveLength(7);
-    expect(f.failures).toEqual(
-      Array.from({ length: 7 }, () => expect.objectContaining({ code: expect.any(String) })),
+    expect(bare.headers.get("www-authenticate")).toBe(
+      [
+        "Bearer",
+        'resource_metadata="https://agent.example.test/.well-known/oauth-protected-resource/api/mcp/v1", scope="himawari:read himawari:write"',
+      ].join(" "),
     );
-    expect(f.failures[3]).toEqual({ code: "MCP_ACCESS_OWNER_NOT_BOUND" });
-  });
-
-  it.each([
-    ["a disabled binding", { status: "disabled" as const }],
-    ["a binding for another owner", { ownerId: "owner-someone-else" }],
-  ])("rejects the bound subject when it has %s", async (_label, binding) => {
-    const f = await setup({ binding });
-    await expect(f.connect("modern")).rejects.toThrow();
-    expect(f.failures).toEqual([{ code: "MCP_ACCESS_OWNER_NOT_BOUND" }]);
+    for (const authorization of [
+      `Bearer ${"m".repeat(43)}`,
+      `Bearer ${f.token}x`,
+      `bearer ${f.token}`,
+      `Basic ${f.token}`,
+      f.token,
+    ]) {
+      const rejected = await postWith(f.url, authorization);
+      expect(rejected.status).toBe(401);
+      if (authorization.startsWith("Bearer "))
+        expect(rejected.headers.get("www-authenticate")).toContain('error="invalid_token"');
+    }
+    await expect(f.connect("legacy", "m".repeat(43))).rejects.toThrow();
+    await expect(f.connect("modern", "m".repeat(43))).rejects.toThrow();
     expect(await f.ledger()).toEqual([]);
+    expect(f.failures).toEqual([]);
   });
 
-  it("answers 503, not 401, when the owner binding cannot be read, and limits it like a signed-in request", async () => {
-    const f = await setup({ failBinding: true });
-    const post = async () =>
-      fetch(f.url, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          accept: "application/json, text/event-stream",
-          "cf-access-jwt-assertion": await f.access.sign(),
-        },
-        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
-      });
-    for (let attempt = 0; attempt < 30; attempt += 1) expect((await post()).status).toBe(503);
-    expect((await post()).status).toBe(429);
+  it("turns a token away once it expires", async () => {
+    const f = await setup();
+    expect((await postWith(f.url, `Bearer ${f.token}`)).status).toBe(200);
+    f.clock.advance(3_600_001);
+    expect((await postWith(f.url, `Bearer ${f.token}`)).status).toBe(401);
+  });
+
+  it("answers 503, not 401, when the token store cannot be read, and limits it like a signed-in request", async () => {
+    const f = await setup({ failTokens: true });
+    for (let attempt = 0; attempt < 30; attempt += 1)
+      expect((await postWith(f.url, `Bearer ${f.token}`)).status).toBe(503);
+    expect((await postWith(f.url, `Bearer ${f.token}`)).status).toBe(429);
     expect(f.failures).toHaveLength(30);
   });
 
   it("answers 429 after 30 signed-in requests a minute, without using up the rejected-request allowance", async () => {
     const f = await setup();
-    const post = async (assertion: string) =>
-      (
-        await fetch(f.url, {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            accept: "application/json, text/event-stream",
-            "cf-access-jwt-assertion": assertion,
-          },
-          body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
-        })
-      ).status;
-    const owner = await f.access.sign();
-    for (let attempt = 0; attempt < 30; attempt += 1) expect(await post(owner)).not.toBe(429);
-    expect(await post(owner)).toBe(429);
-    expect(await post(await f.access.signWithForeignKey())).toBe(401);
+    for (let attempt = 0; attempt < 30; attempt += 1)
+      expect((await postWith(f.url, `Bearer ${f.token}`)).status).not.toBe(429);
+    expect((await postWith(f.url, `Bearer ${f.token}`)).status).toBe(429);
+    expect((await postWith(f.url, `Bearer ${"m".repeat(43)}`)).status).toBe(401);
   });
 
-  it("answers 429 after 60 rejected assertions a minute, logs only the 401s, and still serves a valid sign-in", async () => {
+  it("answers 429 after 60 rejected tokens a minute and still serves a valid token", async () => {
     const f = await setup();
-    const forged = await f.access.signWithForeignKey();
-    const post = () =>
-      fetch(f.url, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          accept: "application/json, text/event-stream",
-          "cf-access-jwt-assertion": forged,
-        },
-        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
-      });
-    for (let attempt = 0; attempt < 60; attempt += 1) expect((await post()).status).toBe(401);
-    const limited = await post();
-    expect(limited.status).toBe(429);
-    expect(f.failures).toHaveLength(60);
+    const forged = `Bearer ${"m".repeat(43)}`;
+    for (let attempt = 0; attempt < 60; attempt += 1)
+      expect((await postWith(f.url, forged)).status).toBe(401);
+    expect((await postWith(f.url, forged)).status).toBe(429);
     const modern = await f.connect("modern");
     expect((await modern.listTools()).tools.length).toBeGreaterThan(0);
   });
@@ -1456,14 +1377,14 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
     });
   });
 
-  describe("[P5-B] each connection has its own address, ceiling and counts", () => {
-    const post = async (target: URL, assertion: string | null, body: unknown) =>
+  describe("[P5-B] each connection has its own token, ceiling and counts", () => {
+    const post = async (target: URL, token: string | null, body: unknown) =>
       fetch(target, {
         method: "POST",
         headers: {
           "content-type": "application/json",
           accept: "application/json, text/event-stream",
-          ...(assertion ? { "cf-access-jwt-assertion": assertion } : {}),
+          ...(token ? { authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify(body),
       });
@@ -1484,71 +1405,29 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
         ]),
       );
 
-    it("offers no tools on the address without a key, only the hint, and counts nothing", async () => {
+    it("rejects a paused connection with 403 and a revoked one with 401 at once, and a resumed one works again", async () => {
       const f = await setup();
-      const client = await f.connect("modern", undefined, f.bareUrl);
-      expect(client.getInstructions()).toContain("接入的 agent");
-      expect((await client.listTools()).tools).toEqual([]);
-      await expect(client.callTool({ name: "today_context", arguments: {} })).rejects.toThrow();
-      expect(await f.ledger()).toEqual([]);
-      expect(await f.usage()).toEqual([]);
-    });
-
-    it("answers 404 for an unknown or malformed key and counts it against no connection", async () => {
-      const f = await setup();
-      const owner = await f.access.sign();
-      const unknown = newMcpConnectionSecret();
-      expect((await post(f.urlFor(unknown), owner, listTools)).status).toBe(404);
-      expect((await post(f.urlFor("short"), owner, listTools)).status).toBe(404);
-      expect((await post(f.urlFor(unknown), null, listTools)).status).toBe(401);
-      expect(await f.usage()).toEqual([]);
-      expect(await f.ledger()).toEqual([]);
-      expect(JSON.stringify(f.failures)).not.toContain(unknown);
-    });
-
-    it("rejects a paused key with 403 and a revoked key with 404 at once, and a resumed key works again", async () => {
-      const f = await setup();
-      const owner = await f.access.sign();
-      expect((await post(f.url, owner, listTools)).status).toBe(200);
+      expect((await post(f.url, f.token, listTools)).status).toBe(200);
       await f.connections.change({ ...scope, id: CONNECTION_ID, updatedAt: NOW, status: "paused" });
-      expect((await post(f.url, owner, listTools)).status).toBe(403);
+      expect((await post(f.url, f.token, listTools)).status).toBe(403);
       await f.connections.change({ ...scope, id: CONNECTION_ID, updatedAt: NOW, status: "active" });
-      expect((await post(f.url, owner, listTools)).status).toBe(200);
+      expect((await post(f.url, f.token, listTools)).status).toBe(200);
       await f.connections.change({
         ...scope,
         id: CONNECTION_ID,
         updatedAt: NOW,
         status: "revoked",
       });
-      expect((await post(f.url, owner, listTools)).status).toBe(404);
-      expect(JSON.stringify(f.failures)).not.toContain(f.secret);
-    });
-
-    it("turns the old key away after a rotation while the id and the counts stay", async () => {
-      const f = await setup();
-      const client = await f.connect("modern");
-      await f.call(client, "today_context");
-      const rotated = newMcpConnectionSecret();
-      await f.connections.rotateSecret({
-        ...scope,
-        id: CONNECTION_ID,
-        secretSha256: mcpConnectionSecretDigest(rotated),
-        rotatedAt: NOW,
-      });
-      expect((await post(f.url, await f.access.sign(), listTools)).status).toBe(404);
-      const fresh = await f.connect("modern", undefined, f.urlFor(rotated));
-      await f.call(fresh, "today_context");
-      expect(counted(await f.usage())).toMatchObject({
-        [`${CONNECTION_ID}/today_context/model/calls`]: 2,
-        [`${CONNECTION_ID}/today_context/model/delivered`]: 2,
-      });
+      expect((await post(f.url, f.token, listTools)).status).toBe(401);
+      expect(JSON.stringify(f.failures)).not.toContain(f.token);
+      expect(await f.usage()).toEqual([]);
     });
 
     it("keeps one connection's ceiling and counts apart from another's", async () => {
       const f = await setup({ readCeiling: "sensitive" });
-      const otherSecret = await f.createConnection("conn-public", "public");
+      const otherToken = await f.createConnection("conn-public", "public");
       const open = await f.connect("modern");
-      const closed = await f.connect("modern", undefined, f.urlFor(otherSecret));
+      const closed = await f.connect("modern", otherToken);
       const wifi = (text: string) => text.includes("家里 Wi-Fi 密码");
       expect(wifi((await f.call(open, "find_memories", { query: "Wi-Fi" })).text)).toBe(true);
       expect(wifi((await f.call(closed, "find_memories", { query: "Wi-Fi" })).text)).toBe(false);
@@ -1623,7 +1502,7 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
 
     it("limits automatic lookups on their own allowance and counts the refusals", async () => {
       const f = await setup({ hookReadsPerMinute: 2 });
-      const owner = await f.access.sign();
+      const owner = f.token;
       const client = await f.connect("modern");
       const auto = {
         jsonrpc: "2.0",
@@ -1643,9 +1522,9 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       });
     });
 
-    it("never writes the key or the keyed address into failures, records, counts or replies", async () => {
+    it("never writes the token into failures, records, counts or replies", async () => {
       const f = await setup({ failRecall: true });
-      const owner = await f.access.sign();
+      const owner = f.token;
       const client = await f.connect("modern");
       await f.call(client, "find_memories", { query: "牙医" });
       await f.call(client, "today_context");
@@ -1654,12 +1533,12 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
         await post(f.url, null, listTools),
         await fetch(f.url, {
           method: "POST",
-          headers: { "content-type": "application/json", "cf-access-jwt-assertion": owner },
+          headers: { "content-type": "application/json", authorization: `Bearer ${owner}` },
           body: "{",
         }),
         await fetch(f.url, {
           method: "POST",
-          headers: { "content-type": "application/json", "cf-access-jwt-assertion": owner },
+          headers: { "content-type": "application/json", authorization: `Bearer ${owner}` },
           body: JSON.stringify({ padding: "x".repeat(70_000) }),
         }),
       ];
@@ -1677,8 +1556,8 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
         bodies,
       });
       expect(everything).toContain(CONNECTION_ID);
-      expect(everything).not.toContain(f.secret);
-      expect(everything).not.toContain(mcpConnectionSecretDigest(f.secret));
+      expect(everything).not.toContain(f.token);
+      expect(everything).not.toContain(createHash("sha256").update(f.token).digest("hex"));
     });
   });
 });

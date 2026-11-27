@@ -610,6 +610,11 @@
     "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
   },
   {
+    "key": "next-2-chat-attach|light|dynamicType",
+    "count": 1,
+    "why": "导航栏右上角系统 PhotosPicker 按钮“照片”的字不随动态字体放大：苹果的栏按钮在大字号下用长按放大预览（Large Content Viewer）代替放大字号，这是系统组件的做法，不自绘替换"
+  },
+  {
     "key": "next-2-chat-attach|light|textClipped",
     "count": 2,
     "why": "放大字号后文字可能被截断；交 iPhone 编码线程按第 73 条改（挤不下就换行或竖排）"

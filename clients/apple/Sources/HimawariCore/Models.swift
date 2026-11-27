@@ -203,6 +203,7 @@ public struct ThreadMessage: Codable, Sendable, Equatable, Identifiable {
     public let committedAt: String
     public var options: MessageOptions? = nil
     public var chosenFrom: ChosenOption? = nil
+    public var spoken = false
     public var id: String { messageId }
 }
 
@@ -219,6 +220,7 @@ extension ThreadMessage {
         committedAt = try container.decode(String.self, forKey: .committedAt)
         options = try? container.decodeIfPresent(MessageOptions.self, forKey: .options)
         chosenFrom = try? container.decodeIfPresent(ChosenOption.self, forKey: .chosenFrom)
+        spoken = (try? container.decodeIfPresent(Bool.self, forKey: .spoken)) ?? false
     }
 }
 

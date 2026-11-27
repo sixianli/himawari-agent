@@ -10,7 +10,12 @@ import type {
   ThreadCommandService,
   WebPushStorePort,
 } from "@himawari-agent/application";
-import { herWordsPushKey, isMessageUrgency, MESSAGE_URGENCIES } from "@himawari-agent/application";
+import {
+  herWordsPushKey,
+  isMessageUrgency,
+  MESSAGE_URGENCIES,
+  SPOKEN_REASON_CODES,
+} from "@himawari-agent/application";
 import { TOOL_TELL_OWNER } from "@himawari-agent/prompt-catalog";
 import { classificationWithIdentifiers } from "@himawari-agent/sensitive-capture";
 import {
@@ -187,7 +192,7 @@ export class ProductionTellOwner {
         scenario: event.sourceKind,
         decidedAt: now,
         verdict: push ? "pushed" : "silent",
-        reasonCode: push ? "told_pushed" : "told_in_app",
+        reasonCode: push ? SPOKEN_REASON_CODES.pushed : SPOKEN_REASON_CODES.inApp,
         subjectRef: event.entryId,
         runId: invocation.runId,
         messageId,

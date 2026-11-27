@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 // Explicit opt-in; public registry reads and installs only in an owned scratch tree.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
@@ -83,7 +84,7 @@ try {
             ? ["/System", "/private/etc/ssl/openssl.cnf", certificate, "/private/etc/hosts"]
             : [
                 "/lib",
-                "/lib64",
+                ...["/lib64"].filter(existsSync),
                 "/proc",
                 "/etc/ssl",
                 "/etc/hosts",

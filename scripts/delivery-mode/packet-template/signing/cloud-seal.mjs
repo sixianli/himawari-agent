@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash, createPrivateKey, createPublicKey, sign, verify } from "node:crypto";
-import { constants } from "node:fs";
+import { constants, existsSync } from "node:fs";
 import { lstat, open, readFile, readdir, realpath, stat, writeFile } from "node:fs/promises";
 import { hostname, release } from "node:os";
 import path from "node:path";
@@ -339,7 +339,7 @@ const base = {
           "/usr/lib",
           "/usr/share",
           "/lib",
-          "/lib64",
+          ...["/lib64"].filter(existsSync),
           "/dev",
           "/proc",
           "/etc/ssl",

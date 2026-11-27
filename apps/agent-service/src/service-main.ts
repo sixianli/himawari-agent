@@ -64,8 +64,6 @@ import {
   APP_CONNECTION_CLIENT_SECRET_PURPOSE,
   APPLE_PUSH_SECRET_PURPOSE,
   assertProductionSecretSource,
-  BoundedJwksFetcher,
-  CloudflareAccessJwtVerifier,
   createApplePushSender,
   createGmailReader,
   createGoogleOAuth,
@@ -148,7 +146,15 @@ import { expandConfigurationWithMagpieModels, priceTiers } from "./production-ma
 import { ProductionAppTools } from "./production-app-tools.js";
 import { ProductionMailRead } from "./production-mail-read.js";
 import { ProductionMcpMemoryWriter } from "./production-mcp-memory-writer.js";
-import { ProductionMcpRead } from "./production-mcp-read.js";
+import { MCP_READ_PATH, ProductionMcpRead } from "./production-mcp-read.js";
+import {
+  acceptableRedirectUri,
+  ProductionMcpAuthorization,
+} from "./production-mcp-authorization.js";
+import {
+  McpClientMetadataCache,
+  nodeClientMetadataFetch,
+} from "./production-mcp-client-metadata.js";
 import { ProductionMcpRuleWriter } from "./production-mcp-rule-writer.js";
 import { ProductionMcpSync } from "./production-mcp-sync.js";
 import {
@@ -761,6 +767,7 @@ export async function startTenantRuntime(
   let memoryClassifier: ProductionMemoryClassifier | undefined;
   let memoryImportDuplicates: ReturnType<typeof productionImportDuplicateChecker>;
   let mcpRead: ProductionMcpRead | undefined;
+  let mcpAuthorization: ProductionMcpAuthorization | undefined;
   let observation: ProductionObservation | undefined;
   let realEval: ProductionRealEval | RealEvalSampleExpiry | undefined;
   let perceptionExtraction: ProductionPerceptionExtraction | undefined;
@@ -922,8 +929,6 @@ export async function startTenantRuntime(
     const webEnabled =
       configuration.publicMode ||
       (configuration.identity?.kind === "built-in" && Boolean(configuration.http));
-    if (configuration.runPolicy?.mcpRead !== undefined && !webEnabled)
-      throw new Error("MCP_READ_RUNTIME_UNAVAILABLE");
     if (
       webEnabled &&
       (!configuration.runPolicy ||
@@ -2819,12 +2824,32 @@ export async function startTenantRuntime(
         clock: { now: () => clock.now() },
         timeZone: configuration.runPolicy?.timeZone ?? "UTC",
       });
-      const mcpReadConfiguration = configuration.runPolicy?.mcpRead;
-      const mcpIdentity =
-        configuration.identity && configuration.identity.kind !== "built-in"
-          ? configuration.identity
-          : undefined;
-      if (mcpReadConfiguration && mcpIdentity) {
+      {
+        const mcpScope = { ownerId: configuration.ownerId, agentId: configuration.agentId };
+        const mcpFailure = (event: string) => (error: unknown) =>
+          writeServiceDiagnostic(errorOutput, {
+            component: "agent-service",
+            event,
+            code: stableErrorCode(error),
+          });
+        mcpAuthorization = new ProductionMcpAuthorization({
+          scope: mcpScope,
+          clock,
+          publicOrigin: configuration.publicOrigin,
+          resourcePath: MCP_READ_PATH,
+          store: repository.mcpOAuth(),
+          connections: repository.mcpConnections(),
+          metadata: new McpClientMetadataCache({
+            fetch: nodeClientMetadataFetch,
+            now: () => Date.parse(clock.now()),
+            ownOrigin: configuration.publicOrigin,
+            acceptRedirect: acceptableRedirectUri,
+          }),
+          notify: async (grant) => {
+            await applePush?.requestMcpGrant(grant);
+          },
+          onFailure: mcpFailure("mcp-authorization.failed"),
+        });
         const settingsStore = repository.proactive();
         const ownerRuleStore = repository.ownerRules();
         const profileState = repository.productMemoryState();
@@ -2835,43 +2860,24 @@ export async function startTenantRuntime(
             agentId: configuration.agentId,
           },
           clock,
-          owners: repository.ownerIdentityState(),
-          access: new CloudflareAccessJwtVerifier({
-            issuer: mcpIdentity.issuer,
-            audience: mcpReadConfiguration.audience,
-            jwksUrl: mcpIdentity.jwksUrl,
-            jwksFetcher:
-              dependencies.httpOptions?.jwksFetcher ??
-              new BoundedJwksFetcher({
-                allowedUrl: mcpIdentity.jwksUrl,
-                timeoutMilliseconds: mcpIdentity.jwksTimeoutMilliseconds,
-                maximumBodyBytes: mcpIdentity.jwksMaximumBodyBytes,
-              }),
-            now: () => new Date(clock.now()),
-            cacheMilliseconds: mcpIdentity.jwksCacheMilliseconds,
-            clockToleranceSeconds: mcpIdentity.clockToleranceSeconds,
-          }),
-          ...(mcpReadConfiguration.proposals
-            ? {
-                write: {
-                  proposals: externalProposals,
-                  sync: mcpSync,
-                  rules: new ProductionMcpRuleWriter({
-                    configuration,
-                    rules: ownerRuleWriter,
-                    payloads,
-                    protector: recallProtector,
-                    clock: { now: () => clock.now() },
-                    onFailure: (error) =>
-                      writeServiceDiagnostic(errorOutput, {
-                        component: "agent-service",
-                        event: "mcp-rule.marker-failed",
-                        code: stableErrorCode(error),
-                      }),
-                  }),
-                },
-              }
-            : {}),
+          tokens: mcpAuthorization,
+          write: {
+            proposals: externalProposals,
+            sync: mcpSync,
+            rules: new ProductionMcpRuleWriter({
+              configuration,
+              rules: ownerRuleWriter,
+              payloads,
+              protector: recallProtector,
+              clock: { now: () => clock.now() },
+              onFailure: (error) =>
+                writeServiceDiagnostic(errorOutput, {
+                  component: "agent-service",
+                  event: "mcp-rule.marker-failed",
+                  code: stableErrorCode(error),
+                }),
+            }),
+          },
           timeZone: configuration.runPolicy?.timeZone ?? "UTC",
           connections: repository.mcpConnections(),
           requestTimeoutMs: configuration.deadlines.providerRequestMs,
@@ -3184,9 +3190,7 @@ export async function startTenantRuntime(
         },
         observation: repository.ledgerObservation(),
         ledger: repository.decisionLedger(),
-        ...(configuration.runPolicy?.mcpRead
-          ? { mcpConnections: repository.mcpConnections() }
-          : {}),
+        ...(mcpRead ? { mcpConnections: repository.mcpConnections() } : {}),
         clock,
         schedule: {
           configured: proactive !== undefined,
@@ -3512,8 +3516,6 @@ export async function startTenantRuntime(
         };
       };
       const activeDurableMemory = durableMemory;
-      if (configuration.runPolicy?.mcpRead !== undefined && !mcpRead)
-        throw new Error("MCP_READ_RUNTIME_UNAVAILABLE");
       const capabilityReactivation = createProductionCapabilityReactivationVerifier({
         configuration,
         layout,
@@ -3568,7 +3570,20 @@ export async function startTenantRuntime(
               ),
             }
           : {}),
-        ...(mcpRead ? { mcpRead } : {}),
+        ...(mcpRead && mcpAuthorization
+          ? {
+              mcpRead: {
+                read: mcpRead,
+                authorization: mcpAuthorization,
+                onAuthorizationFailure: (error: unknown) =>
+                  writeServiceDiagnostic(errorOutput, {
+                    component: "agent-service",
+                    event: "mcp-authorization.failed",
+                    code: stableErrorCode(error),
+                  }),
+              },
+            }
+          : {}),
         ...(observation ? { observation } : {}),
         memory: {
           ...(memoryComposition
