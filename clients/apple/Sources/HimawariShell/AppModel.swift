@@ -115,6 +115,7 @@ public final class AppModel {
         )
         #if os(iOS)
         PushBridge.sync = pushSync
+        BackgroundWorkActivityTokens.watch(pushSync)
         NotificationRouter.shared.transport = api
         #endif
         if restoring { restore() }
@@ -267,6 +268,8 @@ public final class AppModel {
                 }
                 let deviceKey = keys.signer(.device)
                 let confirmKey = keys.signer(.confirm)
+                let devicePublicKey = try deviceKey.publicKeySPKI()
+                let confirmPublicKey = try confirmKey.publicKeySPKI()
                 let device = try await api.pair(
                     invitation: invitation,
                     kind: kind,
@@ -275,8 +278,6 @@ public final class AppModel {
                     deviceKey: deviceKey,
                     confirmKey: confirmKey
                 )
-                let devicePublicKey = try deviceKey.publicKeySPKI()
-                let confirmPublicKey = try confirmKey.publicKeySPKI()
                 if let reported = device.pairingNumber,
                    reported != PairingNumber.digits(devicePublicKey: devicePublicKey, confirmPublicKey: confirmPublicKey) {
                     throw DeviceAPIError.invalidResponse

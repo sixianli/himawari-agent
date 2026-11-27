@@ -11,6 +11,7 @@ enum AttachFailure: Error, Equatable {
     case unreadable
     case noLocation
     case tooLarge
+    case imagesUnsupported
 }
 
 enum AttachReader {

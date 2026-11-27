@@ -16,7 +16,15 @@ public struct HimawariRootView: View {
 
     public var body: some View {
         Group {
-            #if DEBUG
+            #if DEBUG && os(iOS)
+            if let load = ScrollBench.requested {
+                ScrollBenchView(load: load)
+            } else if let scene = DemoScene.requested {
+                DemoSceneView(scene: scene)
+            } else {
+                app
+            }
+            #elseif DEBUG
             if let scene = DemoScene.requested {
                 DemoSceneView(scene: scene)
             } else {
@@ -27,7 +35,6 @@ public struct HimawariRootView: View {
             #endif
         }
         .dismissesKeyboardOnOutsideTap()
-        .dynamicTypeSize(...DynamicTypeSize.accessibility2)
     }
 
     @State private var handoverEntry: HandoverEntryLink?
@@ -83,7 +90,7 @@ struct MainShell: View {
     @State private var herListenOpen = false
     #if os(iOS)
     @State private var dictation = ChatDictation()
-    @State private var talkSession = ChatTalkSession()
+    @State private var talkSession: ChatTalkSession
     #endif
 
     init(model: AppModel, chat: ChatStore, actions: DeviceActionsModel? = nil, threadId: String? = nil, herOpen: Bool = false) {
@@ -92,6 +99,10 @@ struct MainShell: View {
         actionsOverride = actions
         fixedThreadId = threadId
         _herOpen = State(initialValue: herOpen)
+        #if os(iOS)
+        let api = model.api
+        _talkSession = State(initialValue: ChatTalkSession(cloudSpeech: { text in try await api.speech(text) }, reportTiming: { timing in await api.reportVoiceTiming(timing) }))
+        #endif
     }
 
     private var actions: DeviceActionsModel? { actionsOverride ?? model.actions }
@@ -104,12 +115,12 @@ struct MainShell: View {
     var body: some View {
         Group {
             if let threadId = fixedThreadId ?? mainThreadId {
-                ChatView(store: chat, threadId: threadId, draft: draft.text, openHerPage: { herOpen = true })
+                ChatView(store: chat, threadId: threadId, draft: draft.text, openHerPage: { herOpen = true }, explainSpoken: explainSpoken)
                     .id(draft.nonce)
                     .environment(\.chatStopRun, stopRun)
                     .environment(\.chatChooseOption, chooseOption)
                     .environment(\.chatOwnerAwaited, (actions?.waitingCount ?? 0) > 0)
-                    .environment(\.chatCanAttach, model.configuration?.acceptsChatAttachments == true)
+                    .environment(\.chatAttachLimits, model.configuration?.attachments)
                     #if os(iOS)
                     .environment(\.chatVoice, dictation)
                     .environment(\.chatTalk, talkSession)
@@ -160,6 +171,14 @@ struct MainShell: View {
             mainThreadId = try await MainThreadLocator(api: model.api, confirmKey: model.confirmKey).mainThreadId()
         } catch {
             lookupFailed = true
+        }
+    }
+
+    private var explainSpoken: (ThreadMessage) -> AnyView {
+        let api = model.api
+        let confirmKey = model.confirmKey
+        return { message in
+            AnyView(SpokenExplanationCard(api: api, confirmKey: confirmKey, messageId: message.messageId))
         }
     }
 

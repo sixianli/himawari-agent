@@ -1,6 +1,9 @@
 import Foundation
 import HimawariCore
 import Observation
+#if canImport(os)
+import os
+#endif
 
 public enum TranscriptItem: Identifiable, Equatable {
     case message(ThreadMessage)
@@ -231,6 +234,7 @@ public final class ChatStore {
             }
             await loadTexts(detail.messages.map(\.contentRef) + [detail.thread.titleRef].compactMap { $0 })
             if let reply = streaming[threadId], reply.isSettled(in: detail) || detail.runs.allSatisfy({ ProcessLine.terminalRunStatuses.contains($0.status) }) {
+                StreamingLog.cleared(runId: reply.runId, ownRunListed: detail.runs.contains { $0.runId == reply.runId }, runs: detail.runs.count, characters: reply.text.count)
                 streaming[threadId] = nil
             }
             persist()
@@ -331,18 +335,18 @@ public final class ChatStore {
         return created.threadId
     }
 
-    public func send(_ text: String, in threadId: String) async {
+    public func send(_ text: String, in threadId: String, spoken: Bool = false, messageId: String = OutgoingMessage.newId()) async {
         guard !frozen else { return }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         let revision = details[threadId]?.thread.revision ?? threads.first(where: { $0.threadId == threadId })?.revision ?? createdRevisions[threadId] ?? 1
-        await outbox.enqueue(OutgoingMessage(threadId: threadId, expectedRevision: revision, text: trimmed, createdAt: Date()))
+        await outbox.enqueue(OutgoingMessage(messageId: messageId, threadId: threadId, expectedRevision: revision, text: trimmed, createdAt: Date(), spoken: spoken))
         await flush()
     }
 
-    public func send(_ text: String, attachments: [ChatAttachment], requestId: String, in threadId: String) async throws {
+    public func send(_ text: String, attachments: [ChatAttachment], requestId: String, in threadId: String, spoken: Bool = false, messageId: String = OutgoingMessage.newId()) async throws {
         guard !attachments.isEmpty else {
-            await send(text, in: threadId)
+            await send(text, in: threadId, spoken: spoken, messageId: messageId)
             return
         }
         let composed = try await api.compose(
@@ -351,7 +355,7 @@ public final class ChatStore {
             requestId: requestId,
             images: images
         )
-        await send(composed, in: threadId)
+        await send(composed, in: threadId, spoken: spoken, messageId: messageId)
     }
 
     public func retry(_ messageId: String) async {
@@ -429,10 +433,15 @@ public final class ChatStore {
             await refreshThreads()
             await refreshBackgroundWork()
         case let .executionText(chunk):
-            guard !StreamingReply(runId: chunk.runId).isSettled(in: details[chunk.threadId]) else { break }
-            var reply = streaming[chunk.threadId].flatMap { $0.runId == chunk.runId ? $0 : nil } ?? StreamingReply(runId: chunk.runId)
+            guard !StreamingReply(runId: chunk.runId).isSettled(in: details[chunk.threadId]) else {
+                StreamingLog.received(chunk, kept: false, shown: 0, fresh: false)
+                break
+            }
+            let existing = streaming[chunk.threadId].flatMap { $0.runId == chunk.runId ? $0 : nil }
+            var reply = existing ?? StreamingReply(runId: chunk.runId)
             reply.apply(chunk)
             streaming[chunk.threadId] = reply
+            StreamingLog.received(chunk, kept: true, shown: reply.text.count, fresh: existing == nil)
         case let .executionChanged(threadId, runId):
             if details[threadId] != nil {
                 await load(threadId)
@@ -487,5 +496,23 @@ public final class ChatStore {
             if left.updatedAt != right.updatedAt { return left.updatedAt > right.updatedAt }
             return left.threadId < right.threadId
         }
+    }
+}
+
+enum StreamingLog {
+    #if canImport(os)
+    private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "himawari", category: "streaming")
+    #endif
+
+    static func received(_ chunk: ExecutionText, kept: Bool, shown: Int, fresh: Bool) {
+        #if canImport(os)
+        logger.notice("text run=\(chunk.runId, privacy: .public) item=\(chunk.itemId, privacy: .public) offset=\(chunk.offset) length=\(chunk.text.utf16.count) kept=\(kept) fresh=\(fresh) shown=\(shown)")
+        #endif
+    }
+
+    static func cleared(runId: String, ownRunListed: Bool, runs: Int, characters: Int) {
+        #if canImport(os)
+        logger.notice("cleared run=\(runId, privacy: .public) ownRunListed=\(ownRunListed) runs=\(runs) characters=\(characters)")
+        #endif
     }
 }

@@ -32,6 +32,7 @@
     "scripts/delivery-mode/packet-template/measurement/probe/read-driver.mjs": 1,
     "scripts/delivery-mode/packet-template/signing/cloud-seal.mjs": 1,
     "scripts/delivery-mode/sandbox-command-links.py": 1,
+    "scripts/delivery-mode/test_make_packet.py": 4,
     "test/fixtures/mac-sandbox-deployment.ts": 1,
     "test/fixtures/product-path-harness.ts": 1,
     "test/integration/prepared-file-runner.test.ts": 1,

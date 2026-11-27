@@ -5,7 +5,12 @@
   "policyName": "Himawari app entry: everyone",
   "paths": [
     "/.well-known/apple-app-site-association",
+    "/.well-known/oauth-protected-resource",
+    "/.well-known/oauth-authorization-server",
+    "/api/mcp-auth/v1",
+    "/api/mcp/v1",
     "/api/connections/v1/callback",
+    "/api/device/v1",
     "/api/proactive/v1/google/callback"
   ],
   "retireApplications": []

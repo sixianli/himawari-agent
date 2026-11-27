@@ -52,7 +52,7 @@ TOOLCHAIN_LOCK = 'ci/toolchain-lock.json'
 NODE_ARCHITECTURES = {'x86_64': 'x64', 'aarch64': 'arm64'}
 MATERIAL_FILES = ('context.json', 'source-build-inputs.json', 'node-modules.tar.gz', 'node-modules.json', 'npm-ls.json')
 EXECUTION_NOTE = 'G180'
-DISCOVERED_KEYS = ('OLD_PREFIX', 'OLD_OPERATIONS', 'OLD_QUALIFICATION', 'ORIGINAL_CONTEXT_WINDOW', 'ORIGINAL_MAX_TOKENS', 'ORIGINAL_PUBLIC_FETCH_BYTES', 'HOSTNAME', 'SERVICE_UID', 'SERVICE_GID', 'NODE_SHA256', 'NODE_ARCH', 'FIRST_SIGNER_KEY_PATH')
+DISCOVERED_KEYS = ('OLD_PREFIX', 'OLD_OPERATIONS', 'OLD_QUALIFICATION', 'ORIGINAL_CONTEXT_WINDOW', 'ORIGINAL_MAX_TOKENS', 'ORIGINAL_PUBLIC_FETCH_BYTES', 'HOSTNAME', 'SERVICE_UID', 'SERVICE_GID', 'NODE_SHA256', 'SYSTEM_BWRAP_SHA256', 'NODE_ARCH', 'FIRST_SIGNER_KEY_PATH')
 FAST_MODE_NOTE = 'skipped in fast delivery mode (DELIVERY_MODE=fast, ADR 0073, approved by Andy 2026-10-25T10:07Z; G180)'
 
 
@@ -299,6 +299,7 @@ def discovery_script():
         "    'serviceUid': service.pw_uid,",
         "    'serviceGid': service.pw_gid,",
         "    'nodeSha256': hashlib.sha256(pathlib.Path(node_path).read_bytes()).hexdigest(),",
+        "    'systemBwrapSha256': hashlib.sha256(pathlib.Path(os.path.realpath('/usr/bin/bwrap')).read_bytes()).hexdigest() if os.path.isfile('/usr/bin/bwrap') else None,",
         "    'signerKeys': [path for mtime, path in keys],",
         "    'active': subprocess.run(['/usr/bin/systemctl', 'is-active', unit_name], capture_output=True, text=True).stdout.strip(),",
         "    'execStart': [line for line in unit.decode().splitlines() if line.startswith('ExecStart=')],",
@@ -355,6 +356,8 @@ def interpret_discovery(facts, instance, label=None):
             refuse('PACKET_SERVICE_ACCOUNT_NOT_READABLE', key + '=' + str(facts.get(key)))
     if not isinstance(facts.get('nodeSha256'), str) or re.fullmatch(r'[0-9a-f]{64}', facts['nodeSha256']) is None:
         refuse('PACKET_NODE_DIGEST_NOT_READABLE', facts.get('nodeSha256'))
+    if not isinstance(facts.get('systemBwrapSha256'), str) or re.fullmatch(r'[0-9a-f]{64}', facts['systemBwrapSha256']) is None:
+        refuse('PACKET_SYSTEM_BWRAP_NOT_READABLE', facts.get('systemBwrapSha256'))
     signer_keys = facts.get('signerKeys')
     if not isinstance(signer_keys, list) or not signer_keys or not all(isinstance(key, str) and re.fullmatch(r'/[A-Za-z0-9._/-]+', key) for key in signer_keys):
         refuse('PACKET_FIRST_SIGNER_KEY_NOT_FOUND', signer_keys)
@@ -385,6 +388,7 @@ def interpret_discovery(facts, instance, label=None):
         'SERVICE_UID': facts['serviceUid'],
         'SERVICE_GID': facts['serviceGid'],
         'NODE_SHA256': facts['nodeSha256'],
+        'SYSTEM_BWRAP_SHA256': facts['systemBwrapSha256'],
         'NODE_ARCH': machine,
         'FIRST_SIGNER_KEY_PATH': signer_keys[0],
         'LABEL': chosen,

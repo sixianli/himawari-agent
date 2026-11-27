@@ -13,12 +13,14 @@ public struct ChatView: View {
     @Environment(\.transcriptScrollsToTopAfter) private var scrollToTopAfter
     @Environment(\.chatVoice) private var voice
     @Environment(\.chatOpensAttachSheet) private var opensAttachSheet
+    @Environment(\.chatReadsPhotoLibrary) private var readsPhotoLibrary
     @Environment(\.chatOpensSelectText) private var opensSelectText
     @Environment(\.chatShowsCopied) private var showsCopied
     @Environment(\.chatStartsReplyTo) private var startsReplyTo
-    @Environment(\.chatCanAttach) private var canAttach
+    @Environment(\.chatAttachLimits) private var attachLimits
     @Environment(\.chatStopRun) private var stopRun
     @Environment(\.chatChooseOption) private var chooseOption
+    @State private var explained: Set<String> = []
     @Environment(\.chatTalk) private var talk
     @Environment(\.chatOwnerAwaited) private var ownerAwaited
     @Environment(\.chatOpensTalk) private var opensTalk
@@ -27,8 +29,8 @@ public struct ChatView: View {
     @State private var stopping = false
     @State private var attachments: [ChatAttachment] = []
     @State private var attachOpen = false
-    @State private var attachSheetHeight: CGFloat = 0
     @State private var attachProblem: String?
+    @State private var uploadFailed = false
     @State private var sendRequestId = OutgoingMessage.newId()
     @State private var hold: HoldPhase?
     @State private var heard = ""
@@ -40,14 +42,25 @@ public struct ChatView: View {
     @State private var replyingTo: ThreadMessage?
     @State private var flashing: String?
     @State private var backgroundOpen = false
+    @State private var screenWidth: CGFloat = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     #if os(iOS)
     @State private var safari: SafariLink?
     #endif
 
-    public init(store: ChatStore, threadId: String, draft: String = "", openHerPage: (() -> Void)? = nil, close: (() -> Void)? = nil) {
+    private let explainSpoken: ((ThreadMessage) -> AnyView)?
+
+    public init(
+        store: ChatStore,
+        threadId: String,
+        draft: String = "",
+        openHerPage: (() -> Void)? = nil,
+        close: (() -> Void)? = nil,
+        explainSpoken: ((ThreadMessage) -> AnyView)? = nil
+    ) {
         self.store = store
         self.close = close
+        self.explainSpoken = explainSpoken
         self.openHerPage = openHerPage
         self.threadId = threadId
         _draft = State(initialValue: draft)
@@ -99,7 +112,10 @@ public struct ChatView: View {
             }
             #if os(iOS)
             if !attachments.isEmpty {
-                AttachmentChips(attachments: attachments) { id in attachments.removeAll { $0.id == id } }
+                AttachmentChips(attachments: attachments, retry: uploadFailed ? { deliver(draft, clearDraft: true) } : nil) { id in
+                    attachments.removeAll { $0.id == id }
+                    uploadFailed = false
+                }
                     .padding(.bottom, DesignTokens.Chat.listMarkerGap)
             }
             #endif
@@ -119,8 +135,17 @@ public struct ChatView: View {
     @ViewBuilder
     private var composer: some View {
         if let activeTalk {
-            ChatTalkBar(talk: activeTalk, end: endTalk)
-                .transition(.opacity)
+            VStack(spacing: DesignTokens.Chat.listMarkerGap) {
+                if activeTalk.suggestsVoiceDownload {
+                    Text(L.text("chat.talk.voiceHint"))
+                        .font(.footnote)
+                        .foregroundStyle(Color.hmMuted)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
+                }
+                ChatTalkBar(talk: activeTalk, end: endTalk)
+            }
+            .transition(.opacity)
         } else {
             ChatInputBar(
                 text: $draft,
@@ -162,7 +187,7 @@ public struct ChatView: View {
     }
 
     private var attachAction: (() -> Void)? {
-        guard Self.attachAvailable, canAttach else { return nil }
+        guard Self.attachAvailable, attachLimits != nil else { return nil }
         return {
             inputFocused = false
             attachOpen = true
@@ -183,7 +208,7 @@ public struct ChatView: View {
                 if talking { endTalk() }
             }
             .onAppear {
-                if opensAttachSheet, canAttach { attachOpen = true }
+                if opensAttachSheet, attachLimits != nil { attachOpen = true }
                 if showsCopied { copiedShown = true }
                 if let startsReplyTo { replyingTo = store.messages(in: threadId).first { $0.messageId == startsReplyTo } }
                 if let opensSelectText, let message = store.messages(in: threadId).first(where: { $0.messageId == opensSelectText }) {
@@ -208,19 +233,25 @@ public struct ChatView: View {
     }
 
     #if os(iOS)
+    @ViewBuilder
     private var attachSheet: some View {
-        AttachSheet(room: max(0, Self.attachRoom - attachments.count)) { picked in
-            attachments += picked
-            attachOpen = false
-        } failed: { failure in
-            attachProblem = Self.describe(failure)
-        } close: {
-            attachOpen = false
+        if let attachLimits {
+            AttachSheet(limits: attachLimits, chosen: attachments, readsPhotoLibrary: readsPhotoLibrary) { picked in
+                let known = Set(attachments.map(\.id))
+                let room = max(0, attachLimits.perMessage - attachments.count)
+                let fresh = picked.filter { !known.contains($0.id) }
+                attachments += fresh.prefix(room)
+                if fresh.count > room { attachProblem = L.format("attach.problem.tooMany", attachLimits.perMessage) }
+            } remove: { id in
+                attachments.removeAll { $0.id == id }
+            } failed: { failure in
+                attachProblem = Self.describe(failure)
+            } close: {
+                attachOpen = false
+            }
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
         }
-        .fixedSize(horizontal: false, vertical: true)
-        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { attachSheetHeight = $0 }
-        .presentationDetents([attachSheetHeight > 0 ? .height(attachSheetHeight) : .medium])
-        .presentationCornerRadius(DesignTokens.Radius.sheetTop)
     }
     #endif
 
@@ -241,6 +272,10 @@ public struct ChatView: View {
             .onChange(of: lastAgentReply) { _, reply in
                 guard talking, let reply, reply.id != talkStartedAfter else { return }
                 talk?.herReply(reply.text, finished: true)
+            }
+            .onChange(of: talk?.running ?? false) { wasRunning, running in
+                guard wasRunning, !running, talking else { return }
+                withAnimation(.easeInOut(duration: 0.15)) { talking = false }
             }
             .onChange(of: attachmentIds) { _, _ in
                 sendRequestId = OutgoingMessage.newId()
@@ -280,8 +315,23 @@ public struct ChatView: View {
         return MessageMenuActions(
             reply: close == nil ? { startReply(to: message) } : nil,
             copy: { copyToPasteboard(MessageCopy.text(raw, fromAgent: fromAgent)) },
-            select: { selecting = SelectableMessage(id: message.messageId, text: raw, fromAgent: fromAgent) }
+            select: { selecting = SelectableMessage(id: message.messageId, text: raw, fromAgent: fromAgent) },
+            why: explains(message) ? { toggleWhy(message) } : nil
         )
+    }
+
+    private func explains(_ message: ThreadMessage) -> Bool {
+        message.role == .agent && message.spoken && explainSpoken != nil
+    }
+
+    private func toggleWhy(_ message: ThreadMessage) {
+        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) {
+            if explained.contains(message.messageId) {
+                explained.remove(message.messageId)
+            } else {
+                explained.insert(message.messageId)
+            }
+        }
     }
 
     private func startReply(to message: ThreadMessage) {
@@ -310,7 +360,7 @@ public struct ChatView: View {
         let whole = menu(for: message)
         return { code in
             guard let whole else { return nil }
-            return MessageMenuActions(reply: whole.reply, copy: { copyToPasteboard(code) }, select: whole.select)
+            return MessageMenuActions(reply: whole.reply, copy: { copyToPasteboard(code) }, select: whole.select, why: whole.why)
         }
     }
 
@@ -319,7 +369,6 @@ public struct ChatView: View {
     #else
     private static let attachAvailable = false
     #endif
-    private static let attachRoom = 10
 
     private var header: some View {
         ZStack(alignment: .top) {
@@ -381,64 +430,86 @@ public struct ChatView: View {
     }
 
     private func transcriptScroll(jump: @escaping (String) -> Void) -> some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 18) {
-                ForEach(store.transcript(in: threadId)) { item in
-                    switch item {
-                    case let .message(message):
-                        Group {
-                            if message.role == .agent, let options = message.options {
-                                VStack(alignment: .leading, spacing: DesignTokens.Options.afterMessage) {
-                                    MessageRow(role: message.role, text: store.texts[message.contentRef], failed: message.status == .failed, codeMenu: codeMenu(for: message), copyCode: copyCode)
-                                        .messageMenu(menu(for: message))
-                                    MessageOptionsView(options: options, choose: choose(for: message))
-                                }
-                            } else if message.role == .owner, message.chosenFrom != nil {
-                                ChosenOptionBubble(text: store.texts[message.contentRef] ?? "")
-                            } else {
-                                MessageRow(role: message.role, text: store.texts[message.contentRef], failed: message.status == .failed, codeMenu: codeMenu(for: message), copyCode: copyCode, quote: message.role == .owner ? quote(inside: store.texts[message.contentRef]) : nil, jump: jump)
-                                    .messageMenu(menu(for: message))
-                            }
-                        }
-                        .background {
-                            RoundedRectangle(cornerRadius: DesignTokens.Radius.bubble, style: .continuous)
-                                .fill(Color.hmReplyBar.opacity(flashing == message.messageId ? DesignTokens.Chat.replyFlashOpacity : 0))
-                                .padding(-DesignTokens.Chat.replyQuoteGap)
-                        }
-                        .task(id: message.messageId) {
-                            if message.role == .agent, let runId = message.runId { await store.showExecution(runId, in: threadId) }
-                        }
-                    case let .process(runId):
-                        if let line = store.processLine(for: runId, in: threadId) {
-                            ProcessRowView(line: line, failed: store.run(runId, in: threadId)?.status == "failed")
-                                .task(id: runId) { await store.showExecution(runId, in: threadId) }
-                        }
-                    }
-                }
-                if let streaming = store.streamingText(in: threadId) {
-                    StreamingAnswer(text: streaming)
-                }
-                ForEach(store.queuedMessages(in: threadId)) { item in
-                    QueuedMessageRow(item: item, online: store.connection == .online, quote: quote(inside: item.message.text)) {
-                        Task { await store.retry(item.id) }
-                    } discard: {
-                        Task { await store.discard(item.id) }
-                    }
-                }
-                if !talkHeard.isEmpty {
-                    OwnerBubble(text: talkHeard)
-                        .opacity(DesignTokens.Chat.hearingBubbleOpacity)
+        let rows = chatRows
+        let placed = BubbleLayout.place(rows.map(\.entry))
+        let actions = rowActions(jump: jump)
+        return ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                ForEach(rows) { row in
+                    ChatRowView(model: model(of: row, placed: placed[row.id] ?? ChatRow.lone), actions: actions)
+                        .equatable()
                 }
             }
-            .padding(.horizontal, DesignTokens.Size.chatPaddingX)
+            .padding(.horizontal, DesignTokens.Chat.bubbleEdge)
             .padding(.top, Self.headerHeight + DesignTokens.Chat.puckContentGap + (shownBackgroundWork == nil ? 0 : DesignTokens.Chat.puckBannerGap + DesignTokens.Avatar.backgroundPillHeight))
             .padding(.bottom, 110)
         }
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { screenWidth = $0 }
         .defaultScrollAnchor(.bottom, for: .alignment)
         .defaultScrollAnchor(.bottom, for: .initialOffset)
         .defaultScrollAnchor(.bottom, for: .sizeChanges)
         .scrollDismissesKeyboard(.interactively)
         .scrollIndicators(.hidden)
+    }
+
+    private var chatRows: [ChatRow] {
+        var rows: [ChatRow] = []
+        for item in store.transcript(in: threadId) {
+            switch item {
+            case let .message(message):
+                rows.append(.message(message))
+            case let .process(runId):
+                if let line = store.processLine(for: runId, in: threadId) {
+                    rows.append(.process(runId: runId, line: line, failed: store.run(runId, in: threadId)?.status == "failed"))
+                }
+            }
+        }
+        if let streaming = store.streamingText(in: threadId) { rows.append(.streaming(streaming)) }
+        rows += store.queuedMessages(in: threadId).map(ChatRow.queued)
+        if !talkHeard.isEmpty { rows.append(.hearing(talkHeard)) }
+        return rows
+    }
+
+    private var herWidth: CGFloat {
+        screenWidth > 0 ? screenWidth - DesignTokens.Chat.bubbleEdge - DesignTokens.Chat.bubbleHerRoom : .infinity
+    }
+
+    private var ownerWidth: CGFloat {
+        screenWidth > 0 ? screenWidth * DesignTokens.Chat.bubbleOwnerShare : DesignTokens.Size.bubbleMaxWidth
+    }
+
+    private func model(of row: ChatRow, placed: BubblePlacement) -> ChatRowModel {
+        var text: String?
+        var quote: BubbleQuote?
+        var flashes = false
+        var why = ChatRowWhy.none
+        switch row {
+        case let .message(message):
+            text = store.texts[message.contentRef]
+            if explains(message) { why = explained.contains(message.messageId) ? .open : .closed }
+            if message.role == .owner, message.chosenFrom == nil { quote = self.quote(inside: text) }
+            flashes = flashing == message.messageId
+        case let .queued(item):
+            quote = self.quote(inside: item.message.text)
+        default:
+            break
+        }
+        return ChatRowModel(row: row, text: text, quote: quote, placement: placed, herWidth: herWidth, ownerWidth: ownerWidth, flashing: flashes, online: store.connection == .online, why: why)
+    }
+
+    private func rowActions(jump: @escaping (String) -> Void) -> ChatRowActions {
+        ChatRowActions(
+            menu: { menu(for: $0) },
+            codeMenu: { codeMenu(for: $0) },
+            copyCode: copyCode,
+            choose: { choose(for: $0) },
+            jump: jump,
+            retry: { id in Task { await store.retry(id) } },
+            discard: { id in Task { await store.discard(id) } },
+            showExecution: { [store, threadId] runId in await store.showExecution(runId, in: threadId) },
+            toggleWhy: { toggleWhy($0) },
+            explanation: { [explainSpoken] message in explainSpoken?(message) }
+        )
     }
 
     private func copyCode(_ code: String) {
@@ -488,7 +559,7 @@ public struct ChatView: View {
         withAnimation(.easeInOut(duration: 0.15)) { talking = true }
         Task {
             do {
-                try await talk.begin { said in deliver(said, clearDraft: false) }
+                try await talk.begin { said, messageId in deliver(said, clearDraft: false, spoken: true, messageId: messageId) }
             } catch {
                 withAnimation(.easeInOut(duration: 0.15)) { talking = false }
                 attachProblem = L.text("chat.talk.failed")
@@ -516,7 +587,7 @@ public struct ChatView: View {
         }
     }
 
-    private func deliver(_ text: String, clearDraft: Bool) {
+    private func deliver(_ text: String, clearDraft: Bool, spoken: Bool = false, messageId: String = OutgoingMessage.newId()) {
         let carried = attachments
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !carried.isEmpty, !uploading else { return }
         Haptics.shared.report(.messageSent)
@@ -525,20 +596,23 @@ public struct ChatView: View {
         let text = MessageReply.compose(replyingTo: replyTo, text: text)
         if carried.isEmpty {
             if clearDraft { draft = "" }
-            Task { await store.send(text, in: threadId) }
+            Task { await store.send(text, in: threadId, spoken: spoken, messageId: messageId) }
             return
         }
         uploading = true
         Task {
             defer { uploading = false }
             do {
-                try await store.send(text, attachments: carried, requestId: sendRequestId, in: threadId)
+                try await store.send(text, attachments: carried, requestId: sendRequestId, in: threadId, spoken: spoken, messageId: messageId)
                 attachments.removeAll { item in carried.contains { $0.id == item.id } }
                 sendRequestId = OutgoingMessage.newId()
+                uploadFailed = false
                 if clearDraft { draft = "" }
             } catch let problem as ChatAttachmentProblem {
+                uploadFailed = problem == .uploadFailed
                 attachProblem = Self.describe(problem)
             } catch {
+                uploadFailed = true
                 attachProblem = L.text("attach.problem.upload")
             }
         }
@@ -550,6 +624,7 @@ public struct ChatView: View {
         case let .tooMany(limit): L.format("attach.problem.tooMany", limit)
         case .tooLarge: L.text("attach.problem.tooLarge")
         case .uploadFailed: L.text("attach.problem.upload")
+        case .imagesUnsupported: L.text("attach.problem.images")
         }
     }
 
@@ -557,8 +632,9 @@ public struct ChatView: View {
     static func describe(_ failure: AttachFailure) -> String {
         switch failure {
         case .noLocation: L.text("attach.problem.location")
-        case .tooLarge: L.text("attach.problem.tooLarge")
+        case .tooLarge: L.format("attach.problem.fileTooLarge", ChatAttachmentPlanner.maxFileBytes / ChatAttachmentPlanner.bytesPerMegabyte)
         case .unreadable: L.text("attach.problem.unreadable")
+        case .imagesUnsupported: L.text("attach.problem.images")
         }
     }
     #endif
@@ -628,23 +704,118 @@ public struct ChatView: View {
     }
 }
 
-struct MessageRow: View {
-    let role: MessageRole
+struct ChatRowModel: Equatable {
+    let row: ChatRow
     let text: String?
-    let failed: Bool
-    var codeMenu: (String) -> MessageMenuActions? = { _ in nil }
-    var copyCode: (String) -> Void = { _ in }
-    var quote: BubbleQuote?
-    var jump: (String) -> Void = { _ in }
+    let quote: BubbleQuote?
+    let placement: BubblePlacement
+    let herWidth: CGFloat
+    let ownerWidth: CGFloat
+    let flashing: Bool
+    let online: Bool
+    let why: ChatRowWhy
+}
+
+enum ChatRowWhy: Equatable {
+    case none
+    case closed
+    case open
+}
+
+struct ChatRowActions {
+    let menu: (ThreadMessage) -> MessageMenuActions?
+    let codeMenu: (ThreadMessage) -> (String) -> MessageMenuActions?
+    let copyCode: (String) -> Void
+    let choose: (ThreadMessage) -> (@MainActor (MessageOptions.Item) async throws -> Void)?
+    let jump: (String) -> Void
+    let retry: (String) -> Void
+    let discard: (String) -> Void
+    let showExecution: (String) async -> Void
+    let toggleWhy: (ThreadMessage) -> Void
+    let explanation: (ThreadMessage) -> AnyView?
+}
+
+struct ChatRowView: View, @MainActor Equatable {
+    let model: ChatRowModel
+    let actions: ChatRowActions
+
+    static func == (lhs: ChatRowView, rhs: ChatRowView) -> Bool {
+        lhs.model == rhs.model
+    }
 
     var body: some View {
-        switch role {
-        case .owner:
-            OwnerBubble(text: text ?? "", quote: quote, jump: jump)
+        VStack(spacing: 0) {
+            if let time = model.placement.timeAbove {
+                BubbleTimeLine(date: time)
+            }
+            content
+        }
+        .padding(.top, Self.gap(model.placement.gapAbove))
+    }
+
+    private var tail: Bool { model.placement.tail }
+
+    private static func gap(_ gap: BubbleGap) -> CGFloat {
+        switch gap {
+        case .none: 0
+        case .inGroup: DesignTokens.Chat.bubbleGroupGap
+        case .newSpeaker: DesignTokens.Chat.bubbleSpeakerGap
+        case .aroundStep: DesignTokens.Chat.bubbleStepGap
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch model.row {
+        case let .message(message):
+            messageRow(message)
+                .background {
+                    RoundedRectangle(cornerRadius: DesignTokens.Chat.bubbleRadius, style: .continuous)
+                        .fill(Color.hmReplyBar.opacity(model.flashing ? DesignTokens.Chat.replyFlashOpacity : 0))
+                        .padding(-DesignTokens.Chat.replyQuoteGap)
+                }
+                .task(id: message.messageId) {
+                    if message.role == .agent, let runId = message.runId { await actions.showExecution(runId) }
+                }
+        case let .process(runId, line, failed):
+            ProcessRowView(line: line, failed: failed)
+                .task(id: runId) { await actions.showExecution(runId) }
+        case let .streaming(text):
+            HerBubble(text: text, streaming: true, tail: tail, maxWidth: model.herWidth)
+        case let .queued(item):
+            QueuedMessageRow(item: item, online: model.online, quote: model.quote, tail: tail, maxWidth: model.ownerWidth) {
+                actions.retry(item.id)
+            } discard: {
+                actions.discard(item.id)
+            }
+        case let .hearing(text):
+            OwnerBubble(text: text, tail: tail, maxWidth: model.ownerWidth)
+                .opacity(DesignTokens.Chat.hearingBubbleOpacity)
+        }
+    }
+
+    @ViewBuilder
+    private func messageRow(_ message: ThreadMessage) -> some View {
+        let text = model.text ?? ""
+        switch message.role {
         case .agent:
-            AnswerText(text: text ?? "", muted: failed, copyCode: copyCode, codeMenu: codeMenu)
+            VStack(alignment: .leading, spacing: DesignTokens.Options.afterMessage) {
+                HerBubble(text: text, failed: message.status == .failed, tail: tail, maxWidth: model.herWidth, copyCode: actions.copyCode, codeMenu: actions.codeMenu(message))
+                    .messageMenu(actions.menu(message))
+                if let options = message.options {
+                    MessageOptionsView(options: options, choose: actions.choose(message))
+                }
+                if model.why != .none {
+                    why(message)
+                }
+            }
+        case .owner where message.chosenFrom != nil:
+            ChosenOptionBubble(text: text, tail: tail, maxWidth: model.ownerWidth)
+        case .owner:
+            OwnerBubble(text: text, quote: model.quote, jump: actions.jump, tail: tail, maxWidth: model.ownerWidth)
+                .messageMenu(actions.menu(message))
         case .system:
-            Text(text ?? "")
+            Text(text)
                 .hmType(DesignTokens.TypeScale.caption)
                 .foregroundStyle(Color.hmMuted)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -652,56 +823,131 @@ struct MessageRow: View {
     }
 }
 
-struct OwnerBubble: View {
-    let text: String
-    var quote: BubbleQuote?
-    var jump: (String) -> Void = { _ in }
-
-    var body: some View {
-        let shown = MessageAttachments.shown(text)
-        HStack {
-            Spacer(minLength: 0)
-            VStack(alignment: .leading, spacing: DesignTokens.Chat.listGap) {
-                if let quote {
-                    if let target = quote.targetId {
-                        Button { jump(target) } label: { ReplyQuoteView(quote: quote, lines: 2) }
-                            .buttonStyle(.pressable)
-                            .padding(.bottom, DesignTokens.Chat.listGap)
-                    } else {
-                        ReplyQuoteView(quote: quote, lines: 2)
-                            .padding(.bottom, DesignTokens.Chat.listGap)
-                    }
-                }
-                if !shown.text.isEmpty {
-                    Text(shown.text)
-                        .hmType(DesignTokens.TypeScale.bubble)
-                        #if os(macOS)
-                        .textSelection(.enabled)
-                        #endif
-                }
-                ForEach(Array(shown.attachments.enumerated()), id: \.offset) { _, attachment in
-                    Label {
-                        Text(attachment.name).hmType(DesignTokens.TypeScale.secondary)
-                    } icon: {
-                        Icon(attachment.kind == .image ? .photo : .fileText, size: DesignTokens.Chat.attachRowIcon)
-                    }
-                    .foregroundStyle(Color.hmMuted)
-                }
-            }
-            .foregroundStyle(Color.hmText)
-            .padding(.vertical, 14)
-            .padding(.horizontal, 18)
-            .background(Color.hmFill, in: RoundedRectangle(cornerRadius: DesignTokens.Radius.bubble, style: .continuous))
-            .frame(maxWidth: DesignTokens.Size.bubbleMaxWidth, alignment: .trailing)
+extension ChatRowView {
+    @ViewBuilder
+    fileprivate func why(_ message: ThreadMessage) -> some View {
+        let open = model.why == .open
+        Button {
+            actions.toggleWhy(message)
+        } label: {
+            Label(L.text(open ? "chat.why.hide" : "chat.why"), systemImage: "questionmark.circle")
+                .font(.subheadline)
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .tint(Color.hmSun)
+        .accessibilityValue(L.text(open ? "chat.why.open" : "chat.why.closed"))
+        if open, let explanation = actions.explanation(message) {
+            explanation
+                .transition(.opacity.combined(with: .move(edge: .top)))
         }
     }
 }
 
-struct StreamingAnswer: View {
+enum ChatRow: Identifiable, Equatable {
+    case message(ThreadMessage)
+    case process(runId: String, line: ProcessLine, failed: Bool)
+    case streaming(String)
+    case queued(OutboxItem)
+    case hearing(String)
+
+    static let lone = BubblePlacement(timeAbove: nil, gapAbove: .newSpeaker, tail: true)
+
+    var id: String {
+        switch self {
+        case let .message(message): TranscriptItem.id(ofMessage: message.messageId)
+        case let .process(runId, _, _): "process:\(runId)"
+        case .streaming: "streaming"
+        case let .queued(item): "queued:\(item.id)"
+        case .hearing: "hearing"
+        }
+    }
+
+    var entry: BubbleEntry {
+        switch self {
+        case let .message(message):
+            let speaker: BubbleSpeaker = switch message.role {
+            case .agent: .her
+            case .owner: .owner
+            case .system: .other
+            }
+            return BubbleEntry(id: id, speaker: speaker, at: BubbleDates.date(message.committedAt))
+        case .process:
+            return .step(id: id)
+        case .streaming:
+            return BubbleEntry(id: id, speaker: .her, at: nil)
+        case .queued, .hearing:
+            return BubbleEntry(id: id, speaker: .owner, at: nil)
+        }
+    }
+}
+
+struct HerBubble: View {
     let text: String
+    var streaming = false
+    var failed = false
+    let tail: Bool
+    let maxWidth: CGFloat
+    var copyCode: (String) -> Void = { _ in }
+    var codeMenu: (String) -> MessageMenuActions? = { _ in nil }
 
     var body: some View {
-        AnswerText(text: text, streaming: true)
+        AnswerText(text: text, streaming: streaming, muted: failed, copyCode: copyCode, codeMenu: codeMenu)
+            .bubble(.her, tail: tail)
+            .frame(maxWidth: maxWidth, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(Text(L.text("chat.bubble.her")))
+    }
+}
+
+struct OwnerBubble: View {
+    let text: String
+    var quote: BubbleQuote?
+    var jump: (String) -> Void = { _ in }
+    var tail = true
+    var maxWidth: CGFloat = DesignTokens.Size.bubbleMaxWidth
+
+    var body: some View {
+        let shown = MessageAttachments.shown(text)
+        VStack(alignment: .trailing, spacing: DesignTokens.Chat.listGap) {
+            ForEach(Array(shown.attachments.enumerated()), id: \.offset) { _, attachment in
+                Label {
+                    Text(attachment.name).hmType(DesignTokens.TypeScale.secondary)
+                } icon: {
+                    Icon(attachment.kind == .image ? .photo : .fileText, size: DesignTokens.Chat.attachRowIcon)
+                }
+                .foregroundStyle(Color.hmMuted)
+            }
+            if quote != nil || !shown.text.isEmpty {
+                VStack(alignment: .leading, spacing: DesignTokens.Chat.listGap) {
+                    if let quote {
+                        if let target = quote.targetId {
+                            Button { jump(target) } label: { ReplyQuoteView(quote: quote, lines: 2, onInk: true) }
+                                .buttonStyle(.pressable)
+                                .padding(.bottom, DesignTokens.Chat.listGap)
+                        } else {
+                            ReplyQuoteView(quote: quote, lines: 2, onInk: true)
+                                .padding(.bottom, DesignTokens.Chat.listGap)
+                        }
+                    }
+                    if !shown.text.isEmpty {
+                        Text(shown.text)
+                            .hmType(DesignTokens.TypeScale.bubble)
+                            #if os(macOS)
+                            .textSelection(.enabled)
+                            #endif
+                    }
+                }
+                .foregroundStyle(Color.hmOnText)
+                .tint(Color.hmOnText)
+                .bubble(.owner, tail: tail)
+                .frame(maxWidth: maxWidth, alignment: .trailing)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .trailing)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(Text(L.text("chat.bubble.owner")))
     }
 }
 
@@ -709,12 +955,14 @@ struct QueuedMessageRow: View {
     let item: OutboxItem
     let online: Bool
     var quote: BubbleQuote?
+    var tail = true
+    var maxWidth: CGFloat = DesignTokens.Size.bubbleMaxWidth
     let retry: () -> Void
     let discard: () -> Void
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 6) {
-            OwnerBubble(text: item.message.text, quote: quote)
+            OwnerBubble(text: item.message.text, quote: quote, tail: tail, maxWidth: maxWidth)
             Group {
                 switch item.state {
                 case .failed:
@@ -732,9 +980,14 @@ struct QueuedMessageRow: View {
                     HStack(spacing: 12) {
                         Text(L.text("chat.queued.offline"))
                             .foregroundStyle(Color.hmDanger)
-                        Button(L.text("chat.queued.retryNow"), action: retry)
-                            .fontWeight(.semibold)
-                            .foregroundStyle(Color.hmSun)
+                        Button(action: retry) {
+                            Text(L.text("chat.queued.retryNow"))
+                                .fontWeight(.semibold)
+                                .foregroundStyle(Color.hmSun)
+                                .frame(minWidth: DesignTokens.Size.minTapTarget, minHeight: DesignTokens.Size.minTapTarget)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.pressable)
                     }
                 case .waiting, .sending:
                     Text(L.text("chat.queued.sending"))

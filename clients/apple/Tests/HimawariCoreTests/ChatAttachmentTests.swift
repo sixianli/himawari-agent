@@ -76,6 +76,23 @@ import Testing
         }
     }
 
+    @Test func aServerThatCannotReadImagesIsNotSentOne() async throws {
+        let photo = ChatAttachment(name: "照片", content: .image(data: Data([1, 2, 3]), mimeType: "image/jpeg"))
+        let blind = RecordingExchange([ok(config(image: 0))])
+        await #expect(throws: ChatAttachmentProblem.imagesUnsupported) {
+            try await api(blind).compose(text: "看看", attachments: [photo], requestId: "R", images: nil)
+        }
+        #expect(blind.requests.count == 1)
+        let refusing = RecordingExchange([ok(config()), ok(#"{"error":{"code":"ATTACHMENT_IMAGE_UNSUPPORTED"}}"#, status: 415)])
+        await #expect(throws: ChatAttachmentProblem.imagesUnsupported) {
+            try await api(refusing).compose(text: "看看", attachments: [photo], requestId: "R", images: nil)
+        }
+        let text = ChatAttachment(name: "笔记", content: .text("你好", kind: .text))
+        let textOnly = RecordingExchange([ok(config(image: 0)), ok(#"{"ref":"payload:t"}"#, status: 201)])
+        let composed = try await api(textOnly).compose(text: "", attachments: [text], requestId: "R", images: nil)
+        #expect(composed.hasPrefix("<file name=\"笔记\" ref=\"payload:t\""))
+    }
+
     @Test func theTagCarriesTheSizeOfTheOriginalTextNotTheClippedOne() async throws {
         let exchange = RecordingExchange([ok(config()), ok(#"{"ref":"payload:t"}"#, status: 201)])
         let composed = try await api(exchange).compose(

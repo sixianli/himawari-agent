@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
 import { lstat, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { release } from "node:os";
@@ -417,7 +418,7 @@ export async function writeNonproductionCodingSnapshot({
             "/usr/bin",
             "/usr/lib",
             "/lib",
-            "/lib64",
+            ...["/lib64"].filter(existsSync),
             "/proc",
             "/etc/ssl",
             "/etc/hosts",

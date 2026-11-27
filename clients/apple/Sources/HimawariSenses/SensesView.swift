@@ -32,7 +32,7 @@ public struct SensesView<Handover: View>: View {
     }
 
     private var overview: some View {
-        SenseSheet(title: L.text("senses.title"), back: { if let close { close() } else { dismiss() } }) {
+        SenseSheet(title: L.text("senses.title"), closes: true, back: { if let close { close() } else { dismiss() } }) {
             ScrollView {
                 VStack(alignment: .leading, spacing: DesignTokens.Senses.listGap) {
                     GroupedSection(Text(L.text("senses.thisDevice"))) {
@@ -114,50 +114,33 @@ public struct SenseRow: View {
 
 struct SenseSheet<Content: View>: View {
     let title: String
+    let closes: Bool
     let back: () -> Void
     let content: Content
 
-    init(title: String, back: @escaping () -> Void, @ViewBuilder content: () -> Content) {
+    init(title: String, closes: Bool = false, back: @escaping () -> Void, @ViewBuilder content: () -> Content) {
         self.title = title
+        self.closes = closes
         self.back = back
         self.content = content()
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            ZStack {
-                Text(title)
-                    .hmType(DesignTokens.TypeScale.navTitle)
-                    .foregroundStyle(Color.hmText)
-                    .lineLimit(1)
-                    .padding(.horizontal, DesignTokens.Size.glassButton)
-                    .accessibilityAddTraits(.isHeader)
-                HStack {
-                    GlassCircleButton(Text(L.text("senses.back")), action: back) {
-                        Icon(.chevronLeft, size: DesignTokens.IconSize.glassButton)
+        content
+            .padding(.horizontal, DesignTokens.Size.sheetPaddingHorizontal)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .himawariScreenBackground()
+            .navigationTitle(title)
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                if closes {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button(L.text("senses.close"), systemImage: "xmark", action: back)
                     }
-                    Spacer()
                 }
             }
-            .padding(.bottom, DesignTokens.Senses.listGap)
-            content
-        }
-        .padding(.top, DesignTokens.Size.sheetPaddingTop)
-        .padding(.horizontal, DesignTokens.Size.sheetPaddingHorizontal)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .himawariScreenBackground()
-        .senseHidesNavigationBar()
-    }
-}
-
-extension View {
-    @ViewBuilder
-    func senseHidesNavigationBar() -> some View {
-        #if os(iOS)
-        toolbar(.hidden, for: .navigationBar)
-        #else
-        self
-        #endif
     }
 }
 

@@ -23,6 +23,7 @@ import type {
   InboxStorePort,
   LedgerObservationPort,
   McpConnectionStorePort,
+  McpOAuthStorePort,
   McpMemorySyncStorePort,
   MemoryBookStorePort,
   MemoryCaptureBacklogPort,
@@ -1055,14 +1056,24 @@ export class SqliteDurableAdapters {
     });
   }
 
+  mcpOAuth(): McpOAuthStorePort {
+    return Object.freeze<McpOAuthStorePort>({
+      registerClient: (input) => this.context.write("mcpOAuth.registerClient", input),
+      readClient: (input) => this.context.read("mcpOAuth.readClient", input),
+      bindGrant: (input) => this.context.write("mcpOAuth.bindGrant", input),
+      issueTokens: (input) => this.context.write("mcpOAuth.issueTokens", input),
+      findAccess: (input) => this.context.read("mcpOAuth.findAccess", input),
+      rotateRefresh: (input) => this.context.write("mcpOAuth.rotateRefresh", input),
+      revokeToken: (input) => this.context.write("mcpOAuth.revokeToken", input),
+      pruneExpired: (input) => this.context.write("mcpOAuth.pruneExpired", input),
+    });
+  }
+
   mcpConnections(): McpConnectionStorePort {
     return Object.freeze<McpConnectionStorePort>({
-      create: (input) => this.context.write("mcpConnection.create", input),
       list: (input) => this.context.read("mcpConnection.list", input),
       read: (input) => this.context.read("mcpConnection.read", input),
-      findBySecret: (input) => this.context.read("mcpConnection.findBySecret", input),
       change: (input) => this.context.write("mcpConnection.change", input),
-      rotateSecret: (input) => this.context.write("mcpConnection.rotateSecret", input),
       touch: (input) => this.context.write("mcpConnection.touch", input),
       addUsage: (input) => this.context.write("mcpConnection.addUsage", input),
       usage: (input) => this.context.read("mcpConnection.usage", input),
@@ -1245,6 +1256,9 @@ export class SqliteDurableAdapters {
     return Object.freeze<DecisionLedgerPort>({
       append: (input) => this.context.write("decisionLedger.append", input),
       recordSpoken: (input) => this.context.write("decisionLedger.recordSpoken", input),
+      spokenMessages: (input) => this.context.read("decisionLedger.spokenMessages", input),
+      readSpoken: (input) => this.context.read("decisionLedger.readSpoken", input),
+      spokenStats: (input) => this.context.read("decisionLedger.spokenStats", input),
       appendIfChanged: (input) => this.context.write("decisionLedger.appendIfChanged", input),
       list: (input) => this.context.read("decisionLedger.list", input),
       read: (input) => this.context.read("decisionLedger.read", input),
@@ -1311,12 +1325,11 @@ export class SqliteDurableAdapters {
 
   pairedDevices(): PairedDeviceStorePort {
     return Object.freeze<PairedDeviceStorePort>({
-      createPairingCode: (input) => this.context.write("pairedDevices.createPairingCode", input),
-      redeemPairingCode: (input) => this.context.write("pairedDevices.redeemPairingCode", input),
+      listPasskeys: (input) => this.context.read("pairedDevices.listPasskeys", input),
+      readPasskey: (credentialId) => this.context.read("pairedDevices.readPasskey", credentialId),
+      signInDevice: (input) => this.context.write("pairedDevices.signInDevice", input),
       readDevice: (deviceId) => this.context.read("pairedDevices.readDevice", deviceId),
       listDevices: (input) => this.context.read("pairedDevices.listDevices", input),
-      readOpenPairingCode: (input) => this.context.read("pairedDevices.readOpenPairingCode", input),
-      confirmDevice: (input) => this.context.write("pairedDevices.confirmDevice", input),
       renameDevice: (input) => this.context.write("pairedDevices.renameDevice", input),
       revokeDevice: (input) => this.context.write("pairedDevices.revokeDevice", input),
       recordNonce: (input) => this.context.write("pairedDevices.recordNonce", input),

@@ -5,7 +5,7 @@ execution_risk: critical
 supersedes: ""
 superseded_by: ""
 date: "2026-11-26"
-covers: "scripts/install/first-install.sh, scripts/install/prepare-host-tools.sh, scripts/operations/install-deploy-key.sh, scripts/delivery-mode/packet-template/systemd/pair-supervisor.mjs, apps/admin-cli/src/account-command.ts"
+covers: "scripts/install/first-install.sh, scripts/install/prepare-host-tools.sh, scripts/operations/install-deploy-key.sh, scripts/delivery-mode/packet-template/systemd/pair-supervisor.mjs, apps/admin-cli/src/account-command.ts, apps/admin-cli/src/sign-in-command.ts"
 verified_at: "7c8521fe5f55e7dd57c5bd52badd16eef647502e"
 ---
 
@@ -115,6 +115,17 @@ journalctl -u himawari-prod.service -n 100 --no-pager
 2. 第一次建立：`himawari account create --config /etc/himawari/config.json --input <输入文件> --output <新的设置文件> --secret-dir <stateRoot>/secrets`。设置文件里有验证器地址和 10 条一次性恢复码，交给 Andy 保存后删掉服务器上的副本。
 3. 丢了密码或全部第二因素时：同样准备输入文件，运行 `himawari account recover ...`，加 `--confirm RECOVER_ACCOUNT_<配置里的 Owner ID>`。它重设密码和第二因素，并让全部旧会话和设备失效。
 4. 启动服务，在网页上用新凭据登录一次。
+
+<a id="app-sign-in-setup-code"></a>
+
+### App 第一次登录和找回：一次性设置码
+
+iPhone、Mac 的 App 只用通行密钥（passkey，存在苹果钥匙串里、刷面容就能用的登录凭据）登录，没有密码和验证码（[ADR 0309](../adr/0309-apps-sign-in-with-passkeys-and-the-web-is-removed.md)）。第一次登录、或者所有设备都丢了要找回时，在服务器上生成一个一次性设置码，在 App 里输入后当场创建通行密钥。
+
+1. 用服务账号（或 root）运行 `himawari sign-in setup-code --config /etc/himawari/config.json`。默认 15 分钟有效，可以加 `--minutes 1-1440`。命令只在 state root 下写一个文件、不碰数据库，所以服务开着也能跑。
+2. 输出一行 JSON：`setupCode` 是 8 位、4 位一组的码（不含 0、O、1、I、L 这类容易看错的字），`expiresAt` 是过期时间。码只显示这一次，服务器只存哈希（文件 600、目录 700）。再跑一次会让上一个没用的码作废。
+3. 在 App 里输入设置码，按系统提示刷面容创建通行密钥。创建成功时码才作废；中途取消，有效期内还能再用。输错 5 次锁 15 分钟。
+4. 之后同一个苹果账号的其他设备直接用这把通行密钥登录，不需要设置码；其他已登录的设备会收到“新设备已登录”推送。
 
 <a id="verification"></a>
 

@@ -10,19 +10,18 @@ struct MessageMenuActions {
     var reply: (() -> Void)?
     let copy: () -> Void
     let select: () -> Void
+    var why: (() -> Void)? = nil
 }
 
 extension View {
     @ViewBuilder
-    func messageMenu(_ actions: MessageMenuActions?) -> some View {
+    func messageMenu(_ actions: MessageMenuActions?, ownPreview: Bool = false) -> some View {
         #if os(iOS)
         if let actions {
-            contextMenu {
-                if let reply = actions.reply {
-                    Button(action: reply) { Label(L.text("chat.menu.reply"), systemImage: "arrowshape.turn.up.left") }
-                }
-                Button(action: actions.copy) { Label(L.text("chat.menu.copy"), systemImage: "doc.on.doc") }
-                Button(action: actions.select) { Label(L.text("chat.menu.select"), systemImage: "text.cursor") }
+            if ownPreview {
+                modifier(FramedMessageMenu(actions: actions))
+            } else {
+                contextMenu { MessageMenuItems(actions: actions) }
             }
         } else {
             self
@@ -32,6 +31,43 @@ extension View {
         #endif
     }
 }
+
+#if os(iOS)
+struct MessageMenuItems: View {
+    let actions: MessageMenuActions
+
+    var body: some View {
+        if let reply = actions.reply {
+            Button(action: reply) { Label(L.text("chat.menu.reply"), systemImage: "arrowshape.turn.up.left") }
+        }
+        Button(action: actions.copy) { Label(L.text("chat.menu.copy"), systemImage: "doc.on.doc") }
+        Button(action: actions.select) { Label(L.text("chat.menu.select"), systemImage: "text.cursor") }
+        if let why = actions.why {
+            Button(action: why) { Label(L.text("chat.menu.why"), systemImage: "questionmark.circle") }
+        }
+    }
+}
+
+struct FramedMessageMenu: ViewModifier {
+    let actions: MessageMenuActions
+    @State private var width: CGFloat?
+
+    private static let shape = RoundedRectangle(cornerRadius: DesignTokens.Chat.codeRadius, style: .continuous)
+
+    func body(content: Content) -> some View {
+        content
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+            .contextMenu {
+                MessageMenuItems(actions: actions)
+            } preview: {
+                content
+                    .frame(width: width)
+                    .background(Color.hmBubble, in: Self.shape)
+                    .clipShape(Self.shape)
+            }
+    }
+}
+#endif
 
 struct SelectableMessage: Identifiable, Equatable {
     let id: String

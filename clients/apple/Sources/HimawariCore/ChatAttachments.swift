@@ -28,6 +28,7 @@ public enum ChatAttachmentProblem: Error, Equatable, Sendable {
     case tooMany(limit: Int)
     case tooLarge
     case uploadFailed
+    case imagesUnsupported
 }
 
 public struct ShownAttachment: Sendable, Equatable {
@@ -82,7 +83,8 @@ extension MessageAttachments {
 
 public enum ChatAttachmentPlanner {
     static let dataURLPrefix = "data:image/jpeg;base64,".utf16.count
-    public static let maxFileBytes = 20 * 1024 * 1024
+    public static let bytesPerMegabyte = 1024 * 1024
+    public static let maxFileBytes = 20 * bytesPerMegabyte
     public static let maxImagePixels = 4096
 
     public static func fileFits(bytes: Int?) -> Bool {
@@ -106,6 +108,7 @@ extension DeviceAPI {
         }
         guard let limits = configuration.attachments else { throw ChatAttachmentProblem.serverOutdated }
         guard attachments.count <= limits.perMessage else { throw ChatAttachmentProblem.tooMany(limit: limits.perMessage) }
+        guard limits.imageCharacters > 0 || !attachments.contains(where: \.isImage) else { throw ChatAttachmentProblem.imagesUnsupported }
         guard MessageAttachments.fits(text: text, attachments: [], limits: limits) else { throw ChatAttachmentProblem.tooLarge }
         var tags: [MessageAttachment] = []
         for (index, attachment) in attachments.enumerated() {
@@ -138,6 +141,8 @@ extension DeviceAPI {
             let ref: String
             do {
                 ref = try await uploadAttachment(requestId: Self.attachmentRequestId(requestId, index: index), content: content, as: upload)
+            } catch let DeviceAPIError.server(status, _, _, _) where status == 415 {
+                throw ChatAttachmentProblem.imagesUnsupported
             } catch {
                 throw ChatAttachmentProblem.uploadFailed
             }

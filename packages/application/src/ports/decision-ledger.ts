@@ -262,6 +262,8 @@ export const SPOKEN_VERDICTS = ["pushed", "silent"] as const;
 
 export type SpokenVerdict = (typeof SPOKEN_VERDICTS)[number];
 
+export const SPOKEN_REASON_CODES = { pushed: "told_pushed", inApp: "told_in_app" } as const;
+
 export interface SpokenDecisionWrite {
   readonly id: string;
   readonly ownerId: OwnerId;
@@ -279,9 +281,40 @@ export interface SpokenDecisionWrite {
   readonly durationMs: number;
 }
 
+export interface SpokenDecisionRecord {
+  readonly id: string;
+  readonly scenario: string;
+  readonly decidedAt: string;
+  readonly verdict: SpokenVerdict;
+  readonly subjectRef: string;
+  readonly sourceIds: readonly string[];
+  readonly reasonRef: string | null;
+  readonly rating: DecisionRating | null;
+  readonly durationMs: number;
+}
+
+export interface SpokenStats {
+  readonly spoken: number;
+  readonly rated: number;
+  readonly useful: number;
+  readonly unneeded: number;
+}
+
 export interface DecisionLedgerPort {
   append(write: DecisionLedgerWrite): Promise<void>;
   recordSpoken(write: SpokenDecisionWrite): Promise<boolean>;
+  spokenMessages(
+    input: DecisionLedgerScope & {
+      readonly messageIds: readonly string[];
+      readonly since: string;
+    },
+  ): Promise<readonly string[]>;
+  readSpoken(
+    input: DecisionLedgerScope & { readonly messageId: string },
+  ): Promise<readonly SpokenDecisionRecord[]>;
+  spokenStats(
+    input: DecisionLedgerScope & { readonly start: string; readonly end: string },
+  ): Promise<SpokenStats>;
   appendIfChanged(input: {
     readonly write: DecisionLedgerWrite;
     readonly reasonCodes: readonly string[];
