@@ -5,8 +5,6 @@ on:
     paths:
       - clients/apple/**
       - .github/workflows/mac-release.yml
-      - scripts/ci/notary-status.mjs
-      - scripts/ci/mac-publish.sh
   workflow_dispatch:
   schedule:
     - cron: "7,37 * * * *"
@@ -88,7 +86,7 @@ jobs:
           VERSION: ${{ steps.build.outputs.version }}
           BUILD: ${{ github.run_number }}
           SUPERSEDES_RUN: ${{ github.run_id }}
-        run: scripts/ci/mac-publish.sh
+        run: clients/apple/scripts/mac-publish.sh
   check:
     name: mac-release/check-notarization
     if: ${{ github.event_name == 'schedule' && github.repository == 'sixianli/himawari-agent' }}
@@ -128,7 +126,7 @@ jobs:
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
           SUBMISSION_ID: ${{ steps.pending.outputs.submission }}
-        run: node scripts/ci/notary-status.mjs
+        run: node clients/apple/scripts/notary-status.mjs
   finish:
     name: mac-release/finish
     needs: check
@@ -165,4 +163,4 @@ jobs:
           VERSION: ${{ steps.build.outputs.version }}
           BUILD: ${{ steps.build.outputs.build }}
           SUPERSEDES_RUN: ${{ needs.check.outputs.run }}
-        run: scripts/ci/mac-publish.sh
+        run: clients/apple/scripts/mac-publish.sh

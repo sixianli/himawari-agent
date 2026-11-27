@@ -107,7 +107,7 @@ describe("Mac 安装包发布工作流", () => {
     expect(park.if).toContain("steps.build.outputs.notarized == 'false'");
     expect(park.with.name).toContain("env.HIMAWARI_PENDING_ARTIFACT");
     const status = check.steps.find((step) => step.id === "status");
-    expect(status.run).toBe("node scripts/ci/notary-status.mjs");
+    expect(status.run).toBe("node clients/apple/scripts/notary-status.mjs");
     expect(workflow.on.schedule.length).toBe(1);
   });
   it("直接发布和收尾发布用同一个脚本，App 读的更新清单地址就是它上传 appcast.xml 的那个 release", () => {
@@ -115,11 +115,11 @@ describe("Mac 安装包发布工作流", () => {
       "/releases/download/mac-updates/appcast.xml",
     );
     for (const job of [publish, finish]) {
-      expect(job.steps.at(-1).run).toBe("scripts/ci/mac-publish.sh");
+      expect(job.steps.at(-1).run).toBe("clients/apple/scripts/mac-publish.sh");
       expect(Object.keys(job.steps.at(-1).env)).toContain("SUPERSEDES_RUN");
     }
     const publishScript = readFileSync(
-      path.join(repositoryRoot, "scripts/ci/mac-publish.sh"),
+      path.join(repositoryRoot, "clients/apple/scripts/mac-publish.sh"),
       "utf8",
     );
     expect(publishScript).toContain("gh release upload mac-updates");

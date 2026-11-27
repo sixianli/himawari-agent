@@ -1,6 +1,10 @@
 import { generateKeyPairSync, verify } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { notaryToken, outcomeOf, submissionStatus } from "../../scripts/ci/notary-status.mjs";
+import {
+  notaryToken,
+  outcomeOf,
+  submissionStatus,
+} from "../../clients/apple/scripts/notary-status.mjs";
 
 const { privateKey, publicKey } = generateKeyPairSync("ec", { namedCurve: "P-256" });
 const pem = privateKey.export({ format: "pem", type: "pkcs8" });
