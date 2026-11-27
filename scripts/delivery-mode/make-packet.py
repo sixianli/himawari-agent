@@ -52,7 +52,7 @@ TOOLCHAIN_LOCK = 'ci/toolchain-lock.json'
 NODE_ARCHITECTURES = {'x86_64': 'x64', 'aarch64': 'arm64'}
 MATERIAL_FILES = ('context.json', 'source-build-inputs.json', 'node-modules.tar.gz', 'node-modules.json', 'npm-ls.json')
 EXECUTION_NOTE = 'G180'
-DISCOVERED_KEYS = ('OLD_PREFIX', 'OLD_OPERATIONS', 'OLD_QUALIFICATION', 'ORIGINAL_CONTEXT_WINDOW', 'ORIGINAL_MAX_TOKENS', 'ORIGINAL_PUBLIC_FETCH_BYTES', 'HOSTNAME', 'SERVICE_UID', 'SERVICE_GID', 'NODE_SHA256', 'NODE_ARCH', 'FIRST_SIGNER_KEY_PATH')
+DISCOVERED_KEYS = ('OLD_PREFIX', 'OLD_OPERATIONS', 'OLD_QUALIFICATION', 'ORIGINAL_CONTEXT_WINDOW', 'ORIGINAL_MAX_TOKENS', 'ORIGINAL_PUBLIC_FETCH_BYTES', 'HOSTNAME', 'SERVICE_UID', 'SERVICE_GID', 'NODE_SHA256', 'SYSTEM_BWRAP_SHA256', 'NODE_ARCH', 'FIRST_SIGNER_KEY_PATH')
 FAST_MODE_NOTE = 'skipped in fast delivery mode (DELIVERY_MODE=fast, ADR 0073, approved by Andy 2026-10-25T10:07Z; G180)'
 
 
@@ -299,6 +299,7 @@ def discovery_script():
         "    'serviceUid': service.pw_uid,",
         "    'serviceGid': service.pw_gid,",
         "    'nodeSha256': hashlib.sha256(pathlib.Path(node_path).read_bytes()).hexdigest(),",
+        "    'systemBwrapSha256': hashlib.sha256(pathlib.Path(os.path.realpath('/usr/bin/bwrap')).read_bytes()).hexdigest() if os.path.isfile('/usr/bin/bwrap') else None,",
         "    'signerKeys': [path for mtime, path in keys],",
         "    'active': subprocess.run(['/usr/bin/systemctl', 'is-active', unit_name], capture_output=True, text=True).stdout.strip(),",
         "    'execStart': [line for line in unit.decode().splitlines() if line.startswith('ExecStart=')],",
@@ -355,6 +356,8 @@ def interpret_discovery(facts, instance, label=None):
             refuse('PACKET_SERVICE_ACCOUNT_NOT_READABLE', key + '=' + str(facts.get(key)))
     if not isinstance(facts.get('nodeSha256'), str) or re.fullmatch(r'[0-9a-f]{64}', facts['nodeSha256']) is None:
         refuse('PACKET_NODE_DIGEST_NOT_READABLE', facts.get('nodeSha256'))
+    if not isinstance(facts.get('systemBwrapSha256'), str) or re.fullmatch(r'[0-9a-f]{64}', facts['systemBwrapSha256']) is None:
+        refuse('PACKET_SYSTEM_BWRAP_NOT_READABLE', facts.get('systemBwrapSha256'))
     signer_keys = facts.get('signerKeys')
     if not isinstance(signer_keys, list) or not signer_keys or not all(isinstance(key, str) and re.fullmatch(r'/[A-Za-z0-9._/-]+', key) for key in signer_keys):
         refuse('PACKET_FIRST_SIGNER_KEY_NOT_FOUND', signer_keys)
@@ -385,6 +388,7 @@ def interpret_discovery(facts, instance, label=None):
         'SERVICE_UID': facts['serviceUid'],
         'SERVICE_GID': facts['serviceGid'],
         'NODE_SHA256': facts['nodeSha256'],
+        'SYSTEM_BWRAP_SHA256': facts['systemBwrapSha256'],
         'NODE_ARCH': machine,
         'FIRST_SIGNER_KEY_PATH': signer_keys[0],
         'LABEL': chosen,
@@ -442,9 +446,48 @@ BROWSER_TARGET_KEYS = {'maxOutputBytes', 'maxTextChars', 'responseReserveMs'}
 COMPUTERS_SETTINGS = REPO / 'scripts/operations/computers/settings.json'
 
 
-def run_policy_target(target):
+APP_CONNECTION_TARGET_KEYS = {'name', 'title', 'serverUrl', 'clientId', 'clientSecret', 'trustsReadOnlyLabels'}
+APP_CONNECTION_SECRET_PURPOSE = 'app-connection-client'
+APP_CONNECTION_SECRET_SCOPE = 'agent'
+
+
+def app_connections_target(target):
     if target is None:
-        return '{}'
+        return None, []
+    reference = re.compile(r'[A-Za-z0-9][A-Za-z0-9._-]{0,127}')
+    if not isinstance(target, list) or not target or len(target) > 32:
+        refuse('PACKET_APP_CONNECTIONS_TARGET_INVALID', target)
+    connections, secrets, names = [], [], set()
+    for entry in target:
+        if not isinstance(entry, dict) or set(entry) != APP_CONNECTION_TARGET_KEYS:
+            refuse('PACKET_APP_CONNECTIONS_TARGET_INVALID', entry)
+        secret = entry['clientSecret']
+        valid = (
+            isinstance(entry['name'], str) and re.fullmatch(r'[a-z][a-z0-9_]{0,63}', entry['name']) and entry['name'] not in names
+            and isinstance(entry['title'], str) and 0 < len(entry['title']) <= 64
+            and isinstance(entry['serverUrl'], str) and re.fullmatch(r'https://[A-Za-z0-9.-]+(:[0-9]+)?(/[A-Za-z0-9._~/-]*)?', entry['serverUrl'])
+            and isinstance(entry['clientId'], str) and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,255}', entry['clientId'])
+            and type(entry['trustsReadOnlyLabels']) is bool
+            and isinstance(secret, dict) and set(secret) == {'ref', 'version'}
+            and all(isinstance(secret[key], str) and reference.fullmatch(secret[key]) for key in ('ref', 'version'))
+            and secret['ref'] not in {known['ref'] for known in secrets}
+        )
+        if not valid:
+            refuse('PACKET_APP_CONNECTIONS_TARGET_INVALID', entry)
+        names.add(entry['name'])
+        connections.append({'name': entry['name'], 'title': entry['title'], 'serverUrl': entry['serverUrl'], 'clientId': entry['clientId'], 'clientSecretRef': secret['ref'], 'trustsReadOnlyLabels': entry['trustsReadOnlyLabels']})
+        secrets.append({'ref': secret['ref'], 'version': secret['version'], 'purpose': APP_CONNECTION_SECRET_PURPOSE, 'scope': APP_CONNECTION_SECRET_SCOPE})
+    return connections, secrets
+
+
+def secret_references_target(app_connections):
+    return json.dumps(app_connections_target(app_connections)[1], separators=(',', ':'), ensure_ascii=False)
+
+
+def run_policy_target(target, app_connections=None):
+    connections = app_connections_target(app_connections)[0]
+    if target is None:
+        return '{}' if connections is None else json.dumps({'appConnections': connections}, separators=(',', ':'), ensure_ascii=False)
     if not isinstance(target, dict) or set(target) != {'browser'}:
         refuse('PACKET_COMPUTERS_TARGET_INVALID', target)
     browser = target['browser']
@@ -454,6 +497,8 @@ def run_policy_target(target):
     if not isinstance(socket_path, str) or not socket_path.startswith('/'):
         refuse('PACKET_COMPUTERS_SOCKET_INVALID', socket_path)
     additions = {'userComputers': {'socketPath': socket_path}, 'browser': {key: browser[key] for key in ('maxOutputBytes', 'maxTextChars', 'responseReserveMs')}}
+    if connections is not None:
+        additions['appConnections'] = connections
     return json.dumps(additions, separators=(',', ':'), ensure_ascii=False)
 
 
@@ -534,7 +579,8 @@ def base_parameters(instance, commit, date, discovered):
         'TARGET_PUBLIC_FETCH_BYTES': targets['publicFetchMaximumBytes'],
         'TARGET_EMBEDDING_JSON': embedding_target(targets.get('embedding')),
         'TARGET_SPEECH_JSON': speech_target(targets.get('speech')),
-        'TARGET_RUN_POLICY_JSON': run_policy_target(targets.get('computers')),
+        'TARGET_RUN_POLICY_JSON': run_policy_target(targets.get('computers'), targets.get('appConnections')),
+        'TARGET_SECRET_REFERENCES_JSON': secret_references_target(targets.get('appConnections')),
         'STARTUP_READY_BUDGET_MS': startup_ready_budget(instance, git('show', commit + ':' + WORKER_SERVICE_MAIN)),
         'STARTUP_PHASE_BASELINE_MS': startup_phase_baseline(instance),
     }

@@ -1,4 +1,6 @@
+import contextlib
 import importlib.util
+import io
 import json
 import os
 import re
@@ -373,6 +375,17 @@ class KernelPreflightTest(unittest.TestCase):
         self.assertEqual(self.failed(savedBootKernel=''), ['NEXT_BOOT_KERNEL_IS_RUNNING_KERNEL'])
         self.assertEqual(self.failed(runningKernel=''), ['NEXT_BOOT_KERNEL_IS_RUNNING_KERNEL', 'RUNNING_KERNEL_MATCHES_QUALIFICATION'])
 
+    def first_failed(self, **changes):
+        facts = dict(line.split('=', 1) for line in GOOD_FACTS.splitlines())
+        facts.update(changes)
+        return [name for name, passed in preflight.checks(BINDING, facts, 1000, first=True) if not passed]
+
+    def test_a_first_tools_deployment_on_a_host_with_no_receipt_yet_qualifies_the_running_kernel(self):
+        self.assertEqual(self.first_failed(qualifiedKernel='none'), [])
+        self.assertEqual(self.failed(qualifiedKernel='none'), ['RUNNING_KERNEL_MATCHES_QUALIFICATION'])
+        self.assertEqual(self.first_failed(qualifiedKernel=''), ['RUNNING_KERNEL_MATCHES_QUALIFICATION'])
+        self.assertEqual(self.first_failed(qualifiedKernel='6.8.0-139-generic'), ['RUNNING_KERNEL_MATCHES_QUALIFICATION'])
+
     def test_running_kernel_different_from_the_qualified_one_is_refused(self):
         self.assertEqual(self.failed(qualifiedKernel='6.8.0-139-generic'), ['RUNNING_KERNEL_MATCHES_QUALIFICATION'])
         self.assertEqual(self.failed(qualifiedKernel=''), ['RUNNING_KERNEL_MATCHES_QUALIFICATION'])
@@ -537,9 +550,47 @@ class KernelPreflightTest(unittest.TestCase):
                 os.utime(receipt, (1000, 1000))
             self.assertEqual(self.qualified(root), '6.8.0-142-generic')
 
-    def test_a_directory_without_receipts_gives_an_empty_answer(self):
+    def test_a_directory_without_receipts_says_none_were_recorded(self):
         with tempfile.TemporaryDirectory() as directory:
-            self.assertEqual(self.qualified(Path(directory)), '')
+            self.assertEqual(self.qualified(Path(directory)), 'none')
+
+
+class HostSystemBootTest(unittest.TestCase):
+    TAG = KernelPreflightTest.TAG
+    UUID, ADVANCED = KernelPreflightTest.UUID, KernelPreflightTest.ADVANCED
+    entry_id, grub_config, next_boot = KernelPreflightTest.entry_id, KernelPreflightTest.grub_config, KernelPreflightTest.next_boot
+
+    def remote(self, root):
+        namespace = {'__name__': 'host_system_fixture'}
+        exec(compile(load('host_system', 'host-system.py').remote_program(), 'host-system-remote', 'exec'), namespace)
+        namespace['settings']['bootPaths'] = [str(root / 'grub.cfg'), str(root / 'grubenv'), str(root)]
+        return namespace
+
+    def test_pinning_picks_the_running_kernel_by_its_versioned_entry_not_the_simple_or_recovery_one(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'grub.cfg').write_text(self.grub_config())
+            path = self.remote(root)['running_entry_path']('6.8.0-142-generic')
+        self.assertEqual(path, self.ADVANCED + '>' + self.entry_id('6.8.0-142-generic'))
+        self.assertEqual(self.next_boot(saved_entry=path), ('6.8.0-142-generic',) * 2)
+
+    def test_pinning_refuses_a_kernel_grub_does_not_list(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'grub.cfg').write_text(self.grub_config())
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output), self.assertRaises(SystemExit):
+                self.remote(root)['running_entry_path']('7.0.0-1013-oracle')
+        self.assertIn('HOST_SYSTEM_FAILED RUNNING_KERNEL_NOT_IN_GRUB', output.getvalue())
+
+    def test_the_remote_program_reuses_the_preflight_checks_and_pins_every_document_package(self):
+        settings = self.remote(Path('/nonexistent'))['settings']
+        self.assertEqual(settings['documentCheck'], preflight.DOCUMENT_TOOLS_CHECK)
+        self.assertEqual(settings['bootReader'], preflight.READ_NEXT_BOOT_KERNEL)
+        lines = [line for line in settings['requirements'].splitlines() if line]
+        self.assertEqual(len(lines), 14)
+        self.assertTrue(all(re.fullmatch(r'[a-z0-9-]+==[0-9.]+( --hash=sha256:[0-9a-f]{64})+', line) for line in lines), lines)
+        self.assertIn('weasyprint==70.0 ', settings['requirements'])
 
 
 class DeployHarness(unittest.TestCase):

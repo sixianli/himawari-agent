@@ -1256,6 +1256,9 @@ export class SqliteDurableAdapters {
     return Object.freeze<DecisionLedgerPort>({
       append: (input) => this.context.write("decisionLedger.append", input),
       recordSpoken: (input) => this.context.write("decisionLedger.recordSpoken", input),
+      spokenMessages: (input) => this.context.read("decisionLedger.spokenMessages", input),
+      readSpoken: (input) => this.context.read("decisionLedger.readSpoken", input),
+      spokenStats: (input) => this.context.read("decisionLedger.spokenStats", input),
       appendIfChanged: (input) => this.context.write("decisionLedger.appendIfChanged", input),
       list: (input) => this.context.read("decisionLedger.list", input),
       read: (input) => this.context.read("decisionLedger.read", input),

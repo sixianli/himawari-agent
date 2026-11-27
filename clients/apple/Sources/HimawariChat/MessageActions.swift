@@ -10,6 +10,7 @@ struct MessageMenuActions {
     var reply: (() -> Void)?
     let copy: () -> Void
     let select: () -> Void
+    var why: (() -> Void)? = nil
 }
 
 extension View {
@@ -41,6 +42,9 @@ struct MessageMenuItems: View {
         }
         Button(action: actions.copy) { Label(L.text("chat.menu.copy"), systemImage: "doc.on.doc") }
         Button(action: actions.select) { Label(L.text("chat.menu.select"), systemImage: "text.cursor") }
+        if let why = actions.why {
+            Button(action: why) { Label(L.text("chat.menu.why"), systemImage: "questionmark.circle") }
+        }
     }
 }
 
