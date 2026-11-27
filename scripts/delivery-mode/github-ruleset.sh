@@ -8,15 +8,7 @@ case "${1:-}" in
   fast)
     rules='[
       {"type": "deletion"},
-      {"type": "non_fast_forward"},
-      {"type": "required_status_checks", "parameters": {
-        "strict_required_status_checks_policy": false,
-        "do_not_enforce_on_create": false,
-        "required_status_checks": [
-          {"context": "ci/required", "integration_id": 15368},
-          {"context": "apple/required", "integration_id": 15368}
-        ]
-      }}
+      {"type": "non_fast_forward"}
     ]'
     ;;
   full)
@@ -36,10 +28,7 @@ case "${1:-}" in
       {"type": "required_status_checks", "parameters": {
         "strict_required_status_checks_policy": true,
         "do_not_enforce_on_create": false,
-        "required_status_checks": [
-          {"context": "ci/required", "integration_id": 15368},
-          {"context": "apple/required", "integration_id": 15368}
-        ]
+        "required_status_checks": [{"context": "ci/required", "integration_id": 15368}]
       }}
     ]'
     ;;

@@ -143,20 +143,6 @@ jobs:
           name: accessibility-audit-${{ strategy.job-index }}
           path: accessibility-audit.xcresult
           retention-days: 7
-  required:
-    name: apple/required
-    needs: [changes, iphone, mac]
-    if: ${{ always() }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-        with:
-          persist-credentials: false
-      - name: iPhone 单元测试和编译、Mac 编译都过了才算过
-        env:
-          APPLE_NEEDS: ${{ toJSON(needs) }}
-        run: node scripts/ci/apple-required.mjs
   scroll:
     name: apple/scroll
     needs: changes

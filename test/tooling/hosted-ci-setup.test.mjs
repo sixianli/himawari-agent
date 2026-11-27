@@ -126,11 +126,9 @@ describe("iPhone 工作流", () => {
       "iphone",
       "mac",
       "iphone-accessibility",
-      "required",
       "scroll",
     ]);
-    const { changes, required, ...macJobs } = workflow.jobs;
-    expect(required["runs-on"]).toBe("ubuntu-24.04");
+    const { changes, ...macJobs } = workflow.jobs;
     expect(changes["runs-on"]).toBe("ubuntu-24.04");
     expect(changes.if).toContain("github.event.pull_request.draft != true");
     expect(changes.steps.at(-1).run).toContain("scripts/ci/apple-scope.mjs");
