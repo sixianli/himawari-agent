@@ -103,6 +103,9 @@ trap 'rm -f "$prepare_log"' EXIT
 packet="$(sed -n 's/^PACKET_READY //p' "$prepare_log" | tail -1 | /usr/bin/python3 -I -c 'import json,sys; print(json.loads(sys.stdin.read())["packet"])')"
 [[ -d "$packet" ]] || refuse PACKET_MISSING "no PACKET_READY line" 3
 
+echo "CI_DEPLOY_SHADOW_REHEARSAL $packet"
+bash "$here/shadow-rehearsal.sh" "$packet" || refuse SHADOW_REHEARSAL_FAILED "the deploy failed on a copy of production in an offline shadow machine, so production was not touched; see the SHADOW_ lines above" 4
+
 echo "CI_DEPLOY_START $packet"
 HIMAWARI_DEPLOY_ON_FAILURE="${HIMAWARI_DEPLOY_ON_FAILURE:-rollback}" bash "$here/deploy.sh" "$packet"
 deploy_code=$?

@@ -110,7 +110,7 @@ def capability_problems(capabilities, host_id, old_prefix):
             problems.append('OLD_APPROVED_RUNTIME_IDENTITY_CHANGED')
     return problems
 
-def check_production_authorization(frozen, s0, *, new_capability_refs, read_configuration, service_uid, service_gid, now=None):
+def check_production_authorization(frozen, s0, *, new_capability_refs, configuration_path, service_uid, service_gid, now=None):
     checked_at = datetime.now(timezone.utc) if now is None else now
     problems = []
     result = {}
@@ -140,7 +140,11 @@ def check_production_authorization(frozen, s0, *, new_capability_refs, read_conf
     problems += capability_problems(capabilities, host_id, frozen['paths']['oldPrefix'])
     worker_ids = {entry.get('workerInstanceId') for entry in capabilities}
     if not capabilities:
-        configuration_bytes = read_configuration()
+        try:
+            configuration_bytes = read_stable(configuration_path, service_uid)
+        except Exception as error:
+            problems.append('ORIGINAL_CONFIGURATION_UNREADABLE:' + problem_code(error))
+            return result, problems
         if digest(configuration_bytes) != frozen['service']['oldConfigSha256']:
             problems.append('ORIGINAL_CONFIGURATION_CHANGED')
         try:

@@ -1092,8 +1092,27 @@ class ProductionRehearsalTest(unittest.TestCase):
     def test_I120_one_rehearsal_lists_every_problem_the_signing_step_would_hit_on_production_data(self):
         binding = load('workspace_grant_binding_rehearsal', 'packet-template/signing/workspace-grant-binding.py')
         frozen, s0 = self.inputs(self.grant(expiresAt='next year'))
-        _, problems = binding.check_production_authorization(frozen, s0, new_capability_refs=['himawari.pi-coding', 'himawari.public-search', 'himawari.public-fetch'], read_configuration=lambda: b'{"runPolicy": {}}', service_uid=os.getuid(), service_gid=os.getgid())
+        with tempfile.TemporaryDirectory() as directory:
+            configuration = Path(directory) / 'config.json'
+            configuration.write_text('{"runPolicy": {}}')
+            _, problems = binding.check_production_authorization(frozen, s0, new_capability_refs=['himawari.pi-coding', 'himawari.public-search', 'himawari.public-fetch'], configuration_path=str(configuration), service_uid=os.getuid(), service_gid=os.getgid())
         self.assertEqual(problems, ['G90_ZONED_TIMESTAMP_REQUIRED', 'G90_ZONED_TIMESTAMP_REQUIRED', 'ORIGINAL_CONFIGURATION_CHANGED', 'FIRST_TOOLS_WORKER_IDENTITY_REQUIRED'])
+
+    def test_I120_the_signing_step_reads_the_original_configuration_as_the_service_account_owns_it(self):
+        binding = load('workspace_grant_binding_owner', 'packet-template/signing/workspace-grant-binding.py')
+        frozen, s0 = self.inputs(self.grant())
+        with tempfile.TemporaryDirectory() as directory:
+            configuration = Path(directory) / 'config.json'
+            configuration.write_text('{"runPolicy": {"coding": {"workerInstanceId": "worker-1"}}}')
+            configuration.chmod(0o600)
+            frozen['service']['oldConfigSha256'] = binding.digest(configuration.read_bytes())
+            check = lambda uid: binding.check_production_authorization(frozen, s0, new_capability_refs=['himawari.pi-coding', 'himawari.public-search', 'himawari.public-fetch'], configuration_path=str(configuration), service_uid=uid, service_gid=os.getgid())[1]
+            owned = check(os.getuid())
+            someone_else = check(os.getuid() + 1)
+        self.assertFalse([problem for problem in owned if 'CONFIGURATION' in problem], owned)
+        self.assertIn('ORIGINAL_CONFIGURATION_UNREADABLE:G90_VERIFICATION_FILE_UNSAFE', someone_else)
+        signing = (HERE / 'packet-template/signing/finalize-binding-inputs.py').read_text()
+        self.assertNotIn("read(Path('/etc/himawari/config.json'), 0)", signing)
 
     def test_the_signing_step_and_the_freeze_rehearsal_run_the_same_check(self):
         signing = (HERE / 'packet-template/signing/finalize-binding-inputs.py').read_text()
