@@ -62,6 +62,7 @@ def production_facts(running='eleventh', date='2026-10-26', public_fetch=102400,
         'serviceUid': 999,
         'serviceGid': 988,
         'nodeSha256': 'e6ec2c188d83d813f81f2de8aea084d74dce603ac1abedd0a30ad941b10087b2',
+        'systemBwrapSha256': 'e318903862396f96de3df57264e0158682b952fd3fb53ac23d876413e7b30f71',
         'signerKeys': ['/var/lib/himawari/qualification/first-20261007/host-qualification-public-key.pem'],
         'active': 'active',
         'execStart': ['ExecStart=/opt/himawari/node/bin/node --no-global-search-paths /opt/himawari/operations/' + running + '-' + compact + '/pair-supervisor.mjs --prefix ' + prefix + ' --config /etc/himawari/config.json --worker-token-file /var/lib/himawari/state/secrets/worker-token.json'],
@@ -426,6 +427,7 @@ class TemplateTest(RenderedPacket):
             ({'serviceUid': None}, 'PACKET_SERVICE_ACCOUNT_NOT_READABLE'),
             ({'serviceGid': 0}, 'PACKET_SERVICE_ACCOUNT_NOT_READABLE'),
             ({'nodeSha256': 'abc'}, 'PACKET_NODE_DIGEST_NOT_READABLE'),
+            ({'systemBwrapSha256': None}, 'PACKET_SYSTEM_BWRAP_NOT_READABLE'),
             ({'signerKeys': []}, 'PACKET_FIRST_SIGNER_KEY_NOT_FOUND'),
             ({'hostname': ''}, 'PACKET_HOSTNAME_NOT_READABLE'),
         ]
@@ -927,12 +929,12 @@ class TemplateNeutralityTest(unittest.TestCase):
 
 class ArmTargetTest(RenderedPacket):
     TAG = '[PG-6]'
-    ARM = {'SERVICE_UID': 1001, 'SERVICE_GID': 1002, 'NODE_SHA256': 'a' * 64, 'NODE_ARCH': 'arm64', 'HOSTNAME': 'tokyo-a1', 'ADDRESS': '192.0.2.7', 'FIRST_SIGNER_KEY_PATH': '/var/lib/himawari/qualification/zeroth-20261101/host-qualification-public-key.pem', 'PYTHON_SHA256': 'b' * 64, 'PYTHON_BYTES': 123, 'BUILDER_HOSTNAME': 'tokyo-a1', 'REHEARSAL_HOSTNAME': ''}
+    ARM = {'SERVICE_UID': 1001, 'SERVICE_GID': 1002, 'NODE_SHA256': 'a' * 64, 'SYSTEM_BWRAP_SHA256': 'f' * 64, 'NODE_ARCH': 'arm64', 'HOSTNAME': 'tokyo-a1', 'ADDRESS': '192.0.2.7', 'FIRST_SIGNER_KEY_PATH': '/var/lib/himawari/qualification/zeroth-20261101/host-qualification-public-key.pem', 'PYTHON_SHA256': 'b' * 64, 'PYTHON_BYTES': 123, 'BUILDER_HOSTNAME': 'tokyo-a1', 'REHEARSAL_HOSTNAME': ''}
 
     def test_a_packet_for_another_machine_carries_none_of_the_old_machine_values(self):
         packet = self.render(**self.ARM)
         rehearsal_only = load('check_template_neutral', 'check-template-neutral.py').REHEARSAL_ONLY
-        old = (TWELFTH['HOSTNAME'], TWELFTH['ADDRESS'], TWELFTH['NODE_SHA256'], TWELFTH['PYTHON_SHA256'], 'first-20261007', 'hermes-home')
+        old = (TWELFTH['HOSTNAME'], TWELFTH['ADDRESS'], TWELFTH['NODE_SHA256'], TWELFTH['SYSTEM_BWRAP_SHA256'], TWELFTH['PYTHON_SHA256'], 'first-20261007', 'hermes-home')
         for path in packet.rglob('*'):
             relative = path.relative_to(packet).as_posix()
             if path.is_file() and not any(relative == entry or (entry.endswith('/') and relative.startswith(entry)) for entry in rehearsal_only):
@@ -942,6 +944,8 @@ class ArmTargetTest(RenderedPacket):
         self.assertIn('process.arch === "arm64"', (packet / 'install/twelfth-artifact-install.mjs').read_text())
         self.assertIn('hostname() === ""', (packet / 'install/twelfth-artifact-install.mjs').read_text())
         self.assertIn('"nodeSha256": "' + 'a' * 64 + '"', (packet / 'install/p5-materials.json').read_text())
+        draft_host = json.loads((packet / 'inputs/bindings.draft.json').read_text())['host']
+        self.assertEqual((draft_host['systemBwrap']['sha256'], draft_host['systemBwrapIdentity']['sha256']), ('f' * 64, 'f' * 64))
         self.assertIn('/usr/bin/setpriv --reuid=1001 --regid=1002', (packet / 'signing/prepare-twelfth-snapshot.sh').read_text())
 
     def test_the_python_archive_digest_is_the_one_the_commit_locks_for_that_architecture(self):
