@@ -347,3 +347,22 @@ describe("TestFlight 工作流", () => {
     );
   });
 });
+
+describe("示例场景截图工作流", () => {
+  const workflow = parse(
+    readFileSync(path.join(repositoryRoot, ".github/workflows/apple-screens.yml"), "utf8"),
+  );
+  it("只能手动触发、只读权限，在免费的标准 Mac 机器上用 ui-review.sh 截深浅两张并上传", () => {
+    expect(Object.keys(workflow.on)).toEqual(["workflow_dispatch"]);
+    expect(workflow.permissions).toEqual({ contents: "read" });
+    const job = workflow.jobs.screens;
+    expect(job["runs-on"]).toBe(macRunnerLabel);
+    const shoot = job.steps.find((step) =>
+      step.run?.includes("clients/apple/scripts/ui-review.sh"),
+    );
+    expect(shoot.run).toContain('--only "$SCENES"');
+    expect(shoot.env.SCENES).toContain("inputs.scenes");
+    const upload = job.steps.find((step) => step.with?.name === "apple-screens");
+    expect(upload.if).toContain("always()");
+  });
+});

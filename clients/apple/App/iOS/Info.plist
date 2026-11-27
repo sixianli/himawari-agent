@@ -48,6 +48,16 @@
 				<string>himawari-pair</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>$(PRODUCT_BUNDLE_IDENTIFIER).otpauth</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>otpauth</string>
+			</array>
+		</dict>
 	</array>
 	<key>HimawariAppGroup</key>
 	<string>$(HIMAWARI_APP_GROUP)</string>

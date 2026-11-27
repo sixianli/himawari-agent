@@ -144,7 +144,8 @@ Andy 2026-11-26 同意的方案是给每个用户一台用 gVisor 隔离的长�
 
 浏览器工具 `browser`（`apps/agent-service/src/production-browser-tools.ts`）在主人自己的电脑里开网页、点击、输入、按键、后退、截图和读页面文字。电脑里的程序是 `himawari-browser`（`packages/runtime-sandbox/computer-image/himawari-browser.mjs`），用 Playwright 起一个常驻的 Chromium，资料目录在家目录的 `~/.himawari/browser/profile`，所以登录状态留在主人自己的磁盘上；电脑关机前，电脑管理先执行 `himawari-browser stop` 把浏览器收好（配置项 `beforeStop`）。
 
-- 每次动作都是一次 `UserComputers.exec`，网址只能经电脑的出网代理出去。`open` 放行要去的网站，`click`、`type`、`press`、`back` 放行当前页面所在的网站，`read` 和 `screenshot` 什么都不放行。没放行的网站代理直接拒绝，工具报 `BROWSER_SITE_NOT_ALLOWED` 并说出是哪个网站。
+- 每次动作都是一次 `UserComputers.exec`，网址只能经电脑的出网代理出去。`open` 放行要去的网站，`click`、`type`、`press`、`back`、`sign_in`、`ask_code` 放行当前页面所在的网站，`read` 和 `screenshot` 什么都不放行。没放行的网站代理直接拒绝，工具报 `BROWSER_SITE_NOT_ALLOWED` 并说出是哪个网站。
+- `sign_in` 用保险箱登录（[ADR 0288](0288-passwords-and-keys-live-in-a-vault-the-phone-unlocks.md)）：先由 `himawari-browser` 的 `vault_check` 核对要填的框（只在 https 主页面、框可见可填、类型对得上、表单提交到同一网站），再请主人在 iPhone 上 Face ID 批准，手机交回账号、密码和接下来几个窗口的两步验证码，`vault_fill` 复核页面没变后填入；同一轮之后只填验证码时用已交回的验证码，不再问。`ask_code` 把短信或邮件验证码的请求推送到 iPhone，主人输入后再填。这些值不进模型上下文，结果里写成 `[hidden]`。
 - 授权走统一的主人范围授权，目标类型是 `browser-site`，按网站问主人；已有的“这次任务 / 几天 / 一直”照常有效，读过外部网页后只认“这次任务”。授权提示的文字按主人设的界面语言。
 - 截图只交给能看图的模型（看模型目录里这个模型的输入类型），交给 Pi 的工具结果里多一张图；不能看图的模型只拿到一句说明。
 - 配置里同时有 `runPolicy.userComputers` 和 `runPolicy.browser`（单次输出上限、正文字数上限、给回复留的时间）时才开这个工具；只有后者，配置校验拒绝。
