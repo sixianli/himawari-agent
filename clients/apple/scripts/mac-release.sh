@@ -130,7 +130,7 @@ notarize_app() {
     --key-id "$ASC_KEY_ID" \
     --issuer "$ASC_ISSUER_ID" \
     --wait \
-    --timeout 30m
+    --timeout 3h
   xcrun stapler staple "$export_dir/$app_name"
   spctl --assess --type execute --verbose=2 "$export_dir/$app_name"
   rm -f "$upload"
