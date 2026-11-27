@@ -20,6 +20,8 @@ public struct HerPage: View {
         case notifications
         case privacy
         case connections
+        case agents
+        case agent(String)
         case gmail
         case app(String)
         case addApp
@@ -30,6 +32,10 @@ public struct HerPage: View {
         case timers
         case timer(String)
         case about
+        case serverStatus
+        case transfer
+        case importPaste
+        case importPreview
         case files
         case evaluation
         case talkTiming
@@ -42,7 +48,11 @@ public struct HerPage: View {
     @State private var stats: DecisionStatsStore
     @State private var files: OwnerFilesStore
     @State private var connections: ConnectionsStore
+    @State private var agents: AgentsStore
     @State private var gmail: GmailStore
+    @State private var dataExport: DataExportStore
+    @State private var memoryImport: MemoryImportStore
+    @State private var serverStatus: ServerStatusStore
     @State private var path: [Page] = []
     @State private var sensesOpen = false
     @State private var vaultCount: HerVaultCount = .unknown
@@ -87,7 +97,11 @@ public struct HerPage: View {
         _stats = State(initialValue: DecisionStatsStore(gateway: gateway))
         _files = State(initialValue: OwnerFilesStore(gateway: gateway, api: api))
         _connections = State(initialValue: ConnectionsStore(gateway: gateway))
+        _agents = State(initialValue: AgentsStore(gateway: gateway))
         _gmail = State(initialValue: GmailStore(gateway: gateway))
+        _dataExport = State(initialValue: DataExportStore(gateway: gateway, download: { try await api.dataExportArchive(exportId: $0) }))
+        _memoryImport = State(initialValue: MemoryImportStore(gateway: gateway))
+        _serverStatus = State(initialValue: ServerStatusStore(gateway: gateway))
         self.listening = listening
         self.actions = actions
         self.openListening = openListening
@@ -114,7 +128,7 @@ public struct HerPage: View {
         #endif
     }
 
-    init(settings: SettingsStore, memory: MemoryStore, quietHours: QuietHoursStore, timers: TimersStore? = nil, connections: ConnectionsStore? = nil, gmail: GmailStore? = nil, listening: (any HerListening)? = nil, actions: DeviceActionsModel? = nil, senses: AnyView? = nil, vaultItems: HerVaultCount = .items(3), path: [Page] = []) {
+    init(settings: SettingsStore, memory: MemoryStore, quietHours: QuietHoursStore, timers: TimersStore? = nil, connections: ConnectionsStore? = nil, agents: AgentsStore? = nil, gmail: GmailStore? = nil, gateway: ManageGateway? = nil, memoryImport: MemoryImportStore? = nil, listening: (any HerListening)? = nil, actions: DeviceActionsModel? = nil, senses: AnyView? = nil, vaultItems: HerVaultCount = .items(3), path: [Page] = []) {
         _settings = State(initialValue: settings)
         _memory = State(initialValue: memory)
         _quietHours = State(initialValue: quietHours)
@@ -122,7 +136,12 @@ public struct HerPage: View {
         _stats = State(initialValue: DecisionStatsStore(stats: nil))
         _files = State(initialValue: OwnerFilesStore(files: nil))
         _connections = State(initialValue: connections ?? ConnectionsStore(connections: nil))
+        _agents = State(initialValue: agents ?? AgentsStore(agents: nil))
         _gmail = State(initialValue: gmail ?? GmailStore(overview: nil))
+        let demoGateway = gateway ?? ManageGateway(transport: NoTransport())
+        _dataExport = State(initialValue: DataExportStore(gateway: demoGateway, download: { _ in Data() }))
+        _memoryImport = State(initialValue: memoryImport ?? MemoryImportStore(gateway: demoGateway))
+        _serverStatus = State(initialValue: ServerStatusStore(gateway: demoGateway))
         _path = State(initialValue: path)
         self.listening = listening
         self.actions = actions
@@ -178,6 +197,12 @@ public struct HerPage: View {
                             }
                             .buttonStyle(.pressable)
                         }
+                        if agents.available {
+                            Button { path.append(.agents) } label: {
+                                HerRow(icon: .affiliate, title: M.agentsTitle, subtitle: M.agentsSummary(agents.shown.map(\.name)))
+                            }
+                            .buttonStyle(.pressable)
+                        }
                         Button { path.append(.allowances) } label: {
                             HerRow(icon: .shieldCheck, title: M.allowancesTitle, subtitle: M.allowancesSummary(memory.allowances.count), last: vaultCount == .unsupported)
                         }
@@ -212,6 +237,10 @@ public struct HerPage: View {
                         .buttonStyle(.pressable)
                     }
                     SettingsGroup(label: nil) {
+                        Button { path.append(.transfer) } label: {
+                            HerRow(icon: .download, title: M.transferTitle)
+                        }
+                        .buttonStyle(.pressable)
                         Button { path.append(.about) } label: {
                             HerRow(icon: .infoCircle, title: M.aboutTitle, subtitle: AboutPage.versionLine, last: true)
                         }
@@ -253,6 +282,10 @@ public struct HerPage: View {
                     ConnectionsPage(store: connections, actions: actions, openSenses: senses == nil ? nil : { sensesOpen = true }, open: { connection in
                         path.append(connection.name == GmailStore.source ? .gmail : .app(connection.name))
                     }, add: { path.append(.addApp) }) { path.removeLast() }
+                case .agents:
+                    AgentsPage(store: agents, open: { path.append(.agent($0)) }) { path.removeLast() }
+                case .agent(let id):
+                    AgentPage(store: agents, agentId: id) { path.removeLast() }
                 case .gmail:
                     GmailPage(store: gmail) { path.removeLast() }
                         .onDisappear { Task { await connections.load() } }
@@ -274,7 +307,20 @@ public struct HerPage: View {
                 case .timer(let id):
                     TimerDetailPage(store: timers, timerId: id) { path.removeLast() }
                 case .about:
-                    AboutPage(server: server, openTiming: { path.append(.talkTiming) }) { path.removeLast() }
+                    AboutPage(server: server, openStatus: { path.append(.serverStatus) }, openTiming: { path.append(.talkTiming) }) { path.removeLast() }
+                case .serverStatus:
+                    ServerStatusPage(store: serverStatus) { path.removeLast() }
+                case .transfer:
+                    DataTransferPage(
+                        export: dataExport,
+                        importer: memoryImport,
+                        openPaste: { path.append(.importPaste) },
+                        openPreview: { path.append(.importPreview) }
+                    ) { path.removeLast() }
+                case .importPaste:
+                    MemoryImportPastePage(store: memoryImport, openPreview: { path.append(.importPreview) }) { path.removeLast() }
+                case .importPreview:
+                    MemoryImportPreviewPage(store: memoryImport, finish: finishImport) { path.removeLast() }
                 case .files:
                     FilesPage(store: files)
                 case .evaluation:
@@ -298,6 +344,12 @@ public struct HerPage: View {
         .sheet(isPresented: $vaultOpen, onDismiss: { Task { vaultCount = await countVault() } }) {
             vault?({ vaultOpen = false })
         }
+    }
+
+    private func finishImport() {
+        memoryImport.reset()
+        path.removeAll { $0 == .importPreview || $0 == .importPaste }
+        Task { await memory.load() }
     }
 
     private var timersSummary: String? {
@@ -325,8 +377,9 @@ public struct HerPage: View {
         async let statsLoaded: Void = stats.load(.week)
         async let filesLoaded: Void = files.load()
         async let connectionsLoaded: Void = connections.load()
+        async let agentsLoaded: Void = agents.load()
         vaultCount = await countVault()
-        _ = await (settingsLoaded, memoryLoaded, quietLoaded, timersLoaded, statsLoaded, filesLoaded, connectionsLoaded)
+        _ = await (settingsLoaded, memoryLoaded, quietLoaded, timersLoaded, statsLoaded, filesLoaded, connectionsLoaded, agentsLoaded)
     }
 }
 

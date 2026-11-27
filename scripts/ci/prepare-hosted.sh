@@ -7,6 +7,12 @@ node_bin=$1
 [ "$(id -u)" = 0 ] || { echo "CI_HOSTED_PREPARE_NEEDS_ROOT" >&2; exit 65; }
 
 export DEBIAN_FRONTEND=noninteractive
+set_aside=/etc/apt/sources.list.d.not-ubuntu
+mkdir -p "$set_aside"
+for source in /etc/apt/sources.list.d/*; do
+  [ -f "$source" ] || continue
+  grep -qE 'archive\.ubuntu\.com|security\.ubuntu\.com|ports\.ubuntu\.com|apt-mirrors\.txt' "$source" || mv "$source" "$set_aside/"
+done
 apt-get update -q
 apt-get install -y -q --no-install-recommends bubblewrap socat ripgrep apparmor-utils restic
 
