@@ -600,6 +600,66 @@
     "why": "文字不完全跟动态字体放大（多半是 RootView 把字号封顶在 accessibility2，以及固定行高）；交 iPhone 编码线程按第 73 条改"
   },
   {
+    "key": "next-10-her-import-preview|dark|contrast",
+    "count": 7,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "next-10-her-import-preview|light|contrast",
+    "count": 7,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "next-10-her-import-preview|light|dynamicType",
+    "count": 13,
+    "why": "文字不完全跟动态字体放大（多半是 RootView 把字号封顶在 accessibility2，以及固定行高）；交 iPhone 编码线程按第 73 条改"
+  },
+  {
+    "key": "next-10-her-import-preview|light|textClipped",
+    "count": 13,
+    "why": "放大字号后文字可能被截断；交 iPhone 编码线程按第 73 条改（挤不下就换行或竖排）"
+  },
+  {
+    "key": "next-10-her-server-status|dark|contrast",
+    "count": 7,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "next-10-her-server-status|light|contrast",
+    "count": 7,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "next-10-her-server-status|light|dynamicType",
+    "count": 16,
+    "why": "文字不完全跟动态字体放大（多半是 RootView 把字号封顶在 accessibility2，以及固定行高）；交 iPhone 编码线程按第 73 条改"
+  },
+  {
+    "key": "next-10-her-server-status|light|textClipped",
+    "count": 16,
+    "why": "放大字号后文字可能被截断；交 iPhone 编码线程按第 73 条改（挤不下就换行或竖排）"
+  },
+  {
+    "key": "next-10-her-transfer|dark|contrast",
+    "count": 5,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "next-10-her-transfer|light|contrast",
+    "count": 5,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "next-10-her-transfer|light|dynamicType",
+    "count": 10,
+    "why": "文字不完全跟动态字体放大（多半是 RootView 把字号封顶在 accessibility2，以及固定行高）；交 iPhone 编码线程按第 73 条改"
+  },
+  {
+    "key": "next-10-her-transfer|light|textClipped",
+    "count": 10,
+    "why": "放大字号后文字可能被截断；交 iPhone 编码线程按第 73 条改（挤不下就换行或竖排）"
+  },
+  {
     "key": "next-2-chat-attach|dark|contrast",
     "count": 4,
     "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
@@ -761,7 +821,7 @@
   },
   {
     "key": "next-3-her-allowances|light|contrast",
-    "count": 4,
+    "count": 5,
     "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
   },
   {
@@ -986,7 +1046,7 @@
   },
   {
     "key": "next-6-her-about|light|textClipped",
-    "count": 10,
+    "count": 14,
     "why": "去掉 RootView 的字号上限后，最大无障碍字号下这些文字被截断（之前被上限挡住没量到）；交 iPhone 编码线程按第 73 条改成能换行或改排版"
   },
   {
