@@ -88,6 +88,7 @@ struct MainShell: View {
     @State private var listening: ListeningController?
     @State private var herOpen: Bool
     @State private var herListenOpen = false
+    @State private var herVoiceprintOpen = false
     #if os(iOS)
     @State private var dictation = ChatDictation()
     @State private var talkSession: ChatTalkSession
@@ -209,6 +210,7 @@ struct MainShell: View {
             listening: listening,
             actions: actions,
             openListening: { herListenOpen = true },
+            openVoiceprint: { herVoiceprintOpen = true },
             senses: model.senses.map { senses in
                 AnyView(SensesView(model: senses) { HandoverEntryRows() })
             },
@@ -229,6 +231,12 @@ struct MainShell: View {
         .sheet(isPresented: $herListenOpen) {
             if let listening {
                 ListenEntrySheet(controller: listening) { herListenOpen = false }
+                    .presentationCornerRadius(DesignTokens.Radius.sheetTop)
+            }
+        }
+        .sheet(isPresented: $herVoiceprintOpen) {
+            if let listening {
+                VoiceprintEnrollScreen(controller: listening) { herVoiceprintOpen = false }
                     .presentationCornerRadius(DesignTokens.Radius.sheetTop)
             }
         }

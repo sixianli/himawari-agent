@@ -7,12 +7,12 @@ import { parseDocument } from "yaml";
 import {
   activeMembers,
   armChecks,
-  legacyArmChecks,
   armRunnerLabel,
   fileSha256,
   gateRunnerLabel,
   githubExpression,
   hostedRunnerLabels,
+  legacyArmChecks,
   legacyRunnerLabels,
   linuxRunnerLabel,
   macRunnerLabel,
@@ -1760,20 +1760,18 @@ export function validateVitestProjects(policy, config) {
   };
 }
 
-export async function main(argv = process.argv.slice(2)) {
-  const args = parseArguments(argv, ["--base", "--workflow", "--root"]);
-  const root = path.resolve(args["--root"] ?? repositoryRoot);
-  const source = resolvePolicySource({ root, base: args["--base"] ?? "HEAD" });
-  const proposed = validatePolicy(readJson(path.join(root, "ci/policy.json")));
+export const policyParts = ["workflows", "tests"];
+
+export function validateWorkflowsAgainstPolicy({ root, source, proposed }) {
   const lock = readJson(path.join(root, "ci/toolchain-lock.json"));
   validateToolchain(proposed, lock, readJson(path.join(root, "package.json")));
   validateInstallScriptReviews(lock, readJson(path.join(root, "package-lock.json")));
-  const workflow = path.resolve(root, args["--workflow"] ?? ".github/workflows/ci.yml");
-  validateWorkflow(proposed, readFileSync(workflow, "utf8"), lock);
+  const workflow = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
+  validateWorkflow(proposed, workflow, lock);
   const mainWorkflow = readFileSync(path.join(root, ".github/workflows/main.yml"), "utf8");
   validateMainWorkflow(mainWorkflow, lock);
-  validateCallerGrantsCalledPermissions(mainWorkflow, readFileSync(workflow, "utf8"));
-  validateWorkflow(source.policy, readFileSync(workflow, "utf8"), lock);
+  validateCallerGrantsCalledPermissions(mainWorkflow, workflow);
+  validateWorkflow(source.policy, workflow, lock);
   validateQualityWorkflow(
     readJson(path.join(root, "ci/quality-policy.json")),
     readFileSync(path.join(root, ".github/workflows/quality.yml"), "utf8"),
@@ -1788,6 +1786,9 @@ export async function main(argv = process.argv.slice(2)) {
         .map((name) => [name, readFileSync(path.join(workflowDirectory, name), "utf8")]),
     ),
   );
+}
+
+export async function validateTestsAgainstPolicy({ root, source, proposed }) {
   const vitest = await import(pathToFileURL(path.join(root, "vitest.workspace.ts")).href);
   validateVitestProjects(proposed, vitest.default);
   validateVitestProjects(source.policy, vitest.default);
@@ -1806,8 +1807,26 @@ export async function main(argv = process.argv.slice(2)) {
     (file) => readFileSync(path.join(root, file), "utf8"),
   );
   validateTestHygiene({ root, base: source.baseSha, findings });
+  return inventory;
+}
+
+export async function main(argv = process.argv.slice(2)) {
+  const args = parseArguments(argv, ["--base", "--root", "--part"]);
+  const root = path.resolve(args["--root"] ?? repositoryRoot);
+  const parts = args["--part"] === undefined ? policyParts : [args["--part"]];
+  assert(
+    parts.every((part) => policyParts.includes(part)),
+    `CI_POLICY_PART_UNKNOWN: ${parts.join(",")}`,
+  );
+  const source = resolvePolicySource({ root, base: args["--base"] ?? "HEAD" });
+  const proposed = validatePolicy(readJson(path.join(root, "ci/policy.json")));
+  if (parts.includes("workflows")) validateWorkflowsAgainstPolicy({ root, source, proposed });
+  const inventory = parts.includes("tests")
+    ? await validateTestsAgainstPolicy({ root, source, proposed })
+    : {};
   const result = {
     status: "passed",
+    parts,
     baseSha: source.baseSha,
     initialization: source.initialization,
     policySha256: source.policySha256,

@@ -176,3 +176,6 @@
 "demo.dinner" = "家族と夕食";
 "demo.clipboard" = "大阪駅3番出口で";
 "demo.heard" = "来週水曜までに案を送って";
+"detail.notOn.systemDenied" = "オンにできませんでした：iPhone の「設定」で Himawari に%@の使用が許可されていません。";
+"detail.notOn.unsupported" = "オンにできませんでした：お使いの Himawari サーバーはまだ%@に対応していません。サーバーを更新してからお試しください。";
+"detail.notOn.off" = "オンにできませんでした：サーバーで%@が有効になりませんでした。しばらくしてからお試しください。";

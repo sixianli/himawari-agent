@@ -12,9 +12,10 @@ package actor FluidSpeakerEmbedder: SpeakerEmbedder {
 
     package init() {}
 
-    enum Failure: Error {
+    package enum Failure: Error {
         case tooShort
         case wrongSampleRate
+        case notReady
     }
 
     package func prepare() async throws {
@@ -29,7 +30,7 @@ package actor FluidSpeakerEmbedder: SpeakerEmbedder {
         guard sampleRate == Self.sampleRate else { throw Failure.wrongSampleRate }
         guard Double(samples.count) >= Self.minimumSeconds * sampleRate else { throw Failure.tooShort }
         try await prepare()
-        guard let manager else { throw Failure.tooShort }
+        guard let manager else { throw Failure.notReady }
         return try manager.extractSpeakerEmbedding(from: samples)
     }
 }

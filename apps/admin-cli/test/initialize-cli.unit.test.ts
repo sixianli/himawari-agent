@@ -212,3 +212,84 @@ it("stores a configuration that later admin commands can load when it names reti
     await rm(root, { recursive: true, force: true });
   }
 });
+
+it("stores a workspace grant expiry as a canonical UTC timestamp whatever form the owner typed", async () => {
+  const root = await realpath(await mkdtemp(path.join(tmpdir(), "himawari-grant-expiry-")));
+  try {
+    const source = JSON.parse(
+      await readFile(
+        new URL(
+          "../../../test/integration/fixtures/file-summary/configuration.json",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+    );
+    const stateRoot = path.join(root, "state");
+    const input = path.join(root, "input.json");
+    await writeFile(
+      input,
+      JSON.stringify({
+        ...source,
+        stateRoot,
+        runtimeDirectory: path.join(stateRoot, "runtime"),
+        cacheDirectory: path.join(stateRoot, "cache"),
+        memory: { ...source.memory, storagePath: path.join(stateRoot, "data", "memory") },
+      }),
+      { mode: 0o600 },
+    );
+    let output = "";
+    let errors = "";
+    const stdout = new Writable({
+      write(chunk, _encoding, done) {
+        output += String(chunk);
+        done();
+      },
+    });
+    const stderr = new Writable({
+      write(chunk, _encoding, done) {
+        errors += String(chunk);
+        done();
+      },
+    });
+    expect(await runAdminCli(["init", "--config", input], stdout, stderr), errors).toBe(0);
+    const workspace = path.join(root, "workspace");
+    await mkdir(workspace, { mode: 0o700 });
+    output = "";
+    expect(
+      await runAdminCli(
+        [
+          "workspace",
+          "grant",
+          "--config",
+          path.join(stateRoot, "configuration.json"),
+          "--directory",
+          workspace,
+          "--host-id",
+          "host:test",
+          "--id",
+          "directory:test",
+          "--expires-at",
+          "2099-01-01T09:00:00+09:00",
+          "--confirm",
+          workspace,
+        ],
+        stdout,
+        stderr,
+      ),
+      errors,
+    ).toBe(0);
+    expect(JSON.parse(output).expiresAt).toBe("2099-01-01T00:00:00.000Z");
+    const db = openQualifiedDatabase(path.join(stateRoot, "data", "product.sqlite"));
+    try {
+      const row = db
+        .prepare("SELECT value_json FROM product_state_records WHERE key = ?")
+        .get("host-workspace:directory-grant:directory:test") as { value_json: string };
+      expect(JSON.parse(row.value_json).expiresAt).toBe("2099-01-01T00:00:00.000Z");
+    } finally {
+      db.close();
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

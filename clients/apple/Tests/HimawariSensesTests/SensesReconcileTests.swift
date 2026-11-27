@@ -111,3 +111,33 @@ struct SensesReconcileTests {
         #expect(!model.serverCopyRemovable(.calendar))
     }
 }
+
+@MainActor
+struct SenseTurnOnFeedbackTests {
+    @Test func turningOnThatDoesNotEndOnSaysWhy() async {
+        let service = RecordingSensesService()
+        service.server = SenseServerView(state: "active", enabledSenses: [], knownTypes: ["location.visit"])
+        service.serverAfterRefresh = service.server
+        let model = SensesModel(service: service, store: MemoryLocalStore())
+        await model.turnOn(.photos)
+        #expect(model.state(.photos) == .serverUnsupported)
+        #expect(model.notice != nil)
+    }
+
+    @Test func turningOnThatWorksSaysNothing() async {
+        let service = RecordingSensesService()
+        service.server = SensesReconcileTests.allowingServer
+        let model = SensesModel(service: service, store: MemoryLocalStore())
+        await model.turnOn(.calendar)
+        #expect(model.state(.calendar) == .on)
+        #expect(model.notice == nil)
+    }
+
+    @Test func everyStateThatIsNotOnHasAReason() {
+        #expect(SensesModel.notOnReason(.on) == nil)
+        #expect(SensesModel.notOnReason(.serverPaused) == nil)
+        #expect(SensesModel.notOnReason(.off) != nil)
+        #expect(SensesModel.notOnReason(.systemDenied) != nil)
+        #expect(SensesModel.notOnReason(.serverUnsupported) != nil)
+    }
+}

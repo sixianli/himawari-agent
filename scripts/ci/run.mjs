@@ -27,7 +27,6 @@ import {
 } from "./contracts.mjs";
 import { prepareCoverageComparison, retainComparisonEvidence } from "./coverage-comparison.mjs";
 import { coverageProjects, strategyDigest, validateCoveragePolicy } from "./coverage-model.mjs";
-import { planTestScope, zeroCounts } from "./test-scope.mjs";
 import { execute, sumCounts, vitestCounts } from "./execute.mjs";
 import { startHostLoad } from "./host-load.mjs";
 import { isolatedEnvironment, verifyInstalledTools } from "./install-tools.mjs";
@@ -35,6 +34,7 @@ import { artifactPlatformKey, hostArch, hostOs } from "./platforms.mjs";
 import { observeResources } from "./resources.mjs";
 import { redactText } from "./security-redaction.mjs";
 import { runTests } from "./test.mjs";
+import { planTestScope, zeroCounts } from "./test-scope.mjs";
 import { cacheEnvironment } from "./verified-download.mjs";
 import { verifyArtifact } from "./verify-artifact.mjs";
 
@@ -268,11 +268,20 @@ export async function runCheck({
         "scripts/ci/check-policy.mjs",
         "--base",
         context.baseSha,
+        "--part",
+        "workflows",
       ]);
       await command("toolchain", tools.node, ["scripts/ci/install-tools.mjs", "--check"]);
       if (check.projects.length) await vitest(check.projects);
       else result.counts = { files: 2, executed: 2, passed: 2, failed: 0, skipped: 0 };
     } else if (checkId === "tooling") {
+      await command("policy-tests", tools.node, [
+        "scripts/ci/check-policy.mjs",
+        "--base",
+        context.baseSha,
+        "--part",
+        "tests",
+      ]);
       await vitest(check.projects, relatedScope(check.projects));
     } else if (checkId === "static") {
       await command("check", tools.node, [tools.npmCli, "run", "check"]);
@@ -284,6 +293,7 @@ export async function runCheck({
         ".github/workflows/merge-queue.yml",
         ".github/workflows/pr-closed.yml",
         ".github/workflows/apple.yml",
+        ".github/workflows/ci-cache.yml",
         ".github/workflows/docs-drift.yml",
         ".github/workflows/real-sites.yml",
       ]);

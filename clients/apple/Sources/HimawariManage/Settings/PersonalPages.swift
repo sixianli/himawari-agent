@@ -30,7 +30,9 @@ struct NamePage: View {
                         if value.count > PersonalStore.nameLimit { draft = String(value.prefix(PersonalStore.nameLimit)) }
                     }
             } footer: {
-                Text(M.nameFooter).foregroundStyle(Color.hmText)
+                Text(M.nameFooter)
+                    .foregroundStyle(Color.hmText)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .scrollContentBackground(.hidden)
