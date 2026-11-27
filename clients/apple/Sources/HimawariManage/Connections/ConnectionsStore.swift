@@ -168,9 +168,10 @@ public final class ConnectionsStore {
         do {
             let data = try await gateway.confirmedPost(Self.addPath, body: app.body, reason: reason)
             let answer = try JSONDecoder().decode(Added.self, from: data)
-            await load()
             switch answer.outcome {
-            case "added": return answer.connection.map(AddConnectionOutcome.added) ?? .failed
+            case "added":
+                await load()
+                return answer.connection.map(AddConnectionOutcome.added) ?? .failed
             case "invalid_address": return .invalidAddress
             case "unreachable": return .unreachable
             default: return .failed
