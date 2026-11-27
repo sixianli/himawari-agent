@@ -1,4 +1,5 @@
 #!/bin/sh
 root=$(git rev-parse --show-toplevel) || exit 1
 python3 "$root/scripts/layer0-tests/check-layer0-tests.py" commit-msg "$1" || exit 1
+node "$root/scripts/check-incident-gates.mjs" --commit-msg "$1" || exit 1
 exec python3 "$root/scripts/delivery-mode/untested-claims.py" commit-msg "$1"
