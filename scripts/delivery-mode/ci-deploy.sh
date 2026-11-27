@@ -76,6 +76,9 @@ remote 'tools="$(getent passwd himawari-build | cut -d: -f6)/packet-builder/tool
 echo "CI_DEPLOY_NODE_OWNERSHIP"
 remote "chown -R root:root /opt/himawari/node && chmod -R go-w /opt/himawari/node" || refuse NODE_OWNERSHIP_FAILED "cannot make /opt/himawari/node root-owned on $host" 3
 
+echo "CI_DEPLOY_HOST_SYSTEM"
+/usr/bin/python3 -I "$here/host-system.py" | remote "/usr/bin/python3 -I -" || refuse HOST_SYSTEM_FAILED "could not install the document tools or pin the next boot to the running kernel on $host; see the HOST_SYSTEM_FAILED line above" 3
+
 echo "CI_DEPLOY_PREPARE $commit"
 prepare_log="$(mktemp)"
 trap 'rm -f "$prepare_log"' EXIT
