@@ -89,8 +89,7 @@ struct JumpToLatestButton: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: "chevron.down")
-                .font(.body.weight(.semibold))
+            Icon(.chevronDown, size: DesignTokens.IconSize.listRow)
         }
         .buttonStyle(.glass)
         .buttonBorderShape(.circle)
