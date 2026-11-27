@@ -121,20 +121,26 @@ describe("iPhone 工作流", () => {
   const workflow = parse(
     readFileSync(path.join(repositoryRoot, ".github/workflows/apple.yml"), "utf8"),
   );
-  it("main 上每次推送各自排队，排队中的运行不会被下一次推送顶掉", () => {
+  it("main 上同时只跑一次，排队的只留最新一次；最新一次从这些检查上次全部通过的提交算改动，跳过的推送不会漏审", () => {
     const group = workflow.concurrency.group;
-    expect(group).toContain("github.event.pull_request.number");
-    expect(group).toContain("github.sha");
-    expect(group).not.toContain("github.ref");
-    expect(workflow.concurrency["cancel-in-progress"]).toContain(
-      "github.event_name == 'pull_request'",
+    expect(group).toContain("github.event_name");
+    expect(group).toContain("github.event.pull_request.number || github.ref");
+    expect(group).not.toContain("github.sha");
+    expect(workflow.concurrency["cancel-in-progress"]).toMatch(
+      /^\$\{\{ github\.event_name == 'pull_request' \}\}$/u,
     );
+    const scope = workflow.jobs.changes.steps.at(-1);
+    expect(scope.env.BASE).toContain("github.event_name == 'push' && '--since-green'");
+    expect(scope.env.BASE).not.toContain("github.event.before");
+    expect(scope.env.GH_TOKEN).toContain("github.token");
+    expect(workflow.jobs.changes.permissions).toEqual({ contents: "read", actions: "read" });
   });
 
   it("只在免费的标准机器上跑，只读权限，跳过草稿，没碰 iPhone 客户端时不占 Mac 机器", () => {
     expect(Object.keys(workflow.jobs)).toEqual([
       "changes",
       "iphone",
+      "iphone-accessibility-build",
       "iphone-accessibility",
       "scroll",
       "claim",
@@ -146,10 +152,11 @@ describe("iPhone 工作流", () => {
     expect(changes.steps.at(-1).run).toContain("scripts/ci/apple-scope.mjs");
     for (const job of Object.values(macJobs)) {
       expect(job["runs-on"]).toBe(macRunnerLabel);
-      expect(job.needs).toBe("changes");
+      expect([job.needs].flat()).toContain("changes");
       expect(job.if).toContain("needs.changes.outputs.client == 'true'");
     }
     expect(workflow.permissions).toEqual({ contents: "read" });
+    expect(Object.values(macJobs).every((job) => job.permissions === undefined)).toBe(true);
     expect(() =>
       validateHostedRunners({
         "apple.yml": readFileSync(path.join(repositoryRoot, ".github/workflows/apple.yml"), "utf8"),
@@ -180,7 +187,12 @@ describe("iPhone 工作流", () => {
   it("main 上审计、测速或编译失败时，自动在改了苹果客户端的 PR 上留言请它的线程认领", () => {
     const claim = workflow.jobs.claim;
     expect(claim["runs-on"]).toBe("ubuntu-24.04");
-    expect(claim.needs).toEqual(["iphone", "iphone-accessibility", "scroll"]);
+    expect(claim.needs).toEqual([
+      "iphone",
+      "iphone-accessibility-build",
+      "iphone-accessibility",
+      "scroll",
+    ]);
     expect(claim.if).toContain("failure()");
     expect(claim.if).toContain("github.event_name == 'push'");
     expect(claim.if).toContain("refs/heads/main");
@@ -224,6 +236,27 @@ describe("iPhone 工作流", () => {
       ).length,
     ).toBeGreaterThan(0);
   });
+  it("三份审计共用同一次运行里编译一次的 App，只重跑审计时也找得到那次编译", () => {
+    const build = workflow.jobs["iphone-accessibility-build"];
+    expect(build.needs).toBe("changes");
+    expect(build.if).toContain("github.event_name != 'pull_request'");
+    const compile = build.steps.find((step) => step.run?.startsWith("xcodebuild"))?.run ?? "";
+    expect(compile).toContain("xcodebuild build-for-testing");
+    expect(compile).toContain("-scheme Himawari");
+    expect(compile).toContain("generic/platform=iOS Simulator");
+    expect(compile).toContain("CODE_SIGNING_ALLOWED=NO");
+    const upload = build.steps.find((step) => step.uses?.startsWith("actions/upload-artifact@"));
+    expect(upload.with.name).toMatch(/^accessibility-build-\$\{\{ github\.run_attempt \}\}$/u);
+    expect(upload.with["retention-days"]).toBe(1);
+    expect(build.outputs.artifact).toBe(upload.with.name);
+    const shards = workflow.jobs["iphone-accessibility"];
+    expect(shards.needs).toEqual(["changes", "iphone-accessibility-build"]);
+    const download = shards.steps.find((step) =>
+      step.uses?.startsWith("actions/download-artifact@"),
+    );
+    expect(download.with.name).toContain("needs.iphone-accessibility-build.outputs.artifact");
+    expect(shards.steps.some((step) => step.run?.includes("xcodebuild build"))).toBe(false);
+  });
   it("深色那一遍审计真的在深色下跑：App 按启动参数切深色，不只靠模拟器的外观设置", () => {
     const audit = readFileSync(
       path.join(repositoryRoot, "clients/apple/App/UITests/AccessibilityAuditTests.swift"),
@@ -260,8 +293,9 @@ describe("iPhone 工作流", () => {
     expect(job.strategy.matrix.shard.length).toBeGreaterThan(1);
     const shard = job.steps.find((step) => step.run?.includes("xcodebuild test"));
     expect(shard.env.TEST_RUNNER_HIMAWARI_AUDIT_SHARD).toContain("matrix.shard");
-    const audit = job.steps.find((step) => step.run?.includes("xcodebuild test"))?.run ?? "";
-    expect(audit).toContain("-scheme Himawari");
+    const audit = shard.run;
+    expect(audit).toContain("xcodebuild test-without-building");
+    expect(audit).toContain("-xctestrun");
     expect(audit).toContain("-only-testing:HimawariUITests");
     expect(audit).toContain("set -o pipefail");
     const scheme = readFileSync(

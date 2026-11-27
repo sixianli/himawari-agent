@@ -12,7 +12,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: apple-${{ github.event.pull_request.number || github.sha }}
+  group: apple-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 defaults:
   run:
@@ -23,16 +23,20 @@ jobs:
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft != true }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
     outputs:
       client: ${{ steps.scope.outputs.client }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
-      - name: 看这次改动有没有碰苹果客户端（iPhone 和 Mac），没碰就不占 Mac 机器
+      - name: 看这次改动有没有碰苹果客户端（iPhone 和 Mac），没碰就不占 Mac 机器；main 上从这些检查上次全部通过的提交算起
         id: scope
         env:
-          BASE: ${{ github.event_name != 'workflow_dispatch' && (github.event.pull_request.base.sha || github.event.before) || '' }}
+          BASE: ${{ github.event_name == 'push' && '--since-green' || github.event.pull_request.base.sha || '' }}
+          GH_TOKEN: ${{ github.token }}
         run: node scripts/ci/apple-scope.mjs "$BASE" "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
   iphone:
     name: apple/iphone
@@ -65,9 +69,39 @@ jobs:
           -configuration Debug
           -destination 'generic/platform=macOS'
           CODE_SIGNING_ALLOWED=NO
+  iphone-accessibility-build:
+    name: apple/iphone-accessibility-build
+    needs: changes
+    if: ${{ github.event_name != 'pull_request' && needs.changes.outputs.client == 'true' }}
+    runs-on: macos-26
+    timeout-minutes: 60
+    outputs:
+      artifact: accessibility-build-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: 为模拟器编译一次 App 和无障碍审计测试，三份审计共用
+        run: >-
+          xcodebuild build-for-testing
+          -project clients/apple/App/Himawari.xcodeproj
+          -scheme Himawari
+          -configuration Debug
+          -destination 'generic/platform=iOS Simulator'
+          -derivedDataPath "$RUNNER_TEMP/dd"
+          CODE_SIGNING_ALLOWED=NO
+          -quiet
+      - name: 打包编译结果
+        run: tar -C "$RUNNER_TEMP/dd/Build" -czf "$RUNNER_TEMP/accessibility-build.tgz" Products
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: accessibility-build-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/accessibility-build.tgz
+          retention-days: 1
+          if-no-files-found: error
   iphone-accessibility:
     name: apple/iphone-accessibility ${{ matrix.shard }}
-    needs: changes
+    needs: [changes, iphone-accessibility-build]
     if: ${{ github.event_name != 'pull_request' && needs.changes.outputs.client == 'true' }}
     runs-on: macos-26
     timeout-minutes: 60
@@ -79,6 +113,18 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: ${{ needs.iphone-accessibility-build.outputs.artifact }}
+          path: ${{ runner.temp }}
+      - name: 解开同一次运行编译好的 App 和测试
+        id: build
+        run: |
+          mkdir -p "$RUNNER_TEMP/dd/Build"
+          tar -C "$RUNNER_TEMP/dd/Build" -xzf "$RUNNER_TEMP/accessibility-build.tgz"
+          xctestrun="$(find "$RUNNER_TEMP/dd/Build/Products" -maxdepth 1 -name 'Himawari_*.xctestrun' | head -1)"
+          test -n "$xctestrun"
+          echo "xctestrun=$xctestrun" >> "$GITHUB_OUTPUT"
       - name: 选一台最新系统的 iPhone 模拟器
         id: simulator
         run: |
@@ -98,13 +144,10 @@ jobs:
           TEST_RUNNER_HIMAWARI_AUDIT_SHARD: ${{ matrix.shard }}
         run: >-
           set -o pipefail;
-          xcodebuild test
-          -project clients/apple/App/Himawari.xcodeproj
-          -scheme Himawari
-          -configuration Debug
+          xcodebuild test-without-building
+          -xctestrun "${{ steps.build.outputs.xctestrun }}"
           -destination "id=${{ steps.simulator.outputs.udid }}"
           -only-testing:HimawariUITests
-          CODE_SIGNING_ALLOWED=NO
           -resultBundlePath accessibility-audit.xcresult
           | tee accessibility-audit.log
           | grep -E 'A11Y_AUDIT_|error:|Test Case .* (passed|failed)|\*\* TEST'
@@ -173,7 +216,7 @@ jobs:
           if-no-files-found: ignore
   claim:
     name: apple/claim
-    needs: [iphone, iphone-accessibility, scroll]
+    needs: [iphone, iphone-accessibility-build, iphone-accessibility, scroll]
     if: ${{ failure() && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
