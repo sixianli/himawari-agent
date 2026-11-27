@@ -986,7 +986,7 @@
   },
   {
     "key": "next-6-her-about|light|textClipped",
-    "count": 9,
+    "count": 10,
     "why": "去掉 RootView 的字号上限后，最大无障碍字号下这些文字被截断（之前被上限挡住没量到）；交 iPhone 编码线程按第 73 条改成能换行或改排版"
   },
   {
