@@ -19,9 +19,42 @@ since="${BASH_REMATCH[2]}"
 force="${BASH_REMATCH[3]}"
 [[ "$since" != - ]] || since=""
 
+session_command="${HIMAWARI_DEPLOY_SESSION_COMMAND:-sshd}"
+shadow_machine="${HIMAWARI_DEPLOY_SHADOW_MACHINE:-himawari-shadow}"
+
+lock_holders() {
+  local link
+  for link in /proc/[0-9]*/fd/*; do
+    [[ "$(readlink "$link" 2> /dev/null)" == "$1" ]] && echo "${link#/proc/}" | cut -d/ -f1
+  done | sort -un | grep -vx "$$" || true
+}
+
+in_live_session() {
+  local pid="$1" name parent
+  while [[ "$pid" =~ ^[0-9]+$ && "$pid" -gt 1 ]]; do
+    name="$(cat "/proc/$pid/comm" 2> /dev/null)" || return 1
+    [[ "$name" == "$session_command"* ]] && return 0
+    parent="$(awk '/^PPid:/{print $2}' "/proc/$pid/status" 2> /dev/null)" || return 1
+    pid="$parent"
+  done
+  return 1
+}
+
 mkdir -p "$base"
-exec 9> "$base/deploy.lock"
-flock -n 9 || refuse ALREADY_RUNNING "another deploy holds $base/deploy.lock" 75
+lock_file="$(realpath -m "$base/deploy.lock")"
+exec 9> "$lock_file"
+if ! flock -n 9; then
+  holders="$(lock_holders "$lock_file" | tr '\n' ' ')"
+  for holder in $holders; do
+    in_live_session "$holder" && refuse ALREADY_RUNNING "another deploy holds $lock_file (pid $holder is still in a connected session)" 75
+  done
+  echo "DEPLOY_ENTRY_ORPHAN_CLEARED pids=${holders:-none}: the deploy that held $lock_file lost its session (a cut-off GitHub job); stopping what it left running"
+  if command -v machinectl > /dev/null 2>&1 && machinectl show "$shadow_machine" > /dev/null 2>&1; then
+    machinectl terminate "$shadow_machine" > /dev/null 2>&1 || true
+  fi
+  [[ -z "$holders" ]] || kill -TERM $holders 2> /dev/null || true
+  flock -w 30 9 || { [[ -z "$holders" ]] || kill -KILL $holders 2> /dev/null || true; flock -w 30 9; } || refuse ALREADY_RUNNING "processes left by a cut-off deploy still hold $lock_file: $holders" 75
+fi
 
 checkout="$base/checkout"
 if [[ ! -d "$checkout/.git" ]]; then

@@ -20,6 +20,24 @@ refuse() {
 [[ -z "$since" || "$since" =~ ^[0-9a-f]{40}$ ]] || refuse SINCE_INVALID "HIMAWARI_DEPLOY_SINCE must be a full 40-character commit hash"
 [[ "$(git -C "$repo" rev-parse HEAD)" == "$commit" ]] || refuse CHECKOUT_MISMATCH "the checkout must be exactly $commit"
 
+entry_source="$repo/scripts/install/deploy-entry"
+entry_library="${HIMAWARI_DEPLOY_ENTRY_LIBRARY:-/usr/local/lib/himawari-deploy}"
+if [[ -d "$entry_source" && -d "$entry_library" ]] && ! diff -r -q "$entry_source" "$entry_library" > /dev/null 2>&1; then
+  entry_staging="$(mktemp -d "$entry_library.new.XXXXXX")"
+  if cp -R "$entry_source/." "$entry_staging/" && chmod -R u=rwX,go=rX "$entry_staging" && { [[ "$(id -u)" -ne 0 ]] || chown -R root:root "$entry_staging"; } && rm -rf "$entry_library.old" && mv "$entry_library" "$entry_library.old"; then
+    if mv "$entry_staging" "$entry_library"; then
+      rm -rf "$entry_library.old"
+      echo "CI_DEPLOY_ENTRY_UPDATED $entry_library from $commit"
+    else
+      mv "$entry_library.old" "$entry_library"
+      echo "CI_DEPLOY_ENTRY_UPDATE_FAILED: kept the installed deploy entry in $entry_library" >&2
+    fi
+  else
+    rm -rf "$entry_staging"
+    echo "CI_DEPLOY_ENTRY_UPDATE_FAILED: kept the installed deploy entry in $entry_library" >&2
+  fi
+fi
+
 remote() {
   "$ssh_bin" -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 "root@$host" "$@"
 }
