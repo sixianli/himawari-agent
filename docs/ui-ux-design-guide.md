@@ -334,15 +334,15 @@ Andy 批准并明确表示喜欢的设计。每行的原型链接是当时批注
 
 ## 自动检查
 
-规范里能自动检查的部分，已经变成程序检查：“命令”一列是 `npm run check:…` 的，每次 `npm run check` 都会跑；其余各项在同一列写明是哪个测试、哪项上线走查，或要单独运行的脚本。规则写进本文不算完成，能检查的要落成检查（[ADR 0107](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0107-every-incident-gets-an-automatic-gate.md)）。
+规范里能自动检查的部分，已经变成程序检查：“命令”一列是 `npm run check:…` 的，除了注明不在里面的，每次 `npm run check` 都会跑；网页已决定删除（Andy 2026-11-27），只查网页的三项移出了 `npm run check` 和 CI（[ADR 0292](adr/0292-how-ci-runs-now.md#jobs)）；其余各项在同一列写明是哪个测试、哪项上线走查，或要单独运行的脚本。规则写进本文不算完成，能检查的要落成检查（[ADR 0107](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0107-every-incident-gets-an-automatic-gate.md)）。
 
 | 检查 | 命令 | 拦什么 |
 | --- | --- | --- |
-| 真浏览器全站自查 | `npm run check:layout`（`scripts/check-layout-audit.mjs`） | 19 个画面（含设置的“个性化”栏、“数据”栏和敏感信息拦截记录，清单见脚本里的 `SCENES`）在中英日三语、1280、654 和 390 三种宽度、浅色深色下：横向滚动、内容被横向推出容器（第 52 条）、元素超出屏幕、按钮被挡住、文字被挤成竖排、文字被截断却没有省略号、原生下拉框、没点过就出现的焦点描边、中日界面里的英文月份星期和 AM/PM。每次运行先用一页故意做坏的页面自检，`REQUIRED_KINDS` 里的 14 类问题都要认出来才继续 |
+| 真浏览器全站自查 | `npm run check:layout`（`scripts/check-layout-audit.mjs`），2026-11-27 起不在 `npm run check` 里，只能手动跑 | 19 个画面（含设置的“个性化”栏、“数据”栏和敏感信息拦截记录，清单见脚本里的 `SCENES`）在中英日三语、1280、654 和 390 三种宽度、浅色深色下：横向滚动、内容被横向推出容器（第 52 条）、元素超出屏幕、按钮被挡住、文字被挤成竖排、文字被截断却没有省略号、原生下拉框、没点过就出现的焦点描边、中日界面里的英文月份星期和 AM/PM。每次运行先用一页故意做坏的页面自检，`REQUIRED_KINDS` 里的 14 类问题都要认出来才继续 |
 | 标志资源 | `npm run check:brand`（`scripts/check-brand-assets.mjs`） | `assets/brand/himawari/v3/logo-sunflower-disc.svg` 和代码里画种子的数学（`brand-seeds.ts`）不一致 |
 | 标志的动静 | `apps/control-center/test/brand.unit.test.ts` | 已完成回答、侧栏、减少动态效果下的标志有计时器在跑；种子数、黄金角位置不对 |
-| 日期时间语言 | `npm run check:locale` | 代码里不传界面语言的日期、时间、数字格式化（I-15） |
-| 手机排版 | `npm run check:phone-layout` | 手机输入框字号、弹窗安全区、视口设置（I-14） |
+| 日期时间语言 | `npm run check:locale`，2026-11-27 起不在 `npm run check` 里，只能手动跑 | 代码里不传界面语言的日期、时间、数字格式化（I-15） |
+| 手机排版 | `npm run check:phone-layout`，2026-11-27 起不在 `npm run check` 里，只能手动跑 | 手机输入框字号、弹窗安全区、视口设置（I-14） |
 | 文件预览 | `node scripts/test-file-preview-browser.mjs chromium`（和 `webkit`），不在 `npm run check` 里 | 在生产安全策略下，PDF、Word、Excel 在三语、1280 和 390 宽下都能显示：PDF 有文字层，Word 有样式、图片和项目符号，Excel 填充色和数字格式对，页面不横向滚动 |
 | 界面走查脚本 | `npm run check:release-walkthrough` | 上线前走查脚本里的选择器和页面一致，包括审批卡片的按钮和“已收到，正在继续…”文字 |
 | 批准后继续 | 上线走查 `accept-search-approval`（`test/integration/product-path-browser.test.ts`，`scripts/delivery-mode/browser-acceptance-gate.py` 要求它通过才能上线） | 一步里两次搜索只弹一张卡片；点一次允许后 10 秒内回答出现，页面不停在“正在加载…”（I-29） |
@@ -351,7 +351,7 @@ Andy 批准并明确表示喜欢的设计。每行的原型链接是当时批注
 | 回答字重 | `npm run check:answer-weight` | 回答正文字重（I-12） |
 | 设置各端一致 | `test/integration/owner-settings-sync.test.ts` 和 `apps/control-center/test/app-interactions.unit.test.ts` 的 `[I-16]` 测试 | 只存浏览器本地的新设置、服务器协议漏掉的设置、断线旧设备盖掉新值、换模型配置后设置丢失（I-16） |
 | 苹果客户端页面代码 | `npm run check:apple-design`（`clients/apple/scripts/check-design.mjs`，用例在 `test/tooling/apple-design-check.test.mjs`） | iPhone、手表、Mac 的页面代码里：写死的颜色和尺寸、直接调震动、`.plain` 和 `.borderless` 这种只有字能点的按钮（第 70 条）、点按和长按手势没有读屏能用的替代（`gesture-without-button`，第 76 条）、隐藏系统导航栏（第 71 条）、App 自己定浅色深色（第 77 条）、不跟动态字体放大的字号（`fixed-font`，第 73 条）、系统字以外的字体（`custom-font`，第 56 条）；用 `.containerRelativeFrame(.vertical)` 把页面内容锁成一屏高、长页面滑不到底（`screen-height-lock`，事故 I-122）；`tokens.json` 里正文字色在浅色、深色下对底色不到 4.5:1（`text-contrast`，第 74 条）；生成的令牌文件过期。已有的违规记在 `clients/apple/scripts/design-baseline.json`，超出数量、修好后不减数量、没写原因都失败（第 84 条） |
-| 苹果无障碍审计 | CI 的 `apple/iphone-accessibility` 作业（`clients/apple/App/UITests/AccessibilityAuditTests.swift`），不在 `npm run check` 里，需要 Mac 上的 Xcode 和 iPhone 模拟器；只在 PR 或推送改了 `clients/apple/`、`.github/workflows/apple.yml` 或 `scripts/ci/apple-scope.mjs` 时跑（由 `apple/changes` 作业判断，说不清时照跑） | 从 `DemoScenes.swift` 读出全部静态示例场景，场景按顺序分成三份在三台机器上并行跑。每个场景用苹果的 `performAccessibilityAudit`（[WWDC23 Perform accessibility audits for your app](https://developer.apple.com/videos/play/wwdc2023/10035/)）在浅色下跑全部审计项，再切到深色只跑对比度：对比度不够、点击区域太小、没有名字的元素、读屏特征不对、字不跟动态字体变、字被截断。没有在最大辅助字号下再跑一遍：试过一次，审计在大字号下超时跑不完。已知问题按“场景、浅色或深色、审计项”计数，记在 `clients/apple/App/UITests/accessibility-baseline.json` 并写原因；某一格的问题比登记的多，作业失败；比登记的少，作业给出警告，提醒把数字改小 |
+| 苹果无障碍审计 | CI 的 `apple/iphone-accessibility` 作业（`clients/apple/App/UITests/AccessibilityAuditTests.swift`），不在 `npm run check` 里，需要 Mac 上的 Xcode 和 iPhone 模拟器；不在 PR 上跑，只在推送到 `main` 改了 `clients/apple/`、`.github/workflows/apple.yml` 或 `scripts/ci/apple-scope.mjs` 时跑（由 `apple/changes` 作业判断，说不清时照跑），也可以在 GitHub 的 Actions 页面对任一分支手动运行 `Apple` 工作流；`main` 上失败时 `apple/claim` 在改了苹果客户端的 PR 上留言请它的线程认领（[ADR 0292](adr/0292-how-ci-runs-now.md#runners)） | 从 `DemoScenes.swift` 读出全部静态示例场景，场景按顺序分成三份在三台机器上并行跑。每个场景用苹果的 `performAccessibilityAudit`（[WWDC23 Perform accessibility audits for your app](https://developer.apple.com/videos/play/wwdc2023/10035/)）在浅色下跑全部审计项，再切到深色只跑对比度：对比度不够、点击区域太小、没有名字的元素、读屏特征不对、字不跟动态字体变、字被截断。没有在最大辅助字号下再跑一遍：试过一次，审计在大字号下超时跑不完。已知问题按“场景、浅色或深色、审计项”计数，记在 `clients/apple/App/UITests/accessibility-baseline.json` 并写原因；某一格的问题比登记的多，作业失败；比登记的少，作业给出警告，提醒把数字改小 |
 | 苹果截图比对 | Mac 上 `clients/apple/scripts/ui-review.sh --check`，不在 CI 里 | 每个示例场景浅色、深色截图和 `clients/apple/Tests/Snapshots/iPhone-390/` 逐像素比，差异超过 0.05% 失败。没放进 CI：快照是在 Andy 的 Mac 上拍的，GitHub 机器的 Xcode 和模拟器版本不同，字的渲染会有细微差别，放进去会常常误报；字跟不跟动态字体变、字有没有被截断，由上面的无障碍审计查；最大辅助字号下的样子按验收清单人工看 |
 | 进行中图标的动作 | `npx vitest run --config vitest.workspace.ts --project tooling test/tooling/icon-motion-css.test.mjs` 和 `npx vitest run --config vitest.workspace.ts --project browser apps/control-center/test/icon-motion.unit.test.ts apps/control-center/test/execution-process.unit.test.ts`，不在 `npm run check` 里 | 按第几层选中的动作规则指向不存在的图标或图层、用了以 `icon-` 开头却没定义的动画名；旧的转框和整体缩放写法（`.row-icon::after`、`process-ring-spin`、`process-step-running`）又回来，换了新名字的不拦；动作没放进“允许动态效果”里、减少动态效果时没有静态底色；搜索网页和读网页没共用雷达；审查行、思考行在不该动的时候动（第 51 条） |
 

@@ -30,7 +30,7 @@ if [ "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null || ec
   apparmor_parser -r "$profile"
 fi
 
-"$node_bin" node_modules/playwright/cli.js install-deps chromium firefox webkit
+"$node_bin" node_modules/playwright/cli.js install-deps chromium
 
 printf 'CI_HOSTED_PREPARED bwrap=%s userns_restrict=%s\n' \
   "$(/usr/bin/bwrap --version | awk '{print $2}')" \

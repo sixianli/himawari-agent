@@ -38,6 +38,7 @@ import {
   upgradeCoverageToTests,
   upgradeGateRunnerPolicy,
   upgradeHostedRunnerPolicy,
+  upgradeRetiredBrowserCheck,
   upgradeRetiredTestChecks,
   upgradeRunnerLabel,
   upgradeSplitTests,
@@ -71,8 +72,33 @@ import { testWorkerCount } from "../../scripts/ci/test-concurrency.mjs";
 
 const policy = readJson(path.join(repositoryRoot, "ci/policy.json"));
 const clone = () => structuredClone(policy);
+const retiredBrowserCheck = () => ({
+  id: "browser",
+  needs: ["build"],
+  timeoutMinutes: 90,
+  members: ["chromium", "firefox", "webkit"].map((engine) => ({
+    key: engine,
+    runner: linuxRunnerLabel,
+    os: "linux",
+    arch: policy.checks.find((check) => check.id === "tests").members[0].arch,
+    node: "22.22.3",
+    browser: engine,
+  })),
+  projects: [],
+  outputs: ["json", "artifact"],
+});
+const withRetiredBrowser = (value) => {
+  value.checks.splice(
+    value.checks.findIndex((check) => check.id === "build") + 1,
+    0,
+    retiredBrowserCheck(),
+  );
+  const required = value.checks.find((check) => check.id === "required");
+  required.needs.splice(required.needs.indexOf("build") + 1, 0, "browser");
+  return value;
+};
 const legacyClone = () => {
-  const value = clone();
+  const value = withRetiredBrowser(clone());
   for (const check of value.checks)
     for (const member of check.members)
       if (member.key === "macos-arm64") member.runner = "macos-15";
@@ -306,16 +332,14 @@ function workflow() {
               with: { "persist-credentials": false },
             },
             shareRoot(),
-            ...(["static", "tests", "tooling"].includes(check.id)
-              ? [{ run: chromiumInstall }]
-              : []),
+            ...(["tests", "tooling"].includes(check.id) ? [{ run: chromiumInstall }] : []),
             {
               run:
                 check.id === "tests"
                   ? '.ci-output/tools/bin/node scripts/ci/run.mjs --check tests --matrix "$CI_MATRIX" --base "$CI_BASE" --tools .ci-output/tools --output .ci-output/check --baseline-candidate initial-only --input .ci-output/input/result.json'
                   : "node scripts/ci/run.mjs",
             },
-            ...(["browser", "tests"].includes(check.id) ? [buildRestore(), buildFetch()] : []),
+            ...(check.id === "tests" ? [buildRestore(), buildFetch()] : []),
             ...(check.id === "required"
               ? [...reportRestores(), shareCollect(), gateStep()]
               : [sharePut(check), shareSave(check), diagnosticSummary(check)]),
@@ -564,8 +588,8 @@ describe("CI policy contract", () => {
   it("accepts the exact eight-job policy and literal execution graph", () => {
     expect(validatePolicy(policy)).toBe(policy);
     expect(validateWorkflow(policy, stringify(workflow()), lock)).toEqual({
-      jobs: 8,
-      members: 13,
+      jobs: 7,
+      members: 10,
     });
   });
   it.each([
@@ -689,15 +713,15 @@ describe("CI policy contract", () => {
     [
       "matrix omission",
       (value) => {
-        value.jobs.browser.strategy.matrix.include = activeMembers(
-          policy.checks.find((check) => check.id === "browser"),
+        value.jobs.tests.strategy.matrix.include = activeMembers(
+          policy.checks.find((check) => check.id === "tests"),
         ).slice(1);
       },
     ],
     [
       "matrix expression",
       (value) => {
-        value.jobs.browser.strategy.matrix = githubExpression(
+        value.jobs.tests.strategy.matrix = githubExpression(
           "fromJSON(needs.policy.outputs.matrix)",
         );
       },
@@ -770,9 +794,9 @@ describe("CI policy contract", () => {
       },
     ],
     [
-      "missing draft condition on browser",
+      "missing draft condition on tests",
       (value) => {
-        delete value.jobs.browser.if;
+        delete value.jobs.tests.if;
       },
     ],
     [
@@ -856,7 +880,7 @@ describe("CI policy contract", () => {
     "actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093",
   ];
   it.each(
-    ["policy", "browser", "tests", "tooling", "required"].flatMap((id) =>
+    ["policy", "tests", "tooling", "required"].flatMap((id) =>
       formerArtifactActions.map((uses) => [id, uses]),
     ),
   )("[I-95] rejects a GitHub artifact step in %s: %s", (id, uses) => {
@@ -921,7 +945,7 @@ describe("CI policy contract", () => {
     value.jobs.required.permissions = { contents: "read", actions: "read" };
     expect(() => validateWorkflow(policy, stringify(value), lock)).not.toThrow();
   });
-  it.each(["static", "tests", "tooling"])(
+  it.each(["tests", "tooling"])(
     "rejects a %s job that runs browser tests without installing Chromium",
     (id) => {
       const value = workflow();
@@ -1115,6 +1139,33 @@ describe("CI policy contract", () => {
     expect(() => resolvePolicySource({ root, base: "--help" })).toThrow();
     expect(() => resolvePolicySource({ root, base: "f".repeat(40) })).toThrow();
   });
+  it("[ADR-0309] 基准上还带三个浏览器作业的策略升级成去掉 browser 的七作业，别的写法照样被拒", () => {
+    expect(upgradeRetiredBrowserCheck(withRetiredBrowser(clone()))).toEqual(policy);
+    expect(upgradeRetiredBrowserCheck(policy)).toBe(policy);
+    const twoEngines = withRetiredBrowser(clone());
+    twoEngines.checks.find((check) => check.id === "browser").members.pop();
+    expect(upgradeRetiredBrowserCheck(twoEngines)).toBe(twoEngines);
+    expect(() => validatePolicy(upgradeRetiredBrowserCheck(twoEngines))).toThrow(
+      "Policy must declare exactly seven required jobs",
+    );
+    const requiredSkipsBrowser = withRetiredBrowser(clone());
+    const required = requiredSkipsBrowser.checks.find((check) => check.id === "required");
+    required.needs = required.needs.filter((id) => id !== "browser");
+    expect(upgradeRetiredBrowserCheck(requiredSkipsBrowser)).toBe(requiredSkipsBrowser);
+    const { root, git } = fixtureRepository();
+    const accepted = withRetiredBrowser(clone());
+    writeFileSync(path.join(root, "ci/policy.json"), JSON.stringify(accepted));
+    writeFileSync(path.join(root, "ci/coverage-policy.json"), JSON.stringify(reviewedCoverage()));
+    git("add", "ci");
+    git("commit", "--quiet", "-m", "accepted browser jobs");
+    const selected = resolvePolicySource({ root });
+    expect(selected.policy).toEqual(policy);
+    expect(selected.policySha256).toBe(sha256(JSON.stringify(accepted)));
+    expect(validateWorkflow(selected.policy, stringify(workflow()), lock)).toEqual({
+      jobs: 7,
+      members: 10,
+    });
+  });
   it("暂停的 macOS 成员不进矩阵，也不进闸门要等的结果", () => {
     const withMac = workflow();
     withMac.jobs.build.strategy.matrix.include = policy.checks.find(
@@ -1124,7 +1175,7 @@ describe("CI policy contract", () => {
       "Matrix members differ: build",
     );
     const ids = expectedMembers(policy).map((entry) => entry.id);
-    expect(ids).toHaveLength(11);
+    expect(ids).toHaveLength(8);
     expect(ids.some((id) => id.includes("macos-arm64"))).toBe(false);
   });
   it("把已接受的托管 runner 政策升级成 ci-vps 加暂停 macOS 一次", () => {
@@ -1191,9 +1242,11 @@ describe("CI policy contract", () => {
     expect(upgradeHostedRunnerPolicy(legacy)).not.toBe(legacy);
     expect(() =>
       validatePolicy(
-        upgradeSelfHostedRunners(
-          toCurrentTests(
-            upgradeArmRunnerPolicy(upgradeGateRunnerPolicy(upgradeHostedRunnerPolicy(legacy))),
+        upgradeRetiredBrowserCheck(
+          upgradeSelfHostedRunners(
+            toCurrentTests(
+              upgradeArmRunnerPolicy(upgradeGateRunnerPolicy(upgradeHostedRunnerPolicy(legacy))),
+            ),
           ),
         ),
       ),
@@ -1220,8 +1273,8 @@ describe("CI policy contract", () => {
     expect(selected.policy).toEqual(policy);
     expect(selected.policySha256).toBe(sha256(JSON.stringify(accepted)));
     expect(validateWorkflow(selected.policy, stringify(workflow()), lock)).toEqual({
-      jobs: 8,
-      members: 13,
+      jobs: 7,
+      members: 10,
     });
   });
   it("[HR-11] 只升级完整的 hermes-home 写法，混写、未暂停 macOS、时限不对的照样被拒", () => {
@@ -1320,8 +1373,8 @@ describe("CI policy contract", () => {
     expect(selected.policy).toEqual(policy);
     expect(selected.policySha256).toBe(sha256(JSON.stringify(accepted)));
     expect(validateWorkflow(selected.policy, stringify(workflow()), lock)).toEqual({
-      jobs: 8,
-      members: 13,
+      jobs: 7,
+      members: 10,
     });
   });
   it.each([
@@ -1428,8 +1481,8 @@ describe("CI policy contract", () => {
     expect(selected.policy).toEqual(policy);
     expect(selected.policySha256).toBe(sha256(JSON.stringify(accepted)));
     expect(validateWorkflow(selected.policy, stringify(workflow()), lock)).toEqual({
-      jobs: 8,
-      members: 13,
+      jobs: 7,
+      members: 10,
     });
   });
   it("[ADR-0287] 只升级汇总作业在 ci-vps 的七作业写法，现行策略原样返回，别的写法照样被拒", () => {
@@ -1537,9 +1590,9 @@ describe("CI policy contract", () => {
         node: "22.22.3",
       },
     ];
-    expect(() => validatePolicy(upgradeSelfHostedRunners(single))).toThrow(
-      "Incomplete matrix: tests",
-    );
+    expect(() =>
+      validatePolicy(upgradeRetiredBrowserCheck(upgradeSelfHostedRunners(single))),
+    ).toThrow("Incomplete matrix: tests");
     expect(upgradeSplitTests(single)).toEqual(legacyPolicy);
     expect(upgradeSplitTests(policy)).toBe(policy);
     const { root, git } = fixtureRepository();
@@ -1551,8 +1604,8 @@ describe("CI policy contract", () => {
     expect(selected.policy).toEqual(policy);
     expect(selected.policySha256).toBe(sha256(JSON.stringify(single)));
     expect(validateWorkflow(selected.policy, stringify(workflow()), lock)).toEqual({
-      jobs: 8,
-      members: 13,
+      jobs: 7,
+      members: 10,
     });
   });
   it.each([
@@ -1675,8 +1728,8 @@ describe("CI policy contract", () => {
         },
       ]);
     expect(validateWorkflow(selected.policy, stringify(workflow()), lock)).toEqual({
-      jobs: 8,
-      members: 13,
+      jobs: 7,
+      members: 10,
     });
   });
   it("[ADR-0287] 三项检查还在共享 runner 上的写法一起升级成 ci-arm，现行策略原样返回，只有部分搬过去的混写照样被拒", () => {
@@ -1690,15 +1743,14 @@ describe("CI policy contract", () => {
     mixed.checks.find((check) => check.id === "security").members[0].runner =
       legacyRunnerLabels.arm;
     expect(upgradeArmRunnerPolicy(mixed)).toBe(mixed);
-    expect(() => validatePolicy(upgradeSelfHostedRunners(toCurrentTests(mixed)))).toThrow(
-      "Incorrect platform: policy/default",
-    );
+    expect(() =>
+      validatePolicy(upgradeRetiredBrowserCheck(upgradeSelfHostedRunners(toCurrentTests(mixed)))),
+    ).toThrow("Incorrect platform: policy/default");
   });
   it.each([
     ["build 允许 arm64", "build", { alternateArch: "arm64" }],
     ["tests 写成 arm64", "tests", { arch: "arm64" }],
     ["tooling 放回 x64 机器", "tooling", { runner: linuxRunnerLabel }],
-    ["browser 允许 arm64", "browser", { alternateArch: "arm64" }],
     ["static 允许 arm64", "static", { alternateArch: "arm64" }],
     ["security 放到汇总 runner", "security", { runner: gateRunnerLabel }],
     ["static 放到 ARM 机器", "static", { runner: armRunnerLabel }],
@@ -1857,7 +1909,7 @@ describe("CI policy contract", () => {
     );
   });
   it.each(
-    ["browser", "tests"].flatMap((id) =>
+    ["tests"].flatMap((id) =>
       ["missing", "wrong digest", "conditional", "wrong path", "duplicated"].map((fault) => [
         id,
         fault,
@@ -1877,7 +1929,7 @@ describe("CI policy contract", () => {
     );
   });
   it.each(
-    ["browser", "tests"].flatMap((id) =>
+    ["tests"].flatMap((id) =>
       ["missing", "after fetch", "conditional", "wrong key", "may miss"].map((fault) => [
         id,
         fault,
@@ -1944,7 +1996,7 @@ describe("CI policy contract", () => {
       );
     },
   );
-  it.each(["policy", "required", "browser"])("拒绝作业没把共享目录指到本机临时目录：%s", (id) => {
+  it.each(["policy", "required", "tests"])("拒绝作业没把共享目录指到本机临时目录：%s", (id) => {
     const value = workflow();
     const steps = value.jobs[id].steps;
     steps.splice(
@@ -1964,15 +2016,15 @@ describe("CI policy contract", () => {
     "wrong output",
   ])("拒绝报告不放 CI 服务器或摘要没交出去：%s", (fault) => {
     const value = workflow();
-    const job = value.jobs.browser;
+    const job = value.jobs.tests;
     const put = job.steps.find((entry) => entry.id === "share");
     if (fault === "missing put") job.steps.splice(job.steps.indexOf(put), 1);
     if (fault === "second put") job.steps.push({ ...put, id: "again" });
     if (fault === "renamed id") put.id = "other";
-    if (fault === "missing output") delete job.outputs.firefox;
+    if (fault === "missing output") delete job.outputs.others;
     if (fault === "extra output") job.outputs["macos-arm64"] = "x";
     if (fault === "wrong output")
-      job.outputs.webkit = githubExpression("steps.other.outputs.webkit");
+      job.outputs["integration-2"] = githubExpression("steps.other.outputs.integration-2");
     expect(() => validateWorkflow(policy, stringify(value), lock)).toThrow(
       /runner share|report digest/u,
     );
