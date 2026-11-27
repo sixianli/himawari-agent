@@ -5,6 +5,7 @@ public enum ConnectionOutcome: Equatable, Sendable {
     case denied
     case failed
     case cancelled
+    case clientRequired(redirectUri: String)
 }
 
 enum ConnectionAuthorization {
@@ -22,6 +23,7 @@ enum ConnectionAuthorization {
         struct Started: Decodable {
             let kind: String
             let authorizationUrl: String?
+            let redirectUri: String?
         }
         struct Finished: Decodable {
             let outcome: String
@@ -29,6 +31,7 @@ enum ConnectionAuthorization {
         do {
             let startedData = try await gateway.post(startPath, body: ["connection": .string(connection), "callbackScheme": .string(callbackScheme)])
             let started = try JSONDecoder().decode(Started.self, from: startedData)
+            if started.kind == "client_required", let redirectUri = started.redirectUri { return .clientRequired(redirectUri: redirectUri) }
             guard started.kind == "browser", let page = started.authorizationUrl.flatMap(URL.init(string:)) else { return .failed }
             guard let returned = try await signIn(page, callbackScheme) else { return .cancelled }
             guard let state = state(in: returned, scheme: callbackScheme, host: callbackHost) else { return .failed }

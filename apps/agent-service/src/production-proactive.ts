@@ -536,6 +536,7 @@ export class ProductionProactive {
     readonly status: "disconnected" | "connected" | "needs_reconnect";
     readonly account: string | null;
     readonly connectedAt: string | null;
+    readonly added: false;
   }> {
     const { scope, store, seal } = this.#options;
     const connection = await store.readConnection({ ...scope, source: GMAIL_SOURCE.name });
@@ -548,6 +549,7 @@ export class ProductionProactive {
       status: connection?.status ?? "disconnected",
       account,
       connectedAt: connection?.connectedAt ?? null,
+      added: false,
     };
   }
 
