@@ -4,6 +4,7 @@ on:
     branches: [main]
     paths:
       - clients/apple/**
+      - test/ios-e2e/**
       - .github/workflows/testflight.yml
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
@@ -34,8 +35,34 @@ jobs:
           persist-credentials: false
       - name: 打 Release 归档并核对权限仍在签名里
         run: clients/apple/scripts/testflight.sh archive
+  e2e:
+    name: testflight/e2e
+    if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && github.repository == 'sixianli/himawari-agent' }}
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.22.3
+      - name: 安装测试后端的依赖
+        run: npm ci --no-audit --no-fund
+      - name: 上传前先在模拟器上跑端到端测试，不过就不上传
+        run: clients/apple/scripts/e2e.sh
+      - name: 保存测试结果包和后端日志
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: testflight-e2e
+          path: |
+            ${{ runner.temp }}/ios-e2e/EndToEnd.xcresult
+            ${{ runner.temp }}/ios-e2e/*.log
+          retention-days: 7
   upload:
     name: testflight/upload
+    needs: [e2e]
     if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && github.repository == 'sixianli/himawari-agent' }}
     runs-on: macos-26
     timeout-minutes: 60

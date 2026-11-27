@@ -15,7 +15,7 @@
 ## MacBook
 
 - 绝不在 Andy 的 MacBook 上运行 Himawari 服务器端的构建和测试：不跑 `npm run check`、`npm test`、任何 Vitest 项目或产品路径资格验证，也不在 Mac 上起 Himawari 服务。发现那里有这类进程在运行时要停止它。
-- 苹果客户端（`clients/apple/` 下的 iPhone、Apple Watch、Mac App 和它们的扩展）的构建、单元测试和打包，在 GitHub 的 macOS 机器（GitHub Actions 提供的、装好 Xcode 的云端 Mac）上做，iPhone 和 Mac 版都经 TestFlight（苹果的测试版分发服务）装到 Andy 的设备上，不依赖 Andy 的 Mac。依据 [ADR 0309](../../docs/adr/0309-apps-sign-in-with-passkeys-and-the-web-is-removed.md#decision) 决定第 14 条（Andy 2026-11-26 定：不再依赖他的 Mac）。客户端测试不在任何 Mac 上起 Himawari 服务。
+- 苹果客户端（`clients/apple/` 下的 iPhone、Apple Watch、Mac App 和它们的扩展）的构建、单元测试和打包，在 GitHub 的 macOS 机器（GitHub Actions 提供的、装好 Xcode 的云端 Mac）上做，iPhone 和 Mac 版都经 TestFlight（苹果的测试版分发服务）装到 Andy 的设备上，不依赖 Andy 的 Mac。依据 [ADR 0309](../../docs/adr/0309-apps-sign-in-with-passkeys-and-the-web-is-removed.md#decision) 决定第 14 条（Andy 2026-11-26 定：不再依赖他的 Mac）。客户端测试不在任何 Mac 上起 Himawari 服务。端到端测试也在 GitHub 的 `macos-26` 机器上跑：`apple/iphone-e2e` 作业用 `clients/apple/scripts/e2e.sh` 在那台机器上起一个只供测试的后端（`test/ios-e2e/backend.ts`：真的设备接口和 Pi 运行，模型换成 Pi 官方的 faux 替身），这个脚本不得在 Andy 的 Mac 上运行。
 
 <a id="production"></a>
 ## 生产机

@@ -62,11 +62,13 @@ describe("Apple 工作流按改动决定要不要占 Mac 机器", () => {
         file,
       ]);
     };
+    commit("docs/notes.md");
+    expect(run().stdout).toBe("client=false\ne2e=false\n");
     commit("server.ts");
-    expect(run().stdout).toBe("client=false\n");
+    expect(run().stdout).toBe("client=false\ne2e=true\n");
     commit("clients/apple/Sources/App.swift");
     const result = run();
-    expect(result.stdout).toBe("client=true\n");
-    expect(result.stderr).toContain("APPLE_SCOPE client=true files=2");
+    expect(result.stdout).toBe("client=true\ne2e=true\n");
+    expect(result.stderr).toContain("APPLE_SCOPE client=true e2e=true files=3");
   });
 });

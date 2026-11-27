@@ -9,6 +9,12 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      only:
+        description: 只跑哪一组作业
+        type: choice
+        default: all
+        options: [all, iphone-e2e]
 permissions:
   contents: read
 concurrency:
@@ -25,6 +31,7 @@ jobs:
     timeout-minutes: 10
     outputs:
       client: ${{ steps.scope.outputs.client }}
+      e2e: ${{ steps.scope.outputs.e2e }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -37,7 +44,7 @@ jobs:
   iphone:
     name: apple/iphone
     needs: changes
-    if: ${{ needs.changes.outputs.client == 'true' }}
+    if: ${{ needs.changes.outputs.client == 'true' && inputs.only != 'iphone-e2e' }}
     runs-on: macos-26
     timeout-minutes: 60
     steps:
@@ -57,10 +64,36 @@ jobs:
           -configuration Debug
           -destination 'generic/platform=iOS Simulator'
           CODE_SIGNING_ALLOWED=NO
+  iphone-e2e:
+    name: apple/iphone-e2e
+    needs: changes
+    if: ${{ needs.changes.outputs.e2e == 'true' }}
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.22.3
+      - name: 安装测试后端的依赖
+        run: npm ci --no-audit --no-fund
+      - name: 起真后端，在模拟器上跑端到端测试
+        run: clients/apple/scripts/e2e.sh
+      - name: 保存测试结果包和后端日志
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: iphone-e2e
+          path: |
+            ${{ runner.temp }}/ios-e2e/EndToEnd.xcresult
+            ${{ runner.temp }}/ios-e2e/*.log
+          retention-days: 7
   mac:
     name: apple/mac
     needs: changes
-    if: ${{ needs.changes.outputs.client == 'true' }}
+    if: ${{ needs.changes.outputs.client == 'true' && inputs.only != 'iphone-e2e' }}
     runs-on: macos-26
     timeout-minutes: 60
     steps:
@@ -80,7 +113,7 @@ jobs:
   iphone-accessibility:
     name: apple/iphone-accessibility ${{ matrix.shard }}
     needs: changes
-    if: ${{ needs.changes.outputs.client == 'true' }}
+    if: ${{ needs.changes.outputs.client == 'true' && inputs.only != 'iphone-e2e' }}
     runs-on: macos-26
     timeout-minutes: 60
     strategy:
@@ -146,7 +179,7 @@ jobs:
   scroll:
     name: apple/scroll
     needs: changes
-    if: ${{ needs.changes.outputs.client == 'true' }}
+    if: ${{ needs.changes.outputs.client == 'true' && inputs.only != 'iphone-e2e' }}
     runs-on: macos-26
     timeout-minutes: 60
     steps:

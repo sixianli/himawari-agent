@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
+import { needsIphoneEndToEnd } from "../../scripts/ci/apple-scope.mjs";
 import { validateHostedRunners } from "../../scripts/ci/check-policy.mjs";
 import { macRunnerLabel, repositoryRoot } from "../../scripts/ci/contracts.mjs";
 
@@ -124,6 +125,7 @@ describe("iPhone 工作流", () => {
     expect(Object.keys(workflow.jobs)).toEqual([
       "changes",
       "iphone",
+      "iphone-e2e",
       "mac",
       "iphone-accessibility",
       "scroll",
@@ -132,10 +134,14 @@ describe("iPhone 工作流", () => {
     expect(changes["runs-on"]).toBe("ubuntu-24.04");
     expect(changes.if).toContain("github.event.pull_request.draft != true");
     expect(changes.steps.at(-1).run).toContain("scripts/ci/apple-scope.mjs");
-    for (const job of Object.values(macJobs)) {
+    for (const [name, job] of Object.entries(macJobs)) {
       expect(job["runs-on"]).toBe(macRunnerLabel);
       expect(job.needs).toBe("changes");
-      expect(job.if).toContain("needs.changes.outputs.client == 'true'");
+      expect(job.if).toContain(
+        name === "iphone-e2e"
+          ? "needs.changes.outputs.e2e == 'true'"
+          : "needs.changes.outputs.client == 'true'",
+      );
     }
     expect(workflow.permissions).toEqual({ contents: "read" });
     expect(() =>
@@ -230,5 +236,32 @@ describe("iPhone 工作流", () => {
     );
     expect(project).toContain('productType = "com.apple.product-type.bundle.ui-testing";');
     expect(project).toContain("TEST_TARGET_NAME = Himawari;");
+  });
+  it("每个不只改文档的 PR 都起真后端跑 iPhone 端到端测试", () => {
+    const job = workflow.jobs["iphone-e2e"];
+    expect(job.name).toBe("apple/iphone-e2e");
+    const runs = job.steps.map((step) => step.run ?? "");
+    expect(runs).toContain("clients/apple/scripts/e2e.sh");
+    expect(runs.some((run) => run.startsWith("npm ci"))).toBe(true);
+    expect(workflow.jobs.changes.outputs.e2e).toContain("steps.scope.outputs.e2e");
+    expect(needsIphoneEndToEnd(["docs/adr/0001-x.md", "README.md"])).toBe(false);
+    expect(
+      needsIphoneEndToEnd(["docs/a.md", "clients/apple/Sources/HimawariChat/ChatView.swift"]),
+    ).toBe(true);
+    expect(needsIphoneEndToEnd(["packages/platform-node/src/device-api-routes.ts"])).toBe(true);
+    expect(needsIphoneEndToEnd(null)).toBe(true);
+  });
+});
+
+describe("TestFlight 工作流", () => {
+  const workflow = parse(
+    readFileSync(path.join(repositoryRoot, ".github/workflows/testflight.yml"), "utf8"),
+  );
+  it("上传前必须先过端到端测试", () => {
+    expect(workflow.jobs.upload.needs).toContain("e2e");
+    expect(workflow.jobs.e2e.if).toBe(workflow.jobs.upload.if);
+    expect(workflow.jobs.e2e.steps.map((step) => step.run ?? "")).toContain(
+      "clients/apple/scripts/e2e.sh",
+    );
   });
 });

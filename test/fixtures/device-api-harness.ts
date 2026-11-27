@@ -16,6 +16,7 @@ import {
   defaultDeviceHardLimits,
   deviceVoiceTimingLister,
   deviceVoiceTimingRecorder,
+  type ExecutionLiveFeed,
   type GatewayAuthenticationContext,
   PERCEPTION_CONFIGURATION_DEFAULTS,
   type PerceptionConfiguration,
@@ -100,6 +101,7 @@ import {
   ProductionThreadGatewayAccessPolicy,
   utterancePrefetch,
 } from "../../apps/agent-service/src/production-http-composition.ts";
+import { ProductionMainThread } from "../../apps/agent-service/src/production-main-thread.ts";
 
 export const ownerId = createOwnerId("owner-device-api");
 export const agentId = createAgentId("agent-device-api");
@@ -195,6 +197,10 @@ export async function harness(
       readonly repository: SqliteProductStateRepository;
       readonly protector: EnvelopePayloadProtector;
     }) => NonNullable<Parameters<typeof buildHttpGatewayServer>[0]["files"]>;
+    readonly clock?: ManualClock;
+    readonly live?: ExecutionLiveFeed;
+    readonly mainThread?: boolean;
+    readonly beforeReady?: (app: FastifyInstance) => void;
     readonly exportArchive?: NonNullable<
       Parameters<typeof buildHttpGatewayServer>[0]["devices"]
     >["exportArchive"];
@@ -243,7 +249,7 @@ export async function harness(
       authorityLease.fencingToken,
     );
   database.close();
-  const clock = new ManualClock("2026-11-12T00:00:00.000Z");
+  const clock = options.clock ?? new ManualClock("2026-11-12T00:00:00.000Z");
   const now = () => new Date(clock.now());
   const repository = await SqliteProductStateRepository.open({
     stateRoot,
@@ -354,6 +360,20 @@ export async function harness(
             }
           : {}),
         waitForEvents: async () => new Promise((resolve) => setTimeout(resolve, 20)),
+        ...(options.live ? { live: options.live } : {}),
+        ...(options.mainThread
+          ? {
+              mainThread: new ProductionMainThread({
+                ownerId,
+                agentId,
+                threads,
+                commands,
+                payloads: repository.payloadStore(ownerId, agentId),
+                protector,
+                clock,
+              }),
+            }
+          : {}),
       });
       return { controlPlane: adapter, reads: adapter };
     })(),
@@ -683,6 +703,7 @@ export async function harness(
       }),
     },
   });
+  options.beforeReady?.(app);
   await app.ready();
   return {
     origin: publicOrigin,

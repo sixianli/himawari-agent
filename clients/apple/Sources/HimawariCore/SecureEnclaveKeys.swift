@@ -106,7 +106,7 @@ public struct SecureEnclaveKeyStore: Sendable {
     public func create(_ role: DeviceKeyRole) throws {
         guard SecureEnclave.isAvailable else { throw DeviceKeyError.secureEnclaveUnavailable }
         try delete(role)
-        let flags: SecAccessControlCreateFlags = role == .confirm ? [.privateKeyUsage, .userPresence] : [.privateKeyUsage]
+        let flags = Self.accessFlags(role)
         var error: Unmanaged<CFError>?
         let protection = role == .confirm ? kSecAttrAccessibleWhenUnlockedThisDeviceOnly : kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         guard let access = SecAccessControlCreateWithFlags(
@@ -130,6 +130,14 @@ public struct SecureEnclaveKeyStore: Sendable {
         ]
         let status = SecItemAdd(scoped(query) as CFDictionary, nil)
         guard status == errSecSuccess else { throw DeviceKeyError.keychain(status) }
+    }
+
+    static func accessFlags(_ role: DeviceKeyRole) -> SecAccessControlCreateFlags {
+        #if targetEnvironment(simulator)
+        return [.privateKeyUsage]
+        #else
+        return role == .confirm ? [.privateKeyUsage, .userPresence] : [.privateKeyUsage]
+        #endif
     }
 
     public func delete(_ role: DeviceKeyRole) throws {
