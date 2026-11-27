@@ -74,6 +74,29 @@ it("rejects direct calls to the system haptics in page code", () => {
   expect(findViolations("Haptics.shared.report(.messageSent)", "X.swift")).toEqual([]);
 });
 
+it("rejects shadows on whole views, which also draw a halo around every word inside a card", () => {
+  for (const line of [
+    ".shadow(color: .black, radius: 4)",
+    "content.shadow(radius: 2)",
+    "Text(title).shadow(color: shade, radius: 1, x: 0, y: 1)",
+    "        shadow(color: token.color.color, radius: token.blur / 2, x: token.x, y: token.y)",
+  ]) {
+    expect(findViolations(line, "X.swift").map((v) => v.code)).toContain("content-shadow");
+  }
+  expect(
+    findViolations(
+      "shape.fill(fill).shadow(color: token.color.color, radius: token.blur / 2, x: token.x, y: token.y)",
+      "X.swift",
+    ),
+  ).toEqual([]);
+  expect(
+    findViolations(
+      ".hmRaised(Circle(), fill: Color.hmSurface, shadow: DesignTokens.Shadows.lift)",
+      "X.swift",
+    ),
+  ).toEqual([]);
+});
+
 it("rejects plain buttons whose empty space cannot be tapped", () => {
   for (const line of [
     ".buttonStyle(.plain)",

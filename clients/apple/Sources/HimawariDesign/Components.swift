@@ -10,8 +10,7 @@ public struct CardBackground: ViewModifier {
     public func body(content: Content) -> some View {
         content
             .padding(padding)
-            .background(Color.hmSurface, in: RoundedRectangle(cornerRadius: DesignTokens.Radius.card, style: .continuous))
-            .hmShadow(DesignTokens.Shadows.lift)
+            .hmRaised(RoundedRectangle(cornerRadius: DesignTokens.Radius.card, style: .continuous), fill: Color.hmSurface, shadow: DesignTokens.Shadows.lift)
     }
 }
 

@@ -186,8 +186,7 @@ private struct MatterCard: View {
         }
         .padding(.horizontal, DesignTokens.Size.cardPaddingX)
         .padding(.bottom, DesignTokens.Chat.backgroundCardPaddingY)
-        .background(Color.hmSurface, in: RoundedRectangle(cornerRadius: DesignTokens.Radius.card, style: .continuous))
-        .hmShadow(DesignTokens.Shadows.lift)
+        .hmRaised(RoundedRectangle(cornerRadius: DesignTokens.Radius.card, style: .continuous), fill: Color.hmSurface, shadow: DesignTokens.Shadows.lift)
     }
 
     private func icon(for subthread: BackgroundWork.Subthread) -> IconName {
@@ -333,8 +332,7 @@ public struct SubthreadPage: View {
                 .padding(.horizontal, DesignTokens.Size.cardPaddingX)
                 .padding(.vertical, DesignTokens.Chat.backgroundCardPaddingY)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.hmSurface, in: RoundedRectangle(cornerRadius: DesignTokens.Radius.card, style: .continuous))
-                .hmShadow(DesignTokens.Shadows.lift)
+                .hmRaised(RoundedRectangle(cornerRadius: DesignTokens.Radius.card, style: .continuous), fill: Color.hmSurface, shadow: DesignTokens.Shadows.lift)
         }
     }
 

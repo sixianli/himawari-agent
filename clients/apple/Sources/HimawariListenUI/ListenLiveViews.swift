@@ -309,9 +309,8 @@ extension View {
 
     public func listenBannerPreviewSurface() -> some View {
         self
-            .background(Color.hmGlass, in: RoundedRectangle(cornerRadius: 30, style: .continuous))
+            .hmRaised(RoundedRectangle(cornerRadius: 30, style: .continuous), fill: Color.hmGlass, shadow: DesignTokens.Shadows.liftBig)
             .overlay(RoundedRectangle(cornerRadius: 30, style: .continuous).strokeBorder(Color.hmGlassLine, lineWidth: 1))
-            .hmShadow(DesignTokens.Shadows.liftBig)
             .frame(width: 366)
     }
 }
