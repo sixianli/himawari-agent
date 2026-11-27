@@ -483,6 +483,10 @@ jobs:
       - tooling
       - security
     timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
     env:
       CI_NODE: 22.22.3
       CI_MATRIX: default
@@ -504,6 +508,10 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22.22.3
+      - name: main 上失败的运行满三次必须认领到事故清单
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: if [ "$GITHUB_EVENT_NAME" = pull_request ]; then node scripts/check-incident-runs.mjs; fi
       - name: 把本次运行的共享目录指到本机临时目录
         run: mkdir -p "$RUNNER_TEMP/ci-share" && echo "HIMAWARI_CI_SHARE=$RUNNER_TEMP/ci-share" >> "$GITHUB_ENV"
       - name: 安装并核验固定工具
