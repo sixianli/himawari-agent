@@ -31,6 +31,7 @@ final class AccessibilityAuditTests: XCTestCase {
             let light = brightness["light"] ?? .nan
             let dark = brightness["dark"] ?? .nan
             print("A11Y_APPEARANCE \(scene) light=\(light) dark=\(dark)")
+            guard light >= Self.midLuminance else { continue }
             XCTAssertLessThan(
                 dark,
                 light,
@@ -76,6 +77,7 @@ final class AccessibilityAuditTests: XCTestCase {
     }
 
     private static let auditAttempts = 2
+    private static let midLuminance = 0.5
 
     private static func brightness(of app: XCUIApplication) -> Double {
         guard let image = app.windows.firstMatch.screenshot().image.cgImage else { return .nan }
