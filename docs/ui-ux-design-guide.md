@@ -334,15 +334,15 @@ Andy 批准并明确表示喜欢的设计。每行的原型链接是当时批注
 
 ## 自动检查
 
-规范里能自动检查的部分，已经变成程序检查：“命令”一列是 `npm run check:…` 的，每次 `npm run check` 都会跑；其余各项在同一列写明是哪个测试、哪项上线走查，或要单独运行的脚本。规则写进本文不算完成，能检查的要落成检查（[ADR 0107](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0107-every-incident-gets-an-automatic-gate.md)）。
+规范里能自动检查的部分，已经变成程序检查：“命令”一列是 `npm run check:…` 的，除了注明不在里面的，每次 `npm run check` 都会跑；网页已决定删除（Andy 2026-11-27），只查网页的三项移出了 `npm run check` 和 CI（[ADR 0292](adr/0292-how-ci-runs-now.md#jobs)）；其余各项在同一列写明是哪个测试、哪项上线走查，或要单独运行的脚本。规则写进本文不算完成，能检查的要落成检查（[ADR 0107](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0107-every-incident-gets-an-automatic-gate.md)）。
 
 | 检查 | 命令 | 拦什么 |
 | --- | --- | --- |
-| 真浏览器全站自查 | `npm run check:layout`（`scripts/check-layout-audit.mjs`） | 19 个画面（含设置的“个性化”栏、“数据”栏和敏感信息拦截记录，清单见脚本里的 `SCENES`）在中英日三语、1280、654 和 390 三种宽度、浅色深色下：横向滚动、内容被横向推出容器（第 52 条）、元素超出屏幕、按钮被挡住、文字被挤成竖排、文字被截断却没有省略号、原生下拉框、没点过就出现的焦点描边、中日界面里的英文月份星期和 AM/PM。每次运行先用一页故意做坏的页面自检，`REQUIRED_KINDS` 里的 14 类问题都要认出来才继续 |
+| 真浏览器全站自查 | `npm run check:layout`（`scripts/check-layout-audit.mjs`），2026-11-27 起不在 `npm run check` 里，只能手动跑 | 19 个画面（含设置的“个性化”栏、“数据”栏和敏感信息拦截记录，清单见脚本里的 `SCENES`）在中英日三语、1280、654 和 390 三种宽度、浅色深色下：横向滚动、内容被横向推出容器（第 52 条）、元素超出屏幕、按钮被挡住、文字被挤成竖排、文字被截断却没有省略号、原生下拉框、没点过就出现的焦点描边、中日界面里的英文月份星期和 AM/PM。每次运行先用一页故意做坏的页面自检，`REQUIRED_KINDS` 里的 14 类问题都要认出来才继续 |
 | 标志资源 | `npm run check:brand`（`scripts/check-brand-assets.mjs`） | `assets/brand/himawari/v3/logo-sunflower-disc.svg` 和代码里画种子的数学（`brand-seeds.ts`）不一致 |
 | 标志的动静 | `apps/control-center/test/brand.unit.test.ts` | 已完成回答、侧栏、减少动态效果下的标志有计时器在跑；种子数、黄金角位置不对 |
-| 日期时间语言 | `npm run check:locale` | 代码里不传界面语言的日期、时间、数字格式化（I-15） |
-| 手机排版 | `npm run check:phone-layout` | 手机输入框字号、弹窗安全区、视口设置（I-14） |
+| 日期时间语言 | `npm run check:locale`，2026-11-27 起不在 `npm run check` 里，只能手动跑 | 代码里不传界面语言的日期、时间、数字格式化（I-15） |
+| 手机排版 | `npm run check:phone-layout`，2026-11-27 起不在 `npm run check` 里，只能手动跑 | 手机输入框字号、弹窗安全区、视口设置（I-14） |
 | 文件预览 | `node scripts/test-file-preview-browser.mjs chromium`（和 `webkit`），不在 `npm run check` 里 | 在生产安全策略下，PDF、Word、Excel 在三语、1280 和 390 宽下都能显示：PDF 有文字层，Word 有样式、图片和项目符号，Excel 填充色和数字格式对，页面不横向滚动 |
 | 界面走查脚本 | `npm run check:release-walkthrough` | 上线前走查脚本里的选择器和页面一致，包括审批卡片的按钮和“已收到，正在继续…”文字 |
 | 批准后继续 | 上线走查 `accept-search-approval`（`test/integration/product-path-browser.test.ts`，`scripts/delivery-mode/browser-acceptance-gate.py` 要求它通过才能上线） | 一步里两次搜索只弹一张卡片；点一次允许后 10 秒内回答出现，页面不停在“正在加载…”（I-29） |

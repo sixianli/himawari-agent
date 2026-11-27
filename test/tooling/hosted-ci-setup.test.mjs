@@ -22,7 +22,7 @@ describe("托管机器的准备脚本", () => {
     expect(result.stderr).toContain("usage: prepare-hosted.sh <node>");
   });
   it.each([
-    ["ci.yml", ["static", "browser", "tests", "tooling"]],
+    ["ci.yml", ["static", "tests", "tooling"]],
     ["main.yml", ["confirm"]],
   ])("%s 里要沙箱或浏览器的作业都先跑准备脚本", (file, jobs) => {
     const workflow = parse(
@@ -52,7 +52,7 @@ describe("托管机器的准备脚本", () => {
     const text = readFileSync(script, "utf8");
     expect(text).toMatch(/apt-get install .*\bbubblewrap socat ripgrep apparmor-utils\b/u);
     expect(text).toContain("profile bwrap /usr/bin/bwrap flags=(unconfined) {");
-    expect(text).toContain("install-deps chromium firefox webkit");
+    expect(text).toContain("install-deps chromium");
   });
 });
 

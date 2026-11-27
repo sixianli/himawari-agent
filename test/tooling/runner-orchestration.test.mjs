@@ -497,9 +497,9 @@ describe("共享runner的调度、来源和失败传播", () => {
     expect(state.calls).toEqual([]);
     expect(existsSync(path.join(state.root, ".ci-output/policy"))).toBe(false);
   });
-  it("rejects hosted build, browser and tests on linux-arm64 before creating output or executing anything", async () => {
+  it("rejects hosted build and tests on linux-arm64 before creating output or executing anything", async () => {
     await withHost("linux", "arm64", async () => {
-      for (const checkId of ["build", "browser", "tests"]) {
+      for (const checkId of ["build", "tests"]) {
         await expect(run(checkId, { hosted: true, matrixKey: "linux-arm64" })).rejects.toThrow(
           "CI_MATRIX_UNSUPPORTED",
         );
@@ -679,15 +679,15 @@ describe("共享runner的调度、来源和失败传播", () => {
       outcome: "passed",
     });
   });
-  it("同一归档的build、browser分别记录produced/consumed身份", async () => {
+  it("同一归档的build、tests分别记录produced/consumed身份", async () => {
     const platform = process.platform === "darwin" ? "macos-arm64" : "linux-x64";
     const build = await run("build", { matrixKey: platform });
     const artifact = path.join(state.root, ".ci-output/build", build.artifacts[0].path);
-    const browser = await run("browser", { matrixKey: "chromium", artifact });
-    expect([build, browser].map((result) => result.status)).toEqual(["passed", "passed"]);
-    expect(browser.artifacts[0].sha256).toBe(build.artifacts[0].sha256);
+    const consumer = await run("tests", { matrixKey: "others", artifact });
+    expect([build, consumer].map((result) => result.status)).toEqual(["passed", "passed"]);
+    expect(consumer.artifacts[0].sha256).toBe(build.artifacts[0].sha256);
     expect(build.artifacts[0].role).toBe("produced");
-    expect(browser.artifacts[0].role).toBe("consumed");
+    expect(consumer.artifacts[0].role).toBe("consumed");
   });
   it("coverage先绑定源码快照，四个project合并后再判定覆盖率", async () => {
     const result = await run("tests");
