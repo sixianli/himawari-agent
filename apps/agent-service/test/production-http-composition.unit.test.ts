@@ -1,5 +1,15 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { chmod, lstat, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  copyFile,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { request as httpRequest } from "node:http";
 import { connect } from "node:net";
 import { tmpdir } from "node:os";
@@ -37,7 +47,7 @@ import {
   SoftwarePasskey,
 } from "@himawari-agent/testing";
 import { exportJWK, importJWK, type JSONWebKeySet, SignJWT } from "jose";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import {
   createProductionHttpComposition,
   type ProductionHttpCompositionSecretSources,
@@ -76,6 +86,26 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
+let migratedTemplate: Promise<string> | undefined;
+
+async function buildMigratedTemplate(): Promise<string> {
+  const directory = await mkdtemp(path.join(tmpdir(), "himawari-production-http-template-"));
+  const databasePath = path.join(directory, "product.sqlite");
+  const database = openQualifiedDatabase(databasePath);
+  try {
+    applyMigrations(database, await loadBundledMigrations());
+    database.pragma("wal_checkpoint(TRUNCATE)");
+  } finally {
+    database.close();
+  }
+  return databasePath;
+}
+
+afterAll(async () => {
+  if (migratedTemplate)
+    await rm(path.dirname(await migratedTemplate), { recursive: true, force: true });
+});
+
 async function fixture() {
   const root = await mkdtemp(path.join(tmpdir(), "himawari-production-http-"));
   roots.push(root);
@@ -85,8 +115,9 @@ async function fixture() {
   await mkdir(staticRoot);
   await writeFile(path.join(staticRoot, "index.html"), "<!doctype html><title>Himawari</title>");
   const databasePath = path.join(layout.data, "product.sqlite");
+  migratedTemplate ??= buildMigratedTemplate();
+  await copyFile(await migratedTemplate, databasePath);
   const database = openQualifiedDatabase(databasePath);
-  applyMigrations(database, await loadBundledMigrations());
   database.prepare("INSERT INTO owners (id, revision) VALUES (?, 0)").run(OWNER_ID);
   database
     .prepare("INSERT INTO agents (id, owner_id, revision) VALUES (?, ?, 0)")
