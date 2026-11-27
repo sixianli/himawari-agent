@@ -6,6 +6,12 @@ on:
       - clients/apple/**
       - .github/workflows/mac-release.yml
   workflow_dispatch:
+    inputs:
+      mode:
+        description: build 重新出包；check 只查存起来的那次公证，通过就发布
+        type: choice
+        options: [build, check]
+        default: build
   schedule:
     - cron: "7,37 * * * *"
 permissions:
@@ -21,7 +27,7 @@ env:
 jobs:
   publish:
     name: mac-release/publish
-    if: ${{ github.event_name != 'schedule' && github.ref == 'refs/heads/main' && github.repository == 'sixianli/himawari-agent' }}
+    if: ${{ github.event_name != 'schedule' && inputs.mode != 'check' && github.ref == 'refs/heads/main' && github.repository == 'sixianli/himawari-agent' }}
     runs-on: macos-26
     timeout-minutes: 90
     environment: testflight
@@ -89,7 +95,7 @@ jobs:
         run: clients/apple/scripts/mac-publish.sh
   check:
     name: mac-release/check-notarization
-    if: ${{ github.event_name == 'schedule' && github.repository == 'sixianli/himawari-agent' }}
+    if: ${{ (github.event_name == 'schedule' || inputs.mode == 'check') && github.ref == 'refs/heads/main' && github.repository == 'sixianli/himawari-agent' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     environment: testflight
