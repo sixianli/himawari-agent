@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -48,6 +49,40 @@ def report_evidence(directory):
             say('TAIL', error_file.name + ' ' + line)
 
 
+SKIPPED_DIRECTORIES = {'node_modules', '.git', 'source', 'scratch-failure-files'}
+REPORT_KEYS = ('failure', 'failureCode', 'error', 'errors', 'reason', 'runnerErrors', 'readbackErrors', 'runtimeIntegrityFailure', 'fault')
+
+
+def files_under(root):
+    found = []
+    for parent, directories, files in os.walk(root):
+        directories[:] = sorted(name for name in directories if name not in SKIPPED_DIRECTORIES)
+        for filename in sorted(files):
+            path = Path(parent) / filename
+            if path.is_file() and not path.is_symlink() and path.stat().st_size > 0:
+                found.append(path)
+    return found
+
+
+def failed_report_details(path):
+    try:
+        if path.stat().st_size > 4 * 1024 * 1024:
+            return None
+        value = json.loads(path.read_bytes())
+    except (OSError, ValueError):
+        return None
+    if not isinstance(value, dict) or value.get('passed') is not False:
+        return None
+    details = {key: value[key] for key in REPORT_KEYS if value.get(key)}
+    failed = [entry.get('id') or entry.get('name') for entry in value.get('assertions', []) if isinstance(entry, dict) and entry.get('passed') is False]
+    if failed:
+        details['failedAssertions'] = failed[:20]
+    commands = [{'name': entry.get('name'), 'exitCode': entry.get('exitCode')} for entry in value.get('commands', []) if isinstance(entry, dict) and entry.get('exitCode') not in (0, None)]
+    if commands:
+        details['failedCommands'] = commands[:20]
+    return json.dumps(details, ensure_ascii=False, sort_keys=True)[:1500] if details else None
+
+
 def report_failed_acceptance():
     root = STATE / 'release-cleanup' / 'failed-acceptance'
     if not root.is_dir() or root.is_symlink():
@@ -57,26 +92,13 @@ def report_failed_acceptance():
         return
     newest = found[-1]
     say('ACCEPTANCE', str(newest))
-    for report in sorted(newest.rglob('run-report.json')):
-        try:
-            value = json.loads(report.read_text())
-        except (OSError, ValueError) as error:
-            say('ACCEPTANCE', report.name + ' unreadable ' + type(error).__name__)
-            continue
-        say('ACCEPTANCE', 'run exitCode=' + json.dumps(value.get('exitCode')) + ' runnerErrors=' + json.dumps(value.get('runnerErrors'), ensure_ascii=False))
-    for report in sorted(newest.rglob('acceptance-report.json')):
-        try:
-            value = json.loads(report.read_text())
-        except (OSError, ValueError) as error:
-            say('ACCEPTANCE', report.name + ' unreadable ' + type(error).__name__)
-            continue
-        for command in value.get('commands', []):
-            if command.get('exitCode') != 0:
-                say('ACCEPTANCE', 'command ' + str(command.get('name')) + ' exitCode=' + str(command.get('exitCode')))
-        if value.get('runtimeIntegrityFailure'):
-            say('ACCEPTANCE', 'runtimeIntegrityFailure ' + str(value['runtimeIntegrityFailure']))
-    files = [path for path in sorted(newest.rglob('*.stderr')) if path.is_file() and not path.is_symlink() and path.stat().st_size > 0]
-    for error_file in files[:12]:
+    files = files_under(newest)
+    for path in [path for path in files if path.suffix == '.json']:
+        details = failed_report_details(path)
+        if details:
+            for start in range(0, len(details), WIDTH):
+                say('REPORT', str(path.relative_to(newest)) + ' ' + details[start:start + WIDTH])
+    for error_file in [path for path in files if path.suffix in ('.stderr', '.err', '.log')][:16]:
         say('FILE', str(error_file))
         for line in tail(error_file)[-10:]:
             say('TAIL', error_file.name + ' ' + line)
