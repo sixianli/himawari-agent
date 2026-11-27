@@ -163,6 +163,13 @@ struct MainShell: View {
             NotificationRouter.shared.approvalsRequested = false
             herOpen = true
         }
+        .agentGrantPrompt(
+            api: model.api,
+            confirmKey: model.confirmKey,
+            requested: NotificationRouter.shared.agentGrantRequested
+        ) {
+            NotificationRouter.shared.agentGrantRequested = false
+        }
         #endif
     }
 

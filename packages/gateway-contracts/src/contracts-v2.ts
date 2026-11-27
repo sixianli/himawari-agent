@@ -73,6 +73,8 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "memory.classify.snapshot",
   "memory.import.duplicates.read",
   "memory.import.duplicates.snapshot",
+  "memory.import.preview.read",
+  "memory.import.preview.snapshot",
   "decision.chain.read",
   "decision.chain.snapshot",
   "decision.email.read",
@@ -1160,6 +1162,24 @@ const serverStatusSnapshotSchema = object({
         reasonCode: nullable(machineString),
       }),
     ),
+    release: nullable(
+      object({
+        commit: {
+          parse(input: unknown, path = "$") {
+            if (typeof input !== "string" || !/^[0-9a-f]{7,40}$/u.test(input))
+              throw new ContractValidationError(path, "expected a commit hash");
+            return input;
+          },
+        },
+        installedAt: nullable(timestamp),
+      }),
+    ),
+    disk: nullable(
+      object({
+        availableBytes: integer(0),
+        totalBytes: integer(1),
+      }),
+    ),
     generatedAt: timestamp,
   }),
 });
@@ -2080,6 +2100,63 @@ const memoryImportDuplicatesSnapshotSchema = object({
         contentRef: machineString,
         verdict: enumeration(["same", "unsure", "different", "skipped"]),
         memoryId: nullable(machineString),
+      }),
+    ),
+  }),
+});
+export const MEMORY_IMPORT_PREVIEW_FILES_MAXIMUM = 10;
+export const MEMORY_IMPORT_PREVIEW_FILE_NAME_MAXIMUM = 128;
+export const MEMORY_IMPORT_PREVIEW_ITEMS_MAXIMUM = 500;
+export const MEMORY_IMPORT_PREVIEW_FILE_STATES = ["read", "empty", "unreadable"] as const;
+export const MEMORY_IMPORT_PREVIEW_FLAGS = [
+  "duplicate",
+  "secret",
+  "unclassified",
+  "similar",
+  "unchecked",
+  "coding",
+] as const;
+const memoryImportPreviewQuerySchema = object({
+  ...envelope("query", "memory.import.preview.read"),
+  payload: object({
+    source: enumeration(MEMORY_IMPORT_SOURCE_NAMES),
+    files: {
+      parse(input, path = "$.payload.files") {
+        const files = array(
+          object({
+            name: boundedString(MEMORY_IMPORT_PREVIEW_FILE_NAME_MAXIMUM),
+            contentRef: machineString,
+          }),
+        ).parse(input, path);
+        if (files.length < 1 || files.length > MEMORY_IMPORT_PREVIEW_FILES_MAXIMUM)
+          throw new ContractValidationError(path, "must hold 1 to 10 files");
+        return files;
+      },
+    },
+  }),
+});
+const memoryImportPreviewSnapshotSchema = object({
+  ...envelope("snapshot", "memory.import.preview.snapshot"),
+  payload: object({
+    files: array(
+      object({
+        name: boundedString(MEMORY_IMPORT_PREVIEW_FILE_NAME_MAXIMUM),
+        state: enumeration(MEMORY_IMPORT_PREVIEW_FILE_STATES),
+        found: integer(0),
+      }),
+    ),
+    found: integer(0),
+    items: array(
+      object({
+        contentRef: machineString,
+        text: boundedString(500),
+        from: boundedString(MEMORY_IMPORT_PREVIEW_FILE_NAME_MAXIMUM + 200),
+        category: enumeration(MEMORY_CATEGORY_NAMES),
+        subCategory: nullable(memoryLabelSchema),
+        topic: nullable(enumeration(MEMORY_SENSITIVE_TOPICS)),
+        flag: nullable(enumeration(MEMORY_IMPORT_PREVIEW_FLAGS)),
+        selectable: booleanValue,
+        checked: booleanValue,
       }),
     ),
   }),
@@ -3833,6 +3910,8 @@ const schemasByType = {
   "memory.classify.snapshot": memoryClassifySnapshotSchema,
   "memory.import.duplicates.read": memoryImportDuplicatesQuerySchema,
   "memory.import.duplicates.snapshot": memoryImportDuplicatesSnapshotSchema,
+  "memory.import.preview.read": memoryImportPreviewQuerySchema,
+  "memory.import.preview.snapshot": memoryImportPreviewSnapshotSchema,
   "decision.chain.read": decisionChainQuerySchema,
   "decision.chain.snapshot": decisionChainSnapshotSchema,
   "decision.email.read": decisionEmailQuerySchema,
