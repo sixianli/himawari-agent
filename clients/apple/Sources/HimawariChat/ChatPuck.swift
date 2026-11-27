@@ -23,9 +23,8 @@ struct ChatPuck: View {
         SunflowerMark(motion: busy ? .breathing(low: Double(DesignTokens.Chat.puckBusyLow)) : .still, seeds: Int(DesignTokens.Chat.puckSeeds))
             .frame(width: DesignTokens.Chat.puckMark, height: DesignTokens.Chat.puckMark)
             .frame(width: DesignTokens.Chat.puckSize, height: DesignTokens.Chat.puckSize)
-            .background(.ultraThinMaterial, in: Circle())
+            .hmRaised(Circle(), fill: .ultraThinMaterial, shadow: DesignTokens.Shadows.puck)
             .overlay(Circle().strokeBorder(Color.hmGlassLine, lineWidth: DesignTokens.Chat.puckLine))
-            .hmShadow(DesignTokens.Shadows.puck)
     }
 }
 

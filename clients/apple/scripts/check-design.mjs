@@ -92,6 +92,10 @@ const RULES = [
     pattern: /\.preferredColorScheme\(/u,
   },
   {
+    code: "content-shadow",
+    pattern: /(?<!\.fill\([^()]*\)\.)\bshadow\(/u,
+  },
+  {
     code: "fixed-font",
     pattern: /\.font\(\s*\.system\(\s*size:/u,
   },
