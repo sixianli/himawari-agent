@@ -248,9 +248,7 @@
         "model": 1612818,
         "projection": 14535
       },
-      "failureSamples": [
-        "The transaction scope exceeded 2000 ms"
-      ]
+      "failureSamples": ["The transaction scope exceeded 2000 ms"]
     },
     {
       "id": "eace081b",
@@ -765,9 +763,7 @@
         "model": 1326185,
         "projection": 17380
       },
-      "failureSamples": [
-        "The transaction scope exceeded 2000 ms"
-      ]
+      "failureSamples": ["The transaction scope exceeded 2000 ms"]
     },
     {
       "id": "195a1a1b",
