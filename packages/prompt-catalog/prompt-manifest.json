@@ -1003,14 +1003,14 @@
     "reason": "新增：工具参数 activity、activityIcon 的说明和系统提示里的过程图标表"
   },
   "tools.app-action": {
-    "sha256": "de76eb8f6f7f35473135d7afa0dd58eb7ba20155a6dce6215f1655602dc603a0",
-    "changedIn": "ADR 0311",
-    "reason": "新增：通用连接的 app_action 工具，Himawari 用主人连接的应用时看到的说明"
+    "sha256": "8f4cce4ab414205a3a1439c2bf8a7cd50e2fe48ca1783737b5e421e442b7e486",
+    "changedIn": "ADR 0313",
+    "reason": "改：app_action 加 run（Code Mode），没有应用时改为请主人在“连接”里添加"
   },
   "tools.app-action.action": {
-    "sha256": "2ad4e5f37ff3b3f1a5ff3119c1a25b6cd14adefca8923175f62be459d12ad20b",
-    "changedIn": "ADR 0311",
-    "reason": "新增：通用连接的 app_action 工具，Himawari 用主人连接的应用时看到的说明"
+    "sha256": "772e77550275331a8716cc8db078c441d23f772171e6f07fbf4da9ccbbfb0eaf",
+    "changedIn": "ADR 0313",
+    "reason": "改：app_action 加 run（Code Mode），没有应用时改为请主人在“连接”里添加"
   },
   "tools.app-action.app": {
     "sha256": "d3c71c135425516d20134c5834fec81029536d3ed2af4f36156162d7bae87904",
@@ -1246,9 +1246,9 @@
     "reason": "W-09、W-13：写明有钟点的最多提前 1 小时、只有日期的当天 9 点（Andy 2026-11-05 定 D8）；失败时怎么说只留在身份说明里；复核第 2 轮：写明 yearly 的过去日期会顺延到下一次，不会被拒绝（reminderSchedule）"
   },
   "tools.result.app-action.describe": {
-    "sha256": "82aebe0fb75668124441d4bcf8d6f00c9a7dedc6dc212197e3a5a26cf53881bc",
-    "changedIn": "ADR 0311",
-    "reason": "新增：通用连接的 app_action 工具，Himawari 用主人连接的应用时看到的说明"
+    "sha256": "cc8cbccb2f22682bce1f0b2285414af8cded511c910b26dc7536290ad5a81d2c",
+    "changedIn": "ADR 0313",
+    "reason": "改：app_action 加 run（Code Mode），没有应用时改为请主人在“连接”里添加"
   },
   "tools.result.app-action.failed": {
     "sha256": "db7b6ea1a08857f5aa57c6458a89e63337a51483a1f365a37c5f2eee084b85ec",
@@ -1256,14 +1256,14 @@
     "reason": "新增：通用连接的 app_action 工具，Himawari 用主人连接的应用时看到的说明"
   },
   "tools.result.app-action.invalid": {
-    "sha256": "e19f7d08a7148793a7470716b6a2728ccf6741dfb8800b666454108ba0ff90c4",
-    "changedIn": "ADR 0311",
-    "reason": "新增：通用连接的 app_action 工具，Himawari 用主人连接的应用时看到的说明"
+    "sha256": "5a17ce244b3c4d9c56d90a97010fe92748710a322123f77d1e46dfe520df55e6",
+    "changedIn": "ADR 0313",
+    "reason": "改：app_action 加 run（Code Mode），没有应用时改为请主人在“连接”里添加"
   },
   "tools.result.app-action.no-app": {
-    "sha256": "bbee560f66ed816b5e54cd014f1cf69995f7191b00d249ba4581cfbaf6b6ec11",
-    "changedIn": "ADR 0311",
-    "reason": "新增：通用连接的 app_action 工具，Himawari 用主人连接的应用时看到的说明"
+    "sha256": "6ca56fa4ec43776e52e0c72715ad56b94450bc0bfe3a61db9376c268ebb1294f",
+    "changedIn": "ADR 0313",
+    "reason": "改：app_action 加 run（Code Mode），没有应用时改为请主人在“连接”里添加"
   },
   "tools.result.app-action.not-connected": {
     "sha256": "8923b1a0773f966ab56589aa2dac6f4aee0c9c3af84236ac77387e2c6fd93de2",
@@ -1769,5 +1769,35 @@
     "sha256": "b38deaf33509804d822ba74e561e96b773b08ce38e3c75a178c6e49eb2e5bd4e",
     "changedIn": "浏览器工具",
     "reason": "新增浏览器工具的定义和结果文字"
+  },
+  "tools.app-action.code": {
+    "sha256": "6d9655ee59c4196a4ea6edf1e2ffc40e46980cdd114a30a8810e1c8b00743556",
+    "changedIn": "ADR 0313",
+    "reason": "新增：app_action 的 run（Code Mode）用到的说明"
+  },
+  "tools.result.app-code.error": {
+    "sha256": "95f930b257010da2183ed34a1463fbb51aac123664011e6c76d9fa6fc545656a",
+    "changedIn": "ADR 0313",
+    "reason": "新增：app_action 的 run（Code Mode）用到的说明"
+  },
+  "tools.result.app-code.not-repeatable": {
+    "sha256": "c17c1ace193fb4e8bfdd2d54e39fee7f8d88ba50abb598a059b19e4af43de4b8",
+    "changedIn": "ADR 0313",
+    "reason": "新增：app_action 的 run（Code Mode）用到的说明"
+  },
+  "tools.result.app-code.result": {
+    "sha256": "8ab7ef795e16557ae5e0d36021b14a7fc9e9fbc11ffa3ab4b1dfcbd195941a31",
+    "changedIn": "ADR 0313",
+    "reason": "新增：app_action 的 run（Code Mode）用到的说明"
+  },
+  "tools.result.app-code.timeout": {
+    "sha256": "e43d1d9e04105600f5647495b32c4b1091a02ad06a9930c3f1fa956f9ec31fbb",
+    "changedIn": "ADR 0313",
+    "reason": "新增：app_action 的 run（Code Mode）用到的说明"
+  },
+  "tools.result.app-code.unavailable": {
+    "sha256": "33373bc654f29839bcfbc37d7c4b48c301f36760a2c4eb5495ca35ef8f79a1e0",
+    "changedIn": "ADR 0313",
+    "reason": "新增：app_action 的 run（Code Mode）用到的说明"
   }
 }
