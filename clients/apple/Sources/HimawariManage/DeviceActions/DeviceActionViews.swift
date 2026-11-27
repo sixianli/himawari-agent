@@ -296,7 +296,6 @@ public struct ApprovalDetailView: View {
 
 public struct DeviceAbilitiesSection: View {
     let model: DeviceActionsModel
-    @State private var primer: PermissionState?
 
     public init(model: DeviceActionsModel) {
         self.model = model
@@ -304,31 +303,27 @@ public struct DeviceAbilitiesSection: View {
 
     private var actions: [DevicePolicyEntry] { model.policy?.actions ?? [] }
 
-    private func actions(for permission: PermissionState) -> [DevicePolicyEntry] {
-        actions.filter { model.permissionOfAction[$0.name] == permission.id }
-    }
-
     private var unmatchedActions: [DevicePolicyEntry] {
         let known = Set(model.permissions.map(\.id))
         return actions.filter { entry in model.permissionOfAction[entry.name].map { !known.contains($0) } ?? true }
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 22) {
-            ForEach(model.permissions) { permission in
-                let entries = actions(for: permission)
-                GroupedSection(Text(permission.name)) {
-                    Button { primer = permission } label: {
-                        GroupedRow(Text(L.text("abilities.systemAccess")), icon: { EmptyView() }) {
-                            Text(L.text("permission.status.\(permission.status.rawValue)"))
-                                .hmType(DesignTokens.TypeScale.body)
-                                .foregroundStyle(Color.hmText)
+        VStack(alignment: .leading, spacing: DesignTokens.Her.pageGap) {
+            if !model.permissions.isEmpty {
+                GroupedSection(Text(L.text("abilities.allowedBySystem"))) {
+                    ForEach(Array(model.permissions.enumerated()), id: \.element.id) { index, permission in
+                        if index > 0 { RowSeparator() }
+                        NavigationLink {
+                            PermissionAbilitiesPage(model: model, permissionId: permission.id)
+                        } label: {
+                            GroupedRow(Text(permission.name), icon: { EmptyView() }) {
+                                Text(L.text("permission.status.\(permission.status.rawValue)"))
+                                    .hmType(DesignTokens.TypeScale.body)
+                                    .foregroundStyle(Color.hmMuted)
+                            }
                         }
-                    }
-                    .buttonStyle(.pressable)
-                    ForEach(entries) { entry in
-                        RowSeparator()
-                        toggle(entry)
+                        .buttonStyle(.pressable)
                     }
                 }
             }
@@ -336,7 +331,7 @@ public struct DeviceAbilitiesSection: View {
                 GroupedSection(Text(L.text("abilities.title"))) {
                     ForEach(Array(unmatchedActions.enumerated()), id: \.element.id) { index, entry in
                         if index > 0 { RowSeparator() }
-                        toggle(entry)
+                        AbilityToggle(model: model, entry: entry)
                     }
                 }
             }
@@ -347,17 +342,69 @@ public struct DeviceAbilitiesSection: View {
             }
         }
         .task { await model.refresh() }
-        .sheet(item: $primer) { permission in
-            PermissionPrimerView(permission: model.permissions.first { $0.id == permission.id } ?? permission) {
-                Task { await model.request(permission.id) }
+    }
+}
+
+struct PermissionAbilitiesPage: View {
+    let model: DeviceActionsModel
+    let permissionId: String
+    @State private var primer: PermissionState?
+
+    private var permission: PermissionState? { model.permissions.first { $0.id == permissionId } }
+
+    private var entries: [DevicePolicyEntry] {
+        (model.policy?.actions ?? []).filter { model.permissionOfAction[$0.name] == permissionId }
+    }
+
+    var body: some View {
+        SettingsPage(gap: DesignTokens.Her.pageGap) {
+            if let permission {
+                GroupedSection {
+                    Button { primer = permission } label: {
+                        GroupedRow(Text(L.text("abilities.systemAccess")), icon: { EmptyView() }) {
+                            Text(L.text("permission.status.\(permission.status.rawValue)"))
+                                .hmType(DesignTokens.TypeScale.body)
+                                .foregroundStyle(Color.hmMuted)
+                        }
+                    }
+                    .buttonStyle(.pressable)
+                }
+                Text(permission.purpose)
+                    .font(.footnote)
+                    .foregroundStyle(Color.hmMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+                if !entries.isEmpty {
+                    GroupedSection(Text(L.text("abilities.title"))) {
+                        ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
+                            if index > 0 { RowSeparator() }
+                            AbilityToggle(model: model, entry: entry)
+                        }
+                    }
+                }
+                if let problem = model.problem {
+                    Text(problem)
+                        .hmType(DesignTokens.TypeScale.caption)
+                        .foregroundStyle(Color.hmDanger)
+                }
+            }
+        }
+        .navigationTitle(permission?.name ?? "")
+        .sheet(item: $primer) { shown in
+            PermissionPrimerView(permission: model.permissions.first { $0.id == shown.id } ?? shown) {
+                Task { await model.request(shown.id) }
             } close: {
                 primer = nil
             }
             .presentationDetents([.medium, .large])
         }
     }
+}
 
-    private func toggle(_ entry: DevicePolicyEntry) -> some View {
+struct AbilityToggle: View {
+    let model: DeviceActionsModel
+    let entry: DevicePolicyEntry
+
+    var body: some View {
         ToggleRow(
             Text(entry.shownTitle),
             isOn: Binding(
