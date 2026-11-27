@@ -104,6 +104,17 @@ describe("Mac 安装包发布工作流", () => {
     expect(plist).toContain("<string>$(HIMAWARI_UPDATE_FEED)</string>");
     expect(plist).toContain("<string>$(HIMAWARI_UPDATE_KEY)</string>");
   });
+  it("等苹果公证至少 2 小时，整个任务比公证多留 1 小时给归档和发布", () => {
+    const script = readFileSync(
+      path.join(repositoryRoot, "clients/apple/scripts/mac-release.sh"),
+      "utf8",
+    );
+    const wait = script.match(/notarytool submit[\s\S]*?--timeout (\d+)([mh])/u);
+    expect(wait).not.toBeNull();
+    const waitMinutes = Number(wait[1]) * (wait[2] === "h" ? 60 : 1);
+    expect(waitMinutes).toBeGreaterThanOrEqual(120);
+    expect(job["timeout-minutes"]).toBeGreaterThanOrEqual(waitMinutes + 60);
+  });
 });
 
 describe("iPhone 工作流", () => {
