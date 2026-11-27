@@ -25,7 +25,6 @@
 "attach.camera" = "撮影";
 "attach.photos" = "写真";
 "attach.files" = "ファイル";
-"attach.location" = "いまいる場所";
 "attach.remove" = "%@ を外す";
 "attach.retry" = "再試行";
 "attach.problem.tooMany" = "最大 %d 個";
@@ -39,7 +38,6 @@
 "attach.problem.outdated" = "サーバーがまだ対応していません。先にサーバーを更新してください";
 "attach.problem.upload" = "送れませんでした。あとでもう一度";
 "attach.problem.unreadable" = "このファイルはまだ読めません";
-"attach.problem.location" = "位置を取得できませんでした。位置情報がオンか確認してください";
 "chat.dictate" = "音声入力";
 "chat.talk" = "話しかける";
 "chat.hold.hint" = "離すと送信 · 上にスライドで取り消し";

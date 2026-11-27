@@ -631,7 +631,6 @@ public struct ChatView: View {
     #if os(iOS)
     static func describe(_ failure: AttachFailure) -> String {
         switch failure {
-        case .noLocation: L.text("attach.problem.location")
         case .tooLarge: L.format("attach.problem.fileTooLarge", ChatAttachmentPlanner.maxFileBytes / ChatAttachmentPlanner.bytesPerMegabyte)
         case .unreadable: L.text("attach.problem.unreadable")
         case .imagesUnsupported: L.text("attach.problem.images")
