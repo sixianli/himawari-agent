@@ -581,6 +581,22 @@ export async function runCheck({
   return result;
 }
 
+export function failureLines(result, details) {
+  if (result.status === "passed") return [];
+  const commands = (details?.commands ?? [])
+    .filter((command) => command.exitCode !== 0)
+    .map(
+      (command) =>
+        `CI_CHECK_COMMAND ${command.name} exit=${command.exitCode}${command.error ? ` error=${command.error}` : ""}${command.termination ? ` termination=${command.termination}` : ""}`,
+    );
+  const failures = (details?.failures ?? []).map((failure) => `CI_CHECK_FAILURE ${failure}`);
+  return [
+    `CI_CHECK_STATUS ${result.checkId}/${result.matrixKey} ${result.status}`,
+    ...commands,
+    ...failures,
+  ].map((line) => redactText(line));
+}
+
 export async function main(argv = process.argv.slice(2)) {
   const args = parseArguments(argv, [
     "--check",
@@ -638,6 +654,9 @@ export async function main(argv = process.argv.slice(2)) {
   process.stdout.write(
     `${result.checkId}/${result.matrixKey}: ${result.status} (${result.counts.passed} passed, ${result.counts.failed} failed)\n`,
   );
+  const detailsPath = path.join(outputPath(args["--output"]), "details.json");
+  const details = existsSync(detailsPath) ? readJson(detailsPath) : null;
+  for (const line of failureLines(result, details)) process.stdout.write(`${line}\n`);
   process.exitCode = result.exitCode;
   return result;
 }

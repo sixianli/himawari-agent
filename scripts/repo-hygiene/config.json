@@ -32,6 +32,10 @@
     {
       "path": "clients/apple/Sources/HimawariChat/Resources/Fonts/",
       "reason": "回答正文的中文衬线字（思源宋体 Noto Serif SC 常规和半粗两种字重，只保留 GB2312 的 7445 个字，每个约 2.8MB，SIL OFL 1.1 许可）；系统宋体在 iPhone 上要联网按需下载、下载完之前先显示苹方，所以随 App 打包"
+    },
+    {
+      "path": "evals/memory-benchmark/",
+      "reason": "公开记忆基准（LoCoMo、LongMemEval）每轮评测的逐题记录，是成绩单和案例库数字的唯一出处；每轮约 1.5MB，只在重跑评测时新增一个日期目录"
     }
   ]
 }
