@@ -329,8 +329,6 @@ public enum DesignTokens {
         public static let bubbleRadius: CGFloat = 20
         public static let bubbleSpeakerGap: CGFloat = 14
         public static let bubbleStepGap: CGFloat = 6
-        public static let bubbleTailHeight: CGFloat = 16
-        public static let bubbleTailWidth: CGFloat = 6
         public static let bubbleTimePaddingY: CGFloat = 6
         public static let codeHeaderPaddingTop: CGFloat = 8
         public static let codePadding: CGFloat = 12

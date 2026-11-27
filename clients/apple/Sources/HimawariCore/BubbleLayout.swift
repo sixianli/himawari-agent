@@ -32,12 +32,10 @@ public enum BubbleGap: Sendable, Equatable {
 public struct BubblePlacement: Sendable, Equatable {
     public let timeAbove: Date?
     public let gapAbove: BubbleGap
-    public let tail: Bool
 
-    public init(timeAbove: Date?, gapAbove: BubbleGap, tail: Bool) {
+    public init(timeAbove: Date?, gapAbove: BubbleGap) {
         self.timeAbove = timeAbove
         self.gapAbove = gapAbove
-        self.tail = tail
     }
 }
 
@@ -61,16 +59,10 @@ public enum BubbleLayout {
             } else {
                 gap = entry.speaker == lastSpeaker ? .inGroup : .newSpeaker
             }
-            var tail = false
             if let speaker = entry.speaker {
-                if let next = nextMessage(after: index, in: entries) {
-                    tail = entries[next].speaker != speaker || (index + 1...next).contains { times[$0] != nil }
-                } else {
-                    tail = true
-                }
                 lastSpeaker = speaker
             }
-            placements[entry.id] = BubblePlacement(timeAbove: times[index], gapAbove: gap, tail: tail)
+            placements[entry.id] = BubblePlacement(timeAbove: times[index], gapAbove: gap)
         }
         return placements
     }
@@ -88,9 +80,5 @@ public enum BubbleLayout {
             previousAt = at
         }
         return times
-    }
-
-    private static func nextMessage(after index: Int, in entries: [BubbleEntry]) -> Int? {
-        entries.indices.first { $0 > index && entries[$0].speaker != nil }
     }
 }

@@ -753,8 +753,6 @@ struct ChatRowView: View, @MainActor Equatable {
         .padding(.top, Self.gap(model.placement.gapAbove))
     }
 
-    private var tail: Bool { model.placement.tail }
-
     private static func gap(_ gap: BubbleGap) -> CGFloat {
         switch gap {
         case .none: 0
@@ -781,15 +779,15 @@ struct ChatRowView: View, @MainActor Equatable {
             ProcessRowView(line: line, failed: failed)
                 .task(id: runId) { await actions.showExecution(runId) }
         case let .streaming(text):
-            HerBubble(text: text, streaming: true, tail: tail, maxWidth: model.herWidth)
+            HerBubble(text: text, streaming: true, maxWidth: model.herWidth)
         case let .queued(item):
-            QueuedMessageRow(item: item, online: model.online, quote: model.quote, tail: tail, maxWidth: model.ownerWidth) {
+            QueuedMessageRow(item: item, online: model.online, quote: model.quote, maxWidth: model.ownerWidth) {
                 actions.retry(item.id)
             } discard: {
                 actions.discard(item.id)
             }
         case let .hearing(text):
-            OwnerBubble(text: text, tail: tail, maxWidth: model.ownerWidth)
+            OwnerBubble(text: text, maxWidth: model.ownerWidth)
                 .opacity(DesignTokens.Chat.hearingBubbleOpacity)
         }
     }
@@ -800,7 +798,7 @@ struct ChatRowView: View, @MainActor Equatable {
         switch message.role {
         case .agent:
             VStack(alignment: .leading, spacing: DesignTokens.Options.afterMessage) {
-                HerBubble(text: text, failed: message.status == .failed, tail: tail, maxWidth: model.herWidth, copyCode: actions.copyCode, codeMenu: actions.codeMenu(message))
+                HerBubble(text: text, failed: message.status == .failed, maxWidth: model.herWidth, copyCode: actions.copyCode, codeMenu: actions.codeMenu(message))
                     .messageMenu(actions.menu(message))
                 if let options = message.options {
                     MessageOptionsView(options: options, choose: actions.choose(message))
@@ -810,9 +808,9 @@ struct ChatRowView: View, @MainActor Equatable {
                 }
             }
         case .owner where message.chosenFrom != nil:
-            ChosenOptionBubble(text: text, tail: tail, maxWidth: model.ownerWidth)
+            ChosenOptionBubble(text: text, maxWidth: model.ownerWidth)
         case .owner:
-            OwnerBubble(text: text, quote: model.quote, jump: actions.jump, tail: tail, maxWidth: model.ownerWidth)
+            OwnerBubble(text: text, quote: model.quote, jump: actions.jump, maxWidth: model.ownerWidth)
                 .messageMenu(actions.menu(message))
         case .system:
             Text(text)
@@ -851,7 +849,7 @@ enum ChatRow: Identifiable, Equatable {
     case queued(OutboxItem)
     case hearing(String)
 
-    static let lone = BubblePlacement(timeAbove: nil, gapAbove: .newSpeaker, tail: true)
+    static let lone = BubblePlacement(timeAbove: nil, gapAbove: .newSpeaker)
 
     var id: String {
         switch self {
@@ -886,14 +884,13 @@ struct HerBubble: View {
     let text: String
     var streaming = false
     var failed = false
-    let tail: Bool
     let maxWidth: CGFloat
     var copyCode: (String) -> Void = { _ in }
     var codeMenu: (String) -> MessageMenuActions? = { _ in nil }
 
     var body: some View {
         AnswerText(text: text, streaming: streaming, muted: failed, copyCode: copyCode, codeMenu: codeMenu)
-            .bubble(.her, tail: tail)
+            .bubble(.her)
             .frame(maxWidth: maxWidth, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityElement(children: .contain)
@@ -905,7 +902,6 @@ struct OwnerBubble: View {
     let text: String
     var quote: BubbleQuote?
     var jump: (String) -> Void = { _ in }
-    var tail = true
     var maxWidth: CGFloat = DesignTokens.Size.bubbleMaxWidth
 
     var body: some View {
@@ -941,7 +937,7 @@ struct OwnerBubble: View {
                 }
                 .foregroundStyle(Color.hmOnText)
                 .tint(Color.hmOnText)
-                .bubble(.owner, tail: tail)
+                .bubble(.owner)
                 .frame(maxWidth: maxWidth, alignment: .trailing)
             }
         }
@@ -955,14 +951,13 @@ struct QueuedMessageRow: View {
     let item: OutboxItem
     let online: Bool
     var quote: BubbleQuote?
-    var tail = true
     var maxWidth: CGFloat = DesignTokens.Size.bubbleMaxWidth
     let retry: () -> Void
     let discard: () -> Void
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 6) {
-            OwnerBubble(text: item.message.text, quote: quote, tail: tail, maxWidth: maxWidth)
+            OwnerBubble(text: item.message.text, quote: quote, maxWidth: maxWidth)
             Group {
                 switch item.state {
                 case .failed:
