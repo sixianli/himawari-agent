@@ -253,8 +253,8 @@ describe("[I-93] main 调用完整 CI 时授予的权限覆盖 ci.yml 每个 job
   });
   it("完整 CI 的某个 job 重新申请 actions: write 时调用检查失败", () => {
     const writing = ci.replace(
-      "  required:\n",
-      "  required:\n    permissions:\n      contents: read\n      actions: write\n",
+      "    permissions:\n      contents: read\n      pull-requests: read\n      actions: read\n",
+      "    permissions:\n      contents: read\n      pull-requests: read\n      actions: write\n",
     );
     expect(writing).not.toBe(ci);
     expect(() => validateCallerGrantsCalledPermissions(main, writing)).toThrow(
