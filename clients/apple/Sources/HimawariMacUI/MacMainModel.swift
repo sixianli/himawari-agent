@@ -9,7 +9,7 @@ public enum MacDestination: Hashable, Sendable {
     case chat
     case her(HerSection)
 
-    static let sidebarSections: [HerSection] = [.memory, .approvals, .timers, .allowances, .vault]
+    static let sidebarSections: [HerSection] = [.memory, .rules, .approvals, .timers, .allowances, .vault]
 }
 
 struct ChatDraft: Equatable {

@@ -184,7 +184,8 @@ enum RuleFacts {
         if rule.status == "needs_review" || !rule.enforced {
             rows.append(RuleFact(title: M.ruleState(rule), detail: nil))
         }
-        if let quote = rule.quote?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty {
+        if let quote = rule.quote?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty,
+           rule.quoteSuperseded == true || quote != rule.summary.trimmingCharacters(in: .whitespacesAndNewlines) {
             if rule.quoteSuperseded == true {
                 rows.append(RuleFact(title: M.yourWords, detail: M.quoted(quote), note: M.quoteChangedLater, opensMemory: rule.quoteLatestMemoryId))
             } else {

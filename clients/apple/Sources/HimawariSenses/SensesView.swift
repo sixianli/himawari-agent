@@ -181,7 +181,7 @@ extension SenseState {
 
     var color: Color {
         switch self {
-        case .on: Color.hmSuccess
+        case .on: Color.hmSun
         case .systemDenied: Color.hmSun
         case .off, .serverPaused, .serverUnsupported: Color.hmMuted
         }

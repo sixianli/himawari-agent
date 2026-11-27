@@ -287,7 +287,7 @@ public struct HandoverSheet: View {
             VStack(spacing: DesignTokens.Handover.outcomeGap) {
                 HStack(spacing: DesignTokens.Size.composerGap + 2) {
                     if model.isDone {
-                        Icon(.check, size: DesignTokens.Handover.doneIcon).foregroundStyle(Color.hmSuccess)
+                        Icon(.check, size: DesignTokens.Handover.doneIcon).foregroundStyle(Color.hmSun)
                     }
                     Text(model.outcomeLine ?? "")
                         .hmType(DesignTokens.TypeScale.body)

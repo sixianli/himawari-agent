@@ -18,7 +18,7 @@ public struct ListenActivityWidget: Widget {
                     ListenActivityLockView(state: context.state)
                 }
             }
-                .activityBackgroundTint(Color.hmGlass)
+                .activityBackgroundTint(Color.hmSurface)
                 .activitySystemActionForegroundColor(Color.hmText)
         } dynamicIsland: { context in
             DynamicIsland {
@@ -105,14 +105,12 @@ struct ListenActivityLockView: View {
             }
         case .calling:
             ListenCallPanel(state: state, levels: VoiceLevels.resting)
-                .environment(\.colorScheme, .dark)
         case .asking:
             ListenAskPanel(state: state) { label in
                 Button(intent: NotMeIntent()) { label }.buttonStyle(.pressable)
             } itsMe: { label in
                 Button(intent: ItsMeIntent()) { label }.buttonStyle(.pressable)
             }
-            .environment(\.colorScheme, .dark)
         }
     }
 }

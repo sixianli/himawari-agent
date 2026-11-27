@@ -75,7 +75,6 @@ struct SenseDetailView: View {
                 }
             }
         }
-        .tint(Color.hmSuccess)
         .disabled(model.working == item)
         .frame(minHeight: DesignTokens.Size.rowMinHeight)
         .himawariCard(padding: EdgeInsets(top: 0, leading: DesignTokens.Size.cardPaddingX, bottom: 0, trailing: DesignTokens.Size.cardPaddingX))
@@ -155,7 +154,6 @@ struct SenseDetailView: View {
                             .foregroundStyle(Color.hmMuted)
                     }
                 }
-                .tint(Color.hmSuccess)
                 .disabled(always || !collecting)
                 .frame(minHeight: DesignTokens.Size.rowMinHeight)
             }

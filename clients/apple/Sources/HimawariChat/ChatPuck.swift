@@ -20,7 +20,7 @@ struct ChatPuck: View {
     }
 
     private var disc: some View {
-        SunflowerMark(motion: busy ? .breathing(low: Double(DesignTokens.Chat.puckBusyLow)) : .still, seeds: Int(DesignTokens.Chat.puckSeeds))
+        SunflowerMark(motion: busy ? .breathing(low: Double(DesignTokens.Chat.puckBusyLow)) : .idling, seeds: Int(DesignTokens.Chat.puckSeeds))
             .frame(width: DesignTokens.Chat.puckMark, height: DesignTokens.Chat.puckMark)
             .frame(width: DesignTokens.Chat.puckSize, height: DesignTokens.Chat.puckSize)
             .hmRaised(Circle(), fill: .ultraThinMaterial, shadow: DesignTokens.Shadows.puck)

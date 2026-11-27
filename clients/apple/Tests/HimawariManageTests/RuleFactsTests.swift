@@ -45,6 +45,13 @@ final class RuleFactsTests: XCTestCase {
         }
     }
 
+    func testYourWordsAreNotRepeatedWhenTheyAreTheRuleItself() throws {
+        let same = try rule(#""quote":" 给没发过邮件的人发信，先问我 ","changes":0,"lastUsed":null"#)
+        XCTAssertEqual(RuleFacts.rows(same), [])
+        let sameButChangedLater = try rule(#""quote":"给没发过邮件的人发信，先问我","changes":0,"lastUsed":null,"quoteSuperseded":true,"quoteLatestMemoryId":"m6""#)
+        XCTAssertEqual(RuleFacts.rows(sameButChangedLater).map(\.title), [M.yourWords])
+    }
+
     func testPausedOrUnreviewedRulesSayWhereTheyStand() throws {
         let paused = try JSONDecoder().decode(
             RuleSummary.self,

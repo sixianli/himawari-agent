@@ -182,7 +182,7 @@ final class MenuBarController: NSObject, NSWindowDelegate, NSDraggingDestination
 
     func showPairing() {
         if pairingWindow == nil {
-            let window = NSWindow(contentViewController: NSHostingController(rootView: MacPairingView(model: model.app, inbox: pairingInbox)))
+            let window = NSWindow(contentViewController: NSHostingController(rootView: MacPairingView(model: model.app, inbox: pairingInbox).tint(Color.hmSun)))
             window.title = L.text("app.name")
             window.styleMask = [.titled, .closable]
             window.isReleasedWhenClosed = false
@@ -244,7 +244,7 @@ final class InputBarWindow {
 
     private func makePanel() -> InputPanel {
         let panel = InputPanel()
-        let host = NSHostingView(rootView: InputBarHost(model: model, menu: menu))
+        let host = NSHostingView(rootView: InputBarHost(model: model, menu: menu).tint(Color.hmSun))
         host.sizingOptions = [.preferredContentSize]
         panel.contentView = host
         panel.onClose = { [weak self] in

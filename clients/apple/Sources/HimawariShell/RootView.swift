@@ -35,6 +35,7 @@ public struct HimawariRootView: View {
             #endif
         }
         .dismissesKeyboardOnOutsideTap()
+        .tint(Color.hmSun)
     }
 
     @State private var handoverEntry: HandoverEntryLink?

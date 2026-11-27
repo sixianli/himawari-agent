@@ -29,12 +29,13 @@
 "entry.share.title" = "分享给 Himawari";
 "entry.share.detail" = "在别的 App 里点分享";
 "entry.safari.title" = "Safari 里的这一页";
-"entry.safari.detail" = "你点了才读";
+"entry.safari.detail" = "把正在看的网页交给 Himawari 读";
 "status.anytime" = "随时能用";
 "status.on" = "开着";
 "status.off" = "关着";
 "status.setUp" = "去打开";
 "safari.hero" = "在 Safari 里把这一页交给 Himawari";
+"safari.purpose" = "看网页时想让 Himawari 总结、回答这一页上的问题或把这一页记下来，就在 Safari 里点一下 Himawari。";
 "safari.step1.key" = "第一步";
 "safari.step1" = "在 Safari 里点地址栏旁边的菜单按钮";
 "safari.step2.key" = "第二步";

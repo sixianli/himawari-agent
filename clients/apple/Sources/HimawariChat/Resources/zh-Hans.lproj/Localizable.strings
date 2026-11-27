@@ -8,7 +8,6 @@
 "common.ok" = "好";
 "process.thinking" = "在想";
 "process.waiting" = "等你同意";
-"process.seconds" = "%d 秒";
 "process.expand" = "点开看每一步";
 "process.didThings" = "做了 %d 件事";
 "process.failed" = "没做成";
@@ -61,6 +60,8 @@
 "chat.menu.copy" = "复制";
 "chat.menu.select" = "选择文字";
 "chat.menu.why" = "为什么说这个";
+"chat.menu.steps" = "看看 Himawari 做了什么";
+"chat.jumpLatest" = "回到最新";
 "chat.why" = "为什么";
 "chat.why.hide" = "收起";
 "chat.why.open" = "已展开";

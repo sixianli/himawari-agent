@@ -37,6 +37,9 @@ public struct ChatView: View {
     @State private var dictating = false
     @State private var dictation = DictationDraft()
     @State private var selecting: SelectableMessage?
+    @State private var shownSteps: ShownSteps?
+    @State private var farFromLatest = false
+    @State private var latestJumps = 0
     @State private var copiedCount = 0
     @State private var copiedShown = false
     @State private var replyingTo: ThreadMessage?
@@ -105,6 +108,13 @@ public struct ChatView: View {
         VStack(spacing: 0) {
             header
             Spacer(minLength: 0)
+            if farFromLatest {
+                JumpToLatestButton { latestJumps += 1 }
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .padding(.horizontal, DesignTokens.Size.composerInsetX)
+                    .padding(.bottom, DesignTokens.Chat.listMarkerGap)
+                    .transition(reduceMotion ? .identity : .opacity)
+            }
             if copiedShown {
                 CopiedToast()
                     .padding(.bottom, DesignTokens.Chat.copiedToastLift)
@@ -289,6 +299,13 @@ public struct ChatView: View {
             .sheet(item: $selecting) { message in
                 SelectTextSheet(message: message) { selecting = nil }
             }
+            .sheet(item: $shownSteps) { shown in
+                ProcessStepsSheet(steps: shown.steps) { shownSteps = nil }
+                    .onAppear { Haptics.shared.report(.sheetSettled) }
+                    .presentationDetents([.medium, .large])
+                    .presentationCornerRadius(DesignTokens.Radius.sheetTop)
+                    .presentationBackground(Color.hmBackground)
+            }
             .fullScreenCover(item: $safari) { link in
                 SafariView(url: link.url).ignoresSafeArea()
             }
@@ -316,8 +333,14 @@ public struct ChatView: View {
             reply: close == nil ? { startReply(to: message) } : nil,
             copy: { copyToPasteboard(MessageCopy.text(raw, fromAgent: fromAgent)) },
             select: { selecting = SelectableMessage(id: message.messageId, text: raw, fromAgent: fromAgent) },
-            why: explains(message) ? { toggleWhy(message) } : nil
+            why: explains(message) ? { toggleWhy(message) } : nil,
+            steps: finishedSteps(of: message).map { steps in { shownSteps = ShownSteps(id: message.messageId, steps: steps) } }
         )
+    }
+
+    private func finishedSteps(of message: ThreadMessage) -> [ProcessStep]? {
+        guard message.role == .agent, let runId = message.runId else { return nil }
+        return store.processLine(for: runId, in: threadId)?.finishedSteps
     }
 
     private func explains(_ message: ThreadMessage) -> Bool {
@@ -360,7 +383,7 @@ public struct ChatView: View {
         let whole = menu(for: message)
         return { code in
             guard let whole else { return nil }
-            return MessageMenuActions(reply: whole.reply, copy: { copyToPasteboard(code) }, select: whole.select, why: whole.why)
+            return MessageMenuActions(reply: whole.reply, copy: { copyToPasteboard(code) }, select: whole.select, why: whole.why, steps: whole.steps)
         }
     }
 
@@ -413,6 +436,10 @@ public struct ChatView: View {
                     try? await Task.sleep(for: .seconds(scrollToTopAfter))
                     withAnimation(.easeInOut(duration: 3)) { proxy.scrollTo(first.id, anchor: .top) }
                 }
+                .onChange(of: latestJumps) { _, _ in
+                    guard let last = chatRows.last else { return }
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.3)) { proxy.scrollTo(last.id, anchor: .bottom) }
+                }
         }
     }
 
@@ -445,6 +472,11 @@ public struct ChatView: View {
             .padding(.bottom, 110)
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { screenWidth = $0 }
+        .onScrollGeometryChange(for: Bool.self) { geometry in
+            geometry.contentSize.height - geometry.visibleRect.maxY > geometry.containerSize.height
+        } action: { _, far in
+            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { farFromLatest = far }
+        }
         .defaultScrollAnchor(.bottom, for: .alignment)
         .defaultScrollAnchor(.bottom, for: .initialOffset)
         .defaultScrollAnchor(.bottom, for: .sizeChanges)
@@ -459,7 +491,7 @@ public struct ChatView: View {
             case let .message(message):
                 rows.append(.message(message))
             case let .process(runId):
-                if let line = store.processLine(for: runId, in: threadId) {
+                if let line = store.processLine(for: runId, in: threadId), line.showsInTranscript {
                     rows.append(.process(runId: runId, line: line, failed: store.run(runId, in: threadId)?.status == "failed"))
                 }
             }

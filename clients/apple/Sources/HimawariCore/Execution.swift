@@ -174,6 +174,16 @@ public extension ProcessLine {
         if case let .finished(steps, _) = self { return steps.isEmpty }
         return false
     }
+
+    public var showsInTranscript: Bool {
+        if case .finished = self { return false }
+        return true
+    }
+
+    public var finishedSteps: [ProcessStep]? {
+        if case let .finished(steps, _) = self, !steps.isEmpty { return steps }
+        return nil
+    }
 }
 
 public enum ExecutionRefresh {
