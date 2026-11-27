@@ -113,17 +113,6 @@ enum DemoScene: String, CaseIterable {
         guard let index = arguments.firstIndex(of: argument), arguments.indices.contains(index + 1) else { return nil }
         return DemoScene(rawValue: arguments[index + 1])
     }
-
-    static let appearanceArgument = "-HimawariDemoAppearance"
-    static var requestedAppearance: ColorScheme? {
-        let arguments = ProcessInfo.processInfo.arguments
-        guard let index = arguments.firstIndex(of: appearanceArgument), arguments.indices.contains(index + 1) else { return nil }
-        switch arguments[index + 1] {
-        case "dark": return .dark
-        case "light": return .light
-        default: return nil
-        }
-    }
 }
 
 struct DemoSceneView: View {
@@ -135,7 +124,6 @@ struct DemoSceneView: View {
             .environment(\.listClock, DemoChatFixtures.now)
             .environment(\.stillFrames, !scene.rawValue.hasPrefix("motion-"))
             .environment(\.chatVoice, DemoVoice())
-            .preferredColorScheme(DemoScene.requestedAppearance)
             .task(id: scenePhase) {
                 guard scenePhase == .active else { return }
                 try? await Task.sleep(for: .milliseconds(300))
