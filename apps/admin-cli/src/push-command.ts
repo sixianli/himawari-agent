@@ -3,11 +3,13 @@ import { constants } from "node:fs";
 import { lstat, open } from "node:fs/promises";
 import path from "node:path";
 import { webPushPublicKey } from "@himawari-agent/platform-node";
+import { runOutagePush } from "./outage-push-command.js";
 
 const SECRET_REF = "web-push-vapid";
 const SECRET_VERSION = "v1";
 
 export async function runPushCommand(arguments_: readonly string[]): Promise<unknown> {
+  if (arguments_[1] === "outage") return runOutagePush(arguments_);
   if (
     arguments_.length !== 4 ||
     arguments_[1] !== "init-key" ||

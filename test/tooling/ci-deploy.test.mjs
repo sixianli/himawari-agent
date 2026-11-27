@@ -76,11 +76,15 @@ function workspace() {
       '[ -n "$FAKE_BACKUP_INSTALLED" ] || FAKE_BACKUP_INSTALLED=1',
       '[ -n "$FAKE_BACKUP_EXIT" ] || FAKE_BACKUP_EXIT=0',
       '[ -n "$FAKE_HOST_SYSTEM_EXIT" ] || FAKE_HOST_SYSTEM_EXIT=0',
+      '[ -n "$FAKE_HEARTBEAT_INSTALLED" ] || FAKE_HEARTBEAT_INSTALLED=1',
+      '[ -n "$FAKE_HEARTBEAT_EXIT" ] || FAKE_HEARTBEAT_EXIT=0',
       `echo "$command" >> ${repo}-remote.log`,
       'case "$command" in',
       '  "test -f /etc/himawari-backup/settings.json") exit "$FAKE_BACKUP_INSTALLED" ;;',
       `  *himawari-backup.new*) cat > ${repo}-refreshed.py; exit 0 ;;`,
       '  *"himawari-backup run"*) exit "$FAKE_BACKUP_EXIT" ;;',
+      '  "test -f /etc/himawari-heartbeat/healthcheck-url") exit "$FAKE_HEARTBEAT_INSTALLED" ;;',
+      '  *install-heartbeat.sh*) exit "$FAKE_HEARTBEAT_EXIT" ;;',
       `  "/usr/bin/python3 -I -") cat > ${repo}-host-system.py; exit "$FAKE_HOST_SYSTEM_EXIT" ;;`,
       "esac",
       `echo /opt/himawari/releases/2026-11-25-${first.slice(0, 8)}`,
@@ -206,6 +210,47 @@ describe("ci-deploy.sh", () => {
     expect(child.status).toBe(6);
     expect(child.stderr).toContain("CI_DEPLOY_REFUSED BACKUP_FAILED");
     expect(child.stdout).not.toContain("CI_DEPLOY_PREPARE");
+  });
+
+  it("reinstalls the heartbeat with the outage push from the deployed commit before building", () => {
+    const { repo, fakeSsh } = workspace();
+    const second = commitFile(repo, "src/app.ts", "changed");
+    const child = run(repo, {
+      HIMAWARI_PACKET_HOST: "198.51.100.9",
+      HIMAWARI_PACKET_SSH: fakeSsh,
+      HIMAWARI_DEPLOY_COMMIT: second,
+      FAKE_HEARTBEAT_INSTALLED: "0",
+    });
+    const output = child.stdout;
+    expect(output.indexOf("CI_DEPLOY_HEARTBEAT_REFRESH")).toBeGreaterThan(-1);
+    expect(output.indexOf("CI_DEPLOY_HEARTBEAT_REFRESH")).toBeLessThan(
+      output.indexOf("CI_DEPLOY_PREPARE"),
+    );
+    expect(readFileSync(`${repo}-remote.log`, "utf8")).toContain(
+      `bash '${repo}/scripts/operations/heartbeat/install-heartbeat.sh' install --keep-url --instance '${repo}/scripts/delivery-mode/instances/andy-production.json'`,
+    );
+  });
+
+  it("deploys nothing when the heartbeat cannot be reinstalled, and only warns when it was never installed", () => {
+    const { repo, fakeSsh } = workspace();
+    const second = commitFile(repo, "src/app.ts", "changed");
+    const failed = run(repo, {
+      HIMAWARI_PACKET_HOST: "198.51.100.9",
+      HIMAWARI_PACKET_SSH: fakeSsh,
+      HIMAWARI_DEPLOY_COMMIT: second,
+      FAKE_HEARTBEAT_INSTALLED: "0",
+      FAKE_HEARTBEAT_EXIT: "2",
+    });
+    expect(failed.status).toBe(3);
+    expect(failed.stderr).toContain("CI_DEPLOY_REFUSED HEARTBEAT_REFRESH_FAILED");
+    expect(failed.stdout).not.toContain("CI_DEPLOY_PREPARE");
+    const missing = run(repo, {
+      HIMAWARI_PACKET_HOST: "198.51.100.9",
+      HIMAWARI_PACKET_SSH: fakeSsh,
+      HIMAWARI_DEPLOY_COMMIT: second,
+    });
+    expect(missing.stderr).toContain("CI_DEPLOY_HEARTBEAT_NOT_INSTALLED");
+    expect(missing.stdout).toContain("CI_DEPLOY_PREPARE");
   });
 
   it("tightens the database file modes before building the packet", () => {

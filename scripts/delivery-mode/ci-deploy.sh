@@ -67,6 +67,13 @@ else
   echo "CI_DEPLOY_BACKUP_NOT_INSTALLED: no /etc/himawari-backup/settings.json on $host; install it with scripts/operations/backup/install-backup.sh" >&2
 fi
 
+if remote "test -f /etc/himawari-heartbeat/healthcheck-url"; then
+  echo "CI_DEPLOY_HEARTBEAT_REFRESH"
+  remote "bash '$repo/scripts/operations/heartbeat/install-heartbeat.sh' install --keep-url --instance '$repo/scripts/delivery-mode/instances/$instance_name.json'" || refuse HEARTBEAT_REFRESH_FAILED "could not reinstall the heartbeat and its outage push on $host; see the HEARTBEAT_ line above" 3
+else
+  echo "CI_DEPLOY_HEARTBEAT_NOT_INSTALLED: no /etc/himawari-heartbeat/healthcheck-url on $host; install it with scripts/operations/heartbeat/install-heartbeat.sh" >&2
+fi
+
 echo "CI_DEPLOY_DB_PERMISSIONS"
 remote "cd /var/lib/himawari/state/data && for f in product.sqlite product.sqlite-wal product.sqlite-shm; do [ -e \"\$f\" ] && chmod 600 \"\$f\"; done; true" || refuse DB_PERMISSIONS_FAILED "cannot tighten the product database file modes on $host" 3
 
