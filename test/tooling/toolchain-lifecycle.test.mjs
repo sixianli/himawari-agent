@@ -559,7 +559,7 @@ describe("合成npm/native/SQLite子进程边界", () => {
   it("原生模块缓存的键随 Node ABI、平台、包完整性和工具锁变化", () => {
     const entry = { name: "better-sqlite3", version: "12.8.0" };
     const installation = {
-      platform: "linux-x64",
+      platform: "platform-a",
       node: "22.22.3",
       nodeAbi: "127",
       toolchainSha256: "a".repeat(64),
@@ -569,7 +569,7 @@ describe("合成npm/native/SQLite子进程边界", () => {
     for (const changed of [
       { entry, integrity: "sha512-y", installation },
       { entry, integrity: "sha512-x", installation: { ...installation, nodeAbi: "131" } },
-      { entry, integrity: "sha512-x", installation: { ...installation, platform: "linux-arm64" } },
+      { entry, integrity: "sha512-x", installation: { ...installation, platform: "platform-b" } },
       {
         entry,
         integrity: "sha512-x",
