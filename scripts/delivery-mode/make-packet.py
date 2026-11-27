@@ -1201,11 +1201,8 @@ payload = json.loads(base64.b64decode(sys.stdin.buffer.read()))
 module = types.ModuleType('workspace_grant_binding')
 exec(compile(payload['module'], 'workspace-grant-binding.py', 'exec'), module.__dict__)
 account = pwd.getpwnam(payload['serviceAccount'])
-def read_configuration():
-    with open(payload['configuration'], 'rb') as source:
-        return source.read()
 try:
-    checked, problems = module.check_production_authorization(payload['frozen'], payload['s0'], new_capability_refs=payload['newCapabilityRefs'], read_configuration=read_configuration, service_uid=account.pw_uid, service_gid=account.pw_gid)
+    checked, problems = module.check_production_authorization(payload['frozen'], payload['s0'], new_capability_refs=payload['newCapabilityRefs'], configuration_path=payload['configuration'], service_uid=account.pw_uid, service_gid=account.pw_gid)
 except Exception as error:
     problems = [module.problem_code(error)]
 expected = payload['serviceProperties']

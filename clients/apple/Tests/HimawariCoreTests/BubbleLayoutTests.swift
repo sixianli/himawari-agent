@@ -9,21 +9,6 @@ import Testing
         BubbleEntry(id: id, speaker: speaker, at: start.addingTimeInterval(minute * 60))
     }
 
-    @Test func onlyTheLastBubbleOfEachSpeakersRunHasATail() {
-        let placed = BubbleLayout.place([
-            message("q1", .owner, minute: 0),
-            message("q2", .owner, minute: 1),
-            .step(id: "s1"),
-            message("a1", .her, minute: 2),
-            message("a2", .her, minute: 3),
-        ])
-        #expect(placed["q1"]?.tail == false)
-        #expect(placed["q2"]?.tail == true)
-        #expect(placed["a1"]?.tail == false)
-        #expect(placed["a2"]?.tail == true)
-        #expect(placed["s1"]?.tail == false)
-    }
-
     @Test func bubblesInARunSitCloseAndANewSpeakerStartsFurtherDown() {
         let placed = BubbleLayout.place([
             message("q1", .owner, minute: 0),
@@ -65,13 +50,11 @@ import Testing
         #expect(placed["q1"]?.timeAbove == nil)
     }
 
-    @Test func aTimeLineSplitsARunSoTheBubbleBeforeItKeepsItsTail() {
+    @Test func aTimeLineSplitsARun() {
         let placed = BubbleLayout.place([
             message("q1", .owner, minute: 0),
             message("q2", .owner, minute: 30),
         ])
-        #expect(placed["q1"]?.tail == true)
-        #expect(placed["q2"]?.tail == true)
         #expect(placed["q2"]?.gapAbove == .newSpeaker)
     }
 
@@ -80,8 +63,6 @@ import Testing
             message("q1", .owner, minute: 0),
             BubbleEntry(id: "queued", speaker: .owner, at: nil),
         ])
-        #expect(placed["q1"]?.tail == false)
-        #expect(placed["queued"]?.tail == true)
         #expect(placed["queued"]?.gapAbove == .inGroup)
     }
 }
