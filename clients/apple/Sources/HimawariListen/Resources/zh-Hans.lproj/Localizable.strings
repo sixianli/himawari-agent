@@ -14,6 +14,6 @@
 "eval.recorded" = "这句录过了，再录会替换。";
 "eval.purpose.enrollment" = "声纹三句";
 "eval.purpose.speaker" = "认人";
-"eval.purpose.command" = "叫它做事";
+"eval.purpose.command" = "叫 Himawari 做事";
 "eval.purpose.mixed" = "混着说";
-"eval.purpose.owner_mention" = "提到它但不是叫它";
+"eval.purpose.owner_mention" = "提到 Himawari 但不是叫 Himawari";

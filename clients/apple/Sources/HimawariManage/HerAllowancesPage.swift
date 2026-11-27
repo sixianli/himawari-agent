@@ -15,6 +15,7 @@ struct HerAllowancesPage: View {
                 Text(M.allowancesEmpty)
                     .hmType(DesignTokens.TypeScale.caption)
                     .foregroundStyle(Color.hmMuted)
+                    .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, DesignTokens.Allowance.footInset)
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else {
@@ -35,6 +36,7 @@ struct HerAllowancesPage: View {
             Text(M.allowancesFoot)
                 .hmType(DesignTokens.TypeScale.caption)
                 .foregroundStyle(Color.hmMuted)
+                .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, DesignTokens.Allowance.footInset)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }

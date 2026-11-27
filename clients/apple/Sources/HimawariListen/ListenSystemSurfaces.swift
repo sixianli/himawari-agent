@@ -11,8 +11,8 @@ final class ListenActivityController {
 
     func start(state: ListenLiveState) {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
-        end()
-        current = try? Activity.request(attributes: ListenActivityAttributes(), content: ActivityContent(state: state, staleDate: nil))
+        ListenActivities.endExisting()
+        current = try? Activity.request(attributes: ListenActivityAttributes(), content: Self.content(state))
     }
 
     func update(_ state: ListenLiveState) {
@@ -21,23 +21,17 @@ final class ListenActivityController {
     }
 
     func end() {
-        guard let id = current?.id else { return }
         current = nil
-        Task { await Self.end(id: id) }
+        ListenActivities.endExisting()
     }
 
-    private nonisolated static func activity(id: String) -> Activity<ListenActivityAttributes>? {
-        Activity<ListenActivityAttributes>.activities.first { $0.id == id }
+    private nonisolated static func content(_ state: ListenLiveState) -> ActivityContent<ListenLiveState> {
+        ActivityContent(state: state, staleDate: ListenActivityLifetime.staleDate(after: Date()))
     }
 
     private nonisolated static func update(id: String, state: ListenLiveState) async {
-        guard let activity = activity(id: id) else { return }
-        await activity.update(ActivityContent(state: state, staleDate: nil))
-    }
-
-    private nonisolated static func end(id: String) async {
-        guard let activity = activity(id: id) else { return }
-        await activity.end(nil, dismissalPolicy: .immediate)
+        guard let activity = Activity<ListenActivityAttributes>.activities.first(where: { $0.id == id }) else { return }
+        await activity.update(content(state))
     }
 }
 
