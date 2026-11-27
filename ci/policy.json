@@ -180,7 +180,8 @@
         "test/integration/container-runtime-restart-qualification.test.ts",
         "test/integration/container-browser-qualification.test.ts",
         "test/integration/container-pi-runner-qualification.test.ts",
-        "test/integration/product-path-browser.test.ts"
+        "test/integration/product-path-browser.test.ts",
+        "test/integration/browser-tool-real-sites.test.ts"
       ],
       "fileParallelism": true,
       "workerLimits": {
@@ -292,6 +293,13 @@
       "project": "qualification-product-path",
       "reason": "产品路径浏览器 E2E 需要已构建的安装包、本机 Chrome 和沙箱运行时，单次运行十几分钟，只能单独 opt-in",
       "allowedModifiers": ["skip"]
+    },
+    {
+      "path": "test/integration/browser-tool-real-sites.test.ts",
+      "kind": "qualification",
+      "project": "qualification-browser-real-sites",
+      "reason": "浏览器工具访问 en.wikipedia.org、example.com 等真实外网，外网慢或改版会让和本 PR 无关的合并被拦；只在 main 推送后由 real-sites.yml 跑，失败在合进来的 PR 上留言认领",
+      "allowedModifiers": []
     },
     {
       "path": "test/fixtures/durable-phase-child.test.ts",

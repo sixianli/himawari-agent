@@ -6,12 +6,13 @@ import {
   greenBase,
   isGreen,
   marker,
-} from "../../scripts/ci/apple-main-claim.mjs";
+  scopes,
+} from "../../scripts/ci/main-claim.mjs";
 
 const job = (name, conclusion) => ({ name, conclusion });
 const prefixes = ["apple/iphone", "apple/scroll"];
 
-describe("main 上苹果检查失败时找人认领", () => {
+describe("main 上检查失败时找人认领", () => {
   it("只有每一类作业都真的跑过且全部成功才算通过，跳过的不算", () => {
     const all = [
       job("apple/changes", "success"),
@@ -75,6 +76,7 @@ describe("main 上苹果检查失败时找人认领", () => {
 
   it("留言带本次运行的标记，同一次运行不在同一个 PR 上留两次", () => {
     const body = claimComment({
+      scope: "apple",
       workflow: "apple.yml",
       failed: ["apple/iphone-accessibility 0/3"],
       head: "d".repeat(40),
@@ -94,6 +96,7 @@ describe("main 上苹果检查失败时找人认领", () => {
 
   it("找不到上一次通过时说明只列了这个提交的 PR", () => {
     const body = claimComment({
+      scope: "apple",
       workflow: "testflight.yml",
       failed: ["testflight/upload"],
       head: "d".repeat(40),
@@ -103,5 +106,24 @@ describe("main 上苹果检查失败时找人认领", () => {
       pulls: [],
     });
     expect(body).toContain("找不到这些作业全部通过的一次");
+  });
+
+  it("真联网测试失败时请区间里所有 PR 认领，并说明外网变了怎么处理", () => {
+    expect(scopes.any.owns(["docs/x.md"])).toBe(true);
+    expect(scopes.apple.owns(["docs/x.md"])).toBe(false);
+    expect(scopes.apple.owns(["clients/apple/App/Sources/X.swift"])).toBe(true);
+    const body = claimComment({
+      scope: "any",
+      workflow: "real-sites.yml",
+      failed: ["real-sites/run"],
+      head: "d".repeat(40),
+      base: "a".repeat(40),
+      runUrl: "u",
+      runId: "7",
+      pulls: [770],
+    });
+    expect(body).toContain("合进 main 的PR：#770");
+    expect(body).toContain("不加重试");
+    expect(body).not.toContain("登记表");
   });
 });
