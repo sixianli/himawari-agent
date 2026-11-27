@@ -137,6 +137,31 @@ const FONT_RULE = {
     /(?:Font)?\.custom\([^)]*\b(?:size|fixedSize):|design:\s*\.serif\b|\.withDesign\(\s*\.serif\s*\)|\b(?:UIFont|NSFont)\(\s*name:|\bCTFontCreateWithName\b/u,
 };
 
+const PRONOUN_DIRECTORIES = ["Sources", "App"];
+const PRONOUN_FILE = /\.(?:swift|strings|plist)$/u;
+const PRONOUN_HAN = /她|彼女/u;
+const PRONOUN_LITERAL = /"(?:[^"\\\n]|\\.)*"/gu;
+const PRONOUN_ENGLISH = /\b(?:[Ss]he|[Hh]er|[Hh]ers|[Hh]erself)\b/u;
+
+export function findPronounViolations(source, file) {
+  const violations = [];
+  source.split("\n").forEach((line, index) => {
+    const prose = (line.match(PRONOUN_LITERAL) ?? []).filter((text) => /\s/u.test(text));
+    if (PRONOUN_HAN.test(line) || prose.some((text) => PRONOUN_ENGLISH.test(text)))
+      violations.push({ file, line: index + 1, code: "himawari-pronoun", text: line.trim() });
+  });
+  return violations;
+}
+
+function pronounFiles(directory) {
+  if (!existsSync(directory)) return [];
+  return readdirSync(directory).flatMap((entry) => {
+    const full = path.join(directory, entry);
+    if (statSync(full).isDirectory()) return pronounFiles(full);
+    return PRONOUN_FILE.test(entry) ? [full] : [];
+  });
+}
+
 export function findFontViolations(source, file) {
   const violations = [];
   source.split("\n").forEach((line, index) => {
@@ -242,6 +267,13 @@ export function checkDesign(root = appleRoot, repo = repositoryRoot) {
   for (const directory of FONT_DIRECTORIES) {
     for (const file of swiftFiles(path.join(root, directory))) {
       problems.push(...findFontViolations(readFileSync(file, "utf8"), path.relative(root, file)));
+    }
+  }
+  for (const directory of PRONOUN_DIRECTORIES) {
+    for (const file of pronounFiles(path.join(root, directory))) {
+      problems.push(
+        ...findPronounViolations(readFileSync(file, "utf8"), path.relative(root, file)),
+      );
     }
   }
   const web = path.join(root, WEB_DIRECTORY);

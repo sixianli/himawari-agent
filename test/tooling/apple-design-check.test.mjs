@@ -8,6 +8,7 @@ import {
   contrastRatio,
   findContrastProblems,
   findFontViolations,
+  findPronounViolations,
   findViolations,
   findWebViolations,
 } from "../../clients/apple/scripts/check-design.mjs";
@@ -375,4 +376,26 @@ it("lets the baseline hold known debt but never more, and flags entries that wen
       (p) => p.code,
     ),
   ).toEqual(["baseline-without-reason"]);
+});
+
+it("rejects she, her and their Chinese and Japanese forms in Himawari's interface text", () => {
+  for (const line of [
+    '"chat.reply.toAgent" = "回复她";',
+    '"chat.reply.toAgent" = "彼女への返信";',
+    'text("你的称呼", ja: "呼び名", en: "What she calls you")',
+    '"permission.note" = "Her model answers from the server";',
+  ]) {
+    expect(findPronounViolations(line, "X.strings").map((v) => v.code)).toEqual([
+      "himawari-pronoun",
+    ]);
+  }
+  for (const line of [
+    'case herApprovals = "next-3-her-approvals"',
+    'case her = "self"',
+    '"chat.reply.toAgent" = "回复 Himawari";',
+    'text("Himawari 用的模型", ja: "Himawari が使うモデル", en: "Himawari\'s model")',
+    "if !her.isEmpty {",
+  ]) {
+    expect(findPronounViolations(line, "X.swift")).toEqual([]);
+  }
 });
