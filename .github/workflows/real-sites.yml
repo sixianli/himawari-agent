@@ -36,3 +36,21 @@ jobs:
         run: .ci-output/tools/bin/node node_modules/playwright/cli.js install --only-shell chromium
       - name: 让浏览器工具访问真实外网
         run: .ci-output/tools/bin/node node_modules/vitest/vitest.mjs run --config vitest.workspace.ts --project qualification-browser-real-sites --retry 0
+  claim:
+    name: real-sites/claim
+    needs: run
+    if: ${{ failure() && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: 在上次通过以来合进 main 的 PR 上留言请它的线程认领
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ci/main-claim.mjs real-sites.yml any real-sites/run

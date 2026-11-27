@@ -46,4 +46,21 @@ describe("访问真实外网的浏览器工具测试", () => {
   it("static 检查用 actionlint 检查这个工作流", () => {
     expect(read("scripts/ci/run.mjs")).toContain('".github/workflows/real-sites.yml"');
   });
+
+  it("main 上失败时在上次通过以来合进 main 的每个 PR 上留言请它认领", () => {
+    const claim = workflow.jobs.claim;
+    expect(claim.needs).toBe("run");
+    expect(claim.if).toContain("failure()");
+    expect(claim.if).toContain("github.event_name == 'push'");
+    expect(claim.if).toContain("refs/heads/main");
+    expect(claim["runs-on"]).toBe("ubuntu-24.04");
+    expect(claim.permissions).toEqual({
+      contents: "read",
+      actions: "read",
+      "pull-requests": "write",
+    });
+    expect(claim.steps.at(-1).run).toBe(
+      "node scripts/ci/main-claim.mjs real-sites.yml any real-sites/run",
+    );
+  });
 });

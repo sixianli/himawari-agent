@@ -179,7 +179,7 @@ describe("iPhone 工作流", () => {
       "pull-requests": "write",
     });
     expect(claim.steps.at(-1).run).toBe(
-      "node scripts/ci/apple-main-claim.mjs apple.yml apple/iphone apple/scroll",
+      "node scripts/ci/main-claim.mjs apple.yml apple apple/iphone apple/scroll",
     );
   });
   it("滚动测速作业用开了优化的调试版跑长对话滚动脚本，并上传结果", () => {
@@ -298,7 +298,7 @@ describe("TestFlight 工作流", () => {
     expect(workflow.jobs.claim.needs).toBe("upload");
     expect(workflow.jobs.claim.if).toContain("failure()");
     expect(workflow.jobs.claim.steps.at(-1).run).toBe(
-      "node scripts/ci/apple-main-claim.mjs testflight.yml testflight/upload",
+      "node scripts/ci/main-claim.mjs testflight.yml apple testflight/upload",
     );
   });
 });
