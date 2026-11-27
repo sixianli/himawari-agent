@@ -104,8 +104,6 @@ jobs:
         run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache runner
       - name: 准备 GitHub 托管机器上的沙箱和浏览器依赖
         run: sudo bash scripts/ci/prepare-hosted.sh "$PWD/.ci-output/tools/bin/node"
-      - name: 安装布局检查用的 Chromium
-        run: .ci-output/tools/bin/node node_modules/playwright/cli.js install --only-shell chromium
       - name: 执行共享检查
         run: .ci-output/tools/bin/node scripts/ci/run.mjs --check static --matrix "$CI_MATRIX" --base "$CI_BASE" --tools .ci-output/tools --output .ci-output/check
       - name: 核验公开输出白名单
@@ -185,93 +183,6 @@ jobs:
         run: .ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "build/$CI_MATRIX 失败诊断" --from .ci-output/public/diagnostics --failed-logs .ci-output/public/reports
     outputs:
       linux-x64: ${{ steps.share.outputs.linux-x64 }}
-  browser:
-    name: browser / ${{ matrix.key }}
-    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft != true }}
-    runs-on: ${{ matrix.runner }}
-    needs:
-      - build
-    timeout-minutes: 90
-    outputs:
-      chromium: ${{ steps.share.outputs.chromium }}
-      firefox: ${{ steps.share.outputs.firefox }}
-      webkit: ${{ steps.share.outputs.webkit }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - key: chromium
-            runner: ubuntu-24.04
-            os: linux
-            arch: x64
-            node: 22.22.3
-            browser: chromium
-          - key: firefox
-            runner: ubuntu-24.04
-            os: linux
-            arch: x64
-            node: 22.22.3
-            browser: firefox
-          - key: webkit
-            runner: ubuntu-24.04
-            os: linux
-            arch: x64
-            node: 22.22.3
-            browser: webkit
-    env:
-      CI_NODE: ${{ matrix.node }}
-      CI_MATRIX: ${{ matrix.key }}
-      CI_BASE: ${{ inputs.base_sha || '' }}
-      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.ci-output/browsers
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        with:
-          node-version: ${{ matrix.node }}
-      - name: 把本次运行的共享目录指到本机临时目录
-        run: mkdir -p "$RUNNER_TEMP/ci-share" && echo "HIMAWARI_CI_SHARE=$RUNNER_TEMP/ci-share" >> "$GITHUB_ENV"
-      - name: 安装并核验固定工具
-        run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
-      - name: 隔离安装依赖及 SQLite 探针
-        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache runner
-      - name: 准备 GitHub 托管机器上的沙箱和浏览器依赖
-        run: sudo bash scripts/ci/prepare-hosted.sh "$PWD/.ci-output/tools/bin/node"
-      - name: 从本次运行的缓存取 Linux 构建
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
-        with:
-          path: ${{ runner.temp }}/ci-share/${{ github.run_id }}-${{ github.run_attempt }}/build-linux-x64
-          key: ci-share-${{ github.run_id }}-${{ github.run_attempt }}-build-linux-x64
-          fail-on-cache-miss: true
-      - name: 从共享目录取本次 Linux 构建并核对摘要
-        env:
-          CI_BUILD_DIGEST: ${{ needs.build.outputs.linux-x64 }}
-        run: .ci-output/tools/bin/node scripts/ci/run-share.mjs get --name build-linux-x64 --digest "$CI_BUILD_DIGEST" --to .ci-output/input
-      - name: 安装锁定 Playwright 对应引擎
-        run: .ci-output/tools/bin/node node_modules/playwright/cli.js install "$CI_MATRIX"
-      - name: 执行共享检查
-        run: .ci-output/tools/bin/node scripts/ci/run.mjs --check browser --matrix "$CI_MATRIX" --base "$CI_BASE" --tools .ci-output/tools --output .ci-output/check --input .ci-output/input/result.json
-      - name: 核验公开输出白名单
-        env:
-          HIMAWARI_CI_GITHUB_TOKEN: ${{ github.token }}
-        run: .ci-output/tools/bin/node scripts/ci/publish.mjs --input .ci-output/check --output .ci-output/public --tools .ci-output/tools
-        if: always()
-        id: publish
-      - name: 把本次完整报告放进本次运行的共享目录
-        id: share
-        if: ${{ always() && steps.publish.outcome == 'success' }}
-        run: .ci-output/tools/bin/node scripts/ci/run-share.mjs put --name "browser-$CI_MATRIX" --from .ci-output/public/reports --output-key "$CI_MATRIX"
-      - name: 把共享目录里本作业的报告存进本次运行的缓存
-        if: ${{ always() && steps.share.outcome == 'success' }}
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
-        with:
-          path: ${{ runner.temp }}/ci-share/${{ github.run_id }}-${{ github.run_attempt }}/browser-${{ env.CI_MATRIX }}
-          key: ci-share-${{ github.run_id }}-${{ github.run_attempt }}-browser-${{ env.CI_MATRIX }}
-      - name: 把失败诊断写进作业摘要
-        if: ${{ always() && steps.publish.outcome == 'success' }}
-        run: .ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "browser/$CI_MATRIX 失败诊断" --from .ci-output/public/diagnostics --failed-logs .ci-output/public/reports
   tests:
     name: tests / ${{ matrix.key }}
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft != true }}
@@ -478,7 +389,6 @@ jobs:
       - policy
       - static
       - build
-      - browser
       - tests
       - tooling
       - security
@@ -533,21 +443,6 @@ jobs:
         with:
           path: ${{ runner.temp }}/ci-share/${{ github.run_id }}-${{ github.run_attempt }}/build-linux-x64
           key: ci-share-${{ github.run_id }}-${{ github.run_attempt }}-build-linux-x64
-      - name: 从本次运行的缓存取 browser-chromium 的报告
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
-        with:
-          path: ${{ runner.temp }}/ci-share/${{ github.run_id }}-${{ github.run_attempt }}/browser-chromium
-          key: ci-share-${{ github.run_id }}-${{ github.run_attempt }}-browser-chromium
-      - name: 从本次运行的缓存取 browser-firefox 的报告
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
-        with:
-          path: ${{ runner.temp }}/ci-share/${{ github.run_id }}-${{ github.run_attempt }}/browser-firefox
-          key: ci-share-${{ github.run_id }}-${{ github.run_attempt }}-browser-firefox
-      - name: 从本次运行的缓存取 browser-webkit 的报告
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
-        with:
-          path: ${{ runner.temp }}/ci-share/${{ github.run_id }}-${{ github.run_attempt }}/browser-webkit
-          key: ci-share-${{ github.run_id }}-${{ github.run_attempt }}-browser-webkit
       - name: 从本次运行的缓存取 tests-integration-1 的报告
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
         with:

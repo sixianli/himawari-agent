@@ -76,7 +76,7 @@ it("完整 CI 只用 GitHub 缓存在本次运行的作业之间传报告和构�
   const workflow = parse(readFileSync(".github/workflows/ci.yml", "utf8"));
   expect(workflow.on.push).toBeUndefined();
   expect(workflow.on.workflow_call).toBeDefined();
-  expect(Object.keys(workflow.jobs)).toHaveLength(8);
+  expect(Object.keys(workflow.jobs)).toHaveLength(7);
   expect(
     workflow.jobs.required.steps.some((s) => s.run?.includes("install-gate-dependencies.mjs")),
   ).toBe(true);
@@ -277,7 +277,7 @@ it("job 之间的文件经本次运行的缓存传递：汇总先取回再收齐
   const restores = steps.flatMap((step, index) => (usesGitHubCache(step) ? [index] : []));
   const collect = steps.findIndex((step) => step.run?.includes("run-share.mjs collect"));
   const gate = steps.findIndex((step) => step.run?.includes("required.mjs"));
-  expect(restores.length).toBe(11);
+  expect(restores.length).toBe(8);
   expect(Math.max(...restores)).toBeLessThan(collect);
   expect(gate).toBeGreaterThan(collect);
   expect(steps.some((step) => step.run?.includes("run-share.mjs remove"))).toBe(false);

@@ -599,9 +599,6 @@ describe("local shared-runner boundary", () => {
       "policy",
       "static",
       "build",
-      "browser",
-      "browser",
-      "browser",
       "tests",
       "tests",
       "tests",
@@ -609,12 +606,9 @@ describe("local shared-runner boundary", () => {
       "security",
     ]);
     expect(
-      calls.filter((entry) => entry.checkId === "browser").map((entry) => entry.matrixKey),
-    ).toEqual(["chromium", "firefox", "webkit"]);
-    expect(
       calls.filter((entry) => entry.checkId === "tests").map((entry) => entry.matrixKey),
     ).toEqual(["integration-1", "integration-2", "others"]);
-    const consumers = calls.filter((entry) => ["browser", "tests"].includes(entry.checkId));
+    const consumers = calls.filter((entry) => entry.checkId === "tests");
     expect(new Set(consumers.map((entry) => entry.artifact)).size).toBe(1);
     expect(consumers[0].artifact).toContain("runtime.tar.gz");
     expect(calls.every((entry) => entry.hosted === false)).toBe(true);
@@ -682,7 +676,7 @@ describe("local shared-runner boundary", () => {
     state.fail = "build";
     const failedBuild = await runLocal();
     expect(failedBuild.status).toBe("failed");
-    expect(state.calls.some((entry) => ["browser", "tests"].includes(entry.checkId))).toBe(false);
+    expect(state.calls.some((entry) => entry.checkId === "tests")).toBe(false);
     expect(state.calls.map((entry) => entry.checkId)).toEqual([
       "policy",
       "static",

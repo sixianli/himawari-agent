@@ -142,3 +142,73 @@ it("initializes one product identity and refuses repeated or escaping targets", 
     await rm(root, { recursive: true, force: true });
   }
 });
+
+it("stores a configuration that later admin commands can load when it names retired run policy keys", async () => {
+  const root = await realpath(await mkdtemp(path.join(tmpdir(), "himawari-init-retired-")));
+  try {
+    const source = JSON.parse(
+      await readFile(
+        new URL(
+          "../../../test/integration/fixtures/file-summary/configuration.json",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+    );
+    const stateRoot = path.join(root, "state");
+    const config = {
+      ...source,
+      stateRoot,
+      runtimeDirectory: path.join(stateRoot, "runtime"),
+      cacheDirectory: path.join(stateRoot, "cache"),
+      memory: { ...source.memory, storagePath: path.join(stateRoot, "data", "memory") },
+      runPolicy: { ...source.runPolicy, maxMemoryClassification: "private" },
+    };
+    const input = path.join(root, "input.json");
+    await writeFile(input, JSON.stringify(config), { mode: 0o600 });
+    let errors = "";
+    const sink = new Writable({
+      write(_chunk, _encoding, done) {
+        done();
+      },
+    });
+    const stderr = new Writable({
+      write(chunk, _encoding, done) {
+        errors += String(chunk);
+        done();
+      },
+    });
+    expect(await runAdminCli(["init", "--config", input], sink, stderr), errors).toBe(0);
+    const storedConfig = path.join(stateRoot, "configuration.json");
+    const stored = JSON.parse(await readFile(storedConfig, "utf8"));
+    expect(stored.runPolicy).toEqual(source.runPolicy);
+    const workspace = path.join(root, "workspace");
+    await mkdir(workspace, { mode: 0o700 });
+    errors = "";
+    expect(
+      await runAdminCli(
+        [
+          "workspace",
+          "grant",
+          "--config",
+          storedConfig,
+          "--directory",
+          workspace,
+          "--host-id",
+          "host:test",
+          "--id",
+          "directory:test",
+          "--expires-at",
+          new Date(Date.now() + 3600000).toISOString(),
+          "--confirm",
+          workspace,
+        ],
+        sink,
+        stderr,
+      ),
+      errors,
+    ).toBe(0);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
