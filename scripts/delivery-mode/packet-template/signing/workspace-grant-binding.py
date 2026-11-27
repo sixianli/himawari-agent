@@ -39,8 +39,8 @@ def parse_json(data):
     return json.loads(data, object_pairs_hook=object_pairs)
 
 def utc(value):
-    require(isinstance(value, str) and re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z', value), 'G90_CANONICAL_UTC_TIMESTAMP_REQUIRED')
-    return datetime.fromisoformat(value.replace('Z', '+00:00'))
+    require(isinstance(value, str) and re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?(Z|[+-]\d{2}:\d{2})', value), 'G90_ZONED_TIMESTAMP_REQUIRED')
+    return datetime.fromisoformat(value.replace('Z', '+00:00')).astimezone(timezone.utc)
 
 def safe_sha(value):
     return isinstance(value, str) and re.fullmatch('[a-f0-9]{64}', value) is not None

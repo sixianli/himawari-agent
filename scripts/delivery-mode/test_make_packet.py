@@ -34,7 +34,7 @@ INTENDED_CHANGES = {
     'acceptance/cloud/run-cloud-acceptance.sh', 'acceptance/cloud/run-stage-03.py', 'acceptance/cloud/run-question12-downloads.sh', 'inputs/bindings.draft.json',
     'inputs/check-packet-consistency.py', 'inputs/verify-packet-consistency.py', 'inputs/finalize-bindings.py', 'install/twelfth-artifact-install.mjs', 'install/verify-s9-clean-transport-fixtures.py', 'install/P5-new-prefix.md', 'inputs/verify-finalize-bindings.py', 'maintenance/OWNED-SHA256SUMS', 'maintenance/P-readback-design.md', 'maintenance/S9-control-files.py', 'maintenance/maintenance-common.mjs',
     'maintenance/production-shape-config-template.json', 'acceptance/cloud/download-question-12.py', 'acceptance/cloud/adapters/failure-scene.py', 'acceptance/cloud/verify-failure-scene-fixtures.py',
-    'acceptance/helpers/test-resource-retention.py', 'acceptance/helpers/check-p5-scratch-cleanup.py', 'measurement/probe/run-service-probe.py', 'install/S9-clean-transport.py', 'signing/finalize-binding-inputs.py',
+    'acceptance/helpers/test-resource-retention.py', 'acceptance/helpers/check-p5-scratch-cleanup.py', 'measurement/probe/run-service-probe.py', 'install/S9-clean-transport.py', 'signing/finalize-binding-inputs.py', 'signing/workspace-grant-binding.py',
     'maintenance/raw-copy-recovery.mjs', 'maintenance/run-maintenance.mjs', 'maintenance/verify-fixtures.mjs', 'measurement/OWNED-SHA256SUMS', 'measurement/S6-service-read.py', 'measurement/probe/bootstrap.mjs', 's0-db/read-s0-db.mjs',
     'signing/cloud-protected-prepare.mjs', 'signing/cloud-seal.mjs', 'signing/publish-runtime-protection.mjs', 'steps/README.md', 'steps/run-local-step.py', 'steps/run-step.py', 'steps/verify-steps.py', 'systemd/OWNED-SHA256SUMS', 'systemd/P9-switch-start-readback.md',
     's0-db/verify-catalog-runtime-switch.mjs', 'signing/cloud-capability-manifest.mjs', 'signing/verify-capability-manifest.mjs',
@@ -1057,6 +1057,27 @@ class ServiceAccountContractTest(unittest.TestCase):
 
     def test_first_install_gives_the_service_account_the_state_root_as_home(self):
         self.assertEqual(self.first_install_account(), ('/var/lib/himawari/state', '/usr/sbin/nologin'))
+
+
+class WorkspaceGrantExpiryTest(unittest.TestCase):
+    def setUp(self):
+        previous = sys.dont_write_bytecode
+        sys.dont_write_bytecode = True
+        try:
+            self.binding = load('workspace_grant_binding', 'packet-template/signing/workspace-grant-binding.py')
+        finally:
+            sys.dont_write_bytecode = previous
+
+    def test_I120_an_existing_grant_expiry_without_milliseconds_or_in_another_zone_is_read_as_utc(self):
+        from datetime import datetime, timezone
+        expected = datetime(2099, 1, 1, tzinfo=timezone.utc)
+        for value in ['2099-01-01T00:00:00Z', '2099-01-01T00:00:00.000Z', '2099-01-01T09:00:00+09:00', '2098-12-31T19:00:00.000000-05:00']:
+            self.assertEqual(self.binding.utc(value), expected, value)
+
+    def test_an_expiry_without_a_zone_or_in_another_shape_is_rejected(self):
+        for value in ['2099-01-01T00:00:00', '2099-01-01', 'tomorrow', 1, None]:
+            with self.assertRaisesRegex(RuntimeError, 'G90_ZONED_TIMESTAMP_REQUIRED'):
+                self.binding.utc(value)
 
 
 class DeployScriptErrorLineTest(unittest.TestCase):
