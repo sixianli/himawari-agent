@@ -1019,6 +1019,45 @@ class ArmTargetTest(RenderedPacket):
         self.assertEqual((upload[0], upload[-2], upload[-1]), ('scp', '/tmp/a', 'himawari-build@192.0.2.7:/remote/b'))
 
 
+class ServiceAccountContractTest(unittest.TestCase):
+    SCRIPTS = ('run-question12-downloads.sh', 'run-cloud-acceptance.sh')
+
+    def account_block(self, name):
+        lines = (HERE / 'packet-template/acceptance/cloud' / name).read_text().splitlines()
+        start = next(index for index, line in enumerate(lines) if line.startswith('account=$(getent passwd himawari-prod)'))
+        end = next(index for index, line in enumerate(lines) if line.startswith('test "$(id -G himawari-prod)"'))
+        return '\n'.join(lines[start:end + 1])
+
+    def run_block(self, name, passwd_line, groups):
+        program = 'set -euo pipefail\ngetent() { printf "%s\\n" "$PASSWD_LINE"; }\nid() { printf "%s\\n" "$GROUPS_LINE"; }\n' + self.account_block(name) + '\necho ACCOUNT_OK\n'
+        return subprocess.run(['bash', '-c', program], capture_output=True, text=True, env={'PATH': '/usr/bin:/bin', 'PASSWD_LINE': passwd_line, 'GROUPS_LINE': groups})
+
+    def first_install_account(self):
+        line = next(line for line in (HERE.parents[1] / 'scripts/install/first-install.sh').read_text().splitlines() if 'useradd' in line and '"$service_user"' in line)
+        home = re.search(r'--home-dir "([^"]+)"', line).group(1).replace('$state_parent', '/var/lib/himawari')
+        shell = re.search(r'--shell (\S+)', line).group(1)
+        return home, shell
+
+    def test_I120_acceptance_accepts_the_service_account_first_install_created_on_tokyo(self):
+        for name in self.SCRIPTS:
+            with self.subTest(script=name):
+                tokyo = self.run_block(name, 'himawari-prod:x:999:988::/var/lib/himawari:/usr/sbin/nologin', '988')
+                self.assertIn('ACCOUNT_OK', tokyo.stdout, tokyo.stderr)
+                home, shell = self.first_install_account()
+                fresh = self.run_block(name, 'himawari-prod:x:999:988::' + home + ':' + shell, '988')
+                self.assertIn('ACCOUNT_OK', fresh.stdout, fresh.stderr)
+
+    def test_acceptance_still_rejects_a_service_account_that_can_log_in_or_has_extra_groups(self):
+        for name in self.SCRIPTS:
+            with self.subTest(script=name):
+                self.assertNotIn('ACCOUNT_OK', self.run_block(name, 'himawari-prod:x:999:988::/var/lib/himawari/state:/bin/bash', '988').stdout)
+                self.assertNotIn('ACCOUNT_OK', self.run_block(name, 'himawari-prod:x:999:988::/var/lib/himawari/state:/usr/sbin/nologin', '988 27').stdout)
+                self.assertNotIn('ACCOUNT_OK', self.run_block(name, 'himawari-prod:x:0:0::/var/lib/himawari/state:/usr/sbin/nologin', '0').stdout)
+
+    def test_first_install_gives_the_service_account_the_state_root_as_home(self):
+        self.assertEqual(self.first_install_account(), ('/var/lib/himawari/state', '/usr/sbin/nologin'))
+
+
 class ArmHostPathsTest(unittest.TestCase):
     TAG = '[PG-6]'
     OPTIONAL_LIB64 = '...["/lib64"].filter(existsSync)'
