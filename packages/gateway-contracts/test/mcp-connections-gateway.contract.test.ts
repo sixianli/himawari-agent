@@ -3,25 +3,22 @@ import { describe, expect, it } from "vitest";
 import { ContractValidationError, gatewayV2MessageSchema } from "../src/index.ts";
 import { fixture } from "./gateway-v2.fixture.ts";
 
-const create = {
-  name: "Claude Code",
-  capabilities: ["mcp"],
+const approve = {
+  grantId: "grant-AAAAAAAAAAAAAAAAAAAAAA",
+  name: null,
   readCeiling: "private",
-  pushPolicy: "ask",
+  pushPolicy: "direct",
+  write: true,
 };
 
 function rejects(message: Record<string, unknown>) {
   expect(() => gatewayV2MessageSchema.parse(message)).toThrow(ContractValidationError);
 }
 
-describe("[P5-B] MCP connection gateway messages", () => {
-  it("trims a name and accepts every capability once", () => {
+describe("MCP connection gateway messages", () => {
+  it("trims the name an approval gives the new connection", () => {
     const parsed = gatewayV2MessageSchema.parse(
-      fixture("command", "mcp.connection.create", {
-        ...create,
-        name: "  Codex  ",
-        capabilities: ["scheduled_tasks", "mcp", "command_hooks"],
-      }),
+      fixture("command", "mcp.grant.approve", { ...approve, name: "  Codex  " }),
     ) as { payload: { name: string } };
     expect(parsed.payload.name).toBe("Codex");
   });
@@ -30,18 +27,23 @@ describe("[P5-B] MCP connection gateway messages", () => {
     ["an empty name", { name: "  " }],
     ["a name over 64 characters", { name: "名".repeat(65) }],
     ["a name with a hidden character", { name: "a​b" }],
-    ["a repeated capability", { capabilities: ["mcp", "mcp"] }],
-    ["an unknown capability", { capabilities: ["shell"] }],
     ["the restricted ceiling", { readCeiling: "restricted" }],
     ["an unknown push policy", { pushPolicy: "auto" }],
+    ["no write choice", { write: undefined }],
     ["an extra field", { secret: "x" }],
-  ])("rejects a create with %s", (_name, overrides) => {
-    rejects(fixture("command", "mcp.connection.create", { ...create, ...overrides }));
+  ])("rejects an approval with %s", (_name, overrides) => {
+    rejects(fixture("command", "mcp.grant.approve", { ...approve, ...overrides }));
   });
 
-  it("rejects a change without every field and a rotate without a connection", () => {
+  it("rejects a change without every field, a deny without a grant and a read with fields", () => {
     rejects(fixture("command", "mcp.connection.change", { connectionId: "conn-1", name: null }));
-    rejects(fixture("command", "mcp.connection.rotate", {}));
+    rejects(fixture("command", "mcp.grant.deny", {}));
+    rejects(fixture("query", "mcp.grants.read", { all: true }));
     rejects(fixture("query", "mcp.connections.read", { all: true }));
+  });
+
+  it("no longer knows the commands that made and rotated secret addresses", () => {
+    rejects(fixture("command", "mcp.connection.create", { name: "x" }));
+    rejects(fixture("command", "mcp.connection.rotate", { connectionId: "conn-1" }));
   });
 });
