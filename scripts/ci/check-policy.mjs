@@ -64,13 +64,24 @@ const assert = (condition, message) => {
 };
 const unique = (values, label) =>
   assert(new Set(values).size === values.length, `Duplicate ${label}`);
-const jobIds = ["policy", "static", "build", "browser", "tests", "tooling", "security", "required"];
+const legacyJobIds = [
+  "policy",
+  "static",
+  "build",
+  "browser",
+  "tests",
+  "tooling",
+  "security",
+  "required",
+];
+const jobIds = legacyJobIds.filter((id) => id !== "browser");
+const retiredBrowserEngines = ["chromium", "firefox", "webkit"];
 const coverageArmChecks = ["policy", "static", "security"];
 const coverageJobIds = ["policy", "static", "build", "browser", "coverage", "security", "required"];
 const mainProjects = ["unit", "contracts", "integration", "e2e", "pi-compat", "tooling"];
 export const chromiumInstall =
   ".ci-output/tools/bin/node node_modules/playwright/cli.js install --only-shell chromium";
-const chromiumChecks = ["static", "tests", "tooling"];
+const chromiumChecks = ["tests", "tooling"];
 
 export function timeoutMinutesFor(checkId) {
   if (checkId === "required") return 15;
@@ -284,7 +295,7 @@ export function upgradeCoverageToTests(policy) {
   upgraded.checks = upgraded.checks.flatMap((check) => {
     if (check.id === "policy") return [{ ...check, projects: [] }];
     if (check.id === "required")
-      return [{ ...check, needs: jobIds.filter((id) => id !== "required") }];
+      return [{ ...check, needs: legacyJobIds.filter((id) => id !== "required") }];
     if (check.id !== "coverage") return [check];
     return [
       {
@@ -366,6 +377,34 @@ export function upgradeGateRunnerPolicy(policy) {
   return upgraded;
 }
 
+export function upgradeRetiredBrowserCheck(policy) {
+  const checks = policy?.checks ?? [];
+  const browser = checks.find((check) => check.id === "browser");
+  const required = checks.find((check) => check.id === "required");
+  const retired =
+    browser &&
+    required &&
+    sameSet(
+      checks.map((check) => check.id),
+      legacyJobIds,
+    ) &&
+    sameSet(browser.needs ?? [], ["build"]) &&
+    sameSet(
+      (browser.members ?? []).map((member) => member.key),
+      retiredBrowserEngines,
+    ) &&
+    (browser.members ?? []).every((member) => member.browser === member.key) &&
+    sameSet(
+      required.needs ?? [],
+      legacyJobIds.filter((id) => id !== "required"),
+    );
+  if (!retired) return policy;
+  const upgraded = structuredClone(policy);
+  upgraded.checks = upgraded.checks.filter((check) => check.id !== "browser");
+  for (const check of upgraded.checks) check.needs = check.needs.filter((id) => id !== "browser");
+  return upgraded;
+}
+
 export function upgradeSelfHostedRunners(policy) {
   const hosted = {
     [legacyRunnerLabels.linux]: linuxRunnerLabel,
@@ -422,7 +461,7 @@ export function validatePolicy(policy, { allowLegacyIntegration = false } = {}) 
       policy.checks.map((check) => check.id),
       jobIds,
     ),
-    "Policy must declare exactly eight required jobs",
+    "Policy must declare exactly seven required jobs",
   );
   unique(
     policy.testProjects.map((project) => project.id),
@@ -479,7 +518,6 @@ export function validatePolicy(policy, { allowLegacyIntegration = false } = {}) 
     policy: [],
     static: ["policy"],
     build: ["policy"],
-    browser: ["build"],
     tests: ["policy", "build"],
     tooling: ["policy"],
     security: ["policy"],
@@ -505,11 +543,9 @@ export function validatePolicy(policy, { allowLegacyIntegration = false } = {}) 
     const requiredKeys =
       check.id === "build"
         ? ["linux-x64", "macos-arm64"]
-        : check.id === "browser"
-          ? ["chromium", "firefox", "webkit"]
-          : check.id === "tests"
-            ? testsMembers.map((member) => member.key)
-            : ["default"];
+        : check.id === "tests"
+          ? testsMembers.map((member) => member.key)
+          : ["default"];
     assert(
       sameSet(
         check.members.map((member) => member.key),
@@ -530,10 +566,7 @@ export function validatePolicy(policy, { allowLegacyIntegration = false } = {}) 
         `Incorrect platform: ${check.id}/${member.key}`,
       );
       assert(mac || member.paused === undefined, `Only macOS members may pause: ${check.id}`);
-      assert(
-        check.id === "browser" ? member.browser === member.key : member.browser === undefined,
-        `Incorrect browser identity: ${check.id}`,
-      );
+      assert(member.browser === undefined, `Incorrect browser identity: ${check.id}`);
     }
     visit(check.id, new Set());
   }
@@ -850,7 +883,7 @@ export function validateWorkflow(policy, source, toolchain) {
         `Job must expose one report digest per matrix member: ${check.id}`,
       );
     }
-    if (check.id === "tests" || check.id === "browser") {
+    if (check.id === "tests") {
       const fetches = job.steps.filter((step) =>
         step.run?.includes("scripts/ci/run-share.mjs get"),
       );
@@ -1507,15 +1540,17 @@ export function resolvePolicySource({
     ? git(["show", `${baseSha}:${policyPath}`])
     : readFileSync(path.join(root, policyPath), "utf8");
   const policy = validatePolicy(
-    upgradeSelfHostedRunners(
-      upgradeSplitTests(
-        upgradeCoverageToTests(
-          upgradeCoverageCollection(
-            upgradeArmRunnerPolicy(
-              upgradeGateRunnerPolicy(
-                upgradeRetiredTestChecks(
-                  upgradeArtifactRetention(
-                    upgradeRunnerLabel(upgradeHostedRunnerPolicy(JSON.parse(bytes))),
+    upgradeRetiredBrowserCheck(
+      upgradeSelfHostedRunners(
+        upgradeSplitTests(
+          upgradeCoverageToTests(
+            upgradeCoverageCollection(
+              upgradeArmRunnerPolicy(
+                upgradeGateRunnerPolicy(
+                  upgradeRetiredTestChecks(
+                    upgradeArtifactRetention(
+                      upgradeRunnerLabel(upgradeHostedRunnerPolicy(JSON.parse(bytes))),
+                    ),
                   ),
                 ),
               ),
