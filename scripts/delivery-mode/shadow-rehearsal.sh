@@ -24,6 +24,7 @@ upper_size="${HIMAWARI_SHADOW_UPPER_SIZE:-8G}"
 machine="himawari-shadow"
 boot_wait="${HIMAWARI_SHADOW_BOOT_WAIT:-300}"
 service_wait="${HIMAWARI_SHADOW_SERVICE_WAIT:-120}"
+probe_timeout="${HIMAWARI_SHADOW_PROBE_TIMEOUT:-15}"
 shadow=""
 booted=0
 launcher=""
@@ -61,7 +62,19 @@ if [[ ! -x "$nspawn" || ! -x "$machinectl" ]]; then
   echo "SHADOW_INSTALL systemd-container"
   /usr/bin/apt-get install -y -qq --no-install-recommends systemd-container > /dev/null || fail TOOLS_MISSING "could not install systemd-container"
 fi
-"$machinectl" show "$machine" > /dev/null 2>&1 && "$machinectl" terminate "$machine" > /dev/null 2>&1 || true
+if "$machinectl" show "$machine" > /dev/null 2>&1; then
+  echo "SHADOW_LEFTOVER_MACHINE $machine"
+  "$machinectl" terminate "$machine" > /dev/null 2>&1 || true
+  for _ in $(seq 1 60); do
+    "$machinectl" show "$machine" > /dev/null 2>&1 || break
+    sleep 1
+  done
+fi
+for leftover in "$shadow_parent"/himawari-shadow.*; do
+  [[ -d "$leftover" ]] || continue
+  echo "SHADOW_LEFTOVER_REMOVED $leftover"
+  rm -rf --one-file-system "$leftover" || fail LEFTOVER_STUCK "could not remove $leftover from an earlier rehearsal"
+done
 
 /usr/sbin/modprobe overlay > /dev/null 2>&1 || true
 /usr/sbin/modprobe loop > /dev/null 2>&1 || true
@@ -92,33 +105,49 @@ set -e
 "$1" -o loop "$2/upper.img" "$2/layer"
 mkdir "$2/layer/upper" "$2/layer/work"
 "$1" -t overlay overlay -o "lowerdir=/,upperdir=$2/layer/upper,workdir=$2/layer/work" "$2/root"
+if [ -f "$2/root/etc/fstab" ]; then
+  grep -vE "^[[:space:]]*(#|$)" "$2/root/etc/fstab" | sed "s/^/SHADOW_FSTAB_DROPPED /" || true
+  : > "$2/root/etc/fstab"
+fi
+if [ -d "$2/root/etc/cloud" ]; then
+  : > "$2/root/etc/cloud/cloud-init.disabled"
+fi
 shift 2
 exec "$@"
-' shadow-root "$mount" "$shadow" "$nspawn" --quiet --directory="$shadow/root" --private-network --link-journal=no --machine="$machine" --hostname="$(hostname)" --console=passive --bind="$shadow/data:$state_data" --property="MemoryMax=$memory_max" --boot > "$shadow/boot.log" 2>&1 &
+' shadow-root "$mount" "$shadow" "$nspawn" --quiet --directory="$shadow/root" --private-network --link-journal=no --machine="$machine" --hostname="$(hostname)" --console=passive --bind="$shadow/data:$state_data" --property="MemoryMax=$memory_max" --boot > "$shadow/boot.log" 2>&1 9>&- &
 launcher=$!
 booted=1
 inside() {
   "$systemd_run" --machine="$machine" --quiet --wait --pipe --collect "$@"
 }
-ready=0
-for _ in $(seq 1 "$boot_wait"); do
-  if state="$(inside "$systemctl" is-system-running 2>/dev/null)" || [[ "$state" == degraded ]]; then
-    ready=1
-    break
-  fi
+probe() {
+  timeout "$probe_timeout" "$systemctl" --machine="$machine" "$@"
+}
+stuck_units() {
+  echo "jobs: $(probe list-jobs --no-pager --no-legend 2>&1 | head -20 | tr -s ' \n' ' ')"
+  echo "failed: $(probe --failed --no-pager --no-legend 2>&1 | head -20 | tr -s ' \n' ' ')"
+  echo "console: $(tail -5 "$shadow/boot.log" | tr '\n' ' ')"
+}
+deadline=$(( SECONDS + boot_wait ))
+state=""
+while (( SECONDS < deadline )); do
   launcher_alive || fail BOOT_EXITED "the shadow machine exited while booting: $(tail -5 "$shadow/boot.log" | tr '\n' ' ')"
-  sleep 1
+  state="$(probe is-system-running 2> /dev/null || true)"
+  [[ "$state" == running || "$state" == degraded ]] && break
+  [[ "$state" == maintenance ]] && fail BOOT_EMERGENCY "the shadow machine fell into emergency mode while booting; $(stuck_units)"
+  sleep 2
 done
-[[ "$ready" -eq 1 ]] || fail BOOT_TIMEOUT "the shadow machine did not finish booting in $boot_wait seconds: $(tail -5 "$shadow/boot.log" | tr '\n' ' ')"
-active=0
-for _ in $(seq 1 "$service_wait"); do
-  if [[ "$(inside "$systemctl" is-active "$unit" 2>/dev/null)" == active ]]; then
-    active=1
-    break
-  fi
-  sleep 1
+grep '^SHADOW_FSTAB_DROPPED ' "$shadow/boot.log" || true
+[[ "$state" == running || "$state" == degraded ]] || fail BOOT_TIMEOUT "the shadow machine did not finish booting in $boot_wait seconds (state ${state:-unreachable}); $(stuck_units)"
+echo "SHADOW_SYSTEM_STATE $state"
+deadline=$(( SECONDS + service_wait ))
+active=""
+while (( SECONDS < deadline )); do
+  active="$(probe is-active "$unit" 2> /dev/null || true)"
+  [[ "$active" == active ]] && break
+  sleep 2
 done
-[[ "$active" -eq 1 ]] || fail OLD_SERVICE_NOT_ACTIVE "$unit did not start on the copied data: $(inside /usr/bin/journalctl -u "$unit" -n 20 --no-pager 2>&1 | tr '\n' ' ' | cut -c1-2000)"
+[[ "$active" == active ]] || fail OLD_SERVICE_NOT_ACTIVE "$unit did not start on the copied data (${active:-unreachable}): $(timeout "$probe_timeout" /usr/bin/journalctl --machine="$machine" -u "$unit" -n 20 --no-pager 2>&1 | tr '\n' ' ' | cut -c1-2000); $(stuck_units)"
 echo "SHADOW_BOOTED"
 
 echo "SHADOW_DEPLOY_START $(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -127,8 +156,8 @@ passed_environment=("--setenv=PATH=$PATH")
 while IFS= read -r name; do
   passed_environment+=("--setenv=$name=${!name}")
 done < <(compgen -e | grep -E '^HIMAWARI_' | grep -vE '^HIMAWARI_(SHADOW_|DEPLOY_SHADOW_REHEARSAL$|DEPLOY_ON_FAILURE$|DEPLOY_FROM_STEP$)' | sort)
-inside /bin/rm -rf -- "$(dirname "$packet")/.$(basename "$packet").deploy.lock"
-inside --property=RuntimeMaxSec=3600 "${passed_environment[@]}" --setenv=HIMAWARI_DEPLOY_ON_FAILURE=keep --setenv=HIMAWARI_DEPLOY_FROM_STEP=S2_STOP /bin/bash "$here/deploy.sh" "$packet" > "$shadow/deploy.log" 2>&1
+timeout 60 "$systemd_run" --machine="$machine" --quiet --wait --pipe --collect /bin/rm -rf -- "$(dirname "$packet")/.$(basename "$packet").deploy.lock"
+timeout 2700 "$systemd_run" --machine="$machine" --quiet --wait --pipe --collect --property=RuntimeMaxSec=2400 "${passed_environment[@]}" --setenv=HIMAWARI_DEPLOY_ON_FAILURE=keep --setenv=HIMAWARI_DEPLOY_FROM_STEP=S2_STOP /bin/bash "$here/deploy.sh" "$packet" > "$shadow/deploy.log" 2>&1
 code=$?
 set -e
 sed 's/^/SHADOW| /' "$shadow/deploy.log" | tail -200

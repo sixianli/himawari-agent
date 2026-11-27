@@ -135,9 +135,11 @@ export function touchesScope(changed, scope) {
 
 export function changedFiles(root, eventPath) {
   if (!eventPath || !existsSync(eventPath)) return undefined;
-  const base = JSON.parse(readFileSync(eventPath, "utf8")).pull_request?.base?.sha;
+  const pull = JSON.parse(readFileSync(eventPath, "utf8")).pull_request;
+  const base = pull?.base?.sha;
   if (!/^[0-9a-f]{40}$/.test(base ?? "")) return undefined;
-  return git(root, ["diff", "--name-only", `${base}...HEAD`])
+  const tip = /^[0-9a-f]{40}$/.test(pull?.head?.sha ?? "") ? pull.head.sha : "HEAD";
+  return git(root, ["diff", "--name-only", `${base}...${tip}`])
     .split("\n")
     .filter(Boolean);
 }
