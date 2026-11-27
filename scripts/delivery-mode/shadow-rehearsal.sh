@@ -14,11 +14,16 @@ nspawn="$tools/systemd-nspawn"
 systemd_run="$tools/systemd-run"
 machinectl="$tools/machinectl"
 systemctl="$tools/systemctl"
+unshare="$tools/unshare"
+mount="$tools/mount"
+mkfs="${HIMAWARI_SHADOW_SBIN:-/usr/sbin}/mkfs.ext4"
+upper_size="${HIMAWARI_SHADOW_UPPER_SIZE:-32G}"
 machine="himawari-shadow"
 boot_wait="${HIMAWARI_SHADOW_BOOT_WAIT:-180}"
 service_wait="${HIMAWARI_SHADOW_SERVICE_WAIT:-120}"
 shadow=""
 booted=0
+launcher=""
 
 fail() {
   echo "SHADOW_REHEARSAL_FAILED $1: $2" >&2
@@ -30,6 +35,10 @@ finish() {
     "$machinectl" terminate "$machine" > /dev/null 2>&1 || true
     for _ in $(seq 1 60); do
       "$machinectl" show "$machine" > /dev/null 2>&1 || break
+      sleep 1
+    done
+    for _ in $(seq 1 60); do
+      [[ -n "$launcher" ]] && kill -0 "$launcher" 2> /dev/null || break
       sleep 1
     done
   fi
@@ -57,8 +66,20 @@ echo "SHADOW_COPY_START $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 /usr/bin/python3 -I "$here/shadow-copy.py" "$state_data" "$shadow/data" || fail COPY_FAILED "could not copy $state_data"
 echo "SHADOW_COPY_DONE $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
+mkdir "$shadow/layer" "$shadow/root"
+truncate -s "$upper_size" "$shadow/upper.img"
+"$mkfs" -q -F -m 0 "$shadow/upper.img" > /dev/null || fail UPPER_LAYER_FAILED "could not make the throwaway layer file $shadow/upper.img"
+
 echo "SHADOW_BOOT_START"
-"$nspawn" --quiet --directory=/ --volatile=overlay --private-network --machine="$machine" --hostname="$(hostname)" --console=passive --bind="$shadow/data:$state_data" --property="MemoryMax=$memory_max" --boot > "$shadow/boot.log" 2>&1 &
+"$unshare" --mount --propagation private /bin/bash -c '
+set -e
+"$1" -o loop "$2/upper.img" "$2/layer"
+mkdir "$2/layer/upper" "$2/layer/work"
+"$1" -t overlay overlay -o "lowerdir=/,upperdir=$2/layer/upper,workdir=$2/layer/work" "$2/root"
+shift 2
+exec "$@"
+' shadow-root "$mount" "$shadow" "$nspawn" --quiet --directory="$shadow/root" --private-network --link-journal=no --machine="$machine" --hostname="$(hostname)" --console=passive --bind="$shadow/data:$state_data" --property="MemoryMax=$memory_max" --boot > "$shadow/boot.log" 2>&1 &
+launcher=$!
 booted=1
 inside() {
   "$systemd_run" --machine="$machine" --quiet --wait --pipe --collect "$@"
@@ -69,6 +90,7 @@ for _ in $(seq 1 "$boot_wait"); do
     ready=1
     break
   fi
+  kill -0 "$launcher" 2> /dev/null || fail BOOT_EXITED "the shadow machine exited while booting: $(tail -5 "$shadow/boot.log" | tr '\n' ' ')"
   sleep 1
 done
 [[ "$ready" -eq 1 ]] || fail BOOT_TIMEOUT "the shadow machine did not finish booting in $boot_wait seconds: $(tail -5 "$shadow/boot.log" | tr '\n' ' ')"
