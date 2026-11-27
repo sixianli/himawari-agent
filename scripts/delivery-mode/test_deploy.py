@@ -633,6 +633,29 @@ class LastFailureReportTest(unittest.TestCase):
         self.assertFalse(any('S1_INSTALL' in line for line in lines))
         self.assertFalse(any('step-s1_install-1.stderr' in line for line in lines))
 
+    def test_I120_the_report_reads_the_saved_cloud_acceptance_failure(self):
+        module = load('last_failure_report', 'last-failure-report.py')
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            module.STATE = root
+            older = root / 'release-cleanup/failed-acceptance/20261127T080000Z-himawari-first/run-01'
+            newest = root / 'release-cleanup/failed-acceptance/20261127T092948Z-himawari-first/run-01'
+            for run in (older, newest):
+                run.mkdir(parents=True)
+            (older / 'console.stderr').write_text('old failure\n')
+            (newest / 'run-report.json').write_text(json.dumps({'exitCode': 1, 'runnerErrors': [{'type': 'RuntimeError', 'message': 'ACCEPTANCE_SUBCOMMAND_FAILED'}]}))
+            (newest / 'acceptance-report.json').write_text(json.dumps({'commands': [{'name': 'scratch-guard', 'exitCode': 0}, {'name': 'r2l6-console', 'exitCode': 1}]}))
+            (newest / 'r2l6-console.stderr').write_text('Error: sandbox refused\n')
+            (newest / 'scratch-guard.stderr').write_text('')
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                module.report_failed_acceptance()
+        lines = output.getvalue().splitlines()
+        self.assertIn('LAST_FAILURE_ACCEPTANCE run exitCode=1 runnerErrors=[{"type": "RuntimeError", "message": "ACCEPTANCE_SUBCOMMAND_FAILED"}]', lines)
+        self.assertIn('LAST_FAILURE_ACCEPTANCE command r2l6-console exitCode=1', lines)
+        self.assertIn('LAST_FAILURE_TAIL r2l6-console.stderr Error: sandbox refused', lines)
+        self.assertFalse(any('scratch-guard' in line or 'old failure' in line for line in lines))
+
     def test_npm_differences_name_the_exact_field_that_moved(self):
         module = load('last_failure_report', 'last-failure-report.py')
         expected = {'npm': {'version': '10.9.4', 'requestedPathChain': [{'path': '/opt', 'uid': 0}]}, 'node': {'version': 'v22.22.3'}}
