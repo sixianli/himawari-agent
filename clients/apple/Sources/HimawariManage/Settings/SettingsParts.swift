@@ -104,7 +104,7 @@ struct SettingsRow: View {
                     valueText(value)
                 }
                 if let switchState {
-                    Toggle("", isOn: switchState).labelsHidden().tint(Color.hmSuccess)
+                    Toggle("", isOn: switchState).labelsHidden()
                 }
                 if chevron {
                     Icon(.chevronRight, size: DesignTokens.IconSize.chevron).foregroundStyle(Color.hmMuted)
@@ -120,7 +120,7 @@ struct SettingsRow: View {
     private func valueText(_ value: String) -> some View {
         Text(value)
             .hmType(SL.rowValue)
-            .foregroundStyle(tone == .attention ? Color.hmDanger : tone == .good ? Color.hmSuccess : Color.hmMuted)
+            .foregroundStyle(tone == .attention ? Color.hmDanger : tone == .good ? Color.hmSun : Color.hmMuted)
     }
 }
 

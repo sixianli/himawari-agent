@@ -37,6 +37,7 @@ public struct ChatView: View {
     @State private var dictating = false
     @State private var dictation = DictationDraft()
     @State private var selecting: SelectableMessage?
+    @State private var shownSteps: ShownSteps?
     @State private var copiedCount = 0
     @State private var copiedShown = false
     @State private var replyingTo: ThreadMessage?
@@ -289,6 +290,13 @@ public struct ChatView: View {
             .sheet(item: $selecting) { message in
                 SelectTextSheet(message: message) { selecting = nil }
             }
+            .sheet(item: $shownSteps) { shown in
+                ProcessStepsSheet(steps: shown.steps) { shownSteps = nil }
+                    .onAppear { Haptics.shared.report(.sheetSettled) }
+                    .presentationDetents([.medium, .large])
+                    .presentationCornerRadius(DesignTokens.Radius.sheetTop)
+                    .presentationBackground(Color.hmBackground)
+            }
             .fullScreenCover(item: $safari) { link in
                 SafariView(url: link.url).ignoresSafeArea()
             }
@@ -316,8 +324,14 @@ public struct ChatView: View {
             reply: close == nil ? { startReply(to: message) } : nil,
             copy: { copyToPasteboard(MessageCopy.text(raw, fromAgent: fromAgent)) },
             select: { selecting = SelectableMessage(id: message.messageId, text: raw, fromAgent: fromAgent) },
-            why: explains(message) ? { toggleWhy(message) } : nil
+            why: explains(message) ? { toggleWhy(message) } : nil,
+            steps: finishedSteps(of: message).map { steps in { shownSteps = ShownSteps(id: message.messageId, steps: steps) } }
         )
+    }
+
+    private func finishedSteps(of message: ThreadMessage) -> [ProcessStep]? {
+        guard message.role == .agent, let runId = message.runId else { return nil }
+        return store.processLine(for: runId, in: threadId)?.finishedSteps
     }
 
     private func explains(_ message: ThreadMessage) -> Bool {
@@ -360,7 +374,7 @@ public struct ChatView: View {
         let whole = menu(for: message)
         return { code in
             guard let whole else { return nil }
-            return MessageMenuActions(reply: whole.reply, copy: { copyToPasteboard(code) }, select: whole.select, why: whole.why)
+            return MessageMenuActions(reply: whole.reply, copy: { copyToPasteboard(code) }, select: whole.select, why: whole.why, steps: whole.steps)
         }
     }
 
@@ -459,7 +473,7 @@ public struct ChatView: View {
             case let .message(message):
                 rows.append(.message(message))
             case let .process(runId):
-                if let line = store.processLine(for: runId, in: threadId) {
+                if let line = store.processLine(for: runId, in: threadId), line.showsInTranscript {
                     rows.append(.process(runId: runId, line: line, failed: store.run(runId, in: threadId)?.status == "failed"))
                 }
             }

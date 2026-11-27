@@ -29,6 +29,22 @@ import Testing
         #expect(!ProcessLine.make(records: [], runStatus: "running").hasNothingToShow)
     }
 
+    @Test func aFinishedRunLeavesTheTranscriptAndItsStepsMoveToTheMessageMenu() {
+        let done = ProcessLine.make(records: [record(1, "a", .started, at: 0, activity: "正在看日历", icon: "calendar"), record(2, "a", .completed, at: 1)], runStatus: "completed")
+        #expect(!done.showsInTranscript)
+        #expect(done.finishedSteps?.map(\.title) == ["正在看日历"])
+    }
+
+    @Test func aRunningFailedOrStoppedRunStaysInTheTranscriptWithNoMenuSteps() {
+        let running = ProcessLine.make(records: [record(1, "a", .started, at: 0, activity: "正在看日历", icon: "calendar")], runStatus: "running")
+        let failed = ProcessLine.make(records: [record(1, "a", .completed, at: 0)], runStatus: "failed")
+        let stopped = ProcessLine.make(records: [record(1, "a", .completed, at: 0)], runStatus: "cancelled")
+        for line in [running, failed, stopped, .thinking] {
+            #expect(line.showsInTranscript)
+            #expect(line.finishedSteps == nil)
+        }
+    }
+
     @Test func noToolStepYetIsThinking() {
         #expect(ProcessLine.make(records: [record(1, "m", .started, at: 0, kind: .message)], runStatus: "running") == .thinking)
     }

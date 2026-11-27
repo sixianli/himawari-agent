@@ -396,7 +396,7 @@ public struct PermissionPrimerView: View {
             case .authorized:
                 Text(L.text("permission.allowed"))
                     .hmType(DesignTokens.TypeScale.secondary)
-                    .foregroundStyle(Color.hmSuccess)
+                    .foregroundStyle(Color.hmSun)
             case .notDetermined:
                 Text(L.text("permission.next"))
                     .hmType(DesignTokens.TypeScale.secondary)

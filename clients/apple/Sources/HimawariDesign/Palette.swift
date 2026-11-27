@@ -192,7 +192,6 @@ extension Color {
     public static var hmSun: Color { DesignTokens.Colors.sun.color }
     public static var hmSunBright: Color { DesignTokens.Colors.sunBright.color }
     public static var hmDanger: Color { DesignTokens.Colors.danger.color }
-    public static var hmSuccess: Color { DesignTokens.Colors.success.color }
     public static var hmSeparator: Color { DesignTokens.Colors.separator.color }
     public static var hmGlow: Color { DesignTokens.Colors.glow.color }
     public static var hmOnText: Color { DesignTokens.Colors.onText.color }

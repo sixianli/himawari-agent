@@ -332,7 +332,6 @@ public struct ToggleRow<Leading: View>: View {
                 }
             }
         }
-        .tint(Color.hmSuccess)
         .frame(minHeight: DesignTokens.Size.rowMinHeight)
     }
 }

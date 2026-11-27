@@ -709,7 +709,7 @@ public struct VaultApprovalView: View {
                 }
             }
             HStack(spacing: SL.rowTextGap) {
-                Icon(.check, size: DesignTokens.IconSize.chevron).foregroundStyle(Color.hmSuccess)
+                Icon(.check, size: DesignTokens.IconSize.chevron).foregroundStyle(Color.hmSun)
                 Text(M.vaultMatches).hmType(DesignTokens.TypeScale.caption).foregroundStyle(Color.hmMuted)
             }
             RowSeparator()
