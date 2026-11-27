@@ -1,12 +1,14 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
+  copyFileSync,
   existsSync,
   lstatSync,
   mkdirSync,
   readdirSync,
   readFileSync,
   realpathSync,
+  renameSync,
   rmSync,
   utimesSync,
   writeFileSync,
@@ -75,6 +77,67 @@ export function runnerNpmCache(env = process.env, now = Date.now()) {
     utimesSync(stamp, new Date(now), new Date(now));
   }
   return target;
+}
+
+const nativeBinary = join("build", "Release", "better_sqlite3.node");
+
+export function runnerNativeCache(env = process.env) {
+  assert(
+    env.GITHUB_ACTIONS === "true" && env.HOME && isAbsolute(env.HOME),
+    "runner native cache 只能在 GitHub Actions runner 上使用",
+  );
+  const home = realpathSync(env.HOME);
+  const target = join(home, ".cache", "himawari-ci", "native");
+  rejectSymlinks(target, dirname(home));
+  mkdirSync(target, { recursive: true });
+  return target;
+}
+
+export function nativeBuildKey({ entry, integrity, installation }) {
+  return hash(
+    JSON.stringify([
+      entry.name,
+      entry.version,
+      integrity,
+      installation.platform,
+      installation.node,
+      installation.nodeAbi,
+      installation.toolchainSha256,
+    ]),
+  );
+}
+
+function restoreNativeBuild(cached, target) {
+  const manifestPath = join(cached, "manifest.json");
+  const binary = join(cached, "better_sqlite3.node");
+  if (!existsSync(manifestPath) || !existsSync(binary)) return false;
+  let manifest;
+  try {
+    manifest = json(manifestPath);
+  } catch {
+    manifest = null;
+  }
+  if (manifest?.sha256 !== hash(readFileSync(binary))) {
+    rmSync(cached, { recursive: true, force: true });
+    return false;
+  }
+  mkdirSync(dirname(target), { recursive: true });
+  copyFileSync(binary, target);
+  assert(hash(readFileSync(target)) === manifest.sha256, "取回的原生模块摘要不匹配");
+  return manifest.sha256;
+}
+
+function storeNativeBuild(cached, target) {
+  assert(existsSync(target), "原生构建没有产出 better_sqlite3.node");
+  const staging = `${cached}.staging-${process.pid}`;
+  rmSync(staging, { recursive: true, force: true });
+  mkdirSync(staging, { recursive: true });
+  copyFileSync(target, join(staging, "better_sqlite3.node"));
+  const sha256 = hash(readFileSync(join(staging, "better_sqlite3.node")));
+  writeFileSync(join(staging, "manifest.json"), `${JSON.stringify({ sha256 })}\n`);
+  rmSync(cached, { recursive: true, force: true });
+  renameSync(staging, cached);
+  return sha256;
 }
 
 function cacheLocation(value, root, env) {
@@ -382,17 +445,41 @@ export async function installDependencies({
         "--registry=https://registry.npmjs.org/",
       ]),
     );
+    const npmCiMs = Math.round(performance.now() - started);
     const dependencies = auditInstalledDependencies(root, lock);
+    const nativeCache = cacheDirectory === "runner" ? runnerNativeCache(hostEnvironment) : null;
+    const packages = json(join(root, "package-lock.json")).packages;
+    const native = [];
     for (const entry of lock.nativeDependencies.filter((item) => item.decision === "build")) {
       assert(entry.name === "better-sqlite3", "未支持的原生构建目标");
-      writeFileSync(
-        join(evidence, "native-build.log"),
-        await run(
-          node,
-          [nodeGyp, "rebuild", "--release", `--nodedir=${nodeHeaders}`, `--python=${python}`],
-          join(root, entry.path),
-        ),
-      );
+      const target = join(root, entry.path, nativeBinary);
+      const key = nativeBuildKey({
+        entry,
+        integrity: packages[entry.path]?.integrity,
+        installation,
+      });
+      const cached = nativeCache && join(nativeCache, key);
+      const buildStarted = performance.now();
+      const restored = cached && restoreNativeBuild(cached, target);
+      if (restored) {
+        writeFileSync(join(evidence, "native-build.log"), `restored ${key} ${restored}\n`);
+      } else {
+        writeFileSync(
+          join(evidence, "native-build.log"),
+          await run(
+            node,
+            [nodeGyp, "rebuild", "--release", `--nodedir=${nodeHeaders}`, `--python=${python}`],
+            join(root, entry.path),
+          ),
+        );
+        if (cached) storeNativeBuild(cached, target);
+      }
+      native.push({
+        name: entry.name,
+        key,
+        source: restored ? "cache" : "build",
+        durationMs: Math.round(performance.now() - buildStarted),
+      });
     }
     const probeScript = `import { probeSqlite } from ${JSON.stringify(new URL("./install-dependencies.mjs", import.meta.url).href)}; console.log(JSON.stringify(probeSqlite(process.argv[1])));`;
     const sqlite = JSON.parse(
@@ -414,6 +501,8 @@ export async function installDependencies({
       toolchainSha256: installation.toolchainSha256,
       cache,
       lifecycle: "ignore-scripts-with-reviewed-native-build",
+      native,
+      npmCiMs,
       durationMs: Math.round(performance.now() - started),
       sqlite,
       ...dependencies,

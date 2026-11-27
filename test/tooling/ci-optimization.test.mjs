@@ -102,7 +102,7 @@ it("完整 CI 只用 GitHub 缓存在本次运行的作业之间传报告和构�
 
 const downloadCaches = {
   "ci-tools": "~/.cache/himawari-ci/downloads",
-  "ci-deps": "~/.cache/himawari-ci/npm\n.ci-output/browsers\n",
+  "ci-deps": "~/.cache/himawari-ci/npm\n~/.cache/himawari-ci/native\n.ci-output/browsers\n",
 };
 
 describe("依赖、工具和浏览器的下载缓存", () => {
@@ -154,7 +154,7 @@ describe("依赖、工具和浏览器的下载缓存", () => {
     expect(saves.map(cacheKind).sort()).toEqual(["ci-deps", "ci-tools"]);
     for (const save of saves) {
       expect(save.with.path).toBe(downloadCaches[cacheKind(save)]);
-      expect(save.with.key).toMatch(/hashFiles\([^)]*'ci\/toolchain-lock\.json'\)/u);
+      expect(save.with.key).toMatch(/hashFiles\([^)]*'ci\/toolchain-lock\.json'[^)]*\)/u);
       expect(save.with.key.endsWith(githubExpression("steps.week.outputs.week"))).toBe(true);
       for (const job of Object.values(ci.jobs))
         for (const restore of restores(job).filter((step) => cacheKind(step) === cacheKind(save))) {
@@ -164,6 +164,9 @@ describe("依赖、工具和浏览器的下载缓存", () => {
     }
     expect(saves.find((step) => cacheKind(step) === "ci-deps").with.key).toContain(
       "package-lock.json",
+    );
+    expect(saves.find((step) => cacheKind(step) === "ci-deps").with.key).toContain(
+      "scripts/ci/install-dependencies.mjs",
     );
   });
 

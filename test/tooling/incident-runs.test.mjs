@@ -74,9 +74,10 @@ function head(root) {
   return execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
 }
 
-function pullRequest(root, base) {
+function pullRequest(root, base, prHead) {
   const event = join(root, "..", `${root.split("/").at(-1)}-event.json`);
-  writeFileSync(event, JSON.stringify({ pull_request: { base: { sha: base } } }));
+  const pull = { base: { sha: base }, ...(prHead ? { head: { sha: prHead } } : {}) };
+  writeFileSync(event, JSON.stringify({ pull_request: pull }));
   roots.push(event);
   return event;
 }
@@ -197,6 +198,27 @@ describe("failed runs on the default branch are counted without anyone rememberi
     expect(related.stderr).toContain(
       'INCIDENT_RUNS_UNCLAIMED workflow="Deploy production" failures=3',
     );
+  });
+
+  it("judges a PR by its own changes, not by what main gained after the PR's base", async () => {
+    const root = repository();
+    deployWorkflow(root);
+    const base = head(root);
+    execFileSync("git", ["checkout", "-q", "-b", "pr"], { cwd: root });
+    writeFileSync(join(root, "docs/notes.md"), "unrelated\n");
+    execFileSync("git", ["add", "docs/notes.md"], { cwd: root });
+    execFileSync("git", [...identity, "commit", "-q", "--no-verify", "-m", "docs: unrelated"], {
+      cwd: root,
+    });
+    const prHead = head(root);
+    execFileSync("git", ["checkout", "-q", "main"], { cwd: root });
+    writeFileSync(join(root, "scripts/deploy/run.sh"), "echo changed on main\n");
+    commit(root, "fix: deploy on main\n\nIncident: none");
+    execFileSync("git", [...identity, "merge", "-q", "--no-ff", "--no-edit", "pr"], { cwd: root });
+    const { api } = await github([run(11), run(12)]);
+    const result = await check(root, api, { event: pullRequest(root, base, prHead) });
+    expect(result.stderr).not.toContain("INCIDENT_RUNS_UNCLAIMED");
+    expect(result.status).toBe(0);
   });
 
   it("lists unclaimed failures in report mode without failing", async () => {
