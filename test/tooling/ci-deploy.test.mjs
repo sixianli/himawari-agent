@@ -164,21 +164,20 @@ describe("ci-deploy.sh", () => {
     expect(child.status).toBe(3);
   });
 
-  it("[I-120] touches nothing on production when the deploy fails in the offline shadow machine", () => {
+  it("[I-120] asks deploy.sh to rehearse the steps after the stop in the shadow machine before it stops production", () => {
     const { repo, fakeSsh } = workspace();
     const scripts = path.join(repo, "scripts/delivery-mode");
     const packet = path.join(repo, "built-packet");
-    const deployed = `${repo}-deployed`;
-    directories.push(deployed);
+    const seen = `${repo}-deploy-environment`;
+    directories.push(seen);
     writeFileSync(
       path.join(scripts, "make-packet.py"),
       `import json\nprint("PACKET_READY " + json.dumps({"packet": ${JSON.stringify(packet)}}))\n`,
     );
     writeFileSync(
-      path.join(scripts, "shadow-rehearsal.sh"),
-      'echo "SHADOW_REHEARSAL_FAILED DEPLOY_S7_CONFIG_APPLY: on the copy" >&2\nexit 1\n',
+      path.join(scripts, "deploy.sh"),
+      `echo "shadow=$HIMAWARI_DEPLOY_SHADOW_REHEARSAL packet=$1" > ${JSON.stringify(seen)}\necho "DEPLOY_STOPPED_AT SHADOW_REHEARSAL" >&2\nexit 10\n`,
     );
-    writeFileSync(path.join(scripts, "deploy.sh"), `touch ${JSON.stringify(deployed)}\n`);
     mkdirSync(packet, { recursive: true });
     writeFileSync(path.join(packet, "keep"), "");
     const second = commitFile(repo, "src/app.ts", "changed");
@@ -187,11 +186,10 @@ describe("ci-deploy.sh", () => {
       HIMAWARI_PACKET_SSH: fakeSsh,
       HIMAWARI_DEPLOY_COMMIT: second,
     });
-    expect(child.stdout).toContain(`CI_DEPLOY_SHADOW_REHEARSAL ${packet}`);
-    expect(child.stderr).toContain("CI_DEPLOY_REFUSED SHADOW_REHEARSAL_FAILED");
-    expect(child.stdout).not.toContain("CI_DEPLOY_START");
+    expect(readFileSync(seen, "utf8")).toBe(`shadow=1 packet=${packet}\n`);
+    expect(child.stderr).toContain("CI_DEPLOY_FAILED exit=10");
+    expect(child.stdout).not.toContain("CI_DEPLOY_READBACK");
     expect(child.status).toBe(4);
-    expect(() => readFileSync(deployed)).toThrow();
   });
 
   it("warns and goes on when the backup is not installed yet", () => {
