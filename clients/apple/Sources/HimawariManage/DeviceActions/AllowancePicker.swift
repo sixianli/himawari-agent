@@ -8,20 +8,45 @@ struct AllowancePicker: View {
     @Binding var selection: ApprovalAllowFor
 
     var body: some View {
-        if let limit = approval.allowanceLimit {
-            Text(Self.reason(limit))
-                .hmType(DesignTokens.TypeScale.secondary)
-                .foregroundStyle(Color.hmText)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        } else {
-            SegmentPicker(
-                selection: $selection,
-                options: ApprovalAllowFor.allCases
-                    .filter { $0 != .days || days != nil }
-                    .map { ($0, Self.label($0, days: days)) }
-            )
+        let limit = approval.allowanceLimit
+        VStack(alignment: .leading, spacing: DesignTokens.Allowance.noteGap) {
+            HStack(spacing: DesignTokens.Allowance.segmentGap) {
+                ForEach(ApprovalAllowFor.allCases.filter { $0 != .days || days != nil }, id: \.self) { choice in
+                    option(choice, on: (limit == nil ? selection : .once) == choice)
+                }
+            }
+            .padding(DesignTokens.Allowance.segmentInset)
+            .background(Color.hmFill, in: RoundedRectangle(cornerRadius: DesignTokens.Radius.segment, style: .continuous))
+            .opacity(limit == nil ? 1 : DesignTokens.Allowance.lockedOpacity)
+            .disabled(limit != nil)
+            if let limit {
+                Text(Self.reason(limit))
+                    .hmType(DesignTokens.TypeScale.caption)
+                    .foregroundStyle(Color.hmMuted)
+            }
         }
+    }
+
+    private func option(_ choice: ApprovalAllowFor, on: Bool) -> some View {
+        Button {
+            selection = choice
+        } label: {
+            Text(Self.label(choice, days: days))
+                .hmType(on ? DesignTokens.TypeScale.rowAction : DesignTokens.TypeScale.secondary)
+                .foregroundStyle(Color.hmText)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, minHeight: DesignTokens.Allowance.segmentHeight)
+                .background {
+                    if on {
+                        Capsule(style: .continuous)
+                            .fill(Color.hmSurface)
+                            .hmShadow(DesignTokens.Shadows.lift)
+                    }
+                }
+                .contentShape(Capsule(style: .continuous))
+        }
+        .buttonStyle(.pressable)
+        .accessibilityAddTraits(on ? .isSelected : [])
     }
 
     static func label(_ choice: ApprovalAllowFor, days: Int?) -> String {
