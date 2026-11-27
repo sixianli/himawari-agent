@@ -5,6 +5,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 sys.dont_write_bytecode = True
@@ -32,6 +33,11 @@ exec "$@"
 
 FAKE_MOUNT = '''#!/bin/bash
 echo "mount $*" >> "$FAKE_LOG/calls"
+if [ "$2" = overlay ]; then
+  target="${@: -1}"
+  mkdir -p "$target/etc/cloud"
+  printf '# comment\\nLABEL=cloudimg-rootfs / ext4 defaults 0 1\\nLABEL=UEFI /boot/efi vfat umask=0077 0 1\\n' > "$target/etc/fstab"
+fi
 '''
 
 FAKE_FINDMNT = '''#!/bin/bash
@@ -66,9 +72,17 @@ exec env -i "${inside[@]}" "$@"
 '''
 
 FAKE_SYSTEMCTL = '''#!/bin/bash
+echo "systemctl $*" >> "$FAKE_LOG/calls"
+[[ "$1" == --machine=himawari-shadow ]] || exit 64
+shift
 case "$1" in
-  is-system-running) echo "${FAKE_SYSTEM_STATE:-running}"; [ "${FAKE_SYSTEM_STATE:-running}" = running ] ;;
+  is-system-running)
+    [ -e "$FAKE_LOG/machine.up" ] || exit 1
+    [ -z "$FAKE_SYSTEMCTL_HANGS" ] || exec sleep 60
+    echo "${FAKE_SYSTEM_STATE:-running}"; [ "${FAKE_SYSTEM_STATE:-running}" = running ] ;;
   is-active) echo "${FAKE_UNIT_STATE:-active}"; [ "${FAKE_UNIT_STATE:-active}" = active ] ;;
+  list-jobs) echo "42 boot-efi.mount start running" ;;
+  --failed) echo "cloud-init.service loaded failed failed" ;;
 esac
 '''
 
@@ -127,7 +141,7 @@ class ShadowRehearsalTest(unittest.TestCase):
         return database
 
     def run_rehearsal(self, **extra):
-        environment = {'PATH': '/usr/bin:/bin', 'FAKE_LOG': str(self.log), 'HIMAWARI_SHADOW_TOOLS': str(self.tools), 'HIMAWARI_SHADOW_SBIN': str(self.tools), 'HIMAWARI_SHADOW_UPPER_SIZE': '1M', 'HIMAWARI_SHADOW_PROC_FILESYSTEMS': str(self.log / 'filesystems'), 'HIMAWARI_SHADOW_LOOP_CONTROL': str(self.log / 'loop-control'), 'HIMAWARI_PACKET_HOST': '127.0.0.1', 'HIMAWARI_DEPLOY_SHADOW_REHEARSAL': '1', 'HIMAWARI_SHADOW_STATE_DATA': str(self.data), 'HIMAWARI_SHADOW_PARENT': str(self.parent), 'HIMAWARI_SHADOW_BOOT_WAIT': '5', 'HIMAWARI_SHADOW_SERVICE_WAIT': '3', **extra}
+        environment = {'PATH': '/usr/bin:/bin', 'FAKE_LOG': str(self.log), 'HIMAWARI_SHADOW_TOOLS': str(self.tools), 'HIMAWARI_SHADOW_SBIN': str(self.tools), 'HIMAWARI_SHADOW_UPPER_SIZE': '1M', 'HIMAWARI_SHADOW_PROC_FILESYSTEMS': str(self.log / 'filesystems'), 'HIMAWARI_SHADOW_LOOP_CONTROL': str(self.log / 'loop-control'), 'HIMAWARI_PACKET_HOST': '127.0.0.1', 'HIMAWARI_DEPLOY_SHADOW_REHEARSAL': '1', 'HIMAWARI_SHADOW_STATE_DATA': str(self.data), 'HIMAWARI_SHADOW_PARENT': str(self.parent), 'HIMAWARI_SHADOW_BOOT_WAIT': '5', 'HIMAWARI_SHADOW_SERVICE_WAIT': '3', 'HIMAWARI_SHADOW_PROBE_TIMEOUT': '2', **extra}
         return subprocess.run(['/bin/bash', str(self.scripts / 'shadow-rehearsal.sh'), str(self.packet)], capture_output=True, text=True, env=environment, timeout=120)
 
     def test_the_copy_holds_rows_still_in_the_write_ahead_log_and_keeps_owner_and_mode(self):
@@ -165,6 +179,9 @@ class ShadowRehearsalTest(unittest.TestCase):
         self.assertIn('SHADOW_HOST arch=', result.stdout)
         self.assertIn('overlay=yes loop=yes', result.stdout)
         self.assertIn('nspawn=systemd_255_(255.4-1ubuntu8)', result.stdout)
+        self.assertIn('SHADOW_FSTAB_DROPPED LABEL=UEFI /boot/efi vfat umask=0077 0 1', result.stdout)
+        self.assertNotIn('SHADOW_FSTAB_DROPPED # comment', result.stdout)
+        self.assertIn('SHADOW_SYSTEM_STATE running', result.stdout)
         arguments = (self.log / 'nspawn.args').read_text().splitlines()
         for expected in ('--private-network', '--boot', '--machine=himawari-shadow', '--link-journal=no'):
             self.assertIn(expected, arguments)
@@ -210,6 +227,38 @@ class ShadowRehearsalTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn('SHADOW_REHEARSAL_FAILED OVERLAY_UNSUPPORTED', result.stderr)
         self.assertNotIn('SHADOW_COPY_START', result.stdout)
+
+    def test_I120_a_boot_whose_status_never_answers_stops_at_the_deadline_and_names_the_waiting_units(self):
+        self.live_database()
+        started = time.monotonic()
+        result = self.run_rehearsal(FAKE_SYSTEMCTL_HANGS='1', HIMAWARI_SHADOW_BOOT_WAIT='4')
+        self.assertLess(time.monotonic() - started, 30)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('SHADOW_REHEARSAL_FAILED BOOT_TIMEOUT', result.stderr)
+        self.assertIn('state unreachable', result.stderr)
+        self.assertIn('42 boot-efi.mount start running', result.stderr)
+        self.assertNotIn('SHADOW_DEPLOY_START', result.stdout)
+        self.assertEqual(list(self.parent.iterdir()), [])
+
+    def test_I120_emergency_mode_fails_at_once_with_the_failed_units(self):
+        self.live_database()
+        started = time.monotonic()
+        result = self.run_rehearsal(FAKE_SYSTEM_STATE='maintenance', HIMAWARI_SHADOW_BOOT_WAIT='100')
+        self.assertLess(time.monotonic() - started, 30)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('SHADOW_REHEARSAL_FAILED BOOT_EMERGENCY', result.stderr)
+        self.assertIn('cloud-init.service loaded failed failed', result.stderr)
+
+    def test_a_shadow_left_by_a_cut_off_run_is_terminated_and_removed_first(self):
+        self.live_database()
+        leftover = self.parent / 'himawari-shadow.old123'
+        (leftover / 'data').mkdir(parents=True)
+        (self.log / 'machine.up').touch()
+        result = self.run_rehearsal()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('SHADOW_LEFTOVER_MACHINE himawari-shadow', result.stdout)
+        self.assertIn('SHADOW_LEFTOVER_REMOVED ' + str(leftover), result.stdout)
+        self.assertEqual(list(self.parent.iterdir()), [])
 
     def test_the_old_release_must_start_on_the_copy_before_the_deploy_is_rehearsed(self):
         self.live_database()
