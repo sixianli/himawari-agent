@@ -39,17 +39,17 @@ struct ChatInputBar: View {
                     if holdEnabled { holdArea }
                 }
             if voice, hold == nil {
-                circle(.microphone, label: L.text("chat.dictate"), fill: dictating ? Color.hmSpeak : Color.hmFill, foreground: dictating ? Color.hmOnSpeak : Color.hmText, action: toggleDictation)
+                circle(.microphone, label: L.text("chat.dictate"), fill: dictating ? Color.hmText : Color.hmFill, foreground: dictating ? Color.hmOnText : Color.hmText, action: toggleDictation)
             }
             if hold == nil {
                 if let stop, !canSend {
-                    circle(.playerStop, label: L.text("chat.stop"), fill: Color.hmSpeak, foreground: Color.hmOnSpeak, action: stop)
+                    circle(.playerStop, label: L.text("chat.stop"), fill: Color.hmText, foreground: Color.hmOnText, action: stop)
                         .transition(.scale.combined(with: .opacity))
                 } else if canSend {
-                    circle(.arrowUp, label: L.text("chat.send"), fill: Color.hmSpeak, foreground: Color.hmOnSpeak, action: send)
+                    circle(.arrowUp, label: L.text("chat.send"), fill: Color.hmText, foreground: Color.hmOnText, action: send)
                         .transition(.scale.combined(with: .opacity))
                 } else {
-                    circle(.voiceWave, label: L.text("chat.talk"), fill: Color.hmSpeak, foreground: Color.hmOnSpeak) { startTalk?() }
+                    circle(.voiceWave, label: L.text("chat.talk"), fill: Color.hmText, foreground: Color.hmOnText) { startTalk?() }
                         .allowsHitTesting(startTalk != nil)
                 }
             }

@@ -140,18 +140,9 @@ it("accepts token-based code", () => {
 
 const readable = (bg, fg) =>
   Object.fromEntries(
-    [
-      "surface",
-      "text",
-      "muted",
-      "sun",
-      "danger",
-      "success",
-      "glyph",
-      "onSpeak",
-      "onText",
-      "speak",
-    ].map((name) => [name, ["surface", "onSpeak", "onText"].includes(name) ? bg : fg]),
+    ["surface", "text", "muted", "sun", "danger", "success", "glyph", "onText", "speak"].map(
+      (name) => [name, ["surface", "onText"].includes(name) ? bg : fg],
+    ),
   );
 const tokens = {
   color: {
@@ -353,7 +344,6 @@ it("measures text contrast of the approved tokens in light and dark", () => {
     danger: "#000000",
     success: "#000000",
     glyph: "#000000",
-    onSpeak: "#ffffff",
     speak: "#000000",
     onText: "#ffffff",
   };
