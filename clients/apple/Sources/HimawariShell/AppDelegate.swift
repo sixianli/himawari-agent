@@ -1,5 +1,6 @@
 #if canImport(UIKit)
 import HimawariCore
+import HimawariListenUI
 import UIKit
 
 @MainActor
@@ -11,6 +12,12 @@ public final class HimawariAppDelegate: NSObject, UIApplicationDelegate {
     public func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         NotificationRouter.shared.install()
         return true
+    }
+
+    public func applicationWillTerminate(_ application: UIApplication) {
+        #if canImport(ActivityKit) && os(iOS)
+        ListenActivities.endAllBeforeExit()
+        #endif
     }
 
     public func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {

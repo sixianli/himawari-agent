@@ -2,10 +2,14 @@ import HimawariCore
 import HimawariDesign
 import HimawariListenUI
 import SwiftUI
+#if os(iOS)
+import UIKit
+#endif
 
 public struct ListenEntrySheet: View {
     private let controller: ListeningController
     private let dismiss: () -> Void
+    @State private var started = false
 
     public init(controller: ListeningController, dismiss: @escaping () -> Void) {
         self.controller = controller
@@ -14,14 +18,11 @@ public struct ListenEntrySheet: View {
 
     public var body: some View {
         Group {
-            if case let .recording(progress) = controller.enrollment {
-                VoiceprintEnrollView(progress: progress, onClose: close, onLater: close)
+            if started {
+                VoiceprintEnrollScreen(controller: controller, dismiss: dismiss)
             } else {
                 ListenIntroView(onStart: start, onLater: dismiss)
             }
-        }
-        .onChange(of: controller.hasVoiceprint) { _, has in
-            if has { dismiss() }
         }
     }
 
@@ -32,14 +33,57 @@ public struct ListenEntrySheet: View {
             if controller.hasVoiceprint {
                 dismiss()
             } else {
-                controller.beginEnrollment()
+                started = true
             }
         }
+    }
+}
+
+public struct VoiceprintEnrollScreen: View {
+    private let controller: ListeningController
+    private let dismiss: () -> Void
+    @Environment(\.openURL) private var openURL
+
+    public init(controller: ListeningController, dismiss: @escaping () -> Void) {
+        self.controller = controller
+        self.dismiss = dismiss
+    }
+
+    public var body: some View {
+        Group {
+            switch controller.enrollment {
+            case let .recording(progress):
+                VoiceprintEnrollView(progress: progress, onClose: close, onLater: close)
+            case let .failed(failure):
+                VoiceprintEnrollStatusView(status: .failed(failure), onClose: close, onRetry: begin, onOpenSettings: openSettings)
+            case .preparing, .idle:
+                VoiceprintEnrollStatusView(status: .preparing, onClose: close, onRetry: begin, onOpenSettings: openSettings)
+            }
+        }
+        .task {
+            if controller.enrollment == .idle, !controller.hasVoiceprint {
+                await controller.beginEnrollment()
+            }
+        }
+        .onChange(of: controller.hasVoiceprint) { _, has in
+            if has { dismiss() }
+        }
+        .onDisappear { controller.skipEnrollment() }
+    }
+
+    private func begin() {
+        Task { await controller.beginEnrollment() }
     }
 
     private func close() {
         controller.skipEnrollment()
         dismiss()
+    }
+
+    private func openSettings() {
+        #if os(iOS)
+        if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+        #endif
     }
 }
 
@@ -63,10 +107,11 @@ public struct ListenOverlay: View {
                     }
                 }
             }
-            .background(Color.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 30, style: .continuous))
+            .background(Color.hmSurface, in: RoundedRectangle(cornerRadius: DesignTokens.Radius.card, style: .continuous))
+            .environment(\.colorScheme, .dark)
+            .hmShadow(DesignTokens.Shadows.liftBig)
             .padding(.horizontal, 12)
             .padding(.bottom, 34)
-            .environment(\.colorScheme, .dark)
             .transition(.move(edge: .bottom).combined(with: .opacity))
         }
     }

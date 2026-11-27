@@ -43,7 +43,7 @@
 "watch.offer.title" = "给这块 Apple Watch 用吗";
 "watch.offer.watch" = "给手表用";
 "watch.offer.cancel" = "不用";
-"main.retry" = "连不上她，点这里再试";
+"main.retry" = "连不上 Himawari，点这里再试";
 "push.approve" = "同意";
 "push.deny" = "不同意";
 "push.vaultCode.enter" = "输入验证码";

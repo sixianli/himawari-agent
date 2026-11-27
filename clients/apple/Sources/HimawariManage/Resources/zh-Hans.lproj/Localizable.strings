@@ -14,7 +14,7 @@
 "approval.confirm" = "同意";
 "approval.why" = "为什么问你";
 "approval.why.rule" = "规则：%@";
-"approval.why.noRule" = "还没有规则允许它自己做";
+"approval.why.noRule" = "还没有规则允许 Himawari 自己做";
 "approval.from" = "从哪来的";
 "approval.from.thread" = "对话“%@”";
 "approval.from.unnamed" = "一个还没起名的对话";
@@ -28,8 +28,7 @@
 "result.waiting" = "等你同意";
 "result.other" = "这个版本的 App 显示不了这件事的结果";
 "result.other.update" = "更新 App 后能看到";
-"abilities.title" = "它能替你做的";
-"abilities.system" = "系统里允许的";
+"abilities.title" = "Himawari 能替你做的";
 "permission.status.authorized" = "已允许";
 "permission.status.notDetermined" = "还没问过";
 "permission.status.denied" = "没允许";
@@ -56,3 +55,4 @@
 "allowance.locked.ownerPresence" = "要你本人在场的事只能“只这一次”";
 "allowance.locked.asksEveryTime" = "这类事每次都先问你，只能“只这一次”";
 "allowance.notSaved" = "这次已经同意了，但没能记下同意的范围，下次同样的事还会问你";
+"abilities.systemAccess" = "系统权限";

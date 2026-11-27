@@ -294,6 +294,7 @@ export async function runCheck({
         ".github/workflows/pr-closed.yml",
         ".github/workflows/apple.yml",
         ".github/workflows/docs-drift.yml",
+        ".github/workflows/real-sites.yml",
       ]);
       await command("diff", "git", ["diff", "--check"]);
       result.counts = { files: 3, executed: 3, passed: 3, failed: 0, skipped: 0 };

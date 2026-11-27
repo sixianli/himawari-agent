@@ -12,7 +12,7 @@ public struct AlarmPermission: DevicePermission {
     public var name: LocalizedLine { line("闹钟", "Alarms", "アラーム") }
     public var settingsPath: LocalizedLine { SettingsPath.app }
     public var purpose: LocalizedLine {
-        line("你让 Himawari 设闹钟时，它在这台 iPhone 上替你设，到点会像系统闹钟一样响，静音和专注模式下也响。",
+        line("你让 Himawari 设闹钟时，Himawari 在这台 iPhone 上替你设，到点会像系统闹钟一样响，静音和专注模式下也响。",
              "When you ask Himawari to set an alarm, it sets it on this iPhone. It rings like a system alarm, even in silent mode or Focus.",
              "アラームを頼むと、この iPhone に設定します。消音モードや集中モードでもシステムのアラームと同じように鳴ります。")
     }

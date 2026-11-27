@@ -63,13 +63,15 @@ describe("the listening audio session never silences the phone's haptics", () =>
   it("releases the session on stop, on teardown, on a replaced capture and when the capture is dropped", () => {
     expect(body(capture, "func stop(deactivate: Bool)")).toContain("setActive(false");
     expect(body(capture, "deinit")).toContain("setActive(false");
-    const tearDown = body(controller, "private func tearDown()");
-    expect(tearDown).toContain("capture?.stop(deactivate: true)");
-    expect(tearDown).toContain("capture = nil");
-    const start = body(controller, "public func start() async");
-    const release = start.indexOf("capture?.stop(deactivate: true)");
+    const close = body(controller, "private func closeMicrophone()");
+    expect(close).toContain("capture?.stop(deactivate: true)");
+    expect(close).toContain("capture = nil");
+    expect(body(controller, "private func tearDown()")).toContain("closeMicrophone()");
+    expect(body(controller, "public func start() async")).toContain("openMicrophone()");
+    const open = body(controller, "private func openMicrophone() async throws");
+    const release = open.indexOf("closeMicrophone()");
     expect(release).toBeGreaterThan(-1);
-    expect(release).toBeLessThan(start.indexOf("AudioCapture()"));
+    expect(release).toBeLessThan(open.indexOf("AudioCapture()"));
   });
 
   it("tracks whether the capture holds the session so a dropped capture releases it", () => {

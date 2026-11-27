@@ -65,8 +65,8 @@ extension M {
     static func timerBy(_ createdBy: OwnerTimer.CreatedBy) -> String {
         switch createdBy {
         case .owner: text("你说的", ja: "あなたが言った", en: "You asked")
-        case .agreed: text("她提议、你同意的", ja: "彼女の提案にあなたが同意", en: "She suggested, you agreed")
-        case .her: text("她想到的", ja: "彼女が思いついた", en: "Her idea")
+        case .agreed: text("Himawari 提议、你同意的", ja: "Himawari の提案にあなたが同意", en: "Himawari suggested, you agreed")
+        case .her: text("Himawari 想到的", ja: "Himawari が思いついた", en: "Himawari's idea")
         }
     }
 

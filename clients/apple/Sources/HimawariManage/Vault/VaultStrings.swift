@@ -5,9 +5,9 @@ extension M {
     static var vaultTitle: String { text("保险箱", ja: "金庫", en: "Vault") }
     static var vaultIntro: String {
         text(
-            "她只知道每一项的名字和能用在哪个网站，看不到值。每次用都要你批准。",
-            ja: "彼女が知っているのは各項目の名前と使えるサイトだけで、値は見えません。使うたびにあなたの承認が必要です。",
-            en: "She only knows each item's name and the site it works on, never the value. Every use needs your approval."
+            "Himawari 只知道每一项的名字和能用在哪个网站，看不到值。每次用都要你批准。",
+            ja: "Himawari が知っているのは各項目の名前と使えるサイトだけで、値は見えません。使うたびにあなたの承認が必要です。",
+            en: "Himawari only knows each item's name and the site it works on, never the value. Every use needs your approval."
         )
     }
     static var vaultEmpty: String { text("还没有存东西", ja: "まだ何も入っていません", en: "Nothing stored yet") }
@@ -23,7 +23,7 @@ extension M {
     }
     static var vaultImport: String { text("从苹果“密码”导入", ja: "Apple の「パスワード」から読み込む", en: "Import from Apple Passwords") }
     static var vaultImportSubtitle: String {
-        text("一次选好要给她的那些，不用一项项抄", ja: "渡す項目をまとめて選べます", en: "Pick everything you want her to use at once")
+        text("一次选好要给 Himawari 的那些，不用一项项抄", ja: "渡す項目をまとめて選べます", en: "Pick everything you want Himawari to use at once")
     }
     static var vaultManual: String { text("手动加", ja: "手入力で追加", en: "Add by hand") }
     static var vaultManualSubtitle: String {
@@ -31,9 +31,9 @@ extension M {
     }
     static var vaultAddLater: String {
         text(
-            "不先加也行：她用到一个没存过的网站时会来问你，你当场从“密码”里选。",
-            ja: "先に追加しなくても大丈夫。まだないサイトを使うとき、彼女が聞きに来ます。",
-            en: "You can also skip this: when she needs a site you haven't stored, she'll ask you then."
+            "不先加也行：Himawari 用到一个没存过的网站时会来问你，你当场从“密码”里选。",
+            ja: "先に追加しなくても大丈夫。まだないサイトを使うとき、Himawari が聞きに来ます。",
+            en: "You can also skip this: when Himawari needs a site you haven't stored, Himawari will ask you then."
         )
     }
     static var vaultEncryptedHere: String {
@@ -62,7 +62,7 @@ extension M {
     static var vaultSiteRow: String { text("能用在哪个网站", ja: "使えるサイト", en: "Works on") }
     static var vaultBackgroundNote: String {
         text(
-            "打开后，定时任务用它不用问你；服务器被黑时这一项会泄露",
+            "打开后，定时任务用这一项不用问你；服务器被黑时这一项会泄露",
             ja: "オンにすると定期タスクは確認なしで使います。サーバーが侵入されるとこの項目は漏れます",
             en: "When on, scheduled tasks use it without asking. If the server is broken into, this item leaks"
         )
@@ -82,10 +82,10 @@ extension M {
     static var vaultApproveTitle: String { text("批准一次使用", ja: "1 回の使用を承認", en: "Approve one use") }
     static func vaultOnlyFor(_ origin: String) -> String { text("只填进 \(origin)", ja: "\(origin) にだけ入力", en: "Only for \(origin)") }
     static var vaultMatches: String { text("名字和网站和你存的一致", ja: "名前とサイトは保存した内容と一致", en: "Name and site match what you stored") }
-    static var vaultPurposeLabel: String { text("她要做什么（这是她说的，只作参考）", ja: "何をするか（彼女の説明・参考のみ）", en: "What she's doing (her words, for reference)") }
+    static var vaultPurposeLabel: String { text("Himawari 要做什么（这是 Himawari 说的，只作参考）", ja: "何をするか（Himawari の説明・参考のみ）", en: "What Himawari's doing (Himawari words, for reference)") }
     static var vaultApproveFooter: String {
         text(
-            "只管这次办事 · 2 分钟内不点就作废。登录以后要付款、转账，她会再单独问你。",
+            "只管这次办事 · 2 分钟内不点就作废。登录以后要付款、转账，Himawari 会再单独问你。",
             ja: "今回の用事だけ・2 分以内に押さないと無効。ログイン後の支払いや送金は別に確認します。",
             en: "Only for this task · expires if you don't tap within 2 minutes. Payments or transfers after login are asked separately."
         )

@@ -110,6 +110,7 @@ struct EntryNote: View {
         Text(text)
             .hmType(DesignTokens.TypeScale.caption)
             .foregroundStyle(Color.hmMuted)
+            .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, DesignTokens.Handover.noteInset)
     }

@@ -21,7 +21,7 @@ import {
   BrowserToolError,
   ProductionBrowserTools,
 } from "../../apps/agent-service/src/production-browser-tools.js";
-import { ComputerOnThisMachine, freePort } from "../fixtures/browser-computer.ts";
+import { ComputerOnThisMachine, freePort } from "../fixtures/browser-tool-harness.ts";
 
 const CALL_MS = 90_000;
 const SITE = "https://the-internet.herokuapp.com";

@@ -75,4 +75,4 @@ jobs:
       - name: main 上失败时找出改了苹果客户端的 PR，在 PR 上留言请它的线程认领
         env:
           GH_TOKEN: ${{ github.token }}
-        run: node scripts/ci/apple-main-claim.mjs testflight.yml testflight/upload
+        run: node scripts/ci/main-claim.mjs testflight.yml apple testflight/upload
