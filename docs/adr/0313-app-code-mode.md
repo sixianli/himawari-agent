@@ -7,7 +7,7 @@ superseded_by: ""
 date: "2026-11-27"
 implementation: in_progress
 covers: "apps/agent-service/src/production-app-tools.ts, apps/agent-service/src/app-code-runner.ts, apps/agent-service/src/production-runtime-tools.ts, apps/agent-service/src/owner-scope-authorization.ts, packages/prompt-catalog/src/apps.ts"
-verified_at: "3ff09b5d9"
+verified_at: "df9b61fae"
 ---
 
 # ADR 0313：连接的应用支持 Code Mode：模型写代码调工具，每次要先问的调用在那一步停下
