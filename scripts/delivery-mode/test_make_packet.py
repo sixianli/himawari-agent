@@ -2275,6 +2275,19 @@ class FirstToolsMaintenanceTest(RenderedPacket):
         self.assertEqual(set(upgrade), set(first))
         self.assertEqual({name for name in upgrade if upgrade[name] != first[name]}, {'signing/cloud-capability-manifest.mjs', 'signing/verify-capability-manifest.mjs', 'signing/finalize-binding-inputs.py', 'inputs/finalize-bindings.py', 'inputs/verify-finalize-bindings.py', 'systemd/S2-stop-and-inspect.py', 'systemd/S7-switch-start-readback.py', 'systemd/S7-startup-readback.mjs', 'install/S9-clean-transport.py'})
 
+    def test_maintenance_fixtures_pass_with_every_config_target_andy_production_sets(self):
+        targets = INSTANCE['configTargets']
+        self.assertTrue(targets.get('speech') and targets.get('computers') and targets.get('appConnections'))
+        packet = self.render(**FIRST_TOOLS_PARAMETERS,
+                             TARGET_SPEECH_JSON=packet_maker.speech_target(targets.get('speech')),
+                             TARGET_RUN_POLICY_JSON=packet_maker.run_policy_target(targets.get('computers'), targets.get('appConnections')),
+                             TARGET_SECRET_REFERENCES_JSON=packet_maker.secret_references_target(targets.get('appConnections')))
+        self.assertNotEqual(json.loads(packet_maker.secret_references_target(targets.get('appConnections'))), [])
+        scratch = self.root / 'fixture-temp-production-targets'
+        scratch.mkdir()
+        result = subprocess.run([shutil.which('node'), str(packet / 'maintenance' / 'verify-fixtures.mjs')], capture_output=True, text=True, cwd=HERE.parents[1], env={**os.environ, 'HIMAWARI_TEST_TEMP_ROOT': str(scratch)}, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr[-2000:])
+
     def test_maintenance_fixtures_pass_in_the_first_tools_render(self):
         packet = self.render(**FIRST_TOOLS_PARAMETERS)
         scratch = self.root / 'fixture-temp-first'
