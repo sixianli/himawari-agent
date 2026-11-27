@@ -4,7 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { validateHostedRunners } from "../../scripts/ci/check-policy.mjs";
-import { macRunnerLabel, repositoryRoot } from "../../scripts/ci/contracts.mjs";
+import { linuxRunnerLabel, macRunnerLabel, repositoryRoot } from "../../scripts/ci/contracts.mjs";
 
 const script = path.join(repositoryRoot, "scripts/ci/prepare-hosted.sh");
 const run = (args, env = {}) =>
@@ -58,19 +58,29 @@ describe("托管机器的准备脚本", () => {
 describe("Mac 安装包发布工作流", () => {
   const text = readFileSync(path.join(repositoryRoot, ".github/workflows/mac-release.yml"), "utf8");
   const workflow = parse(text);
-  const job = workflow.jobs.publish;
-  it("只在 main 上、免费的标准 Mac 机器上跑，只有发布这一步能写仓库", () => {
-    expect(Object.keys(workflow.jobs)).toEqual(["publish"]);
+  const { publish, check, finish } = workflow.jobs;
+  const releaseScript = readFileSync(
+    path.join(repositoryRoot, "clients/apple/scripts/mac-release.sh"),
+    "utf8",
+  );
+  it("只在 main 上、免费的标准机器上跑；查公证状态用 Linux 机器，只有出包和收尾用 Mac 机器", () => {
+    expect(Object.keys(workflow.jobs)).toEqual(["publish", "check", "finish"]);
     expect(workflow.on.push.branches).toEqual(["main"]);
     expect(workflow.on.pull_request).toBeUndefined();
-    expect(job["runs-on"]).toBe(macRunnerLabel);
-    expect(job.if).toContain("github.ref == 'refs/heads/main'");
+    expect(publish["runs-on"]).toBe(macRunnerLabel);
+    expect(finish["runs-on"]).toBe(macRunnerLabel);
+    expect(check["runs-on"]).toBe(linuxRunnerLabel);
+    expect(publish.if).toContain("github.ref == 'refs/heads/main'");
+    expect(publish.if).toContain("github.event_name != 'schedule'");
+    expect(check.if).toContain("github.event_name == 'schedule'");
+    expect(finish.needs).toBe("check");
+    expect(finish.if).toContain("needs.check.outputs.outcome == 'accepted'");
     expect(workflow.permissions).toEqual({ contents: "read" });
-    expect(job.permissions).toEqual({ contents: "write" });
+    expect(check.permissions).toEqual({ contents: "read", actions: "read" });
     expect(() => validateHostedRunners({ "mac-release.yml": text })).not.toThrow();
   });
   it("缺任何一把密钥就只警告、不出包", () => {
-    const check = job.steps.find((step) => step.id === "keys");
+    const keys = publish.steps.find((step) => step.id === "keys");
     for (const name of [
       "ASC_KEY_ID",
       "ASC_ISSUER_ID",
@@ -80,22 +90,42 @@ describe("Mac 安装包发布工作流", () => {
       "SPARKLE_PRIVATE_KEY",
       "HIMAWARI_UPDATE_KEY",
     ]) {
-      expect(check.run).toContain(name);
-      expect(Object.keys(check.env)).toContain(name);
+      expect(keys.run).toContain(name);
+      expect(Object.keys(keys.env)).toContain(name);
     }
-    for (const step of job.steps.slice(job.steps.indexOf(check) + 1)) {
+    for (const step of publish.steps.slice(publish.steps.indexOf(keys) + 1)) {
       expect(step.if).toContain("steps.keys.outputs.ready == 'true'");
     }
   });
-  it("App 读的更新清单地址就是发布步骤上传 appcast.xml 的那个 release", () => {
+  it("Mac 机器上最多等公证 15 分钟；没好就把签好的 App 存起来，不再占着机器干等", () => {
+    expect(releaseScript).not.toContain("--wait");
+    expect(releaseScript).toContain("HIMAWARI_NOTARY_WAIT_SECONDS:-900");
+    expect(publish["timeout-minutes"]).toBeLessThanOrEqual(90);
+    const park = publish.steps.find((step) =>
+      String(step.uses ?? "").startsWith("actions/upload-artifact@"),
+    );
+    expect(park.if).toContain("steps.build.outputs.notarized == 'false'");
+    expect(park.with.name).toContain("env.HIMAWARI_PENDING_ARTIFACT");
+    const status = check.steps.find((step) => step.id === "status");
+    expect(status.run).toBe("node clients/apple/scripts/notary-status.mjs");
+    expect(workflow.on.schedule.length).toBe(1);
+  });
+  it("直接发布和收尾发布用同一个脚本，App 读的更新清单地址就是它上传 appcast.xml 的那个 release", () => {
     expect(workflow.env.HIMAWARI_UPDATE_FEED).toContain(
       "/releases/download/mac-updates/appcast.xml",
     );
-    const publish = job.steps.at(-1).run;
-    expect(publish).toContain("gh release upload mac-updates");
-    expect(publish).toContain('gh release create "mac-$HIMAWARI_BUILD_NUMBER"');
-    expect(workflow.env.HIMAWARI_DOWNLOAD_BASE).toMatch(
-      /\/releases\/download\/mac-\$\{\{ github\.run_number \}\}$/u,
+    for (const job of [publish, finish]) {
+      expect(job.steps.at(-1).run).toBe("clients/apple/scripts/mac-publish.sh");
+      expect(Object.keys(job.steps.at(-1).env)).toContain("SUPERSEDES_RUN");
+    }
+    const publishScript = readFileSync(
+      path.join(repositoryRoot, "clients/apple/scripts/mac-publish.sh"),
+      "utf8",
+    );
+    expect(publishScript).toContain("gh release upload mac-updates");
+    expect(publishScript).toContain('gh release create "mac-$BUILD"');
+    expect(releaseScript).toContain(
+      'url="$HIMAWARI_RELEASE_BASE/mac-$HIMAWARI_BUILD_NUMBER/$zip_name"',
     );
     const plist = readFileSync(
       path.join(repositoryRoot, "clients/apple/App/macOS/Info.plist"),
@@ -103,17 +133,6 @@ describe("Mac 安装包发布工作流", () => {
     );
     expect(plist).toContain("<string>$(HIMAWARI_UPDATE_FEED)</string>");
     expect(plist).toContain("<string>$(HIMAWARI_UPDATE_KEY)</string>");
-  });
-  it("等苹果公证至少 2 小时，整个任务比公证多留 1 小时给归档和发布", () => {
-    const script = readFileSync(
-      path.join(repositoryRoot, "clients/apple/scripts/mac-release.sh"),
-      "utf8",
-    );
-    const wait = script.match(/notarytool submit[\s\S]*?--timeout (\d+)([mh])/u);
-    expect(wait).not.toBeNull();
-    const waitMinutes = Number(wait[1]) * (wait[2] === "h" ? 60 : 1);
-    expect(waitMinutes).toBeGreaterThanOrEqual(120);
-    expect(job["timeout-minutes"]).toBeGreaterThanOrEqual(waitMinutes + 60);
   });
 });
 
