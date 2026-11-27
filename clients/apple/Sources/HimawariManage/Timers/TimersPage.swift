@@ -104,6 +104,9 @@ struct TimersNote: View {
 
     var body: some View {
         Text(text)
+            .font(.footnote)
+            .foregroundStyle(Color.hmMuted)
+            .fixedSize(horizontal: false, vertical: true)
             .textCase(nil)
     }
 }
