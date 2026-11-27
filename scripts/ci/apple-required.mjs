@@ -7,9 +7,7 @@ if (result("changes") !== "success") {
 }
 const client = needs.changes.outputs?.client === "true";
 if (client) {
-  const failed = ["iphone", "mac", "iphone-accessibility"].filter(
-    (job) => result(job) !== "success",
-  );
+  const failed = ["iphone", "mac"].filter((job) => result(job) !== "success");
   if (failed.length > 0) {
     console.error(
       `APPLE_REQUIRED_FAILED ${failed.map((job) => `${job}=${result(job)}`).join(" ")}`,

@@ -11,39 +11,31 @@ const run = (needs) =>
     encoding: "utf8",
     env: { PATH: process.env.PATH, APPLE_NEEDS: JSON.stringify(needs) },
   });
-const needs = (client, iphone, audit) => ({
+const needs = (client, iphone, mac = iphone) => ({
   changes: { result: "success", outputs: { client: String(client) } },
   iphone: { result: iphone, outputs: {} },
-  mac: { result: iphone, outputs: {} },
-  "iphone-accessibility": { result: audit, outputs: {} },
+  mac: { result: mac, outputs: {} },
 });
 
-describe("apple/required：iPhone 编译和三片无障碍审计汇成一项检查", () => {
-  it("改了 iPhone 客户端，编译和审计都成功才通过", () => {
-    const result = run(needs(true, "success", "success"));
+describe("apple/required：PR 上 iPhone 单元测试和编译、Mac 编译汇成一项检查（无障碍审计只在 main 上跑）", () => {
+  it("改了客户端，iPhone 和 Mac 作业都成功才通过", () => {
+    const result = run(needs(true, "success"));
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("APPLE_REQUIRED_PASSED client=true");
   });
   it.each([
     ["failure", "success"],
+    ["cancelled", "success"],
+    ["skipped", "success"],
     ["success", "failure"],
     ["success", "cancelled"],
-    ["success", "skipped"],
-  ])("改了 iPhone 客户端时，编译 %s、审计 %s 都判失败", (iphone, audit) => {
-    const result = run(needs(true, iphone, audit));
+  ])("改了客户端时，iPhone %s、Mac %s 都判失败", (iphone, mac) => {
+    const result = run(needs(true, iphone, mac));
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("APPLE_REQUIRED_FAILED");
   });
-  it("改了客户端时 Mac App 编译失败也判失败", () => {
-    const result = run({
-      ...needs(true, "success", "success"),
-      mac: { result: "failure", outputs: {} },
-    });
-    expect(result.status).toBe(1);
-    expect(result.stderr).toContain("APPLE_REQUIRED_FAILED mac=failure");
-  });
-  it("没改 iPhone 客户端时，Mac 作业跳过也通过", () => {
-    const result = run(needs(false, "skipped", "skipped"));
+  it("没改客户端时，Mac 作业跳过也通过", () => {
+    const result = run(needs(false, "skipped"));
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("APPLE_REQUIRED_PASSED client=false");
   });
@@ -52,7 +44,6 @@ describe("apple/required：iPhone 编译和三片无障碍审计汇成一项检�
       changes: { result: "skipped", outputs: {} },
       iphone: { result: "skipped", outputs: {} },
       mac: { result: "skipped", outputs: {} },
-      "iphone-accessibility": { result: "skipped", outputs: {} },
     });
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("APPLE_REQUIRED_FAILED changes=skipped");
@@ -65,7 +56,7 @@ describe("apple/required：iPhone 编译和三片无障碍审计汇成一项检�
     expect(job.name).toBe("apple/required");
     expect(job["runs-on"]).toBe("ubuntu-24.04");
     expect(job.if).toContain("always()");
-    expect(job.needs).toEqual(["changes", "iphone", "mac", "iphone-accessibility"]);
+    expect(job.needs).toEqual(["changes", "iphone", "mac"]);
     const step = job.steps.find((s) =>
       String(s.run ?? "").includes("scripts/ci/apple-required.mjs"),
     );
