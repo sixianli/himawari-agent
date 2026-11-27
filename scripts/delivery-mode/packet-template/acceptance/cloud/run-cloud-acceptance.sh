@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-set -euo pipefail
-trap 'echo "ACCEPTANCE_COMMAND_FAILED run-cloud-acceptance line=$LINENO exit=$? command=$BASH_COMMAND" >&2' ERR
+set -Eeuo pipefail
+trap 'echo "SCRIPT_COMMAND_FAILED file=${BASH_SOURCE[0]} line=$LINENO exit=$? command=$BASH_COMMAND" >&2' ERR
 umask 077
 export PATH=/usr/bin:/bin:/usr/sbin:/sbin
 test "$#" -eq 1
@@ -119,7 +119,7 @@ print(json.dumps({'receipt': {'path': str(receipt), 'bytes': len(payload), 'sha2
 sys.exit(0 if exit_code != 0 or record['passed'] else 1)
 PY
 }
-trap 'outcome=$?; trap - EXIT; write_receipt "$outcome" || exit 1; exit "$outcome"' EXIT
+trap 'outcome=$?; trap - EXIT ERR; write_receipt "$outcome" || exit 1; exit "$outcome"' EXIT
 as_service /usr/bin/python3 -I -c 'import os,sys; os.umask(0o077); os.mkdir(sys.argv[1],0o700)' "$target" < /dev/null
 created_identity=$(stat -c '%d:%i' "$target")
 test "$(stat -c '%u:%g:%a' "$target")" = "$service_uid:$service_gid:700"

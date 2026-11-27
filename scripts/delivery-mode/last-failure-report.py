@@ -48,6 +48,40 @@ def report_evidence(directory):
             say('TAIL', error_file.name + ' ' + line)
 
 
+def report_failed_acceptance():
+    root = STATE / 'release-cleanup' / 'failed-acceptance'
+    if not root.is_dir() or root.is_symlink():
+        return
+    found = sorted(path for path in root.iterdir() if path.is_dir() and not path.is_symlink())
+    if not found:
+        return
+    newest = found[-1]
+    say('ACCEPTANCE', str(newest))
+    for report in sorted(newest.rglob('run-report.json')):
+        try:
+            value = json.loads(report.read_text())
+        except (OSError, ValueError) as error:
+            say('ACCEPTANCE', report.name + ' unreadable ' + type(error).__name__)
+            continue
+        say('ACCEPTANCE', 'run exitCode=' + json.dumps(value.get('exitCode')) + ' runnerErrors=' + json.dumps(value.get('runnerErrors'), ensure_ascii=False))
+    for report in sorted(newest.rglob('acceptance-report.json')):
+        try:
+            value = json.loads(report.read_text())
+        except (OSError, ValueError) as error:
+            say('ACCEPTANCE', report.name + ' unreadable ' + type(error).__name__)
+            continue
+        for command in value.get('commands', []):
+            if command.get('exitCode') != 0:
+                say('ACCEPTANCE', 'command ' + str(command.get('name')) + ' exitCode=' + str(command.get('exitCode')))
+        if value.get('runtimeIntegrityFailure'):
+            say('ACCEPTANCE', 'runtimeIntegrityFailure ' + str(value['runtimeIntegrityFailure']))
+    files = [path for path in sorted(newest.rglob('*.stderr')) if path.is_file() and not path.is_symlink() and path.stat().st_size > 0]
+    for error_file in files[:12]:
+        say('FILE', str(error_file))
+        for line in tail(error_file)[-10:]:
+            say('TAIL', error_file.name + ' ' + line)
+
+
 def differences(expected, actual, prefix=''):
     if isinstance(expected, dict) and isinstance(actual, dict):
         found = []
@@ -139,6 +173,7 @@ def main():
     packet = Path(sys.argv[1]) if len(sys.argv) == 2 else None
     for directory in evidence_directories():
         report_evidence(directory)
+    report_failed_acceptance()
     if packet is not None:
         report_npm(packet)
         probe_downloads(packet)

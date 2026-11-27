@@ -414,21 +414,30 @@ def failed_step_output_is_shown_in_short():
     sample.unlink()
 case('a failed step prints the last lines of its own output so the deploy log shows why', failed_step_output_is_shown_in_short)
 
-def failed_step_shows_what_its_helpers_wrote_to_their_own_error_files():
-    directory = scratch / 'helper-errors'
-    directory.mkdir()
-    old = directory / 'p8-old.stderr'
+def failed_step_shows_every_error_file_written_anywhere_in_its_working_directories():
+    evidence = scratch / 'helper-errors'
+    stage = scratch / 'helper-stage'
+    run = stage / 'acceptance/run-01'
+    modules = stage / 'validation/source/node_modules/package'
+    for directory in (evidence, run, modules):
+        directory.mkdir(parents=True)
+    old = evidence / 'p8-old.stderr'
     old.write_text('from an earlier attempt\n')
     os.utime(old, ns=(1, 1))
-    (directory / 's6-npm-observation.stderr').write_text('RuntimeError: FIRST_NPM_FROZEN_OBSERVATION_CHANGED:npm\n')
-    (directory / 'p8-empty.stderr').write_text('')
-    (directory / 'step-s6_acceptance-5.stderr').write_text('own output\n')
-    (directory / 's6-npm-observation.json').write_text('{}\n')
-    found = steps.helper_error_files(directory, 2, 'step-s6_acceptance-5')
-    assert [path.name for path in found] == ['s6-npm-observation.stderr'], found
-    assert steps.failure_tail(found[0], lines=20) == ['RuntimeError: FIRST_NPM_FROZEN_OBSERVATION_CHANGED:npm']
-    shutil.rmtree(directory)
-case('a failed step also shows the error files its helpers wrote during the step', failed_step_shows_what_its_helpers_wrote_to_their_own_error_files)
+    (evidence / 's6-npm-observation.stderr').write_text('RuntimeError: FIRST_NPM_FROZEN_OBSERVATION_CHANGED:npm\n')
+    (evidence / 'p8-empty.stderr').write_text('')
+    (evidence / 'step-s6_acceptance-5.stderr').write_text('own output\n')
+    (evidence / 's6-npm-observation.json').write_text('{}\n')
+    (run / 'r2l6-console.stderr').write_text('Error: sandbox refused\n')
+    (run / 'install.log').write_text('npm ERR! code EACCES\n')
+    (modules / 'build.log').write_text('ignored\n')
+    found = steps.failure_files([evidence, stage, scratch / 'missing'], 2, 'step-s6_acceptance-5')
+    assert sorted(path.name for path in found) == ['install.log', 'r2l6-console.stderr', 's6-npm-observation.stderr'], found
+    assert steps.failure_tail(run / 'r2l6-console.stderr', lines=20) == ['Error: sandbox refused']
+    assert len(steps.failure_files([evidence, stage], 2, 'step-s6_acceptance-5', limit=2)) == 2
+    shutil.rmtree(evidence)
+    shutil.rmtree(stage)
+case('a failed step shows every error file written anywhere in its working directories', failed_step_shows_every_error_file_written_anywhere_in_its_working_directories)
 
 report = {'schemaVersion': 'himawari.__PKT_LABEL__-change-step-fixtures.v1', 'passed': all(item['passed'] for item in results), 'total': len(results), 'failed': sum(not item['passed'] for item in results), 'sources': {name: sha((base / name).read_bytes()) for name in ['packet-common.py', 'run-step.py', 'run-local-step.py', 'run-user-step.sh', 'transport-packet.py']}, 'productionHostOrRootExecuted': False, 'results': results}
 print(json.dumps(report, indent=2))
