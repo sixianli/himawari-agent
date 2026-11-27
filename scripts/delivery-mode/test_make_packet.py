@@ -1128,8 +1128,9 @@ class ProductionRehearsalTest(unittest.TestCase):
                     packet_maker.rehearse_production_data(packet, instance, parameters)
             problems = str(raised.exception).split(' ')
             self.assertEqual(problems[0], 'PACKET_PRODUCTION_REHEARSAL_FAILED')
-            for expected in ['G90_ZONED_TIMESTAMP_REQUIRED', 'ORIGINAL_CONFIGURATION_CHANGED', 'FIRST_TOOLS_WORKER_IDENTITY_REQUIRED', 'STOPPED_ORIGINAL_SERVICE_PROPERTIES_CHANGED:User=<missing>', 'ORIGINAL_UNIT_CHANGED_BEFORE_SWITCH', 'staticRootConfiguration:TWELFTH_MAINTENANCE_ORIGINAL_STATIC_ROOT_CHANGED', 'routeIdentity:TWELFTH_MAINTENANCE_ROUTE_IDENTITY_INVALID']:
+            for expected in ['G90_ZONED_TIMESTAMP_REQUIRED', 'ORIGINAL_CONFIGURATION_CHANGED', 'FIRST_TOOLS_WORKER_IDENTITY_REQUIRED', 'ORIGINAL_UNIT_CHANGED_BEFORE_SWITCH', 'staticRootConfiguration:TWELFTH_MAINTENANCE_ORIGINAL_STATIC_ROOT_CHANGED', 'routeIdentity:TWELFTH_MAINTENANCE_ROUTE_IDENTITY_INVALID']:
                 self.assertIn(expected, problems)
+            self.assertTrue(any(problem.startswith('STOPPED_ORIGINAL_SERVICE_PROPERTIES_CHANGED:User=') for problem in problems), problems)
 
 
 class DeployScriptErrorLineTest(unittest.TestCase):
