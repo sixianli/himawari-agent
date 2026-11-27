@@ -640,6 +640,49 @@ class LastFailureReportTest(unittest.TestCase):
         self.assertEqual(module.differences(expected, actual), ['npm.requestedPathChain[0].uid expected=0 actual=1000'])
         self.assertEqual(module.differences(expected, expected), [])
 
+    def test_tool_source_probe_flags_links_and_missing_tools_before_s6_copies_them(self):
+        module = load('last_failure_report', 'last-failure-report.py')
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'bash').write_text('x')
+            (root / 'rg').symlink_to(root / 'bash')
+            module.TOOL_SOURCES = [str(root / 'bash'), str(root / 'rg'), str(root / 'bwrap')]
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                module.probe_tool_sources()
+        lines = output.getvalue().splitlines()
+        self.assertEqual(lines, [
+            'LAST_FAILURE_READY ok tool-source ' + str(root / 'bash') + ' regular file',
+            'LAST_FAILURE_READY FAIL tool-source ' + str(root / 'rg') + ' is a link or not a regular file',
+            'LAST_FAILURE_READY FAIL tool-source ' + str(root / 'bwrap') + ' missing',
+        ])
+
+    def test_download_probe_checks_every_reference_url_the_packet_will_fetch(self):
+        module = load('last_failure_report', 'last-failure-report.py')
+        with tempfile.TemporaryDirectory() as directory:
+            packet = Path(directory)
+            script = packet / 'acceptance/cloud/download-question-12.py'
+            script.parent.mkdir(parents=True)
+            script.write_text((HERE / 'packet-template/acceptance/cloud/download-question-12.py').read_text().replace('__PKT_FD_TRIPLE__', 'aarch64-unknown-linux-gnu'))
+            asked = []
+
+            def answer(request, timeout):
+                asked.append((request.get_method(), request.full_url))
+                if 'registry.npmjs.org' in request.full_url:
+                    raise OSError('blocked')
+                response = mock.MagicMock()
+                response.status = 200
+                response.__enter__.return_value = response
+                return response
+
+            output = io.StringIO()
+            with mock.patch.object(module.urllib.request, 'urlopen', answer), contextlib.redirect_stdout(output):
+                module.probe_downloads(packet)
+        self.assertEqual([method for method, _ in asked], ['HEAD', 'HEAD'])
+        lines = output.getvalue().splitlines()
+        self.assertIn('LAST_FAILURE_READY ok download 200 https://github.com/sharkdp/fd/releases/download/v10.5.0/fd-v10.5.0-aarch64-unknown-linux-gnu.tar.gz', lines)
+        self.assertIn('LAST_FAILURE_READY FAIL download OSError blocked https://registry.npmjs.org/is-number/-/is-number-7.0.0.tgz', lines)
+
 
 class DeployHarness(unittest.TestCase):
     def setUp(self):
