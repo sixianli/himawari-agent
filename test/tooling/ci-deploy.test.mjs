@@ -164,6 +164,36 @@ describe("ci-deploy.sh", () => {
     expect(child.status).toBe(3);
   });
 
+  it("[I-120] touches nothing on production when the deploy fails in the offline shadow machine", () => {
+    const { repo, fakeSsh } = workspace();
+    const scripts = path.join(repo, "scripts/delivery-mode");
+    const packet = path.join(repo, "built-packet");
+    const deployed = `${repo}-deployed`;
+    directories.push(deployed);
+    writeFileSync(
+      path.join(scripts, "make-packet.py"),
+      `import json\nprint("PACKET_READY " + json.dumps({"packet": ${JSON.stringify(packet)}}))\n`,
+    );
+    writeFileSync(
+      path.join(scripts, "shadow-rehearsal.sh"),
+      'echo "SHADOW_REHEARSAL_FAILED DEPLOY_S7_CONFIG_APPLY: on the copy" >&2\nexit 1\n',
+    );
+    writeFileSync(path.join(scripts, "deploy.sh"), `touch ${JSON.stringify(deployed)}\n`);
+    mkdirSync(packet, { recursive: true });
+    writeFileSync(path.join(packet, "keep"), "");
+    const second = commitFile(repo, "src/app.ts", "changed");
+    const child = run(repo, {
+      HIMAWARI_PACKET_HOST: "198.51.100.9",
+      HIMAWARI_PACKET_SSH: fakeSsh,
+      HIMAWARI_DEPLOY_COMMIT: second,
+    });
+    expect(child.stdout).toContain(`CI_DEPLOY_SHADOW_REHEARSAL ${packet}`);
+    expect(child.stderr).toContain("CI_DEPLOY_REFUSED SHADOW_REHEARSAL_FAILED");
+    expect(child.stdout).not.toContain("CI_DEPLOY_START");
+    expect(child.status).toBe(4);
+    expect(() => readFileSync(deployed)).toThrow();
+  });
+
   it("warns and goes on when the backup is not installed yet", () => {
     const { repo, fakeSsh } = workspace();
     const second = commitFile(repo, "src/app.ts", "changed");
