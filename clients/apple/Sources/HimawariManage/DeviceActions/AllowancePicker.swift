@@ -7,46 +7,30 @@ struct AllowancePicker: View {
     let days: Int?
     @Binding var selection: ApprovalAllowFor
 
+    @Environment(\.dynamicTypeSize) private var typeSize
+
     var body: some View {
-        let limit = approval.allowanceLimit
-        VStack(alignment: .leading, spacing: DesignTokens.Allowance.noteGap) {
-            HStack(spacing: DesignTokens.Allowance.segmentGap) {
-                ForEach(ApprovalAllowFor.allCases.filter { $0 != .days || days != nil }, id: \.self) { choice in
-                    option(choice, on: (limit == nil ? selection : .once) == choice)
-                }
-            }
-            .padding(DesignTokens.Allowance.segmentInset)
-            .background(Color.hmFill, in: RoundedRectangle(cornerRadius: DesignTokens.Radius.segment, style: .continuous))
-            .opacity(limit == nil ? 1 : DesignTokens.Allowance.lockedOpacity)
-            .disabled(limit != nil)
-            if let limit {
-                Text(Self.reason(limit))
-                    .hmType(DesignTokens.TypeScale.caption)
-                    .foregroundStyle(Color.hmMuted)
-            }
+        if let limit = approval.allowanceLimit {
+            Text(Self.reason(limit))
+                .hmType(DesignTokens.TypeScale.caption)
+                .foregroundStyle(Color.hmMuted)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        } else if typeSize.isAccessibilitySize {
+            Picker(L.text("allowance.title"), selection: $selection) { options }
+                .pickerStyle(.menu)
+                .tint(Color.hmText)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            Picker(L.text("allowance.title"), selection: $selection) { options }
+                .pickerStyle(.segmented)
+                .labelsHidden()
         }
     }
 
-    private func option(_ choice: ApprovalAllowFor, on: Bool) -> some View {
-        Button {
-            selection = choice
-        } label: {
-            Text(Self.label(choice, days: days))
-                .hmType(on ? DesignTokens.TypeScale.rowAction : DesignTokens.TypeScale.secondary)
-                .foregroundStyle(Color.hmText)
-                .lineLimit(1)
-                .frame(maxWidth: .infinity, minHeight: DesignTokens.Allowance.segmentHeight)
-                .background {
-                    if on {
-                        Capsule(style: .continuous)
-                            .fill(Color.hmSurface)
-                            .hmShadow(DesignTokens.Shadows.lift)
-                    }
-                }
-                .contentShape(Capsule(style: .continuous))
+    private var options: some View {
+        ForEach(ApprovalAllowFor.allCases.filter { $0 != .days || days != nil }, id: \.self) { choice in
+            Text(Self.label(choice, days: days)).tag(choice)
         }
-        .buttonStyle(.pressable)
-        .accessibilityAddTraits(on ? .isSelected : [])
     }
 
     static func label(_ choice: ApprovalAllowFor, days: Int?) -> String {
