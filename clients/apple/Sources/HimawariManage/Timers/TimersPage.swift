@@ -66,7 +66,7 @@ struct TimersPage: View {
                     Text(TimerText.line(timer, now: now()))
                         .hmType(DesignTokens.TypeScale.caption)
                         .foregroundStyle(Color.hmMuted)
-                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, minHeight: SL.rowMinHeight, alignment: .leading)
                 .contentShape(Rectangle())
@@ -106,6 +106,7 @@ struct TimersNote: View {
         Text(text)
             .hmType(DesignTokens.TypeScale.caption)
             .foregroundStyle(Color.hmMuted)
+            .fixedSize(horizontal: false, vertical: true)
             .textCase(nil)
     }
 }

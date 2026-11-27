@@ -92,28 +92,34 @@ public struct ListenIntroView: View {
     public var body: some View {
         VStack(spacing: 22) {
             ListenSheetHeader(title: L.text("intro.title"), leading: .chevronLeft, leadingLabel: L.text("back"), action: onLater)
-            VStack(spacing: 18) {
-                Icon(.earLarge, size: 72)
-                    .foregroundStyle(Color.hmSun)
-                Text(L.text("intro.hero"))
-                    .font(.system(.title, weight: .semibold))
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(Color.hmText)
+            ScrollView {
+                VStack(spacing: 22) {
+                    VStack(spacing: 18) {
+                        Icon(.earLarge, size: 72)
+                            .foregroundStyle(Color.hmSun)
+                        Text(L.text("intro.hero"))
+                            .font(.system(.title, weight: .semibold))
+                            .multilineTextAlignment(.center)
+                            .foregroundStyle(Color.hmText)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(.top, 30)
+                    ListenFactCard {
+                        ListenFactRow(icon: .eye, label: L.text("intro.what.label"), value: L.text("intro.what.value"))
+                        ListenFactRow(icon: .users, label: L.text("intro.others.label"), value: L.text("intro.others.value"))
+                        ListenFactRow(icon: .clock, label: L.text("intro.keep.label"), value: L.text("intro.keep.value"))
+                        ListenFactRow(icon: .point, label: L.text("intro.know.label"), value: L.text("intro.know.value"))
+                    }
+                    Text(L.text("intro.note"))
+                        .font(.system(size: 13))
+                        .lineSpacing(13 * 0.5 - 4)
+                        .foregroundStyle(Color.hmMuted)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 8)
+                }
             }
-            .padding(.top, 30)
-            ListenFactCard {
-                ListenFactRow(icon: .eye, label: L.text("intro.what.label"), value: L.text("intro.what.value"))
-                ListenFactRow(icon: .users, label: L.text("intro.others.label"), value: L.text("intro.others.value"))
-                ListenFactRow(icon: .clock, label: L.text("intro.keep.label"), value: L.text("intro.keep.value"))
-                ListenFactRow(icon: .point, label: L.text("intro.know.label"), value: L.text("intro.know.value"))
-            }
-            Text(L.text("intro.note"))
-                .font(.system(size: 13))
-                .lineSpacing(13 * 0.5 - 4)
-                .foregroundStyle(Color.hmMuted)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 8)
-            Spacer(minLength: 0)
+            .scrollBounceBehavior(.basedOnSize)
             VStack(spacing: 6) {
                 Button(L.text("intro.start"), action: onStart)
                     .buttonStyle(CapsuleButtonStyle(.primary, height: 56, fontSize: 17))
