@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import { isolatedEnvironment } from "./install-tools.mjs";
 
 const roots = ["ajv", "typescript", "yaml"];
+export const gateWorkspaces = { "@himawari-agent/testing": "packages/testing" };
 const assert = (condition, message) => {
   if (!condition) throw new Error(message);
 };
@@ -95,6 +96,11 @@ export function installGateDependencies({ root = process.cwd(), tools = ".ci-out
       ),
     },
   );
+  for (const [name, target] of Object.entries(gateWorkspaces)) {
+    const link = path.join(directory, "node_modules", name);
+    mkdirSync(path.dirname(link), { recursive: true });
+    symlinkSync(path.join(root, target), link, "dir");
+  }
   symlinkSync(path.join(directory, "node_modules"), path.join(root, "node_modules"), "dir");
   return { packages: Object.keys(data.lock.packages).length - 1 };
 }

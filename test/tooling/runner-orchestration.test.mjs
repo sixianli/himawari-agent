@@ -385,11 +385,12 @@ describe("共享runner的调度、来源和失败传播", () => {
       }
     },
   );
-  it("[ADR-0267] tooling 只跑 tooling 测试，不跑 policy 检查", async () => {
+  it("[ADR-0267] tooling 先核对测试登记再跑 tooling 测试，不跑工作流的 policy 检查", async () => {
     const result = await run("tooling");
     expect(result.status).toBe("passed");
     expect(result.projects.map((entry) => entry.id)).toEqual(["tooling"]);
-    expect(state.calls.map((entry) => entry.name)).toEqual(["vitest-tooling"]);
+    expect(state.calls.map((entry) => entry.name)).toEqual(["policy-tests", "vitest-tooling"]);
+    expect(state.calls[0].args).toContain("tests");
   });
   it("[ADR-0267] tests 不带 --coverage measure 时只跑测试，不量覆盖率", async () => {
     const result = await run("tests", { coverage: undefined });
@@ -412,7 +413,7 @@ describe("共享runner的调度、来源和失败传播", () => {
       JSON.parse(readFileSync(path.join(state.root, ".ci-output/tooling/details.json"), "utf8")),
     ).toMatchObject({ failures: [] });
     expect(result.status).toBe("passed");
-    expect(state.calls).toEqual([]);
+    expect(state.calls.map(({ name }) => name)).toEqual(["policy-tests"]);
     expect(result.relatedProjects).toEqual(["tooling"]);
     expect(result.projects).toEqual([
       { id: "tooling", counts: { files: 0, executed: 0, passed: 0, failed: 0, skipped: 0 } },
@@ -425,13 +426,14 @@ describe("共享runner的调度、来源和失败传播", () => {
         reason: "related",
       }),
     });
-    expect(state.calls[0].args.at(-1)).toBe("test/tooling/example.test.mjs");
+    const vitestArgs = () => state.calls.find(({ name }) => name === "vitest-tooling").args;
+    expect(vitestArgs().at(-1)).toBe("test/tooling/example.test.mjs");
     state.calls.length = 0;
     const full = await run("tooling", {
       output: ".ci-output/tooling-full",
       planScope: () => ({ related: new Map(), reason: "full-event" }),
     });
-    expect(state.calls[0].args.at(-1)).toMatch(/^--outputFile\.junit=/);
+    expect(vitestArgs().at(-1)).toMatch(/^--outputFile\.junit=/);
     expect(full.relatedProjects).toBeUndefined();
   });
   it("[ADR-0268] tests 不量覆盖率时把相关范围交给 runTests，量覆盖率时不选范围", async () => {

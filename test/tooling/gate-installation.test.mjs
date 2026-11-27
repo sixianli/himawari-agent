@@ -4,6 +4,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readlinkSync,
   realpathSync,
   rmSync,
   writeFileSync,
@@ -75,6 +76,9 @@ it("从锁定工具运行隔离的 npm ci，只发布成功安装的最小依赖
   expect(realpathSync(path.join(root, "node_modules"))).toBe(path.join(directory, "node_modules"));
   expect(readFileSync(path.join(root, "node_modules/installed.txt"), "utf8")).toBe(
     "npm boundary completed",
+  );
+  expect(readlinkSync(path.join(root, "node_modules/@himawari-agent/testing"))).toBe(
+    path.join(root, "packages/testing"),
   );
 });
 

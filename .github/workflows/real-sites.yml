@@ -1,0 +1,56 @@
+name: Real sites
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: real-sites-${{ github.ref }}
+  cancel-in-progress: true
+defaults:
+  run:
+    shell: bash
+jobs:
+  run:
+    name: real-sites/run
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.ci-output/browsers
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.22.3
+      - name: 安装并核验固定工具
+        run: node scripts/ci/install-tools.mjs --directory .ci-output/tools
+      - name: 隔离安装依赖及 SQLite 探针
+        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation
+      - name: 准备 GitHub 托管机器上的沙箱和浏览器依赖
+        run: sudo bash scripts/ci/prepare-hosted.sh "$PWD/.ci-output/tools/bin/node"
+      - name: 安装浏览器工具测试用的 Chromium
+        run: .ci-output/tools/bin/node node_modules/playwright/cli.js install --only-shell chromium
+      - name: 让浏览器工具访问真实外网
+        run: .ci-output/tools/bin/node node_modules/vitest/vitest.mjs run --config vitest.workspace.ts --project qualification-browser-real-sites --retry 0
+  claim:
+    name: real-sites/claim
+    needs: run
+    if: ${{ failure() && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: 在上次通过以来合进 main 的 PR 上留言请它的线程认领
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ci/main-claim.mjs real-sites.yml any real-sites/run

@@ -51,8 +51,8 @@ jobs:
         run: mkdir -p "$RUNNER_TEMP/ci-share" && echo "HIMAWARI_CI_SHARE=$RUNNER_TEMP/ci-share" >> "$GITHUB_ENV"
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
-      - name: 隔离安装依赖及 SQLite 探针
-        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache runner
+      - name: 只装检查工作流要用的最小依赖
+        run: .ci-output/tools/bin/node scripts/ci/install-gate-dependencies.mjs
       - name: 执行共享检查
         run: .ci-output/tools/bin/node scripts/ci/run.mjs --check policy --matrix "$CI_MATRIX" --base "$CI_BASE" --tools .ci-output/tools --output .ci-output/check
       - name: 核验公开输出白名单
