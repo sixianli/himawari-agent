@@ -110,7 +110,7 @@ def main():
     common.publish(path, (json.dumps(report, indent=2) + '\n').encode(), 0, __PKT_SERVICE_GID__, 0o640)
     if not report['passed']:
         for extension in ('stderr', 'stdout'):
-            for line in failure_tail(common.EVIDENCE / (name + '.' + extension)):
+            for line in failure_tail(common.EVIDENCE / (name + '.' + extension), lines=80 if extension == 'stderr' else 40):
                 print('STEP_FAILURE_TAIL ' + extension + ' ' + line)
         for path in helper_error_files(common.EVIDENCE, started_ns, name):
             print('STEP_FAILURE_FILE ' + str(path))

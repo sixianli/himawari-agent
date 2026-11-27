@@ -1058,6 +1058,31 @@ class ServiceAccountContractTest(unittest.TestCase):
         self.assertEqual(self.first_install_account(), ('/var/lib/himawari/state', '/usr/sbin/nologin'))
 
 
+class CloudAcceptanceFailureOutputTest(unittest.TestCase):
+    def test_I120_a_failed_cloud_acceptance_prints_the_failing_command_and_its_error_files(self):
+        lines = (HERE / 'packet-template/acceptance/cloud/run-cloud-acceptance.sh').read_text().splitlines()
+        header = [line for line in lines[:4] if line.startswith(('set ', 'trap '))]
+        start = next(index for index, line in enumerate(lines) if line.startswith('as_service() {'))
+        service = lines[start:start + 3]
+        failure_start = next((index for index, line in enumerate(lines) if line.startswith('report_failure() {')), None)
+        failure = lines[failure_start:lines.index('}', failure_start) + 1] if failure_start is not None else []
+        exit_trap = next(line for line in lines if line.startswith('trap ') and line.endswith(' EXIT'))
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory)
+            (target / 'r2l6-console.stderr').write_text('Error: sandbox refused\n')
+            (target / 'scratch-guard.stderr').write_text('')
+            (target / 'console.stderr').write_text('Traceback (most recent call last):\nRuntimeError: SUBCOMMAND_FAILED:r2l6-console\n')
+            program = '\n'.join(header + ['target=' + str(target), 'write_receipt() { :; }'] + service + failure + [exit_trap, 'as_service /bin/false'])
+            program = program.replace('/usr/bin/setpriv --reuid="$service_uid" --regid="$service_gid" --init-groups --no-new-privs --bounding-set=-all --inh-caps=-all --ambient-caps=-all /usr/bin/env -i PATH=/opt/himawari/node/bin:/usr/bin:/bin LANG=C.UTF-8 HOME="$parent" ', '')
+            result = subprocess.run(['bash', '-c', program], capture_output=True, text=True, env={'PATH': '/usr/bin:/bin'})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('ACCEPTANCE_COMMAND_FAILED run-cloud-acceptance', result.stderr)
+        self.assertIn('command="$@"', result.stderr)
+        self.assertIn('ACCEPTANCE_ERROR_TAIL r2l6-console.stderr Error: sandbox refused', result.stderr)
+        self.assertIn('ACCEPTANCE_ERROR_TAIL console.stderr RuntimeError: SUBCOMMAND_FAILED:r2l6-console', result.stderr)
+        self.assertNotIn('scratch-guard.stderr', result.stderr)
+
+
 class ArmHostPathsTest(unittest.TestCase):
     TAG = '[PG-6]'
     OPTIONAL_LIB64 = '...["/lib64"].filter(existsSync)'
