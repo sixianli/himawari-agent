@@ -238,6 +238,16 @@ describe("安全runner的隔离外部边界", () => {
       const result = await runSecurityChecks(f);
       expect(result.status).toBe("failed");
       expect(result.findingCount).toBeGreaterThan(0);
+      const failed = result.checks.filter((c) => c.status === "failed");
+      expect(failed).toHaveLength(1);
+      expect(failed[0].blocking.length).toBeGreaterThan(0);
+      for (const finding of failed[0].blocking) {
+        expect(finding.id).toMatch(/\S/u);
+        expect(finding.path).toMatch(/\S/u);
+      }
+      expect(JSON.stringify(failed[0].blocking)).not.toContain(
+        ["probe", "unclassified", "credential"].join(""),
+      );
       expect(readFileSync(result.reportPath, "utf8")).not.toContain(
         ["probe", "unclassified", "credential"].join(""),
       );
