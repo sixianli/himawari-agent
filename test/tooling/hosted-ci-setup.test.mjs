@@ -124,11 +124,12 @@ describe("iPhone 工作流", () => {
     expect(Object.keys(workflow.jobs)).toEqual([
       "changes",
       "iphone",
-      "mac",
       "iphone-accessibility",
       "scroll",
+      "claim",
     ]);
-    const { changes, ...macJobs } = workflow.jobs;
+    const { changes, claim, ...macJobs } = workflow.jobs;
+    expect(claim["runs-on"]).toBe("ubuntu-24.04");
     expect(changes["runs-on"]).toBe("ubuntu-24.04");
     expect(changes.if).toContain("github.event.pull_request.draft != true");
     expect(changes.steps.at(-1).run).toContain("scripts/ci/apple-scope.mjs");
@@ -143,6 +144,43 @@ describe("iPhone 工作流", () => {
         "apple.yml": readFileSync(path.join(repositoryRoot, ".github/workflows/apple.yml"), "utf8"),
       }),
     ).not.toThrow();
+  });
+
+  it("PR 上只开一台 Mac：单元测试、iPhone 和 Mac 两个 App 的编译都在 apple/iphone 里，审计和测速只在 main 和手动触发时跑", () => {
+    const macJobs = Object.entries(workflow.jobs).filter(
+      ([, job]) => job["runs-on"] === macRunnerLabel,
+    );
+    const onPullRequest = macJobs.filter(
+      ([, job]) => !job.if.includes("github.event_name != 'pull_request'"),
+    );
+    expect(onPullRequest.map(([id]) => id)).toEqual(["iphone"]);
+    expect(onPullRequest[0][1].strategy).toBeUndefined();
+    for (const id of ["iphone-accessibility", "scroll"]) {
+      expect(workflow.jobs[id].if).toContain("github.event_name != 'pull_request'");
+    }
+    expect(Object.keys(workflow.on)).toContain("workflow_dispatch");
+    const builds = workflow.jobs.iphone.steps
+      .map((step) => step.run ?? "")
+      .filter((run) => run.startsWith("xcodebuild build"));
+    expect(builds.some((run) => run.includes("-scheme Himawari "))).toBe(true);
+    expect(builds.some((run) => run.includes("-scheme HimawariMac"))).toBe(true);
+  });
+
+  it("main 上审计、测速或编译失败时，自动在改了苹果客户端的 PR 上留言请它的线程认领", () => {
+    const claim = workflow.jobs.claim;
+    expect(claim["runs-on"]).toBe("ubuntu-24.04");
+    expect(claim.needs).toEqual(["iphone", "iphone-accessibility", "scroll"]);
+    expect(claim.if).toContain("failure()");
+    expect(claim.if).toContain("github.event_name == 'push'");
+    expect(claim.if).toContain("refs/heads/main");
+    expect(claim.permissions).toEqual({
+      contents: "read",
+      actions: "read",
+      "pull-requests": "write",
+    });
+    expect(claim.steps.at(-1).run).toBe(
+      "node scripts/ci/apple-main-claim.mjs apple.yml apple/iphone apple/scroll",
+    );
   });
   it("滚动测速作业用开了优化的调试版跑长对话滚动脚本，并上传结果", () => {
     const steps = workflow.jobs.scroll.steps;
@@ -191,9 +229,8 @@ describe("iPhone 工作流", () => {
   });
   it("不签名编译原生 Mac App 的 HimawariMac scheme", () => {
     const build =
-      workflow.jobs.mac.steps.find((step) => step.run?.startsWith("xcodebuild build"))?.run ?? "";
-    expect(workflow.jobs.mac.name).toBe("apple/mac");
-    expect(build).toContain("-scheme HimawariMac");
+      workflow.jobs.iphone.steps.find((step) => step.run?.includes("-scheme HimawariMac"))?.run ??
+      "";
     expect(build).toContain("generic/platform=macOS");
     expect(build).toContain("CODE_SIGNING_ALLOWED=NO");
     expect(
@@ -230,5 +267,38 @@ describe("iPhone 工作流", () => {
     );
     expect(project).toContain('productType = "com.apple.product-type.bundle.ui-testing";');
     expect(project).toContain("TEST_TARGET_NAME = Himawari;");
+  });
+});
+
+describe("TestFlight 工作流", () => {
+  const workflow = parse(
+    readFileSync(path.join(repositoryRoot, ".github/workflows/testflight.yml"), "utf8"),
+  );
+  it("PR 上不打 Release 归档，只在 main 和手动触发时跑", () => {
+    expect(Object.keys(workflow.on).sort()).toEqual(["push", "workflow_dispatch"]);
+    expect(workflow.on.push.branches).toEqual(["main"]);
+    expect(Object.keys(workflow.jobs)).toEqual(["upload", "claim"]);
+  });
+  it("main 上没有密钥时照样打 Release 归档、核对权限；有密钥时归档、核对后上传", () => {
+    const steps = workflow.jobs.upload.steps;
+    const archive = steps.find(
+      (step) => step.run === "clients/apple/scripts/testflight.sh archive",
+    );
+    expect(archive.if).toContain("steps.keys.outputs.ready != 'true'");
+    const upload = steps.find((step) => step.run === "clients/apple/scripts/testflight.sh upload");
+    expect(upload.if).toContain("steps.keys.outputs.ready == 'true'");
+    const script = readFileSync(
+      path.join(repositoryRoot, "clients/apple/scripts/testflight.sh"),
+      "utf8",
+    );
+    expect(script).toMatch(/archive_and_upload\(\) \{[^}]*archive_app/su);
+    expect(script).toMatch(/archive_app\(\) \{[^}]*check_entitlements/su);
+  });
+  it("main 上失败时同样留言请改了苹果客户端的 PR 认领", () => {
+    expect(workflow.jobs.claim.needs).toBe("upload");
+    expect(workflow.jobs.claim.if).toContain("failure()");
+    expect(workflow.jobs.claim.steps.at(-1).run).toBe(
+      "node scripts/ci/apple-main-claim.mjs testflight.yml testflight/upload",
+    );
   });
 });

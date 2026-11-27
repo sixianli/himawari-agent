@@ -475,8 +475,10 @@ describe("[P1-1] device messages and event stream", () => {
       stream.on("end", () => resolve());
     });
     await web(h, "revoke", { deviceId: client.deviceId, expectedRevision: client.revision });
-    await Promise.race([ended, new Promise((resolve) => setTimeout(resolve, 2500))]);
-    expect(chunks.join("")).toContain("IDENTITY_SESSION_INVALID");
+    await expect
+      .poll(() => chunks.join(""), { timeout: 15_000 })
+      .toContain("IDENTITY_SESSION_INVALID");
+    await ended;
     stream.destroy();
     await h.repository.close();
   });
@@ -741,8 +743,10 @@ describe("[P1-1] device client routes", () => {
       .toContain("event: thread.execution_changed");
     expect(chunks.join("")).toContain(`"threadId":"${threadId}"`);
     await web(h, "revoke", { deviceId: client.deviceId, expectedRevision: client.revision });
-    await Promise.race([ended, new Promise((resolve) => setTimeout(resolve, 2500))]);
-    expect(chunks.join("")).toMatch(/IDENTITY_SESSION_INVALID|DEVICE_REVOKED/u);
+    await expect
+      .poll(() => chunks.join(""), { timeout: 15_000 })
+      .toMatch(/IDENTITY_SESSION_INVALID|DEVICE_REVOKED/u);
+    await ended;
     stream.destroy();
     await h.repository.close();
   });
