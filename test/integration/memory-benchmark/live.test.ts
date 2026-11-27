@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { embeddingIdentity, JINA_V5_SMALL_INT8_PROFILE } from "@himawari-agent/application";
 import { EgressEmbedder, type Embedder, LOCAL_ONNX_BASE_URL } from "@himawari-agent/memory-engine";
@@ -21,7 +21,8 @@ import {
   stratifiedLongMemEval,
 } from "./datasets.ts";
 import { BudgetReachedError, ChatClient, DEEPSEEK_V4_1_FLASH_PRICES } from "./model.ts";
-import { type IngestedStore, ingestStore, type StoreStatistics } from "./store.ts";
+import { finishedSamples, readEarlierRound, type StoreLine } from "./resume.ts";
+import { type IngestedStore, ingestStore } from "./store.ts";
 
 interface BenchEnvironment {
   readonly HIMAWARI_MEMORY_BENCH_LIVE?: string;
@@ -103,6 +104,15 @@ describe.skipIf(!LIVE)(
         if (!dataDir || !stateRoot || !artifactSha256) throw new Error("BENCH_INPUTS_REQUIRED");
         const capUsd = Number(environment.HIMAWARI_MEMORY_BENCH_COST_CAP_USD ?? 0);
         expect(capUsd).toBeGreaterThan(0);
+        const output =
+          environment.HIMAWARI_MEMORY_BENCH_OUTPUT ??
+          path.resolve(
+            ".ci-output/memory-benchmark",
+            new Date().toISOString().replace(/[:.]/gu, "-"),
+          );
+        await mkdir(output, { recursive: true });
+        const earlier = await readEarlierRound(output);
+        expect(earlier.spentUsd).toBeLessThan(capUsd);
         const fullContext = environment.HIMAWARI_MEMORY_BENCH_FULL_CONTEXT === "1";
         const perType = Number(environment.HIMAWARI_MEMORY_BENCH_LONGMEMEVAL_PER_TYPE ?? 0);
         const samples: BenchmarkSample[] = [];
@@ -169,20 +179,24 @@ describe.skipIf(!LIVE)(
             environment.HIMAWARI_MEMORY_BENCH_BASE_URL ?? "https://opencode.ai/inference/go/v1",
           model: environment.HIMAWARI_MEMORY_BENCH_MODEL ?? "deepseek-v4.1-flash",
           prices: DEEPSEEK_V4_1_FLASH_PRICES,
-          capUsd,
+          capUsd: capUsd - earlier.spentUsd,
           concurrency: Number(environment.HIMAWARI_MEMORY_BENCH_MODEL_CONCURRENCY ?? 24),
         });
-        const output =
-          environment.HIMAWARI_MEMORY_BENCH_OUTPUT ??
-          path.resolve(
-            ".ci-output/memory-benchmark",
-            new Date().toISOString().replace(/[:.]/gu, "-"),
-          );
-        await mkdir(output, { recursive: true });
         const outcomesFile = path.join(output, "outcomes.jsonl");
         const storesFile = path.join(output, "stores.jsonl");
-        const outcomes: QuestionOutcome[] = [];
-        const stores: (StoreStatistics & { id: string; benchmark: string })[] = [];
+        const finished = finishedSamples(samples, earlier, fullContext);
+        const outcomes: QuestionOutcome[] = earlier.outcomes.filter((outcome) =>
+          finished.has(outcome.sampleId),
+        );
+        const stores: StoreLine[] = earlier.stores.filter((store) =>
+          samples.some(
+            (sample) => finished.has(sample.id) && sample.stores.some(({ id }) => id === store.id),
+          ),
+        );
+        await writeFile(outcomesFile, outcomes.map((line) => `${JSON.stringify(line)}\n`).join(""));
+        await writeFile(storesFile, stores.map((line) => `${JSON.stringify(line)}\n`).join(""));
+        const remaining = samples.filter(({ id }) => !finished.has(id));
+        const spentUsd = () => earlier.spentUsd + client.spentUsd;
         const record = async (
           outcome: QuestionOutcome & {
             readonly benchmark: string;
@@ -210,21 +224,26 @@ describe.skipIf(!LIVE)(
         };
         const started = Date.now();
         const progress = new Map<string, string>();
-        const ticker = setInterval(() => {
-          void writeFile(
-            path.join(output, "progress.json"),
-            JSON.stringify(
-              {
-                spentUsd: client.spentUsd,
-                outcomes: outcomes.length,
-                stores: Object.fromEntries(progress),
-                usage: Object.fromEntries(client.usage),
-              },
-              null,
-              1,
-            ),
+        let progressWrite = Promise.resolve();
+        const writeProgress = () => {
+          const body = JSON.stringify(
+            {
+              spentUsd: spentUsd(),
+              resumedSamples: finished.size,
+              outcomes: outcomes.length,
+              stores: Object.fromEntries(progress),
+              usage: Object.fromEntries(client.usage),
+            },
+            null,
+            1,
           );
-        }, 15_000);
+          const file = path.join(output, "progress.json");
+          progressWrite = progressWrite
+            .then(() => writeFile(`${file}.next`, body))
+            .then(() => rename(`${file}.next`, file));
+          return progressWrite;
+        };
+        const ticker = setInterval(() => void writeProgress(), 15_000);
         let stopped: string | null = null;
 
         const runSample = async (sample: BenchmarkSample) => {
@@ -241,9 +260,7 @@ describe.skipIf(!LIVE)(
                       progress.set(store.id, `${done}/${total}`);
                     },
                     stopIf: () =>
-                      client.spentUsd >= capUsd
-                        ? new BudgetReachedError(client.spentUsd, capUsd)
-                        : undefined,
+                      spentUsd() >= capUsd ? new BudgetReachedError(spentUsd(), capUsd) : undefined,
                     generate: async (prompt, call) =>
                       (
                         await client.chat({
@@ -342,7 +359,7 @@ describe.skipIf(!LIVE)(
 
         try {
           await pool(
-            samples,
+            remaining,
             Number(environment.HIMAWARI_MEMORY_BENCH_SAMPLE_CONCURRENCY ?? 8),
             runSample,
           );
@@ -351,6 +368,7 @@ describe.skipIf(!LIVE)(
           stopped = error.message;
         } finally {
           clearInterval(ticker);
+          await writeProgress();
           await runtime.close();
         }
 
@@ -371,7 +389,8 @@ describe.skipIf(!LIVE)(
           minimumSimilarity: profile.chatMinimumSimilarity,
           stopped,
           wallMinutes: Math.round((Date.now() - started) / 600) / 100,
-          spentUsd: Math.round(client.spentUsd * 10_000) / 10_000,
+          spentUsd: Math.round(spentUsd() * 10_000) / 10_000,
+          resumedSamples: [...finished],
           usage: Object.fromEntries(client.usage),
           samples: samples.map(({ id, benchmark, questions }) => ({
             id,

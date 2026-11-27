@@ -1,3 +1,6 @@
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { evidenceHit, fullContextMessages, memoryAnswerMessages } from "./answer.ts";
 import {
@@ -10,6 +13,7 @@ import {
   stratifiedLongMemEval,
 } from "./datasets.ts";
 import { BudgetReachedError, ChatClient, DEEPSEEK_V4_1_FLASH_PRICES } from "./model.ts";
+import { finishedSamples, readEarlierRound } from "./resume.ts";
 
 const locomo = [
   {
@@ -239,5 +243,72 @@ describe("benchmark model client", () => {
     });
     await broke.chat(request);
     await expect(broke.chat(request)).rejects.toBeInstanceOf(BudgetReachedError);
+  });
+});
+
+describe("resuming an interrupted round", () => {
+  it("keeps only samples whose stores and every question in every arm were recorded, and carries the earlier spend", async () => {
+    const output = await mkdtemp(path.join(tmpdir(), "himawari-bench-resume-"));
+    const [sample] = locomoSamples(locomo);
+    if (!sample) throw new Error("sample");
+    const other = {
+      ...sample,
+      id: "conv-2",
+      stores: sample.stores.map((store) => ({ ...store, id: `${store.id}-2` })),
+    };
+    const outcome = (sampleId: string, questionId: string, arm: string) =>
+      JSON.stringify({
+        sampleId,
+        questionId,
+        arm,
+        category: "1",
+        correct: true,
+        response: "",
+        contextTokens: 1,
+        answerMs: 1,
+        evidenceRecalled: null,
+        evidenceStored: null,
+      });
+    const lines = sample.questions.flatMap((question) => [
+      outcome(sample.id, question.id, "memory"),
+      outcome(sample.id, question.id, "full-context"),
+    ]);
+    lines.push(outcome(other.id, sample.questions[0]?.id ?? "", "memory"));
+    await writeFile(path.join(output, "outcomes.jsonl"), `${lines.join("\n")}\n`);
+    await writeFile(
+      path.join(output, "stores.jsonl"),
+      `${[...sample.stores, ...other.stores].map(({ id }) => JSON.stringify({ id, benchmark: "locomo" })).join("\n")}\n`,
+    );
+    await writeFile(path.join(output, "progress.json"), JSON.stringify({ spentUsd: 1.25 }));
+    const earlier = await readEarlierRound(output);
+    expect(earlier.spentUsd).toBe(1.25);
+    expect([...finishedSamples([sample, other], earlier, true)]).toEqual([sample.id]);
+    expect([...finishedSamples([sample, other], earlier, false)]).toEqual([sample.id]);
+  });
+
+  it("REVERSE: a fresh output directory resumes nothing and has spent nothing", async () => {
+    const output = await mkdtemp(path.join(tmpdir(), "himawari-bench-resume-"));
+    const earlier = await readEarlierRound(output);
+    expect(earlier).toEqual({ spentUsd: 0, outcomes: [], stores: [] });
+    expect(finishedSamples(locomoSamples(locomo), earlier, false).size).toBe(0);
+  });
+
+  it("REVERSE: a sample missing one store is not resumed even when its answers were recorded", async () => {
+    const output = await mkdtemp(path.join(tmpdir(), "himawari-bench-resume-"));
+    const [sample] = locomoSamples(locomo);
+    if (!sample) throw new Error("sample");
+    await writeFile(
+      path.join(output, "outcomes.jsonl"),
+      sample.questions
+        .map((question) =>
+          JSON.stringify({ sampleId: sample.id, questionId: question.id, arm: "memory" }),
+        )
+        .join("\n"),
+    );
+    await writeFile(
+      path.join(output, "stores.jsonl"),
+      JSON.stringify({ id: sample.stores[0]?.id }),
+    );
+    expect(finishedSamples([sample], await readEarlierRound(output), false).size).toBe(0);
   });
 });
