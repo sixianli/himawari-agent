@@ -15,8 +15,6 @@ import {
   JsonFileConfigurationPort,
 } from "@himawari-agent/platform-node";
 
-/** Offline owner administration. A directory grant is not an action approval;
- * model requests still require their own policy/disclosure decision and qualified Worker. */
 export async function runWorkspaceCommand(args: readonly string[]): Promise<unknown> {
   const invalid = () => new Error("ADMIN_WORKSPACE_INPUT_INVALID");
   if (args[1] !== "grant") throw invalid();
@@ -147,7 +145,7 @@ export async function runWorkspaceCommand(args: readonly string[]): Promise<unkn
       pathPolicy: "same_filesystem_no_links",
       mountPolicy: "fixed_device",
       authorizationRef: `owner-cli:${id}`,
-      expiresAt,
+      expiresAt: new Date(expiresAt).toISOString(),
       revokedAt: null,
     });
     await repo.auditLedger().append({

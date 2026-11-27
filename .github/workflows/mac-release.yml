@@ -24,7 +24,7 @@ jobs:
     name: mac-release/publish
     if: ${{ github.ref == 'refs/heads/main' && github.repository == 'sixianli/himawari-agent' }}
     runs-on: macos-26
-    timeout-minutes: 90
+    timeout-minutes: 240
     environment: testflight
     permissions:
       contents: write

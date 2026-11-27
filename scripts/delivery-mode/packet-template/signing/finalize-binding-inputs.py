@@ -9,7 +9,6 @@ import socket
 import stat
 import subprocess
 import sys
-from datetime import datetime, timezone
 
 sys.dont_write_bytecode = True
 
@@ -48,19 +47,6 @@ def read(filename, uid):
 def sha(data):
     return hashlib.sha256(data).hexdigest()
 
-def assert_current_grant(grant, host_id):
-    if grant['hostId'] != host_id or grant['revokedAt'] is not None or datetime.fromisoformat(grant['expiresAt'].replace('Z', '+00:00')) <= datetime.now(timezone.utc) or any(grant[field] is not True for field in ['readAllowed', 'hostMatchesRoute', 'currentlyUsable']):
-        raise RuntimeError('NEW_AUTHORIZED_DIRECTORY_GRANT_UNUSABLE:' + grant['grantId'])
-    if not grant['routeKey'] or not grant['grantId'] or not grant['capabilityRef'] or not grant['capabilityVersion'] or not grant['canonicalRootId'] or not grant['device'].isdigit() or not grant['inode'].isdigit():
-        raise RuntimeError('NEW_AUTHORIZED_DIRECTORY_GRANT_INVALID')
-    filename = Path(grant['displayPath'])
-    if not filename.is_absolute() or filename == Path('/'):
-        raise RuntimeError('NEW_AUTHORIZED_DIRECTORY_ROOT_INVALID')
-    info = directory(filename, account.pw_uid, 0o700)
-    if info.st_gid != account.pw_gid or str(info.st_dev) != grant['device'] or str(info.st_ino) != grant['inode']:
-        raise RuntimeError('NEW_AUTHORIZED_DIRECTORY_ROOT_CHANGED')
-    return {'canonicalRootId': grant['canonicalRootId'], 'canonicalPath': str(filename), 'device': str(info.st_dev), 'inode': str(info.st_ino)}
-
 for filename in [stage, packet, packet / 'signing', packet / 'acceptance/cloud', qualification, qualification / 'acceptance-evidence']:
     directory(filename, 0)
 manifest_path = packet / 'acceptance/cloud/cloud-inputs.json'
@@ -85,34 +71,13 @@ read(grant_validator_path, 0)
 grant_spec = importlib.util.spec_from_file_location('workspace_grant_binding', grant_validator_path)
 grant_validator = importlib.util.module_from_spec(grant_spec)
 grant_spec.loader.exec_module(grant_validator)
-grant_binding = grant_validator.bind_existing_grant(frozen, s0)
+checked, problems = grant_validator.check_production_authorization(frozen, s0, new_capability_refs=__PKT_NEW_CAPABILITY_REFS_JSON__, read_configuration=lambda: read(Path('/etc/himawari/config.json'), 0), service_uid=account.pw_uid, service_gid=account.pw_gid)
+if problems:
+    raise RuntimeError(' '.join(problems))
+grant_binding = checked['grantBinding']
 authorization = {'directoryGrants': grant_binding['authorizedDirectoryGrants'], 'capabilities': grant_binding['capabilities']}
-new_capability_refs = __PKT_NEW_CAPABILITY_REFS_JSON__
-if len(authorization['directoryGrants']) != 1 or len(authorization['capabilities']) != 3 - len(new_capability_refs) or {entry['capabilityRef'] for entry in authorization['capabilities']} != {'himawari.pi-coding', 'himawari.public-search', 'himawari.public-fetch'} - set(new_capability_refs):
-    raise RuntimeError('FROZEN_COMPLETE_AUTHORIZATION_REQUIRED')
-authorized_roots = {}
-for grant in authorization['directoryGrants']:
-    root = assert_current_grant(grant, host_id)
-    authorized_roots[root['canonicalRootId']] = root
-if list(authorized_roots.values()) != grant_binding['authorizedRoots']:
-    raise RuntimeError('NEW_AUTHORIZED_ROOT_CHANGED')
-for observed in authorization['capabilities']:
-    if observed['version'] != '1.0.0' or observed['status'] != 'active' or any(observed[field] is not True for field in ['activeHealthy', 'versionMatchesSnapshot', 'operationsMatchSnapshot', 'scopesMatchSnapshot', 'costMatchesSnapshot', 'secretRefsMatchSnapshot', 'permissionRefsMatchSnapshot', 'declarationMatchesSnapshotExceptArtifact', 'snapshotIntegrityMatchesRunner', 'storedIntegrityMatchesDeclaration', 'runnerMatchesRecorded']) or any(observed[field] is not True for field in ['integrityMatchesSnapshot', 'declarationInvariantMatchesSnapshot']) or observed['runnerSha256'] != observed['actualRunnerSha256']:
-        raise RuntimeError('OLD_APPROVED_CAPABILITY_CHANGED:' + observed['capabilityRef'])
-    if observed['hostId'] != host_id or observed['runtimeRoot'] != frozen['paths']['oldPrefix'] + '/lib/himawari-agent' or not observed['workerInstanceId']:
-        raise RuntimeError('OLD_APPROVED_RUNTIME_IDENTITY_CHANGED')
-worker_ids = {entry['workerInstanceId'] for entry in authorization['capabilities']}
-if not authorization['capabilities']:
-    configuration_bytes = read(Path('/etc/himawari/config.json'), 0)
-    if sha(configuration_bytes) != grant_binding['originalConfigurationSha256']:
-        raise RuntimeError('ORIGINAL_CONFIGURATION_CHANGED')
-    route_worker = (json.loads(configuration_bytes).get('runPolicy', {}).get('coding') or {}).get('workerInstanceId')
-    if not isinstance(route_worker, str) or not route_worker:
-        raise RuntimeError('FIRST_TOOLS_WORKER_IDENTITY_REQUIRED')
-    worker_ids = {route_worker}
-if len(worker_ids) != 1:
-    raise RuntimeError('OLD_APPROVED_WORKER_IDENTITY_AMBIGUOUS')
-worker_instance_id = worker_ids.pop()
+authorized_roots = {root['canonicalRootId']: root for root in checked['authorizedRoots']}
+worker_instance_id = checked['workerInstanceId']
 system_tool_paths = {name: '/usr/bin/' + name for name in ['bwrap', 'socat', 'bash', 'rg']}
 system_tools_bytes = read(packet / 'inputs/system-tools-observed.json', 0)
 system_tools = json.loads(system_tools_bytes)
