@@ -11,6 +11,7 @@ import {
   createSessionId,
   type ProductAuthorityFence,
 } from "@himawari-agent/domain";
+import { gatewayV2MessageSchema } from "@himawari-agent/gateway-contracts";
 import {
   openQualifiedDatabase,
   SqliteProductStateRepository,
@@ -27,11 +28,12 @@ import {
 import { ProductionInboxWorker } from "../../apps/agent-service/src/production-inbox-worker.ts";
 import { ProductionMainThread } from "../../apps/agent-service/src/production-main-thread.ts";
 import { ProductionSubthreads } from "../../apps/agent-service/src/production-subthreads.ts";
-import { ProductionTimerControl } from "../../apps/agent-service/src/production-timer-control.ts";
 import {
   ProductionThreadTasks,
   SubthreadToolError,
 } from "../../apps/agent-service/src/production-thread-tasks.ts";
+import { ProductionTimerControl } from "../../apps/agent-service/src/production-timer-control.ts";
+import { fixture as contractFixture } from "../../packages/gateway-contracts/test/gateway-v2.fixture.ts";
 import { copyMigratedDatabase } from "../fixtures/sqlite-migrated-template.ts";
 import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
 
@@ -673,6 +675,48 @@ describe("subthreads opened by the main conversation", () => {
     f.setNow("2026-11-26T12:00:05.000Z");
     await f.subthreads.tickTimers();
     expect(timerEvents(f)).toHaveLength(1);
+  });
+
+  it("[I-126] sends the timer list to the App when the owner's words, the task and the last result span several lines", async () => {
+    const f = await fixture();
+    const first = await f.ownerSays("lines-1", "每晚九点查一下明天要不要带伞");
+    const second = await f.ownerSays("lines-2", "下雨的话顺便提醒我穿厚点");
+    const scheduled = (
+      (await f.call(second.runId, "schedule_task", {
+        task: "查东京明天会不会下雨\n下雨就提醒带伞和穿厚点",
+        schedule: { daily_at: "21:00" },
+        created_by: "owner",
+        owner_messages: [first.messageId, second.messageId],
+        matter: "带伞",
+        title: "🌂查明天带伞和穿衣提醒🌂查明天带伞和穿衣",
+      })) as { value: { timer: string; subthread: string } }
+    ).value;
+    f.setNow("2026-11-25T12:00:05.000Z");
+    await f.subthreads.tickTimers();
+    const wake = await f.started(scheduled.subthread);
+    await f.call(wake.runId, "tell_main", { kind: "progress", text: "明天有雨\n记得带伞" });
+    await f.settle(wake);
+    const control = new ProductionTimerControl({
+      subthreads: f.subthreads,
+      scope,
+      clock: { now: () => START },
+    });
+    const snapshot = await control.query({
+      kind: "query",
+      type: "timers.read",
+      payload: {},
+    } as never);
+    const sent = gatewayV2MessageSchema.parseJson(
+      gatewayV2MessageSchema.serialize(
+        contractFixture("snapshot", "timers.snapshot", snapshot.payload) as never,
+      ),
+    ) as unknown as { payload: { timers: Record<string, unknown>[] } };
+    expect(sent.payload.timers[0]).toMatchObject({
+      title: "🌂查明天带伞和穿衣提醒🌂查明天带伞和穿衣",
+      task: "查东京明天会不会下雨\n下雨就提醒带伞和穿厚点",
+      ownerWords: "- 每晚九点查一下明天要不要带伞\n- 下雨的话顺便提醒我穿厚点",
+      lastResult: { text: "明天有雨\n记得带伞" },
+    });
   });
 
   it("REVERSE: refuses a schedule that is not exactly one of the three kinds and stores nothing", async () => {

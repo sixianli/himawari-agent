@@ -1,30 +1,10 @@
-import { execFile } from "node:child_process";
 import { appendFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-import { promisify } from "node:util";
 import { touchesAppleClient } from "./apple-scope.mjs";
-
-const execFileAsync = promisify(execFile);
+import { findGreenBase, getJson, getPages, gh } from "./main-green.mjs";
 
 export function marker(runId) {
   return `<!-- main-claim:${runId} -->`;
-}
-
-export function isGreen(jobs, prefixes) {
-  return prefixes.every((prefix) => {
-    const matching = jobs.filter((job) => job.name.startsWith(prefix));
-    return matching.length > 0 && matching.every((job) => job.conclusion === "success");
-  });
-}
-
-export function greenBase(runs, jobsByRun, prefixes, currentRunId) {
-  const earlier = runs
-    .filter((run) => String(run.id) !== String(currentRunId))
-    .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
-  for (const run of earlier) {
-    if (isGreen(jobsByRun.get(run.id) ?? [], prefixes)) return run.head_sha;
-  }
-  return null;
 }
 
 export function failedJobs(jobs, prefixes) {
@@ -66,20 +46,6 @@ export function claimComment({ scope, workflow, failed, head, base, runUrl, runI
   ].join("\n\n");
 }
 
-async function gh(args) {
-  const { stdout } = await execFileAsync("gh", args, { maxBuffer: 64 * 1024 * 1024 });
-  return stdout;
-}
-
-async function getJson(endpoint) {
-  return JSON.parse(await gh(["api", "-X", "GET", endpoint]));
-}
-
-async function getPages(endpoint, pick) {
-  const out = await gh(["api", "-X", "GET", "--paginate", "--slurp", endpoint]);
-  return JSON.parse(out).flatMap(pick);
-}
-
 async function main() {
   const [workflow, scope, ...prefixes] = process.argv.slice(2);
   if (!workflow || !Object.hasOwn(scopes, scope ?? "") || prefixes.length === 0) {
@@ -101,21 +67,7 @@ async function main() {
     process.stdout.write("MAIN_CLAIM nothing-failed\n");
     return;
   }
-  const { workflow_runs: runs } = await getJson(
-    `repos/${repo}/actions/workflows/${workflow}/runs?branch=main&event=push&status=completed&per_page=40`,
-  );
-  const jobsByRun = new Map();
-  for (const run of runs) {
-    jobsByRun.set(
-      run.id,
-      await getPages(
-        `repos/${repo}/actions/runs/${run.id}/jobs?filter=latest&per_page=100`,
-        (page) => page.jobs,
-      ),
-    );
-    if (String(run.id) !== String(runId) && isGreen(jobsByRun.get(run.id), prefixes)) break;
-  }
-  const base = greenBase(runs, jobsByRun, prefixes, runId);
+  const base = await findGreenBase({ repo, workflow, prefixes, runId, getJson, getPages });
   const commits = base
     ? (await getJson(`repos/${repo}/compare/${base}...${head}`)).commits.map((commit) => commit.sha)
     : [head];

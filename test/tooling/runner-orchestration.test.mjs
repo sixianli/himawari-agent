@@ -249,7 +249,26 @@ vi.mock("../../scripts/ci/check-security.mjs", () => ({
       reportPath,
       checks: state.failSecurity
         ? [
-            { id: "gitleaks", status: "passed" },
+            {
+              id: "gitleaks",
+              status: "failed",
+              blocking: [
+                {
+                  id: "generic-api-key",
+                  path: "test/fixtures/sample.ts",
+                  line: 12,
+                  scope: "history",
+                  commit: "0123456789abcdef0123456789abcdef01234567",
+                },
+                {
+                  id: "private-key",
+                  path: "docs/example.md",
+                  line: 3,
+                  scope: "current",
+                  commit: null,
+                },
+              ],
+            },
             { id: "semgrep", status: "infrastructure_failed", error: "SECURITY_SCANNER_FAILED" },
             {
               id: "security-exceptions",
@@ -871,6 +890,9 @@ describe("共享runner的调度、来源和失败传播", () => {
         retryCount: 0,
       });
       expect(written.mock.calls.map(([text]) => text)).toEqual([
+        "security scan gitleaks: failed\n",
+        "security finding gitleaks generic-api-key test/fixtures/sample.ts:12 history 0123456789ab\n",
+        "security finding gitleaks private-key docs/example.md:3 current\n",
         "security scan semgrep: infrastructure_failed SECURITY_SCANNER_FAILED\n",
         "security scan security-exceptions: infrastructure_failed\n",
       ]);
