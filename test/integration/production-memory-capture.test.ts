@@ -536,18 +536,6 @@ describe("production memory capture", () => {
     if (snapshot.type !== "memory.overview.snapshot") throw new Error("snapshot");
     return snapshot.payload;
   };
-  const respond = (
-    control: ProductionMemoryControl,
-    requestId: string,
-    resolution: "approved" | "edited" | "rejected",
-    editedText: string | null = null,
-  ) =>
-    control.execute({
-      ...envelope,
-      kind: "command",
-      type: "memory.approval.respond",
-      payload: { requestId, resolution, editedText },
-    } as never);
   const mutate = (
     control: ProductionMemoryControl,
     memoryId: string,
@@ -1165,123 +1153,37 @@ describe("production memory capture", () => {
     expect((await gatewayOverview(context.control)).memories[0]?.text).toBe("主人住在杭州");
   });
 
-  it("queues a sensitive Memory with its topic and commits it once the Owner approves", async () => {
-    const context = await setup(
+  it.each([
+    [
+      "health",
       "我对青霉素过敏，最近在吃降压药。",
       '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人对青霉素过敏","classification":"sensitive","topic":"health","confidence":950,"quote":"我对青霉素过敏，最近在吃降压药"},{"kind":"durable_fact","decision":"create","text":"主人在吃降压药","classification":"sensitive","topic":"health","confidence":950,"quote":"我对青霉素过敏，最近在吃降压药"}]}',
-    );
-    await context.capture.start(context.request);
-    await context.capture.stop();
-    expect(context.failures).toEqual([]);
-    const before = await overview(context.control);
-    expect(before.memories).toEqual([]);
-    expect(before.pending.map(({ text, topic }) => [text, topic])).toEqual([
-      ["主人对青霉素过敏", "health"],
-      ["主人在吃降压药", "health"],
-    ]);
-    const [first, second] = before.pending;
-    if (!first || !second) throw new Error("pending");
-    await respond(context.control, first.requestId, "approved");
-    await respond(context.control, second.requestId, "edited", "主人每天早上吃一次降压药");
-    const after = await overview(context.control);
-    expect(after.pending).toEqual([]);
-    expect(after.memories.map(({ text }) => text).sort()).toEqual([
-      "主人对青霉素过敏",
-      "主人每天早上吃一次降压药",
-    ]);
-    expect(
-      after.memories.map(({ dataClassification, topic }) => [dataClassification, topic]),
-    ).toEqual([
-      ["private", "health"],
-      ["private", "health"],
-    ]);
-    await context.memory.runProjectionBatch(5);
-    expect(context.provider.upserts.map(({ content }) => content).sort()).toEqual([
-      "主人对青霉素过敏",
-      "主人每天早上吃一次降压药",
-    ]);
-    expect(context.audits.map(({ outcome }) => outcome)).toContain("approval_committed");
-  });
-
-  it("drops a rejected sensitive Memory", async () => {
-    const context = await setup(
+      ["主人在吃降压药", "主人对青霉素过敏"],
+    ],
+    [
+      "finance",
       "我月薪三万。",
       '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人月薪三万","classification":"sensitive","topic":"finance","confidence":950,"quote":"我月薪三万"}]}',
-    );
-    await context.capture.start(context.request);
-    await context.capture.stop();
-    const [pending] = (await overview(context.control)).pending;
-    if (!pending) throw new Error("pending");
-    expect(pending.topic).toBe("finance");
-    await respond(context.control, pending.requestId, "rejected");
-    expect(await overview(context.control)).toMatchObject({ memories: [], pending: [] });
-  });
-
-  it("[P3-5] rolls a sensitive approval back completely when its last write fails, and lets the Owner approve it again", async () => {
-    const context = await setup(
-      "我月薪三万。",
-      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人月薪三万","classification":"sensitive","topic":"finance","confidence":950,"quote":"我月薪三万"}]}',
-    );
-    await context.capture.start(context.request);
-    await context.capture.stop();
-    const [pending] = (await overview(context.control)).pending;
-    if (!pending) throw new Error("pending");
-    const options = (
-      context.control as unknown as {
-        options: ConstructorParameters<typeof ProductionMemoryControl>[0];
-      }
-    ).options;
-    const failing = new ProductionMemoryControl({
-      ...options,
-      approvals: {
-        ...options.approvals,
-        markCommitted: async () => {
-          throw new Error("PORT_UNAVAILABLE");
-        },
-      },
-    });
-    await expect(respond(failing, pending.requestId, "approved")).rejects.toThrow(
-      "PORT_UNAVAILABLE",
-    );
-    expect(await activeMemories(context)).toEqual([]);
-    expect((await overview(context.control)).pending.map(({ requestId }) => requestId)).toEqual([
-      pending.requestId,
-    ]);
-    await respond(context.control, pending.requestId, "approved");
-    expect(await activeMemories(context)).toHaveLength(1);
-    expect((await overview(context.control)).pending).toEqual([]);
-  });
-
-  it("[P3-5] sends no approval audit record when the approval's transaction is rolled back", async () => {
-    const context = await setup(
-      "我月薪三万。",
-      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人月薪三万","classification":"sensitive","topic":"finance","confidence":950,"quote":"我月薪三万"}]}',
-    );
-    await context.capture.start(context.request);
-    await context.capture.stop();
-    const [pending] = (await overview(context.control)).pending;
-    if (!pending) throw new Error("pending");
-    const options = (
-      context.control as unknown as {
-        options: ConstructorParameters<typeof ProductionMemoryControl>[0];
-      }
-    ).options;
-    const sent: MemoryExtractionAuditRecord[] = [];
-    const rolledBack = new ProductionMemoryControl({
-      ...options,
-      onAudit: (record) => sent.push(record),
-      unitOfWork: {
-        run: (work) =>
-          options.unitOfWork.run(async () => {
-            await work();
-            throw new Error("COMMIT_LOST");
-          }),
-      },
-    });
-    await expect(respond(rolledBack, pending.requestId, "approved")).rejects.toThrow("COMMIT_LOST");
-    expect(sent).toEqual([]);
-    expect(await activeMemories(context)).toEqual([]);
-  });
+      ["主人月薪三万"],
+    ],
+  ])(
+    "[ADR-0286] stores %s facts directly as private, without asking the Owner first",
+    async (_name, message, output, texts) => {
+      const context = await setup(message, output);
+      await context.capture.start(context.request);
+      await context.capture.stop();
+      expect(context.failures).toEqual([]);
+      const snapshot = await overview(context.control);
+      expect(snapshot.pending).toEqual([]);
+      expect(snapshot.memories.map(({ text }) => text).sort()).toEqual(texts);
+      expect(
+        new Set(snapshot.memories.map(({ dataClassification }) => dataClassification)),
+      ).toEqual(new Set(["private"]));
+      expect(context.audits.map(({ outcome }) => outcome)).not.toContain("approval_requested");
+      await context.memory.runProjectionBatch(5);
+      expect(context.provider.upserts.map(({ content }) => content).sort()).toEqual(texts);
+    },
+  );
 
   it("[mask-not-block] tells the model to mark passwords, keys, identity and card numbers sensitive and to skip one-time codes", () => {
     const prompt = memoryCapturePrompt("记住我的密码是 abc12345", [], null, null, null);
@@ -1291,30 +1193,24 @@ describe("production memory capture", () => {
     expect(prompt).not.toContain("密码密钥等凭据");
   });
 
-  it("[mask-not-block] stores a password the Owner asked to remember as written, marked sensitive", async () => {
-    const context = await setup(
+  it.each([
+    [
+      "the Owner asked to remember",
       "记住我家 Wi-Fi 的密码是 abc12345。",
       '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人家的 Wi-Fi 密码是 abc12345","classification":"sensitive","topic":"other","confidence":990,"explicit":true,"quote":"我家 Wi-Fi 的密码是 abc12345"}]}',
-    );
-    await context.capture.start(context.request);
-    await context.capture.stop();
-    expect(context.failures).toEqual([]);
-    const [memory] = (await overview(context.control)).memories;
-    expect(memory?.text).toBe("主人家的 Wi-Fi 密码是 abc12345");
-    expect(memory?.dataClassification).toBe("sensitive");
-  });
-
-  it("[mask-not-block] asks the Owner first when the model calls a password private and he did not ask to remember it", async () => {
-    const context = await setup(
+    ],
+    [
+      "the model calls private",
       "我家 Wi-Fi 的密码是 abc12345，你帮我看看信号。",
       '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人家的 Wi-Fi 密码是 abc12345","classification":"private","confidence":900,"explicit":false,"quote":"我家 Wi-Fi 的密码是 abc12345"}]}',
-    );
+    ],
+  ])("[ADR-0286] refuses to store a password %s", async (_name, message, output) => {
+    const context = await setup(message, output);
     await context.capture.start(context.request);
     await context.capture.stop();
     expect(context.failures).toEqual([]);
-    const snapshot = await overview(context.control);
-    expect(snapshot.memories).toEqual([]);
-    expect(snapshot.pending.map(({ text }) => text)).toEqual(["主人家的 Wi-Fi 密码是 abc12345"]);
+    expect(context.audits.map(({ outcome }) => outcome)).toEqual(["restricted_excluded"]);
+    expect(await overview(context.control)).toMatchObject({ memories: [], pending: [] });
   });
 
   it("asks the model to keep who the Owner's family are and the Owner's rules private, and only their private matters sensitive", () => {
@@ -1325,47 +1221,42 @@ describe("production memory capture", () => {
     expect(prompt).not.toContain("他人隐私");
   });
 
-  it("[mask-not-block] stores an identity number the Owner asked to remember as written, marked sensitive", async () => {
-    const context = await setup(
+  it.each([
+    [
+      "an identity number the Owner asked to remember",
       "记住我的身份证号 110101199003071234。",
       '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人的身份证号是 110101199003071234","classification":"private","confidence":990,"explicit":true,"quote":"我的身份证号 110101199003071234"}]}',
-    );
-    await context.capture.start(context.request);
-    await context.capture.stop();
-    expect(context.failures).toEqual([]);
-    expect(context.audits.map(({ outcome }) => outcome)).not.toContain("restricted_excluded");
-    const [memory] = (await overview(context.control)).memories;
-    expect(memory?.text).toBe("主人的身份证号是 110101199003071234");
-    expect(memory?.dataClassification).toBe("sensitive");
-  });
-
-  it("[mask-not-block] asks the Owner first when the model calls a card number private and he did not ask to remember it", async () => {
-    const context = await setup(
+      "主人的身份证号是 110101199003071234",
+    ],
+    [
+      "a card number the Owner did not ask to remember",
       "我的银行卡号 6222020200112233445 绑定了工资。",
-      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人的银行卡号是 6222020200112233445","classification":"private","confidence":900,"explicit":false,"quote":"我的银行卡号 6222020200112233445"}]}',
-    );
-    await context.capture.start(context.request);
-    await context.capture.stop();
-    expect(context.failures).toEqual([]);
-    const snapshot = await overview(context.control);
-    expect(snapshot.memories).toEqual([]);
-    expect(snapshot.pending.map(({ text }) => text)).toEqual([
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人的银行卡号是 6222020200112233445","classification":"sensitive","topic":"finance","confidence":900,"explicit":false,"quote":"我的银行卡号 6222020200112233445"}]}',
       "主人的银行卡号是 6222020200112233445",
-    ]);
-  });
-
-  it("[mask-not-block] marks a memory sensitive when only its quote holds the card number", async () => {
-    const context = await setup(
+    ],
+    [
+      "a memory whose quote alone holds the card number",
       "记住我绑定了工资的银行卡号 6222020200112233445。",
       '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人有一张绑定工资的银行卡","classification":"private","confidence":990,"explicit":true,"quote":"银行卡号 6222020200112233445"}]}',
-    );
-    await context.capture.start(context.request);
-    await context.capture.stop();
-    expect(context.failures).toEqual([]);
-    const [memory] = (await overview(context.control)).memories;
-    expect(memory?.text).toBe("主人有一张绑定工资的银行卡");
-    expect(memory?.dataClassification).toBe("sensitive");
-  });
+      "主人有一张绑定工资的银行卡",
+    ],
+  ])(
+    "[ADR-0286] stores %s as written, private, without asking",
+    async (_name, message, output, text) => {
+      const context = await setup(message, output);
+      await context.capture.start(context.request);
+      await context.capture.stop();
+      expect(context.failures).toEqual([]);
+      const snapshot = await overview(context.control);
+      expect(snapshot.pending).toEqual([]);
+      expect(
+        snapshot.memories.map(({ text: stored, dataClassification }) => [
+          stored,
+          dataClassification,
+        ]),
+      ).toEqual([[text, "private"]]);
+    },
+  );
 
   it("[mask-not-block] still stores an ordinary long number the model calls private without asking", async () => {
     const context = await setup(
@@ -1381,46 +1272,13 @@ describe("production memory capture", () => {
     ]);
   });
 
-  it("[mask-not-block] restores a placeholder the model copied into the candidate text and quote", async () => {
-    const message = "记住我的密码: hunter2abc 这件事。";
-    const placeholder = placeholderOf(message);
-    const context = await setup(
-      message,
-      JSON.stringify({
-        memories: [
-          {
-            kind: "durable_fact",
-            decision: "create",
-            text: `主人的密码是 ${placeholder}`,
-            classification: "private",
-            confidence: 990,
-            explicit: true,
-            quote: `我的密码: ${placeholder} 这件事`,
-          },
-        ],
-      }),
-    );
-    await context.capture.start(context.request);
-    await context.capture.stop();
-    expect(context.failures).toEqual([]);
-    const [memory] = (await overview(context.control)).memories;
-    expect(memory?.text).toContain("hunter2abc");
-    expect(memory?.text).not.toContain("#");
-  });
-
   it.each([
-    ["inside the message", '记住我的密码: ab"c\\d 这件事。', "我的密码: ", " 这件事", 'ab"c\\d'],
-    ["at the end of the message", '记住我的密码是 ab"c\\d', "我的密码是 ", "", 'ab"c\\d'],
-    [
-      "plain at the end of the message",
-      "记住我的密码是 hunter2abc",
-      "我的密码是 ",
-      "",
-      "hunter2abc",
-    ],
+    ["inside the message", '记住我的密码: ab"c\\d 这件事。', "我的密码: ", " 这件事"],
+    ["at the end of the message", '记住我的密码是 ab"c\\d', "我的密码是 ", ""],
+    ["plain at the end of the message", "记住我的密码是 hunter2abc", "我的密码是 ", ""],
   ])(
-    "[mask-not-block] stores a secret %s byte for byte",
-    async (_name, message, before, after, secret) => {
+    "[ADR-0286] restores a masked password %s and then refuses to store it",
+    async (_name, message, before, after) => {
       const placeholder = placeholderOf(message);
       const context = await setup(
         message,
@@ -1441,20 +1299,19 @@ describe("production memory capture", () => {
       await context.capture.start(context.request);
       await context.capture.stop();
       expect(context.failures).toEqual([]);
-      const [memory] = (await overview(context.control)).memories;
-      expect(memory?.text).toBe(`主人的密码是 ${secret}`);
+      expect(context.audits.map(({ outcome }) => outcome)).toEqual(["restricted_excluded"]);
+      expect(await overview(context.control)).toMatchObject({ memories: [], pending: [] });
     },
   );
 
-  it("[mask-not-block] keeps a placeholder it cannot restore as written, without inventing a value", async () => {
+  it("[ADR-0286] refuses a candidate whose quote holds a password even when its text is an unrestorable placeholder", async () => {
     const context = await setup(
       "记住我的密码: hunter2abc 这件事。",
       '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人的密码是 [密码#zzzzzzzz]","classification":"private","confidence":990,"explicit":true,"quote":"我的密码: hunter2abc"}]}',
     );
     await context.capture.start(context.request);
     await context.capture.stop();
-    const [memory] = (await overview(context.control)).memories;
-    expect(memory?.text).toBe("主人的密码是 [密码#zzzzzzzz]");
+    expect(await overview(context.control)).toMatchObject({ memories: [], pending: [] });
   });
 
   it("[mask-not-block] still drops a candidate the model itself classifies as restricted", async () => {
@@ -1716,7 +1573,7 @@ describe("production memory capture", () => {
     ).toEqual(["主人住在杭州", "主人有一只猫"].sort());
   });
 
-  it("[mask-not-block] keeps the text of a candidate whose quote fails, even when it holds a machine secret", async () => {
+  it("[ADR-0286] keeps no text of a candidate that holds a machine secret, even when its quote fails", async () => {
     const context = await setup(
       "我最喜欢的颜色是蓝色。",
       '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人的密钥是 ' +
@@ -1730,9 +1587,9 @@ describe("production memory capture", () => {
     expect(ledger).toHaveLength(1);
     expect(ledger[0]).toMatchObject({
       outcome: "discarded",
-      reasonCode: "evidence_unverified",
+      reasonCode: "restricted_excluded",
+      contentRef: null,
     });
-    expect(ledger[0]?.contentRef).not.toBeNull();
   });
 
   it("writes no ledger row for a candidate whose quote is in the message and is simply dropped as invalid", async () => {
@@ -4503,7 +4360,7 @@ describe("production memory capture", () => {
   it("[A4] reports skipped when every existing memory is sensitive, and never counts them against the limit", async () => {
     const context = await setup(
       "我月薪三万。",
-      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人月薪三万","classification":"sensitive","topic":"finance","confidence":950,"quote":"我月薪三万"}]}',
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人月薪三万","classification":"restricted","confidence":950,"quote":"我月薪三万"}]}',
     );
     await context.capture.start(context.request);
     await context.capture.stop();

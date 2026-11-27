@@ -150,17 +150,20 @@ describe("[PA-2] low-confidence candidates are kept as tentative memories", () =
     ]);
   });
 
-  it("REVERSE: a low-confidence sensitive or restricted candidate with a quote keeps its old path", async () => {
+  it("REVERSE: a low-confidence restricted candidate is still excluded, not kept as tentative", async () => {
     const { result, audit, proposals } = await capture([
       candidate({ dataClassification: "restricted" }),
-      candidate({ dataClassification: "sensitive" }),
     ]);
     expect(result.tentativeMemoryIds).toEqual([]);
     expect(proposals).toEqual([]);
-    expect(audit.map(({ outcome }) => outcome)).toEqual([
-      "restricted_excluded",
-      "approval_requested",
-    ]);
+    expect(audit.map(({ outcome }) => outcome)).toEqual(["restricted_excluded"]);
+  });
+
+  it("[ADR-0286] a low-confidence sensitive candidate is kept as tentative like any other, without an approval request", async () => {
+    const { result, audit } = await capture([candidate({ dataClassification: "sensitive" })]);
+    expect(result.approvalRequestIds).toEqual([]);
+    expect(result.tentativeMemoryIds).toEqual(["memory:generation-1:0"]);
+    expect(audit.map(({ outcome }) => outcome)).not.toContain("approval_requested");
   });
 
   it("REVERSE: a confident candidate is still committed as a formal memory", async () => {
