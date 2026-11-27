@@ -276,7 +276,7 @@ describe.each(["worker", "direct"] as const)("automatic-memory-golden through %s
   }
 
   describe("automatic Memory governed golden dataset", () => {
-    it("[mask-not-block] reads a source holding a machine secret, keeps per-item sensitive approval and deterministic quality thresholds", async () => {
+    it("[mask-not-block] reads a source holding a machine secret, stores sensitive facts without approval and keeps deterministic quality thresholds", async () => {
       expect(dataset.schemaVersion).toBe(1);
       expect(dataset.cases.map(({ category }) => category)).toEqual(
         expect.arrayContaining([
@@ -370,44 +370,22 @@ describe.each(["worker", "direct"] as const)("automatic-memory-golden through %s
       const machineSecretSource = sourceTexts.get("payload-source-machine-secret") as string;
       expect(extractor.observedSources).toContain(machineSecretSource);
 
-      const personalApproval = resultByCase.get("sensitive-personal")?.approvalRequestIds[0];
-      if (!personalApproval) throw new Error("personal approval missing");
-      await automatic.resolveSensitive({ requestId: personalApproval, resolution: "approved" });
-
-      const thirdPartyApproval = resultByCase.get("third-party-sensitive")?.approvalRequestIds[0];
-      if (!thirdPartyApproval) throw new Error("third-party approval missing");
-      expect(await repository.sensitiveMemoryApprovals().read(thirdPartyApproval)).toMatchObject({
-        sourceRef: "payload-source-third-party-sensitive",
-        deliveryState: "queued_no_ui",
-        status: "pending",
-      });
-      await automatic.resolveSensitive({ requestId: thirdPartyApproval, resolution: "rejected" });
-
-      const multipleApprovals = resultByCase.get("multiple-sensitive")?.approvalRequestIds ?? [];
-      expect(multipleApprovals).toHaveLength(2);
-      const pendingSnapshot = await repository
-        .sensitiveMemoryApprovals()
-        .listPending(OWNER_ID, THREAD_ID);
-      expect(JSON.stringify(pendingSnapshot)).not.toContain("owner@example.test");
-      expect(JSON.stringify(pendingSnapshot)).not.toContain("090-9999-8888");
-      const firstMultiple = multipleApprovals[0];
-      const secondMultiple = multipleApprovals[1];
-      if (!firstMultiple || !secondMultiple) throw new Error("multiple approvals missing");
-      await automatic.resolveSensitive({ requestId: firstMultiple, resolution: "approved" });
-      await automatic.resolveSensitive({
-        requestId: secondMultiple,
-        resolution: "edited",
-        editedText: "所有者的私人电话尾号为 8888",
-      });
+      for (const id of ["sensitive-personal", "third-party-sensitive"]) {
+        expect(resultByCase.get(id)?.approvalRequestIds, `[ADR-0286] ${id}`).toEqual([]);
+        expect(resultByCase.get(id)?.committedMemoryIds, `[ADR-0286] ${id}`).toHaveLength(1);
+      }
+      const multiple = resultByCase.get("multiple-sensitive");
+      expect(multiple?.approvalRequestIds).toEqual([]);
+      expect(multiple?.committedMemoryIds).toHaveLength(2);
+      expect(await repository.sensitiveMemoryApprovals().listPending(OWNER_ID, THREAD_ID)).toEqual(
+        [],
+      );
 
       const explicitResult = resultByCase.get("explicit-remember-one");
-      expect(explicitResult?.committedMemoryIds).toEqual([
-        createMemoryId("memory-generation-explicit-remember-one-0"),
-      ]);
-      expect(explicitResult?.approvalRequestIds).toHaveLength(1);
-      const unpointedApproval = explicitResult?.approvalRequestIds[0];
-      if (!unpointedApproval) throw new Error("unpointed approval missing");
-      await automatic.resolveSensitive({ requestId: unpointedApproval, resolution: "rejected" });
+      expect(explicitResult?.approvalRequestIds).toEqual([]);
+      expect(explicitResult?.committedMemoryIds).toEqual(
+        expect.arrayContaining([createMemoryId("memory-generation-explicit-remember-one-0")]),
+      );
 
       const active = await repository.productMemoryState().listActive(OWNER_ID, AGENT_ID);
       const corrected = await repository
