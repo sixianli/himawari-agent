@@ -54,27 +54,36 @@ echo "mkfs.ext4 $*" >> "$FAKE_LOG/calls"
 FAKE_MACHINECTL = '''#!/bin/bash
 echo "machinectl $*" >> "$FAKE_LOG/calls"
 case "$1" in
-  show) [ -e "$FAKE_LOG/machine.up" ] ;;
+  show)
+    [ -e "$FAKE_LOG/machine.up" ] || exit 1
+    [[ " $* " == *" -p Leader --value "* ]] && echo 4242
+    exit 0 ;;
   terminate) rm -f "$FAKE_LOG/machine.up"; pkill -f "$FAKE_LOG/tools/systemd-nspawn" || true ;;
 esac
 '''
 
-FAKE_SYSTEMD_RUN = '''#!/bin/bash
-echo "systemd-run $*" >> "$FAKE_LOG/calls"
+FAKE_NSENTER = '''#!/bin/bash
+echo "nsenter $*" >> "$FAKE_LOG/calls"
 [ -e "$FAKE_LOG/machine.up" ] || exit 1
-inside=()
-while IFS= read -r name; do inside+=("$name=${!name}"); done < <(compgen -e | grep -E '^FAKE_')
-while [[ "$1" == --* ]]; do
-  case "$1" in --setenv=*) inside+=("${1#--setenv=}") ;; esac
-  shift
-done
-exec env -i "${inside[@]}" "$@"
+[[ "$1" == --target=4242 ]] || exit 65
+while [[ "$1" != -- ]]; do shift; done
+shift
+export FAKE_INSIDE=1
+if [[ "$1" == /usr/bin/env && "$2" == -i ]]; then
+  shift 2
+  inside=()
+  while IFS= read -r name; do inside+=("$name=${!name}"); done < <(compgen -e | grep -E '^FAKE_')
+  exec /usr/bin/env -i "${inside[@]}" "$@"
+fi
+exec "$@"
 '''
 
 FAKE_SYSTEMCTL = '''#!/bin/bash
 echo "systemctl $*" >> "$FAKE_LOG/calls"
-[[ "$1" == --machine=himawari-shadow ]] || exit 64
-shift
+if [ "$FAKE_INSIDE" != 1 ]; then
+  echo "Failed to activate service 'org.freedesktop.systemd1': timed out (service_start_timeout=25000ms)" >&2
+  exit 1
+fi
 case "$1" in
   is-system-running)
     [ -e "$FAKE_LOG/machine.up" ] || exit 1
@@ -116,7 +125,7 @@ class ShadowRehearsalTest(unittest.TestCase):
         self.log.mkdir()
         tools = self.log / 'tools'
         tools.mkdir()
-        for name, text in (('systemd-nspawn', FAKE_NSPAWN), ('machinectl', FAKE_MACHINECTL), ('systemd-run', FAKE_SYSTEMD_RUN), ('systemctl', FAKE_SYSTEMCTL), ('unshare', FAKE_UNSHARE), ('mount', FAKE_MOUNT), ('mkfs.ext4', FAKE_MKFS), ('findmnt', FAKE_FINDMNT)):
+        for name, text in (('systemd-nspawn', FAKE_NSPAWN), ('machinectl', FAKE_MACHINECTL), ('nsenter', FAKE_NSENTER), ('systemctl', FAKE_SYSTEMCTL), ('unshare', FAKE_UNSHARE), ('mount', FAKE_MOUNT), ('mkfs.ext4', FAKE_MKFS), ('findmnt', FAKE_FINDMNT)):
             executable(tools / name, text)
         self.tools = tools
         (self.log / 'filesystems').write_text('nodev\ttmpfs\nnodev\toverlay\n\text4\n')
@@ -239,6 +248,25 @@ class ShadowRehearsalTest(unittest.TestCase):
         self.assertIn('42 boot-efi.mount start running', result.stderr)
         self.assertNotIn('SHADOW_DEPLOY_START', result.stdout)
         self.assertEqual(list(self.parent.iterdir()), [])
+
+    def test_I120_status_and_the_deploy_reach_the_shadow_through_its_namespaces_not_its_message_bus(self):
+        self.live_database()
+        result = self.run_rehearsal()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('SHADOW_BOOTED leader=4242', result.stdout)
+        calls = (self.log / 'calls').read_text()
+        self.assertNotIn('systemctl --machine', calls)
+        self.assertNotIn('systemd-run', calls)
+        self.assertIn('nsenter --target=4242 --mount --uts --ipc --net --pid -- ' + str(self.tools / 'systemctl') + ' is-system-running', calls)
+        self.assertIn('/usr/bin/env -i PATH=/usr/bin:/bin HIMAWARI_DEPLOY_ON_FAILURE=keep HIMAWARI_DEPLOY_FROM_STEP=S2_STOP', calls)
+
+    def test_I120_a_stuck_boot_reports_the_shadow_processes_and_journal(self):
+        self.live_database()
+        result = self.run_rehearsal(FAKE_SYSTEMCTL_HANGS='1', HIMAWARI_SHADOW_BOOT_WAIT='4')
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('leader: 4242', result.stderr)
+        self.assertIn('processes: ', result.stderr)
+        self.assertIn('journal: ', result.stderr)
 
     def test_I120_emergency_mode_fails_at_once_with_the_failed_units(self):
         self.live_database()
