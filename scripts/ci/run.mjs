@@ -293,6 +293,7 @@ export async function runCheck({
         ".github/workflows/merge-queue.yml",
         ".github/workflows/pr-closed.yml",
         ".github/workflows/apple.yml",
+        ".github/workflows/ci-cache.yml",
         ".github/workflows/docs-drift.yml",
         ".github/workflows/real-sites.yml",
       ]);
