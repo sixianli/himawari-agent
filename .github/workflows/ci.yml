@@ -121,8 +121,9 @@ jobs:
         with:
           path: |
             ~/.cache/himawari-ci/npm
+            ~/.cache/himawari-ci/native
             .ci-output/browsers
-          key: ci-deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json', 'ci/toolchain-lock.json') }}-${{ steps.week.outputs.week }}
+          key: ci-deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json', 'ci/toolchain-lock.json', 'scripts/ci/install-dependencies.mjs') }}-${{ steps.week.outputs.week }}
           restore-keys: ci-deps-v1-${{ runner.os }}-${{ runner.arch }}-
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
@@ -196,8 +197,9 @@ jobs:
         with:
           path: |
             ~/.cache/himawari-ci/npm
+            ~/.cache/himawari-ci/native
             .ci-output/browsers
-          key: ci-deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json', 'ci/toolchain-lock.json') }}-${{ steps.week.outputs.week }}
+          key: ci-deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json', 'ci/toolchain-lock.json', 'scripts/ci/install-dependencies.mjs') }}-${{ steps.week.outputs.week }}
           restore-keys: ci-deps-v1-${{ runner.os }}-${{ runner.arch }}-
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
@@ -295,8 +297,9 @@ jobs:
         with:
           path: |
             ~/.cache/himawari-ci/npm
+            ~/.cache/himawari-ci/native
             .ci-output/browsers
-          key: ci-deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json', 'ci/toolchain-lock.json') }}-${{ steps.week.outputs.week }}
+          key: ci-deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json', 'ci/toolchain-lock.json', 'scripts/ci/install-dependencies.mjs') }}-${{ steps.week.outputs.week }}
           restore-keys: ci-deps-v1-${{ runner.os }}-${{ runner.arch }}-
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
@@ -375,8 +378,9 @@ jobs:
         with:
           path: |
             ~/.cache/himawari-ci/npm
+            ~/.cache/himawari-ci/native
             .ci-output/browsers
-          key: ci-deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json', 'ci/toolchain-lock.json') }}-${{ steps.week.outputs.week }}
+          key: ci-deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json', 'ci/toolchain-lock.json', 'scripts/ci/install-dependencies.mjs') }}-${{ steps.week.outputs.week }}
           restore-keys: ci-deps-v1-${{ runner.os }}-${{ runner.arch }}-
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
@@ -445,8 +449,9 @@ jobs:
         with:
           path: |
             ~/.cache/himawari-ci/npm
+            ~/.cache/himawari-ci/native
             .ci-output/browsers
-          key: ci-deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json', 'ci/toolchain-lock.json') }}-${{ steps.week.outputs.week }}
+          key: ci-deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json', 'ci/toolchain-lock.json', 'scripts/ci/install-dependencies.mjs') }}-${{ steps.week.outputs.week }}
           restore-keys: ci-deps-v1-${{ runner.os }}-${{ runner.arch }}-
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
