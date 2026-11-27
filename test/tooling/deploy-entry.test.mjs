@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import {
   chmodSync,
   mkdirSync,
@@ -67,7 +67,7 @@ function fakeTools() {
   return tools;
 }
 
-function runEntry(request, repo, tools = fakeTools(), base = temporary()) {
+function runEntry(request, repo, tools = fakeTools(), base = temporary(), extra = {}) {
   return spawnSync("bash", [entry], {
     encoding: "utf8",
     env: {
@@ -77,13 +77,54 @@ function runEntry(request, repo, tools = fakeTools(), base = temporary()) {
       HIMAWARI_DEPLOY_BASE: base,
       HIMAWARI_DEPLOY_REPO_URL: repo,
       HIMAWARI_DEPLOY_TOOLS: tools,
+      ...extra,
     },
   });
 }
 
+function holdLock(base, { detached }) {
+  const lock = path.join(base, "deploy.lock");
+  const ready = path.join(base, "holder.ready");
+  const pidFile = path.join(base, "holder.pid");
+  const script = `exec 9> ${JSON.stringify(lock)}; flock -n 9 || exit 3; echo $$ > ${JSON.stringify(pidFile)}; touch ${JSON.stringify(ready)}; exec sleep 60`;
+  const child = detached
+    ? spawn("setsid", ["-f", "bash", "-c", script], { stdio: "ignore" })
+    : spawn("bash", ["-c", script], { stdio: "ignore" });
+  const until = Date.now() + 10000;
+  while (Date.now() < until) {
+    try {
+      readFileSync(ready);
+      break;
+    } catch {
+      spawnSync("sleep", ["0.1"]);
+    }
+  }
+  const pid = Number(readFileSync(pidFile, "utf8").trim());
+  directories.push({
+    kill: () => {
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {}
+    },
+  });
+  return { child, pid };
+}
+
+function alive(pid) {
+  try {
+    process.kill(pid, 0);
+    const state = readFileSync(`/proc/${pid}/stat`, "utf8").split(") ")[1]?.[0];
+    return state !== "Z";
+  } catch {
+    return false;
+  }
+}
+
 afterEach(() => {
-  for (const directory of directories.splice(0))
-    rmSync(directory, { recursive: true, force: true });
+  for (const directory of directories.splice(0)) {
+    if (typeof directory === "string") rmSync(directory, { recursive: true, force: true });
+    else directory.kill();
+  }
 });
 
 describe("himawari-deploy-entry", () => {
@@ -128,6 +169,32 @@ describe("himawari-deploy-entry", () => {
     const child = runEntry(`deploy ${main} - 0`, repo, path.join(temporary(), "none"));
     expect(child.status).toBe(70);
     expect(child.stderr).toContain("TOOLS_MISSING");
+  });
+
+  it("[I-120] refuses while the deploy holding the lock is still in a connected session", () => {
+    const { repo, main } = source();
+    const base = temporary();
+    const { pid } = holdLock(base, { detached: false });
+    const child = runEntry(`deploy ${main} - 1`, repo, fakeTools(), base, {
+      HIMAWARI_DEPLOY_SESSION_COMMAND: "node",
+    });
+    expect(child.status).toBe(75);
+    expect(child.stderr).toContain(`ALREADY_RUNNING`);
+    expect(child.stderr).toContain(`pid ${pid} is still in a connected session`);
+    expect(alive(pid)).toBe(true);
+  });
+
+  it("[I-120] stops what a cut-off deploy left holding the lock and goes on", () => {
+    const { repo, main } = source();
+    const base = temporary();
+    const { pid } = holdLock(base, { detached: true });
+    const child = runEntry(`deploy ${main} - 1`, repo, fakeTools(), base, {
+      HIMAWARI_DEPLOY_SESSION_COMMAND: "node",
+    });
+    expect(child.stdout).toContain(`DEPLOY_ENTRY_ORPHAN_CLEARED pids=${pid}`);
+    expect(child.status).toBe(0);
+    expect(child.stdout).toContain(`STUB commit=${main}`);
+    expect(alive(pid)).toBe(false);
   });
 
   it("checks out a main commit and runs its own ci-deploy.sh against the local machine", () => {

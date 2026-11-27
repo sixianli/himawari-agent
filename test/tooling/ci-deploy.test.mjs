@@ -6,6 +6,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import os from "node:os";
@@ -136,6 +137,33 @@ describe("ci-deploy.sh", () => {
     });
     expect(child.status).toBe(0);
     expect(child.stdout).toContain("CI_DEPLOY_SKIPPED already-running");
+  });
+
+  it("[I-120] installs the deploy entry of the commit it runs so entry fixes reach the server", () => {
+    const { repo, first, fakeSsh } = workspace();
+    const entrySource = path.resolve(import.meta.dirname, "../../scripts/install/deploy-entry");
+    cpSync(entrySource, path.join(repo, "scripts/install/deploy-entry"), { recursive: true });
+    const library = mkdtempSync(path.join(os.tmpdir(), "entry-library-"));
+    directories.push(library, `${library}.old`);
+    writeFileSync(path.join(library, "himawari-deploy-entry"), "old entry\n");
+    const child = run(repo, {
+      HIMAWARI_PACKET_HOST: "198.51.100.9",
+      HIMAWARI_PACKET_SSH: fakeSsh,
+      HIMAWARI_DEPLOY_COMMIT: first,
+      HIMAWARI_DEPLOY_ENTRY_LIBRARY: library,
+    });
+    expect(child.stdout).toContain(`CI_DEPLOY_ENTRY_UPDATED ${library} from ${first}`);
+    expect(readFileSync(path.join(library, "himawari-deploy-entry"), "utf8")).toBe(
+      readFileSync(path.join(entrySource, "himawari-deploy-entry"), "utf8"),
+    );
+    expect(statSync(path.join(library, "shim/ssh")).mode & 0o777).toBe(0o755);
+    const again = run(repo, {
+      HIMAWARI_PACKET_HOST: "198.51.100.9",
+      HIMAWARI_PACKET_SSH: fakeSsh,
+      HIMAWARI_DEPLOY_COMMIT: first,
+      HIMAWARI_DEPLOY_ENTRY_LIBRARY: library,
+    });
+    expect(again.stdout).not.toContain("CI_DEPLOY_ENTRY_UPDATED");
   });
 
   it("skips when only documents changed since the running release", () => {
