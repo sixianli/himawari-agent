@@ -84,6 +84,78 @@ def bind_existing_grant(frozen, s0, *, now=None):
     authorized_root = {'canonicalRootId': grant['canonicalRootId'], 'canonicalPath': grant['displayPath'], 'device': grant['device'], 'inode': grant['inode']}
     return {'authorizedDirectoryGrants': [copy.deepcopy(grant)], 'authorizedRoots': [authorized_root], 'capabilities': copy.deepcopy(authorization['capabilities']), 'workspaceGrant': copy.deepcopy(PLAN), 'originalConfigurationSha256': configuration_sha256}
 
+CAPABILITY_TRUE_FIELDS = ['activeHealthy', 'versionMatchesSnapshot', 'operationsMatchSnapshot', 'scopesMatchSnapshot', 'costMatchesSnapshot', 'secretRefsMatchSnapshot', 'permissionRefsMatchSnapshot', 'declarationMatchesSnapshotExceptArtifact', 'snapshotIntegrityMatchesRunner', 'storedIntegrityMatchesDeclaration', 'runnerMatchesRecorded', 'integrityMatchesSnapshot', 'declarationInvariantMatchesSnapshot']
+TOOL_REFS = {'himawari.pi-coding', 'himawari.public-search', 'himawari.public-fetch'}
+
+def problem_code(error):
+    text = str(error)
+    return text if isinstance(error, RuntimeError) and re.fullmatch('[A-Z0-9_]+(:[^ ]+)?', text) else type(error).__name__ + ':' + text[:200]
+
+def current_root(grant, host_id, service_uid, service_gid, now):
+    require(grant['hostId'] == host_id and grant['revokedAt'] is None and utc(grant['expiresAt']) > now and all(grant[field] is True for field in ['readAllowed', 'hostMatchesRoute', 'currentlyUsable']), 'NEW_AUTHORIZED_DIRECTORY_GRANT_UNUSABLE:' + str(grant['grantId']))
+    require(grant['routeKey'] and grant['grantId'] and grant['capabilityRef'] and grant['capabilityVersion'] and grant['canonicalRootId'] and decimal(grant['device']) and decimal(grant['inode']), 'NEW_AUTHORIZED_DIRECTORY_GRANT_INVALID')
+    filename = Path(grant['displayPath'])
+    require(filename.is_absolute() and filename != Path('/'), 'NEW_AUTHORIZED_DIRECTORY_ROOT_INVALID')
+    info = filename.lstat()
+    require(stat.S_ISDIR(info.st_mode) and filename.resolve() == filename and not filename.is_symlink() and info.st_uid == service_uid and not info.st_mode & 0o022 and stat.S_IMODE(info.st_mode) == 0o700, 'PUBLIC_DIRECTORY_UNSAFE:' + str(filename))
+    require(info.st_gid == service_gid and str(info.st_dev) == grant['device'] and str(info.st_ino) == grant['inode'], 'NEW_AUTHORIZED_DIRECTORY_ROOT_CHANGED')
+    return {'canonicalRootId': grant['canonicalRootId'], 'canonicalPath': str(filename), 'device': str(info.st_dev), 'inode': str(info.st_ino)}
+
+def capability_problems(capabilities, host_id, old_prefix):
+    problems = []
+    for observed in capabilities:
+        if observed.get('version') != '1.0.0' or observed.get('status') != 'active' or any(observed.get(field) is not True for field in CAPABILITY_TRUE_FIELDS) or observed.get('runnerSha256') != observed.get('actualRunnerSha256'):
+            problems.append('OLD_APPROVED_CAPABILITY_CHANGED:' + str(observed.get('capabilityRef')))
+        if observed.get('hostId') != host_id or observed.get('runtimeRoot') != old_prefix + '/lib/himawari-agent' or not observed.get('workerInstanceId'):
+            problems.append('OLD_APPROVED_RUNTIME_IDENTITY_CHANGED')
+    return problems
+
+def check_production_authorization(frozen, s0, *, new_capability_refs, read_configuration, service_uid, service_gid, now=None):
+    checked_at = datetime.now(timezone.utc) if now is None else now
+    problems = []
+    result = {}
+    host_id = s0['identity']['hostId']
+    authorization = s0['authorization']
+    try:
+        result['grantBinding'] = bind_existing_grant(frozen, s0, now=checked_at)
+    except Exception as error:
+        problems.append(problem_code(error))
+    grants = authorization.get('directoryGrants') if isinstance(authorization, dict) else None
+    capabilities = authorization.get('capabilities') if isinstance(authorization, dict) else None
+    if not isinstance(grants, list) or not isinstance(capabilities, list):
+        problems.append('G90_ORIGINAL_AUTHORIZATION_REQUIRED')
+        return result, problems
+    if len(grants) != 1 or len(capabilities) != 3 - len(new_capability_refs) or {entry.get('capabilityRef') for entry in capabilities} != TOOL_REFS - set(new_capability_refs):
+        problems.append('FROZEN_COMPLETE_AUTHORIZATION_REQUIRED')
+    roots = {}
+    for grant in grants:
+        try:
+            root = current_root(grant, host_id, service_uid, service_gid, checked_at)
+            roots[root['canonicalRootId']] = root
+        except Exception as error:
+            problems.append(problem_code(error))
+    result['authorizedRoots'] = list(roots.values())
+    if 'grantBinding' in result and len(roots) == len(grants) and result['authorizedRoots'] != result['grantBinding']['authorizedRoots']:
+        problems.append('NEW_AUTHORIZED_ROOT_CHANGED')
+    problems += capability_problems(capabilities, host_id, frozen['paths']['oldPrefix'])
+    worker_ids = {entry.get('workerInstanceId') for entry in capabilities}
+    if not capabilities:
+        configuration_bytes = read_configuration()
+        if digest(configuration_bytes) != frozen['service']['oldConfigSha256']:
+            problems.append('ORIGINAL_CONFIGURATION_CHANGED')
+        try:
+            route_worker = (json.loads(configuration_bytes).get('runPolicy', {}).get('coding') or {}).get('workerInstanceId')
+        except ValueError:
+            route_worker = None
+        if not isinstance(route_worker, str) or not route_worker:
+            problems.append('FIRST_TOOLS_WORKER_IDENTITY_REQUIRED')
+        worker_ids = {route_worker}
+    if len(worker_ids) != 1:
+        problems.append('OLD_APPROVED_WORKER_IDENTITY_AMBIGUOUS')
+    else:
+        result['workerInstanceId'] = next(iter(worker_ids))
+    return result, problems
+
 def read_stable(filename, uid):
     filename = Path(filename)
     before = filename.lstat()

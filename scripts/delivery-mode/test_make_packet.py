@@ -6,16 +6,19 @@ import hashlib
 import importlib.util
 import json
 import os
+import pwd
 import re
 from pathlib import Path
 import shlex
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
 import unittest
 import unittest.mock
 
+sys.dont_write_bytecode = True
 HERE = Path(__file__).resolve().parent
 FIXTURES = HERE / 'fixtures'
 TWELFTH = json.loads((FIXTURES / 'twelfth-parameters.json').read_text())
@@ -1061,12 +1064,7 @@ class ServiceAccountContractTest(unittest.TestCase):
 
 class WorkspaceGrantExpiryTest(unittest.TestCase):
     def setUp(self):
-        previous = sys.dont_write_bytecode
-        sys.dont_write_bytecode = True
-        try:
-            self.binding = load('workspace_grant_binding', 'packet-template/signing/workspace-grant-binding.py')
-        finally:
-            sys.dont_write_bytecode = previous
+        self.binding = load('workspace_grant_binding', 'packet-template/signing/workspace-grant-binding.py')
 
     def test_I120_an_existing_grant_expiry_without_milliseconds_or_in_another_zone_is_read_as_utc(self):
         from datetime import datetime, timezone
@@ -1078,6 +1076,60 @@ class WorkspaceGrantExpiryTest(unittest.TestCase):
         for value in ['2099-01-01T00:00:00', '2099-01-01', 'tomorrow', 1, None]:
             with self.assertRaisesRegex(RuntimeError, 'G90_ZONED_TIMESTAMP_REQUIRED'):
                 self.binding.utc(value)
+
+
+class ProductionRehearsalTest(unittest.TestCase):
+    def grant(self, **changes):
+        grant = {'routeKey': 'coding', 'grantId': 'directory:himawari-prod-workspace-20261015', 'capabilityRef': 'himawari.pi-coding', 'capabilityVersion': '1.0.0', 'revision': 1, 'stateRevision': 1, 'hostId': 'host:tokyo', 'canonicalRootId': '1:2', 'displayPath': '/var/lib/himawari/workspace', 'device': '1', 'inode': '2', 'pathPolicy': 'same_filesystem_no_links', 'mountPolicy': 'fixed_device', 'expiresAt': '2099-01-01T00:00:00Z', 'revokedAt': None, 'readAllowed': True, 'hostMatchesRoute': True, 'rootMatchesSnapshot': True, 'currentlyUsable': True, 'metadataSha256': 'a' * 64}
+        grant.update(changes)
+        return grant
+
+    def inputs(self, grant):
+        frozen = {'workspace': {'decisionRef': 'G90', 'routeKey': 'coding', 'grantId': 'directory:himawari-prod-workspace-20261015', 'canonicalPath': '/var/lib/himawari/workspace', 'subdirectories': ['files', 'repos']}, 'paths': {'oldPrefix': '/opt/himawari/releases/2026-11-25-db0859f5'}, 'service': {'oldConfigSha256': 'b' * 64}, 'host': {'uid': 1, 'gid': 1}, 'identity': {}, 'authority': {}}
+        s0 = {'identity': {'hostId': 'host:tokyo'}, 'authorization': {'directoryGrants': [grant], 'capabilities': []}}
+        return frozen, s0
+
+    def test_I120_one_rehearsal_lists_every_problem_the_signing_step_would_hit_on_production_data(self):
+        binding = load('workspace_grant_binding_rehearsal', 'packet-template/signing/workspace-grant-binding.py')
+        frozen, s0 = self.inputs(self.grant(expiresAt='next year'))
+        _, problems = binding.check_production_authorization(frozen, s0, new_capability_refs=['himawari.pi-coding', 'himawari.public-search', 'himawari.public-fetch'], read_configuration=lambda: b'{"runPolicy": {}}', service_uid=os.getuid(), service_gid=os.getgid())
+        self.assertEqual(problems, ['G90_ZONED_TIMESTAMP_REQUIRED', 'G90_ZONED_TIMESTAMP_REQUIRED', 'ORIGINAL_CONFIGURATION_CHANGED', 'FIRST_TOOLS_WORKER_IDENTITY_REQUIRED'])
+
+    def test_the_signing_step_and_the_freeze_rehearsal_run_the_same_check(self):
+        signing = (HERE / 'packet-template/signing/finalize-binding-inputs.py').read_text()
+        self.assertIn('grant_validator.check_production_authorization(', signing)
+        self.assertNotIn('bind_existing_grant(', signing)
+        self.assertIn("'signing/workspace-grant-binding.py'", (HERE / 'make-packet.py').read_text())
+        self.assertIn('module.check_production_authorization(', packet_maker.REHEARSAL_DRIVER)
+        self.assertIn('common.staticRootConfiguration(original)', packet_maker.MAINTENANCE_REHEARSAL_DRIVER)
+        self.assertIn('common.routeIdentity(original, payload.plan)', packet_maker.MAINTENANCE_REHEARSAL_DRIVER)
+        self.assertIn('rehearse_production_data(packet, instance, parameters)', (HERE / 'make-packet.py').read_text())
+
+    def test_I120_freeze_refuses_the_packet_with_every_problem_the_rehearsal_found_on_the_target(self):
+        with tempfile.TemporaryDirectory() as directory:
+            packet = Path(directory) / 'packet'
+            packet_maker.render(packet, {**TWELFTH, **FIRST_TOOLS_PARAMETERS, 'BUILDER_HOSTNAME': socket.gethostname()})
+            frozen, s0 = self.inputs(self.grant(expiresAt='next year'))
+            frozen['service']['oldUnitSha256'] = 'c' * 64
+            (packet / 'inputs/bindings.json').write_text(json.dumps(frozen))
+            (packet / 'inputs/s0-db-readback.json').write_text(json.dumps(s0))
+            configuration = Path(directory) / 'config.json'
+            configuration.write_text('{"runPolicy": {}}')
+            unit = Path(directory) / 'himawari-prod.service'
+            unit.write_text('[Service]\n')
+            instance = {'fixedByTemplate': {'serviceAccount': pwd.getpwuid(os.getuid()).pw_name, 'config': str(configuration), 'unit': 'himawari-rehearsal-absent.service', 'unitPath': str(unit), 'nodePath': shutil.which('node')}}
+            parameters = {'HOSTNAME': socket.gethostname(), 'NEW_CAPABILITY_REFS_JSON': FIRST_TOOLS_PARAMETERS['NEW_CAPABILITY_REFS_JSON']}
+
+            def local(_instance, remote, stdin_bytes, timeout=300):
+                return subprocess.run(['/bin/bash', '-c', remote], input=stdin_bytes, capture_output=True, check=True).stdout
+
+            with unittest.mock.patch.object(packet_maker, 'run_remote', local):
+                with self.assertRaises(packet_maker.PacketError) as raised:
+                    packet_maker.rehearse_production_data(packet, instance, parameters)
+            problems = str(raised.exception).split(' ')
+            self.assertEqual(problems[0], 'PACKET_PRODUCTION_REHEARSAL_FAILED')
+            for expected in ['G90_ZONED_TIMESTAMP_REQUIRED', 'ORIGINAL_CONFIGURATION_CHANGED', 'FIRST_TOOLS_WORKER_IDENTITY_REQUIRED', 'STOPPED_ORIGINAL_SERVICE_PROPERTIES_CHANGED:User=<missing>', 'ORIGINAL_UNIT_CHANGED_BEFORE_SWITCH', 'staticRootConfiguration:TWELFTH_MAINTENANCE_ORIGINAL_STATIC_ROOT_CHANGED', 'routeIdentity:TWELFTH_MAINTENANCE_ROUTE_IDENTITY_INVALID']:
+                self.assertIn(expected, problems)
 
 
 class DeployScriptErrorLineTest(unittest.TestCase):
@@ -1158,6 +1210,7 @@ class FinalizeCapabilityFixtureTest(unittest.TestCase):
             (packet / 'inputs').mkdir()
             shutil.copy(HERE / 'packet-template/signing/verify-finalize-capability-check.py', packet / 'signing')
             shutil.copy(HERE / 'packet-template/signing/finalize-binding-inputs.py', packet / 'signing')
+            shutil.copy(HERE / 'packet-template/signing/workspace-grant-binding.py', packet / 'signing')
             (packet / 'inputs/s0-db-readback.json').write_text(json.dumps({'identity': {'hostId': 'host:fixture'}, 'authorization': {'capabilities': capabilities}}))
             (packet / 'inputs/bindings.draft.json').write_text(json.dumps({'paths': {'oldPrefix': '/opt/himawari/releases/old'}}))
             child = subprocess.run([sys.executable, '-I', str(packet / 'signing/verify-finalize-capability-check.py')], capture_output=True, text=True, check=False)
