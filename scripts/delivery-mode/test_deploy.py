@@ -609,6 +609,38 @@ class HostSystemBootTest(unittest.TestCase):
         self.assertIn('weasyprint==70.0 ', settings['requirements'])
 
 
+class LastFailureReportTest(unittest.TestCase):
+    def report(self, root, packet=None):
+        module = load('last_failure_report', 'last-failure-report.py')
+        module.STATE = root
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            module.report_evidence(root / 'first-20261127-evidence.attempt-failed-20261127T073915Z')
+        return module, output.getvalue().splitlines()
+
+    def test_I120_the_next_deploy_prints_why_the_last_one_failed_from_the_files_left_on_the_host(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            evidence = root / 'first-20261127-evidence.attempt-failed-20261127T073915Z'
+            evidence.mkdir()
+            (evidence / 'step-s6_acceptance-1-result.json').write_text(json.dumps({'action': 'S6_ACCEPTANCE', 'passed': False, 'exitCode': 1}))
+            (evidence / 'step-s1_install-1-result.json').write_text(json.dumps({'action': 'S1_INSTALL', 'passed': True, 'exitCode': 0}))
+            (evidence / 's6-npm-observation.stderr').write_text('Traceback\nRuntimeError: FIRST_NPM_FROZEN_OBSERVATION_CHANGED:npm\n')
+            (evidence / 'step-s1_install-1.stderr').write_text('')
+            _, lines = self.report(root)
+        self.assertIn('LAST_FAILURE_TAIL s6-npm-observation.stderr RuntimeError: FIRST_NPM_FROZEN_OBSERVATION_CHANGED:npm', lines)
+        self.assertTrue(any(line.startswith('LAST_FAILURE_STEP ') and 'S6_ACCEPTANCE' in line for line in lines))
+        self.assertFalse(any('S1_INSTALL' in line for line in lines))
+        self.assertFalse(any('step-s1_install-1.stderr' in line for line in lines))
+
+    def test_npm_differences_name_the_exact_field_that_moved(self):
+        module = load('last_failure_report', 'last-failure-report.py')
+        expected = {'npm': {'version': '10.9.4', 'requestedPathChain': [{'path': '/opt', 'uid': 0}]}, 'node': {'version': 'v22.22.3'}}
+        actual = {'npm': {'version': '10.9.4', 'requestedPathChain': [{'path': '/opt', 'uid': 1000}]}, 'node': {'version': 'v22.22.3'}}
+        self.assertEqual(module.differences(expected, actual), ['npm.requestedPathChain[0].uid expected=0 actual=1000'])
+        self.assertEqual(module.differences(expected, expected), [])
+
+
 class DeployHarness(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
