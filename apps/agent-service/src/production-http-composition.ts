@@ -1,6 +1,7 @@
 import { createHash, createHmac, randomBytes } from "node:crypto";
 import { lstat } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type {
   CancelCoordinatedRunInput,
   CapabilityReactivationVerifierPort,
@@ -182,6 +183,7 @@ import {
   PRODUCTION_OBSERVATION_OPERATIONS,
   type ProductionObservation,
 } from "./production-observation.js";
+import { deviceChatModels } from "./production-device-chat-models.js";
 import {
   PRODUCTION_OWNER_PREFERENCE_OPERATIONS,
   ProductionOwnerPreferencesControl,
@@ -215,8 +217,15 @@ import {
 import {
   PRODUCTION_SERVER_STATUS_OPERATIONS,
   ProductionServerStatusControl,
+  readServerDisk,
+  readServerRelease,
 } from "./production-server-status-control.js";
 import { createProductionSpeech } from "./production-speech.js";
+import {
+  PRODUCTION_SPOKEN_DECISION_OPERATIONS,
+  ProductionSpokenDecisions,
+  spokenMessagesReader,
+} from "./production-spoken-decisions.js";
 import {
   DEFAULT_TIMER_TIME_ZONE,
   localTime,
@@ -913,6 +922,7 @@ function routeOptions(
         ...(searchAvailable ? PRODUCTION_MEMORY_SEARCH_OPERATIONS : []),
         ...PRODUCTION_DATA_EXPORT_OPERATIONS,
         ...PRODUCTION_FILES_OPERATIONS,
+        ...PRODUCTION_SPOKEN_DECISION_OPERATIONS,
         ...PRODUCTION_LOGIN_DEVICE_OPERATIONS,
         ...(mcpConnectionsAvailable ? PRODUCTION_MCP_CONNECTION_OPERATIONS : []),
         ...PRODUCTION_PERCEPTION_OPERATIONS,
@@ -984,6 +994,11 @@ export async function createProductionHttpComposition(
       options.modelCatalog?.find((entry) => entry.ref === chatModel?.ref)?.images ??
       chatModel?.input.includes("image") ??
       false,
+  });
+  const deviceModels = deviceChatModels({
+    catalog: options.modelCatalog,
+    configuration,
+    preferences: repository.ownerPreferences(),
   });
   const speech = createProductionSpeech(configuration, (ref, version) =>
     secretSources.provider.resolve(ref, version),
@@ -1164,6 +1179,7 @@ export async function createProductionHttpComposition(
   const threadAdapter = new ProductThreadGatewayAdapter({
     ...(backgroundWork ? { backgroundWork: { read: () => backgroundWork.backgroundWork() } } : {}),
     ...(options.messageOptions ? { messageOptions: options.messageOptions } : {}),
+    spokenMessages: spokenMessagesReader(repository.decisionLedger()),
     validateModelSelection: (selection, classification) => {
       const model = options.modelCatalog?.find((entry) => entry.ref === selection.modelRef);
       const descriptor = configuration.modelDescriptors.find(
@@ -1871,6 +1887,19 @@ export async function createProductionHttpComposition(
           }),
         }
       : {}),
+    spokenControl: new ProductionSpokenDecisions({
+      scope: { ownerId, agentId },
+      ledger: repository.decisionLedger(),
+      readText: async (ref) => {
+        const payload = await repository.payloadStore(ownerId, agentId).get(ref as never);
+        if (!payload || payload.contentType !== "text/plain") return null;
+        return new TextDecoder("utf-8", { fatal: true }).decode(
+          await payloadProtector.unprotect({ ownerId, agentId, payload }),
+        );
+      },
+      recallRuns: (limit) => repository.realEval().listRuns({ ownerId, agentId, limit }),
+      clock: { now: clock },
+    }),
     perceptionControl: new ProductionPerceptionControl({
       configuration,
       perception,
@@ -1888,6 +1917,8 @@ export async function createProductionHttpComposition(
       configuration,
       health,
       clock: { now: clock },
+      release: () => readServerRelease(fileURLToPath(import.meta.url)),
+      disk: () => readServerDisk(configuration.stateRoot),
     }),
     dataExportControl: new ProductionDataExportControl({
       configuration,
@@ -1961,6 +1992,7 @@ export async function createProductionHttpComposition(
       home: { resolveAction: (input) => home.resolveAction(input) },
       configuration: () => deviceConfiguration,
       chatAttachments: () => chatAttachments,
+      ...(deviceModels ? { chatModels: deviceModels } : {}),
       recordVoiceTiming: (input) => recordVoiceTiming(input),
       listVoiceTiming: (limit) => listVoiceTiming(limit),
       audit: repository.auditLedger(),

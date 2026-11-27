@@ -4,10 +4,6 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { CONTROL_CENTER_SURFACE_INVENTORY } from "../../apps/control-center/src/app/control-center-inventory.ts";
 import {
-  DEVICE_REFERENCE_PLACEHOLDER,
-  SERVER_FILLED_PAYLOAD_KEYS,
-} from "../../packages/platform-node/src/device-gateway.ts";
-import {
   APPROVAL_ALLOWANCE_DAYS_MAXIMUM,
   APPROVAL_ALLOWANCE_DAYS_MINIMUM,
   CLIENT_CAPABILITY_TABLE,
@@ -15,10 +11,17 @@ import {
   CLIENT_GATEWAYS,
   CLIENT_PAGE_TABLE,
   CLIENT_RESPONSE_ONLY_TYPES,
-  MEMORY_TRASH_RETENTION_DAYS,
   type ClientCapabilityEntry,
   type ClientPageEntry,
+  MEMORY_IMPORT_PREVIEW_FILE_NAME_MAXIMUM,
+  MEMORY_IMPORT_PREVIEW_FILES_MAXIMUM,
+  MEMORY_TRASH_RETENTION_DAYS,
 } from "../../packages/gateway-contracts/src/index.ts";
+import {
+  DEVICE_REFERENCE_PLACEHOLDER,
+  SERVER_FILLED_PAYLOAD_KEYS,
+} from "../../packages/platform-node/src/device-gateway.ts";
+import { PLAIN_TEXT_MAXIMUM_CHARACTERS } from "../../packages/platform-node/src/text-admission.ts";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const SWIFT_FILE = "clients/apple/Sources/HimawariManage/Generated/ClientCapabilities.swift";
@@ -153,6 +156,9 @@ ${capabilities.map(capabilityLine).join("\n")}
     public static let serverFilledReferences = [${SERVER_FILLED_PAYLOAD_KEYS.map(swiftString).join(", ")}]
     public static let allowanceDays: ClosedRange<Int> = ${APPROVAL_ALLOWANCE_DAYS_MINIMUM}...${APPROVAL_ALLOWANCE_DAYS_MAXIMUM}
     public static let memoryTrashDays = ${MEMORY_TRASH_RETENTION_DAYS}
+    public static let memoryImportFilesMaximum = ${MEMORY_IMPORT_PREVIEW_FILES_MAXIMUM}
+    public static let memoryImportFileNameMaximum = ${MEMORY_IMPORT_PREVIEW_FILE_NAME_MAXIMUM}
+    public static let textUploadMaximumCharacters = ${PLAIN_TEXT_MAXIMUM_CHARACTERS}
 
     public static func find(_ gateway: ClientGateway, _ type: String) -> ClientCapability? {
         all.first { $0.gateway == gateway && $0.type == type }

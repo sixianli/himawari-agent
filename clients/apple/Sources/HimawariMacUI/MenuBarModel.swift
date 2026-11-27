@@ -25,11 +25,6 @@ protocol MacWorkControl: AnyObject {
     func stop(_ workId: String) async
 }
 
-struct NoticeReveal: Equatable {
-    let id: String
-    let serial: Int
-}
-
 @MainActor
 @Observable
 final class MenuBarModel {
@@ -37,19 +32,14 @@ final class MenuBarModel {
     let settings: MacSettingsStore
     private(set) var home: HomeSnapshot?
     private(set) var running: [RunningWork] = []
-    private(set) var acting: String?
-    private(set) var failedItem: String?
     private(set) var shortcutState: GlobalShortcut.State?
     private(set) var notices = PendingNotifications()
-    var noticesExpanded = false
-    private(set) var revealedNotice: NoticeReveal?
     @ObservationIgnored var showNotice: ((DeviceNotification) -> Void)?
     @ObservationIgnored var removeNotice: ((String) -> Void)?
     @ObservationIgnored weak var work: MacWorkControl?
     @ObservationIgnored private var refreshTask: Task<Void, Never>?
     @ObservationIgnored private var serverActions: [DeviceActionSummary] = []
     @ObservationIgnored private var localProgress: [String: DeviceProgress] = [:]
-    @ObservationIgnored private var actionRequestIds: [String: String] = [:]
     @ObservationIgnored private var demoShowsStop = false
     @ObservationIgnored private var hasBoundStore = false
 
@@ -59,7 +49,7 @@ final class MenuBarModel {
         followDeviceStore()
     }
 
-    init(demo app: AppModel, settings: MacSettingsStore, home: HomeSnapshot?, running: [RunningWork], shortcut: GlobalShortcut.State?, notices: [DeviceNotification] = [], noticesExpanded: Bool = false) {
+    init(demo app: AppModel, settings: MacSettingsStore, home: HomeSnapshot?, running: [RunningWork], shortcut: GlobalShortcut.State?, notices: [DeviceNotification] = []) {
         self.app = app
         self.settings = settings
         self.home = home
@@ -69,7 +59,6 @@ final class MenuBarModel {
         var pending = PendingNotifications()
         for notice in notices { pending.deliver(notice) }
         self.notices = pending
-        self.noticesExpanded = noticesExpanded
         followDeviceStore()
     }
 
@@ -80,21 +69,6 @@ final class MenuBarModel {
         return notices.items.filter { $0.homeKey == nil || $0.homeKey != pressing }
     }
 
-    var latestNotice: DeviceNotification? { shownNotices.first }
-
-    var olderNotices: [DeviceNotification] { Array(shownNotices.dropFirst()) }
-
-    func toggleOlderNotices() {
-        noticesExpanded.toggle()
-        revealedNotice = nil
-    }
-
-    func reveal(_ id: String) {
-        guard olderNotices.contains(where: { $0.id == id }) else { return }
-        noticesExpanded = true
-        revealedNotice = NoticeReveal(id: id, serial: (revealedNotice?.serial ?? 0) + 1)
-    }
-
     func receive(_ event: DeviceStreamEvent) {
         switch event {
         case let .notificationDeliver(notice):
@@ -103,24 +77,10 @@ final class MenuBarModel {
         case let .notificationWithdraw(id):
             let gone = notices.withdraw(id)
             removeNotice?(id)
-            forgetReveal(of: id)
-            if olderNotices.isEmpty { noticesExpanded = false }
             if gone?.homeKey != nil { Task { await refresh() } }
         default:
             break
         }
-    }
-
-    func dismiss(_ notice: DeviceNotification) {
-        guard notices.items.contains(where: { $0.id == notice.id }) else { return }
-        notices.withdraw(notice.id)
-        removeNotice?(notice.id)
-        forgetReveal(of: notice.id)
-        if olderNotices.isEmpty { noticesExpanded = false }
-    }
-
-    private func forgetReveal(of id: String) {
-        if revealedNotice?.id == id { revealedNotice = nil }
     }
 
     private func followDeviceStore() {
@@ -138,8 +98,6 @@ final class MenuBarModel {
         }
         for notice in notices.items { removeNotice?(notice.id) }
         notices = store.map { PendingNotifications(rememberingIn: $0) } ?? PendingNotifications()
-        revealedNotice = nil
-        noticesExpanded = false
     }
 
     var mostPressing: HomeItem? { home?.mostPressing }
@@ -200,33 +158,6 @@ final class MenuBarModel {
 
     func stop(_ workId: String) {
         Task { await work?.stop(workId) }
-    }
-
-    func respond(_ item: HomeItem, with action: HomeAction) {
-        guard acting == nil else { return }
-        acting = item.key
-        failedItem = nil
-        let key = [item.key, action.action, action.binding ?? ""].joined(separator: "\n")
-        let requestId = actionRequestIds[key] ?? DeviceAPI.newActionRequestId()
-        actionRequestIds[key] = requestId
-        let presence = action.ownerPresence ? app.ownerPresence(reason: L.text("panel.presenceReason")) : nil
-        Task {
-            do {
-                try await app.api.act(on: item, action: action, requestId: requestId, presence: presence)
-                actionRequestIds[key] = nil
-            } catch OwnerPresenceError.declined {
-                actionRequestIds[key] = nil
-                acting = nil
-                return
-            } catch let DeviceAPIError.server(status, _, _, _) where (400 ..< 500).contains(status) {
-                actionRequestIds[key] = nil
-                failedItem = item.key
-            } catch {
-                failedItem = item.key
-            }
-            await refresh()
-            acting = nil
-        }
     }
 }
 #endif

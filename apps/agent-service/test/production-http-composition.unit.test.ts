@@ -395,6 +395,9 @@ describe("production HTTP composition", () => {
           "data.export.cancel",
           "data.export.status.read",
           "files.list.read",
+          "decision.spoken.read",
+          "decision.spoken.rate",
+          "decision.stats.read",
           "login.devices.read",
           "login.device.revoke",
           "login.devices.revoke_others",
@@ -1581,6 +1584,8 @@ describe("production HTTP composition", () => {
             status: string;
             reasonCode: string | null;
           }[];
+          release: unknown;
+          disk: { availableBytes: number; totalBytes: number };
         };
       };
       const webBody = webStatus.json() as typeof phoneStatus.payload;
@@ -1591,6 +1596,10 @@ describe("production HTTP composition", () => {
       expect(phoneStatus.payload.live).toBe(webBody.live);
       expect(phoneStatus.payload.ready).toBe(webBody.ready);
       expect(phoneStatus.payload.status).toBe(webBody.status);
+      const disk = phoneStatus.payload.disk;
+      expect(disk.totalBytes).toBeGreaterThan(0);
+      expect(disk.availableBytes).toBeLessThanOrEqual(disk.totalBytes);
+      expect(phoneStatus.payload.release).toBeNull();
       expect(phoneStatus.payload.dependencies).toEqual(
         webBody.dependencies.map(({ name, required, status, reasonCode }) => ({
           name,
@@ -1721,7 +1730,7 @@ describe("production HTTP composition", () => {
         payload: {
           ...ownerEnvelope(second.authenticationRef, "files.list.read"),
           kind: "query",
-          payload: { kind: null, origin: null, before: null, limit: 20 },
+          payload: { kind: null, origin: null, before: null, limit: 20, search: null },
         },
       });
       expect(phoneFiles.statusCode, phoneFiles.body).toBe(200);

@@ -208,6 +208,7 @@
         "test/integration/openrouter-embedding-live.test.ts",
         "test/integration/jarvis-test/live-round.test.ts",
         "test/integration/memory-retrieval-eval/live.test.ts",
+        "test/integration/memory-benchmark/live.test.ts",
         "test/integration/container-execution-backend-qualification.test.ts",
         "test/integration/container-runtime-restart-qualification.test.ts",
         "test/integration/container-browser-qualification.test.ts",
@@ -274,6 +275,13 @@
       "kind": "qualification",
       "project": "qualification-memory-retrieval-live",
       "reason": "记忆检索评测要调用真实向量模型并产生少量费用，只在显式运行时执行",
+      "allowedModifiers": ["skipIf"]
+    },
+    {
+      "path": "test/integration/memory-benchmark/live.test.ts",
+      "kind": "qualification",
+      "project": "qualification-memory-benchmark-live",
+      "reason": "LoCoMo 和 LongMemEval 记忆基准要逐轮调用真实模型并产生费用，只在显式运行时执行",
       "allowedModifiers": ["skipIf"]
     },
     {

@@ -1550,7 +1550,7 @@ export function resolvePolicySource({
     assert(coverage.baseline !== null, "Accepted coverage policy has no measured baseline");
   }
   return {
-    policy,
+    policy: hasPolicy ? admitFromProposal(root, policyPath, policy, baseSha) : policy,
     policySha256: sha256(bytes),
     coverage,
     baseSha,
@@ -1605,6 +1605,46 @@ export function validateInstallScriptReviews(toolchainLock, packageLock) {
     if (locked.hasInstallScript === true)
       assert(reviewed.has(packagePath), `Install script is not reviewed: ${packagePath}`);
   return true;
+}
+
+export function admitNewQualificationTests(accepted, proposed, baseFiles) {
+  const known = new Set(accepted.registeredTests.map((entry) => entry.path));
+  const base = new Set(baseFiles);
+  const proposedIntegration = proposed.testProjects.find((project) => project.id === "integration");
+  const admitted = proposed.registeredTests.filter(
+    (entry) =>
+      entry.kind === "qualification" &&
+      !known.has(entry.path) &&
+      !base.has(entry.path) &&
+      proposedIntegration?.exclude.includes(entry.path),
+  );
+  if (!admitted.length) return accepted;
+  const widened = structuredClone(accepted);
+  widened.registeredTests.push(...structuredClone(admitted));
+  const integration = widened.testProjects.find((project) => project.id === "integration");
+  for (const entry of admitted)
+    if (!integration.exclude.includes(entry.path)) integration.exclude.push(entry.path);
+  return validatePolicy(widened);
+}
+
+function admitFromProposal(root, policyPath, accepted, baseSha) {
+  let proposed;
+  try {
+    proposed = validatePolicy(JSON.parse(readFileSync(path.join(root, policyPath), "utf8")));
+  } catch {
+    return accepted;
+  }
+  return admitNewQualificationTests(accepted, proposed, baseTrackedFiles(root, baseSha));
+}
+
+export function baseTrackedFiles(root, baseSha) {
+  return execFileSync("git", ["ls-tree", "-r", "--name-only", "-z", baseSha], {
+    cwd: root,
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+  })
+    .split("\0")
+    .filter(Boolean);
 }
 
 export function validateVitestProjects(policy, config) {

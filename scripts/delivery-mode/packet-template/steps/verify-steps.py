@@ -405,6 +405,31 @@ with tempfile.TemporaryDirectory(prefix='steps-', dir=scratch) as temporary:
         assert sorted(logs.glob('*.json')) == before
     case('wrapper refuses to contact the host when local frozen bytes changed', local_tamper)
 
+def failed_step_output_is_shown_in_short():
+    sample = scratch / 'failure-tail.stderr'
+    sample.write_text('\n'.join(['line ' + str(index) for index in range(60)] + ['', 'x' * 500, 'S6_LAST_ERROR']) + '\n')
+    tail = steps.failure_tail(sample)
+    assert len(tail) == 40 and tail[-1] == 'S6_LAST_ERROR' and tail[-2] == 'x' * 300 and tail[0] == 'line 22', tail
+    assert steps.failure_tail(scratch / 'missing.stderr') == ['unreadable FileNotFoundError']
+    sample.unlink()
+case('a failed step prints the last lines of its own output so the deploy log shows why', failed_step_output_is_shown_in_short)
+
+def failed_step_shows_what_its_helpers_wrote_to_their_own_error_files():
+    directory = scratch / 'helper-errors'
+    directory.mkdir()
+    old = directory / 'p8-old.stderr'
+    old.write_text('from an earlier attempt\n')
+    os.utime(old, ns=(1, 1))
+    (directory / 's6-npm-observation.stderr').write_text('RuntimeError: FIRST_NPM_FROZEN_OBSERVATION_CHANGED:npm\n')
+    (directory / 'p8-empty.stderr').write_text('')
+    (directory / 'step-s6_acceptance-5.stderr').write_text('own output\n')
+    (directory / 's6-npm-observation.json').write_text('{}\n')
+    found = steps.helper_error_files(directory, 2, 'step-s6_acceptance-5')
+    assert [path.name for path in found] == ['s6-npm-observation.stderr'], found
+    assert steps.failure_tail(found[0], lines=20) == ['RuntimeError: FIRST_NPM_FROZEN_OBSERVATION_CHANGED:npm']
+    shutil.rmtree(directory)
+case('a failed step also shows the error files its helpers wrote during the step', failed_step_shows_what_its_helpers_wrote_to_their_own_error_files)
+
 report = {'schemaVersion': 'himawari.__PKT_LABEL__-change-step-fixtures.v1', 'passed': all(item['passed'] for item in results), 'total': len(results), 'failed': sum(not item['passed'] for item in results), 'sources': {name: sha((base / name).read_bytes()) for name in ['packet-common.py', 'run-step.py', 'run-local-step.py', 'run-user-step.sh', 'transport-packet.py']}, 'productionHostOrRootExecuted': False, 'results': results}
 print(json.dumps(report, indent=2))
 sys.exit(0 if report['passed'] else 1)

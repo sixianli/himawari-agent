@@ -1,13 +1,11 @@
-import AppKit
 import HimawariMacUI
+import SwiftUI
 
 @main
-enum HimawariMacApp {
-    @MainActor
-    static func main() {
-        let application = NSApplication.shared
-        let delegate = MacAppDelegate()
-        application.delegate = delegate
-        application.run()
+struct HimawariMacApp: App {
+    @NSApplicationDelegateAdaptor(MacAppDelegate.self) private var delegate
+
+    var body: some Scene {
+        MacScenes(delegate: delegate)
     }
 }

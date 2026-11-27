@@ -24,11 +24,9 @@ import {
   type ProductMemoryStatePort,
   type RunExecutionSourcePort,
   type RuntimeRequest,
-  SENSITIVE_MEMORY_TOPICS,
   type SensitiveMemoryApprovalRequest,
   type SensitiveMemoryApprovalStatePort,
   type SensitiveMemoryCandidatePort,
-  type SensitiveMemoryTopic,
   type ThreadDistillationStatePort,
   type ThreadDistillationWork,
   type ThreadRepositoryPort,
@@ -41,7 +39,7 @@ import {
   TRUSTED_PROMPT_TEXTS,
 } from "@himawari-agent/prompt-catalog";
 import {
-  classificationWithIdentifiers,
+  containsCredential,
   type EgressPlaceholderKind,
   isSafeToIndex,
   placeholderTable,
@@ -87,7 +85,6 @@ const CLASSIFICATION_RANK: Record<DataClassification, number> = {
   sensitive: 2,
   restricted: 3,
 };
-const TOPICS = new Set<string>(SENSITIVE_MEMORY_TOPICS);
 const CATEGORIES = new Set<string>(MEMORY_CATEGORIES);
 const MINIMUM_QUOTE_CHARACTERS = 8;
 const MAXIMUM_QUOTE_CHARACTERS = 300;
@@ -376,19 +373,14 @@ export function parseMemoryCandidates(input: {
         ? "create"
         : (requestedDecision as ExtractedMemoryCandidate["decision"]);
     const quote = typeof value["quote"] === "string" ? restore(value["quote"]) : "";
-    const requested = classificationWithIdentifiers(
-      quote,
-      classificationWithIdentifiers(
-        text,
-        value["classification"] === "sensitive" || value["classification"] === "restricted"
-          ? value["classification"]
-          : "private",
-      ),
-    );
-    const dataClassification =
-      CLASSIFICATION_RANK[requested] >= CLASSIFICATION_RANK[input.sourceClassification]
-        ? requested
-        : input.sourceClassification;
+    const dataClassification: DataClassification =
+      value["classification"] === "restricted" ||
+      containsCredential(text) ||
+      containsCredential(quote)
+        ? "restricted"
+        : CLASSIFICATION_RANK[input.sourceClassification] > CLASSIFICATION_RANK.private
+          ? input.sourceClassification
+          : "private";
     const evidenceVerified =
       input.ownerMessage !== undefined && quoteFromOwnerMessage(quote, input.ownerMessage);
     const confirmsTentative =
@@ -523,13 +515,6 @@ export function parseMemoryCandidates(input: {
               decision === "unchanged"
                 ? (input.tentativeMemories?.get(existing)?.category ?? category)
                 : category,
-          }
-        : {}),
-      ...(dataClassification === "sensitive"
-        ? {
-            sensitiveTopic: (typeof value["topic"] === "string" && TOPICS.has(value["topic"])
-              ? value["topic"]
-              : "other") as SensitiveMemoryTopic,
           }
         : {}),
     };

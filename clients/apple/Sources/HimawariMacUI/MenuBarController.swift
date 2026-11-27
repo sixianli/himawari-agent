@@ -7,19 +7,22 @@ import SwiftUI
 import UserNotifications
 
 @MainActor
-final class MenuBarController: NSObject, NSWindowDelegate, NSDraggingDestination {
+final class MenuBarController: NSObject, NSWindowDelegate, NSDraggingDestination, NSMenuDelegate {
     let model: MenuBarModel
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-    private let popover = NSPopover()
+    private let statusMenu = NSMenu()
     private let inputBar: InputBarWindow
     private let notices = ResultNotices()
     private var shortcut: GlobalShortcut?
-    private var settingsWindow: NSWindow?
     private var pairingWindow: NSWindow?
     private var observation: Task<Void, Never>?
     private let messages: MessagesSensor
     private let presence: PresenceSensor
     private let pairingInbox = PairingInbox()
+    private var wasSignedIn = false
+    var openMain: () -> Void = {}
+    var openSettingsWindow: () -> Void = {}
+    var openAwaiting: () -> Void = {}
 
     init(model: MenuBarModel) {
         self.model = model
@@ -28,15 +31,11 @@ final class MenuBarController: NSObject, NSWindowDelegate, NSDraggingDestination
         presence = PresenceSensor(app: model.app)
         super.init()
         configureStatusItem()
-        configurePopover()
         shortcut = GlobalShortcut { [weak self] in self?.summonInputBar() }
         applyShortcut(model.settings.settings.shortcut)
         model.settings.onShortcutChange = { [weak self] in self?.applyShortcut($0) }
         notices.prepare()
-        notices.openPanel = { [weak self] id in
-            self?.model.reveal(id)
-            self?.showPanel()
-        }
+        notices.openNotice = { [weak self] in self?.openMain() }
         model.showNotice = { [weak self] in self?.notices.show($0) }
         model.removeNotice = { [weak self] in self?.notices.withdraw($0) }
         model.app.onDeviceNotification = { [weak model] in model?.receive($0) }
@@ -55,30 +54,12 @@ final class MenuBarController: NSObject, NSWindowDelegate, NSDraggingDestination
         guard let button = statusItem.button else { return }
         button.image = Self.sunflowerImage()
         button.imagePosition = .imageLeading
-        button.target = self
-        button.action = #selector(statusItemClicked(_:))
-        _ = button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         button.setAccessibilityLabel(L.text("app.name"))
         button.window?.registerForDraggedTypes([.fileURL])
         button.window?.delegate = self
-    }
-
-    private func configurePopover() {
-        popover.behavior = .transient
-        popover.animates = true
-        let host = NSHostingController(rootView: PanelView(
-            model: model,
-            talk: { [weak self] in
-                self?.popover.performClose(nil)
-                self?.summonInputBar()
-            },
-            pair: { [weak self] in
-                self?.popover.performClose(nil)
-                self?.showPairing()
-            }
-        ))
-        host.sizingOptions = .preferredContentSize
-        popover.contentViewController = host
+        statusMenu.delegate = self
+        statusMenu.autoenablesItems = false
+        statusItem.menu = statusMenu
     }
 
     private func observeBadge() {
@@ -86,7 +67,11 @@ final class MenuBarController: NSObject, NSWindowDelegate, NSDraggingDestination
             while !Task.isCancelled {
                 guard let self else { return }
                 updateBadge(model.awaitingCount)
-                if model.app.phase == .active { pairingWindow?.close() }
+                let signedIn = model.app.phase == .active
+                statusItem.isVisible = signedIn
+                if signedIn { pairingWindow?.close() }
+                if signedIn && !wasSignedIn { openMain() }
+                wasSignedIn = signedIn
                 await withCheckedContinuation { continuation in
                     withObservationTracking {
                         _ = self.model.awaitingCount
@@ -100,6 +85,7 @@ final class MenuBarController: NSObject, NSWindowDelegate, NSDraggingDestination
     }
 
     private func updateBadge(_ count: Int) {
+        NSApp.dockTile.badgeLabel = count > 0 ? String(count) : nil
         guard let button = statusItem.button else { return }
         if count > 0 {
             button.attributedTitle = NSAttributedString(string: String(count), attributes: [
@@ -119,29 +105,58 @@ final class MenuBarController: NSObject, NSWindowDelegate, NSDraggingDestination
         return image
     }
 
-    @objc private func statusItemClicked(_ sender: NSStatusBarButton) {
-        if NSApp.currentEvent?.type == .rightMouseUp {
-            let menu = NSMenu()
-            menu.addItem(withTitle: L.text("menu.settings"), action: #selector(openSettings), keyEquivalent: ",").target = self
-            menu.addItem(.separator())
-            menu.addItem(withTitle: L.text("menu.quit"), action: #selector(quit), keyEquivalent: "q").target = self
-            statusItem.menu = menu
-            sender.performClick(nil)
-            statusItem.menu = nil
-            return
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        Task { await model.refresh() }
+        menu.removeAllItems()
+        for work in model.running {
+            let line = menu.addItem(withTitle: L.format("menu.running", work.title), action: nil, keyEquivalent: "")
+            line.isEnabled = false
+            if model.canStop {
+                let stop = menu.addItem(withTitle: L.text("panel.stop"), action: #selector(stopWork(_:)), keyEquivalent: "")
+                stop.target = self
+                stop.representedObject = work.id
+            }
         }
-        if popover.isShown {
-            popover.performClose(nil)
-        } else {
-            showPanel()
+        if model.awaitingCount > 0 {
+            menu.addItem(withTitle: L.format("menu.awaiting", model.awaitingCount), action: #selector(showAwaiting), keyEquivalent: "").target = self
         }
+        if menu.numberOfItems > 0 { menu.addItem(.separator()) }
+        let talk = menu.addItem(withTitle: L.text("menu.talk"), action: #selector(talkFromMenu), keyEquivalent: "")
+        talk.target = self
+        if case let .active(shortcut) = model.shortcutState { Self.apply(shortcut, to: talk) }
+        menu.addItem(withTitle: L.text("menu.open"), action: #selector(openMainFromMenu), keyEquivalent: "").target = self
+        menu.addItem(.separator())
+        menu.addItem(withTitle: L.text("menu.settings"), action: #selector(openSettings), keyEquivalent: ",").target = self
+        menu.addItem(withTitle: L.text("menu.quit"), action: #selector(quit), keyEquivalent: "q").target = self
     }
 
-    func showPanel() {
-        guard let button = statusItem.button, !popover.isShown else { return }
-        Task { await model.refresh() }
-        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-        popover.contentViewController?.view.window?.makeKey()
+    static func apply(_ shortcut: KeyShortcut, to item: NSMenuItem) {
+        let key = shortcut.key == "space" ? " " : shortcut.key.lowercased()
+        guard key.count == 1 else { return }
+        item.keyEquivalent = key
+        var flags: NSEvent.ModifierFlags = []
+        if shortcut.modifiers & KeyShortcut.commandModifier != 0 { flags.insert(.command) }
+        if shortcut.modifiers & KeyShortcut.optionModifier != 0 { flags.insert(.option) }
+        if shortcut.modifiers & KeyShortcut.shiftModifier != 0 { flags.insert(.shift) }
+        if shortcut.modifiers & KeyShortcut.controlModifier != 0 { flags.insert(.control) }
+        item.keyEquivalentModifierMask = flags
+    }
+
+    @objc private func stopWork(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String else { return }
+        model.stop(id)
+    }
+
+    @objc private func showAwaiting() {
+        openAwaiting()
+    }
+
+    @objc private func talkFromMenu() {
+        summonInputBar()
+    }
+
+    @objc private func openMainFromMenu() {
+        openMain()
     }
 
     func summonInputBar(files: [URL] = []) {
@@ -156,16 +171,7 @@ final class MenuBarController: NSObject, NSWindowDelegate, NSDraggingDestination
     }
 
     @objc func openSettings() {
-        if settingsWindow == nil {
-            let window = NSWindow(contentViewController: NSHostingController(rootView: SettingsHost(model: model)))
-            window.title = L.text("settings.title")
-            window.styleMask = [.titled, .closable]
-            window.isReleasedWhenClosed = false
-            settingsWindow = window
-        }
-        NSApp.activate()
-        settingsWindow?.center()
-        settingsWindow?.makeKeyAndOrderFront(nil)
+        openSettingsWindow()
     }
 
     func receivePairingLink(_ url: URL) {
@@ -209,14 +215,6 @@ final class MenuBarController: NSObject, NSWindowDelegate, NSDraggingDestination
     static func fileURLs(_ info: NSDraggingInfo) -> [URL] {
         let options: [NSPasteboard.ReadingOptionKey: Any] = [.urlReadingFileURLsOnly: true]
         return (info.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: options) as? [URL]) ?? []
-    }
-}
-
-struct SettingsHost: View {
-    let model: MenuBarModel
-
-    var body: some View {
-        MacSettingsView(store: model.settings, shortcutState: model.shortcutState)
     }
 }
 
@@ -314,7 +312,7 @@ final class ResultNotices: NSObject, UNUserNotificationCenterDelegate {
         center.requestAuthorization(options: [.alert]) { _, _ in }
     }
 
-    var openPanel: ((String) -> Void)?
+    var openNotice: (() -> Void)?
 
     static func noticeIdentifier(_ id: String) -> String { "himawari.notice." + id }
 
@@ -352,8 +350,8 @@ final class ResultNotices: NSObject, UNUserNotificationCenterDelegate {
         let files = (info["files"] as? [String] ?? []).map { URL(fileURLWithPath: $0) }
         let action = response.actionIdentifier
         await MainActor.run {
-            if let noticeId {
-                if action == UNNotificationDefaultActionIdentifier { openPanel?(noticeId) }
+            if noticeId != nil {
+                if action == UNNotificationDefaultActionIdentifier { openNotice?() }
                 return
             }
             switch action {

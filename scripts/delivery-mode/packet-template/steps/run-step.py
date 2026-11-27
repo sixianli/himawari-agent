@@ -51,6 +51,27 @@ def verify_operations(frozen):
             common.require(common.record(target, 0) == {key: expected[key] for key in ('bytes', 'sha256')}, '__PKT_LABEL_UPPER___STEP_FLAT_HELPER_CHANGED:' + name)
 
 
+def failure_tail(path, lines=40, width=300):
+    try:
+        text = path.read_bytes().decode('utf-8', 'replace')
+    except OSError as error:
+        return ['unreadable ' + type(error).__name__]
+    return [line[:width] for line in text.splitlines() if line.strip()][-lines:]
+
+
+def helper_error_files(directory, since_ns, own_name, limit=10):
+    found = []
+    for path in sorted(directory.glob('*.stderr')):
+        try:
+            info = path.lstat()
+        except OSError:
+            continue
+        if path.name.startswith(own_name + '.') or not path.is_file() or path.is_symlink() or info.st_mtime_ns < since_ns or info.st_size == 0:
+            continue
+        found.append(path)
+    return found[:limit]
+
+
 def main():
     os.umask(0o022)
     common.require(len(sys.argv) == 4 and sys.argv[1] == '--approved-r2l13-__PKT_LABEL__-step' and re.fullmatch('[a-f0-9]{64}', sys.argv[3]) and sys.executable == '/usr/bin/python3' and sys.flags.isolated == 1 and sys.platform == 'linux' and os.getuid() == 0 and socket.gethostname() == '__PKT_HOSTNAME__' and Path(__file__).resolve() == ENTRY, '__PKT_LABEL_UPPER___STEP_EXPLICIT_ROOT_TARGET_REQUIRED')
@@ -66,7 +87,8 @@ def main():
     common.require(result.get('passed') is True, '__PKT_LABEL_UPPER___STEP_SUCCESSFUL_S1_REQUIRED')
     if action not in {'S2_STOP', 'S6_ACCEPTANCE', 'S8_READBACK', 'S9_TRANSPORT_PREFLIGHT', 'S9_TRANSPORT_APPLY'}:
         common.service_state()
-    suffix = str(time.time_ns())
+    started_ns = time.time_ns()
+    suffix = str(started_ns)
     report = {'schemaVersion': 'himawari.__PKT_LABEL__-change-step.v1', 'action': action, 'passed': False, 'actor': {'uid': 0, 'hostname': socket.gethostname()}, 'freezeSha256': frozen['freezeSha256'], 'bindingsSha256': frozen['bindingsSha256'], 's1ReportSha256': common.sha(result_bytes), 'command': argv, 'startedAt': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'automaticRollbackOrStart': False}
     name = 'step-' + action.lower() + '-' + suffix
     common.publish(common.EVIDENCE / (name + '-started.json'), (json.dumps(report, indent=2) + '\n').encode(), 0, __PKT_SERVICE_GID__, 0o640)
@@ -86,6 +108,14 @@ def main():
     report['finishedAt'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
     path = common.EVIDENCE / (name + '-result.json')
     common.publish(path, (json.dumps(report, indent=2) + '\n').encode(), 0, __PKT_SERVICE_GID__, 0o640)
+    if not report['passed']:
+        for extension in ('stderr', 'stdout'):
+            for line in failure_tail(common.EVIDENCE / (name + '.' + extension)):
+                print('STEP_FAILURE_TAIL ' + extension + ' ' + line)
+        for path in helper_error_files(common.EVIDENCE, started_ns, name):
+            print('STEP_FAILURE_FILE ' + str(path))
+            for line in failure_tail(path, lines=20):
+                print('STEP_FAILURE_TAIL ' + path.name + ' ' + line)
     print(json.dumps({'passed': report['passed'], 'action': action, 'exitCode': report['exitCode'], 'report': str(path), 'sha256': common.sha(common.read(path, 0))}))
     return report['exitCode'] if 0 <= report['exitCode'] <= 255 else 1
 

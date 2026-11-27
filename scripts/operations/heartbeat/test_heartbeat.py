@@ -1,5 +1,7 @@
 import importlib.util
+import datetime
 import io
+import json
 import os
 import stat
 import subprocess
@@ -15,6 +17,9 @@ HERE = Path(__file__).resolve().parent
 SPEC = importlib.util.spec_from_file_location("heartbeat", HERE / "himawari-heartbeat.py")
 heartbeat = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(heartbeat)
+PUSH_SPEC = importlib.util.spec_from_file_location("outage_push", HERE / "himawari-outage-push.py")
+outage_push = importlib.util.module_from_spec(PUSH_SPEC)
+PUSH_SPEC.loader.exec_module(outage_push)
 
 PING = "https://hc-ping.com/0d5f7c0e-1111-4222-8333-444455556666"
 
@@ -182,6 +187,125 @@ class HeartbeatScriptTest(unittest.TestCase):
         self.assertEqual((code, pings.calls, output.strip()), (0, [], "HEARTBEAT_URL_OK"))
 
 
+class Minutes:
+    def __init__(self):
+        self.moment = datetime.datetime(2026, 11, 27, 2, 0, tzinfo=datetime.timezone.utc)
+
+    def __call__(self):
+        current = self.moment
+        self.moment = self.moment + datetime.timedelta(minutes=1)
+        return current
+
+
+class OutageStateTest(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.url_file = Path(self.directory.name) / "url"
+        self.url_file.write_text(PING + "\n")
+        self.state = Path(self.directory.name) / "state"
+        self.state.mkdir()
+        self.clock = Minutes()
+
+    def tearDown(self):
+        self.directory.cleanup()
+
+    def beat(self, status, alert_after="5"):
+        pings = Pings()
+        output, errors = io.StringIO(), io.StringIO()
+        with ReadyServer(status) as ready:
+            code = heartbeat.main(["--url-file", str(self.url_file), "--ready-url", ready.url, "--timeout", "2", "--state-dir", str(self.state), "--alert-after", alert_after], pings.opener, output, errors, self.clock)
+        return code, output.getvalue(), errors.getvalue(), pings.calls
+
+    def outage(self):
+        path = self.state / "outage.json"
+        return json.loads(path.read_text()) if path.exists() else None
+
+    def test_an_outage_is_announced_once_after_the_threshold_and_the_recovery_once(self):
+        for _ in range(4):
+            code, output, _, calls = self.beat(503)
+            self.assertEqual(code, 0)
+            self.assertNotIn("HEARTBEAT_OUTAGE", output)
+            self.assertEqual(calls[-1][1], PING + "/log")
+        self.assertIsNone(self.outage())
+        code, output, _, _ = self.beat(503)
+        self.assertIn("HEARTBEAT_OUTAGE down", output)
+        self.assertEqual(self.outage(), {"schemaVersion": 1, "state": "down", "failedChecks": 5, "since": "2026-11-27T02:00:00.000Z", "at": "2026-11-27T02:04:00.000Z"})
+        before = (self.state / "outage.json").stat().st_mtime_ns
+        for _ in range(7):
+            self.assertNotIn("HEARTBEAT_OUTAGE", self.beat(503)[1])
+        self.assertEqual((self.state / "outage.json").stat().st_mtime_ns, before)
+        code, output, _, calls = self.beat(200)
+        self.assertIn("HEARTBEAT_OUTAGE up", output)
+        self.assertEqual(calls[-1], ("GET", PING, None))
+        self.assertEqual(self.outage(), {"schemaVersion": 1, "state": "up", "failedChecks": 12, "since": "2026-11-27T02:00:00.000Z", "at": "2026-11-27T02:12:00.000Z"})
+        self.assertNotIn("HEARTBEAT_OUTAGE", self.beat(200)[1])
+        self.assertEqual(self.outage()["at"], "2026-11-27T02:12:00.000Z")
+
+    def test_failures_below_the_threshold_send_nothing_and_start_over_after_a_success(self):
+        for _ in range(4):
+            self.beat(503)
+        self.beat(200)
+        for _ in range(4):
+            self.beat(503)
+        self.assertIsNone(self.outage())
+        self.assertEqual(json.loads((self.state / "streak.json").read_text())["failures"], 4)
+
+    def test_the_threshold_comes_from_the_option(self):
+        self.assertIn("HEARTBEAT_OUTAGE down", self.beat(503, alert_after="1")[1])
+
+    def test_without_a_state_directory_nothing_is_recorded(self):
+        pings = Pings()
+        with ReadyServer(503) as ready:
+            code = heartbeat.main(["--url-file", str(self.url_file), "--ready-url", ready.url, "--timeout", "2"], pings.opener, io.StringIO(), io.StringIO(), self.clock)
+        self.assertEqual(code, 0)
+        self.assertEqual(list(self.state.iterdir()), [])
+
+    def test_an_unwritable_state_directory_still_pings_but_fails_the_run(self):
+        self.state.chmod(0o500)
+        try:
+            if os.access(self.state, os.W_OK):
+                self.skipTest("running as a user that ignores directory modes")
+            code, _, errors, calls = self.beat(200)
+        finally:
+            self.state.chmod(0o700)
+        self.assertEqual(code, 1)
+        self.assertIn("HEARTBEAT_STATE_FAILED", errors)
+        self.assertEqual(calls, [("GET", PING, None)])
+
+
+class OutagePushScriptTest(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        base = Path(self.directory.name)
+        self.releases = base / "releases"
+        release = self.releases / "2026-11-27-0123456789abcdef0123456789abcdef01234567"
+        (release / "bin").mkdir(parents=True)
+        self.record = base / "record"
+        cli = release / "bin" / "himawari"
+        cli.write_text('#!/bin/bash\nprintf "%%s\\n" "$PATH" "$@" > %s\nexit 3\n' % self.record)
+        cli.chmod(0o755)
+        self.unit = base / "himawari-prod.service"
+        self.unit.write_text("[Service]\nEnvironment=PATH=/opt/himawari/node/bin:/usr/bin:/bin\nExecStart=%s/bin/himawari-agent-service\n" % release)
+        self.release = release
+
+    def tearDown(self):
+        self.directory.cleanup()
+
+    def arguments(self):
+        return ["--unit-path", str(self.unit), "--releases-root", str(self.releases), "--config", "/etc/himawari/config.json", "--secret-dir", "/var/lib/himawari/state/secrets", "--event-file", "/var/lib/himawari-heartbeat/outage.json"]
+
+    def test_it_runs_the_serving_release_with_the_service_path_and_passes_its_exit_code(self):
+        self.assertEqual(outage_push.main(self.arguments()), 3)
+        self.assertEqual(self.record.read_text().splitlines(), ["/opt/himawari/node/bin:/usr/bin:/bin", "push", "outage", "--config", "/etc/himawari/config.json", "--secret-dir", "/var/lib/himawari/state/secrets", "--event-file", "/var/lib/himawari-heartbeat/outage.json"])
+
+    def test_it_refuses_when_the_release_cannot_be_found(self):
+        self.unit.write_text("[Service]\nEnvironment=PATH=/usr/bin\n")
+        errors = io.StringIO()
+        self.assertEqual(outage_push.main(self.arguments(), errors=errors), 2)
+        self.assertIn("OUTAGE_PUSH_RELEASE_UNKNOWN", errors.getvalue())
+        self.assertFalse(self.record.exists())
+
+
 class InstallScriptTest(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
@@ -285,6 +409,46 @@ class InstallScriptTest(unittest.TestCase):
         self.assertTrue((self.root / "etc/himawari-heartbeat/healthcheck-url").exists())
         self.assertEqual(self.run_script("remove", "--purge").returncode, 0)
         self.assertFalse((self.root / "etc/himawari-heartbeat/healthcheck-url").exists())
+
+    def write_instance(self, **overrides):
+        fixed = {"serviceAccount": "himawari-prod", "unitPath": "/etc/systemd/system/himawari-prod.service", "releasesRoot": "/opt/himawari/releases", "config": "/etc/himawari/config.json", "stateRoot": "/var/lib/himawari/state", **overrides}
+        path = Path(self.directory.name) / "instance.json"
+        path.write_text(json.dumps({"fixedByTemplate": fixed}))
+        return str(path)
+
+    def test_install_with_an_instance_adds_the_outage_push_and_keeps_the_url_locked_down(self):
+        child = self.run_script("install", "--instance", self.write_instance(), "--alert-after", "7", stdin=PING + "\n")
+        self.assertEqual(child.returncode, 0, child.stderr)
+        self.assertIn("HEARTBEAT_OUTAGE_PUSH_INSTALLED alert-after=7", child.stdout)
+        service = (self.root / "etc/systemd/system/himawari-heartbeat.service").read_text()
+        self.assertIn("ExecStart=/usr/bin/python3 -I /usr/local/sbin/himawari-heartbeat --state-dir /var/lib/himawari-heartbeat --alert-after 7\n", service)
+        self.assertIn("StateDirectory=himawari-heartbeat\nStateDirectoryMode=0755\n", service)
+        self.assertIn("CapabilityBoundingSet=\n", service)
+        self.assertIn("RestrictAddressFamilies=AF_INET AF_INET6\n", service)
+        push = (self.root / "etc/systemd/system/himawari-outage-push.service").read_text()
+        self.assertIn("User=himawari-prod\n", push)
+        self.assertIn("ExecStart=/usr/bin/python3 -I /usr/local/sbin/himawari-outage-push --unit-path /etc/systemd/system/himawari-prod.service --releases-root /opt/himawari/releases --config /etc/himawari/config.json --secret-dir /var/lib/himawari/state/secrets --event-file /var/lib/himawari-heartbeat/outage.json\n", push)
+        self.assertNotIn("healthcheck-url", push)
+        watch = (self.root / "etc/systemd/system/himawari-outage-push.path").read_text()
+        self.assertIn("PathChanged=/var/lib/himawari-heartbeat/outage.json\n", watch)
+        self.assertEqual(stat.S_IMODE((self.root / "usr/local/sbin/himawari-outage-push").stat().st_mode), 0o755)
+        self.assertEqual(stat.S_IMODE((self.root / "etc/himawari-heartbeat").stat().st_mode), 0o700)
+        self.assertEqual(self.calls.read_text().splitlines(), ["daemon-reload", "enable --now himawari-heartbeat.timer", "enable --now himawari-outage-push.path"])
+
+    def test_install_refuses_a_bad_instance_or_threshold_and_changes_nothing(self):
+        for arguments in (["--instance", self.write_instance(serviceAccount="root; rm")], ["--instance", self.write_instance(config="etc/relative")], ["--instance", "/missing.json"], ["--alert-after", "0"], ["--alert-after", "x"]):
+            child = self.run_script("install", *arguments, stdin=PING + "\n")
+            self.assertNotEqual(child.returncode, 0, arguments)
+            self.assertFalse((self.root / "usr").exists(), arguments)
+            self.assertFalse(self.calls.exists(), arguments)
+
+    def test_install_without_an_instance_takes_the_outage_push_away_again(self):
+        self.run_script("install", "--instance", self.write_instance(), stdin=PING + "\n")
+        self.assertEqual(self.run_script("install", "--keep-url").returncode, 0)
+        self.assertFalse((self.root / "etc/systemd/system/himawari-outage-push.path").exists())
+        self.assertFalse((self.root / "usr/local/sbin/himawari-outage-push").exists())
+        self.assertNotIn("--state-dir", (self.root / "etc/systemd/system/himawari-heartbeat.service").read_text())
+        self.assertIn("disable --now himawari-outage-push.path", self.calls.read_text())
 
     def test_installed_script_runs_against_the_stored_url(self):
         self.run_script("install", stdin=PING + "\n")

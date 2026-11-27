@@ -20,6 +20,8 @@ public struct HerPage: View {
         case notifications
         case privacy
         case connections
+        case agents
+        case agent(String)
         case gmail
         case app(String)
         case devices
@@ -29,6 +31,14 @@ public struct HerPage: View {
         case timers
         case timer(String)
         case about
+        case name
+        case model
+        case serverStatus
+        case transfer
+        case importPaste
+        case importPreview
+        case files
+        case evaluation
         case talkTiming
     }
 
@@ -36,8 +46,15 @@ public struct HerPage: View {
     @State private var memory: MemoryStore
     @State private var quietHours: QuietHoursStore
     @State private var timers: TimersStore
+    @State private var personal: PersonalStore
+    @State private var stats: DecisionStatsStore
+    @State private var files: OwnerFilesStore
     @State private var connections: ConnectionsStore
+    @State private var agents: AgentsStore
     @State private var gmail: GmailStore
+    @State private var dataExport: DataExportStore
+    @State private var memoryImport: MemoryImportStore
+    @State private var serverStatus: ServerStatusStore
     @State private var path: [Page] = []
     @State private var sensesOpen = false
     @State private var vaultCount: HerVaultCount = .unknown
@@ -79,8 +96,15 @@ public struct HerPage: View {
         _memory = State(initialValue: MemoryStore(gateway: gateway))
         _quietHours = State(initialValue: QuietHoursStore(gateway: gateway))
         _timers = State(initialValue: TimersStore(gateway: gateway))
+        _personal = State(initialValue: PersonalStore(gateway: gateway, loadModels: { try? await api.configuration().chatModels }))
+        _stats = State(initialValue: DecisionStatsStore(gateway: gateway))
+        _files = State(initialValue: OwnerFilesStore(gateway: gateway, api: api))
         _connections = State(initialValue: ConnectionsStore(gateway: gateway))
+        _agents = State(initialValue: AgentsStore(gateway: gateway))
         _gmail = State(initialValue: GmailStore(gateway: gateway))
+        _dataExport = State(initialValue: DataExportStore(gateway: gateway, download: { try await api.dataExportArchive(exportId: $0) }))
+        _memoryImport = State(initialValue: MemoryImportStore(gateway: gateway))
+        _serverStatus = State(initialValue: ServerStatusStore(gateway: gateway))
         self.listening = listening
         self.actions = actions
         self.openListening = openListening
@@ -107,13 +131,21 @@ public struct HerPage: View {
         #endif
     }
 
-    init(settings: SettingsStore, memory: MemoryStore, quietHours: QuietHoursStore, timers: TimersStore? = nil, connections: ConnectionsStore? = nil, gmail: GmailStore? = nil, listening: (any HerListening)? = nil, actions: DeviceActionsModel? = nil, senses: AnyView? = nil, vaultItems: HerVaultCount = .items(3), path: [Page] = []) {
+    init(settings: SettingsStore, memory: MemoryStore, quietHours: QuietHoursStore, timers: TimersStore? = nil, connections: ConnectionsStore? = nil, agents: AgentsStore? = nil, gmail: GmailStore? = nil, personal: PersonalStore? = nil, gateway: ManageGateway? = nil, memoryImport: MemoryImportStore? = nil, listening: (any HerListening)? = nil, actions: DeviceActionsModel? = nil, senses: AnyView? = nil, vaultItems: HerVaultCount = .items(3), path: [Page] = []) {
         _settings = State(initialValue: settings)
         _memory = State(initialValue: memory)
         _quietHours = State(initialValue: quietHours)
         _timers = State(initialValue: timers ?? TimersStore(timers: nil))
+        _personal = State(initialValue: personal ?? PersonalStore(gateway: settings.gateway, loadModels: { nil }))
+        _stats = State(initialValue: DecisionStatsStore(stats: nil))
+        _files = State(initialValue: OwnerFilesStore(files: nil))
         _connections = State(initialValue: connections ?? ConnectionsStore(connections: nil))
+        _agents = State(initialValue: agents ?? AgentsStore(agents: nil))
         _gmail = State(initialValue: gmail ?? GmailStore(overview: nil))
+        let demoGateway = gateway ?? ManageGateway(transport: NoTransport())
+        _dataExport = State(initialValue: DataExportStore(gateway: demoGateway, download: { _ in Data() }))
+        _memoryImport = State(initialValue: memoryImport ?? MemoryImportStore(gateway: demoGateway))
+        _serverStatus = State(initialValue: ServerStatusStore(gateway: demoGateway))
         _path = State(initialValue: path)
         self.listening = listening
         self.actions = actions
@@ -146,14 +178,32 @@ public struct HerPage: View {
                     }
                     SettingsGroup(label: nil) {
                         Button { path.append(.memory) } label: {
-                            HerRow(icon: .brain, title: M.herMemory, subtitle: memory.summary(categoryLabel: M.category).map(M.memorySummary), last: true)
+                            HerRow(icon: .brain, title: M.herMemory, subtitle: memory.summary(categoryLabel: M.category).map(M.memorySummary), last: files.phase == .unsupported && stats.phase == .unsupported)
                         }
                         .buttonStyle(.pressable)
+                        if files.phase != .unsupported {
+                            Button { path.append(.files) } label: {
+                                HerRow(icon: .folder, title: M.filesTitle, last: stats.phase == .unsupported)
+                            }
+                            .buttonStyle(.pressable)
+                        }
+                        if stats.phase != .unsupported {
+                            Button { path.append(.evaluation) } label: {
+                                HerRow(icon: .listCheck, title: M.evalTitle, last: true)
+                            }
+                            .buttonStyle(.pressable)
+                        }
                     }
                     SettingsGroup(label: nil) {
                         if timers.phase != .unsupported {
                             Button { path.append(.timers) } label: {
                                 HerRow(icon: .alarm, title: M.timersTitle, subtitle: timersSummary)
+                            }
+                            .buttonStyle(.pressable)
+                        }
+                        if agents.available {
+                            Button { path.append(.agents) } label: {
+                                HerRow(icon: .affiliate, title: M.agentsTitle, subtitle: M.agentsSummary(agents.shown.map(\.name)))
                             }
                             .buttonStyle(.pressable)
                         }
@@ -169,6 +219,18 @@ public struct HerPage: View {
                         }
                     }
                     SettingsGroup(label: nil) {
+                        if personal.phase == .loaded {
+                            Button { path.append(.name) } label: {
+                                HerRow(icon: .user, title: M.nameTitle, value: personal.name ?? M.nameUnset)
+                            }
+                            .buttonStyle(.pressable)
+                        }
+                        if personal.canChooseModel, let model = personal.chosenModel {
+                            Button { path.append(.model) } label: {
+                                HerRow(icon: .bulb, title: M.modelTitle, value: M.modelName(model))
+                            }
+                            .buttonStyle(.pressable)
+                        }
                         if connections.available || actions != nil {
                             Button { path.append(.connections) } label: {
                                 HerRow(icon: .puzzle, title: M.connectionsTitle, subtitle: connectionsSummary)
@@ -191,6 +253,10 @@ public struct HerPage: View {
                         .buttonStyle(.pressable)
                     }
                     SettingsGroup(label: nil) {
+                        Button { path.append(.transfer) } label: {
+                            HerRow(icon: .download, title: M.transferTitle)
+                        }
+                        .buttonStyle(.pressable)
                         Button { path.append(.about) } label: {
                             HerRow(icon: .infoCircle, title: M.aboutTitle, subtitle: AboutPage.versionLine, last: true)
                         }
@@ -232,6 +298,10 @@ public struct HerPage: View {
                     ConnectionsPage(store: connections, actions: actions, openSenses: senses == nil ? nil : { sensesOpen = true }, open: { connection in
                         path.append(connection.name == GmailStore.source ? .gmail : .app(connection.name))
                     }) { path.removeLast() }
+                case .agents:
+                    AgentsPage(store: agents, open: { path.append(.agent($0)) }) { path.removeLast() }
+                case .agent(let id):
+                    AgentPage(store: agents, agentId: id) { path.removeLast() }
                 case .gmail:
                     GmailPage(store: gmail) { path.removeLast() }
                         .onDisappear { Task { await connections.load() } }
@@ -248,9 +318,30 @@ public struct HerPage: View {
                 case .timer(let id):
                     TimerDetailPage(store: timers, timerId: id) { path.removeLast() }
                 case .about:
-                    AboutPage(server: server, openTiming: { path.append(.talkTiming) }) { path.removeLast() }
+                    AboutPage(server: server, openStatus: { path.append(.serverStatus) }, openTiming: { path.append(.talkTiming) }) { path.removeLast() }
+                case .serverStatus:
+                    ServerStatusPage(store: serverStatus) { path.removeLast() }
+                case .transfer:
+                    DataTransferPage(
+                        export: dataExport,
+                        importer: memoryImport,
+                        openPaste: { path.append(.importPaste) },
+                        openPreview: { path.append(.importPreview) }
+                    ) { path.removeLast() }
+                case .importPaste:
+                    MemoryImportPastePage(store: memoryImport, openPreview: { path.append(.importPreview) }) { path.removeLast() }
+                case .importPreview:
+                    MemoryImportPreviewPage(store: memoryImport, finish: finishImport) { path.removeLast() }
+                case .files:
+                    FilesPage(store: files)
+                case .evaluation:
+                    EvaluationPage(store: stats)
                 case .talkTiming:
                     TalkTimingPage(load: voiceTimings)
+                case .name:
+                    NamePage(store: personal) { path.removeLast() }
+                case .model:
+                    ModelPage(store: personal) { path.removeLast() }
                 case .approvals:
                     if let actions {
                         ApprovalsView(model: actions, openThread: { _ in close() }) { path.removeLast() }
@@ -268,6 +359,12 @@ public struct HerPage: View {
         .sheet(isPresented: $vaultOpen, onDismiss: { Task { vaultCount = await countVault() } }) {
             vault?({ vaultOpen = false })
         }
+    }
+
+    private func finishImport() {
+        memoryImport.reset()
+        path.removeAll { $0 == .importPreview || $0 == .importPaste }
+        Task { await memory.load() }
     }
 
     private var timersSummary: String? {
@@ -292,9 +389,13 @@ public struct HerPage: View {
         async let memoryLoaded: Void = memory.load()
         async let quietLoaded: Void = quietHours.load()
         async let timersLoaded: Void = timers.load()
+        async let statsLoaded: Void = stats.load(.week)
+        async let filesLoaded: Void = files.load()
+        async let personalLoaded: Void = personal.load()
         async let connectionsLoaded: Void = connections.load()
+        async let agentsLoaded: Void = agents.load()
         vaultCount = await countVault()
-        _ = await (settingsLoaded, memoryLoaded, quietLoaded, timersLoaded, connectionsLoaded)
+        _ = await (settingsLoaded, memoryLoaded, quietLoaded, timersLoaded, personalLoaded, statsLoaded, filesLoaded, connectionsLoaded, agentsLoaded)
     }
 }
 
