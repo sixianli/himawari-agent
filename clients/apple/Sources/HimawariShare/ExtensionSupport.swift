@@ -138,7 +138,7 @@ open class HandoverHostController: UIViewController {
             finish()
         }
         self.model = model
-        let host = UIHostingController(rootView: HandoverSheetScene(model: model))
+        let host = UIHostingController(rootView: HandoverSheetScene(model: model).tint(Color.hmSun))
         host.view.backgroundColor = .clear
         addChild(host)
         host.view.translatesAutoresizingMaskIntoConstraints = false

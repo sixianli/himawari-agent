@@ -1,6 +1,25 @@
-export interface ChatMessage {
-  readonly role: "system" | "user" | "assistant";
-  readonly content: string;
+export interface ToolCall {
+  readonly id: string;
+  readonly type: "function";
+  readonly function: { readonly name: string; readonly arguments: string };
+}
+
+export type ChatMessage =
+  | { readonly role: "system" | "user"; readonly content: string }
+  | {
+      readonly role: "assistant";
+      readonly content: string;
+      readonly tool_calls?: readonly ToolCall[];
+    }
+  | { readonly role: "tool"; readonly tool_call_id: string; readonly content: string };
+
+export interface ChatTool {
+  readonly type: "function";
+  readonly function: {
+    readonly name: string;
+    readonly description: string;
+    readonly parameters: Record<string, unknown>;
+  };
 }
 
 export interface ChatRequest {
@@ -8,10 +27,12 @@ export interface ChatRequest {
   readonly session: string;
   readonly messages: readonly ChatMessage[];
   readonly maxTokens: number;
+  readonly tools?: readonly ChatTool[];
 }
 
 export interface ChatResult {
   readonly text: string;
+  readonly toolCalls: readonly ToolCall[];
   readonly promptTokens: number;
   readonly cachedTokens: number;
   readonly completionTokens: number;
@@ -157,6 +178,7 @@ export class ChatClient {
           max_tokens: request.maxTokens,
           thinking: { type: "disabled" },
           messages: request.messages,
+          ...(request.tools ? { tools: request.tools } : {}),
         }),
         signal: AbortSignal.timeout(180_000),
       }).catch((error: Error) => error);
@@ -166,7 +188,7 @@ export class ChatClient {
         continue;
       }
       const body = (await response.json().catch(() => ({}))) as {
-        choices?: { message?: { content?: string | null } }[];
+        choices?: { message?: { content?: string | null; tool_calls?: ToolCall[] } }[];
         usage?: {
           prompt_tokens?: number;
           completion_tokens?: number;
@@ -203,6 +225,7 @@ export class ChatClient {
         completionTokens * this.#prices.output;
       return {
         text: body.choices?.[0]?.message?.content ?? "",
+        toolCalls: body.choices?.[0]?.message?.tool_calls ?? [],
         promptTokens,
         cachedTokens,
         completionTokens,

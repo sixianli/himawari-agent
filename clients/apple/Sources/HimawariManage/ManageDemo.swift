@@ -52,9 +52,9 @@ public struct ManageDemoView: View {
         case .memoryEdit:
             NavigationStack { MemoryRootView(store: ManageDemo.memoryStore(), opening: .edit("m5")) }
         case .rules:
-            NavigationStack { MemoryRootView(store: ManageDemo.memoryStore(), tab: .rules) }
+            NavigationStack { RulesPage(store: ManageDemo.memoryStore(), quietHours: nil) }
         case .ruleDetail:
-            NavigationStack { MemoryRootView(store: ManageDemo.memoryStore(), tab: .rules, opening: .rule("r1")) }
+            NavigationStack { RulesPage(store: ManageDemo.memoryStore(), quietHours: nil, opening: "r1") }
         case .deviceAbilities:
             her([.devices, .device(ManageDemo.phoneId)])
         case .her:

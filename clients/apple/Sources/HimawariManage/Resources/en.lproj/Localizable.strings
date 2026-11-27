@@ -56,3 +56,4 @@
 "allowance.locked.asksEveryTime" = "Himawari asks every time for this kind of thing, so it's just once";
 "allowance.notSaved" = "This one is approved, but how long it lasts wasn't saved, so Himawari will ask again next time";
 "abilities.systemAccess" = "System access";
+"abilities.allowedBySystem" = "Allowed in Settings";

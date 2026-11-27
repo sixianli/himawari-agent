@@ -11,6 +11,12 @@ struct MessageMenuActions {
     let copy: () -> Void
     let select: () -> Void
     var why: (() -> Void)? = nil
+    var steps: (() -> Void)? = nil
+}
+
+struct ShownSteps: Identifiable {
+    let id: String
+    let steps: [ProcessStep]
 }
 
 extension View {
@@ -45,6 +51,9 @@ struct MessageMenuItems: View {
         if let why = actions.why {
             Button(action: why) { Label(L.text("chat.menu.why"), systemImage: "questionmark.circle") }
         }
+        if let steps = actions.steps {
+            Button(action: steps) { Label(L.text("chat.menu.steps"), systemImage: "list.bullet") }
+        }
     }
 }
 
@@ -73,6 +82,20 @@ struct SelectableMessage: Identifiable, Equatable {
     let id: String
     let text: String
     let fromAgent: Bool
+}
+
+struct JumpToLatestButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Icon(.chevronDown, size: DesignTokens.IconSize.listRow)
+        }
+        .buttonStyle(.glass)
+        .buttonBorderShape(.circle)
+        .controlSize(.large)
+        .accessibilityLabel(Text(L.text("chat.jumpLatest")))
+    }
 }
 
 struct CopiedToast: View {

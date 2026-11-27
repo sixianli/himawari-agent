@@ -5,6 +5,7 @@ import SwiftUI
 
 public enum HerSection: String, CaseIterable, Hashable, Sendable {
     case memory
+    case rules
     case approvals
     case timers
     case allowances
@@ -16,6 +17,7 @@ public enum HerSection: String, CaseIterable, Hashable, Sendable {
     public var title: String {
         switch self {
         case .memory: M.herMemory
+        case .rules: M.rules
         case .approvals: L.text("approval.title")
         case .timers: M.timersTitle
         case .allowances: M.allowancesTitle
@@ -29,6 +31,7 @@ public enum HerSection: String, CaseIterable, Hashable, Sendable {
     public var icon: IconName {
         switch self {
         case .memory: .affiliate
+        case .rules: .clipboardList
         case .approvals: .handStop
         case .timers: .alarm
         case .allowances: .shieldCheck
@@ -77,7 +80,7 @@ public final class HerWorkspace {
 
     public func isAvailable(_ section: HerSection, actions: DeviceActionsModel?) -> Bool {
         switch section {
-        case .memory, .allowances, .privacy, .about: true
+        case .memory, .rules, .allowances, .privacy, .about: true
         case .approvals: actions != nil
         case .timers: timers.phase != .unsupported
         case .vault: vaultCount != .unsupported && Self.vaultBuilt
@@ -165,6 +168,8 @@ public struct HerSectionView: View {
         switch section {
         case .memory:
             MemoryRootView(store: workspace.memory, talk: talk)
+        case .rules:
+            RulesPage(store: workspace.memory, quietHours: workspace.quietHours.hours, talk: talk)
         case .approvals:
             if let actions {
                 ApprovalsView(model: actions, openThread: { _ in openChat() }, close: openChat)

@@ -21,7 +21,6 @@ enum M {
     }
 
     static var memoryTitle: String { text("记忆", ja: "記憶", en: "Memory") }
-    static var remembered: String { text("记住的事", ja: "覚えていること", en: "Remembered") }
     static var rules: String { text("规则", ja: "ルール", en: "Rules") }
     static var search: String { text("搜索", ja: "検索", en: "Search") }
     static var searchPrompt: String { text("搜记住的事和规则", ja: "覚えていることとルールを検索", en: "Search memories and rules") }
@@ -31,6 +30,16 @@ enum M {
         text("还没有记住的事", ja: "まだ覚えていることはありません", en: "Nothing remembered yet")
     }
     static var noRules: String { text("还没有规则", ja: "まだルールはありません", en: "No rules yet") }
+    static var rulesFooter: String {
+        text(
+            "规则是你给 Himawari 定的硬设定，每次都照做，不是记忆。在主对话里说一句就能加、改或停用；像勿扰时段这样本来就是设置的，在对应的设置页里改。",
+            ja: "ルールはあなたが Himawari に決めた固い設定で、毎回必ず守ります。記憶ではありません。会話でひと言伝えれば追加・変更・停止できます。おやすみ時間のように設定そのものは、それぞれの設定ページで変えられます。",
+            en: "Rules are fixed settings you give Himawari, followed every time; they aren't memories. Say it in the chat to add, change, or pause one. Things that are settings already, like quiet hours, change on their own settings page."
+        )
+    }
+    static func rulesSummary(_ count: Int) -> String {
+        text("\(count) 条", ja: "\(count) 件", en: count == 1 ? "1 rule" : "\(count) rules")
+    }
     static var loadFailed: String {
         text("没读到，下拉再试一次", ja: "読み込めませんでした。引っ張ってもう一度", en: "Couldn't load. Pull to try again")
     }
@@ -210,8 +219,8 @@ enum M {
     }
     static var disconnectThisIPhone: String { text("断开这台 iPhone", ja: "この iPhone の接続を解除", en: "Disconnect this iPhone") }
     static var quietWhen: String { text("勿扰时段", ja: "おやすみ時間", en: "Quiet hours") }
-    static var quietAtNight: String { text("定时勿扰", ja: "時間指定で鳴らさない", en: "Scheduled quiet hours") }
-    static var quietOff: String { text("关闭定时勿扰", ja: "時間指定をオフ", en: "Quiet hours off") }
+    static var quietAtNight: String { text("开启勿扰时段", ja: "おやすみ時間をオン", en: "Turn On Quiet Hours") }
+    static var quietOff: String { text("关闭勿扰时段", ja: "おやすみ時間をオフ", en: "Turn Off Quiet Hours") }
     static var quietFrom: String { text("开始", ja: "開始", en: "From") }
     static var quietTo: String { text("结束", ja: "終了", en: "Until") }
     static func quietNote(end: String) -> String {
@@ -236,13 +245,13 @@ enum M {
         )
     }
     static func quietSummary(_ hours: QuietHours) -> String {
-        guard hours.enabled else { return text("没设不响的时段", ja: "鳴らさない時間なし", en: "No quiet hours") }
+        guard hours.enabled else { return text("勿扰时段没开", ja: "おやすみ時間はオフ", en: "Quiet hours off") }
         guard hours.editable, let start = ClockTime(hours.start), let end = ClockTime(hours.end) else {
-            return text("按主对话里说的时段不响", ja: "会話で決めた時間は鳴らさない", en: "Quiet at the times you set in chat")
+            return text("按主对话里定的勿扰时段", ja: "会話で決めたおやすみ時間", en: "Quiet hours set in chat")
         }
         return text(
-            "\(start.shortText)–\(end.shortText) 不响",
-            ja: "\(start.shortText)–\(end.shortText) は鳴らさない",
+            "勿扰 \(start.shortText)–\(end.shortText)",
+            ja: "おやすみ時間 \(start.shortText)–\(end.shortText)",
             en: "Quiet \(start.shortText)–\(end.shortText)"
         )
     }

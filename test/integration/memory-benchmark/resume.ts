@@ -40,9 +40,8 @@ export async function readEarlierRound(output: string): Promise<EarlierRound> {
 export function finishedSamples(
   samples: readonly BenchmarkSample[],
   earlier: EarlierRound,
-  fullContext: boolean,
+  armsFor: (sample: BenchmarkSample) => readonly QuestionOutcome["arm"][],
 ): Set<string> {
-  const arms: QuestionOutcome["arm"][] = fullContext ? ["memory", "full-context"] : ["memory"];
   const answered = new Set(
     earlier.outcomes.map(
       (outcome) => `${outcome.sampleId}\u0000${outcome.questionId}\u0000${outcome.arm}`,
@@ -55,7 +54,9 @@ export function finishedSamples(
         (sample) =>
           sample.stores.every(({ id }) => storeIds.has(id)) &&
           sample.questions.every((question) =>
-            arms.every((arm) => answered.has(`${sample.id}\u0000${question.id}\u0000${arm}`)),
+            armsFor(sample).every((arm) =>
+              answered.has(`${sample.id}\u0000${question.id}\u0000${arm}`),
+            ),
           ),
       )
       .map(({ id }) => id),

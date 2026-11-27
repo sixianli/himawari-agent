@@ -19,6 +19,7 @@ public enum HerVaultCount: Equatable, Sendable {
 public struct HerPage: View {
     enum Page: Hashable {
         case memory
+        case rules
         case notifications
         case privacy
         case connections
@@ -46,6 +47,8 @@ public struct HerPage: View {
     }
 
     @State private var settings: SettingsStore
+    @State private var heroScrolledAway = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var memory: MemoryStore
     @State private var quietHours: QuietHoursStore
     @State private var timers: TimersStore
@@ -175,6 +178,11 @@ public struct HerPage: View {
             ScrollView {
                 VStack(spacing: DesignTokens.Her.pageGap) {
                     HerHero()
+                        .scrollTransition(.interactive, axis: .vertical) { hero, phase in
+                            hero
+                                .scaleEffect(phase.value < 0 ? 1 + phase.value / 2 : 1, anchor: .top)
+                                .opacity(phase.value < 0 ? 1 + phase.value : 1)
+                        }
                     if let actions, actions.waitingCount > 0 {
                         SettingsGroup(label: nil) {
                             Button { path.append(.approvals) } label: {
@@ -214,6 +222,10 @@ public struct HerPage: View {
                             }
                             .buttonStyle(.pressable)
                         }
+                        Button { path.append(.rules) } label: {
+                            HerRow(icon: .clipboardList, title: M.rules, subtitle: memory.phase == .loaded ? M.rulesSummary(RulesPage.ownPageRules(memory.rules, quietHours: quietHours.hours).count) : nil)
+                        }
+                        .buttonStyle(.pressable)
                         Button { path.append(.allowances) } label: {
                             HerRow(icon: .shieldCheck, title: M.allowancesTitle, subtitle: M.allowancesSummary(memory.allowances.count), last: vaultCount == .unsupported)
                         }
@@ -275,6 +287,11 @@ public struct HerPage: View {
                 .padding(.bottom, DesignTokens.Size.sheetPaddingBottom)
             }
             .scrollIndicators(.hidden)
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+                geometry.contentOffset.y + geometry.contentInsets.top > DesignTokens.Her.heroPaddingTop + DesignTokens.Her.heroAvatar
+            } action: { _, away in
+                withAnimation(reduceMotion ? nil : .easeInOut) { heroScrolledAway = away }
+            }
             .refreshable { await load() }
             .himawariScreenBackground()
             .navigationTitle(M.herPage)
@@ -282,6 +299,11 @@ public struct HerPage: View {
             .navigationBarTitleDisplayMode(.inline)
             #endif
             .toolbar {
+                ToolbarItem(placement: .principal) {
+                    HerTitle()
+                        .opacity(heroScrolledAway ? 1 : 0)
+                        .accessibilityHidden(!heroScrolledAway)
+                }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(M.done, action: close)
                 }
@@ -290,6 +312,8 @@ public struct HerPage: View {
                 switch page {
                 case .memory:
                     MemoryRootView(store: memory, talk: talk)
+                case .rules:
+                    RulesPage(store: memory, quietHours: quietHours.hours, talk: talk)
                 case .notifications:
                     NotificationsPage(store: quietHours) { path.removeLast() }
                 case .privacy:
@@ -428,6 +452,19 @@ struct HerHero: View {
         .frame(maxWidth: .infinity)
         .padding(.top, DesignTokens.Her.heroPaddingTop)
         .padding(.bottom, DesignTokens.Her.heroPaddingBottom)
+    }
+}
+
+struct HerTitle: View {
+    var body: some View {
+        HStack(spacing: DesignTokens.Her.heroGap) {
+            SunflowerMark()
+                .frame(width: DesignTokens.IconSize.listRow, height: DesignTokens.IconSize.listRow)
+            Wordmark(size: DesignTokens.TypeScale.navTitle.size)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(M.herPage))
+        .accessibilityAddTraits(.isHeader)
     }
 }
 

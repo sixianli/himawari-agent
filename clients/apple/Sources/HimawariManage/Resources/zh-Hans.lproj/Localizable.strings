@@ -56,3 +56,4 @@
 "allowance.locked.asksEveryTime" = "这类事每次都先问你，只能“只这一次”";
 "allowance.notSaved" = "这次已经同意了，但没能记下同意的范围，下次同样的事还会问你";
 "abilities.systemAccess" = "系统权限";
+"abilities.allowedBySystem" = "系统里允许的";

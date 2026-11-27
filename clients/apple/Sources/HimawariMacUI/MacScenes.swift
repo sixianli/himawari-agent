@@ -13,6 +13,7 @@ public struct MacScenes: Scene {
     public var body: some Scene {
         Window(L.text("app.name"), id: Self.mainWindow) {
             MacMainView(main: delegate.main) { delegate.register($0, $1) }
+                .tint(Color.hmSun)
         }
         .defaultSize(width: DesignTokens.Mac.windowMinWidth, height: DesignTokens.Mac.windowMinHeight)
         .commands {
@@ -28,6 +29,7 @@ public struct MacScenes: Scene {
         }
         Settings {
             MacSettingsWindow(menu: delegate.menu, main: delegate.main, updater: delegate.updater)
+                .tint(Color.hmSun)
         }
     }
 }

@@ -1,6 +1,6 @@
 import type { BenchmarkQuestion, BenchmarkSample } from "./datasets.ts";
-import type { ChatMessage } from "./model.ts";
-import type { RelatedMemory } from "./store.ts";
+import type { ChatMessage, ChatRequest, ChatResult, ChatTool } from "./model.ts";
+import type { ConversationToolOutcome, RelatedMemory } from "./store.ts";
 
 export interface StoreContext {
   readonly ownerName: string | null;
@@ -84,4 +84,68 @@ export function evidenceHit(
   if (question.abstention || question.evidenceSessionIds.length === 0) return null;
   const found = new Set(sessionIds);
   return question.evidenceSessionIds.some((id) => found.has(id));
+}
+
+const CONVERSATION_SEARCH_GUIDANCE =
+  " You can also search and open the original earlier conversations, including what you said, with the conversation_search and conversation_open tools. When the answer depends on details from earlier conversations (dates, numbers, exact words, what you recommended), search the original conversations before answering instead of guessing from a one-line memory.";
+
+export const MAXIMUM_TOOL_ROUNDS = 6;
+
+export interface ToolAnswer {
+  readonly text: string;
+  readonly promptTokens: number;
+  readonly ms: number;
+  readonly toolCalls: number;
+  readonly sessionIds: readonly string[];
+}
+
+export async function answerWithConversationTools(input: {
+  readonly messages: readonly ChatMessage[];
+  readonly tools: readonly ChatTool[];
+  readonly chat: (request: Pick<ChatRequest, "messages" | "tools">) => Promise<ChatResult>;
+  readonly runTool: (
+    name: string,
+    args: Record<string, unknown>,
+    callId: string,
+  ) => Promise<ConversationToolOutcome>;
+}): Promise<ToolAnswer> {
+  const [system, ...rest] = input.messages;
+  const messages: ChatMessage[] = [
+    ...(system && system.role === "system"
+      ? [{ role: "system" as const, content: `${system.content}${CONVERSATION_SEARCH_GUIDANCE}` }]
+      : []),
+    ...(system && system.role !== "system" ? [system] : []),
+    ...rest,
+  ];
+  const sessionIds = new Set<string>();
+  let promptTokens = 0;
+  let ms = 0;
+  let toolCalls = 0;
+  for (let round = 0; ; round += 1) {
+    const last = round >= MAXIMUM_TOOL_ROUNDS;
+    const result = await input.chat({ messages, ...(last ? {} : { tools: input.tools }) });
+    promptTokens += result.promptTokens;
+    ms += result.ms;
+    if (last || result.toolCalls.length === 0)
+      return { text: result.text, promptTokens, ms, toolCalls, sessionIds: [...sessionIds] };
+    messages.push({ role: "assistant", content: result.text, tool_calls: result.toolCalls });
+    for (const call of result.toolCalls) {
+      toolCalls += 1;
+      let args: Record<string, unknown> = {};
+      try {
+        const parsed: unknown = JSON.parse(call.function.arguments || "{}");
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed))
+          args = parsed as Record<string, unknown>;
+      } catch {
+        args = {};
+      }
+      const outcome = await input.runTool(call.function.name, args, call.id);
+      for (const id of outcome.sessionIds) sessionIds.add(id);
+      messages.push({
+        role: "tool",
+        tool_call_id: call.id,
+        content: JSON.stringify(outcome.output),
+      });
+    }
+  }
 }

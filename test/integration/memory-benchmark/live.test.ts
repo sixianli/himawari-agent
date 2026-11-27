@@ -8,7 +8,12 @@ import { testModelEgress } from "@himawari-agent/testing";
 import { EnvHttpProxyAgent, setGlobalDispatcher } from "undici";
 import { beforeAll, describe, expect, it } from "vitest";
 import { useSqliteContractExecution } from "../sqlite-contract-execution.fixture.ts";
-import { evidenceHit, fullContextMessages, memoryAnswerMessages } from "./answer.ts";
+import {
+  answerWithConversationTools,
+  evidenceHit,
+  fullContextMessages,
+  memoryAnswerMessages,
+} from "./answer.ts";
 import {
   armMetrics,
   type BenchmarkQuestion,
@@ -22,7 +27,7 @@ import {
 } from "./datasets.ts";
 import { BudgetReachedError, ChatClient, DEEPSEEK_V4_1_FLASH_PRICES } from "./model.ts";
 import { finishedSamples, readEarlierRound, type StoreLine } from "./resume.ts";
-import { type IngestedStore, ingestStore } from "./store.ts";
+import { conversationTools, type IngestedStore, ingestStore } from "./store.ts";
 
 interface BenchEnvironment {
   readonly HIMAWARI_MEMORY_BENCH_LIVE?: string;
@@ -32,6 +37,7 @@ interface BenchEnvironment {
   readonly HIMAWARI_MEMORY_BENCH_SMOKE_TURNS?: string;
   readonly HIMAWARI_MEMORY_BENCH_LONGMEMEVAL_PER_TYPE?: string;
   readonly HIMAWARI_MEMORY_BENCH_FULL_CONTEXT?: string;
+  readonly HIMAWARI_MEMORY_BENCH_CONVERSATION_TOOLS?: string;
   readonly HIMAWARI_MEMORY_BENCH_COST_CAP_USD?: string;
   readonly HIMAWARI_MEMORY_BENCH_SAMPLE_CONCURRENCY?: string;
   readonly HIMAWARI_MEMORY_BENCH_MODEL_CONCURRENCY?: string;
@@ -114,6 +120,14 @@ describe.skipIf(!LIVE)(
         const earlier = await readEarlierRound(output);
         expect(earlier.spentUsd).toBeLessThan(capUsd);
         const fullContext = environment.HIMAWARI_MEMORY_BENCH_FULL_CONTEXT === "1";
+        const withConversationTools = environment.HIMAWARI_MEMORY_BENCH_CONVERSATION_TOOLS === "1";
+        const armsFor = (sample: BenchmarkSample): QuestionOutcome["arm"][] => [
+          "memory",
+          ...(withConversationTools && sample.benchmark === "longmemeval"
+            ? (["memory-conversation"] as const)
+            : []),
+          ...(fullContext ? (["full-context"] as const) : []),
+        ];
         const perType = Number(environment.HIMAWARI_MEMORY_BENCH_LONGMEMEVAL_PER_TYPE ?? 0);
         const samples: BenchmarkSample[] = [];
         samples.push(
@@ -184,7 +198,7 @@ describe.skipIf(!LIVE)(
         });
         const outcomesFile = path.join(output, "outcomes.jsonl");
         const storesFile = path.join(output, "stores.jsonl");
-        const finished = finishedSamples(samples, earlier, fullContext);
+        const finished = finishedSamples(samples, earlier, armsFor);
         const outcomes: QuestionOutcome[] = earlier.outcomes.filter((outcome) =>
           finished.has(outcome.sampleId),
         );
@@ -331,6 +345,36 @@ describe.skipIf(!LIVE)(
                 ),
                 evidenceStored: evidenceHit(question, stored),
               });
+              if (armsFor(sample).includes("memory-conversation")) {
+                const [store] = ingested;
+                if (!store || ingested.length !== 1) throw new Error("BENCH_CONVERSATION_STORE");
+                const searched = await answerWithConversationTools({
+                  messages,
+                  tools: conversationTools(),
+                  chat: (request) =>
+                    client.chat({
+                      ...request,
+                      purpose: `${sample.benchmark}:answer-conversation`,
+                      session: `himawari-bench-conversation-${sample.id}`,
+                      maxTokens: 400,
+                    }),
+                  runTool: (name, args, callId) => store.conversationTool(name, args, callId),
+                });
+                await record({
+                  ...base,
+                  arm: "memory-conversation",
+                  correct: await judge(sample, question, searched.text),
+                  response: searched.text,
+                  contextTokens: searched.promptTokens,
+                  answerMs: searched.ms,
+                  toolCalls: searched.toolCalls,
+                  evidenceRecalled: evidenceHit(question, [
+                    ...related.flat().flatMap(({ sessionIds }) => sessionIds),
+                    ...searched.sessionIds,
+                  ]),
+                  evidenceStored: evidenceHit(question, stored),
+                });
+              }
               if (!fullContext) return;
               const direct = await client.chat({
                 purpose: `${sample.benchmark}:full-context`,
@@ -405,6 +449,7 @@ describe.skipIf(!LIVE)(
             },
             longmemeval: {
               memory: byBenchmark("longmemeval", "memory"),
+              memoryConversation: byBenchmark("longmemeval", "memory-conversation"),
               fullContext: byBenchmark("longmemeval", "full-context"),
             },
           },

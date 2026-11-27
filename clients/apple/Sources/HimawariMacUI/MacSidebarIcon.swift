@@ -12,6 +12,8 @@ struct MacSidebarIcon: View {
             Image(systemName: "text.bubble")
         case .her(.memory):
             Image(systemName: "brain")
+        case .her(.rules):
+            Image(systemName: "list.bullet.clipboard")
         case .her(.approvals):
             Icon(.handStop, size: DesignTokens.Mac.settingsIcon)
         case .her(.timers):

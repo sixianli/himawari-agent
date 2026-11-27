@@ -117,7 +117,8 @@ enum MacDemo {
             for scene in MacDemoScene.allCases {
                 let host = NSHostingView(rootView: view(for: scene)
                     .padding(DesignTokens.Mac.panelPadding * 2)
-                    .background(Color.hmGlow))
+                    .background(Color.hmGlow)
+                    .tint(Color.hmSun))
                 let size = host.fittingSize
                 let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless], backing: .buffered, defer: false)
                 window.appearance = NSAppearance(named: appearance)
