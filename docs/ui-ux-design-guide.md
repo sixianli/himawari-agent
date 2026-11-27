@@ -106,7 +106,7 @@ verified_at: "1be7af47faac63474bd1f56d065005155b814a52"
 
 49. **每一行、每一列的名字自己说清它是关于什么的。** 表头不能用一套通用的词套在意思不同的行上；每一行用这一行自己的说法，只列这一行可能出现的情况。例如校准周报不用三个按评价按钮起名的通用比例列（[词表](glossary.md)第 16 条的旧叫法），而是“系统没存下的记忆：不存是对的 / 该存没存”“已存的记忆：存对了 / 不该存”。行名还要让人一眼知道单位和对象：原来的 Gmail 行名（词表第 18 条的旧叫法）看不出检查的是什么，改成“读完邮件没提醒”（单位是一次读邮件）。改名时连同用到同一个名字的其他页面和[词表](glossary.md)一起改（2026-11-03，Andy 看校准周报原型的两条意见；词表第 16、18 条）。
 
-35. **动画只在表达状态时才动，位置在变的动画只开一个共用计时器，并尊重系统“减少动态效果”。** 标志只有首页大图（慢慢长新种子）和正在回答的那一个（快速长）会动；iPhone 聊天页顶部的小圆标志空闲时以回答时八分之一的速度慢慢长新种子（`SunflowerMark` 的 `idling`），Himawari 在回答时改为呼吸；已完成的回答、侧栏、登录页的标志一律静止。逐帧改位置的动画全页只用一个 `requestAnimationFrame` 计时器，没有东西在动时一帧都不跑；系统开启 `prefers-reduced-motion: reduce` 时，所有位置变化的动画都不启动（[ADR 0126](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0126-sunflower-mark-grows-233-seeds.md)、[ADR 0308](adr/0308-sunflower-mark-seed-count-follows-its-size-except-the-chat-puck.md)，MDN 与 WCAG 2.3.3）。
+35. **动画只在表达状态时才动，位置在变的动画只开一个共用计时器，并尊重系统“减少动态效果”。** 标志只有首页大图（慢慢长新种子）和正在回答的那一个（快速长）会动；iPhone 聊天页顶部的小圆标志空闲时以回答时十分之一的速度慢慢长新种子（`SunflowerMark` 的 `idling`，和 ADR 0308 第 3 条首页大图的速度一致），Himawari 在回答时改为呼吸；已完成的回答、侧栏、登录页的标志一律静止。逐帧改位置的动画全页只用一个 `requestAnimationFrame` 计时器，没有东西在动时一帧都不跑；系统开启 `prefers-reduced-motion: reduce` 时，所有位置变化的动画都不启动（[ADR 0126](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0126-sunflower-mark-grows-233-seeds.md)、[ADR 0308](adr/0308-sunflower-mark-seed-count-follows-its-size-except-the-chat-puck.md)，MDN 与 WCAG 2.3.3）。
 
 ### 手机
 

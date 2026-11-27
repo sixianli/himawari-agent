@@ -29,7 +29,7 @@ public enum SunflowerSeeds {
     static let tiers: [(diameter: Double, seeds: Int)] = [(28, 21), (46, 34), (56, 55), (72, 89)]
     static let largestTier = 144
     public static let fullGrowthSeconds = 16.0
-    public static let idleShareOfGrowth = 0.125
+    public static let idleShareOfGrowth = 0.1
 
     public static func seedCount(forDiameter diameter: Double) -> Int {
         tiers.first { diameter <= $0.diameter }?.seeds ?? largestTier
