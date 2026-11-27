@@ -29,6 +29,9 @@ public enum ManageDemoScreen: String, CaseIterable, Sendable {
     case herTimerReminder = "next-9-timer-reminder"
     case herTimerPaused = "next-9-timer-paused"
     case herNoTimers = "next-9-her-no-timers"
+    case herTransfer = "next-10-her-transfer"
+    case herImportPreview = "next-10-her-import-preview"
+    case herServerStatus = "next-10-her-server-status"
 }
 
 public struct ManageDemoView: View {
@@ -88,6 +91,12 @@ public struct ManageDemoView: View {
             her([.timers, .timer(TimersStore.demoTanakaId)])
         case .herNoTimers:
             her([], timers: TimersStore(timers: nil))
+        case .herTransfer:
+            her([.transfer])
+        case .herImportPreview:
+            her([.transfer, .importPreview], memoryImport: ManageDemo.previewedImport())
+        case .herServerStatus:
+            her([.about, .serverStatus])
         case .herAllowanceDays:
             AllowanceDaysSheet(days: 7) { _ in }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -95,12 +104,14 @@ public struct ManageDemoView: View {
         }
     }
 
-    private func her(_ path: [HerPage.Page], allowances: Bool = true, timers: TimersStore = .demo()) -> some View {
+    private func her(_ path: [HerPage.Page], allowances: Bool = true, timers: TimersStore = .demo(), memoryImport: MemoryImportStore? = nil) -> some View {
         HerPage(
             settings: ManageDemo.settingsStore(),
             memory: ManageDemo.memoryStore(allowances: allowances),
             quietHours: QuietHoursStore(gateway: ManageDemo.gateway()),
             timers: timers,
+            gateway: ManageDemo.gateway(),
+            memoryImport: memoryImport,
             listening: DemoListening(),
             actions: .demo(),
             senses: AnyView(EmptyView()),
@@ -153,6 +164,12 @@ enum ManageDemo {
         return store
     }
 
+    @MainActor static func previewedImport() -> MemoryImportStore {
+        let store = MemoryImportStore(gateway: gateway())
+        Task { await store.preview(.codex, files: [MemoryImportFile(name: "MEMORY.md", text: "# User Profile")]) }
+        return store
+    }
+
     @MainActor static func settingsStore() -> SettingsStore {
         SettingsStore(
             gateway: gateway(),
@@ -170,6 +187,8 @@ enum ManageDemo {
         case "memory.search.read": searchHits
         case "memory.rules.read": allowances ? rules : #"{"payload":{"rules":[],"allowances":[],"allowanceDays":7}}"#
         case "device.list.read": devices
+        case "server.status.read": serverStatus
+        case "memory.import.preview.read": importPreview
         case "quiet_hours.read": #"{"payload":{"version":"v1","editable":true,"enabled":true,"start":"23:00","end":"07:00","classes":["scheduled_reminder","run_result","mail_reminder","her_words"],"rules":[{"ruleId":"rule-quiet","summary":"晚上 11 点到早上 7 点别推"}]}}"#
         default: "{}"
         }
@@ -188,6 +207,10 @@ enum ManageDemo {
         {"memoryId":"\#(id)","revision":1,"text":"\#(text)","inference":\#(inference),"sourceThreadId":null,"sourceRefs":[],"category":"other","subCategory":"\#(group)","status":"\#(status)","recordedAt":"\#(recordedAt)","updatedAt":"\#(updatedAt ?? recordedAt)","lastUsedAt":\#(used),"importBatchId":null,"history":[\#(older){"historyId":1,"kind":"created","text":"\#(text)","quote":\#(quoted),"sourceThreadId":null,"sourceDeleted":false,"at":"\#(recordedAt)"}]}
         """#
     }
+
+    private static let serverStatus = #"{"payload":{"live":true,"ready":true,"status":"healthy","dependencies":[{"name":"worker","required":true,"status":"healthy","reasonCode":null}],"release":{"commit":"25bf7041","installedAt":"2026-11-26T07:40:00.000Z"},"disk":{"availableBytes":21474836480,"totalBytes":50000000000},"generatedAt":"2026-11-26T08:00:00.000Z"}}"#
+
+    private static let importPreview = #"{"payload":{"files":[{"name":"MEMORY.md","state":"read","found":4}],"found":4,"items":[{"contentRef":"demo-a","text":"每天早上跑步","from":"MEMORY.md · User Profile","category":"preference","subCategory":null,"topic":null,"flag":null,"selectable":true,"checked":true},{"contentRef":"demo-b","text":"对花生过敏","from":"MEMORY.md · User Profile","category":"health","subCategory":null,"topic":"health","flag":"duplicate","selectable":false,"checked":false},{"contentRef":"demo-c","text":"周五下午和田中开会","from":"MEMORY.md · User Profile","category":"event","subCategory":null,"topic":null,"flag":"similar","selectable":true,"checked":false},{"contentRef":"demo-d","text":"用 pnpm 而不是 npm","from":"MEMORY.md · General Tips","category":"project","subCategory":"Codex","topic":null,"flag":"coding","selectable":true,"checked":false}]}}"#
 
     private static var memories: String {
         let items = [
@@ -229,6 +252,9 @@ private actor DemoTransport: DeviceTransport {
     nonisolated func post(path: String, json: Data, nonce: String?, confirm: ConfirmPrompt?) async throws -> DeviceResponse {
         if path == ManageGateway.challengePath {
             return DeviceResponse(status: 201, body: Data(#"{"challenge":"demo","expiresAt":"2999-01-01T00:00:00Z"}"#.utf8))
+        }
+        if path == ManageGateway.textPath {
+            return DeviceResponse(status: 200, body: Data(#"{"payloadRef":"demo-upload"}"#.utf8))
         }
         let body = (try? JSONDecoder().decode([String: JSONValue].self, from: json)) ?? [:]
         guard case .string(let type)? = body["type"] else { return DeviceResponse(status: 200, body: Data("{}".utf8)) }

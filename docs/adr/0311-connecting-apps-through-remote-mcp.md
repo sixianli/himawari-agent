@@ -52,7 +52,7 @@ verified_at: "b08a65a20cda4f6bc90c2a5946b3e5123b88f032"
 
 ### 怎样连接
 
-1. **一个应用就是服务器配置里的一行**：`runPolicy.appConnections` 写名字、显示名、MCP 网址、客户端编号、客户端密钥的引用和 `trustsReadOnlyLabels`；客户端密钥存在密钥库里，用途是 `app-connection-client`。新增应用不改代码。
+1. **一个应用就是服务器配置里的一行**：`runPolicy.appConnections` 写名字、显示名、MCP 网址、客户端编号、客户端密钥的引用和 `trustsReadOnlyLabels`；客户端密钥存在密钥库里，用途是 `app-connection-client`。新增应用不改代码。生产上这一行写在 `scripts/delivery-mode/instances/andy-production.json` 的 `configTargets.appConnections`，由上线流程在配置切换时连同密钥引用一起写进生产配置；密钥文件本身由 Andy 放在生产机上，不进仓库。
 2. **登录照 MCP 规范做**，全部交给官方 SDK：PKCE、`resource`、令牌过期自动换新。App 用系统授权弹窗打开对方登录页，对方跳回 `/api/connections/v1/callback`（公开地址，靠一次性 state 把关，state 绑定发起的设备、10 分钟过期、只能用一次），服务器再跳回 App。
 3. **令牌加密存在服务器上**，表 `app_connections` 只存加密内容的引用和状态（已连接、要重新登录）；换新令牌失败时标成“要重新登录”。断开连接删记录和加密内容，属于收紧，不要面容 ID。
 
