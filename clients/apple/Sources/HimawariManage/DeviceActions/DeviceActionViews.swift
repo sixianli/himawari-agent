@@ -320,6 +320,7 @@ public struct DeviceAbilitiesSection: View {
                     Button { primer = permission } label: {
                         GroupedRow(Text(L.text("abilities.systemAccess")), icon: { EmptyView() }) {
                             Text(L.text("permission.status.\(permission.status.rawValue)"))
+                                .hmType(DesignTokens.TypeScale.body)
                                 .foregroundStyle(Color.hmText)
                         }
                     }
