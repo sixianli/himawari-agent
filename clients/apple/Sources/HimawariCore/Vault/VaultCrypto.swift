@@ -169,10 +169,9 @@ public struct VaultKeyring: Sendable {
             guard item.origins.contains(request.origin) else { throw VaultCryptoError.originNotAllowed }
             var payload: [String: Any] = ["itemKey": try itemKey(item).base64EncodedString()]
             if item.fields.contains("totp") {
-                let seed = try open(item).values["totp"] ?? ""
-                let start = Int64(now.timeIntervalSince1970)
-                payload["totp"] = try [0, 30, 60].map { offset -> [String: Any] in
-                    ["at": start + Int64(offset), "code": try VaultTOTP.code(base32Seed: seed, at: start + Int64(offset))]
+                guard let parameters = VaultTOTP.Parameters(stored: try open(item).values["totp"] ?? "") else { throw VaultCryptoError.invalidTOTPSeed }
+                payload["totp"] = try parameters.upcoming(from: Int64(now.timeIntervalSince1970)).map { at -> [String: Any] in
+                    ["at": at, "code": try parameters.code(at: at)]
                 }
             }
             let plaintext = try JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
@@ -214,17 +213,89 @@ public enum VaultManifest {
 }
 
 public enum VaultTOTP {
+    public enum Algorithm: String, Sendable, Equatable, CaseIterable {
+        case sha1 = "SHA1"
+        case sha256 = "SHA256"
+        case sha512 = "SHA512"
+    }
+
+    public static let releaseCoverSeconds: Int64 = 120
+    public static let maximumCodes = 6
+
+    public struct Parameters: Sendable, Equatable {
+        public let secret: String
+        public let algorithm: Algorithm
+        public let digits: Int
+        public let period: Int64
+
+        public init?(secret: String, algorithm: Algorithm = .sha1, digits: Int = 6, period: Int64 = 30) {
+            let cleaned = secret.uppercased().filter { $0 != " " && $0 != "-" && $0 != "=" }
+            guard let decoded = VaultTOTP.base32Decode(cleaned), !decoded.isEmpty, (6...8).contains(digits), (1...300).contains(period) else { return nil }
+            self.secret = cleaned
+            self.algorithm = algorithm
+            self.digits = digits
+            self.period = period
+        }
+
+        public init?(stored: String) {
+            let trimmed = stored.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.lowercased().hasPrefix("otpauth:") {
+                guard let parsed = VaultOTPAuth.parse(trimmed) else { return nil }
+                self = parsed.parameters
+            } else {
+                self.init(secret: trimmed)
+            }
+        }
+
+        public var isDefault: Bool { algorithm == .sha1 && digits == 6 && period == 30 }
+
+        public var stored: String {
+            if isDefault { return secret }
+            var components = URLComponents()
+            components.scheme = "otpauth"
+            components.host = "totp"
+            components.path = "/"
+            components.queryItems = [
+                URLQueryItem(name: "secret", value: secret),
+                URLQueryItem(name: "algorithm", value: algorithm.rawValue),
+                URLQueryItem(name: "digits", value: String(digits)),
+                URLQueryItem(name: "period", value: String(period)),
+            ]
+            return components.string ?? secret
+        }
+
+        public func code(at seconds: Int64) throws -> String {
+            guard let key = VaultTOTP.base32Decode(secret), !key.isEmpty else { throw VaultCryptoError.invalidTOTPSeed }
+            var counter = UInt64(seconds / period).bigEndian
+            let message = withUnsafeBytes(of: &counter) { Data($0) }
+            let symmetric = SymmetricKey(data: key)
+            let digest: [UInt8] = switch algorithm {
+            case .sha1: Array(HMAC<Insecure.SHA1>.authenticationCode(for: message, using: symmetric))
+            case .sha256: Array(HMAC<SHA256>.authenticationCode(for: message, using: symmetric))
+            case .sha512: Array(HMAC<SHA512>.authenticationCode(for: message, using: symmetric))
+            }
+            let offset = Int(digest[digest.count - 1] & 0x0f)
+            let value = (UInt32(digest[offset] & 0x7f) << 24) | (UInt32(digest[offset + 1]) << 16) | (UInt32(digest[offset + 2]) << 8) | UInt32(digest[offset + 3])
+            var modulus: UInt32 = 1
+            for _ in 0..<digits { modulus *= 10 }
+            let text = String(value % modulus)
+            return String(repeating: "0", count: max(0, digits - text.count)) + text
+        }
+
+        public func upcoming(from seconds: Int64) -> [Int64] {
+            let first = (seconds / period) * period
+            let windows = min(VaultTOTP.maximumCodes, Int((VaultTOTP.releaseCoverSeconds + period - 1) / period) + 1)
+            return (0..<max(2, windows)).map { first + Int64($0) * period }
+        }
+    }
+
     public static func code(base32Seed: String, at seconds: Int64, digits: Int = 6, period: Int64 = 30) throws -> String {
-        guard let secret = base32Decode(base32Seed), !secret.isEmpty else { throw VaultCryptoError.invalidTOTPSeed }
-        var counter = UInt64(seconds / period).bigEndian
-        let message = withUnsafeBytes(of: &counter) { Data($0) }
-        let digest = Array(HMAC<Insecure.SHA1>.authenticationCode(for: message, using: SymmetricKey(data: secret)))
-        let offset = Int(digest[digest.count - 1] & 0x0f)
-        let value = (UInt32(digest[offset] & 0x7f) << 24) | (UInt32(digest[offset + 1]) << 16) | (UInt32(digest[offset + 2]) << 8) | UInt32(digest[offset + 3])
-        var modulus: UInt32 = 1
-        for _ in 0..<digits { modulus *= 10 }
-        let text = String(value % modulus)
-        return String(repeating: "0", count: max(0, digits - text.count)) + text
+        guard let parameters = Parameters(secret: base32Seed, digits: digits, period: period) else { throw VaultCryptoError.invalidTOTPSeed }
+        return try parameters.code(at: seconds)
+    }
+
+    public static func normalized(_ input: String) -> String? {
+        Parameters(stored: input)?.stored
     }
 
     public static func base32Decode(_ text: String) -> Data? {
@@ -247,13 +318,31 @@ public enum VaultTOTP {
     }
 }
 
-public enum VaultOTPAuth {
-    public static func seed(from scanned: String) -> String? {
-        guard let components = URLComponents(string: scanned), components.scheme?.lowercased() == "otpauth", components.host?.lowercased() == "totp" else { return nil }
+public struct VaultOTPAuth: Sendable, Equatable {
+    public let parameters: VaultTOTP.Parameters
+    public let issuer: String?
+    public let account: String?
+
+    public static func parse(_ text: String) -> VaultOTPAuth? {
+        guard let components = URLComponents(string: text.trimmingCharacters(in: .whitespacesAndNewlines)),
+              components.scheme?.lowercased() == "otpauth", components.host?.lowercased() == "totp" else { return nil }
         var values: [String: String] = [:]
         for item in components.queryItems ?? [] { values[item.name.lowercased()] = item.value }
-        guard (values["algorithm"] ?? "SHA1").uppercased() == "SHA1", (values["digits"] ?? "6") == "6", (values["period"] ?? "30") == "30" else { return nil }
-        guard let secret = values["secret"]?.replacingOccurrences(of: " ", with: "").uppercased(), let decoded = VaultTOTP.base32Decode(secret), !decoded.isEmpty else { return nil }
-        return secret
+        guard let algorithm = VaultTOTP.Algorithm(rawValue: (values["algorithm"] ?? "SHA1").uppercased()),
+              let digits = Int(values["digits"] ?? "6"),
+              let period = Int64(values["period"] ?? "30"),
+              let secret = values["secret"],
+              let parameters = VaultTOTP.Parameters(secret: secret, algorithm: algorithm, digits: digits, period: period)
+        else { return nil }
+        let label = components.path.hasPrefix("/") ? String(components.path.dropFirst()) : components.path
+        let parts = label.split(separator: ":", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
+        let labelIssuer = parts.count == 2 ? parts[0] : nil
+        let account = parts.last.flatMap { $0.isEmpty ? nil : $0 }
+        let issuer = (values["issuer"]?.trimmingCharacters(in: .whitespaces)).flatMap { $0.isEmpty ? nil : $0 } ?? labelIssuer
+        return VaultOTPAuth(parameters: parameters, issuer: issuer, account: account)
+    }
+
+    public static func seed(from scanned: String) -> String? {
+        parse(scanned)?.parameters.stored
     }
 }

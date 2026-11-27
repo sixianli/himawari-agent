@@ -46,3 +46,6 @@
 "main.retry" = "Can't reach her. Tap to try again";
 "push.approve" = "Approve";
 "push.deny" = "Decline";
+"push.vaultCode.enter" = "Enter the code";
+"push.vaultCode.fill" = "Fill in";
+"push.vaultCode.placeholder" = "Verification code";

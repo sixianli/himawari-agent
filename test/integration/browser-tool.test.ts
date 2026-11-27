@@ -1,8 +1,4 @@
-import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
 import { mkdtemp, readdir, rm } from "node:fs/promises";
-import { createServer } from "node:net";
-import { homedir } from "node:os";
 import path from "node:path";
 import {
   ApprovalService,
@@ -14,7 +10,6 @@ import {
 import { createRunId } from "@himawari-agent/domain";
 import { openQualifiedDatabase } from "@himawari-agent/persistence-sqlite";
 import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
-import { chromium } from "@playwright/test";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ContextExternalContent } from "../../apps/agent-service/src/context-external-content.js";
 import { OwnerAllowances } from "../../apps/agent-service/src/owner-allowances.js";
@@ -22,16 +17,11 @@ import { OwnerScopeAuthorization } from "../../apps/agent-service/src/owner-scop
 import {
   BROWSER_CAPABILITY_REF,
   BROWSER_SITE_TARGET,
-  type BrowserComputer,
-  type BrowserComputerExecInput,
-  type BrowserComputerExecResult,
   BrowserToolError,
   ProductionBrowserTools,
 } from "../../apps/agent-service/src/production-browser-tools.js";
 import { productionToolActionRegistry } from "../../apps/agent-service/src/production-tool-actions.js";
-import { openNetworkEgress } from "../../packages/runtime-sandbox/src/network-egress.ts";
-import { PREINSTALLED_CHROMIUM } from "../fixtures/chromium-launch.ts";
-import { repositoryRoot } from "../fixtures/product-path-harness.ts";
+import { ComputerOnThisMachine, freePort } from "../fixtures/browser-computer.ts";
 import {
   AGENT_ID,
   OWNER_ID,
@@ -40,113 +30,8 @@ import {
   SERVICE_AUTHORITY,
 } from "../fixtures/sqlite-capability-invocation-fixture.js";
 
-const PROGRAM = path.join(
-  repositoryRoot,
-  "packages/runtime-sandbox/computer-image/himawari-browser.mjs",
-);
 const CALL_MS = 90_000;
 const RESERVE_MS = 5_000;
-
-function chromiumEnv(): Record<string, string> {
-  const browsers = {
-    PLAYWRIGHT_BROWSERS_PATH:
-      process.env["PLAYWRIGHT_BROWSERS_PATH"] || path.join(homedir(), ".cache", "ms-playwright"),
-  };
-  const configured = process.env["HIMAWARI_CHROMIUM_PATH"];
-  const managed = chromium.executablePath();
-  const executable =
-    configured ||
-    (existsSync(managed)
-      ? managed
-      : existsSync(PREINSTALLED_CHROMIUM)
-        ? PREINSTALLED_CHROMIUM
-        : "");
-  return executable ? { ...browsers, HIMAWARI_BROWSER_EXECUTABLE: executable } : browsers;
-}
-
-async function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const server = createServer();
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => {
-      const address = server.address();
-      const port = typeof address === "object" && address ? address.port : 0;
-      server.close(() => resolve(port));
-    });
-  });
-}
-
-class ComputerOnThisMachine implements BrowserComputer {
-  readonly calls: BrowserComputerExecInput[] = [];
-  readonly home: string;
-  readonly #port: number;
-  readonly #token = "a".repeat(64);
-
-  constructor(home: string, port: number) {
-    this.home = home;
-    this.#port = port;
-  }
-
-  run(argv: readonly string[], stdin: Uint8Array, deadlineAt: string) {
-    const proxy = `http://job:${this.#token}@127.0.0.1:${this.#port}`;
-    return new Promise<BrowserComputerExecResult>((resolve, reject) => {
-      const child = spawn(process.execPath, [PROGRAM, ...argv], {
-        env: {
-          PATH: process.env["PATH"] ?? "",
-          HOME: this.home,
-          HTTP_PROXY: proxy,
-          HTTPS_PROXY: proxy,
-          ...chromiumEnv(),
-        },
-        stdio: ["pipe", "pipe", "pipe"],
-      });
-      const stdout: Buffer[] = [];
-      const stderr: Buffer[] = [];
-      child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
-      child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
-      const timer = setTimeout(() => child.kill("SIGKILL"), Date.parse(deadlineAt) - Date.now());
-      child.once("error", reject);
-      child.once("close", (code) => {
-        clearTimeout(timer);
-        resolve({
-          exitCode: code ?? -1,
-          stdout: Buffer.concat(stdout),
-          stderr: Buffer.concat(stderr),
-          truncated: false,
-        });
-      });
-      child.stdin.end(stdin);
-    });
-  }
-
-  async exec(input: BrowserComputerExecInput): Promise<BrowserComputerExecResult> {
-    this.calls.push(input);
-    const egress =
-      input.allowedDomains.length > 0
-        ? await openNetworkEgress(input.allowedDomains, async () => {}, {
-            host: "127.0.0.1",
-            port: this.#port,
-            token: this.#token,
-          })
-        : null;
-    try {
-      const result = await this.run(
-        input.argv.slice(1),
-        input.stdin ?? new Uint8Array(),
-        input.deadlineAt,
-      );
-      if (result.stdout.byteLength > input.maxOutputBytes)
-        return {
-          ...result,
-          stdout: result.stdout.subarray(0, input.maxOutputBytes),
-          truncated: true,
-        };
-      return result;
-    } finally {
-      await egress?.close();
-    }
-  }
-}
 
 let resource: Awaited<ReturnType<typeof openRepository>>;
 let computer: ComputerOnThisMachine;

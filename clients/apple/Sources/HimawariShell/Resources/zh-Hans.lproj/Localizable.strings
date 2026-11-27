@@ -46,3 +46,6 @@
 "main.retry" = "连不上她，点这里再试";
 "push.approve" = "同意";
 "push.deny" = "不同意";
+"push.vaultCode.enter" = "输入验证码";
+"push.vaultCode.fill" = "填入";
+"push.vaultCode.placeholder" = "验证码";

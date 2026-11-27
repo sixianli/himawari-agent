@@ -38,6 +38,7 @@ public struct HimawariRootView: View {
     }
 
     @State private var handoverEntry: HandoverEntryLink?
+    @State private var otpauthImport: VaultOTPAuthImport?
 
     private var app: some View {
         Group {
@@ -56,6 +57,12 @@ public struct HimawariRootView: View {
             }
         }
         .onOpenURL { url in model.handlePairingLink(url.absoluteString) }
+        .onOpenURL { url in
+            if model.phase == .active, let link = VaultOTPAuthImport(url: url) { otpauthImport = link }
+        }
+        .sheet(item: $otpauthImport) { link in
+            VaultOTPAuthImportView(api: model.api, confirmKey: model.confirmKey, link: link) { otpauthImport = nil }
+        }
         .confirmationDialog(
             L.text("watch.offer.title"),
             isPresented: Binding(get: { model.watchOffer != nil }, set: { if !$0 { model.declineWatchOffer() } }),
@@ -168,6 +175,13 @@ struct MainShell: View {
             requested: NotificationRouter.shared.agentGrantRequested
         ) {
             NotificationRouter.shared.agentGrantRequested = false
+        }
+        .vaultPrompt(
+            api: model.api,
+            confirmKey: model.confirmKey,
+            requested: NotificationRouter.shared.vaultRequested
+        ) {
+            NotificationRouter.shared.vaultRequested = false
         }
         #endif
     }
