@@ -13,7 +13,10 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 const source = path.resolve(import.meta.dirname, "../../scripts/delivery-mode");
-const backupSource = path.resolve(import.meta.dirname, "../../scripts/operations/backup");
+const backupSource = path.resolve(
+  import.meta.dirname,
+  "../../scripts/operations/backup",
+);
 const directories = [];
 
 function git(repo, ...args) {
@@ -45,7 +48,9 @@ function workspace() {
   directories.push(`${repo}-fake-ssh.sh`, `${repo}-lost-ssh.sh`);
   directories.push(repo);
   git(repo, "init", "-q");
-  mkdirSync(path.join(repo, "scripts/delivery-mode/instances"), { recursive: true });
+  mkdirSync(path.join(repo, "scripts/delivery-mode/instances"), {
+    recursive: true,
+  });
   for (const file of [
     "ci-deploy.sh",
     "host-system.py",
@@ -55,7 +60,10 @@ function workspace() {
     "embedding-artifact-check.py",
     "deploy-target-paths.py",
   ])
-    cpSync(path.join(source, file), path.join(repo, "scripts/delivery-mode", file));
+    cpSync(
+      path.join(source, file),
+      path.join(repo, "scripts/delivery-mode", file),
+    );
   cpSync(
     path.join(source, "instances/andy-production.json"),
     path.join(repo, "scripts/delivery-mode/instances/andy-production.json"),
@@ -67,7 +75,11 @@ function workspace() {
   );
   const first = commitFile(repo, "src/app.ts", "one");
   const fakeSsh = `${repo}-fake-ssh.sh`;
-  directories.push(`${repo}-remote.log`, `${repo}-refreshed.py`, `${repo}-host-system.py`);
+  directories.push(
+    `${repo}-remote.log`,
+    `${repo}-refreshed.py`,
+    `${repo}-host-system.py`,
+  );
   writeFileSync(
     fakeSsh,
     [
@@ -96,10 +108,14 @@ function workspace() {
 }
 
 function run(repo, environment) {
-  return spawnSync("bash", [path.join(repo, "scripts/delivery-mode/ci-deploy.sh")], {
-    encoding: "utf8",
-    env: { PATH: process.env.PATH, HOME: process.env.HOME, ...environment },
-  });
+  return spawnSync(
+    "bash",
+    [path.join(repo, "scripts/delivery-mode/ci-deploy.sh")],
+    {
+      encoding: "utf8",
+      env: { PATH: process.env.PATH, HOME: process.env.HOME, ...environment },
+    },
+  );
 }
 
 afterEach(() => {
@@ -113,7 +129,10 @@ describe("ci-deploy.sh", () => {
     const none = run(repo, { HIMAWARI_DEPLOY_COMMIT: first });
     expect(none.status).toBe(2);
     expect(none.stderr).toContain("HOST_MISSING");
-    const unsafe = run(repo, { HIMAWARI_PACKET_HOST: "a;b", HIMAWARI_DEPLOY_COMMIT: first });
+    const unsafe = run(repo, {
+      HIMAWARI_PACKET_HOST: "a;b",
+      HIMAWARI_DEPLOY_COMMIT: first,
+    });
     expect(unsafe.stderr).toContain("HOST_UNSAFE");
   });
 
@@ -147,7 +166,9 @@ describe("ci-deploy.sh", () => {
       HIMAWARI_DEPLOY_COMMIT: second,
     });
     expect(child.stdout).toContain(`CI_DEPLOY_RUNNING ${first}`);
-    expect(child.stdout).toContain("CI_DEPLOY_SKIPPED no-deployable-files-changed");
+    expect(child.stdout).toContain(
+      "CI_DEPLOY_SKIPPED no-deployable-files-changed",
+    );
     expect(child.status).toBe(0);
   });
 
@@ -270,7 +291,9 @@ describe("ci-deploy.sh", () => {
       FAKE_HEARTBEAT_EXIT: "2",
     });
     expect(failed.status).toBe(3);
-    expect(failed.stderr).toContain("CI_DEPLOY_REFUSED HEARTBEAT_REFRESH_FAILED");
+    expect(failed.stderr).toContain(
+      "CI_DEPLOY_REFUSED HEARTBEAT_REFRESH_FAILED",
+    );
     expect(failed.stdout).not.toContain("CI_DEPLOY_PREPARE");
     const missing = run(repo, {
       HIMAWARI_PACKET_HOST: "198.51.100.9",
@@ -301,16 +324,24 @@ describe("ci-deploy.sh", () => {
       child.stdout.indexOf("CI_DEPLOY_PREPARE"),
     );
     expect(readFileSync(log, "utf8")).toContain("chmod 600");
-    expect(child.stdout.indexOf("CI_DEPLOY_NODE_OWNERSHIP")).toBeGreaterThan(-1);
+    expect(child.stdout.indexOf("CI_DEPLOY_NODE_OWNERSHIP")).toBeGreaterThan(
+      -1,
+    );
     expect(child.stdout.indexOf("CI_DEPLOY_NODE_OWNERSHIP")).toBeLessThan(
       child.stdout.indexOf("CI_DEPLOY_PREPARE"),
     );
-    expect(readFileSync(log, "utf8")).toContain("chown -R root:root /opt/himawari/node");
-    expect(child.stdout.indexOf("CI_DEPLOY_BUILDER_HOME_OWNERSHIP")).toBeGreaterThan(-1);
-    expect(child.stdout.indexOf("CI_DEPLOY_BUILDER_HOME_OWNERSHIP")).toBeLessThan(
-      child.stdout.indexOf("CI_DEPLOY_PREPARE"),
+    expect(readFileSync(log, "utf8")).toContain(
+      "chown -R root:root /opt/himawari/node",
     );
-    expect(readFileSync(log, "utf8")).toContain("chown -R himawari-build:himawari-build");
+    expect(
+      child.stdout.indexOf("CI_DEPLOY_BUILDER_HOME_OWNERSHIP"),
+    ).toBeGreaterThan(-1);
+    expect(
+      child.stdout.indexOf("CI_DEPLOY_BUILDER_HOME_OWNERSHIP"),
+    ).toBeLessThan(child.stdout.indexOf("CI_DEPLOY_PREPARE"));
+    expect(readFileSync(log, "utf8")).toContain(
+      "chown -R himawari-build:himawari-build",
+    );
   });
 
   it("installs the document tools and pins the next boot before building the packet", () => {
@@ -334,7 +365,10 @@ describe("ci-deploy.sh", () => {
     const { repo, fakeSsh } = workspace();
     const second = commitFile(repo, "src/app.ts", "changed");
     const outputRoot = path.join(repo, ".ci-output/production");
-    for (const name of ["2026-11-27-first-change-packet-06", "2026-11-27-first-change-packet-07"]) {
+    for (const name of [
+      "2026-11-27-first-change-packet-06",
+      "2026-11-27-first-change-packet-07",
+    ]) {
       mkdirSync(path.join(outputRoot, name, "inputs"), { recursive: true });
       writeFileSync(path.join(outputRoot, name, "inputs/bindings.json"), "{}");
       writeFileSync(path.join(outputRoot, name, "freeze-manifest.json"), "{}");
@@ -392,7 +426,10 @@ describe("ci-deploy.sh", () => {
     const { repo, first } = workspace();
     const second = commitFile(repo, "src/app.ts", "changed");
     const lost = `${repo}-lost-ssh.sh`;
-    writeFileSync(lost, "#!/bin/bash\necho /opt/himawari/releases/2026-11-25-deadbeef\n");
+    writeFileSync(
+      lost,
+      "#!/bin/bash\necho /opt/himawari/releases/2026-11-25-deadbeef\n",
+    );
     chmodSync(lost, 0o755);
     const child = run(repo, {
       HIMAWARI_PACKET_HOST: "198.51.100.9",
