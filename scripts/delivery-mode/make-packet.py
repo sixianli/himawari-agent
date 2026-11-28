@@ -1029,7 +1029,7 @@ class Hermes:
                 break
             time.sleep(self.poll_seconds)
         if state != '0':
-            tail = self.ssh('tail -n 20 ' + shlex.quote(log_root + '/' + name + '.log')).decode(errors='replace')
+            tail = self.ssh('tail -n 60 ' + shlex.quote(log_root + '/' + name + '.log')).decode(errors='replace')
             refuse('PACKET_HERMES_STEP_FAILED', name + ' exit=' + state + '\n' + tail)
 
     def has_commit(self, commit):

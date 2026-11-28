@@ -1510,6 +1510,31 @@ class ReleaseWalkthroughTest(unittest.TestCase):
         self.assertEqual(seen['HIMAWARI_CI_TOOLS'], str(self.tools))
         self.assertEqual(seen['HIMAWARI_TEST_PI_TOOLBIN'], str(self.toolbin))
 
+    def failing_node(self, report):
+        self.executable(self.tools / 'bin' / 'node', 'for a in "$@"; do case "$a" in --outputFile=*) out="${a#--outputFile=}";; esac; done\n'
+                        'mkdir -p "$HIMAWARI_PRODUCT_PATH_OUTPUT"\necho "{}" > "$HIMAWARI_PRODUCT_PATH_OUTPUT/browser-acceptance.json"\n'
+                        'echo "vitest says the page never showed the reply"\n' + report + '\nexit 1')
+
+    def test_a_failed_walkthrough_names_the_failing_test_and_its_message(self):
+        report = {'testResults': [{'status': 'failed', 'message': '', 'assertionResults': [
+            {'status': 'passed', 'fullName': 'release acceptance in a real browser signs in', 'failureMessages': []},
+            {'status': 'failed', 'fullName': 'release acceptance in a real browser answers', 'failureMessages': ['AssertionError: expected\n  reply to be visible']}]}]}
+        self.failing_node('cat > "$out" <<\'JSON\'\n' + json.dumps(report) + '\nJSON')
+        run = self.walkthrough('walk-1')
+        self.assertEqual(run.returncode, 4, run.stdout + run.stderr)
+        self.assertIn('HERMES_WALKTHROUGH_TEST_FAILED release acceptance in a real browser answers :: AssertionError: expected reply to be visible', run.stderr)
+        self.assertNotIn('signs in', run.stderr)
+        self.assertIn('vitest says the page never showed the reply', run.stderr)
+        self.assertEqual(run.stderr.strip().splitlines()[-1], 'HERMES_WALKTHROUGH_FAILED VITEST_EXIT 1')
+
+    def test_a_walkthrough_that_left_no_report_still_shows_the_end_of_the_vitest_output(self):
+        self.failing_node('true')
+        run = self.walkthrough('walk-1')
+        self.assertEqual(run.returncode, 4, run.stdout + run.stderr)
+        self.assertIn('HERMES_WALKTHROUGH_NO_TEST_REPORT', run.stderr)
+        self.assertIn('vitest says the page never showed the reply', run.stderr)
+        self.assertEqual(run.stderr.strip().splitlines()[-1], 'HERMES_WALKTHROUGH_FAILED VITEST_EXIT 1')
+
     def test_a_missing_pi_tool_stops_the_preflight_before_any_test(self):
         self.assertEqual(self.walkthrough('--preflight').stdout.strip(), 'HERMES_WALKTHROUGH_PREFLIGHT_OK')
         (self.toolbin / 'fd').unlink()
