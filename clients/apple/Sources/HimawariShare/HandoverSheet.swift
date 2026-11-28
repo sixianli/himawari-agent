@@ -314,6 +314,6 @@ struct HandoverSheetScene: View {
             Spacer(minLength: 0)
             HandoverSheet(model: model)
         }
-        .ignoresSafeArea(edges: .bottom)
+        .ignoresSafeArea(.container, edges: .bottom)
     }
 }
