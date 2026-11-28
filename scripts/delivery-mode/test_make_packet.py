@@ -2398,6 +2398,27 @@ class ForcedStopTest(unittest.TestCase):
         self.assertEqual((stopped['MainPID'], facts, calls), ('4242', None, []))
 
 
+class MaintenanceImportsTest(unittest.TestCase):
+    def test_I120_every_shared_maintenance_function_a_module_calls_is_imported(self):
+        common = (PACKET_TEMPLATE / 'maintenance/maintenance-common.mjs').read_text()
+        exported = set(re.findall(r'^export (?:async )?function ([A-Za-z0-9_]+)', common, re.M)) | set(re.findall(r'^export const ([A-Za-z0-9_]+)', common, re.M))
+        checked = 0
+        for path in sorted((PACKET_TEMPLATE / 'maintenance').glob('*.mjs')):
+            if path.name == 'maintenance-common.mjs':
+                continue
+            source = path.read_text()
+            imports = re.search(r'import \{([^}]*)\} from "\./maintenance-common\.mjs";', source)
+            if not imports:
+                continue
+            checked += 1
+            imported = {name.strip().split(' as ')[-1] for name in imports.group(1).split(',') if name.strip()}
+            body = source[imports.end():]
+            defined = set(re.findall(r'(?:function|const|let|var) ([A-Za-z0-9_]+)', body))
+            used = {name for name in exported if re.search(r'(?<![.\w])' + name + r'\(', body)}
+            self.assertEqual(sorted(used - imported - defined), [], path.name)
+        self.assertGreater(checked, 0)
+
+
 class QuestionTwelveDownloadRetryTest(unittest.TestCase):
     RELATIVE = 'acceptance/cloud/download-question-12.py'
 
