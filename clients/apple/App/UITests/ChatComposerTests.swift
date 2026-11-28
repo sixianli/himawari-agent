@@ -47,6 +47,19 @@ final class ChatComposerTests: XCTestCase {
         XCTAssertLessThanOrEqual(lastBottom, field.frame.minY, "the end of the last answer is still behind the input bar after jumping to the latest")
     }
 
+    func testDismissingTheMessageMenuLeavesTheBubbleWhereItWas() {
+        let app = DemoApp.launch("04-chat")
+        let answer = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "8:50 出门")).firstMatch
+        XCTAssertTrue(answer.waitForExistence(timeout: 10), "the answer is not on screen")
+        let before = answer.frame
+        answer.press(forDuration: 1.0)
+        let copy = app.buttons[SourceText.zh("HimawariChat", "chat.menu.copy")].firstMatch
+        XCTAssertTrue(copy.waitForExistence(timeout: 5), "long-pressing the answer did not open its menu")
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08)).tap()
+        XCTAssertTrue(DemoApp.waitUntil(timeout: 5) { !copy.exists }, "tapping outside did not close the message menu")
+        XCTAssertTrue(DemoApp.waitUntil(timeout: 3) { answer.frame == before }, "the answer did not settle back where it was after the menu closed: \(before) became \(answer.frame)")
+    }
+
     func testTheOfflineChatSaysItIsNotConnectedAndTheOnlineChatDoesNot() {
         let notice = SourceText.zh("HimawariChat", "chat.offline")
         let offline = DemoApp.launch("16-chat-states-4-offline")

@@ -790,8 +790,7 @@ struct ChatRowView: View, @MainActor Equatable {
         switch message.role {
         case .agent:
             VStack(alignment: .leading, spacing: DesignTokens.Options.afterMessage) {
-                HerBubble(text: text, failed: message.status == .failed, maxWidth: model.herWidth, copyCode: actions.copyCode, codeMenu: actions.codeMenu(message))
-                    .messageMenu(actions.menu(message))
+                HerBubble(text: text, failed: message.status == .failed, maxWidth: model.herWidth, copyCode: actions.copyCode, codeMenu: actions.codeMenu(message), menu: actions.menu(message))
                 if let options = message.options {
                     MessageOptionsView(options: options, choose: actions.choose(message))
                 }
@@ -802,8 +801,7 @@ struct ChatRowView: View, @MainActor Equatable {
         case .owner where message.chosenFrom != nil:
             ChosenOptionBubble(text: text, maxWidth: model.ownerWidth)
         case .owner:
-            OwnerBubble(text: text, quote: model.quote, jump: actions.jump, maxWidth: model.ownerWidth)
-                .messageMenu(actions.menu(message))
+            OwnerBubble(text: text, quote: model.quote, jump: actions.jump, maxWidth: model.ownerWidth, menu: actions.menu(message))
         case .system:
             Text(text)
                 .hmType(DesignTokens.TypeScale.caption)
@@ -879,10 +877,11 @@ struct HerBubble: View {
     let maxWidth: CGFloat
     var copyCode: (String) -> Void = { _ in }
     var codeMenu: (String) -> MessageMenuActions? = { _ in nil }
+    var menu: MessageMenuActions?
 
     var body: some View {
         AnswerText(text: text, streaming: streaming, muted: failed, copyCode: copyCode, codeMenu: codeMenu)
-            .bubble(.her)
+            .bubble(.her, menu: menu)
             .frame(maxWidth: maxWidth, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityElement(children: .contain)
@@ -895,6 +894,7 @@ struct OwnerBubble: View {
     var quote: BubbleQuote?
     var jump: (String) -> Void = { _ in }
     var maxWidth: CGFloat = DesignTokens.Size.bubbleMaxWidth
+    var menu: MessageMenuActions?
 
     var body: some View {
         let shown = MessageAttachments.shown(text)
@@ -929,7 +929,7 @@ struct OwnerBubble: View {
                 }
                 .foregroundStyle(Color.hmOnBubbleOwner)
                 .tint(Color.hmOnBubbleOwner)
-                .bubble(.owner)
+                .bubble(.owner, menu: menu)
                 .frame(maxWidth: maxWidth, alignment: .trailing)
             }
         }

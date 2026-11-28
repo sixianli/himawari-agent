@@ -7,12 +7,13 @@
   ],
   "features": [
     {
-      "feature": "聊天输入框：打字出现发送钮、长按空输入框能粘贴、没连上时提示",
+      "feature": "聊天输入框：打字出现发送钮、长按空输入框能粘贴、长按消息出菜单再收起、没连上时提示",
       "scenes": ["04-chat", "16-chat-states-4-offline"],
-      "checks": "打字后出现发送钮、只有空格不出现；长按空输入框出现“粘贴”，粘贴后字进输入框并出现发送钮；没连上的聊天提示没连上，连上的不提示",
+      "checks": "打字后出现发送钮、只有空格不出现；长按空输入框出现“粘贴”，粘贴后字进输入框并出现发送钮；长按回答出现菜单，点别处菜单收起、回答停回原处；没连上的聊天提示没连上，连上的不提示",
       "tests": [
         "HimawariUITests/ChatComposerTests/testTypingTurnsTheTalkButtonIntoSend",
         "HimawariUITests/ChatComposerTests/testLongPressingTheEmptyInputOffersPaste",
+        "HimawariUITests/ChatComposerTests/testDismissingTheMessageMenuLeavesTheBubbleWhereItWas",
         "HimawariUITests/ChatComposerTests/testTheOfflineChatSaysItIsNotConnectedAndTheOnlineChatDoesNot"
       ]
     },
