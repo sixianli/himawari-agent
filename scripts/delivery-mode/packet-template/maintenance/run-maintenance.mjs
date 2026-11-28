@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync, renameSync, lstatSync, rmSync } from "node
 import { hostname } from "node:os";
 import { pathToFileURL } from "node:url";
 import {
-  loadBinding, retainedJson, jsonFile, requireStopped, requireStateUnlocked,
+  loadBinding, withAuthorityAtStop, retainedJson, jsonFile, requireStopped, requireStateUnlocked,
   persistence, cli, readMaintenanceState, verifyHistoryUnchanged, diskSpace, openRecoveryReadonly,
   openLenientReadonly, openImmutableReadonly, openReadWriteDatabase, collectTidyState, tidyDatabaseSidecars, postUpgradeState,
   recoveryIdForSchema,
