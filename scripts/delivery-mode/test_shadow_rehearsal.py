@@ -310,7 +310,16 @@ class ShadowRehearsalTest(unittest.TestCase):
         self.live_database()
         result = self.run_rehearsal('--boot-only', HIMAWARI_SHADOW_WORKSPACE=str(self.directory / 'absent-workspace'))
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertFalse(any(argument.startswith('--bind-ro=') for argument in (self.log / 'nspawn.args').read_text().splitlines()))
+        self.assertFalse(any(argument.startswith('--bind-ro=') and 'absent-workspace' in argument for argument in (self.log / 'nspawn.args').read_text().splitlines()))
+
+    def test_I120_the_host_system_tree_is_bound_read_only_so_tool_bindings_see_their_real_device_and_inode(self):
+        self.live_database()
+        result = self.run_rehearsal('--boot-only')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        arguments = (self.log / 'nspawn.args').read_text().splitlines()
+        self.assertIn('--bind-ro=/usr', arguments)
+        self.assertFalse(any(argument.startswith('--bind=/usr') for argument in arguments))
+        self.assertIn('SHADOW_SYSTEM_TREE_READ_ONLY /usr', result.stdout)
 
     def test_I120_the_shadow_reaches_only_the_identity_key_address_the_service_fetches_before_it_listens(self):
         self.live_database()
