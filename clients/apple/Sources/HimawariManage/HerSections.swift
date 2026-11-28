@@ -22,7 +22,7 @@ public enum HerSection: String, CaseIterable, Hashable, Sendable {
         case .timers: M.timersTitle
         case .allowances: M.allowancesTitle
         case .vault: M.vaultTitle
-        case .notifications: M.notificationsTitle
+        case .notifications: M.quietTitle
         case .privacy: M.privacy
         case .about: M.aboutTitle
         }

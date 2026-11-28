@@ -3111,7 +3111,6 @@ describe("production memory capture", () => {
     });
     const model: ProactiveModelInvoker = {
       modelRef: "stub-flash",
-      allowedDataClassifications: ["public", "private", "sensitive", "restricted"],
       model: {
         listAvailable: async () => [],
         async *invoke(request) {

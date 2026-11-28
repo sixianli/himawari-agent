@@ -37,9 +37,6 @@ enum M {
             en: "Rules are fixed settings you give Himawari, followed every time; they aren't memories. Say it in the chat to add, change, or pause one. Things that are settings already, like quiet hours, change on their own settings page."
         )
     }
-    static func rulesSummary(_ count: Int) -> String {
-        text("\(count) 条", ja: "\(count) 件", en: count == 1 ? "1 rule" : "\(count) rules")
-    }
     static var loadFailed: String {
         text("没读到，下拉再试一次", ja: "読み込めませんでした。引っ張ってもう一度", en: "Couldn't load. Pull to try again")
     }
@@ -52,12 +49,18 @@ enum M {
     static var done: String { text("完成", ja: "完了", en: "Done") }
     static var herPage: String { text("Himawari", ja: "Himawari", en: "Himawari") }
     static var herMemory: String { text("Himawari 记得的", ja: "覚えていること", en: "What Himawari remembers") }
-    static func memorySummary(_ summary: MemorySummary) -> String {
-        text("\(summary.memories) 条记忆", ja: "記憶 \(summary.memories) 件", en: "\(summary.memories) memories")
-    }
-    static var herKnows: String { text("Himawari 知道的", ja: "Himawari が知っていること", en: "What Himawari Knows") }
-    static var herDoes: String { text("Himawari 能替你做的", ja: "Himawari に任せられること", en: "What Himawari Can Do for You") }
-    static var settingsTitle: String { text("设置", ja: "設定", en: "Settings") }
+    static var personalizationTitle: String { text("个性化", ja: "パーソナライズ", en: "Personalization") }
+    static var voiceTitle: String { text("语音", ja: "音声", en: "Voice") }
+    static var dataAndAppsTitle: String { text("数据和应用", ja: "データとアプリ", en: "Data and Apps") }
+    static var yourDataTitle: String { text("你的数据", ja: "あなたのデータ", en: "Your Data") }
+    static var quietTitle: String { text("不打扰", ja: "おやすみ時間", en: "Do Not Disturb") }
+    static var rememberNew: String { text("记住新的事", ja: "新しいことを覚える", en: "Remember new things") }
+    static var deleteRecords: String { text("删掉记录", ja: "記録を削除", en: "Delete records") }
+    static var nameRow: String { text("怎么称呼你", ja: "呼び方", en: "What to call you") }
+    static var modelRow: String { text("模型", ja: "モデル", en: "Model") }
+    static var onThisIPhone: String { text("这台 iPhone 上的", ja: "この iPhone", en: "On This iPhone") }
+    static var accountsAndApps: String { text("账号和应用", ja: "アカウントとアプリ", en: "Accounts and Apps") }
+    static var otherAgents: String { text("其他 agent", ja: "ほかの agent", en: "Other Agents") }
     static var privacy: String { text("隐私", ja: "プライバシー", en: "Privacy") }
     static var devicesTitle: String { text("设备", ja: "デバイス", en: "Devices") }
     static var nameTitle: String { text("你的称呼", ja: "呼び名", en: "What Himawari calls you") }
@@ -157,16 +160,7 @@ enum M {
     static var talkTimingEmpty: String { text("还没有说话记录", ja: "まだ会話の記録はありません", en: "No talk records yet") }
     static var talkTimingFailed: String { text("没读到计时", ja: "計時を読み込めませんでした", en: "Couldn't load timing") }
     static var tryAgain: String { text("再试一次", ja: "もう一度", en: "Try again") }
-    static var allowancesTitle: String { text("同意过的事", ja: "承認したこと", en: "What you've allowed") }
-    static func allowancesSummary(_ count: Int) -> String {
-        if count == 0 { return text("还没有“不用再问”的事", ja: "「もう聞かない」ことはまだありません", en: "Nothing Himawari skips asking yet") }
-        return text("\(count) 条“不用再问”", ja: "\(count) 件「もう聞かない」", en: "\(count) Himawari won't ask again")
-    }
-    static func vaultSummary(_ count: HerVaultCount) -> String? {
-        guard case let .items(items) = count else { return nil }
-        if items == 0 { return text("还没存东西", ja: "まだ何も入っていません", en: "Nothing stored yet") }
-        return text("\(items) 项", ja: "\(items) 件", en: items == 1 ? "1 item" : "\(items) items")
-    }
+    static var allowancesTitle: String { text("不用再问", ja: "もう聞かないこと", en: "Don't Ask Again") }
     static var allowancesEmpty: String {
         text(
             "在同意卡片上选“几天内”或“以后都行”的，会列在这里。",
@@ -522,7 +516,6 @@ enum M {
     static var gmailWatchOff: String { text("Himawari 现在不自己看新邮件", ja: "Himawari は今、自分では新着メールを確認しません", en: "Himawari isn’t checking new mail on its own right now") }
     static var gmailWatchStart: String { text("开始盯着新邮件", ja: "新着メールの見張りを始める", en: "Start watching new mail") }
     static var gmailWatchStop: String { text("不再盯着新邮件", ja: "新着メールの見張りをやめる", en: "Stop watching new mail") }
-    static var connectionsTitle: String { text("连接", ja: "接続", en: "Connections") }
     static var connectionConnected: String { text("已连接", ja: "接続済み", en: "Connected") }
     static var connectionExpired: String { text("授权失效，要重新连接", ja: "許可が切れました。再接続してください", en: "Access expired. Reconnect") }
     static func connectionConnect(_ title: String) -> String { text("连接 \(title)", ja: "\(title) を接続", en: "Connect \(title)") }
@@ -539,9 +532,6 @@ enum M {
     }
     static func connectionDenied(_ title: String) -> String { text("你没有同意，\(title) 没连上", ja: "許可されなかったため、\(title) に接続していません", en: "Access wasn’t granted, so \(title) isn’t connected") }
     static func connectionFailed(_ title: String) -> String { text("\(title) 没连上，再试一次", ja: "\(title) に接続できませんでした。もう一度お試しください", en: "\(title) didn’t connect. Try again") }
-    static var connectionsThisDevice: String { text("这台 iPhone", ja: "この iPhone", en: "This iPhone") }
-    static var connectionHealth: String { text("健康", ja: "ヘルスケア", en: "Health") }
-    static var connectionHealthInSenses: String { text("点这里打开感知设置，在里面开关", ja: "ここから感知の設定を開いてオン・オフします", en: "Opens sensing settings, where you turn it on or off") }
     static var connectionAdd: String { text("添加应用", ja: "アプリを追加", en: "Add App") }
     static var connectionAddAddress: String { text("MCP 服务器网址", ja: "MCP サーバーの URL", en: "MCP server URL") }
     static var connectionAddName: String { text("名字（可不填）", ja: "名前（任意）", en: "Name (optional)") }
@@ -588,7 +578,6 @@ enum M {
             en: "\(title) can’t issue Himawari an ID on its own. Create an app in its developer settings with the callback URL \(redirectUri), then remove this app and add it again with the ID under Advanced."
         )
     }
-    static var connectionsNoneConnected: String { text("还没连接应用", ja: "まだアプリを接続していません", en: "No apps connected yet") }
     static var gmailDisconnect: String { text("断开 Gmail", ja: "Gmail の接続を解除", en: "Disconnect Gmail") }
     static var gmailDisconnectDetail: String {
         text("Himawari 不再看你的邮件，Google 那边的授权也一并收回。", ja: "メールを読まなくなり、Google 側の許可も取り消します。", en: "Himawari stops reading your mail and the Google access is revoked.")

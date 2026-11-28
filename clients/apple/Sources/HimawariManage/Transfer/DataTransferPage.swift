@@ -22,8 +22,14 @@ struct ArchiveDocument: FileDocument {
 }
 
 struct DataTransferPage: View {
+    enum Part {
+        case export
+        case importing
+    }
+
     let export: DataExportStore
     let importer: MemoryImportStore
+    var part: Part? = nil
     let openPaste: () -> Void
     let openPreview: () -> Void
     let back: () -> Void
@@ -34,24 +40,28 @@ struct DataTransferPage: View {
 
     var body: some View {
         SettingsPage(gap: SL.pageGap) {
-            SheetHeader(title: M.transferTitle, leading: .back, action: back)
-            SettingsGroup(label: M.exportGroup) {
-                exportRows
+            SheetHeader(title: title, leading: .back, action: back)
+            if part != .importing {
+                SettingsGroup(label: part == nil ? M.exportGroup : nil) {
+                    exportRows
+                }
+                note(M.exportNote)
             }
-            note(M.exportNote)
-            SettingsGroup(label: M.importGroup) {
-                ForEach(Array(MemoryImportSource.allCases.enumerated()), id: \.element) { index, source in
-                    Button { choose(source) } label: {
-                        SettingsRow(
-                            icon: nil,
-                            title: M.importSource(source),
-                            detail: M.importSourceHelp(source),
-                            chevron: true,
-                            last: index == MemoryImportSource.allCases.count - 1
-                        )
+            if part != .export {
+                SettingsGroup(label: part == nil ? M.importGroup : nil) {
+                    ForEach(Array(MemoryImportSource.allCases.enumerated()), id: \.element) { index, source in
+                        Button { choose(source) } label: {
+                            SettingsRow(
+                                icon: nil,
+                                title: M.importSource(source),
+                                detail: M.importSourceHelp(source),
+                                chevron: true,
+                                last: index == MemoryImportSource.allCases.count - 1
+                            )
+                        }
+                        .buttonStyle(.pressable)
+                        .disabled(export.running)
                     }
-                    .buttonStyle(.pressable)
-                    .disabled(export.running)
                 }
             }
         }
@@ -77,6 +87,14 @@ struct DataTransferPage: View {
             }
             openPreview()
             Task { await importer.preview(source, files: files) }
+        }
+    }
+
+    private var title: String {
+        switch part {
+        case .export: M.exportAction
+        case .importing: M.importGroup
+        case nil: M.transferTitle
         }
     }
 

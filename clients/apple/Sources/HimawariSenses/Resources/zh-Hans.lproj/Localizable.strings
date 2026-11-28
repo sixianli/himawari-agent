@@ -17,7 +17,7 @@
 "item.location.denied" = "iPhone 没让 Himawari 用位置";
 "item.location.deniedDetail" = "打开前 Himawari 不知道你到了哪。";
 
-"item.calendar.name" = "日程";
+"item.calendar.name" = "日历";
 "item.calendar.detail" = "日历里的安排";
 "item.calendar.headline" = "让 Himawari 看到你的日程";
 "item.calendar.records" = "日历里每个安排的时间、地点和标题";
@@ -28,7 +28,7 @@
 "item.calendar.synced" = "同步了 %d 个日程";
 "item.calendar.confirm" = "服务器上的日程副本会删掉，手机日历里的不动。";
 
-"item.health.name" = "健康和运动";
+"item.health.name" = "健康";
 "item.health.detail" = "步数、睡眠、心率";
 "item.health.headline" = "让 Himawari 知道你的身体状况";
 "item.health.records" = "步数、睡眠、心率、锻炼，和你在走路、跑步还是开车";
@@ -46,7 +46,7 @@
 "item.contacts.synced" = "同步了 %d 位联系人";
 "item.contacts.confirm" = "服务器上的联系人副本会删掉，手机通讯录里的不动。";
 
-"item.photos.name" = "相册";
+"item.photos.name" = "照片";
 "item.photos.detail" = "新拍的照片";
 "item.photos.headline" = "让 Himawari 知道你拍了什么";
 "item.photos.records" = "新拍的照片和截屏的时间、地点，不传照片本身";

@@ -25,7 +25,6 @@ function descriptor(ref: string, model: string, priority: number) {
     provider: "magpie",
     model,
     version: "v1",
-    allowedDataClassifications: ["public", "private"],
     disclosure: "trusted_remote",
     secretRef: "vercel-ai-gateway-api-key",
     capabilities: ["text", "tools"],
@@ -50,7 +49,6 @@ const embedding = {
   dimensions: 8,
   capabilities: ["embedding"],
   cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-  allowedDataClassifications: ["public", "private"],
   disclosure: "local_only",
   secretRef: null,
 };

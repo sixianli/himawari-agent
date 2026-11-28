@@ -18,12 +18,13 @@ function structBody(source: string, name: string): string {
   throw new Error(`unterminated ${name}`);
 }
 
-describe("the senses sheet is attached to the view that owns its state", () => {
-  it("declares sensesOpen and senses in HerPage and presents the sheet there", () => {
+describe("the senses pages belong to the view that owns their state", () => {
+  it("declares senses in HerPage and pushes each sense from its own navigation stack", () => {
     const root = structBody(herPage, "HerPage");
-    expect(root).toContain("@State private var sensesOpen");
-    expect(root).toContain("private let senses");
-    expect(root).toContain(".sheet(isPresented: $sensesOpen)");
+    expect(root).toContain("private let senses: HerSenses?");
+    expect(root).toContain("case .sense(let item):");
+    expect(root).toContain("senses.screen(item)");
+    expect(root).not.toContain("sensesOpen");
   });
 
   it("does not use them inside the generic SettingsPage container", () => {

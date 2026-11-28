@@ -1,11 +1,11 @@
 import {
   ApplicationPortError,
+  isModelVisible,
   PORT_ERROR_CODES,
   type GatewayAuthenticationContext,
   type GatewayCommandResult,
   type GatewayV2CommandExecution,
   type GatewayV2ControlPlanePort,
-  type DataClassification,
   type GitHubIntegrationStatePort,
   type GitHubMonitorHistoryPolicyPort,
   type GitHubMonitorMirrorPort,
@@ -27,7 +27,6 @@ export interface GitHubMonitorControlServiceOptions {
   readonly scheduler?: SchedulerPort;
   readonly primaryModelRef: string;
   readonly allowedRepositoryRefs: readonly string[];
-  readonly allowedDataClassifications: readonly DataClassification[];
   readonly now: () => string;
 }
 
@@ -43,7 +42,6 @@ export class GitHubMonitorControlService {
   private readonly scheduler: SchedulerPort | undefined;
   private readonly primaryModelRef: string;
   private readonly allowedRepositoryRefs: readonly string[];
-  private readonly allowedDataClassifications: readonly string[];
   private readonly now: () => string;
 
   constructor(options: GitHubMonitorControlServiceOptions) {
@@ -56,7 +54,6 @@ export class GitHubMonitorControlService {
     this.scheduler = options.scheduler;
     this.primaryModelRef = options.primaryModelRef;
     this.allowedRepositoryRefs = Object.freeze([...options.allowedRepositoryRefs]);
-    this.allowedDataClassifications = Object.freeze([...options.allowedDataClassifications]);
     this.now = options.now;
   }
 
@@ -240,9 +237,7 @@ export class GitHubMonitorControlService {
         !this.allowedRepositoryRefs.includes(monitor.repositoryRef) ||
         disclosure.repositoryRef !== monitor.repositoryRef ||
         disclosure.machineSecretsExcluded !== true ||
-        disclosure.disclosedDataClassifications.some(
-          (classification) => !this.allowedDataClassifications.includes(classification),
-        )
+        !disclosure.disclosedDataClassifications.every(isModelVisible)
       ) {
         throw new ApplicationPortError(
           PORT_ERROR_CODES.NOT_AUTHORITATIVE,

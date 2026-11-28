@@ -1,6 +1,5 @@
 import type { AgentId, DeploymentId, OwnerId } from "@himawari-agent/domain";
 import type { ApplePushConfiguration } from "./apple-push.js";
-import type { DataClassification } from "./common.js";
 import type { DeviceConfiguration } from "./device-limits.js";
 import type { ModelProviderRouting } from "./intelligence.js";
 import type { PerceptionConfiguration } from "./perception.js";
@@ -25,7 +24,6 @@ interface ConfiguredModelDescriptorBase {
   readonly provider: string;
   readonly model: string;
   readonly version: string;
-  readonly allowedDataClassifications: readonly DataClassification[];
   readonly disclosure: "local_only" | "trusted_remote" | "external_remote";
   readonly secretRef: string | null;
   readonly capabilities: readonly string[];

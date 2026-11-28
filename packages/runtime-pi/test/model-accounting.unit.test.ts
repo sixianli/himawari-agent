@@ -105,7 +105,6 @@ function fixture(chosenModel = model) {
       priority: 1,
       disclosure: chosenModel.provider === "vercel-ai-gateway" ? "external_remote" : "local_only",
       capabilities: ["text"],
-      allowedDataClassifications: ["private"],
       secretRequirement: null,
       ...(chosenModel.provider === "vercel-ai-gateway"
         ? { providerRouting: { order: ["runware", "deepinfra", "morph"], sort: "cost" as const } }

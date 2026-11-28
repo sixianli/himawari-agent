@@ -664,9 +664,14 @@
     "reason": "初次登记：从源码原样搬入目录，文字不变"
   },
   "memory.conversation-recall.header": {
-    "sha256": "3760c8e35a53640ed199bc0ec566ae64a37bf075c42d4d9df1d3b57cc2459e27",
-    "changedIn": "自动带上原话",
-    "reason": "新增：每轮自动带上的旧对话原话，第一行说明和每段的抬头"
+    "sha256": "032ab0cb8cbc4b644689bc59c7efe19a552f7395fa6523b492a3791bad8d66be",
+    "changedIn": "原话前后文和逐句日期",
+    "reason": "自动带上的原话在篇幅够时每处连同前后各一轮，前后文只用所有命中放完后剩下的篇幅；和段首不是同一天的话另标日期，并说明原话里写着就照原话答"
+  },
+  "memory.conversation-recall.line-day": {
+    "sha256": "6c7fef2e555cc9d33c33894cf2c8944f2b49f7f2bad40b5be90f92afb7a81cfb",
+    "changedIn": "原话前后文和逐句日期",
+    "reason": "自动带上的原话每处连同前后各一轮，和段首不是同一天的话另标日期，并说明原话里写着就照原话答"
   },
   "memory.conversation-recall.turn": {
     "sha256": "ec8c4c5d27063f5b40176f4f8ee36d227ffe3fffffa373a0c044a23028b55613",
@@ -1665,6 +1670,11 @@
     "changedIn": "I-130",
     "reason": "新增：提醒事项、闹钟、家庭的读动作用法，以及标成完成、控制家居时编号从哪来"
   },
+  "tools.result.device-action.usage.device-status": {
+    "sha256": "dbe8eebb8a2c481993acac565da02b15cede918e4b21a9b6d4be6e90dea513a3",
+    "changedIn": "I-130",
+    "reason": "新增 location.current、device.status 两个现读动作；perception_read 只列有客户端在产生的种类"
+  },
   "tools.result.device-action.usage.home-control": {
     "sha256": "cac0c8c813993cc13db0389c01a869ce1f4ffa554bd2c4cfb31cee1cb8b852d1",
     "changedIn": "I-130",
@@ -1674,6 +1684,11 @@
     "sha256": "dd4af208557d44f3ce429d0bb60c0ba30a05c19a2842d0e2d4ed6071cfb05f6d",
     "changedIn": "I-130",
     "reason": "新增：提醒事项、闹钟、家庭的读动作用法，以及标成完成、控制家居时编号从哪来"
+  },
+  "tools.result.device-action.usage.location-current": {
+    "sha256": "413870bf41f0143b28637406b4f30116e5e15e6bad8ad7d9523a441f40c4a1d4",
+    "changedIn": "I-130",
+    "reason": "新增 location.current、device.status 两个现读动作；perception_read 只列有客户端在产生的种类"
   },
   "tools.result.device-action.waiting-owner": {
     "sha256": "cd84a6d23e03457c0fc116fa235ca008d2ec33f5495d30a90b363479dc06caec",
@@ -1721,9 +1736,9 @@
     "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
   },
   "tools.result.perception-read.unknown-kinds": {
-    "sha256": "47c227d179d2b590592d1fa6324aedcd4ae6eebbf0e8ab511041f2d1b5334d2e",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
+    "sha256": "294baa8c4aa5e03e4936868d437fcf7ff36d63be58f2c3ff0a8f6ebf37fb9091",
+    "changedIn": "I-130",
+    "reason": "新增 location.current、device.status 两个现读动作；perception_read 只列有客户端在产生的种类"
   },
   "tools.result.rule-set.ask-owner": {
     "sha256": "d25662743343f3251ba1300b1e08b1934b08661431db4e6fdafead1b879e10da",

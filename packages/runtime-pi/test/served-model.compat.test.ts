@@ -132,7 +132,6 @@ async function answers(servedModels: readonly (string | undefined)[]) {
         maxTokens: 4096,
         capabilities: ["text"],
         disclosure: "external_remote",
-        allowedDataClassifications: ["public", "private"],
         secretRequirement: { secretRef: "k", secretVersion: "v1", purpose: "model-provider-auth" },
       },
     ],

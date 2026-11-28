@@ -125,7 +125,6 @@ function reviewDescriptor(): ModelDescriptor {
     priority: 1,
     disclosure: "trusted_remote",
     capabilities: ["text"],
-    allowedDataClassifications: ["private"],
     secretRequirement: null,
   };
 }
@@ -138,7 +137,6 @@ function generationDescriptor() {
     model: "primary-fixture",
     version: "1",
     priority: 1,
-    allowedDataClassifications: ["private" as const],
     disclosure: "trusted_remote" as const,
     secretRef: null,
     capabilities: ["text"],
@@ -174,7 +172,6 @@ function configuration(configured: boolean): ProductConfiguration {
         priority: 1,
         name: "fixture reviewer",
         api: "typesafe-systemone",
-        allowedDataClassifications: ["private"],
         disclosure: "trusted_remote",
         secretRef: null,
         capabilities: ["text"],
@@ -187,7 +184,6 @@ function configuration(configured: boolean): ProductConfiguration {
         model: "embedding-fixture",
         version: "1",
         dimensions: 16,
-        allowedDataClassifications: ["private"],
         disclosure: "local_only",
         secretRef: null,
         capabilities: ["embedding"],

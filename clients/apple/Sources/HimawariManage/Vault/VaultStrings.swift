@@ -2,7 +2,7 @@ import Foundation
 import HimawariCore
 
 extension M {
-    static var vaultTitle: String { text("保险箱", ja: "金庫", en: "Vault") }
+    static var vaultTitle: String { text("密码", ja: "パスワード", en: "Passwords") }
     static var vaultIntro: String {
         text(
             "Himawari 只知道每一项的名字和能用在哪个网站，看不到值。每次用都要你批准。",

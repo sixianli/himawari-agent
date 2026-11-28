@@ -47,7 +47,6 @@ const descriptor: ModelDescriptor = {
   priority: 1,
   disclosure: "external_remote",
   capabilities: ["text"],
-  allowedDataClassifications: ["private"],
   providerRouting: { order: ["runware", "deepinfra", "morph"], sort: "cost" },
   secretRequirement: {
     secretRef: "vercel-ai-gateway-api-key",

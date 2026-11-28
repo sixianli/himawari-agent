@@ -31,51 +31,7 @@ extension M {
         }
     }
 
-    static var evalTitle: String { text("评测", ja: "評価", en: "Evaluation") }
-    static func statsSpan(_ span: StatsSpan) -> String {
-        switch span {
-        case .week: text("7 天", ja: "7 日", en: "7 Days")
-        case .fourWeeks: text("4 周", ja: "4 週間", en: "4 Weeks")
-        }
-    }
-
-    static func statsDays(_ span: StatsSpan) -> Int { span == .week ? 7 : 28 }
-
-    static var statsSpoken: String { text("主动说了几次", ja: "自分から伝えた回数", en: "Times Spoken Up") }
-    static func statsSpokenDefinition(_ span: StatsSpan) -> String {
-        let days = statsDays(span)
-        return text("最近 \(days) 天 Himawari 没被问就发到主对话的消息条数，和再往前 \(days) 天比", ja: "直近 \(days) 日間に Himawari が聞かれずにメインの会話に送ったメッセージの数。その前の \(days) 日間と比べます", en: "Messages Himawari sent to the main chat unasked in the last \(days) days, compared with the \(days) days before")
-    }
-
-    static func statsRateDefinition(_ rating: SpokenRating) -> String {
-        let label = M.rating(rating)
-        return text("你在消息下面的“为什么”里选“\(label)”的条数 ÷ 你评过的条数；评过的不到 5 条时显示“—”", ja: "メッセージの下の「なぜ」で「\(label)」を選んだ数 ÷ 評価した数。5 件未満なら「—」", en: "Messages you marked “\(label)” under “Why” ÷ messages you rated; shows “—” under 5 ratings")
-    }
-
-    static func statsRated(_ rated: Int, of total: Int) -> String {
-        text("评了 \(rated) / \(total) 条", ja: "\(total) 件中 \(rated) 件を評価", en: "Rated \(rated) of \(total)")
-    }
-
-    static func statsTooFew(_ rated: Int) -> String {
-        text("评了 \(rated) 条", ja: "\(rated) 件評価", en: "\(rated) rated")
-    }
-
-    static var statsRecall: String { text("记得准不准", ja: "記憶の正確さ", en: "Memory Accuracy") }
-    static func statsRecallDefinition(_ date: Date) -> String {
-        let day = date.formatted(date: .abbreviated, time: .omitted)
-        return text("用你的真实记忆出的固定一组题里答对的比例，\(day) 测的，和上一次比", ja: "あなたの実際の記憶から作った固定の問題で正解した割合。\(day) に測定し、前回と比べます", en: "Share of a fixed set of questions from your real memories Himawari answered right, checked \(day), compared with the previous check")
-    }
-
-    static func statsRecallValue(_ correct: Int, of asked: Int) -> String {
-        text("答对 \(correct) / \(asked) 题", ja: "\(asked) 問中 \(correct) 問正解", en: "\(correct) of \(asked) right")
-    }
-
-    static var statsLoadFailed: String { text("没读到数字，下拉再试一次", ja: "数字を読み込めませんでした。引っ張って再試行", en: "Couldn't load the numbers. Pull to try again") }
-    static var statsUp: String { text("比上一段多", ja: "前の期間より多い", en: "Up from the previous period") }
-    static var statsDown: String { text("比上一段少", ja: "前の期間より少ない", en: "Down from the previous period") }
-    static var statsSame: String { text("和上一段一样", ja: "前の期間と同じ", en: "Same as the previous period") }
-
-    static var filesTitle: String { text("文件", ja: "ファイル", en: "Files") }
+    static var filesTitle: String { text("照片和文件", ja: "写真とファイル", en: "Photos and Files") }
     static var filesSearch: String { text("搜文件名", ja: "ファイル名を検索", en: "Search file names") }
     static var filesFilter: String { text("筛选", ja: "絞り込み", en: "Filter") }
     static var filesEmpty: String { text("还没有文件", ja: "まだファイルはありません", en: "No Files Yet") }

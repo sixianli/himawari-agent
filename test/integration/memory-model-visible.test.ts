@@ -311,7 +311,6 @@ async function runChat(input: {
           maxTokens: 4096,
           capabilities: ["text", "tool_calling"],
           disclosure: "external_remote",
-          allowedDataClassifications: input.allowed,
           secretRequirement: {
             secretRef: "k",
             secretVersion: "v1",

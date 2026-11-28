@@ -21,7 +21,7 @@ import type {
   RuntimeRequest,
   SecretPort,
 } from "@himawari-agent/application";
-import { isModelVisible, modelVisibleClassifications } from "@himawari-agent/application";
+import { isModelVisible } from "@himawari-agent/application";
 import {
   assertProductionSecretSource,
   type HostProviderSecretSource,
@@ -60,7 +60,6 @@ export interface ProductionEmbeddingModelDescriptor {
   readonly version: string;
   readonly dimensions: number;
   readonly capabilities: readonly string[];
-  readonly allowedDataClassifications: ConfiguredEmbeddingModelDescriptor["allowedDataClassifications"];
   readonly disclosure: ConfiguredEmbeddingModelDescriptor["disclosure"];
   readonly secretRequirement: ModelSecretRequirement | null;
   readonly cost: ModelCostDescriptor;
@@ -190,7 +189,6 @@ function embeddingDescriptor(
     version: descriptor.version,
     dimensions: descriptor.dimensions,
     capabilities: Object.freeze([...descriptor.capabilities]),
-    allowedDataClassifications: Object.freeze([...descriptor.allowedDataClassifications]),
     disclosure: descriptor.disclosure,
     secretRequirement: resolveConfiguredSecretRequirement(configuration, descriptor.secretRef),
     cost: Object.freeze({ ...descriptor.cost }),
@@ -220,7 +218,6 @@ function piGenerationDescriptor(
     priority: descriptor.priority,
     disclosure: descriptor.disclosure,
     capabilities: Object.freeze([...descriptor.capabilities]),
-    allowedDataClassifications: Object.freeze([...descriptor.allowedDataClassifications]),
     secretRequirement,
     ...(descriptor.providerRouting === undefined
       ? {}
@@ -262,7 +259,6 @@ function typeSafeGenerationDescriptor(
     priority: descriptor.priority,
     disclosure: descriptor.disclosure,
     capabilities: Object.freeze([...descriptor.capabilities]),
-    allowedDataClassifications: Object.freeze([...descriptor.allowedDataClassifications]),
     secretRequirement,
     name: descriptor.name,
     api: "typesafe-systemone",
@@ -525,7 +521,6 @@ export function createProductionModelComposition(
     return Object.freeze<ProactiveModelInvoker>({
       model,
       modelRef,
-      allowedDataClassifications: modelVisibleClassifications(),
       async prepare({ invocationId, prompt, deadlineAt, dataClassification }) {
         if (!isModelVisible(dataClassification))
           throw new Error("PROACTIVE_MODEL_DISCLOSURE_DENIED");

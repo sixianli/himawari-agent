@@ -164,7 +164,23 @@ public struct MemoryRootView: View {
         case .failed:
             EmptyStateView(Text(M.loadFailed)).frame(minHeight: DesignTokens.Size.emptyMinHeight)
         case .loaded:
+            if let overview = store.overview {
+                SettingsGroup(label: nil) {
+                    SettingsRow(
+                        icon: nil,
+                        title: M.rememberNew,
+                        switchState: Binding(get: { !overview.capturePaused }, set: { setRemembering($0) }),
+                        last: true
+                    )
+                }
+            }
             RememberedList(store: store, openTrash: { trashOpen = true }) { selected = $0 }
+        }
+    }
+
+    private func setRemembering(_ on: Bool) {
+        Task {
+            _ = await perform { try await store.setCapturePaused(!on, reason: on ? M.resumeMemory : M.pauseMemory) }
         }
     }
 }

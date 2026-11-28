@@ -110,10 +110,8 @@ describe("[P4-8] model pre-rating in the running service", () => {
     const reads: string[] = [];
     const released: string[] = [];
     const releaseFails = { input: false, output: false };
-    const allowed: DataClassification[] = ["public", "private", "sensitive", "restricted"];
     const model: ProactiveModelInvoker = {
       modelRef: MODEL_REF,
-      allowedDataClassifications: allowed,
       model: {
         async *invoke(request: ModelInvocationRequest): AsyncIterable<ModelInvocationEvent> {
           invocations.push(request.invocationId);
@@ -290,7 +288,6 @@ describe("[P4-8] model pre-rating in the running service", () => {
         createdAt: string;
       }[];
     return {
-      allowed,
       clock,
       failures,
       invocations,
@@ -376,11 +373,22 @@ describe("[P4-8] model pre-rating in the running service", () => {
     expect(h.released.at(-1)).toBe(`in-${h.invocations.at(-1)}`);
   });
 
-  it("[P4-8] skips subjects the pre-rating model may not receive, sends nothing for them and keeps their slot free", async () => {
+  it("[P4-8][I-129] never sends restricted subjects and keeps their slot free", async () => {
     const h = await setup();
-    h.allowed.splice(0, h.allowed.length, "public", "private");
-    await h.skipped("secret-a", "想记住私密的 A", NOV_4_10AM_JST, "transient_ignored", "sensitive");
-    await h.skipped("secret-b", "想记住私密的 B", NOV_4_10AM_JST, "transient_ignored", "sensitive");
+    await h.skipped(
+      "secret-a",
+      "想记住私密的 A",
+      NOV_4_10AM_JST,
+      "transient_ignored",
+      "restricted",
+    );
+    await h.skipped(
+      "secret-b",
+      "想记住私密的 B",
+      NOV_4_10AM_JST,
+      "transient_ignored",
+      "restricted",
+    );
     await h.skipped("plain", "我最近想吃牛肉", NOV_4_10AM_JST);
 
     const result = await h.service().prereview();
@@ -389,45 +397,15 @@ describe("[P4-8] model pre-rating in the running service", () => {
       attempted: 1,
       recorded: 1,
       failures: [],
-      skippedClassification: 2,
       stoppedBy: "done",
     });
     expect(h.invocations).toHaveLength(1);
     expect(h.prompts).toHaveLength(1);
     expect(h.prompts.join("\n")).not.toContain("私密");
     expect(h.rows().map(({ decisionId }) => decisionId)).toEqual(["plain"]);
-    h.allowed.push("sensitive");
-    const again = await h.service().prereview();
-    expect(again).toMatchObject({ attempted: 2, recorded: 2, skippedClassification: 0 });
-    expect(
-      h
-        .rows()
-        .map(({ decisionId }) => decisionId)
-        .sort(),
-    ).toEqual(["plain", "secret-a", "secret-b"]);
   });
 
-  it("[P4-8] skipped subjects do not take the per-run slot and are not built again while still disallowed", async () => {
-    const h = await setup();
-    h.allowed.splice(0, h.allowed.length, "public", "private");
-    await h.skipped("a-secret", "想记住私密的 A", NOV_4_10AM_JST, "transient_ignored", "sensitive");
-    await h.skipped("plain", "我最近想吃牛肉", NOV_4_10AM_JST);
-    const service = h.service({ perRun: 1 });
-    expect(await service.prereview()).toMatchObject({
-      attempted: 1,
-      recorded: 1,
-      skippedClassification: 1,
-      stoppedBy: "done",
-    });
-    expect(h.prompts).toHaveLength(1);
-    expect(h.prompts.join("\n")).not.toContain("私密");
-    const reads = () => h.reads.filter((ref) => ref === "memory-a-secret").length;
-    expect(reads()).toBe(1);
-    expect(await service.prereview()).toMatchObject({ attempted: 0, skippedClassification: 1 });
-    expect(reads()).toBe(1);
-  });
-
-  it("[P4-8][reverse] subjects the model may receive are never skipped", async () => {
+  it("[P4-8][I-129][reverse] health and other sensitive subjects are never skipped", async () => {
     const h = await setup();
     await h.skipped("secret-a", "想记住私密的 A", NOV_4_10AM_JST, "transient_ignored", "sensitive");
     await h.skipped("plain", "我最近想吃牛肉", NOV_4_10AM_JST);

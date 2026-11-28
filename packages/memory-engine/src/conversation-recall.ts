@@ -1,6 +1,7 @@
 import { type DataClassification, highestClassification } from "@himawari-agent/application";
 import {
   CONVERSATION_RECALL_HEADER,
+  CONVERSATION_RECALL_LINE_DAY,
   CONVERSATION_RECALL_TURN,
   renderPrompt,
 } from "@himawari-agent/prompt-catalog";
@@ -36,13 +37,29 @@ function speaker(line: ConversationLine): string {
   return line.role === "owner" ? "主人" : "你";
 }
 
-function turnText(hit: ConversationTurnHit, day: string, room: number): string | undefined {
+function turnText(
+  threadId: string,
+  lines: readonly ConversationLine[],
+  room: number,
+  timeZone: string | undefined,
+): string | undefined {
+  const first = lines[0];
+  if (!first) return undefined;
+  const day = localDay(first.committedAt, timeZone);
   const head = renderPrompt(CONVERSATION_RECALL_TURN, {
     day,
-    conversationId: hit.turn.threadId,
-    sequence: String(hit.turn.firstSequence),
+    conversationId: threadId,
+    sequence: String(first.sequence),
   });
-  const body = hit.lines.map((line) => `${speaker(line)}：${line.text}`).join("\n");
+  const body = lines
+    .map((line) => {
+      const own = localDay(line.committedAt, timeZone);
+      const said = `${speaker(line)}：${line.text}`;
+      return own === day
+        ? said
+        : `${renderPrompt(CONVERSATION_RECALL_LINE_DAY, { day: own })}${said}`;
+    })
+    .join("\n");
   const whole = `${head}\n${body}`;
   if (characters(whole) <= room) return whole;
   const left = room - characters(head) - 1;
@@ -55,27 +72,69 @@ export function conversationRecallText(
 ): ConversationRecallText | undefined {
   const header = CONVERSATION_RECALL_HEADER.text;
   let room = options.maximumCharacters - characters(header);
-  const chosen: { hit: ConversationTurnHit; day: string; text: string }[] = [];
+  const chosen: {
+    hit: ConversationTurnHit;
+    day: string;
+    lines: readonly ConversationLine[];
+    limit: number;
+  }[] = [];
   for (const hit of hits) {
-    const day = localDay(hit.turn.startedAt, options.timeZone);
-    const whole = turnText(hit, day, Number.POSITIVE_INFINITY) ?? "";
+    const whole = turnText(
+      hit.turn.threadId,
+      hit.lines,
+      Number.POSITIVE_INFINITY,
+      options.timeZone,
+    );
+    if (whole === undefined) continue;
     const fits = characters(whole) + 2 <= room;
-    const text = fits ? whole : chosen.length === 0 ? turnText(hit, day, room - 2) : undefined;
+    if (!fits && chosen.length > 0) continue;
+    const text = fits ? whole : turnText(hit.turn.threadId, hit.lines, room - 2, options.timeZone);
     if (text === undefined) continue;
-    chosen.push({ hit, day, text });
+    chosen.push({
+      hit,
+      day: localDay(hit.turn.startedAt, options.timeZone),
+      lines: hit.lines,
+      limit: fits ? Number.POSITIVE_INFINITY : room - 2,
+    });
     room -= characters(text) + 2;
+    if (!fits) room = 0;
   }
   if (chosen.length === 0) return undefined;
+  const rendered = (lines: readonly ConversationLine[], threadId: string) =>
+    characters(turnText(threadId, lines, Number.POSITIVE_INFINITY, options.timeZone) ?? "");
+  for (const entry of chosen) {
+    const before = entry.hit.before ?? [];
+    const after = entry.hit.after ?? [];
+    if ((before.length === 0 && after.length === 0) || entry.limit !== Number.POSITIVE_INFINITY)
+      continue;
+    const widened = [...before, ...entry.lines, ...after];
+    const grows =
+      rendered(widened, entry.hit.turn.threadId) - rendered(entry.lines, entry.hit.turn.threadId);
+    if (grows > room) continue;
+    entry.lines = widened;
+    room -= grows;
+  }
   chosen.sort(
     (left, right) =>
       left.hit.turn.startedAt.localeCompare(right.hit.turn.startedAt) ||
       left.hit.turn.id.localeCompare(right.hit.turn.id),
   );
+  const shownLines = new Set<string>();
+  const blocks = chosen.flatMap(({ hit, lines, limit }) => {
+    const fresh = lines.filter((line) => {
+      const key = `${hit.turn.threadId}\u0000${line.sequence}`;
+      if (shownLines.has(key)) return false;
+      shownLines.add(key);
+      return true;
+    });
+    const text = turnText(hit.turn.threadId, fresh, limit, options.timeZone);
+    return text === undefined ? [] : [text];
+  });
   return Object.freeze({
-    text: [header, ...chosen.map(({ text }) => text)].join("\n\n"),
+    text: [header, ...blocks].join("\n\n"),
     dataClassification: highestClassification(
       "private",
-      chosen.flatMap(({ hit }) => hit.lines.map((line) => line.dataClassification)),
+      chosen.flatMap(({ lines }) => lines.map((line) => line.dataClassification)),
     ),
     turns: Object.freeze(
       chosen.map(({ hit, day }) =>

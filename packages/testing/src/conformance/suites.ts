@@ -752,7 +752,6 @@ export function modelPortConformance(
         priority: 10,
         disclosure: "trusted_remote",
         capabilities: ["text"],
-        allowedDataClassifications: ["public", "private"],
         secretRequirement: null,
       };
       const events: readonly ModelInvocationEvent[] = [

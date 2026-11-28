@@ -21,7 +21,6 @@ const configuration = {
       version: "catalog-2026-10-06",
       capabilities: ["embedding"],
       cost: { input: 0.01, output: 0, cacheRead: 0, cacheWrite: 0 },
-      allowedDataClassifications: ["private"],
       disclosure: "trusted_remote",
       secretRef: "vercel-ai-gateway-api-key",
     },

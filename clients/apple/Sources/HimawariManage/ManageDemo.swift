@@ -13,7 +13,11 @@ public enum ManageDemoScreen: String, CaseIterable, Sendable {
     case deviceAbilities = "19-settings-more-1-abilities"
     case her = "next-3-her"
     case herApprovals = "next-3-her-approvals"
-    case herPrivacy = "next-3-her-privacy"
+    case herPersonalization = "next-3-her-personalization"
+    case herVoice = "next-3-her-voice"
+    case herDataAndApps = "next-3-her-data"
+    case herYourData = "next-3-her-your-data"
+    case herNotificationsHub = "next-3-her-notifications-hub"
     case herDevices = "next-3-her-devices"
     case herNotifications = "next-3-her-notifications"
     case herAllowances = "next-3-her-allowances"
@@ -56,21 +60,29 @@ public struct ManageDemoView: View {
         case .ruleDetail:
             NavigationStack { RulesPage(store: ManageDemo.memoryStore(), quietHours: nil, opening: "r1") }
         case .deviceAbilities:
-            her([.settings, .devices, .device(ManageDemo.phoneId)])
+            her([.devices, .device(ManageDemo.phoneId)])
         case .her:
             her([])
         case .herApprovals:
             her([.approvals])
-        case .herPrivacy:
-            her([.settings, .privacy])
+        case .herPersonalization:
+            her([.personalization], personal: true)
+        case .herVoice:
+            her([.voice])
+        case .herDataAndApps:
+            her([.dataAndApps])
+        case .herYourData:
+            her([.yourData])
+        case .herNotificationsHub:
+            her([.notificationsHub])
         case .herDevices:
-            her([.settings, .devices])
+            her([.devices])
         case .herNotifications:
-            her([.settings, .notifications])
+            her([.notificationsHub, .notifications])
         case .herAllowances:
             her([.allowances])
         case .herAbout:
-            her([.settings, .about])
+            her([.about])
         case .herAllowancesEmpty:
             her([.allowances], allowances: false)
         case .memoryVersions:
@@ -94,15 +106,15 @@ public struct ManageDemoView: View {
         case .herNoTimers:
             her([], timers: TimersStore(timers: nil))
         case .herName:
-            her([.settings, .name], personal: true)
+            her([.personalization, .name], personal: true)
         case .herModel:
-            her([.settings, .model], personal: true)
+            her([.personalization, .model], personal: true)
         case .herTransfer:
-            her([.settings, .transfer])
+            her([.yourData, .importData])
         case .herImportPreview:
-            her([.settings, .transfer, .importPreview], memoryImport: ManageDemo.previewedImport())
+            her([.yourData, .importData, .importPreview], memoryImport: ManageDemo.previewedImport())
         case .herServerStatus:
-            her([.settings, .about, .serverStatus])
+            her([.about, .serverStatus])
         case .herAllowanceDays:
             AllowanceDaysSheet(days: 7) { _ in }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -117,11 +129,11 @@ public struct ManageDemoView: View {
             quietHours: QuietHoursStore(gateway: ManageDemo.gateway()),
             timers: timers,
             personal: personal ? ManageDemo.personalStore() : nil,
+            files: OwnerFilesStore(files: []),
             gateway: ManageDemo.gateway(),
             memoryImport: memoryImport,
             listening: DemoListening(),
             actions: .demo(),
-            senses: AnyView(EmptyView()),
             path: path
         )
     }

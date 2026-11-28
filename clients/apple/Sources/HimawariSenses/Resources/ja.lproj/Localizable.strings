@@ -17,7 +17,7 @@
 "item.location.denied" = "iPhone が位置情報を許可していません";
 "item.location.deniedDetail" = "許可するまで、どこにいるかはわかりません。";
 
-"item.calendar.name" = "予定";
+"item.calendar.name" = "カレンダー";
 "item.calendar.detail" = "カレンダーの予定";
 "item.calendar.headline" = "予定を見られるようにする";
 "item.calendar.records" = "カレンダーの各予定の時間・場所・タイトル";
@@ -28,7 +28,7 @@
 "item.calendar.synced" = "%d 件の予定を同期済み";
 "item.calendar.confirm" = "サーバー上の予定のコピーを削除します。iPhone のカレンダーはそのままです。";
 
-"item.health.name" = "ヘルスケアと運動";
+"item.health.name" = "ヘルスケア";
 "item.health.detail" = "歩数・睡眠・心拍数";
 "item.health.headline" = "体の調子を知らせる";
 "item.health.records" = "歩数・睡眠・心拍数・ワークアウトと、歩いている・走っている・運転中かどうか";

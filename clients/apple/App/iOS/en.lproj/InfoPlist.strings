@@ -13,3 +13,4 @@
 "NSHealthShareUsageDescription" = "Reads steps, sleep, heart rate and workouts, stored on your own server.";
 "NSHealthUpdateUsageDescription" = "Himawari only reads health data and never writes anything to the Health app.";
 "NSPhotoLibraryUsageDescription" = "Records when and where new photos and screenshots were taken; those photos themselves are not uploaded. Photos you pick under + are sent to Himawari.";
+"CurrentLocation" = "When you ask where you are or what's nearby, Himawari needs your precise location to answer accurately.";

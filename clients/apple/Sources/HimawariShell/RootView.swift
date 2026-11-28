@@ -226,12 +226,18 @@ struct MainShell: View {
             openListening: { herListenOpen = true },
             openVoiceprint: { herVoiceprintOpen = true },
             senses: model.senses.map { senses in
-                AnyView(SensesView(model: senses) { HandoverEntryRows() })
+                HerSenses(
+                    items: senses.items,
+                    opens: { senses.opens($0) },
+                    label: { AnyView(SenseEntryLabel(model: senses, item: $0)) },
+                    screen: { item, back in AnyView(SenseEntryScreen(model: senses, item: item, back: back)) },
+                    refresh: { await senses.refresh() },
+                    handover: AnyView(SenseHandoverSection { HandoverEntryRows(separated: false) })
+                )
             },
             perceptionDeletion: model.senses.map { senses in
                 { (close: @escaping () -> Void) -> AnyView in AnyView(PerceptionDeletionView(model: PerceptionDeletionModel(senses: senses), close: close)) }
             },
-            sensesOn: { model.senses?.status?.senses.count },
             talk: { text in
                 herOpen = false
                 draft = Draft(text: text)

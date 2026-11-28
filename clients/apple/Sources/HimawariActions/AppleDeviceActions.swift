@@ -22,6 +22,12 @@ public enum AppleDeviceActions {
         #if os(iOS) && canImport(HomeKit)
         handlers.append(HomeActions())
         #endif
+        #if os(iOS) && canImport(CoreLocation)
+        handlers.append(LocationActions())
+        #endif
+        #if os(iOS)
+        handlers.append(DeviceStatusActions())
+        #endif
         return handlers
     }
 }

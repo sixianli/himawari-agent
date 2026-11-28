@@ -162,3 +162,12 @@ export async function answerWithConversationTools(input: {
     }
   }
 }
+
+const EVIDENCE_LINE_PROBE_CHARACTERS = 60;
+
+export function evidenceLinesIn(question: BenchmarkQuestion, recalledText: string): boolean | null {
+  if (question.evidenceTexts.length === 0) return null;
+  return question.evidenceTexts.every((said) =>
+    recalledText.includes(said.slice(0, EVIDENCE_LINE_PROBE_CHARACTERS)),
+  );
+}

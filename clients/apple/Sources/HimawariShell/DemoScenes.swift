@@ -19,7 +19,11 @@ enum DemoScene: String, CaseIterable {
     case ruleDetail = "18-memory-more-3-rule-detail"
     case deviceAbilities = "19-settings-more-1-abilities"
     case her = "next-3-her"
-    case herPrivacy = "next-3-her-privacy"
+    case herPersonalization = "next-3-her-personalization"
+    case herVoice = "next-3-her-voice"
+    case herDataAndApps = "next-3-her-data"
+    case herYourData = "next-3-her-your-data"
+    case herNotificationsHub = "next-3-her-notifications-hub"
     case herApprovals = "next-3-her-approvals"
     case herDevices = "next-3-her-devices"
     case herNotifications = "next-3-her-notifications"
@@ -298,7 +302,7 @@ struct DemoSceneView: View {
             DemoPerceptionDeletionHost(segment: .episodes, episode: "episode:00000000000000000000000000000002")
         case .listenIntro, .listenEnroll, .listenLive, .listenInterrupted, .listenCalling, .listenAsking, .listenStopped:
             ListenDemoScene(scene: scene)
-        case .memory, .memoryDetail, .memoryEdit, .rules, .ruleDetail, .deviceAbilities, .her, .herApprovals, .herPrivacy, .herDevices, .herNotifications, .herAllowances, .herAllowancesEmpty, .herAllowanceDays, .memoryVersions, .memoryTrash, .herAbout, .herTimers, .herTimersEmpty, .herTimersReminders, .herTimerRecurring, .herTimerReminder, .herTimerPaused, .herNoTimers, .herTransfer, .herImportPreview, .herServerStatus, .herName, .herModel:
+        case .memory, .memoryDetail, .memoryEdit, .rules, .ruleDetail, .deviceAbilities, .her, .herApprovals, .herPersonalization, .herVoice, .herDataAndApps, .herYourData, .herNotificationsHub, .herDevices, .herNotifications, .herAllowances, .herAllowancesEmpty, .herAllowanceDays, .memoryVersions, .memoryTrash, .herAbout, .herTimers, .herTimersEmpty, .herTimersReminders, .herTimerRecurring, .herTimerReminder, .herTimerPaused, .herNoTimers, .herTransfer, .herImportPreview, .herServerStatus, .herName, .herModel:
             EmptyView()
         }
     }

@@ -145,7 +145,6 @@ export function createBeefRestaurantFixture() {
     priority: 1,
     disclosure: "trusted_remote",
     capabilities: ["reasoning"],
-    allowedDataClassifications: ["public", "private"] as const,
     secretRequirement: null,
   });
   const modelEvents: readonly ModelInvocationEvent[] = Object.freeze([

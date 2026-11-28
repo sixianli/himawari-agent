@@ -2,7 +2,12 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { evidenceHit, fullContextMessages, memoryAnswerMessages } from "./answer.ts";
+import {
+  evidenceHit,
+  evidenceLinesIn,
+  fullContextMessages,
+  memoryAnswerMessages,
+} from "./answer.ts";
 import {
   armMetrics,
   locomoSamples,
@@ -158,6 +163,24 @@ describe("memory benchmark datasets", () => {
     );
     expect(evidenceHit(question, ["D2"])).toBe(false);
     expect(evidenceHit(question, ["D1"])).toBe(true);
+  });
+
+  it("checks each evidence line itself, not just its session, was handed to the model", () => {
+    const [sample] = locomoSamples(locomo as never);
+    const [first, second] = sample?.questions ?? [];
+    if (!first || !second) throw new Error("missing questions");
+    expect(first.evidenceTexts).toEqual(["I went to a support group yesterday."]);
+    expect(second.evidenceTexts).toEqual(["I painted a sunrise."]);
+    const recalled =
+      "[2023-05-08 对话编号 t 序号 1]\n主人：I went to a support group yesterday.\n你：Melanie: That sounds great!";
+    expect(evidenceLinesIn(first, recalled)).toBe(true);
+    expect(evidenceHit(second, ["D2"])).toBe(true);
+    expect(evidenceLinesIn(second, recalled)).toBe(false);
+    expect(evidenceLinesIn(second, "")).toBe(false);
+    const [lmeSample] = longMemEvalSamples([lme("q2", "multi-session")]);
+    const lmeQuestion = lmeSample?.questions[0];
+    if (!lmeQuestion) throw new Error("missing question");
+    expect(evidenceLinesIn(lmeQuestion, recalled)).toBeNull();
   });
 
   it("scores accuracy only over judged answers, per category", () => {

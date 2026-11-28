@@ -27,7 +27,6 @@ import {
   SqliteProductStateRepository,
 } from "@himawari-agent/persistence-sqlite";
 import {
-  CALENDAR_READONLY_SCOPE,
   createGmailReader,
   createGoogleOAuth,
   GMAIL_READONLY_SCOPE,
@@ -73,7 +72,6 @@ const descriptor: ModelDescriptor = {
   priority: 10,
   disclosure: "trusted_remote",
   capabilities: ["text"],
-  allowedDataClassifications: ["public", "private"],
   secretRequirement: null,
 };
 
@@ -112,7 +110,7 @@ function fakeGoogle() {
           ? json({
               refresh_token: "refresh-1",
               access_token: "access-1",
-              scope: `${GMAIL_READONLY_SCOPE} ${CALENDAR_READONLY_SCOPE}`,
+              scope: GMAIL_READONLY_SCOPE,
             })
           : json({ error: "invalid_grant" }, 400);
       return json({ access_token: "access-1", expires_in: 3600 });
@@ -279,7 +277,6 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
           return scripted;
         },
         modelRef: MODEL_REF,
-        allowedDataClassifications: ["public", "private", "sensitive", "restricted"],
         async prepare({ invocationId, prompt }) {
           prompts.push(prompt);
           const inputRef = `input-${invocationId}`;
