@@ -35,6 +35,8 @@ FAKE_MOUNT = '''#!/bin/bash
 echo "mount $*" >> "$FAKE_LOG/calls"
 if [ "$2" = overlay ]; then
   target="${@: -1}"
+  upper="${5#*upperdir=}"; upper="${upper%%,*}"
+  stat -c %a "$upper" > "$FAKE_LOG/upper.mode"
   mkdir -p "$target/etc/cloud" "$target/etc/systemd/system"
   printf '# comment\\nLABEL=cloudimg-rootfs / ext4 defaults 0 1\\nLABEL=UEFI /boot/efi vfat umask=0077 0 1\\n' > "$target/etc/fstab"
 fi
@@ -270,6 +272,12 @@ class ShadowRehearsalTest(unittest.TestCase):
         self.assertIn('leader: 4242', result.stderr)
         self.assertIn('processes: ', result.stderr)
         self.assertIn('journal: ', result.stderr)
+
+    def test_I120_the_shadow_root_keeps_the_host_root_permissions_so_service_accounts_can_enter_it(self):
+        self.live_database()
+        result = self.run_rehearsal()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual((self.log / 'upper.mode').read_text().strip(), format(os.stat('/').st_mode & 0o7777, 'o'))
 
     def test_I120_emergency_mode_fails_at_once_with_the_failed_units(self):
         self.live_database()
