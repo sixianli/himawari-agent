@@ -14,13 +14,15 @@ systemctl_bin="${HIMAWARI_OPS_SYSTEMCTL:-systemctl}"
 journalctl_bin="${HIMAWARI_OPS_JOURNALCTL:-journalctl}"
 window="${HIMAWARI_OPS_WINDOW:-3 hours ago}"
 start_wait="${HIMAWARI_OPS_START_WAIT:-120}"
+mirror="${HIMAWARI_OPS_MIRROR:-/var/lib/himawari-deploy/ops-mirror.git}"
+instance="${HIMAWARI_OPS_INSTANCE:-andy-production}"
 
 refuse() {
   echo "OPS_REFUSED $1: $2" >&2
   exit "${3:-64}"
 }
 
-[[ "$action" == diagnose || "$action" == restart || "$action" == allow-sensitive || "$action" == senses ]] || refuse ACTION_INVALID "only diagnose, restart, allow-sensitive or senses"
+[[ "$action" == diagnose || "$action" == restart || "$action" == allow-sensitive || "$action" == senses || "$action" == heartbeat-install ]] || refuse ACTION_INVALID "only diagnose, restart, allow-sensitive, senses or heartbeat-install"
 [[ -n "$public_key" && -s "$public_key" ]] || refuse KEY_MISSING "HIMAWARI_OPS_PUBLIC_KEY must name the public key that seals the full diagnostics" 70
 
 service_line() {
@@ -206,6 +208,16 @@ if [[ "$action" == allow-sensitive ]]; then
     restart_service
     summary
   fi
+  exit 0
+fi
+
+if [[ "$action" == heartbeat-install ]]; then
+  heartbeat="$(mktemp -d)"
+  trap 'rm -rf "$heartbeat"' EXIT
+  git -C "$mirror" archive main scripts/operations/heartbeat "scripts/delivery-mode/instances/$instance.json" 2> /dev/null | tar -x -C "$heartbeat" 2> /dev/null || refuse HEARTBEAT_SCRIPT_MISSING "main in $mirror has no scripts/operations/heartbeat or instance $instance" 70
+  HEARTBEAT_SYSTEMCTL="$systemctl_bin" bash "$heartbeat/scripts/operations/heartbeat/install-heartbeat.sh" install --instance "$heartbeat/scripts/delivery-mode/instances/$instance.json" > /dev/null || refuse HEARTBEAT_INSTALL_FAILED "the ping address read from standard input was refused or the units could not be installed; see the HEARTBEAT_ line above" 70
+  echo "OPS_HEARTBEAT_INSTALLED timer=$("$systemctl_bin" is-active himawari-heartbeat.timer 2>&1)"
+  echo "OPS_DONE $(date -u +%Y-%m-%dT%H:%M:%SZ)"
   exit 0
 fi
 

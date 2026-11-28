@@ -10,6 +10,7 @@ import * as memory from "./memory.js";
 import * as perception from "./perception.js";
 import * as review from "./review.js";
 import * as runtime from "./runtime.js";
+import * as settings from "./settings.js";
 import * as subthreads from "./subthreads.js";
 import * as tools from "./tools.js";
 
@@ -26,6 +27,7 @@ export const TRUSTED_PROMPT_TEXTS: readonly string[] = trustedPromptTexts(
     perception,
     review,
     runtime,
+    settings,
     subthreads,
     tools,
   ].flatMap((module) => Object.values(module)),
