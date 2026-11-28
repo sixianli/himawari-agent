@@ -94,10 +94,10 @@ Andy 的全局指令已复制到 [.claude/rules/owner-global-instructions.md](.c
 
 创建或修订项目文档之前，先读[文档写法](.agents/instructions/writing-docs.md)（目录、章节内链接、锚点）。
 
-<a id="approved-web-design-baselines"></a>
-## 已批准的网页设计基线
+<a id="apple-client-design"></a>
+## 苹果客户端的界面设计
 
-设计或修改 Himawari 网页（视觉设计、聊天交互、品牌素材）之前，先读[网页设计基线](.agents/instructions/web-design-baselines.md)。iPhone、Apple Watch、Mac 三个 App 的界面和交互一律照苹果最新的《Human Interface Guidelines》（苹果官方界面设计规范）做，能用系统组件就用系统组件，见 [Andy 定的长期规则](.claude/rules/owner-standing-rules.md#apple-clients-follow-the-hig)。
+设计或修改 iPhone、Apple Watch、Mac 三个 App 的界面和交互之前，先读 [docs/ui-ux-design-guide.md](docs/ui-ux-design-guide.md)。界面和交互一律照苹果最新的《Human Interface Guidelines》（苹果官方界面设计规范）做，能用系统组件就用系统组件，见 [Andy 定的长期规则](.claude/rules/owner-standing-rules.md#apple-clients-follow-the-hig)。网页已决定删除（[ADR 0309](docs/adr/0309-apps-sign-in-with-passkeys-and-the-web-is-removed.md)），不得拿网页的页面、原型或设计规则当 App 设计的依据或对照；`npm run check:design-sources` 拦下这类写法。
 
 <a id="engineering-diagrams"></a>
 ## 工程图
