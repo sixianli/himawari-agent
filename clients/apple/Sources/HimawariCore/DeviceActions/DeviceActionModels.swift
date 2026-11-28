@@ -39,6 +39,7 @@ public struct DeviceActionDelivery: Codable, Sendable, Equatable, Identifiable {
     public let detail: LocalizedLine
     public let confirmLabel: LocalizedLine?
     public let declineLabel: LocalizedLine?
+    public let resultMaximumBytes: Int?
 
     public init(
         id: String,
@@ -54,7 +55,8 @@ public struct DeviceActionDelivery: Codable, Sendable, Equatable, Identifiable {
         expiresAt: String,
         detail: LocalizedLine,
         confirmLabel: LocalizedLine? = nil,
-        declineLabel: LocalizedLine? = nil
+        declineLabel: LocalizedLine? = nil,
+        resultMaximumBytes: Int? = nil
     ) {
         self.id = id
         self.mode = mode
@@ -70,6 +72,7 @@ public struct DeviceActionDelivery: Codable, Sendable, Equatable, Identifiable {
         self.detail = detail
         self.confirmLabel = confirmLabel
         self.declineLabel = declineLabel
+        self.resultMaximumBytes = resultMaximumBytes
     }
 
     public var expiry: Date? { DeviceActionTime.parse(expiresAt) }
@@ -78,7 +81,8 @@ public struct DeviceActionDelivery: Codable, Sendable, Equatable, Identifiable {
         DeviceActionDelivery(
             id: id, mode: .verify, action: action, schemaVersion: schemaVersion, arguments: arguments,
             ownerPresence: ownerPresence, readBack: readBack, snapshotBefore: snapshotBefore, reversible: reversible,
-            risk: risk, expiresAt: expiresAt, detail: detail, confirmLabel: confirmLabel, declineLabel: declineLabel
+            risk: risk, expiresAt: expiresAt, detail: detail, confirmLabel: confirmLabel, declineLabel: declineLabel,
+            resultMaximumBytes: resultMaximumBytes
         )
     }
 }
