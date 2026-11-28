@@ -360,7 +360,7 @@ public enum DesignTokens {
         public static let puckContentGap: CGFloat = 12
         public static let puckLine: CGFloat = 0.5
         public static let puckMark: CGFloat = 46
-        public static let puckSeeds: CGFloat = 89
+        public static let puckSeeds: CGFloat = 105
         public static let puckSize: CGFloat = 56
         public static let puckTop: CGFloat = 6
         public static let quoteBar: CGFloat = 3

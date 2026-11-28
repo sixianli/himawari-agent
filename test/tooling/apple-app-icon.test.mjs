@@ -73,3 +73,18 @@ it("[UI-2] ships every icon image the catalog names, at its stated pixel size, o
     .map((image) => image.appearances?.[0]?.value ?? "any");
   expect(appearances).toEqual(["any", "dark", "tinted"]);
 });
+
+it("[UI-2] draws the home-screen icon from 105 seeds in one gold, with a generator that does not depend on the web app", async () => {
+  const generator = path.join(path.dirname(app), "scripts/make-app-icons.mjs");
+  expect(readFileSync(generator, "utf8")).not.toMatch(/apps\/control-center/u);
+  const { APP_ICON_SEEDS, NEWEST_SEED, SEED_GOLD, appIconSeeds, appIconSvg } = await import(
+    generator
+  );
+  const seeds = appIconSeeds();
+  expect(APP_ICON_SEEDS).toBe(105);
+  expect(seeds).toHaveLength(105);
+  const colors = new Set(seeds.map(({ color }) => color.join(",")));
+  expect(colors).toEqual(new Set([SEED_GOLD.join(","), NEWEST_SEED.join(",")]));
+  expect(seeds.filter(({ color }) => color === NEWEST_SEED).length).toBeLessThan(10);
+  expect(appIconSvg().match(/<circle /gu)).toHaveLength(105);
+});
