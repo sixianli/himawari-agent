@@ -18,6 +18,10 @@ on:
         description: 填 1 就算只改了文档也上线
         required: false
         type: string
+      rehearse:
+        description: 填 boot 就只在影子机里用生产数据副本起一遍旧服务，几分钟出结果，不出包、不上线、不碰生产
+        required: false
+        type: string
 permissions:
   contents: read
 concurrency:
@@ -109,7 +113,16 @@ jobs:
           COMMIT: ${{ steps.target.outputs.commit }}
           SINCE: ${{ inputs.since }}
           FORCE: ${{ inputs.force }}
+          REHEARSE: ${{ inputs.rehearse }}
         run: |
+          if [ -n "$REHEARSE" ]; then
+            if [ "$REHEARSE" != boot ]; then
+              echo "::error::rehearse 只能填 boot"
+              exit 1
+            fi
+            ssh -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=20 "himawari-deploy@$PROD_HOST" "rehearse $COMMIT boot" 2>&1 | tee deploy.log
+            exit "${PIPESTATUS[0]}"
+          fi
           since="${SINCE:-}"
           if [ -n "$since" ] && ! printf '%s' "$since" | grep -Eq '^[0-9a-f]{40}$'; then
             echo "::error::since 不是完整的 40 位提交号"
@@ -120,7 +133,7 @@ jobs:
           ssh -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=20 "himawari-deploy@$PROD_HOST" "deploy $COMMIT ${since:--} $force" 2>&1 | tee deploy.log
           exit "${PIPESTATUS[0]}"
       - name: 把 App 用的路径从 Cloudflare 门禁放行
-        if: ${{ steps.keys.outputs.ready == 'true' }}
+        if: ${{ steps.keys.outputs.ready == 'true' && inputs.rehearse == '' }}
         env:
           CLOUDFLARE_ACCESS_TOKEN: ${{ secrets.CLOUDFLARE_ACCESS_TOKEN }}
         run: |
@@ -138,7 +151,7 @@ jobs:
         run: |
           {
             echo '```'
-            grep -E '^(CI_DEPLOY_|DEPLOY_RESULT|DEPLOY_STOPPED_AT|PACKET_READY)' deploy.log | cut -c1-300 || true
+            grep -E '^(CI_DEPLOY_|DEPLOY_RESULT|DEPLOY_STOPPED_AT|PACKET_READY|SHADOW_(REHEARSAL_FAILED|BOOT_ONLY_PASSED|OLD_SERVICE_STABLE))' deploy.log | cut -c1-300 || true
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
       - name: 保存部署日志

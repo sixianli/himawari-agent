@@ -107,6 +107,7 @@ esac
 '''
 
 FAKE_DEPLOY = '''#!/bin/bash
+touch "$FAKE_LOG/deploy.called"
 echo "deploy on_failure=$HIMAWARI_DEPLOY_ON_FAILURE from=$HIMAWARI_DEPLOY_FROM_STEP host=${HIMAWARI_PACKET_HOST:-} shadow=${HIMAWARI_DEPLOY_SHADOW_REHEARSAL:-} path=$PATH packet=$1"
 if [ -n "$FAKE_DEPLOY_FAIL_AT" ]; then
   echo "DEPLOY_STEP_START $FAKE_DEPLOY_FAIL_AT"
@@ -162,9 +163,9 @@ class ShadowRehearsalTest(unittest.TestCase):
         self.addCleanup(database.close)
         return database
 
-    def run_rehearsal(self, **extra):
-        environment = {'PATH': '/usr/bin:/bin', 'FAKE_LOG': str(self.log), 'HIMAWARI_SHADOW_TOOLS': str(self.tools), 'HIMAWARI_SHADOW_SBIN': str(self.tools), 'HIMAWARI_SHADOW_UPPER_SIZE': '1M', 'HIMAWARI_SHADOW_PROC_FILESYSTEMS': str(self.log / 'filesystems'), 'HIMAWARI_SHADOW_LOOP_CONTROL': str(self.log / 'loop-control'), 'HIMAWARI_PACKET_HOST': '127.0.0.1', 'HIMAWARI_DEPLOY_SHADOW_REHEARSAL': '1', 'HIMAWARI_SHADOW_STATE_DATA': str(self.data), 'HIMAWARI_SHADOW_PARENT': str(self.parent), 'HIMAWARI_SHADOW_BOOT_WAIT': '5', 'HIMAWARI_SHADOW_SERVICE_WAIT': '3', 'HIMAWARI_SHADOW_PROBE_TIMEOUT': '2', 'HIMAWARI_SHADOW_SERVICE_SETTLE': '1', **extra}
-        return subprocess.run(['/bin/bash', str(self.scripts / 'shadow-rehearsal.sh'), str(self.packet)], capture_output=True, text=True, env=environment, timeout=120)
+    def run_rehearsal(self, target=None, **extra):
+        environment = {'PATH': '/usr/bin:/bin', 'FAKE_LOG': str(self.log), 'HIMAWARI_SHADOW_TOOLS': str(self.tools), 'HIMAWARI_SHADOW_SBIN': str(self.tools), 'HIMAWARI_SHADOW_UPPER_SIZE': '1M', 'HIMAWARI_SHADOW_PROC_FILESYSTEMS': str(self.log / 'filesystems'), 'HIMAWARI_SHADOW_LOOP_CONTROL': str(self.log / 'loop-control'), 'HIMAWARI_PACKET_HOST': '127.0.0.1', 'HIMAWARI_DEPLOY_SHADOW_REHEARSAL': '1', 'HIMAWARI_SHADOW_STATE_ROOT': str(self.data), 'HIMAWARI_SHADOW_PARENT': str(self.parent), 'HIMAWARI_SHADOW_BOOT_WAIT': '5', 'HIMAWARI_SHADOW_SERVICE_WAIT': '3', 'HIMAWARI_SHADOW_PROBE_TIMEOUT': '2', 'HIMAWARI_SHADOW_SERVICE_SETTLE': '1', **extra}
+        return subprocess.run(['/bin/bash', str(self.scripts / 'shadow-rehearsal.sh'), target or str(self.packet)], capture_output=True, text=True, env=environment, timeout=120)
 
     def test_the_copy_holds_rows_still_in_the_write_ahead_log_and_keeps_owner_and_mode(self):
         self.live_database()
@@ -224,7 +225,22 @@ class ShadowRehearsalTest(unittest.TestCase):
         bind = next(argument for argument in arguments if argument.startswith('--bind='))
         source, target = bind[len('--bind='):].split(':')
         self.assertEqual(target, str(self.data))
-        self.assertEqual(source, str(shadow / 'data'))
+        self.assertEqual(source, str(shadow / 'state'))
+        self.assertEqual(list(self.parent.iterdir()), [])
+
+    def test_I120_boot_only_starts_the_old_release_on_the_whole_copied_state_and_reports_it_without_a_packet_or_deploy(self):
+        self.live_database()
+        (self.data / 'authority.json').write_text('{"status": "active"}')
+        result = self.run_rehearsal('--boot-only')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('SHADOW_OLD_SERVICE_STABLE', result.stdout)
+        self.assertIn('SHADOW_BOOT_ONLY_REPORT service: ActiveState=', result.stdout)
+        self.assertIn('SHADOW_BOOT_ONLY_REPORT service journal:', result.stdout)
+        self.assertIn('SHADOW_BOOT_ONLY_PASSED', result.stdout)
+        self.assertNotIn('SHADOW_DEPLOY_START', result.stdout)
+        self.assertFalse((self.log / 'deploy.called').exists())
+        bind = next(argument for argument in (self.log / 'nspawn.args').read_text().splitlines() if argument.startswith('--bind='))
+        self.assertEqual(bind.split(':')[-1], str(self.data))
         self.assertEqual(list(self.parent.iterdir()), [])
 
     def test_I120_the_host_root_itself_is_never_handed_to_nspawn_and_a_refusing_nspawn_fails_at_once(self):
@@ -276,8 +292,18 @@ class ShadowRehearsalTest(unittest.TestCase):
         calls = (self.log / 'calls').read_text()
         self.assertNotIn('systemctl --machine', calls)
         self.assertNotIn('systemd-run', calls)
-        self.assertIn('nsenter --target=4242 --mount --uts --ipc --net --pid -- ' + str(self.tools / 'systemctl') + ' is-system-running', calls)
+        self.assertIn('nsenter --target=4242 --mount --uts --ipc --net --pid --cgroup -- ' + str(self.tools / 'systemctl') + ' is-system-running', calls)
         self.assertIn('/usr/bin/env -i PATH=/usr/bin:/bin HIMAWARI_DEPLOY_ON_FAILURE=keep HIMAWARI_DEPLOY_FROM_STEP=S2_STOP', calls)
+
+    def test_I120_the_rehearsed_deploy_runs_in_the_shadow_cgroup_namespace_that_the_stop_step_compares_with_its_first_process(self):
+        self.live_database()
+        result = self.run_rehearsal()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        deploy_calls = [line for line in (self.log / 'calls').read_text().splitlines() if line.startswith('nsenter ') and 'deploy.sh' in line]
+        self.assertEqual(len(deploy_calls), 1)
+        self.assertIn(' --mount --uts --ipc --net --pid --cgroup -- ', deploy_calls[0])
+        stop_step = (HERE / 'packet-template' / 'systemd' / 'S2-stop-and-inspect.py').read_text()
+        self.assertIn("os.readlink('/proc/self/ns/cgroup') == os.readlink('/proc/1/ns/cgroup')", stop_step)
 
     def test_I120_a_stuck_boot_reports_the_shadow_processes_and_journal(self):
         self.live_database()
@@ -330,7 +356,7 @@ class ShadowRehearsalTest(unittest.TestCase):
 
     def test_too_little_disk_for_the_copy_refuses_before_copying(self):
         self.live_database()
-        result = self.run_rehearsal(HIMAWARI_SHADOW_PARENT=str(self.parent), HIMAWARI_SHADOW_STATE_DATA=str(self.data), PATH=str(self.fake_df()) + ':/usr/bin:/bin')
+        result = self.run_rehearsal(HIMAWARI_SHADOW_PARENT=str(self.parent), HIMAWARI_SHADOW_STATE_ROOT=str(self.data), PATH=str(self.fake_df()) + ':/usr/bin:/bin')
         self.assertEqual(result.returncode, 1)
         self.assertIn('SHADOW_REHEARSAL_FAILED DISK_LOW', result.stderr)
         self.assertFalse((self.log / 'nspawn.args').exists())

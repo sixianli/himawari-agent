@@ -4,8 +4,10 @@ trap 'echo "SCRIPT_COMMAND_FAILED file=${BASH_SOURCE[0]} line=$LINENO exit=$? co
 umask 077
 
 here="$(cd "$(dirname "$0")" && pwd)"
-packet="${1:?usage: shadow-rehearsal.sh <frozen packet directory>}"
-state_data="${HIMAWARI_SHADOW_STATE_DATA:-/var/lib/himawari/state/data}"
+packet="${1:?usage: shadow-rehearsal.sh <frozen packet directory> | --boot-only}"
+boot_only=0
+[[ "$packet" != --boot-only ]] || boot_only=1
+state_root="${HIMAWARI_SHADOW_STATE_ROOT:-/var/lib/himawari/state}"
 shadow_parent="${HIMAWARI_SHADOW_PARENT:-/var/lib}"
 unit="${HIMAWARI_SHADOW_UNIT:-himawari-prod.service}"
 memory_max="${HIMAWARI_SHADOW_MEMORY_MAX:-6G}"
@@ -58,8 +60,8 @@ finish() {
 }
 trap finish EXIT
 
-[[ -d "$packet" ]] || fail PACKET_MISSING "$packet"
-[[ -d "$state_data" ]] || fail STATE_MISSING "$state_data"
+[[ "$boot_only" -eq 1 || -d "$packet" ]] || fail PACKET_MISSING "$packet"
+[[ -d "$state_root" ]] || fail STATE_MISSING "$state_root"
 if [[ ! -x "$nspawn" || ! -x "$machinectl" ]]; then
   echo "SHADOW_INSTALL systemd-container"
   /usr/bin/apt-get install -y -qq --no-install-recommends systemd-container > /dev/null || fail TOOLS_MISSING "could not install systemd-container"
@@ -87,14 +89,14 @@ not_copied="$("$findmnt" -rn -o TARGET,FSTYPE | awk '$1 != "/" && $1 !~ "^/boot(
 [[ -z "$not_copied" ]] || fail SUBMOUNTS_NOT_COPIED "these filesystems are mounted under / and would be missing from the shadow machine: $not_copied"
 
 upper_bytes="$(numfmt --from=iec "$upper_size")"
-needed=$(( $(du -sb "$state_data" | cut -f1) * 2 + upper_bytes + 1073741824 ))
+needed=$(( $(du -sb "$state_root" | cut -f1) * 2 + upper_bytes + 1073741824 ))
 available=$(df --output=avail -B1 "$shadow_parent" | tail -1 | tr -d ' ')
 [[ "$available" -ge "$needed" ]] || fail DISK_LOW "need $needed bytes under $shadow_parent, have $available"
 
 shadow="$(mktemp -d "$shadow_parent/himawari-shadow.XXXXXX")"
-mkdir "$shadow/data"
+mkdir "$shadow/state"
 echo "SHADOW_COPY_START $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-/usr/bin/python3 -I "$here/shadow-copy.py" "$state_data" "$shadow/data" || fail COPY_FAILED "could not copy $state_data"
+/usr/bin/python3 -I "$here/shadow-copy.py" "$state_root" "$shadow/state" || fail COPY_FAILED "could not copy $state_root"
 echo "SHADOW_COPY_DONE $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 mkdir "$shadow/layer" "$shadow/root"
@@ -123,7 +125,7 @@ for masked in $3; do
 done
 shift 3
 exec "$@"
-' shadow-root "$mount" "$shadow" "$masked_units" "$nspawn" --quiet --directory="$shadow/root" --private-network --link-journal=no --machine="$machine" --hostname="$(hostname)" --console=passive --bind="$shadow/data:$state_data" --property="MemoryMax=$memory_max" --boot > "$shadow/boot.log" 2>&1 9>&- &
+' shadow-root "$mount" "$shadow" "$masked_units" "$nspawn" --quiet --directory="$shadow/root" --private-network --link-journal=no --machine="$machine" --hostname="$(hostname)" --console=passive --bind="$shadow/state:$state_root" --property="MemoryMax=$memory_max" --boot > "$shadow/boot.log" 2>&1 9>&- &
 launcher=$!
 booted=1
 leader=""
@@ -134,11 +136,11 @@ find_leader() {
 }
 probe() {
   find_leader || return 1
-  timeout "$probe_timeout" "$nsenter" --target="$leader" --mount --uts --ipc --net --pid -- "$systemctl" "$@"
+  timeout "$probe_timeout" "$nsenter" --target="$leader" --mount --uts --ipc --net --pid --cgroup -- "$systemctl" "$@"
 }
 look() {
   find_leader || return 1
-  timeout "$probe_timeout" "$nsenter" --target="$leader" --mount --uts --ipc --net --pid -- "$@"
+  timeout "$probe_timeout" "$nsenter" --target="$leader" --mount --uts --ipc --net --pid --cgroup -- "$@"
 }
 stuck_units() {
   find_leader || true
@@ -162,7 +164,7 @@ boot_exit() {
 }
 service_report() {
   echo "service: $(probe show "$unit" --no-pager -p ActiveState -p SubState -p Result -p MainPID -p NRestarts -p ExecMainStatus 2>&1 | tr '\n' ' ')"
-  echo "service journal: $(look /usr/bin/journalctl -u "$unit" -n 40 --no-pager -q -o short-monotonic 2>&1 | cut -c1-300 | tr '\n' '|')"
+  echo "service journal: $(look /usr/bin/journalctl -u "$unit" -n 80 --no-pager -q -o short-monotonic 2>&1 | cut -c1-300 | tr '\n' '|')"
 }
 deadline=$(( SECONDS + boot_wait ))
 state=""
@@ -191,6 +193,11 @@ active="$(probe is-active "$unit" 2> /dev/null || true)"
 echo "SHADOW_OLD_SERVICE_STABLE ${service_settle}s restarts=${restarts:-unknown}"
 find_leader || fail LEADER_MISSING "machinectl does not name the shadow machine's first process"
 echo "SHADOW_BOOTED leader=$leader"
+if [[ "$boot_only" -eq 1 ]]; then
+  service_report | sed 's/^/SHADOW_BOOT_ONLY_REPORT /'
+  echo "SHADOW_BOOT_ONLY_PASSED $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  exit 0
+fi
 
 echo "SHADOW_DEPLOY_START $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 set +e
@@ -198,8 +205,8 @@ passed_environment=("PATH=$PATH" "HIMAWARI_DEPLOY_ON_FAILURE=keep" "HIMAWARI_DEP
 while IFS= read -r name; do
   passed_environment+=("$name=${!name}")
 done < <(compgen -e | grep -E '^HIMAWARI_' | grep -vE '^HIMAWARI_(SHADOW_|DEPLOY_SHADOW_REHEARSAL$|DEPLOY_ON_FAILURE$|DEPLOY_FROM_STEP$)' | sort)
-timeout 60 "$nsenter" --target="$leader" --mount --uts --ipc --net --pid -- /bin/rm -rf -- "$(dirname "$packet")/.$(basename "$packet").deploy.lock"
-timeout 2700 "$nsenter" --target="$leader" --mount --uts --ipc --net --pid -- /usr/bin/env -i "${passed_environment[@]}" /bin/bash "$here/deploy.sh" "$packet" < /dev/null > "$shadow/deploy.log" 2>&1
+timeout 60 "$nsenter" --target="$leader" --mount --uts --ipc --net --pid --cgroup -- /bin/rm -rf -- "$(dirname "$packet")/.$(basename "$packet").deploy.lock"
+timeout 2700 "$nsenter" --target="$leader" --mount --uts --ipc --net --pid --cgroup -- /usr/bin/env -i "${passed_environment[@]}" /bin/bash "$here/deploy.sh" "$packet" < /dev/null > "$shadow/deploy.log" 2>&1
 code=$?
 set -e
 sed 's/^/SHADOW| /' "$shadow/deploy.log" | tail -200
