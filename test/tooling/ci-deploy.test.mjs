@@ -139,6 +139,21 @@ describe("ci-deploy.sh", () => {
     expect(child.stdout).toContain("CI_DEPLOY_SKIPPED already-running");
   });
 
+  it("[I-120] skips an older confirmed commit when production already runs a newer one", () => {
+    const { repo, first, fakeSsh } = workspace();
+    const second = commitFile(repo, "src/app.ts", "two");
+    git(repo, "checkout", "-q", "--detach", first);
+    const child = run(repo, {
+      HIMAWARI_PACKET_HOST: "198.51.100.9",
+      HIMAWARI_PACKET_SSH: fakeSsh,
+      HIMAWARI_DEPLOY_COMMIT: first,
+      HIMAWARI_DEPLOY_SINCE: second,
+    });
+    expect(child.status).toBe(0);
+    expect(child.stdout).toContain("CI_DEPLOY_SKIPPED running-is-newer");
+    expect(child.stdout).not.toContain("CI_DEPLOY_PREPARE");
+  });
+
   it("[I-120] installs the deploy entry of the commit it runs so entry fixes reach the server", () => {
     const { repo, first, fakeSsh } = workspace();
     const entrySource = path.resolve(import.meta.dirname, "../../scripts/install/deploy-entry");
