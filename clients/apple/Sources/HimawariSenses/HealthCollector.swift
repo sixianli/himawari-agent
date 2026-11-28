@@ -9,6 +9,7 @@ public final class HealthCollector: SenseCollector {
     public let item = SenseItem.health
     static let anchorName = "health-since"
     static let motionName = "motion-since"
+    static let backfill: TimeInterval = 7 * 86_400
 
     private let store = HKHealthStore()
     private let motion = CMMotionActivityManager()
@@ -50,8 +51,9 @@ public final class HealthCollector: SenseCollector {
 
     public func start(_ sink: SenseSink) {
         self.sink = sink
-        if sink.localStore.read(Self.anchorName) == nil { save(Date(), Self.anchorName) }
-        if sink.localStore.read(Self.motionName) == nil { save(Date(), Self.motionName) }
+        let firstDay = Date().addingTimeInterval(-Self.backfill)
+        if sink.localStore.read(Self.anchorName) == nil { save(firstDay, Self.anchorName) }
+        if sink.localStore.read(Self.motionName) == nil { save(firstDay, Self.motionName) }
         for type in [HKQuantityType(.stepCount), HKQuantityType(.heartRate), HKCategoryType(.sleepAnalysis), HKObjectType.workoutType()] as [HKSampleType] {
             let query = HKObserverQuery(sampleType: type, predicate: nil) { @Sendable [weak self] _, completion, _ in
                 let finished = ObserverCompletion(completion)
@@ -88,19 +90,18 @@ public final class HealthCollector: SenseCollector {
             return
         }
         let start = calendar.dateInterval(of: .hour, for: since)?.start ?? since
-        await hourly(.stepCount, unit: .count(), options: .cumulativeSum, from: start, to: lastFullHour, kind: .steps, unitName: "count")
-        await hourly(.heartRate, unit: HKUnit.count().unitDivided(by: .minute()), options: .discreteAverage, from: start, to: lastFullHour, kind: .heartRate, unitName: "count/min")
-        await samples(from: since, to: now)
-        save(lastFullHour, Self.anchorName)
+        let steps = await hourly(.stepCount, unit: .count(), options: .cumulativeSum, from: start, to: lastFullHour, kind: .steps, unitName: "count")
+        let heart = await hourly(.heartRate, unit: HKUnit.count().unitDivided(by: .minute()), options: .discreteAverage, from: start, to: lastFullHour, kind: .heartRate, unitName: "count/min")
+        let others = await samples(from: since, to: now)
+        if steps, heart, others, self.sink === sink { save(lastFullHour, Self.anchorName) }
         await collectMotion()
-        _ = sink
     }
 
-    private func hourly(_ identifier: HKQuantityTypeIdentifier, unit: HKUnit, options: HKStatisticsOptions, from start: Date, to end: Date, kind: SenseObservations.HealthKind, unitName: String) async {
+    private func hourly(_ identifier: HKQuantityTypeIdentifier, unit: HKUnit, options: HKStatisticsOptions, from start: Date, to end: Date, kind: SenseObservations.HealthKind, unitName: String) async -> Bool {
         let type = HKQuantityType(identifier)
         let predicate = HKSamplePredicate.quantitySample(type: type, predicate: HKQuery.predicateForSamples(withStart: start, end: end))
         let descriptor = HKStatisticsCollectionQueryDescriptor(predicate: predicate, options: options, anchorDate: start, intervalComponents: DateComponents(hour: 1))
-        guard let collection = try? await descriptor.result(for: store) else { return }
+        guard let collection = try? await descriptor.result(for: store) else { return false }
         collection.enumerateStatistics(from: start, to: end) { statistics, _ in
             let quantity = options.contains(.cumulativeSum) ? statistics.sumQuantity() : statistics.averageQuantity()
             guard let quantity else { return }
@@ -110,23 +111,27 @@ public final class HealthCollector: SenseCollector {
             let id = SenseRecordBuilder.stableId(["health", kind.rawValue, String(statistics.startDate.timeIntervalSince1970)])
             MainActor.assumeIsolated { self.sink?.record(observation, id: id, captureSource: SenseRecordBuilder.sensorSource) }
         }
+        return true
     }
 
-    private func samples(from start: Date, to end: Date) async {
+    private func samples(from start: Date, to end: Date) async -> Bool {
         let window = HKQuery.predicateForSamples(withStart: start, end: end)
         let sleep = HKSampleQueryDescriptor(predicates: [.categorySample(type: HKCategoryType(.sleepAnalysis), predicate: window)], sortDescriptors: [SortDescriptor(\.startDate)])
-        for sample in (try? await sleep.result(for: store)) ?? [] {
+        guard let sleeps = try? await sleep.result(for: store) else { return false }
+        for sample in sleeps {
             guard HKCategoryValueSleepAnalysis.allAsleepValues.map(\.rawValue).contains(sample.value) else { continue }
             let minutes = sample.endDate.timeIntervalSince(sample.startDate) / 60
             let observation = SenseObservations.health(.sleep, value: minutes.rounded(), unit: "min", start: sample.startDate, end: sample.endDate)
             sink?.record(observation, id: SenseRecordBuilder.stableId(["health", "sleep", sample.uuid.uuidString]), captureSource: SenseRecordBuilder.sensorSource)
         }
         let workouts = HKSampleQueryDescriptor(predicates: [.workout(window)], sortDescriptors: [SortDescriptor(\.startDate)])
-        for workout in (try? await workouts.result(for: store)) ?? [] {
+        guard let found = try? await workouts.result(for: store) else { return false }
+        for workout in found {
             let minutes = workout.duration / 60
             let observation = SenseObservations.health(.workout, value: minutes.rounded(), unit: "min", start: workout.startDate, end: workout.endDate, workoutType: Self.name(workout.workoutActivityType))
             sink?.record(observation, id: SenseRecordBuilder.stableId(["health", "workout", workout.uuid.uuidString]), captureSource: SenseRecordBuilder.sensorSource)
         }
+        return true
     }
 
     private func collectMotion() async {
