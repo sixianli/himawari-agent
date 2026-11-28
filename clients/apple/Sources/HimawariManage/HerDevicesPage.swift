@@ -91,7 +91,7 @@ struct DeviceRow: View {
                 HStack(spacing: DesignTokens.Size.rowGap / 2) {
                     if online {
                         Icon(.point, size: DesignTokens.IconSize.chevron / 2)
-                            .foregroundStyle(Color.hmSuccess)
+                            .foregroundStyle(Color.hmSun)
                     }
                     Text(subtitle).foregroundStyle(subtitleColor)
                 }

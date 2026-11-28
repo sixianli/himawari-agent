@@ -71,7 +71,7 @@ struct DevicePage: View {
     private func presenceRow(_ presence: DevicePresence) -> some View {
         let connected = presence == .connected
         let title: String = connected ? M.deviceNow : M.lastConnected
-        let tint: Color = connected ? Color.hmSuccess : Color.hmMuted
+        let tint: Color = connected ? Color.hmSun : Color.hmMuted
         return LabeledContent(title) {
             Text(M.presence(presence)).foregroundStyle(tint)
         }
