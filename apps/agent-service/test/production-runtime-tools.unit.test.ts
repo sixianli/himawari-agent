@@ -2319,7 +2319,7 @@ it("[ADR-0257] throws instead of reporting a failed check when the run has stopp
   ).toEqual([]);
 });
 
-it("[ADR-0257] only the listing, recall, conversation, mail, perception and vault read tools skip the authorization exit among the built-in tools", () => {
+it("[ADR-0257] only the listing, recall, conversation, mail, perception, vault and settings read tools skip the authorization exit among the built-in tools", () => {
   const builtin = PRODUCTION_TOOL_ACTION_ROWS.filter(({ family }) => family === "builtin");
   expect(
     builtin.filter(({ authorization }) => authorization === "read").map(({ tool }) => tool),
@@ -2337,6 +2337,7 @@ it("[ADR-0257] only the listing, recall, conversation, mail, perception and vaul
     "rule_list",
     "tool_result_recall",
     "perception_read",
+    "settings_list",
     "vault_list",
   ]);
   expect(
@@ -2358,6 +2359,8 @@ it("[ADR-0257] only the listing, recall, conversation, mail, perception and vaul
     "rule_undo",
     "schedule_task",
     "send_to_subthread",
+    "settings_change",
+    "settings_undo",
     "stop_subthread",
     "task_create",
     "task_update",
@@ -2365,7 +2368,7 @@ it("[ADR-0257] only the listing, recall, conversation, mail, perception and vaul
     "tell_owner",
     "wait_result",
   ]);
-  expect(builtin).toHaveLength(33);
+  expect(builtin).toHaveLength(36);
 });
 
 it("[ADR-0285] gives the main conversation the subthread tools and a subthread its own, without tell_owner", async () => {

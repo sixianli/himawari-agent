@@ -1,5 +1,14 @@
 import { spawn, spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -57,11 +66,33 @@ function fakes(directory) {
   return { bin, log };
 }
 
-function run(action, directory, extra = {}) {
+function mirrorOfMain(directory) {
+  const mirror = path.join(directory, "mirror");
+  const repository = path.resolve(operations, "../..");
+  for (const part of [
+    "scripts/operations/heartbeat",
+    "scripts/delivery-mode/instances/andy-production.json",
+  ])
+    cpSync(path.join(repository, part), path.join(mirror, part), {
+      recursive: true,
+    });
+  const git = (...args) =>
+    expect(
+      spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-C", mirror, ...args]).status,
+    ).toBe(0);
+  git("init", "--quiet", "--initial-branch=main");
+  git("add", ".");
+  git("commit", "--quiet", "-m", "main");
+  rmSync(path.join(mirror, "scripts"), { recursive: true });
+  return mirror;
+}
+
+function run(action, directory, extra = {}, input = "") {
   const { bin } = fakes(directory);
   const { publicKey, privateKey } = keys(directory);
   const child = spawnSync("bash", [script, action], {
     encoding: "utf8",
+    input,
     env: {
       PATH: process.env.PATH,
       HIMAWARI_OPS_PUBLIC_KEY: publicKey,
@@ -87,7 +118,9 @@ describe("production-ops", () => {
     expect(child.stdout).toContain("OPS_DONE");
     const log = path.join(directory, "ops.log");
     writeFileSync(log, child.stdout);
-    const opened = spawnSync("bash", [opener, log, privateKey], { encoding: "utf8" });
+    const opened = spawnSync("bash", [opener, log, privateKey], {
+      encoding: "utf8",
+    });
     expect(opened.status).toBe(0);
     expect(opened.stdout).toContain("owner said: my secret dinner plans");
   });
@@ -181,7 +214,9 @@ db.prepare("INSERT INTO perception_records VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run
     expect(child.stdout).not.toContain("secret dinner");
     const log = path.join(directory, "ops.log");
     writeFileSync(log, child.stdout);
-    const opened = spawnSync("bash", [opener, log, privateKey], { encoding: "utf8" });
+    const opened = spawnSync("bash", [opener, log, privateKey], {
+      encoding: "utf8",
+    });
     expect(opened.status).toBe(0);
     expect(opened.stdout).toContain('"type":"health.sample","subtype":"sleep"');
     expect(opened.stdout).toContain('SENSES_DEVICES [{"id":"dev_phone","kind":"iphone"');
@@ -237,7 +272,11 @@ db.prepare("INSERT INTO perception_records VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run
           role: "primary",
           allowedDataClassifications: ["public", "private"],
         },
-        { ref: "search", role: "primary", allowedDataClassifications: ["public"] },
+        {
+          ref: "search",
+          role: "primary",
+          allowedDataClassifications: ["public"],
+        },
         {
           ref: "local-embedding",
           role: "embedding",
@@ -276,6 +315,46 @@ db.prepare("INSERT INTO perception_records VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run
     expect(again.status).toBe(0);
     expect(again.stdout).toContain("OPS_CONFIG_UNCHANGED");
     expect(again.stdout).not.toContain("OPS_RESTARTED");
+  });
+
+  it("installs the heartbeat from main with the ping address read from standard input and never prints it", () => {
+    const directory = temporary();
+    const root = path.join(directory, "root");
+    const address = "https://hc-ping.com/0f4c2a6e-91d7-4b5e-a3c8-7d2e1f9b6a40";
+    const { child } = run(
+      "heartbeat-install",
+      directory,
+      { HIMAWARI_OPS_MIRROR: mirrorOfMain(directory), HEARTBEAT_ROOT: root },
+      `${address}\n`,
+    );
+    expect(child.stderr).toBe("");
+    expect(child.status).toBe(0);
+    expect(child.stdout).toMatch(/^OPS_HEARTBEAT_INSTALLED timer=active$/m);
+    expect(child.stdout).not.toContain(address);
+    expect(readFileSync(path.join(root, "etc/himawari-heartbeat/healthcheck-url"), "utf8")).toBe(
+      `${address}\n`,
+    );
+    expect(existsSync(path.join(root, "etc/systemd/system/himawari-outage-push.path"))).toBe(true);
+    expect(readFileSync(path.join(directory, "calls"), "utf8")).toContain(
+      "systemctl enable --now himawari-heartbeat.timer",
+    );
+  });
+
+  it("refuses a ping address that is not a Healthchecks ping and does not echo it", () => {
+    const directory = temporary();
+    const root = path.join(directory, "root");
+    const address = "https://example.com/not-a-ping";
+    const { child } = run(
+      "heartbeat-install",
+      directory,
+      { HIMAWARI_OPS_MIRROR: mirrorOfMain(directory), HEARTBEAT_ROOT: root },
+      `${address}\n`,
+    );
+    expect(child.status).toBe(70);
+    expect(child.stderr).toContain("HEARTBEAT_URL_INVALID");
+    expect(child.stderr).toContain("OPS_REFUSED HEARTBEAT_INSTALL_FAILED");
+    expect(`${child.stdout}${child.stderr}`).not.toContain(address);
+    expect(existsSync(path.join(root, "etc/himawari-heartbeat/healthcheck-url"))).toBe(false);
   });
 
   it("refuses anything but its own actions", () => {
