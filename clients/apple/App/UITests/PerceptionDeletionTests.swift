@@ -1,3 +1,4 @@
+import UIKit
 import XCTest
 
 @MainActor
@@ -16,7 +17,7 @@ final class PerceptionDeletionTests: XCTestCase {
         swipeToDelete(row, in: app)
         let question = SourceText.zh(module, "delete.confirmEpisode").replacingOccurrences(of: "%@", with: meeting)
         XCTAssertTrue(app.staticTexts[question].waitForExistence(timeout: 5), "swiping to delete did not ask \(question)")
-        app.buttons[SourceText.zh(module, "detail.cancel")].firstMatch.tap()
+        dismissWithoutDeleting(in: app)
         XCTAssertTrue(DemoApp.waitUntil(timeout: 5) { !app.staticTexts[question].exists }, "cancel did not close the question")
         XCTAssertFalse(deleted.waitForExistence(timeout: 2), "cancel still deleted the episode")
         XCTAssertTrue(row.exists, "cancel removed the episode from the list")
@@ -48,7 +49,19 @@ final class PerceptionDeletionTests: XCTestCase {
         app.buttons[SourceText.zh(module, "detail.delete")].firstMatch.tap()
         XCTAssertTrue(deletedNotice(in: app).waitForExistence(timeout: 10), "confirming did not report how many records were deleted")
         app.buttons[SourceText.zh(module, "detail.ok")].firstMatch.tap()
-        XCTAssertTrue(app.buttons[SourceText.zh(module, "delete.segment.episodes")].firstMatch.waitForExistence(timeout: 5), "after deleting, the page did not go back to the list")
+        let list = app.buttons[SourceText.zh(module, "delete.segment.episodes")].firstMatch
+        let back = list.waitForExistence(timeout: 5)
+        if !back { print("UI_AFTER_DELETE \(app.debugDescription)") }
+        XCTAssertTrue(back, "after deleting, the page did not go back to the list")
+    }
+
+    private func dismissWithoutDeleting(in app: XCUIApplication) {
+        let cancel = app.buttons[SourceText.zh(module, "detail.cancel")].firstMatch
+        if cancel.exists, cancel.isHittable {
+            cancel.tap()
+        } else {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08)).tap()
+        }
     }
 
     private func episodeRow(_ title: String, in app: XCUIApplication) -> XCUIElement {
