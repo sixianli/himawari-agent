@@ -22,28 +22,36 @@ function swiftFiles(directory) {
 }
 
 export function modelDownloadCalls(source) {
-  return [...source.matchAll(/\b(?:downloadIfNeeded|ModelHub\.\w+|DiarizerModels\.download)\s*\(/gu)].map(
-    (match) => match[0],
-  );
+  return [
+    ...source.matchAll(/\b(?:downloadIfNeeded|ModelHub\.\w+|DiarizerModels\.download)\s*\(/gu),
+  ].map((match) => match[0]);
 }
 
 it("[I-261129-030c] the voiceprint models ship inside the app with the pinned weights", () => {
   for (const [file, sha256] of Object.entries(pinned)) {
-    const digest = createHash("sha256").update(readFileSync(path.join(models, file))).digest("hex");
+    const digest = createHash("sha256")
+      .update(readFileSync(path.join(models, file)))
+      .digest("hex");
     expect(digest, file).toBe(sha256);
   }
   for (const bundle of ["pyannote_segmentation.mlmodelc", "wespeaker_v2.mlmodelc"]) {
     for (const part of ["coremldata.bin", "model.mil", "metadata.json"]) {
-      expect(statSync(path.join(models, bundle, part)).size, `${bundle}/${part}`).toBeGreaterThan(0);
+      expect(statSync(path.join(models, bundle, part)).size, `${bundle}/${part}`).toBeGreaterThan(
+        0,
+      );
     }
   }
   expect(readFileSync(path.join(models, "NOTICE.txt"), "utf8")).toMatch(/CC-BY-4\.0/u);
-  expect(readFileSync(path.join(apple, "Package.swift"), "utf8")).toContain('.copy("SpeakerModels")');
+  expect(readFileSync(path.join(apple, "Package.swift"), "utf8")).toContain(
+    '.copy("SpeakerModels")',
+  );
 });
 
 it("[I-261129-030c] no app code downloads a speech model while the owner waits", () => {
   const offenders = swiftFiles(path.join(apple, "Sources")).flatMap((file) =>
-    modelDownloadCalls(readFileSync(file, "utf8")).map((call) => `${path.relative(apple, file)}: ${call}`),
+    modelDownloadCalls(readFileSync(file, "utf8")).map(
+      (call) => `${path.relative(apple, file)}: ${call}`,
+    ),
   );
   expect(offenders).toEqual([]);
 });
