@@ -64,14 +64,18 @@
         "next-4-memory-versions",
         "next-4-memory-trash"
       ],
-      "checks": "每一页都能滑到最后一行（页里的编辑、删除等操作还没测）",
-      "tests": ["HimawariUITests/SettingsPagesTests/testEverySettingsPageScrollsToItsLastLine"]
+      "checks": "每一页都在最大字号下能滑到最后一行（页里的编辑、删除等操作还没测）",
+      "tests": [
+        "HimawariUITests/SettingsPagesTests/testEverySettingsPageScrollsToItsLastLineAtTheLargestTextSize"
+      ]
     },
     {
       "feature": "规则：列表和详情",
       "scenes": ["18-memory-more-2-rules", "18-memory-more-3-rule-detail"],
-      "checks": "每一页都能滑到最后一行（页里的编辑、删除等操作还没测）",
-      "tests": ["HimawariUITests/SettingsPagesTests/testEverySettingsPageScrollsToItsLastLine"]
+      "checks": "每一页都在最大字号下能滑到最后一行（页里的编辑、删除等操作还没测）",
+      "tests": [
+        "HimawariUITests/SettingsPagesTests/testEverySettingsPageScrollsToItsLastLineAtTheLargestTextSize"
+      ]
     },
     {
       "feature": "Himawari 页：入口、隐私、关于、名字、模型",
@@ -82,23 +86,27 @@
         "next-10-her-name",
         "next-10-her-model"
       ],
-      "checks": "Himawari 页每一行点开都有页面、能从左边缘右滑或下滑回来；各页能滑到最后一行（改名字、换模型等操作还没测）",
+      "checks": "Himawari 页每一行点开都有页面、能从左边缘右滑或下滑回来；各页在最大字号下能滑到最后一行（改名字、换模型等操作还没测）",
       "tests": [
         "HimawariUITests/SettingsPagesTests/testEveryRowOnTheHimawariPageOpensAPageYouCanGoBackFrom",
-        "HimawariUITests/SettingsPagesTests/testEverySettingsPageScrollsToItsLastLine"
+        "HimawariUITests/SettingsPagesTests/testEverySettingsPageScrollsToItsLastLineAtTheLargestTextSize"
       ]
     },
     {
       "feature": "设备页：看和管理登录的设备",
       "scenes": ["next-3-her-devices"],
-      "checks": "每一页都能滑到最后一行（页里的编辑、删除等操作还没测）",
-      "tests": ["HimawariUITests/SettingsPagesTests/testEverySettingsPageScrollsToItsLastLine"]
+      "checks": "每一页都在最大字号下能滑到最后一行（页里的编辑、删除等操作还没测）",
+      "tests": [
+        "HimawariUITests/SettingsPagesTests/testEverySettingsPageScrollsToItsLastLineAtTheLargestTextSize"
+      ]
     },
     {
       "feature": "要你同意：Himawari 页里的待同意列表",
       "scenes": ["next-3-her-approvals"],
-      "checks": "能滑到最后一行（同意、拒绝还没测）",
-      "tests": ["HimawariUITests/SettingsPagesTests/testEverySettingsPageScrollsToItsLastLine"]
+      "checks": "在最大字号下能滑到最后一行（同意、拒绝还没测）",
+      "tests": [
+        "HimawariUITests/SettingsPagesTests/testEverySettingsPageScrollsToItsLastLineAtTheLargestTextSize"
+      ]
     },
     {
       "feature": "要你同意：今天页的列表、详情、面容 ID 同意",
@@ -112,8 +120,10 @@
     {
       "feature": "通知设置",
       "scenes": ["next-3-her-notifications"],
-      "checks": "每一页都能滑到最后一行（页里的编辑、删除等操作还没测）",
-      "tests": ["HimawariUITests/SettingsPagesTests/testEverySettingsPageScrollsToItsLastLine"]
+      "checks": "每一页都在最大字号下能滑到最后一行（页里的编辑、删除等操作还没测）",
+      "tests": [
+        "HimawariUITests/SettingsPagesTests/testEverySettingsPageScrollsToItsLastLineAtTheLargestTextSize"
+      ]
     },
     {
       "feature": "额度：每天能用多少、按天查看",
@@ -122,8 +132,10 @@
         "next-3-her-allowances-empty",
         "next-3-her-allowance-days"
       ],
-      "checks": "每一页都能滑到最后一行（页里的编辑、删除等操作还没测）",
-      "tests": ["HimawariUITests/SettingsPagesTests/testEverySettingsPageScrollsToItsLastLine"]
+      "checks": "每一页都在最大字号下能滑到最后一行（页里的编辑、删除等操作还没测）",
+      "tests": [
+        "HimawariUITests/SettingsPagesTests/testEverySettingsPageScrollsToItsLastLineAtTheLargestTextSize"
+      ]
     },
     {
       "feature": "定时：查看、暂停、继续、撤销",
@@ -136,14 +148,18 @@
         "next-9-timer-paused",
         "next-9-her-no-timers"
       ],
-      "checks": "每一页都能滑到最后一行（页里的编辑、删除等操作还没测）",
-      "tests": ["HimawariUITests/SettingsPagesTests/testEverySettingsPageScrollsToItsLastLine"]
+      "checks": "每一页都在最大字号下能滑到最后一行（页里的编辑、删除等操作还没测）",
+      "tests": [
+        "HimawariUITests/SettingsPagesTests/testEverySettingsPageScrollsToItsLastLineAtTheLargestTextSize"
+      ]
     },
     {
       "feature": "导出导入和服务器状态",
       "scenes": ["next-10-her-transfer", "next-10-her-import-preview", "next-10-her-server-status"],
-      "checks": "每一页都能滑到最后一行（页里的编辑、删除等操作还没测）",
-      "tests": ["HimawariUITests/SettingsPagesTests/testEverySettingsPageScrollsToItsLastLine"]
+      "checks": "每一页都在最大字号下能滑到最后一行（页里的编辑、删除等操作还没测）",
+      "tests": [
+        "HimawariUITests/SettingsPagesTests/testEverySettingsPageScrollsToItsLastLineAtTheLargestTextSize"
+      ]
     },
     {
       "feature": "后台在办：入口、详情、子线程、往来记录",
@@ -200,8 +216,10 @@
     {
       "feature": "设备动作：能力列表",
       "scenes": ["19-settings-more-1-abilities"],
-      "checks": "能滑到最后一行（授权还没测）",
-      "tests": ["HimawariUITests/SettingsPagesTests/testEverySettingsPageScrollsToItsLastLine"]
+      "checks": "在最大字号下能滑到最后一行（授权还没测）",
+      "tests": [
+        "HimawariUITests/SettingsPagesTests/testEverySettingsPageScrollsToItsLastLineAtTheLargestTextSize"
+      ]
     },
     {
       "feature": "设备动作：授权说明、授权被拒",

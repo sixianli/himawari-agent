@@ -34,11 +34,11 @@ final class SettingsPagesTests: XCTestCase {
         }
     }
 
-    func testEverySettingsPageScrollsToItsLastLine() throws {
+    func testEverySettingsPageScrollsToItsLastLineAtTheLargestTextSize() throws {
         let scenes = try SourceText.cases(of: "ManageDemoScreen", in: "Sources/HimawariManage/ManageDemo.swift")
         XCTAssertGreaterThan(scenes.count, 10, "found only \(scenes.count) settings pages in ManageDemo.swift")
         for scene in scenes {
-            let app = DemoApp.launch(scene)
+            let app = DemoApp.launch(scene, textSize: DemoApp.largestText)
             Thread.sleep(forTimeInterval: 1)
             let window = app.windows.firstMatch.frame
             let texts = try DemoApp.nodes(of: .staticText, in: app)

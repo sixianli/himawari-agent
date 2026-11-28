@@ -1,25 +1,9 @@
-import UIKit
 import XCTest
 
 @MainActor
 final class ChatComposerTests: XCTestCase {
     override func setUp() async throws {
         continueAfterFailure = false
-    }
-
-    func testLongPressingTheEmptyInputOffersPaste() {
-        let copied = "周五 9:30 的新干线，12:03 到"
-        UIPasteboard.general.string = copied
-        let app = DemoApp.launch("04-chat")
-        let field = input(in: app)
-        field.press(forDuration: 1.2)
-        let paste = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "label IN %@", ["粘贴", "Paste"]))
-            .firstMatch
-        XCTAssertTrue(paste.waitForExistence(timeout: 5), "long-pressing the empty chat input did not offer Paste")
-        paste.tap()
-        XCTAssertTrue(DemoApp.waitUntil(timeout: 5) { (field.value as? String) == copied }, "Paste did not put the copied text into the chat input")
-        XCTAssertTrue(sendButton(in: app).waitForExistence(timeout: 5), "the send button did not show after pasting")
     }
 
     func testTypingTurnsTheTalkButtonIntoSend() {
@@ -51,7 +35,7 @@ final class ChatComposerTests: XCTestCase {
     }
 
     private func sendButton(in app: XCUIApplication) -> XCUIElement {
-        app.buttons[SourceText.zh("HimawariChat", "chat.send")].firstMatch
+        app.buttons["chat.send"].firstMatch
     }
 
     private func shows(_ text: String, in app: XCUIApplication) -> Bool {

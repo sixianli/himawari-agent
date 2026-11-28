@@ -4,9 +4,12 @@ import XCTest
 
 @MainActor
 enum DemoApp {
-    static func launch(_ scene: String) -> XCUIApplication {
+    static let largestText = "UICTContentSizeCategoryAccessibilityXXXL"
+
+    static func launch(_ scene: String, textSize: String? = nil) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-HimawariDemoScene", scene, "-HimawariDemoAppearance", "light", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+        if let textSize { app.launchArguments += ["-UIPreferredContentSizeCategoryName", textSize] }
         app.launch()
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 20), "\(scene) did not reach the foreground")
         XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 10), "\(scene) showed no window")

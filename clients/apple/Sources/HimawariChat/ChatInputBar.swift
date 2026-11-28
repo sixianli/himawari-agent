@@ -47,6 +47,7 @@ struct ChatInputBar: View {
                         .transition(.scale.combined(with: .opacity))
                 } else if canSend {
                     circle(.arrowUp, label: L.text("chat.send"), fill: Color.hmText, foreground: Color.hmOnText, action: send)
+                        .accessibilityIdentifier("chat.send")
                         .transition(.scale.combined(with: .opacity))
                 } else {
                     circle(.voiceWave, label: L.text("chat.talk"), fill: Color.hmText, foreground: Color.hmOnText) { startTalk?() }
