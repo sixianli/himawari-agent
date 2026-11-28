@@ -31,6 +31,14 @@ enum DemoApp {
         return element.frame.minY >= window.minY && element.frame.maxY <= window.maxY + 1
     }
 
+    static func canTap(_ element: XCUIElement, in app: XCUIApplication) -> Bool {
+        guard element.exists else { return false }
+        let frame = element.frame
+        let window = app.windows.firstMatch.frame
+        guard !frame.isEmpty, window.contains(CGPoint(x: frame.midX, y: frame.midY)) else { return false }
+        return element.isHittable
+    }
+
     static func scrollUntilOnScreen(_ element: XCUIElement, in app: XCUIApplication, swipes: Int = 10) -> Bool {
         for _ in 0..<swipes {
             if onScreen(element, in: app) { return true }
@@ -59,24 +67,24 @@ enum DemoApp {
                 continue
             }
             row.tap()
-            guard waitUntil(timeout: 5, { !row.isHittable }) else {
+            guard waitUntil(timeout: 5, { !canTap(row, in: app) }) else {
                 XCTFail("\(label): tapping the row on \(name) opened nothing")
                 continue
             }
             var way = "edge swipe"
             swipeBackFromTheLeftEdge(app)
-            if !waitUntil(timeout: 3, { row.isHittable }) {
+            if !waitUntil(timeout: 3, { canTap(row, in: app) }) {
                 let back = app.navigationBars.firstMatch.buttons.firstMatch
                 if back.exists, back.isHittable {
                     way = "back button \(back.label)"
                     back.tap()
                 }
             }
-            if !waitUntil(timeout: 3, { row.isHittable }) {
+            if !waitUntil(timeout: 3, { canTap(row, in: app) }) {
                 way = "swipe down"
                 app.swipeDown(velocity: .fast)
             }
-            XCTAssertTrue(waitUntil(timeout: 5) { row.isHittable }, "\(label): a swipe from the left edge, the back button and a swipe down all failed to go back to \(name)")
+            XCTAssertTrue(waitUntil(timeout: 5) { canTap(row, in: app) }, "\(label): a swipe from the left edge, the back button and a swipe down all failed to go back to \(name)")
             print("UI_ROW_OPENED \(label) back=\(way)")
         }
     }
