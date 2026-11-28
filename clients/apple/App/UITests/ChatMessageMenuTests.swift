@@ -1,3 +1,4 @@
+import UIKit
 import XCTest
 
 @MainActor
@@ -19,10 +20,17 @@ final class ChatMessageMenuTests: XCTestCase {
         XCTAssertTrue(DemoApp.waitUntil(timeout: 5) { !quote.exists }, "cancelling the reply did not take the quote away")
     }
 
-    func testCopyingAnAnswerSaysItWasCopied() {
+    func testCopyingAnAnswerPutsItWhereYouCanPasteIt() {
+        UIPasteboard.general.string = ""
         let app = DemoApp.launch("04-chat")
         choose("chat.menu.copy", fromTheMenuOf: "8:50 出门", in: app)
-        XCTAssertTrue(app.staticTexts[SourceText.zh(module, "chat.copied")].firstMatch.waitForExistence(timeout: 5), "copying the answer did not say it was copied")
+        let field = app.descendants(matching: .any)["chat.input"].firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 5), "the chat has no input")
+        field.press(forDuration: 1.2)
+        let paste = app.descendants(matching: .any).matching(NSPredicate(format: "label IN %@", ["粘贴", "Paste"])).firstMatch
+        XCTAssertTrue(paste.waitForExistence(timeout: 5), "after copying, long-pressing the chat input did not offer Paste")
+        paste.tap()
+        XCTAssertTrue(DemoApp.waitUntil(timeout: 5) { ((field.value as? String) ?? "").contains("8:50 出门") }, "pasting after copying did not put the answer into the chat input, it reads \((field.value as? String) ?? "nothing")")
     }
 
     func testSelectingTextOpensAPageThatDoneCloses() {

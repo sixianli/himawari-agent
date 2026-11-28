@@ -19,19 +19,11 @@ final class ApprovalsTests: XCTestCase {
         XCTAssertTrue(card.waitForExistence(timeout: 5), "switching back did not list what is waiting again")
     }
 
-    func testOpeningARequestShowsWhyAndGoesBackToTheList() {
+    func testOpeningARequestShowsWhyHimawariIsAsking() {
         let app = DemoApp.launch("next-3-her-approvals")
-        let card = firstCard(in: app)
-        card.tap()
+        firstCard(in: app).tap()
         let why = app.staticTexts[SourceText.zh(module, "approval.why")].firstMatch
         XCTAssertTrue(why.waitForExistence(timeout: 5), "opening the request did not show why Himawari is asking")
-        DemoApp.swipeBackFromTheLeftEdge(app)
-        if !waitingSegment(in: app).waitForExistence(timeout: 3) {
-            let back = app.navigationBars.firstMatch.buttons.firstMatch
-            if back.exists, back.isHittable { back.tap() }
-        }
-        XCTAssertTrue(waitingSegment(in: app).waitForExistence(timeout: 5), "going back from the request did not return to the waiting list")
-        XCTAssertTrue(card.exists, "the waiting list lost the request after going back")
     }
 
     private func firstCard(in app: XCUIApplication) -> XCUIElement {

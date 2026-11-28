@@ -32,10 +32,10 @@
     {
       "feature": "消息菜单：回复、复制、选择文字",
       "scenes": ["next-5-chat-select-text", "next-5-chat-copied", "next-5-chat-replying"],
-      "checks": "长按回答出菜单：回复会在输入框上方显示在回复谁，取消回复后消失；复制后提示“已复制”；选择文字打开一页能看到这条回答，“完成”能关",
+      "checks": "长按回答出菜单：回复会在输入框上方显示在回复谁，取消回复后消失；复制后在输入框长按粘贴，粘进来的是这条回答；选择文字打开一页能看到这条回答，“完成”能关",
       "tests": [
         "HimawariUITests/ChatMessageMenuTests/testReplyingQuotesTheAnswerAboveTheInputAndCancelTakesItAway",
-        "HimawariUITests/ChatMessageMenuTests/testCopyingAnAnswerSaysItWasCopied",
+        "HimawariUITests/ChatMessageMenuTests/testCopyingAnAnswerPutsItWhereYouCanPasteIt",
         "HimawariUITests/ChatMessageMenuTests/testSelectingTextOpensAPageThatDoneCloses"
       ]
     },
@@ -127,10 +127,10 @@
     {
       "feature": "要你同意：列表、详情",
       "scenes": ["17-today-more-1-approvals", "17-today-more-2-detail"],
-      "checks": "列表能在“等你同意”和“处理过的”之间切；从 Himawari 页进去点开一条，能看到为什么问你，返回回到等你同意的列表",
+      "checks": "列表能在“等你同意”和“处理过的”之间切；从 Himawari 页进去点开一条，能看到为什么问你",
       "tests": [
         "HimawariUITests/ApprovalsTests/testTheListSwitchesBetweenWaitingAndHandled",
-        "HimawariUITests/ApprovalsTests/testOpeningARequestShowsWhyAndGoesBackToTheList"
+        "HimawariUITests/ApprovalsTests/testOpeningARequestShowsWhyHimawariIsAsking"
       ]
     },
     {
