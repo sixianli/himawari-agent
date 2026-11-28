@@ -23,12 +23,11 @@ public enum SunflowerSeeds {
     static let frameShare = 0.94
     static let newSeedOnDark = (255.0, 236.0, 170.0)
     static let newSeedOnLight = (154.0, 98.0, 0.0)
-    static let brown = (92.0, 52.0, 16.0)
-    static let amber = (214.0, 128.0, 20.0)
-    static let gold = (245.0, 178.0, 48.0)
+    static let seedOnDark = (245.0, 178.0, 48.0)
+    static let seedOnLight = (210.0, 124.0, 18.0)
 
-    static let tiers: [(diameter: Double, seeds: Int)] = [(28, 21), (46, 34), (56, 55), (72, 89)]
-    static let largestTier = 144
+    static let tiers: [(diameter: Double, seeds: Int)] = [(28, 21), (46, 34), (56, 55)]
+    static let largestTier = 105
     public static let fullGrowthSeconds = 16.0
     public static let idleShareOfGrowth = 0.1
 
@@ -86,14 +85,9 @@ public enum SunflowerSeeds {
             let distance = spacing * age.squareRoot()
             let angle = order * goldenAngle
             let born = clamp(age / birthSeconds)
-            let color: (Double, Double, Double)
-            if share < newestShare {
-                color = onLight ? newSeedOnLight : newSeedOnDark
-            } else if share < 0.5 {
-                color = blend(brown, amber, share / 0.5)
-            } else {
-                color = blend(amber, gold, (share - 0.5) / 0.5)
-            }
+            let color = share < newestShare
+                ? (onLight ? newSeedOnLight : newSeedOnDark)
+                : (onLight ? seedOnLight : seedOnDark)
             return SunflowerSeed(
                 x: center + distance * cos(angle),
                 y: center + distance * sin(angle),
@@ -107,13 +101,4 @@ public enum SunflowerSeeds {
     }
 
     static func clamp(_ value: Double) -> Double { max(0, min(1, value)) }
-
-    static func blend(_ from: (Double, Double, Double), _ to: (Double, Double, Double), _ share: Double) -> (Double, Double, Double) {
-        let s = clamp(share)
-        return (
-            (from.0 + (to.0 - from.0) * s).rounded(),
-            (from.1 + (to.1 - from.1) * s).rounded(),
-            (from.2 + (to.2 - from.2) * s).rounded()
-        )
-    }
 }

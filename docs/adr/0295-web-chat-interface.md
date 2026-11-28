@@ -99,7 +99,7 @@ verified_at: "7c8521fe5f55e7dd57c5bd52badd16eef647502e"
 ### 造型和标志
 
 - 全站一套“圆润”造型：图标是半透明底形加实心细节的双色图标，全部放在 `glyphs.tsx` 一个文件里，每层填色写在图标自己身上；组件不描边，靠底色和阴影分层，按钮是胶囊形；圆角等尺寸写成 `rounded.css` 里的变量。新图标照同样画法放进同一个文件。
-- 标志是按黄金角排列的种子，种子数按显示大小取（小图点少、大图点多，见 [ADR 0308](0308-sunflower-mark-seed-count-follows-its-size-except-the-chat-puck.md)）；首页大图和正在回答的标志会长新种子，系统开了“减少动态效果”时一律静止。网页标志、PWA 图标和苹果端的桌面图标都由 `render-brand-assets.mjs` 从同一份种子数学生成。
+- 标志是按黄金角排列的种子，种子数按显示大小取（小图点少、大图点多，见 [ADR 0308](https://github.com/sixianli/himawari-agent/blob/1bc2b8886e7af7292d87642d057a78c8788860d7/docs/adr/0308-sunflower-mark-seed-count-follows-its-size-except-the-chat-puck.md)）；首页大图和正在回答的标志会长新种子，系统开了“减少动态效果”时一律静止。网页标志、PWA 图标和苹果端的桌面图标都由 `render-brand-assets.mjs` 从同一份种子数学生成。
 - 界面文字一律有中文、英文、日文三份。
 
 <a id="session-exchange"></a>
