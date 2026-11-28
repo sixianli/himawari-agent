@@ -180,6 +180,14 @@ public final class SensesModel {
         always[item] = await service.requestAlways(item)
     }
 
+    public func alwaysNeedsSettings(_ item: SenseItem) -> Bool {
+        always[item] == true || switchStates[item]?.askedAlways == true
+    }
+
+    public func reloadAlways() {
+        for item in items { always[item] = service.alwaysAllowed(item) }
+    }
+
     public func setRetention(_ item: SenseItem, days: Int) async {
         guard let key = item.retentionKey, let status else { return }
         do {

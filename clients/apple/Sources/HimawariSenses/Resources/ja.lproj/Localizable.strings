@@ -179,3 +179,4 @@
 "detail.notOn.systemDenied" = "オンにできませんでした：iPhone の「設定」で Himawari に%@の使用が許可されていません。";
 "detail.notOn.unsupported" = "オンにできませんでした：お使いの Himawari サーバーはまだ%@に対応していません。サーバーを更新してからお試しください。";
 "detail.notOn.off" = "オンにできませんでした：サーバーで%@が有効になりませんでした。しばらくしてからお試しください。";
+"detail.alwaysSettings" = "「設定」で位置情報を「常に」に変更します";

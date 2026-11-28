@@ -179,3 +179,4 @@
 "detail.notOn.systemDenied" = "Not turned on: Himawari isn't allowed to use %@ in iPhone Settings.";
 "detail.notOn.unsupported" = "Not turned on: your Himawari server doesn't support %@ yet. Update the server and try again.";
 "detail.notOn.off" = "Not turned on: the server didn't enable %@. Try again in a moment.";
+"detail.alwaysSettings" = "Change Location to “Always” in Settings";
