@@ -186,15 +186,44 @@ public final class HomeActions: DeviceActionHandler, @unchecked Sendable {
             return true
         }
         if wantedId != nil, chosen.isEmpty { throw DeviceActionFailure(.targetMissing) }
-        var items: [DeviceActionValue] = []
-        for accessory in chosen { items.append(.object(await Self.state(accessory))) }
-        return ["accessories": .array(items)]
+        var items: [JSONObject] = []
+        for accessory in chosen { items.append(await Self.state(accessory)) }
+        return DeviceActionListing.fit(items, as: "accessories", within: delivery.resultMaximumBytes)
     }
 
     private func accessory(_ delivery: DeviceActionDelivery) async throws -> HMAccessory? {
         let id = try delivery.args.string("accessoryId")
         guard let manager = await loader.homes() else { throw HomeUnavailable() }
         return await MainActor.run { manager.homes.flatMap(\.accessories).first { $0.uniqueIdentifier.uuidString == id } }
+    }
+
+    static let categories: [String: String] = [
+        HMAccessoryCategoryTypeAirPurifier: "air_purifier",
+        HMAccessoryCategoryTypeFan: "fan",
+        HMAccessoryCategoryTypeAirHumidifier: "humidifier",
+        HMAccessoryCategoryTypeAirDehumidifier: "humidifier",
+        HMAccessoryCategoryTypeLightbulb: "light",
+        HMAccessoryCategoryTypeOutlet: "outlet",
+        HMAccessoryCategoryTypeSwitch: "switch",
+        HMAccessoryCategoryTypeProgrammableSwitch: "switch",
+        HMAccessoryCategoryTypeTelevision: "television",
+        HMAccessoryCategoryTypeThermostat: "thermostat",
+        HMAccessoryCategoryTypeAirConditioner: "thermostat",
+        HMAccessoryCategoryTypeAirHeater: "thermostat",
+        HMAccessoryCategoryTypeWindowCovering: "window_covering",
+        HMAccessoryCategoryTypeDoorLock: "door_lock",
+        HMAccessoryCategoryTypeGarageDoorOpener: "garage_door",
+        HMAccessoryCategoryTypeDoor: "door",
+        HMAccessoryCategoryTypeWindow: "window",
+        HMAccessoryCategoryTypeSecuritySystem: "security_system",
+        HMAccessoryCategoryTypeIPCamera: "camera",
+        HMAccessoryCategoryTypeVideoDoorbell: "doorbell",
+        HMAccessoryCategoryTypeSensor: "sensor",
+        HMAccessoryCategoryTypeBridge: "bridge",
+    ]
+
+    static func category(_ type: String) -> String {
+        categories[type] ?? "other"
     }
 
     static func characteristic(_ accessory: HMAccessory, _ type: String) -> HMCharacteristic? {
@@ -230,6 +259,7 @@ public final class HomeActions: DeviceActionHandler, @unchecked Sendable {
             "name": .string(accessory.name),
             "room": .string(accessory.room?.name ?? ""),
             "reachable": .bool(accessory.isReachable),
+            "category": .string(category(accessory.category.categoryType)),
             "state": .object(values),
         ]
     }
