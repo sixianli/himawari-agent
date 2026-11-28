@@ -21,7 +21,7 @@ function swiftFiles(directory) {
   });
 }
 
-export function modelDownloadCalls(source) {
+function modelDownloadCalls(source) {
   return [
     ...source.matchAll(/\b(?:downloadIfNeeded|ModelHub\.\w+|DiarizerModels\.download)\s*\(/gu),
   ].map((match) => match[0]);
