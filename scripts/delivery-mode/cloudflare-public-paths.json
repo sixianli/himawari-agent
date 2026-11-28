@@ -14,5 +14,5 @@
     "/api/device/v1",
     "/api/proactive/v1/google/callback"
   ],
-  "retireApplications": []
+  "retireApplications": ["Himawari devices", "himawari-mcp"]
 }
