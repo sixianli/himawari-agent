@@ -90,7 +90,6 @@ it("streams through a loopback Magpie route with the pinned Pi runtime and price
     maxTokens: 32768,
     capabilities: ["text"],
     disclosure: "external_remote",
-    allowedDataClassifications: ["public", "private"],
     secretRequirement: {
       secretRef: "magpie-gateway-key",
       secretVersion: "v1",

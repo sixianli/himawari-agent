@@ -8,6 +8,7 @@
       "!!.agents/tasks",
       "!!.agents/reviews",
       "!!scripts/delivery-mode/packet-template",
+      "!!clients/apple/Sources/HimawariListenEngine/SpeakerModels",
       "!!scripts/delivery-mode/hermes/capture-build-source-inputs.template.mjs"
     ]
   },

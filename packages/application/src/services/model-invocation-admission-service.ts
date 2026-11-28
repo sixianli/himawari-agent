@@ -170,9 +170,6 @@ function freezeDescriptor(
   if (!Array.isArray(input.capabilities)) {
     throw invalid(`${field}.capabilities must be an array`, { field });
   }
-  if (!Array.isArray(input.allowedDataClassifications)) {
-    throw invalid(`${field}.allowedDataClassifications must be an array`, { field });
-  }
   if (
     input.secretRequirement !== null &&
     (typeof input.secretRequirement !== "object" || Array.isArray(input.secretRequirement))
@@ -182,11 +179,6 @@ function freezeDescriptor(
   const capabilities = Object.freeze(
     input.capabilities.map((value, capabilityIndex) =>
       nonEmptyText(value, `${field}.capabilities[${capabilityIndex}]`),
-    ),
-  );
-  const allowedDataClassifications = Object.freeze(
-    input.allowedDataClassifications.map((value, classificationIndex) =>
-      classification(value, `${field}.allowedDataClassifications[${classificationIndex}]`),
     ),
   );
   const secretRequirement =
@@ -215,7 +207,6 @@ function freezeDescriptor(
     priority: positiveSafeInteger(input.priority, `${field}.priority`),
     disclosure: disclosure(input.disclosure, `${field}.disclosure`),
     capabilities,
-    allowedDataClassifications,
     secretRequirement,
     ...(input.providerRouting === undefined
       ? {}
@@ -228,15 +219,6 @@ function freezeDescriptor(
           }),
         }),
   });
-  if (descriptor.allowedDataClassifications.length === 0) {
-    throw invalid(`${field}.allowedDataClassifications must not be empty`, { field });
-  }
-  if (
-    new Set(descriptor.allowedDataClassifications).size !==
-    descriptor.allowedDataClassifications.length
-  ) {
-    throw invalid(`${field}.allowedDataClassifications must not contain duplicates`, { field });
-  }
   const pricing = freezePricing(input.pricing, `${field}.pricing`);
   const estimatedCostMicros = safeNonNegativeInteger(
     input.estimatedCostMicros,

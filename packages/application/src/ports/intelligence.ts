@@ -72,7 +72,6 @@ export interface ModelDescriptor {
   readonly priority: number;
   readonly disclosure: ModelDisclosure;
   readonly capabilities: readonly string[];
-  readonly allowedDataClassifications: readonly DataClassification[];
   readonly secretRequirement: ModelSecretRequirement | null;
   readonly providerRouting?: ModelProviderRouting;
 }

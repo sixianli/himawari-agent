@@ -754,7 +754,6 @@ function web() {
     routingClass: "primary",
     priority: 1,
     disclosure: "external_remote",
-    allowedDataClassifications: ["private"],
     capabilities: ["text"],
     secretRequirement: null,
     contextWindow: 8192,

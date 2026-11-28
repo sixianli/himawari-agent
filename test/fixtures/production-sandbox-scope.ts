@@ -307,7 +307,6 @@ export async function productionSandboxScope(
     provider: "deterministic",
     model: "fixture",
     version: "1",
-    allowedDataClassifications: ["private"],
     disclosure: "local_only",
     secretRef: null,
     capabilities: ["text"],

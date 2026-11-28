@@ -127,7 +127,6 @@ function descriptor(
     priority: 10,
     disclosure: routingClass === "local" ? "local_only" : "trusted_remote",
     capabilities: routingClass === "specialist" ? ["vision"] : ["text"],
-    allowedDataClassifications: ["public", "private", "sensitive"],
     secretRequirement: null,
     ...options,
   };

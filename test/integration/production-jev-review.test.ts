@@ -112,7 +112,6 @@ const REVIEW_DESCRIPTOR = {
   priority: 2,
   disclosure: "external_remote" as const,
   capabilities: ["text"],
-  allowedDataClassifications: ["private" as const],
   secretRequirement: { secretRef: "provider-reviewer", secretVersion: "v1", purpose: "model-auth" },
 };
 

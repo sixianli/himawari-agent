@@ -43,7 +43,6 @@ function configuration(stateRoot: string) {
           capabilities: ["embedding"],
           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
           dimensions: 1024,
-          allowedDataClassifications: ["public", "private", "sensitive", "restricted"],
           disclosure: "local_only",
           secretRef: null,
           artifactSha256: "a".repeat(64),
@@ -63,7 +62,6 @@ function configuration(stateRoot: string) {
           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
           contextWindow: 8192,
           maxTokens: 1024,
-          allowedDataClassifications: ["public", "private"],
           disclosure: "local_only",
           secretRef: null,
         };

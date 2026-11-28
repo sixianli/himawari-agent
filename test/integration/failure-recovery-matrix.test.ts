@@ -306,7 +306,6 @@ describe("Task 19 failure and recovery matrix", () => {
       priority: 1,
       disclosure: "trusted_remote" as const,
       capabilities: ["reasoning"],
-      allowedDataClassifications: ["private" as const],
       secretRequirement: null,
     };
     const fallback = {

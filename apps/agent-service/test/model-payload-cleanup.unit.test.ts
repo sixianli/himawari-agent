@@ -18,7 +18,6 @@ const MODEL: ConfiguredPiModelDescriptor = {
   priority: 1,
   disclosure: "external_remote",
   capabilities: ["text"],
-  allowedDataClassifications: ["public", "private"],
   secretRequirement: {
     secretRef: "vercel-ai-gateway-api-key",
     secretVersion: "v1",

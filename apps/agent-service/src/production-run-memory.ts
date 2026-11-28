@@ -46,7 +46,6 @@ export function embeddingAdmissionDescriptor(
     priority: 1,
     disclosure: model.disclosure,
     capabilities: model.capabilities,
-    allowedDataClassifications: model.allowedDataClassifications,
     secretRequirement: secret
       ? { secretRef: secret.ref, secretVersion: secret.version, purpose: secret.purpose }
       : null,

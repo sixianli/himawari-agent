@@ -15,7 +15,6 @@ afterEach(removeDeviceHarnessDirectories);
 
 const MODELS = {
   primaryRef: "magpie-main",
-  privateRefs: ["magpie-main", "deepseek-flash"],
   catalog: [
     {
       ref: "magpie-main",

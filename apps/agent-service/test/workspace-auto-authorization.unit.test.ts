@@ -61,7 +61,6 @@ const MODEL = {
   provider: "deterministic",
   model: "fixture",
   version: "1",
-  allowedDataClassifications: ["private"] as const,
   disclosure: "local_only" as const,
   secretRef: null,
   capabilities: ["text"] as const,

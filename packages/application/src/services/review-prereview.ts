@@ -16,6 +16,7 @@ import {
 } from "@himawari-agent/calibration/prereview";
 import { REVIEW_PREREVIEW } from "@himawari-agent/prompt-catalog";
 import { maskSensitiveText } from "@himawari-agent/sensitive-capture";
+import type { DataClassification } from "../ports/common.js";
 import type { ReviewPrereviewConfiguration } from "../ports/configuration.js";
 import type { ModelInvocationRequest } from "../ports/intelligence.js";
 import type { ProactiveScope } from "../ports/proactive-checks.js";
@@ -34,6 +35,7 @@ import {
   reviewKey,
 } from "./daily-review.js";
 import type { ProactiveModelInvoker } from "./proactive-mail-check-service.js";
+import { isModelVisible } from "./model-visibility.js";
 import { startOfZonedDay } from "./proactive-rules.js";
 
 const MAX_OUTPUT_BYTES = 4_096;
@@ -155,7 +157,7 @@ export class ReviewPrereviewService {
   readonly #storeFailedAt = new Map<string, number>();
   readonly #classificationSkipped = new Map<
     string,
-    { classification: ProactiveModelInvoker["allowedDataClassifications"][number]; at: number }
+    { classification: DataClassification; at: number }
   >();
 
   constructor(options: ReviewPrereviewOptions) {
@@ -235,10 +237,9 @@ export class ReviewPrereviewService {
       if (attempted >= settings.perRun) break;
       if (attempts >= settings.dailyLimit)
         return { attempted, recorded, failures, skippedClassification, stoppedBy: "daily_limit" };
-      const allowedClassifications = this.#options.model.allowedDataClassifications;
       const knownSkip = this.#classificationSkipped.get(source.key);
       if (knownSkip !== undefined) {
-        if (!allowedClassifications.includes(knownSkip.classification)) {
+        if (!isModelVisible(knownSkip.classification)) {
           skippedClassification += 1;
           continue;
         }
@@ -246,7 +247,7 @@ export class ReviewPrereviewService {
       }
       const subject = await source.build().catch(() => undefined);
       if (subject === undefined) continue;
-      if (!allowedClassifications.includes(subject.dataClassification)) {
+      if (!isModelVisible(subject.dataClassification)) {
         this.#classificationSkipped.set(source.key, {
           classification: subject.dataClassification,
           at: nowMs,
