@@ -89,8 +89,7 @@ public struct SignInView: View {
                     .multilineTextAlignment(.center)
                     .padding()
                     .frame(maxWidth: .infinity)
-                    .background(Color.hmSurface, in: RoundedRectangle(cornerRadius: DesignTokens.Pairing.bannerRadius, style: .continuous))
-                    .hmShadow(DesignTokens.Shadows.lift)
+                    .hmRaised(RoundedRectangle(cornerRadius: DesignTokens.Pairing.bannerRadius, style: .continuous), fill: Color.hmSurface, shadow: DesignTokens.Shadows.lift)
             }
             Spacer(minLength: 0)
             SunflowerMark(growing: model.phase == .signingIn)
