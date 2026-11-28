@@ -247,9 +247,8 @@ struct PerceptionEpisodeDeletionView: View {
         .task { await load() }
         .confirmationDialog(L.text("delete.confirmThisEpisode"), isPresented: $confirming, titleVisibility: .visible) {
             Button(L.text("detail.delete"), role: .destructive) {
-                Task {
-                    if await model.delete(.episode(episodeId), reason: L.text("delete.confirmThisEpisode")) { back() }
-                }
+                back()
+                Task { await model.delete(.episode(episodeId), reason: L.text("delete.confirmThisEpisode")) }
             }
             Button(L.text("detail.cancel"), role: .cancel) {}
         } message: {
@@ -266,13 +265,11 @@ struct PerceptionEpisodeDeletionView: View {
     }
 
     private func deleteRecord(_ record: PerceptionRecordView) async {
-        guard await model.delete(.records([record.id]), reason: L.text("delete.reasonRecord")), let current = snapshot else { return }
+        guard let current = snapshot else { return }
         let left = current.records.filter { $0.id != record.id }
-        if left.isEmpty {
-            back()
-        } else {
-            snapshot = PerceptionEpisodeSnapshot(episode: current.episode, records: left, nextCursor: current.nextCursor)
-        }
+        if left.isEmpty { back() }
+        guard await model.delete(.records([record.id]), reason: L.text("delete.reasonRecord")), !left.isEmpty else { return }
+        snapshot = PerceptionEpisodeSnapshot(episode: current.episode, records: left, nextCursor: current.nextCursor)
     }
 }
 

@@ -51,6 +51,7 @@ final class PerceptionDeletionTests: XCTestCase {
         XCTAssertTrue(deleted.waitForExistence(timeout: 10), "confirming did not report how many records were deleted")
         app.buttons[SourceText.zh(module, "detail.ok")].firstMatch.tap()
         XCTAssertTrue(DemoApp.waitUntil(timeout: 5) { !deleted.exists }, "the deleted notice did not go away")
+        XCTAssertTrue(app.buttons[SourceText.zh(module, "delete.segment.episodes")].firstMatch.waitForExistence(timeout: 5), "after deleting, the page did not go back to the list")
     }
 
     private func dismissWithoutDeleting(in app: XCUIApplication) {
