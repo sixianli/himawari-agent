@@ -263,7 +263,7 @@ describe("[iOS-7] proactive source registry", () => {
     };
   }
 
-  it("[I-129] a mail search that fails once is retried by Himawari, and one that keeps failing is reported to developers, not handed to the owner", async () => {
+  it("[I-130] a mail search that fails once is retried by Himawari, and one that keeps failing is reported to developers, not handed to the owner", async () => {
     const h = await harness();
     await h.connect(NOTES);
     const failures: ProactiveMailReadFailure[] = [];
@@ -296,7 +296,7 @@ describe("[iOS-7] proactive source registry", () => {
     expect((await h.store.readConnection({ ...scope, source: NOTES }))?.status).toBe("connected");
   });
 
-  it("[I-129][reverse] a mail search refused because the sign-in expired asks the owner to reconnect and is not retried or reported", async () => {
+  it("[I-130][reverse] a mail search refused because the sign-in expired asks the owner to reconnect and is not retried or reported", async () => {
     const h = await harness();
     await h.connect(NOTES);
     const failures: ProactiveMailReadFailure[] = [];

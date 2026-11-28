@@ -270,7 +270,7 @@ describe("[PG-11] Gmail read-only source", () => {
     for (const call of gmailCalls) expect(call.method).toBe("GET");
   });
 
-  it("[I-129] a search or thread read Gmail refuses with 401 is told apart from other failures, so only an expired sign-in asks the owner to reconnect", async () => {
+  it("[I-130] a search or thread read Gmail refuses with 401 is told apart from other failures, so only an expired sign-in asks the owner to reconnect", async () => {
     let status = 401;
     const fake = fakeGoogle((url) => {
       if (url.href === "https://oauth2.googleapis.com/token")

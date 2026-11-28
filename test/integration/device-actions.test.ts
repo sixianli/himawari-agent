@@ -2259,7 +2259,7 @@ function sampleArguments(registration: DeviceActionRegistration): Record<string,
   return args;
 }
 
-describe("[I-129] every device read goes through to the device and back, and what it lists can be acted on", () => {
+describe("[I-130] every device read goes through to the device and back, and what it lists can be acted on", () => {
   const reads = DEVICE_ACTION_REGISTRATIONS.filter(({ actionKind }) => actionKind === "READ");
   const listed = DEVICE_ACTION_REGISTRATIONS.filter(({ target }) => target?.listedBy);
 

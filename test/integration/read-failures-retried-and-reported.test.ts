@@ -49,7 +49,7 @@ function senseFiles(): { readonly file: string; readonly source: string }[] {
     }));
 }
 
-describe("[I-129] when Himawari cannot read what the owner allowed, it retries and tells developers, not the owner", () => {
+describe("[I-130] when Himawari cannot read what the owner allowed, it retries and tells developers, not the owner", () => {
   it("the iPhone and the server name the same read sources", () => {
     const swift = swiftReadProblemSources(readFileSync(READ_PROBLEMS_FILE, "utf8"));
     expect(swift.size).toBeGreaterThan(0);

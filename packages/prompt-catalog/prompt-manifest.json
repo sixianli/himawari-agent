@@ -1134,7 +1134,7 @@
   },
   "tools.mail-read": {
     "sha256": "58972a91136b8110d6b249de6433364bba7808afacaa07a377b8839c1bce7ca3",
-    "changedIn": "I-129",
+    "changedIn": "I-130",
     "reason": "mail_read 加 query：按 Gmail 搜索写法搜主人的邮箱；说明读失败已自动重试并交给开发，授权失效才要主人重连"
   },
   "tools.memory-open": {
@@ -1402,27 +1402,27 @@
   },
   "tools.result.device-action.usage.alarm-list": {
     "sha256": "1a33805b40dcab6f6ff54e1933df8bed601d16b0f6eb3eb8468bd51804c5c4f0",
-    "changedIn": "I-129",
+    "changedIn": "I-130",
     "reason": "新增：提醒事项、闹钟、家庭的读动作用法，以及标成完成、控制家居时编号从哪来"
   },
   "tools.result.device-action.usage.device-reminder-complete": {
     "sha256": "b3dd2a5e72258484af7cca10b27a7e80ebdd02692a2ce37d8f89b98850a075e3",
-    "changedIn": "I-129",
+    "changedIn": "I-130",
     "reason": "新增：提醒事项、闹钟、家庭的读动作用法，以及标成完成、控制家居时编号从哪来"
   },
   "tools.result.device-action.usage.device-reminder-read": {
     "sha256": "ba656789d609f3c70ba43c3db5ec63159e00d8bd10e4372584451f9b147cb122",
-    "changedIn": "I-129",
+    "changedIn": "I-130",
     "reason": "新增：提醒事项、闹钟、家庭的读动作用法，以及标成完成、控制家居时编号从哪来"
   },
   "tools.result.device-action.usage.home-control": {
     "sha256": "cac0c8c813993cc13db0389c01a869ce1f4ffa554bd2c4cfb31cee1cb8b852d1",
-    "changedIn": "I-129",
+    "changedIn": "I-130",
     "reason": "新增：提醒事项、闹钟、家庭的读动作用法，以及标成完成、控制家居时编号从哪来"
   },
   "tools.result.device-action.usage.home-read": {
     "sha256": "dd4af208557d44f3ce429d0bb60c0ba30a05c19a2842d0e2d4ed6071cfb05f6d",
-    "changedIn": "I-129",
+    "changedIn": "I-130",
     "reason": "新增：提醒事项、闹钟、家庭的读动作用法，以及标成完成、控制家居时编号从哪来"
   },
   "tools.result.device-action.waiting-owner": {

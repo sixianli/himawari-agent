@@ -79,7 +79,7 @@ function deviceCapabilityGaps(
   return gaps;
 }
 
-describe("[I-129] 每个设备能力都有读的路径", () => {
+describe("[I-130] 每个设备能力都有读的路径", () => {
   it("注册表里的每个领域都能读，读动作苹果端接通并有测试，改动的目标都找得到", () => {
     expect(deviceCapabilityGaps(DEVICE_ACTION_REGISTRATIONS, appleSide())).toEqual([]);
   });
