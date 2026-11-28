@@ -468,7 +468,7 @@ public struct ChatView: View {
                 .padding(.top, Self.headerHeight + DesignTokens.Chat.puckContentGap + (shownBackgroundWork == nil ? 0 : DesignTokens.Chat.puckBannerGap + DesignTokens.Avatar.backgroundPillHeight))
                 .padding(.bottom, 110)
                 Color.clear
-                    .frame(height: 0)
+                    .frame(height: .zero)
                     .id(Self.transcriptEnd)
             }
         }
