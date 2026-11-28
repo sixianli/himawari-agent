@@ -2,13 +2,14 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { INCIDENT_ID_SOURCE } from "./check-incident-gates.mjs";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const INVENTORY = "docs/agent-rulebook-inventory.md";
 const SELF_TEST = "test/tooling/agent-rulebook-inventory.test.mjs";
 const IGNORED = new Set(["node_modules", ".git", "dist", "coverage", ".ci-output"]);
 const TEST_ID = /\b(?:PG|OM|SI|PA|NAME|MEM|W)-[A-Za-z0-9]+\b/g;
-const INCIDENT_ID = /\bI-\d+\b/g;
+const INCIDENT_ID = new RegExp(`\\b${INCIDENT_ID_SOURCE}\\b`, "g");
 const TEST_FILE = /`([^`\s]+\.(?:test|spec)\.[a-z]+)`/g;
 const LINK = /\]\(([^)\s]+)\)/g;
 

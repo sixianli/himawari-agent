@@ -449,6 +449,51 @@ describe("repeat counts come from the commit history", () => {
     expect(history(root)).toEqual([]);
   });
 
+  it("replays PR 809: a missed Premise line is supplied by a later commit instead of a rewrite", () => {
+    const root = historyFixture();
+    commit(root, "fix: one\n\nIncident: I-01");
+    setList(root, [row({ count: "2" })]);
+    const missing = commit(root, "fix: two\n\nIncident: I-01");
+    expect(history(root)).toEqual([`INCIDENT_PREMISE_MISSING ${missing.slice(0, 12)} I-01`]);
+    commit(
+      root,
+      `docs: name the wrong assumption\n\nIncident-follow-up: I-01\nIncident-amend: ${missing.slice(0, 12)} Premise: 以为副本里的租约已经过期`,
+    );
+    expect(history(root)).toEqual([]);
+  });
+
+  it("replays I-129: a pushed commit naming the wrong incident is pointed at the right one later", () => {
+    const root = historyFixture([row({}), row({ id: "I-02" })]);
+    const wrong = commit(root, "fix: x\n\nIncident: I-77");
+    expect(history(root)).toEqual([`INCIDENT_TRAILER_UNKNOWN ${wrong.slice(0, 12)} I-77`]);
+    commit(
+      root,
+      `chore: right id\n\nIncident: none\nIncident-amend: ${wrong.slice(0, 7)} Incident: I-02`,
+    );
+    expect(history(root)).toEqual([]);
+    const forgot = commit(root, "fix: forgot");
+    commit(root, `chore: add the line\n\nIncident: none\nIncident-amend: ${forgot} Incident: none`);
+    expect(history(root)).toEqual([]);
+  });
+
+  it("refuses an amendment that names no commit or is written wrong", () => {
+    const root = historyFixture();
+    const bad = commit(root, "chore: x\n\nIncident: none\nIncident-amend: abcdef1 Premise: 想错了");
+    const odd = commit(root, "chore: y\n\nIncident: none\nIncident-amend: Premise: 没写提交");
+    expect(history(root)).toEqual([
+      `INCIDENT_AMEND_TARGET_UNKNOWN ${bad.slice(0, 12)} abcdef1`,
+      `INCIDENT_TRAILER_INVALID ${odd.slice(0, 12)} Incident-amend: Premise: 没写提交`,
+    ]);
+    const message = join(root, "message.txt");
+    writeFileSync(message, "chore\n\nIncident: none\nIncident-amend: abcdef1 Premise: 想错了\n");
+    const refused = spawnSync("node", [join(root, RULE_FILE), "--commit-msg", message], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    expect(refused.status).toBe(1);
+    expect(refused.stderr).toContain("INCIDENT_AMEND_TARGET_UNKNOWN commit-msg abcdef1");
+  });
+
   it("refuses an Incident line naming an incident the list does not have", () => {
     const root = historyFixture();
     const sha = commit(root, "fix: x\n\nIncident: I-77");
