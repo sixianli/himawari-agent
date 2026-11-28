@@ -52,7 +52,6 @@ public struct MemoryItem: Decodable, Sendable, Identifiable, Hashable {
 
 public struct MemorySummary: Equatable, Sendable {
     public let memories: Int
-    public let rules: Int
 }
 
 public struct MemoryImport: Decodable, Sendable, Hashable {

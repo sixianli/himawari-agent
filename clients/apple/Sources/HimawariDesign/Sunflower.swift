@@ -13,6 +13,7 @@ public struct SunflowerMark: View {
     private let seeds: Int?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.stillFrames) private var stillFrames
+    @Environment(\.colorScheme) private var colorScheme
 
     public init(growing: Bool = false) {
         motion = growing ? .growing : .still
@@ -65,7 +66,7 @@ public struct SunflowerMark: View {
             let scale = side * SunflowerSeeds.frameShare / (2 * SunflowerSeeds.reach(seeds: seeds))
             let dx = size.width / 2 - SunflowerSeeds.center * scale
             let dy = size.height / 2 - SunflowerSeeds.center * scale
-            for seed in SunflowerSeeds.at(growth: growth, seeds: seeds, startsEmpty: startsEmpty) where seed.radius > 0 {
+            for seed in SunflowerSeeds.at(growth: growth, seeds: seeds, startsEmpty: startsEmpty, onLight: colorScheme == .light) where seed.radius > 0 {
                 let r = seed.radius * scale
                 let rect = CGRect(x: dx + seed.x * scale - r, y: dy + seed.y * scale - r, width: r * 2, height: r * 2)
                 context.fill(
