@@ -73,6 +73,23 @@ def service():
     return dict(line.split('=', 1) for line in output.strip().splitlines())
 
 
+def stop_result():
+    output = command(['/usr/bin/systemctl', 'show', 'himawari-prod.service', '--no-pager', '--property=Result,ExecMainCode,ExecMainStatus'])
+    return dict(line.split('=', 1) for line in output.strip().splitlines())
+
+
+def reset_failed():
+    command(['/usr/bin/systemctl', 'reset-failed', 'himawari-prod.service'])
+
+
+def settle_failed_stop(stopped, read_result, reset, read_service):
+    if stopped['ActiveState'] != 'failed' or stopped['MainPID'] != '0':
+        return stopped, None
+    facts = read_result()
+    reset()
+    return read_service(), facts
+
+
 def root_space():
     info = os.statvfs('/')
     return {'checkedAt': utc(), 'availableBytes': info.f_bavail * info.f_frsize, 'availableInodes': info.f_favail}
@@ -259,7 +276,7 @@ __PKT_END_WHEN__
             previous = load(EVIDENCE / 's2-stop-result.json')
             require(previous['passed'] is True, '__PKT_LABEL_UPPER___S2_ORIGINAL_STOP_REPORT_REQUIRED')
             report['originalControlGroup'] = previous['originalControlGroup']
-        stopped = service()
+        stopped, report['stopEndedFailed'] = settle_failed_stop(service(), stop_result, reset_failed, service)
         require(stopped['ActiveState'] == 'inactive' and stopped['MainPID'] == '0', '__PKT_LABEL_UPPER___S2_SERVICE_NOT_STOPPED')
         first = process_survey()
         second = process_survey()

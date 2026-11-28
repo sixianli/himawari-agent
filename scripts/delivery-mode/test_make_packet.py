@@ -480,7 +480,7 @@ class TemplateTest(RenderedPacket):
     FIRST_TOOLS_REFS = ['himawari.pi-coding', 'himawari.public-fetch', 'himawari.public-search']
     SWITCH_FILES = ('systemd/S2-stop-and-inspect.py', 'systemd/S7-startup-readback.mjs', 'systemd/S7-switch-start-readback.py', 'install/S9-clean-transport.py')
     UPGRADE_SWITCH_SHA256 = {
-    'systemd/S2-stop-and-inspect.py': 'c466dde3068064600fb817631b3fa282eac1cc47539a11635953f0518b5e4fee',
+    'systemd/S2-stop-and-inspect.py': '9cbe8623fd17f45312d9e0eb6c0f4773072cf553128d4ccaa395803ba4181389',
     'systemd/S7-startup-readback.mjs': '80e880d599317d208c4300bbfbcb255cb8ecb098cfa0e4bfa5282149b990200c',
     'systemd/S7-switch-start-readback.py': 'b154d5b181215b884e3011797f7d3127c101a3c9db415d242ff46ee037c1fdc9',
     'install/S9-clean-transport.py': '235a7d2882edaa304097746315a4be7f5c5f467fea83cd1522a43a1e3b223533',    }
@@ -2372,6 +2372,30 @@ class MaintenanceFailureDetailTest(unittest.TestCase):
         for relative in ('packet-template/steps/run-step.py', 'last-failure-report.py'):
             source = (HERE / relative).read_text()
             self.assertIn("'failedCondition', 'failureDetail'", source, relative)
+
+
+class ForcedStopTest(unittest.TestCase):
+    RELATIVE = 'systemd/S2-stop-and-inspect.py'
+
+    def settle(self, stopped, after):
+        calls = []
+        namespace = execute_definitions(self.RELATIVE, template_definitions(self.RELATIVE, {'settle_failed_stop'}), {})
+        result = namespace['settle_failed_stop'](stopped, lambda: calls.append('result') or {'Result': 'exit-code', 'ExecMainStatus': '1'}, lambda: calls.append('reset'), lambda: calls.append('show') or after)
+        return result, calls
+
+    def test_I261128_a_stop_that_the_old_release_ended_by_force_is_reset_and_counts_as_stopped(self):
+        source = (PACKET_TEMPLATE / self.RELATIVE).read_text()
+        self.assertIn("stopped, report['stopEndedFailed'] = settle_failed_stop(service(), stop_result, reset_failed, service)", source)
+        (stopped, facts), calls = self.settle({'ActiveState': 'failed', 'MainPID': '0'}, {'ActiveState': 'inactive', 'MainPID': '0'})
+        self.assertEqual((stopped['ActiveState'], facts['Result'], calls), ('inactive', 'exit-code', ['result', 'reset', 'show']))
+
+    def test_a_clean_stop_is_left_alone(self):
+        (stopped, facts), calls = self.settle({'ActiveState': 'inactive', 'MainPID': '0'}, None)
+        self.assertEqual((stopped['ActiveState'], facts, calls), ('inactive', None, []))
+
+    def test_a_failed_unit_that_still_has_a_main_process_is_not_reset(self):
+        (stopped, facts), calls = self.settle({'ActiveState': 'failed', 'MainPID': '4242'}, None)
+        self.assertEqual((stopped['MainPID'], facts, calls), ('4242', None, []))
 
 
 class QuestionTwelveDownloadRetryTest(unittest.TestCase):
