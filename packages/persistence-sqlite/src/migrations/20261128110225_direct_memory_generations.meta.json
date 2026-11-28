@@ -1,0 +1,4 @@
+{
+  "alters": ["memory_generations"],
+  "rebuilds": ["memory_generations"]
+}
