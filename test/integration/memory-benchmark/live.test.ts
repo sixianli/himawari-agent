@@ -11,6 +11,7 @@ import { useSqliteContractExecution } from "../sqlite-contract-execution.fixture
 import {
   answerWithConversationTools,
   evidenceHit,
+  evidenceLinesIn,
   fullContextMessages,
   memoryAnswerMessages,
 } from "./answer.ts";
@@ -413,6 +414,7 @@ describe.skipIf(!LIVE)(
                   answerMs: answeredWithTurns.ms,
                   toolCalls: answeredWithTurns.toolCalls,
                   recalledTurns: recalled !== null,
+                  evidenceLinesRecalled: evidenceLinesIn(question, recalled?.text ?? ""),
                   evidenceRecalled: evidenceHit(question, [
                     ...related.flat().flatMap(({ sessionIds }) => sessionIds),
                     ...(recalled?.sessionIds ?? []),

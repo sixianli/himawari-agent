@@ -20,6 +20,7 @@ import {
   openQualifiedDatabase,
   SqliteProductStateRepository,
 } from "@himawari-agent/persistence-sqlite";
+import { CONVERSATION_RECALL_HEADER } from "@himawari-agent/prompt-catalog";
 import { DeterministicPayloadProtector } from "@himawari-agent/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -38,9 +39,11 @@ const OTHER = createThreadId("thread-conversation-turns-other");
 const THINK = createThreadId("thread-conversation-turns-think");
 const BOOKS = createThreadId("thread-conversation-turns-books");
 const NOW = createThreadId("thread-conversation-turns-now");
+const POTTERY = createThreadId("thread-conversation-turns-pottery");
 const DIMENSIONS = 16;
 const RECALL_DIMENSIONS = 256;
 const ALL = ["public", "private", "sensitive"] as const;
+const CONVERSATION_RECALL_BUDGET_PROBE = [...CONVERSATION_RECALL_HEADER.text].length + 63;
 
 type Row = readonly [ThreadId, number, "owner" | "agent" | "system", string, string, string];
 
@@ -103,7 +106,7 @@ describe.each(["worker", "direct"] as const)("conversation turns through %s", (e
     database
       .prepare("INSERT INTO agents (id, owner_id, revision) VALUES (?, ?, 0)")
       .run(AGENT_ID, OWNER_ID);
-    for (const thread of [TALK, OTHER, THINK, BOOKS, NOW])
+    for (const thread of [TALK, OTHER, THINK, BOOKS, NOW, POTTERY])
       database
         .prepare(
           `INSERT INTO threads (id, owner_id, agent_id, revision, status, created_at, updated_at)
@@ -947,8 +950,9 @@ describe.each(["worker", "direct"] as const)("conversation turns through %s", (e
     }
   });
 
-  async function recallFixture(maximumCharacters = 20_000) {
+  async function recallFixture(maximumCharacters = 20_000, extra: readonly Row[] = []) {
     const resource = await fixture(RECALL_DIMENSIONS);
+    resource.add(extra);
     resource.add([
       [BOOKS, 1, "owner", "private", "2026-11-18T10:00:00.000Z", "推荐一本好看的科幻小说"],
       [
@@ -1029,7 +1033,7 @@ describe.each(["worker", "direct"] as const)("conversation turns through %s", (e
       ).toEqual([[BOOKS, 1, "2026-11-18"]]);
       expect(found?.turns[0]?.preview).toBe("推荐一本好看的科幻小说");
       expect(found?.text.split("\n")).toEqual([
-        "以前对话里和主人这句话相关的原话（程序按相关度自动找出，按时间先后排列；“你”是 Himawari 自己当时说的话；要看前后文，用 conversation_open 传下面的对话编号和序号）：",
+        CONVERSATION_RECALL_HEADER.text,
         "",
         `[2026-11-18 对话编号 ${BOOKS} 序号 1]`,
         "主人：推荐一本好看的科幻小说",
@@ -1074,11 +1078,58 @@ describe.each(["worker", "direct"] as const)("conversation turns through %s", (e
     }
   });
 
+  const POTTERY_ROWS: readonly Row[] = [
+    [POTTERY, 1, "owner", "private", "2026-11-08T03:00:00.000Z", "周末带孩子去陶艺工作室做陶艺"],
+    [POTTERY, 2, "agent", "private", "2026-11-08T03:00:05.000Z", "听起来很好玩"],
+    [POTTERY, 3, "agent", "private", "2026-11-13T23:00:00.000Z", "上周六的陶艺课孩子还想再去吗？"],
+    [POTTERY, 4, "owner", "private", "2026-11-14T01:00:00.000Z", "想去，上次捏的狗脸杯子还在桌上"],
+    [POTTERY, 5, "agent", "private", "2026-11-14T01:00:05.000Z", "太可爱了"],
+    [POTTERY, 6, "owner", "private", "2026-11-15T01:00:00.000Z", "晚饭吃什么好"],
+    [POTTERY, 7, "agent", "private", "2026-11-15T01:00:05.000Z", "咖喱饭不错"],
+  ];
+
+  it("[自动原话] brings the next turn along with the matched one, marks each line said on another day with its own day, and REVERSE leaves out the turn after that", async () => {
+    const { resource, ask, failures } = await recallFixture(20_000, POTTERY_ROWS);
+    try {
+      const found = await ask("周末带孩子去陶艺工作室做陶艺");
+      expect(failures).toEqual([]);
+      expect(
+        found?.turns.map(({ conversationId, sequence }) => [conversationId, sequence]),
+      ).toEqual([[POTTERY, 1]]);
+      expect(found?.turns[0]?.preview).toBe("周末带孩子去陶艺工作室做陶艺");
+      expect(found?.text.split("\n")).toEqual([
+        CONVERSATION_RECALL_HEADER.text,
+        "",
+        `[2026-11-08 对话编号 ${POTTERY} 序号 1]`,
+        "主人：周末带孩子去陶艺工作室做陶艺",
+        "你：听起来很好玩",
+        "（2026-11-14）你：上周六的陶艺课孩子还想再去吗？",
+        "（2026-11-14）主人：想去，上次捏的狗脸杯子还在桌上",
+        "（2026-11-14）你：太可爱了",
+      ]);
+      expect(found?.text).not.toContain("咖喱饭");
+    } finally {
+      await resource.repository.close();
+    }
+  });
+
+  it("[自动原话] REVERSE: a neighbouring turn still in the model's context is not brought again", async () => {
+    const { resource, ask, failures } = await recallFixture(20_000, POTTERY_ROWS);
+    try {
+      const found = await ask("周末带孩子去陶艺工作室做陶艺", POTTERY, "2026-11-14T00:00:00.000Z");
+      expect(failures).toEqual([]);
+      expect(found?.text).toContain("（2026-11-14）你：上周六的陶艺课孩子还想再去吗？");
+      expect(found?.text).not.toContain("狗脸杯子");
+    } finally {
+      await resource.repository.close();
+    }
+  });
+
   it("[自动原话] keeps the recalled words within the character budget worked out from the model window", async () => {
-    const { resource, ask } = await recallFixture(160);
+    const { resource, ask } = await recallFixture(CONVERSATION_RECALL_BUDGET_PROBE);
     try {
       const found = await ask("你上次推荐的那本科幻小说叫什么");
-      expect([...(found?.text ?? "")].length).toBeLessThanOrEqual(160);
+      expect([...(found?.text ?? "")].length).toBeLessThanOrEqual(CONVERSATION_RECALL_BUDGET_PROBE);
       expect(found?.text).toContain(`[2026-11-18 对话编号 ${BOOKS} 序号 1]\n主人：推荐`);
       expect(found?.text).not.toContain("《三体》");
       expect(found?.text.endsWith("…")).toBe(true);

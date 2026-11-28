@@ -17,6 +17,7 @@ const MESSAGES_PER_READ = 200;
 const MAXIMUM_EMBEDDED_CHARACTERS = 2000;
 const RRF_K = 60;
 const STORE_SEARCH_LIMIT = 500;
+const NEIGHBOUR_MESSAGES = 50;
 
 export interface ConversationLine {
   readonly sequence: number;
@@ -450,12 +451,51 @@ export class ConversationTurnService {
       (left, right) => right.score - left.score || left.turn.id.localeCompare(right.turn.id),
     )) {
       if (used >= input.maximumCharacters) break;
-      const lines = await this.turnLines(turn);
-      if (lines.length === 0) continue;
+      const own = await this.turnLines(turn);
+      if (own.length === 0) continue;
+      const allowed = new Set(input.allowedClassifications.filter(isModelVisible));
+      const around = (line: ConversationLine) =>
+        allowed.has(line.dataClassification) &&
+        (excludeWholeThread ||
+          turn.threadId !== input.excludeThreadId ||
+          Date.parse(line.committedAt) < keptSince);
+      const [before, after] = await this.#neighbours(turn);
+      const lines = [...before.filter(around), ...own, ...after.filter(around)];
       hits.push(Object.freeze({ turn, lines: Object.freeze(lines), score }));
       used += lines.reduce((sum, line) => sum + [...line.text].length, 0);
     }
     return hits;
+  }
+
+  async #neighbours(
+    turn: ConversationTurn,
+  ): Promise<readonly [readonly ConversationLine[], readonly ConversationLine[]]> {
+    const from = Math.max(0, turn.firstSequence - 1 - NEIGHBOUR_MESSAGES);
+    const earlier =
+      turn.firstSequence <= 1
+        ? []
+        : (
+            await this.#options.threads.listMessages(
+              turn.ownerId,
+              turn.agentId,
+              turn.threadId,
+              from,
+              turn.firstSequence - 1 - from,
+            )
+          ).filter((message) => message.sequence < turn.firstSequence);
+    const start = earlier.findLastIndex((message) => message.role === "owner");
+    const later = await this.#options.threads.listMessages(
+      turn.ownerId,
+      turn.agentId,
+      turn.threadId,
+      turn.lastSequence,
+      NEIGHBOUR_MESSAGES,
+    );
+    const next = later[0]?.role === "owner" ? (groupTurns(later)[0]?.messages ?? []) : [];
+    return [
+      await this.#lines(turn.ownerId, turn.agentId, earlier.slice(Math.max(0, start))),
+      await this.#lines(turn.ownerId, turn.agentId, next),
+    ];
   }
 
   async window(input: {

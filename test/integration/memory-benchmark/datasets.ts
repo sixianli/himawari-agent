@@ -13,6 +13,7 @@ export interface BenchmarkQuestion {
   readonly askedAt: string;
   readonly abstention: boolean;
   readonly evidenceSessionIds: readonly string[];
+  readonly evidenceTexts: readonly string[];
 }
 
 export interface BenchmarkStore {
@@ -73,6 +74,7 @@ function secondsLater(at: string, seconds: number): string {
 
 interface LocomoTurn {
   readonly speaker: string;
+  readonly dia_id?: string;
   readonly text?: string;
   readonly blip_caption?: string;
   readonly query?: string;
@@ -122,11 +124,13 @@ export function locomoSamples(raw: readonly LocomoConversation[]): BenchmarkSamp
       })
       .sort((left, right) => left - right);
     const timeline: { speaker: string; text: string; at: string; sessionId: string }[] = [];
+    const saidIn = new Map<string, string>();
     for (const number of sessions) {
       const turns = conversation[`session_${number}`] as readonly LocomoTurn[];
       const start = parseLocomoDate(String(conversation[`session_${number}_date_time`]));
       turns.forEach((turn, index) => {
         const text = locomoText(turn);
+        if (turn.dia_id && text.length > 0) saidIn.set(turn.dia_id, text);
         if (text.length > 0)
           timeline.push({
             speaker: turn.speaker,
@@ -175,6 +179,10 @@ export function locomoSamples(raw: readonly LocomoConversation[]): BenchmarkSamp
                 }),
               ),
             ],
+            evidenceTexts: (qa.evidence ?? []).flatMap((evidence) => {
+              const said = saidIn.get(evidence);
+              return said ? [said] : [];
+            }),
           },
         ];
       }),
@@ -235,6 +243,7 @@ export function longMemEvalSamples(raw: readonly LongMemEvalQuestion[]): Benchma
           askedAt: parseLongMemEvalDate(entry.question_date),
           abstention: entry.question_id.endsWith("_abs"),
           evidenceSessionIds: entry.answer_session_ids.map(String),
+          evidenceTexts: [],
         },
       ],
     };
@@ -337,6 +346,7 @@ export interface QuestionOutcome {
   readonly answerMs: number;
   readonly evidenceRecalled: boolean | null;
   readonly evidenceStored: boolean | null;
+  readonly evidenceLinesRecalled?: boolean | null;
   readonly toolCalls?: number;
   readonly recalledTurns?: boolean;
 }
@@ -348,6 +358,7 @@ export interface ArmMetrics {
   readonly byCategory: Readonly<Record<string, { questions: number; accuracy: number | null }>>;
   readonly evidenceRecall: number | null;
   readonly evidenceStored: number | null;
+  readonly evidenceLineRecall: number | null;
   readonly meanContextTokens: number | null;
   readonly medianAnswerMs: number | null;
 }
@@ -385,6 +396,13 @@ export function armMetrics(outcomes: readonly QuestionOutcome[]): ArmMetrics {
     ),
     evidenceStored: share(
       outcomes.flatMap(({ evidenceStored }) => (evidenceStored === null ? [] : [evidenceStored])),
+    ),
+    evidenceLineRecall: share(
+      outcomes.flatMap(({ evidenceLinesRecalled }) =>
+        evidenceLinesRecalled === undefined || evidenceLinesRecalled === null
+          ? []
+          : [evidenceLinesRecalled],
+      ),
     ),
     meanContextTokens:
       outcomes.length === 0

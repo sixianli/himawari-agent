@@ -1,6 +1,7 @@
 import { type DataClassification, highestClassification } from "@himawari-agent/application";
 import {
   CONVERSATION_RECALL_HEADER,
+  CONVERSATION_RECALL_LINE_DAY,
   CONVERSATION_RECALL_TURN,
   renderPrompt,
 } from "@himawari-agent/prompt-catalog";
@@ -36,13 +37,36 @@ function speaker(line: ConversationLine): string {
   return line.role === "owner" ? "主人" : "你";
 }
 
-function turnText(hit: ConversationTurnHit, day: string, room: number): string | undefined {
+function matched(hit: ConversationTurnHit): readonly ConversationLine[] {
+  const own = hit.lines.filter(
+    (line) => line.sequence >= hit.turn.firstSequence && line.sequence <= hit.turn.lastSequence,
+  );
+  return own.length > 0 ? own : hit.lines;
+}
+
+function turnText(
+  threadId: string,
+  lines: readonly ConversationLine[],
+  room: number,
+  timeZone: string | undefined,
+): string | undefined {
+  const first = lines[0];
+  if (!first) return undefined;
+  const day = localDay(first.committedAt, timeZone);
   const head = renderPrompt(CONVERSATION_RECALL_TURN, {
     day,
-    conversationId: hit.turn.threadId,
-    sequence: String(hit.turn.firstSequence),
+    conversationId: threadId,
+    sequence: String(first.sequence),
   });
-  const body = hit.lines.map((line) => `${speaker(line)}：${line.text}`).join("\n");
+  const body = lines
+    .map((line) => {
+      const own = localDay(line.committedAt, timeZone);
+      const said = `${speaker(line)}：${line.text}`;
+      return own === day
+        ? said
+        : `${renderPrompt(CONVERSATION_RECALL_LINE_DAY, { day: own })}${said}`;
+    })
+    .join("\n");
   const whole = `${head}\n${body}`;
   if (characters(whole) <= room) return whole;
   const left = room - characters(head) - 1;
@@ -55,14 +79,21 @@ export function conversationRecallText(
 ): ConversationRecallText | undefined {
   const header = CONVERSATION_RECALL_HEADER.text;
   let room = options.maximumCharacters - characters(header);
-  const chosen: { hit: ConversationTurnHit; day: string; text: string }[] = [];
+  const chosen: { hit: ConversationTurnHit; day: string; room: number }[] = [];
   for (const hit of hits) {
-    const day = localDay(hit.turn.startedAt, options.timeZone);
-    const whole = turnText(hit, day, Number.POSITIVE_INFINITY) ?? "";
+    const whole = turnText(
+      hit.turn.threadId,
+      hit.lines,
+      Number.POSITIVE_INFINITY,
+      options.timeZone,
+    );
+    if (whole === undefined) continue;
     const fits = characters(whole) + 2 <= room;
-    const text = fits ? whole : chosen.length === 0 ? turnText(hit, day, room - 2) : undefined;
+    if (!fits && chosen.length > 0) continue;
+    const budget = fits ? Number.POSITIVE_INFINITY : room - 2;
+    const text = turnText(hit.turn.threadId, hit.lines, budget, options.timeZone);
     if (text === undefined) continue;
-    chosen.push({ hit, day, text });
+    chosen.push({ hit, day: localDay(hit.turn.startedAt, options.timeZone), room: budget });
     room -= characters(text) + 2;
   }
   if (chosen.length === 0) return undefined;
@@ -71,8 +102,19 @@ export function conversationRecallText(
       left.hit.turn.startedAt.localeCompare(right.hit.turn.startedAt) ||
       left.hit.turn.id.localeCompare(right.hit.turn.id),
   );
+  const shownLines = new Set<string>();
+  const blocks = chosen.flatMap(({ hit, room: budget }) => {
+    const fresh = hit.lines.filter((line) => {
+      const key = `${hit.turn.threadId}\u0000${line.sequence}`;
+      if (shownLines.has(key)) return false;
+      shownLines.add(key);
+      return true;
+    });
+    const text = turnText(hit.turn.threadId, fresh, budget, options.timeZone);
+    return text === undefined ? [] : [text];
+  });
   return Object.freeze({
-    text: [header, ...chosen.map(({ text }) => text)].join("\n\n"),
+    text: [header, ...blocks].join("\n\n"),
     dataClassification: highestClassification(
       "private",
       chosen.flatMap(({ hit }) => hit.lines.map((line) => line.dataClassification)),
@@ -85,7 +127,7 @@ export function conversationRecallText(
           day,
           startedAt: hit.turn.startedAt,
           preview: clipped(
-            (hit.lines.find((line) => line.role === "owner") ?? hit.lines[0])?.text.replace(
+            (matched(hit).find((line) => line.role === "owner") ?? matched(hit)[0])?.text.replace(
               /\s+/gu,
               " ",
             ) ?? "",

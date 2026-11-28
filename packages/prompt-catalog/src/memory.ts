@@ -452,11 +452,11 @@ export const MEMORY_SNAPSHOT_OMITTED = templatePrompt({
 export const CONVERSATION_RECALL_HEADER = fixedPrompt({
   id: "memory.conversation-recall.header",
   purpose:
-    "每轮自动带上的旧对话原话的第一行：说明这是程序按相关度找出的原话、“你”是谁、要看前后文用哪个工具",
+    "每轮自动带上的旧对话原话的第一行：说明这是程序按相关度找出的原话和前后各一轮、日期怎么标、“你”是谁、原话里有就照原话答、要看更多前后文用哪个工具",
   usedBy: ["packages/memory-engine/src/conversation-recall.ts"],
   layer: "last-user-message",
   output: "free-text",
-  text: "以前对话里和主人这句话相关的原话（程序按相关度自动找出，按时间先后排列；“你”是 Himawari 自己当时说的话；要看前后文，用 conversation_open 传下面的对话编号和序号）：",
+  text: "以前对话里和主人这句话相关的原话（程序按相关度自动找出，每处连同前后各一轮，按时间先后排列；每段开头标日期，和开头不是同一天的话前面另标它自己的日期；“你”是 Himawari 自己当时说的话）。原话里写着的，就照原话回答；推算“上周”“昨天”这类说法时，以那句话自己的日期为准。要看更多前后文，用 conversation_open 传下面的对话编号和序号：",
 });
 
 export const CONVERSATION_RECALL_TURN = templatePrompt({
@@ -474,4 +474,13 @@ export const CONVERSATION_RECALL_TURN = templatePrompt({
     slot("sequence"),
     text("]"),
   ],
+});
+
+export const CONVERSATION_RECALL_LINE_DAY = templatePrompt({
+  id: "memory.conversation-recall.line-day",
+  purpose: "自动带上的旧对话里，和这一段开头不是同一天的那句话前面标的它自己的日期",
+  usedBy: ["packages/memory-engine/src/conversation-recall.ts"],
+  layer: "last-user-message",
+  output: "free-text",
+  segments: [text("（"), slot("day"), text("）")],
 });
