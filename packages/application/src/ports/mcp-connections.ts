@@ -3,11 +3,6 @@ import type { AgentId, OwnerId } from "@himawari-agent/domain";
 export const MCP_CONNECTION_STATUSES = ["active", "paused", "revoked"] as const;
 export type McpConnectionStatus = (typeof MCP_CONNECTION_STATUSES)[number];
 
-export const MCP_CONNECTION_READ_CEILINGS = ["public", "private", "sensitive"] as const;
-export type McpConnectionReadCeiling = (typeof MCP_CONNECTION_READ_CEILINGS)[number];
-
-export const MCP_CONNECTION_DEFAULT_READ_CEILING: McpConnectionReadCeiling = "private";
-
 export const MCP_CONNECTION_PUSH_POLICIES = ["ask", "direct"] as const;
 export type McpConnectionPushPolicy = (typeof MCP_CONNECTION_PUSH_POLICIES)[number];
 
@@ -68,7 +63,6 @@ export interface McpConnectionRecord extends McpConnectionScope {
   readonly id: string;
   readonly name: string;
   readonly capabilities: readonly McpConnectionCapability[];
-  readonly readCeiling: McpConnectionReadCeiling;
   readonly pushPolicy: McpConnectionPushPolicy;
   readonly status: McpConnectionStatus;
   readonly reportedClient: string | null;
@@ -83,7 +77,6 @@ export interface McpConnectionChange extends McpConnectionScope {
   readonly updatedAt: string;
   readonly name?: string;
   readonly capabilities?: readonly McpConnectionCapability[];
-  readonly readCeiling?: McpConnectionReadCeiling;
   readonly pushPolicy?: McpConnectionPushPolicy;
   readonly status?: McpConnectionStatus;
 }

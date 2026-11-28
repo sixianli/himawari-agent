@@ -1226,7 +1226,6 @@ describe("production HTTP composition", () => {
       const approved = await command("mcp.grant.approve", "mcp-approve-01", {
         grantId: grant.id,
         name: null,
-        readCeiling: "private",
         pushPolicy: "ask",
         write: true,
       });
@@ -1315,7 +1314,6 @@ describe("production HTTP composition", () => {
       await command("mcp.grant.approve", "mcp-approve-02", {
         grantId: again.id,
         name: null,
-        readCeiling: null,
         pushPolicy: null,
         write: false,
       });
@@ -1376,7 +1374,6 @@ describe("production HTTP composition", () => {
           await command("mcp.grant.approve", "mcp-approve-03", {
             grantId: denied.id,
             name: null,
-            readCeiling: null,
             pushPolicy: null,
             write: true,
           })
@@ -1388,7 +1385,6 @@ describe("production HTTP composition", () => {
       await command("mcp.grant.approve", "mcp-approve-04", {
         grantId: (notified[3] as McpGrantView).id,
         name: null,
-        readCeiling: null,
         pushPolicy: null,
         write: true,
       });
@@ -1409,7 +1405,6 @@ describe("production HTTP composition", () => {
         connectionId,
         name: null,
         capabilities: null,
-        readCeiling: null,
         pushPolicy: null,
         status: "paused",
       });
@@ -1419,7 +1414,6 @@ describe("production HTTP composition", () => {
         connectionId,
         name: null,
         capabilities: null,
-        readCeiling: null,
         pushPolicy: null,
         status: "revoked",
       });

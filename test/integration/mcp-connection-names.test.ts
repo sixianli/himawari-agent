@@ -19,7 +19,6 @@ describe("[P5-B] connection names", () => {
           fixture("command", "mcp.grant.approve", {
             grantId: "grant-AAAAAAAAAAAAAAAAAAAAAA",
             name,
-            readCeiling: "private",
             pushPolicy: "ask",
             write: true,
           }),

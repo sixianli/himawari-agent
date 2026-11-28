@@ -6,7 +6,7 @@ private actor AgentsServer: DeviceTransport {
     private(set) var sent: [[String: JSONValue]] = []
     private(set) var confirmed: [String] = []
     var failCommands = false
-    var connections = #"[{"id":"conn-1","name":"Claude","capabilities":["mcp"],"readCeiling":"private","pushPolicy":"ask","status":"active","reportedClient":null,"createdAt":"2026-11-26T08:00:00.000Z","updatedAt":"2026-11-26T08:00:00.000Z","registration":"metadata_document","clientHost":"claude.ai","lastSeenAt":null,"minute":{"reads":0,"hookReads":0},"usage":{"reads":3,"readsByTool":[],"delivered":1,"empty":2,"autoReads":0,"autoDelivered":0,"modelReads":3,"memoryPushes":2,"ruleProposals":0,"ruleProposalsRateLimited":0,"failed":0,"rateLimited":0}},{"id":"conn-2","name":"Old","capabilities":["mcp"],"readCeiling":"public","pushPolicy":"ask","status":"revoked","reportedClient":null,"createdAt":"2026-11-20T08:00:00.000Z","updatedAt":"2026-11-21T08:00:00.000Z","registration":null,"clientHost":null,"lastSeenAt":null,"minute":{"reads":0,"hookReads":0},"usage":{"reads":0,"readsByTool":[],"delivered":0,"empty":0,"autoReads":0,"autoDelivered":0,"modelReads":0,"memoryPushes":0,"ruleProposals":0,"ruleProposalsRateLimited":0,"failed":0,"rateLimited":0}}]"#
+    var connections = #"[{"id":"conn-1","name":"Claude","capabilities":["mcp"],"pushPolicy":"ask","status":"active","reportedClient":null,"createdAt":"2026-11-26T08:00:00.000Z","updatedAt":"2026-11-26T08:00:00.000Z","registration":"metadata_document","clientHost":"claude.ai","lastSeenAt":null,"minute":{"reads":0,"hookReads":0},"usage":{"reads":3,"readsByTool":[],"delivered":1,"empty":2,"autoReads":0,"autoDelivered":0,"modelReads":3,"memoryPushes":2,"ruleProposals":0,"ruleProposalsRateLimited":0,"failed":0,"rateLimited":0}},{"id":"conn-2","name":"Old","capabilities":["mcp"],"pushPolicy":"ask","status":"revoked","reportedClient":null,"createdAt":"2026-11-20T08:00:00.000Z","updatedAt":"2026-11-21T08:00:00.000Z","registration":null,"clientHost":null,"lastSeenAt":null,"minute":{"reads":0,"hookReads":0},"usage":{"reads":0,"readsByTool":[],"delivered":0,"empty":0,"autoReads":0,"autoDelivered":0,"modelReads":0,"memoryPushes":0,"ruleProposals":0,"ruleProposalsRateLimited":0,"failed":0,"rateLimited":0}}]"#
 
     func failing() { failCommands = true }
 
@@ -26,7 +26,7 @@ private actor AgentsServer: DeviceTransport {
         case "mcp.connections.read":
             return DeviceResponse(status: 200, body: Data(#"{"payload":{"connections":\#(connections),"window":{"fromDay":"2026-11-20","toDay":"2026-11-26","days":7},"limits":[],"generatedAt":"2026-11-26T08:00:00.000Z"}}"#.utf8))
         case "mcp.grants.read":
-            return DeviceResponse(status: 200, body: Data(#"{"payload":{"grants":[{"id":"grant-AAAAAAAAAAAAAAAAAAAAAA","clientName":"Claude","registration":"metadata_document","clientHost":"claude.ai","redirectHost":"claude.ai","localRedirect":false,"wantsWrite":true,"existingConnection":null,"createdAt":"2026-11-26T08:00:00.000Z","expiresAt":"2999-01-01T00:00:00.000Z"}],"defaults":{"readCeiling":"private","pushPolicy":"ask"},"generatedAt":"2026-11-26T08:00:00.000Z"}}"#.utf8))
+            return DeviceResponse(status: 200, body: Data(#"{"payload":{"grants":[{"id":"grant-AAAAAAAAAAAAAAAAAAAAAA","clientName":"Claude","registration":"metadata_document","clientHost":"claude.ai","redirectHost":"claude.ai","localRedirect":false,"wantsWrite":true,"existingConnection":null,"createdAt":"2026-11-26T08:00:00.000Z","expiresAt":"2999-01-01T00:00:00.000Z"}],"defaults":{"pushPolicy":"ask"},"generatedAt":"2026-11-26T08:00:00.000Z"}}"#.utf8))
         default:
             if failCommands { return DeviceResponse(status: 409, body: Data(#"{"error":{"code":"MCP_GRANT_UNKNOWN"}}"#.utf8)) }
             return DeviceResponse(status: 200, body: Data(#"{"kind":"result","payload":{"status":"applied"}}"#.utf8))
@@ -58,7 +58,7 @@ final class AgentsStoreTests: XCTestCase {
         let agents = store(AgentsServer())
         await agents.loadGrants()
         guard let grant = agents.grants.first else { return XCTFail("expected a grant") }
-        XCTAssertEqual(agents.choice(for: grant), AgentGrantChoice(name: "Claude", readCeiling: .private, pushPolicy: .ask, write: true))
+        XCTAssertEqual(agents.choice(for: grant), AgentGrantChoice(name: "Claude", pushPolicy: .ask, write: true))
     }
 
     func testApprovingSendsTheChoiceWithFaceIDAndDropsTheGrant() async throws {
@@ -68,13 +68,11 @@ final class AgentsStoreTests: XCTestCase {
         let grant = agents.grants[0]
         var choice = agents.choice(for: grant)
         choice.name = "  我的 Claude  "
-        choice.readCeiling = .public
         try await agents.approve(grant, choice)
         let command = await server.sent.first { $0["type"] == .string("mcp.grant.approve") }
         XCTAssertEqual(command?["payload"], .object([
             "grantId": .string("grant-AAAAAAAAAAAAAAAAAAAAAA"),
             "name": .string("我的 Claude"),
-            "readCeiling": .string("public"),
             "pushPolicy": .string("ask"),
             "write": .bool(true),
         ]))
@@ -119,7 +117,6 @@ final class AgentsStoreTests: XCTestCase {
             "connectionId": .string("conn-1"),
             "name": .null,
             "capabilities": .null,
-            "readCeiling": .null,
             "pushPolicy": .string("direct"),
             "status": .null,
         ]))

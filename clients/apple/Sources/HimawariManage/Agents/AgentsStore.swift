@@ -1,14 +1,6 @@
 import Foundation
 import Observation
 
-public enum AgentReadCeiling: String, Codable, Sendable, CaseIterable, Identifiable {
-    case `public`
-    case `private`
-    case sensitive
-
-    public var id: String { rawValue }
-}
-
 public enum AgentPushPolicy: String, Codable, Sendable, CaseIterable, Identifiable {
     case ask
     case direct
@@ -31,7 +23,6 @@ public struct ConnectedAgent: Decodable, Sendable, Equatable, Identifiable {
 
     public let id: String
     public let name: String
-    public let readCeiling: AgentReadCeiling
     public let pushPolicy: AgentPushPolicy
     public let status: AgentStatus
     public let clientHost: String?
@@ -44,7 +35,6 @@ public struct AgentGrant: Decodable, Sendable, Equatable, Identifiable {
     public struct Existing: Decodable, Sendable, Equatable {
         public let id: String
         public let name: String
-        public let readCeiling: AgentReadCeiling
         public let pushPolicy: AgentPushPolicy
     }
 
@@ -60,7 +50,6 @@ public struct AgentGrant: Decodable, Sendable, Equatable, Identifiable {
 
 public struct AgentGrantChoice: Sendable, Equatable {
     public var name: String
-    public var readCeiling: AgentReadCeiling
     public var pushPolicy: AgentPushPolicy
     public var write: Bool
 }
@@ -79,7 +68,7 @@ public final class AgentsStore {
     public private(set) var phase: Phase = .loading
     public private(set) var agents: [ConnectedAgent] = []
     public private(set) var grants: [AgentGrant] = []
-    public private(set) var defaults = AgentGrantDefaults(readCeiling: .private, pushPolicy: .ask)
+    public private(set) var defaults = AgentGrantDefaults(pushPolicy: .ask)
     public private(set) var working = false
 
     @ObservationIgnored private let gateway: ManageGateway?
@@ -138,7 +127,6 @@ public final class AgentsStore {
     public func choice(for grant: AgentGrant) -> AgentGrantChoice {
         AgentGrantChoice(
             name: String((grant.existingConnection?.name ?? grant.clientName).prefix(Self.nameCharacters)),
-            readCeiling: grant.existingConnection?.readCeiling ?? defaults.readCeiling,
             pushPolicy: grant.existingConnection?.pushPolicy ?? defaults.pushPolicy,
             write: grant.wantsWrite
         )
@@ -155,7 +143,6 @@ public final class AgentsStore {
             payload: [
                 "grantId": .string(grant.id),
                 "name": name.isEmpty ? .null : .string(name),
-                "readCeiling": .string(choice.readCeiling.rawValue),
                 "pushPolicy": .string(choice.pushPolicy.rawValue),
                 "write": .bool(choice.write),
             ],
@@ -180,7 +167,6 @@ public final class AgentsStore {
 
     public func change(
         _ agent: ConnectedAgent,
-        readCeiling: AgentReadCeiling? = nil,
         pushPolicy: AgentPushPolicy? = nil,
         status: AgentStatus? = nil
     ) async throws {
@@ -194,7 +180,6 @@ public final class AgentsStore {
                 "connectionId": .string(agent.id),
                 "name": .null,
                 "capabilities": .null,
-                "readCeiling": readCeiling.map { JSONValue.string($0.rawValue) } ?? .null,
                 "pushPolicy": pushPolicy.map { JSONValue.string($0.rawValue) } ?? .null,
                 "status": status.map { JSONValue.string($0.rawValue) } ?? .null,
             ],
@@ -205,6 +190,5 @@ public final class AgentsStore {
 }
 
 public struct AgentGrantDefaults: Decodable, Sendable, Equatable {
-    public let readCeiling: AgentReadCeiling
     public let pushPolicy: AgentPushPolicy
 }
