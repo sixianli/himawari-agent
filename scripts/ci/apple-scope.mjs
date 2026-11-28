@@ -9,7 +9,7 @@ const APPLE_CLIENT = [
   /^scripts\/ci\/main-green\.mjs$/u,
 ];
 
-export const mainCheckPrefixes = ["apple/iphone", "apple/scroll"];
+export const mainCheckPrefixes = ["apple/iphone"];
 export const auditCheckPrefixes = [
   "apple/iphone-accessibility-build",
   "apple/iphone-accessibility",
@@ -71,7 +71,32 @@ export async function sinceAuditBase({
   }
 }
 
-const bases = { "--since-green": sinceGreenBase, "--since-audit": sinceAuditBase };
+export async function sinceReleaseBase({
+  repo = process.env.GITHUB_REPOSITORY,
+  runId = process.env.GITHUB_RUN_ID,
+  find = findLastRanBase,
+} = {}) {
+  try {
+    return await find({
+      repo,
+      workflow: "mac-release.yml",
+      job: "mac-release/publish",
+      event: "schedule",
+      runId,
+      getJson,
+      getPages,
+      accept: (conclusion) => conclusion === "success",
+    });
+  } catch {
+    return null;
+  }
+}
+
+const bases = {
+  "--since-green": sinceGreenBase,
+  "--since-audit": sinceAuditBase,
+  "--since-release": sinceReleaseBase,
+};
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   const [first, head = "HEAD"] = process.argv.slice(2);
