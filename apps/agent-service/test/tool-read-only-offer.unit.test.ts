@@ -38,6 +38,7 @@ describe("read-only tool offer", () => {
       "recall",
       "reminder_list",
       "rule_list",
+      "settings_list",
       "task_get",
       "task_list",
       "tool_result_recall",
