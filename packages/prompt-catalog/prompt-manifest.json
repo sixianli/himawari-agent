@@ -1361,8 +1361,8 @@
     "reason": "设备动作没做成时告诉模型的原因（审批未接上、设备策略、本人未确认、结果未知等）"
   },
   "tools.result.device-action.reason.target-unknown": {
-    "sha256": "039ee7fa8b84541251b00d354bac5e8dd6765dc29e87ea8d43d8a8f324124566",
-    "changedIn": "iOS 第 9A 批",
+    "sha256": "6352c78c685352ba93966bf624dacf9cad4beb61f2f9c3d379b886b086f47ad6",
+    "changedIn": "日历和通讯录读取",
     "reason": "设备动作没做成时告诉模型的原因（审批未接上、设备策略、本人未确认、结果未知等）"
   },
   "tools.result.device-action.rejected": {
@@ -1824,5 +1824,25 @@
     "sha256": "33373bc654f29839bcfbc37d7c4b48c301f36760a2c4eb5495ca35ef8f79a1e0",
     "changedIn": "ADR 0313",
     "reason": "新增：app_action 的 run（Code Mode）用到的说明"
+  },
+  "tools.result.device-action.usage.calendar-change": {
+    "sha256": "796eee0c424f9e1ef6d6999ed4c8ed56d33131f9c94c5e8a1ea31ffd39649a9a",
+    "changedIn": "日历和通讯录读取",
+    "reason": "calendar.update、calendar.delete 的编号从 calendar.read 结果里拿，不找主人要"
+  },
+  "tools.result.device-action.usage.calendar-read": {
+    "sha256": "9d7e8dc34d575b7f77b20ac2a656c4b3e654e74ae99b5df755d836a2e748bfcc",
+    "changedIn": "日历和通讯录读取",
+    "reason": "calendar.read 的用法：读出日程，eventId 照抄给改删用"
+  },
+  "tools.result.device-action.usage.contact-search": {
+    "sha256": "f63e60ab2e1b36ea02617a15527d1140d9f98776f0ba0a08d039c08774881784",
+    "changedIn": "日历和通讯录读取",
+    "reason": "contact.search 的用法：按名字、电话或邮箱查人，contactId 照抄给 contact.update"
+  },
+  "tools.result.device-action.usage.contact-update": {
+    "sha256": "c84a292199fd605ebeca4bb3f824753fee61bad7cb1a4edab84781187a7f56ea",
+    "changedIn": "日历和通讯录读取",
+    "reason": "contact.update 的编号从 contact.search 结果里拿，不找主人要"
   }
 }

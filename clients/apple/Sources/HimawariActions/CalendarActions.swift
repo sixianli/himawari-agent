@@ -4,7 +4,8 @@ import Foundation
 import HimawariCore
 
 public final class CalendarActions: DeviceActionHandler, @unchecked Sendable {
-    public let names = ["calendar.create", "calendar.delete", "calendar.update"]
+    public let names = ["calendar.create", "calendar.delete", "calendar.read", "calendar.update"]
+    public let readOnly: Set<String> = ["calendar.read"]
     private let store: EKEventStore
     public let permission: DevicePermission
 
@@ -26,6 +27,13 @@ public final class CalendarActions: DeviceActionHandler, @unchecked Sendable {
             throw DeviceActionFailure(.cannotChange(Self.attendees))
         }
         switch delivery.action {
+        case "calendar.read":
+            let from = try args.localDate("from")
+            let to = try args.localDate("to").addingTimeInterval(60)
+            guard to > from else { throw DeviceActionFailure(.badArguments) }
+            let events = store.events(matching: store.predicateForEvents(withStart: from, end: to, calendars: nil))
+                .sorted { ($0.startDate, $0.eventIdentifier ?? "") < ($1.startDate, $1.eventIdentifier ?? "") }
+            return DeviceActionListing.fit(events.map(Self.listed), as: "events", within: delivery.resultMaximumBytes)
         case "calendar.create":
             let event = EKEvent(eventStore: store)
             event.title = try args.string("title")
@@ -117,6 +125,19 @@ public final class CalendarActions: DeviceActionHandler, @unchecked Sendable {
         ]
         if let location = event.location { value["location"] = .string(location) }
         if let notes = event.notes { value["notes"] = .string(notes) }
+        return value
+    }
+
+    static func occurrenceId(_ event: EKEvent) -> String {
+        CalendarOccurrenceId.of(eventIdentifier: event.eventIdentifier ?? "", start: event.startDate, recurring: event.hasRecurrenceRules)
+    }
+
+    static func listed(_ event: EKEvent) -> JSONObject {
+        var value = describe(event)
+        value["eventId"] = .string(occurrenceId(event))
+        value["startsAtMs"] = .number((event.startDate.timeIntervalSince1970 * 1000).rounded())
+        value["endsAtMs"] = .number((event.endDate.timeIntervalSince1970 * 1000).rounded())
+        if let attendees = event.attendees { value["attendeeCount"] = .number(Double(attendees.count)) }
         return value
     }
 
