@@ -1,6 +1,7 @@
 {
   "说明": "每一项是约定里已定义、但缺后端实现、调用方或测试之一的操作（operations）；理由必须写明缺什么、为什么留着。名单里的操作一旦补齐，检查会要求移出；名单外出现缺项的操作直接报红（P1-4）。notInstalled 是控制中心清单已声明、但还没装进生产网关已安装清单的操作；它们仍要通过后端、调用方、测试三项检查，装进已安装清单后必须移出。",
   "operations": {
+    "decision.stats.read": "评测数字（主动消息次数、有用比例、记忆自测）：后端和测试都在，iPhone 的评测页按 Andy 同意的 Himawari 页重排方案在 PR 851 删掉（App 里不放评测数字，数字留在服务器给开发和面试用），所以没有调用方（缺：调用方）。以后有地方用这些数时移出名单",
     "delegation.detail": "自主建议、反思、委派、改进这一组：实现 autonomy-gateway-adapter 已在 PR 621 删除，生产没有装配，前端没有页面（缺：后端、调用方、测试）。是否整组删除由 Andy 另行决定（P1-4 方案一）",
     "delegation.list": "自主建议、反思、委派、改进这一组：实现 autonomy-gateway-adapter 已在 PR 621 删除，生产没有装配，前端没有页面（缺：后端、调用方、测试）。是否整组删除由 Andy 另行决定（P1-4 方案一）",
     "github.monitor.set_state": "GitHub 监控开关：integration-github 的 monitor-control 已实现并有测试，生产没有装配，前端没有页面（缺：调用方）。做监控页面时移出名单",

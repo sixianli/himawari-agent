@@ -2,14 +2,8 @@ import Foundation
 import HimawariCore
 
 extension M {
-    static var timersTitle: String { text("定时", ja: "タイマー", en: "Timers") }
+    static var timersTitle: String { text("定时提醒", ja: "リマインダーとタイマー", en: "Reminders and Timers") }
 
-    static func timersSummary(active: Int, paused: Int) -> String {
-        guard active + paused > 0 else { return text("还没有定时", ja: "まだタイマーはありません", en: "No timers yet") }
-        let running = text("\(active) 条在跑", ja: "\(active) 件動いています", en: "\(active) running")
-        guard paused > 0 else { return running }
-        return running + " · " + text("\(paused) 条暂停", ja: "\(paused) 件一時停止", en: "\(paused) paused")
-    }
 
     static var timersLead: String {
         text("所有提醒、周期任务、跟进；点进去能暂停、能撤销", ja: "リマインダー、定期タスク、フォローアップのすべて。開くと一時停止や取り消しができます", en: "All reminders, recurring tasks and follow-ups. Open one to pause or cancel it")

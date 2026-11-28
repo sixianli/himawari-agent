@@ -1,0 +1,117 @@
+{
+  "goals": [
+    { "id": "G1", "text": "找对话里发过的照片、文件" },
+    {
+      "id": "G2",
+      "text": "告诉 Himawari 我是谁、要它怎么做事；看和改它记住了我什么，或让它别再记"
+    },
+    { "id": "G3", "text": "管 Himawari 什么时候来找我" },
+    { "id": "G4", "text": "用声音和 Himawari 说话" },
+    { "id": "G5", "text": "管 Himawari 能碰我哪些数据和账号" },
+    { "id": "G6", "text": "看和管 Himawari 替我保管的密码" },
+    { "id": "G7", "text": "把我的数据带走、导入，或删掉" },
+    { "id": "G8", "text": "看这台 iPhone 连着哪台服务器、断开" },
+    { "id": "G9", "text": "看版本" },
+    { "id": "G10", "text": "收回我点过的“以后都行”" }
+  ],
+  "groups": [
+    {
+      "id": "files",
+      "why": "照片和文件是这段对话自己的东西，和信息、WhatsApp 一样放在头像下面第一行，不和设置混在一组"
+    },
+    {
+      "id": "using",
+      "why": "用 Himawari 时会想调的：它怎么待我、什么时候找我、怎么跟它说话、它能看到什么"
+    },
+    {
+      "id": "guarding",
+      "why": "管住它、保护自己的：密码、收回授权、带走或删掉数据、断开这台 iPhone"
+    },
+    {
+      "id": "about",
+      "why": "版本和服务器状况，和 iOS 设置里“关于”一样单独放最后"
+    }
+  ],
+  "entries": [
+    {
+      "id": "files",
+      "group": "files",
+      "goal": "G1",
+      "why": "用户想找发过的东西时会去对话的资料页，不会去设置",
+      "benchmark": [
+        "https://support.apple.com/guide/iphone/share-content-iphb66cfeaad/ios",
+        "https://faq.whatsapp.com/842274731791640/"
+      ]
+    },
+    {
+      "id": "personalization",
+      "group": "using",
+      "goal": "G2",
+      "why": "称呼、规则、模型和记忆都是“让它更懂我”，ChatGPT 把自定义指令和记忆放在同一处“个性化”",
+      "benchmark": ["https://help.openai.com/en/articles/8590148-memory-faq"]
+    },
+    {
+      "id": "notifications",
+      "group": "using",
+      "goal": "G3",
+      "why": "定时提醒和不打扰都是“它什么时候来找我”，用户会去“通知”找",
+      "benchmark": ["https://help.openai.com/en/articles/10291617-tasks-in-chatgpt"]
+    },
+    {
+      "id": "voice",
+      "group": "using",
+      "goal": "G4",
+      "why": "一直听着和声纹是说话的事，ChatGPT 把语音设置单独放一页",
+      "benchmark": ["https://help.openai.com/en/articles/20001274-chatgpt-voice"]
+    },
+    {
+      "id": "dataAndApps",
+      "group": "using",
+      "goal": "G5",
+      "why": "这台 iPhone 上的数据、连上的账号和别的 agent 都是“谁和 Himawari 连着”，每样东西只出现一次",
+      "benchmark": [
+        "https://support.claude.com/en/articles/17631495-get-started-with-claude-duet",
+        "https://help.openai.com/en/articles/11487775-connected-apps-in-chatgpt"
+      ]
+    },
+    {
+      "id": "passwords",
+      "group": "guarding",
+      "goal": "G6",
+      "why": "托管的密码问的是“我怎么保护自己”，名字用 iOS 自己的“密码”",
+      "benchmark": ["https://support.apple.com/en-us/120758"]
+    },
+    {
+      "id": "noMoreAsking",
+      "group": "guarding",
+      "goal": "G10",
+      "why": "点过的“以后都行”是给出去的授权，收回它属于管住 Himawari；授权记录不属于任何一个数据来源，拆不进各自的详情页",
+      "benchmark": [
+        "https://support.claude.com/en/articles/11176164-use-connectors-to-extend-claude-s-capabilities"
+      ]
+    },
+    {
+      "id": "yourData",
+      "group": "guarding",
+      "goal": "G7",
+      "why": "导出、导入和删掉记录都是“我的数据归我”，ChatGPT 放在“数据控制”",
+      "benchmark": [
+        "https://help.openai.com/en/articles/7260999-exporting-your-chatgpt-history-and-data"
+      ]
+    },
+    {
+      "id": "devices",
+      "group": "guarding",
+      "goal": "G8",
+      "why": "断开这台 iPhone 是账户安全的事；现在只显示这台 iPhone，所以叫“设备”",
+      "benchmark": ["https://support.apple.com/en-us/102649"]
+    },
+    {
+      "id": "about",
+      "group": "about",
+      "goal": "G9",
+      "why": "版本号和服务器状态没人天天看，照 iOS“通用 > 关于”放最后",
+      "benchmark": ["https://support.apple.com/HT201685"]
+    }
+  ]
+}

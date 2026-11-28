@@ -5,7 +5,7 @@ import SwiftUI
 struct AboutPage: View {
     let server: String?
     var openStatus: (() -> Void)? = nil
-    let openTiming: () -> Void
+    var openTiming: (() -> Void)? = nil
     let back: () -> Void
     @AppStorage(AboutPage.developerModeKey) private var developerMode = false
     @Environment(\.openURL) private var openURL
@@ -42,7 +42,7 @@ struct AboutPage: View {
                     .buttonStyle(.pressable)
                 }
             }
-            if developerMode {
+            if developerMode, let openTiming {
                 SettingsGroup(label: M.developer) {
                     Button(action: openTiming) {
                         HerRow(icon: .stopwatch, title: M.talkTiming, last: true)
