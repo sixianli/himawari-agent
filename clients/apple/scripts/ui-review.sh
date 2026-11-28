@@ -11,8 +11,6 @@ device_type="com.apple.CoreSimulator.SimDeviceType.iPhone-16e"
 expected_width=1170
 only=""
 text_size=""
-calm_below=40
-calm_patience=600
 prompt_wait=5
 
 usage() {
@@ -142,24 +140,7 @@ if [ "$(xcrun simctl spawn "$udid" defaults read -g AppleLanguages 2>/dev/null |
   boot_device
 fi
 
-simulator_load() {
-  ps -A -o ppid=,%cpu= | awk -v parent="$simulator_launchd" '$1 == parent { total += $2 } END { printf "%d", total }'
-}
-
-calm() {
-  [ "$(simulator_load)" -lt "$calm_below" ]
-}
-
-wait_until_calm() {
-  local quiet=0 waited=0
-  while [ "$quiet" -lt 3 ]; do
-    if calm; then quiet=$((quiet + 1)); else quiet=0; fi
-    [ "$quiet" -lt 3 ] || return 0
-    [ "$waited" -lt "$calm_patience" ] || { echo "UI_REVIEW_FAILED simulator stayed busy for ${calm_patience}s (load $(simulator_load)%, limit ${calm_below}%)" >&2; exit 1; }
-    sleep 2
-    waited=$((waited + 2))
-  done
-}
+. "$root/scripts/simulator-calm.sh"
 
 override_status_bar() {
   xcrun simctl status_bar "$udid" override --time "9:41" --dataNetwork wifi --wifiMode active --wifiBars 3 --cellularMode active --cellularBars 4 --batteryState charged --batteryLevel 100
