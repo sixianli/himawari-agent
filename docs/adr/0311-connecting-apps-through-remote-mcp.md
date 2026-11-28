@@ -7,7 +7,7 @@ superseded_by: ""
 date: "2026-11-26"
 implementation: in_progress
 covers: "packages/platform-node/src/app-connections.ts, packages/persistence-sqlite/src/sqlite-app-connection-operations.ts, apps/agent-service/src/production-app-tools.ts, apps/agent-service/src/production-runtime-tools.ts, apps/agent-service/src/production-tool-actions.ts, packages/prompt-catalog/src/apps.ts"
-verified_at: "b08a65a20cda4f6bc90c2a5946b3e5123b88f032"
+verified_at: "8a676abcace6a7343efd3c7cb0df75a0f652a4bc"
 ---
 
 # ADR 0311：其他应用一律通过远程 MCP 加 OAuth 连接
