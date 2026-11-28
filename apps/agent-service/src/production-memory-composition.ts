@@ -23,6 +23,7 @@ import {
   QueryPrefetch,
   type QueryPrefetchLimits,
   QWEN3_EMBEDDING_8B_COST,
+  sharedQueryEmbedder,
 } from "@himawari-agent/memory-engine";
 import {
   assertProductionSecretSource,
@@ -198,7 +199,10 @@ export async function createProductionMemoryCompositionFromConfiguration(
   });
   const projection = new HybridMemoryProvider({
     index: options.index,
-    embedder: prefetchingEmbedder(embedder, queue),
+    embedder: sharedQueryEmbedder(prefetchingEmbedder(embedder, queue), {
+      limits: () => ({ ttlMs: prefetchLimits.ttlMs, entries: prefetchLimits.entriesPerDevice }),
+      now: () => Date.now(),
+    }),
     minimumSimilarity,
     embeddableClassifications: embedding.allowedDataClassifications,
     now: () => new Date().toISOString(),

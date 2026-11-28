@@ -196,3 +196,42 @@ export function prefetchingEmbedder(inner: Embedder, prefetch: QueryPrefetch): E
     embedDocument: (text) => inner.embedDocument(text),
   };
 }
+
+export interface SharedQueryLimits {
+  readonly ttlMs: number;
+  readonly entries: number;
+}
+
+export function sharedQueryEmbedder(
+  inner: Embedder,
+  options: { readonly limits: () => SharedQueryLimits; readonly now: () => number },
+): Embedder {
+  const recent = new Map<string, { readonly vector: Promise<Float32Array>; readonly at: number }>();
+  const forget = () => {
+    const { ttlMs, entries } = options.limits();
+    const oldest = options.now() - ttlMs;
+    for (const [text, entry] of recent)
+      if (entry.at < oldest || recent.size > Math.max(0, entries)) recent.delete(text);
+  };
+  return {
+    get model() {
+      return inner.model;
+    },
+    get dimensions() {
+      return inner.dimensions;
+    },
+    embedQuery: (text) => {
+      forget();
+      const known = recent.get(text);
+      if (known) return known.vector;
+      const vector = inner.embedQuery(text);
+      recent.set(text, { vector, at: options.now() });
+      vector.catch(() => {
+        if (recent.get(text)?.vector === vector) recent.delete(text);
+      });
+      forget();
+      return vector;
+    },
+    embedDocument: (text) => inner.embedDocument(text),
+  };
+}
