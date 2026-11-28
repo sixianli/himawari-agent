@@ -71,8 +71,8 @@ jobs:
           CODE_SIGNING_ALLOWED=NO
   iphone-accessibility-build:
     name: apple/iphone-accessibility-build
-    needs: changes
-    if: ${{ github.event_name != 'pull_request' && needs.changes.outputs.client == 'true' }}
+    needs: [changes, iphone]
+    if: ${{ !cancelled() && github.event_name != 'pull_request' && needs.changes.outputs.client == 'true' }}
     runs-on: macos-26
     timeout-minutes: 60
     outputs:
@@ -102,11 +102,12 @@ jobs:
   iphone-accessibility:
     name: apple/iphone-accessibility ${{ matrix.shard }}
     needs: [changes, iphone-accessibility-build]
-    if: ${{ github.event_name != 'pull_request' && needs.changes.outputs.client == 'true' }}
+    if: ${{ !cancelled() && needs.iphone-accessibility-build.result == 'success' && github.event_name != 'pull_request' && needs.changes.outputs.client == 'true' }}
     runs-on: macos-26
     timeout-minutes: 60
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix:
         shard: ["0/3", "1/3", "2/3"]
     steps:
@@ -176,8 +177,8 @@ jobs:
           retention-days: 7
   scroll:
     name: apple/scroll
-    needs: changes
-    if: ${{ github.event_name != 'pull_request' && needs.changes.outputs.client == 'true' }}
+    needs: [changes, iphone-accessibility]
+    if: ${{ !cancelled() && github.event_name != 'pull_request' && needs.changes.outputs.client == 'true' }}
     runs-on: macos-26
     timeout-minutes: 60
     steps:

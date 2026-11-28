@@ -2,8 +2,8 @@ import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { parse } from "yaml";
-import { validateHostedRunners } from "../../scripts/ci/check-policy.mjs";
+import { parse, stringify } from "yaml";
+import { validateAppleMacSlots, validateHostedRunners } from "../../scripts/ci/check-policy.mjs";
 import { linuxRunnerLabel, macRunnerLabel, repositoryRoot } from "../../scripts/ci/contracts.mjs";
 
 const script = path.join(repositoryRoot, "scripts/ci/prepare-hosted.sh");
@@ -258,9 +258,58 @@ describe("iPhone 工作流", () => {
       ).length,
     ).toBeGreaterThan(0);
   });
+  it("main 上的苹果检查排成一条队，同时只占一台 Mac，其余留给 PR 的 apple/iphone", () => {
+    const text = readFileSync(path.join(repositoryRoot, ".github/workflows/apple.yml"), "utf8");
+    expect(() => validateAppleMacSlots(text)).not.toThrow();
+    const chain = ["iphone", "iphone-accessibility-build", "iphone-accessibility", "scroll"];
+    for (const [index, id] of chain.entries()) {
+      if (index === 0) continue;
+      expect([workflow.jobs[id].needs].flat()).toContain(chain[index - 1]);
+      expect(workflow.jobs[id].if).toContain("!cancelled()");
+    }
+    expect(workflow.jobs["iphone-accessibility"].strategy["max-parallel"]).toBe(1);
+    expect(workflow.jobs["iphone-accessibility"].if).toContain(
+      "needs.iphone-accessibility-build.result == 'success'",
+    );
+  });
+  it.each([
+    [
+      "合并前的写法：编译、测速和 apple/iphone 同时开跑",
+      (jobs) => {
+        jobs["iphone-accessibility-build"].needs = "changes";
+        jobs.scroll.needs = "changes";
+      },
+      "main starts 3 Mac jobs at once",
+    ],
+    [
+      "三份审计同时跑",
+      (jobs) => {
+        delete jobs["iphone-accessibility"].strategy["max-parallel"];
+      },
+      "set max-parallel: 1",
+    ],
+    [
+      "前一个 Mac 作业失败就把后面的检查跳过",
+      (jobs) => {
+        jobs.scroll.if = jobs.scroll.if.replace("!cancelled() && ", "");
+      },
+      "add !cancelled()",
+    ],
+    [
+      "PR 上开第二台 Mac",
+      (jobs) => {
+        jobs.scroll.if = jobs.scroll.if.replace("github.event_name != 'pull_request' && ", "");
+      },
+      "a pull request starts 2 Mac jobs",
+    ],
+  ])("拒绝%s", (_label, change, message) => {
+    const changed = structuredClone(workflow);
+    change(changed.jobs);
+    expect(() => validateAppleMacSlots(stringify(changed))).toThrow(message);
+  });
   it("三份审计共用同一次运行里编译一次的 App，只重跑审计时也找得到那次编译", () => {
     const build = workflow.jobs["iphone-accessibility-build"];
-    expect(build.needs).toBe("changes");
+    expect(build.needs).toEqual(["changes", "iphone"]);
     expect(build.if).toContain("github.event_name != 'pull_request'");
     const compile = build.steps.find((step) => step.run?.startsWith("xcodebuild"))?.run ?? "";
     expect(compile).toContain("xcodebuild build-for-testing");

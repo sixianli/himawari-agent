@@ -947,6 +947,44 @@ export function validateHostedRunners(workflows) {
   }
 }
 
+export function validateAppleMacSlots(text) {
+  const jobs = parseDocument(text, { uniqueKeys: true }).toJS()?.jobs ?? {};
+  const mac = Object.entries(jobs).filter(([, job]) => job["runs-on"] === macRunnerLabel);
+  const macIds = new Set(mac.map(([id]) => id));
+  const onPullRequest = mac.filter(
+    ([, job]) => !String(job.if).includes("github.event_name != 'pull_request'"),
+  );
+  assert(
+    onPullRequest.length <= 1 && onPullRequest.every(([, job]) => job.strategy === undefined),
+    `APPLE_MAC_SLOTS a pull request starts ${onPullRequest.length} Mac jobs; it may use one`,
+  );
+  const macNeeds = new Map(
+    mac.map(([id, job]) => [id, [job.needs ?? []].flat().filter((need) => macIds.has(need))]),
+  );
+  const roots = mac.filter(([id]) => macNeeds.get(id).length === 0).map(([id]) => id);
+  assert(
+    mac.length === 0 || roots.length === 1,
+    `APPLE_MAC_SLOTS main starts ${roots.length} Mac jobs at once (${roots.join(", ")}); chain them so main holds one Mac and pull requests keep the rest`,
+  );
+  for (const [id, job] of mac) {
+    const needs = macNeeds.get(id);
+    const followers = mac.filter(([other]) => macNeeds.get(other).includes(id));
+    assert(needs.length <= 1, `APPLE_MAC_SLOTS ${id} waits on ${needs.length} Mac jobs`);
+    assert(
+      followers.length <= 1,
+      `APPLE_MAC_SLOTS ${id} starts ${followers.length} Mac jobs at once`,
+    );
+    assert(
+      job.strategy?.matrix === undefined || job.strategy["max-parallel"] === 1,
+      `APPLE_MAC_SLOTS ${id} runs its matrix in parallel; set max-parallel: 1`,
+    );
+    assert(
+      needs.length === 0 || String(job.if).includes("!cancelled()"),
+      `APPLE_MAC_SLOTS ${id} is skipped when ${needs[0]} fails; add !cancelled() to its if`,
+    );
+  }
+}
+
 export function inspectTestSource(source, filename) {
   const ast = ts.createSourceFile(
     filename,
@@ -1778,6 +1816,7 @@ export function validateWorkflowsAgainstPolicy({ root, source, proposed }) {
     lock,
   );
   const workflowDirectory = path.join(root, ".github/workflows");
+  validateAppleMacSlots(readFileSync(path.join(workflowDirectory, "apple.yml"), "utf8"));
   validateHostedRunners(
     Object.fromEntries(
       readdirSync(workflowDirectory)
