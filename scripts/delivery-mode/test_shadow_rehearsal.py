@@ -22,8 +22,17 @@ if [ -n "$FAKE_NSPAWN_REFUSES" ]; then
   echo "$FAKE_NSPAWN_REFUSES" >&2
   exit 1
 fi
+for argument in "$@"; do
+  case "$argument" in --directory=*) [ -z "$FAKE_SAVE_ROOT" ] || cp -r "${argument#--directory=}/etc" "$FAKE_LOG/root-etc" ;; esac
+done
 touch "$FAKE_LOG/machine.up"
 sleep 30
+'''
+
+FAKE_SOCAT = '''#!/bin/bash
+echo "socat $*" >> "$FAKE_LOG/calls"
+echo $$ >> "$FAKE_LOG/socat.pids"
+exec sleep 60
 '''
 
 FAKE_UNSHARE = '''#!/bin/bash
@@ -140,7 +149,7 @@ class ShadowRehearsalTest(unittest.TestCase):
         self.log.mkdir()
         tools = self.log / 'tools'
         tools.mkdir()
-        for name, text in (('systemd-nspawn', FAKE_NSPAWN), ('machinectl', FAKE_MACHINECTL), ('nsenter', FAKE_NSENTER), ('systemctl', FAKE_SYSTEMCTL), ('unshare', FAKE_UNSHARE), ('mount', FAKE_MOUNT), ('mkfs.ext4', FAKE_MKFS), ('findmnt', FAKE_FINDMNT)):
+        for name, text in (('systemd-nspawn', FAKE_NSPAWN), ('machinectl', FAKE_MACHINECTL), ('nsenter', FAKE_NSENTER), ('systemctl', FAKE_SYSTEMCTL), ('unshare', FAKE_UNSHARE), ('mount', FAKE_MOUNT), ('mkfs.ext4', FAKE_MKFS), ('findmnt', FAKE_FINDMNT), ('socat', FAKE_SOCAT)):
             executable(tools / name, text)
         self.tools = tools
         (self.log / 'filesystems').write_text('nodev\ttmpfs\nnodev\toverlay\n\text4\n')
@@ -165,7 +174,7 @@ class ShadowRehearsalTest(unittest.TestCase):
         return database
 
     def run_rehearsal(self, target=None, **extra):
-        environment = {'PATH': '/usr/bin:/bin', 'FAKE_LOG': str(self.log), 'HIMAWARI_SHADOW_TOOLS': str(self.tools), 'HIMAWARI_SHADOW_SBIN': str(self.tools), 'HIMAWARI_SHADOW_UPPER_SIZE': '1M', 'HIMAWARI_SHADOW_PROC_FILESYSTEMS': str(self.log / 'filesystems'), 'HIMAWARI_SHADOW_LOOP_CONTROL': str(self.log / 'loop-control'), 'HIMAWARI_PACKET_HOST': '127.0.0.1', 'HIMAWARI_DEPLOY_SHADOW_REHEARSAL': '1', 'HIMAWARI_SHADOW_STATE_ROOT': str(self.data), 'HIMAWARI_SHADOW_PARENT': str(self.parent), 'HIMAWARI_SHADOW_BOOT_WAIT': '5', 'HIMAWARI_SHADOW_SERVICE_WAIT': '3', 'HIMAWARI_SHADOW_PROBE_TIMEOUT': '2', 'HIMAWARI_SHADOW_SERVICE_SETTLE': '1', **extra}
+        environment = {'PATH': '/usr/bin:/bin', 'FAKE_LOG': str(self.log), 'HIMAWARI_SHADOW_TOOLS': str(self.tools), 'HIMAWARI_SHADOW_SBIN': str(self.tools), 'HIMAWARI_SHADOW_UPPER_SIZE': '1M', 'HIMAWARI_SHADOW_PROC_FILESYSTEMS': str(self.log / 'filesystems'), 'HIMAWARI_SHADOW_LOOP_CONTROL': str(self.log / 'loop-control'), 'HIMAWARI_PACKET_HOST': '127.0.0.1', 'HIMAWARI_DEPLOY_SHADOW_REHEARSAL': '1', 'HIMAWARI_SHADOW_STATE_ROOT': str(self.data), 'HIMAWARI_SHADOW_PARENT': str(self.parent), 'HIMAWARI_SHADOW_BOOT_WAIT': '5', 'HIMAWARI_SHADOW_SERVICE_WAIT': '3', 'HIMAWARI_SHADOW_PROBE_TIMEOUT': '2', 'HIMAWARI_SHADOW_SERVICE_SETTLE': '1', 'HIMAWARI_SHADOW_CONFIG': str(self.directory / 'no-config.json'), **extra}
         return subprocess.run(['/bin/bash', str(self.scripts / 'shadow-rehearsal.sh'), target or str(self.packet)], capture_output=True, text=True, env=environment, timeout=120)
 
     def test_the_copy_holds_rows_still_in_the_write_ahead_log_and_keeps_owner_and_mode(self):
@@ -285,6 +294,35 @@ class ShadowRehearsalTest(unittest.TestCase):
         self.assertEqual(len(journal), 1)
         self.assertEqual(Path(journal[0]).name, 'journal')
         self.assertTrue(Path(journal[0]).parent.name.startswith('himawari-shadow.'))
+
+    def test_I120_the_shadow_reaches_only_the_identity_key_address_the_service_fetches_before_it_listens(self):
+        self.live_database()
+        config = self.directory / 'config.json'
+        config.write_text('{"identity": {"kind": "cloudflare-access", "jwksUrl": "https://team.cloudflareaccess.com/cdn-cgi/access/certs"}}')
+        result = self.run_rehearsal('--boot-only', HIMAWARI_SHADOW_CONFIG=str(config), FAKE_SAVE_ROOT='1')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('SHADOW_EGRESS_ALLOWED team.cloudflareaccess.com:443', result.stdout)
+        arguments = (self.log / 'nspawn.args').read_text().splitlines()
+        self.assertIn('--private-network', arguments)
+        bind = next(argument for argument in arguments if argument.endswith(':/run/himawari-shadow-egress'))
+        calls = (self.log / 'calls').read_text()
+        self.assertIn('socat UNIX-LISTEN:' + bind[len('--bind='):-len(':/run/himawari-shadow-egress')] + '/1.sock,fork,mode=600 TCP:team.cloudflareaccess.com:443', calls)
+        self.assertIn('127.0.1.1 team.cloudflareaccess.com', (self.log / 'root-etc' / 'hosts').read_text())
+        unit = (self.log / 'root-etc' / 'systemd' / 'system' / 'himawari-shadow-egress-1.service').read_text()
+        self.assertIn('ExecStart=/usr/bin/socat TCP-LISTEN:443,bind=127.0.1.1,fork,reuseaddr UNIX-CONNECT:/run/himawari-shadow-egress/1.sock', unit)
+        self.assertIn('Before=himawari-prod.service', unit)
+        self.assertTrue((self.log / 'root-etc' / 'systemd' / 'system' / 'multi-user.target.wants' / 'himawari-shadow-egress-1.service').is_symlink())
+        for pid in (self.log / 'socat.pids').read_text().split():
+            self.assertFalse(Path('/proc/' + pid).exists() and Path('/proc/' + pid + '/stat').read_text().split()[2] != 'Z')
+
+    def test_a_built_in_identity_needs_no_way_out_of_the_shadow(self):
+        self.live_database()
+        config = self.directory / 'config.json'
+        config.write_text('{"identity": {"kind": "built-in", "jwksUrl": "https://team.cloudflareaccess.com/cdn-cgi/access/certs"}}')
+        result = self.run_rehearsal('--boot-only', HIMAWARI_SHADOW_CONFIG=str(config))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn('SHADOW_EGRESS_ALLOWED', result.stdout)
+        self.assertFalse(any(line.startswith('socat ') for line in (self.log / 'calls').read_text().splitlines()))
 
     def test_I120_the_host_root_itself_is_never_handed_to_nspawn_and_a_refusing_nspawn_fails_at_once(self):
         self.live_database()

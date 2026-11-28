@@ -30,6 +30,9 @@ service_settle="${HIMAWARI_SHADOW_SERVICE_SETTLE:-30}"
 probe_timeout="${HIMAWARI_SHADOW_PROBE_TIMEOUT:-15}"
 lease_wait_max="${HIMAWARI_SHADOW_LEASE_WAIT_MAX:-180}"
 masked_units="${HIMAWARI_SHADOW_MASKED_UNITS:-oracle-keepalive.service cloudflared.service}"
+config="${HIMAWARI_SHADOW_CONFIG:-/etc/himawari/config.json}"
+socat="$tools/socat"
+egress_pids=()
 shadow=""
 booted=0
 launcher=""
@@ -44,6 +47,7 @@ launcher_alive() {
 }
 
 finish() {
+  for pid in "${egress_pids[@]}"; do kill "$pid" 2> /dev/null || true; done
   if [[ "$booted" -eq 1 ]]; then
     "$machinectl" terminate "$machine" > /dev/null 2>&1 || true
     for _ in $(seq 1 60); do
@@ -62,6 +66,19 @@ finish() {
 trap finish EXIT
 
 [[ "$boot_only" -eq 1 || -d "$packet" ]] || fail PACKET_MISSING "$packet"
+[[ "$boot_only" -eq 0 || -n "${HIMAWARI_SHADOW_SERVICE_SETTLE:-}" ]] || service_settle=120
+egress="$(/usr/bin/python3 -I - "$config" <<'PY2'
+import json, os, sys, urllib.parse
+path = sys.argv[1]
+if not os.path.exists(path):
+    sys.exit(0)
+identity = json.load(open(path)).get('identity') or {}
+if identity.get('kind') != 'built-in' and identity.get('jwksUrl'):
+    url = urllib.parse.urlsplit(identity['jwksUrl'])
+    print(url.hostname, url.port or 443)
+PY2
+)" || fail CONFIG_UNREADABLE "could not read the identity key address from $config"
+[[ -z "$egress" || -x "$socat" ]] || fail EGRESS_TOOL_MISSING "$socat is needed to let the shadow fetch the identity keys"
 [[ -d "$state_root" ]] || fail STATE_MISSING "$state_root"
 if [[ ! -x "$nspawn" || ! -x "$machinectl" ]]; then
   echo "SHADOW_INSTALL systemd-container"
@@ -111,7 +128,17 @@ if [[ -n "$lease_expiry" ]]; then
   fi
 fi
 
-mkdir "$shadow/layer" "$shadow/root" "$shadow/journal"
+mkdir "$shadow/layer" "$shadow/root" "$shadow/journal" "$shadow/egress"
+egress_spec=""
+number=0
+while read -r egress_host egress_port; do
+  [[ -n "$egress_host" ]] || continue
+  number=$(( number + 1 ))
+  "$socat" "UNIX-LISTEN:$shadow/egress/$number.sock,fork,mode=600" "TCP:$egress_host:$egress_port" > "$shadow/egress/$number.log" 2>&1 &
+  egress_pids+=("$!")
+  egress_spec+="$number $egress_host $egress_port"$'\n'
+  echo "SHADOW_EGRESS_ALLOWED $egress_host:$egress_port (the identity keys the service fetches before it starts listening; every other address stays unreachable)"
+done <<< "$egress"
 if [[ -d /var/log/journal ]]; then
   [[ "$(id -u)" -ne 0 ]] || chown --reference=/var/log/journal "$shadow/journal"
   chmod --reference=/var/log/journal "$shadow/journal"
@@ -139,9 +166,16 @@ for masked in $3; do
   ln -sfn /dev/null "$2/root/etc/systemd/system/$masked"
   echo "SHADOW_UNIT_MASKED $masked"
 done
-shift 3
+printf "%s" "$4" | while read -r number host port; do
+  [ -n "$number" ] || continue
+  printf "127.0.1.%s %s\n" "$number" "$host" >> "$2/root/etc/hosts"
+  mkdir -p "$2/root/etc/systemd/system/multi-user.target.wants"
+  printf "[Unit]\nDescription=Shadow relay to %s\nBefore=himawari-prod.service\n\n[Service]\nExecStart=/usr/bin/socat TCP-LISTEN:%s,bind=127.0.1.%s,fork,reuseaddr UNIX-CONNECT:/run/himawari-shadow-egress/%s.sock\n\n[Install]\nWantedBy=multi-user.target\n" "$host" "$port" "$number" "$number" > "$2/root/etc/systemd/system/himawari-shadow-egress-$number.service"
+  ln -sfn ../himawari-shadow-egress-$number.service "$2/root/etc/systemd/system/multi-user.target.wants/himawari-shadow-egress-$number.service"
+done
+shift 4
 exec "$@"
-' shadow-root "$mount" "$shadow" "$masked_units" "$nspawn" --quiet --directory="$shadow/root" --private-network --link-journal=no --machine="$machine" --hostname="$(hostname)" --console=passive --bind="$shadow/state:$state_root" --bind="$shadow/journal:/var/log/journal" --property="MemoryMax=$memory_max" --boot > "$shadow/boot.log" 2>&1 9>&- &
+' shadow-root "$mount" "$shadow" "$masked_units" "$egress_spec" "$nspawn" --quiet --directory="$shadow/root" --private-network --link-journal=no --machine="$machine" --hostname="$(hostname)" --console=passive --bind="$shadow/state:$state_root" --bind="$shadow/journal:/var/log/journal" --bind="$shadow/egress:/run/himawari-shadow-egress" --property="MemoryMax=$memory_max" --boot > "$shadow/boot.log" 2>&1 9>&- &
 launcher=$!
 booted=1
 leader=""
