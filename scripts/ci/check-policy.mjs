@@ -1011,6 +1011,29 @@ export function validateManualMacRunsSupersede(workflows) {
   }
 }
 
+export function validateMacReleaseNightly(text) {
+  const workflow = parseDocument(text, { uniqueKeys: true }).toJS() ?? {};
+  assert(
+    workflow.on?.push === undefined && workflow.on?.pull_request === undefined,
+    "MAC_RELEASE_NIGHTLY the Mac release is built nightly or by hand, not on every push",
+  );
+  assert(
+    (workflow.on?.schedule ?? []).some((entry) => entry.cron === "0 18 * * *"),
+    'MAC_RELEASE_NIGHTLY the Mac release builds nightly at 03:00 JST (cron "0 18 * * *")',
+  );
+  const publish = String(workflow.jobs?.publish?.if);
+  assert(
+    publish.includes(
+      "github.event.schedule == '0 18 * * *' && needs.changes.outputs.client == 'true'",
+    ) && publish.includes("github.event_name == 'workflow_dispatch'"),
+    "MAC_RELEASE_NIGHTLY publish runs on the nightly tick only when the client changed, or by hand",
+  );
+  assert(
+    String(workflow.jobs?.changes?.steps?.at(-1)?.run).includes("--since-release"),
+    "MAC_RELEASE_NIGHTLY the nightly build must skip when nothing changed since the last release (--since-release)",
+  );
+}
+
 export function validateAppleAuditSchedule(text) {
   const workflow = parseDocument(text, { uniqueKeys: true }).toJS() ?? {};
   const crons = (workflow.on?.schedule ?? []).map((entry) => entry.cron);
@@ -1018,7 +1041,7 @@ export function validateAppleAuditSchedule(text) {
     crons.includes("0 18 * * *"),
     'APPLE_AUDIT_SCHEDULE the accessibility audit runs nightly at 03:00 JST (cron "0 18 * * *")',
   );
-  for (const id of ["iphone-accessibility-build", "iphone-accessibility"]) {
+  for (const id of ["iphone-accessibility-build", "iphone-accessibility", "scroll"]) {
     const condition = String(workflow.jobs?.[id]?.if);
     assert(
       condition.includes("github.event_name != 'push'") &&
@@ -1872,6 +1895,7 @@ export function validateWorkflowsAgainstPolicy({ root, source, proposed }) {
   const appleWorkflow = readFileSync(path.join(workflowDirectory, "apple.yml"), "utf8");
   validateAppleMacSlots(appleWorkflow);
   validateAppleAuditSchedule(appleWorkflow);
+  validateMacReleaseNightly(readFileSync(path.join(workflowDirectory, "mac-release.yml"), "utf8"));
   const workflows = Object.fromEntries(
     readdirSync(workflowDirectory)
       .filter((name) => /\.ya?ml$/u.test(name))

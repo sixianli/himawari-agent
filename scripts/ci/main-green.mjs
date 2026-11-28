@@ -50,9 +50,20 @@ export async function findGreenBase({
   return greenBase(runs, jobsByRun, prefixes, runId);
 }
 
-export async function findLastRanBase({ repo, workflow, job, runId, event, getJson, getPages }) {
+const ran = (conclusion) => !["skipped", "cancelled"].includes(conclusion);
+
+export async function findLastRanBase({
+  repo,
+  workflow,
+  job,
+  runId,
+  event,
+  getJson,
+  getPages,
+  accept = ran,
+}) {
   const { workflow_runs: runs } = await getJson(
-    `repos/${repo}/actions/workflows/${workflow}/runs?branch=main&event=${event}&status=completed&per_page=40`,
+    `repos/${repo}/actions/workflows/${workflow}/runs?branch=main&event=${event}&status=completed&per_page=100`,
   );
   const earlier = runs
     .filter((run) => String(run.id) !== String(runId))
@@ -62,10 +73,7 @@ export async function findLastRanBase({ repo, workflow, job, runId, event, getJs
       `repos/${repo}/actions/runs/${run.id}/jobs?filter=latest&per_page=100`,
       (page) => page.jobs,
     );
-    if (
-      jobs.some((item) => item.name === job && !["skipped", "cancelled"].includes(item.conclusion))
-    )
-      return run.head_sha;
+    if (jobs.some((item) => item.name === job && accept(item.conclusion))) return run.head_sha;
   }
   return null;
 }
