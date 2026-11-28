@@ -39,7 +39,7 @@ final class SignInTests: XCTestCase {
     func testAWrongOrExpiredCodeSaysSoAndTypingAgainClearsTheMessage() throws {
         for (scene, message) in [("15-sign-in-2-code-invalid", "设置码不对，请检查一下。"), ("15-sign-in-3-code-expired", "这个设置码已经失效，请重新生成一个。")] {
             let app = DemoApp.launch(scene)
-            let text = app.staticTexts[message].firstMatch
+            let text = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", message)).firstMatch
             XCTAssertTrue(text.waitForExistence(timeout: 10), "\(scene): the page does not say \(message)")
             let field = app.textFields["输入设置码"].firstMatch
             field.tap()
@@ -61,7 +61,7 @@ final class SignInTests: XCTestCase {
     func testTheWelcomePageExplainsAMissingPasskeyAndARemovedDevice() throws {
         for (scene, message) in [("15-sign-in-5-no-passkey", "这台设备上还没有 Himawari 的通行密钥。第一次用请输入设置码。"), ("15-sign-in-6-removed", "这台设备已从设备列表移除。重新登录就能继续用。")] {
             let app = DemoApp.launch(scene)
-            XCTAssertTrue(app.staticTexts[message].firstMatch.waitForExistence(timeout: 10), "\(scene): the page does not say \(message)")
+            XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", message)).firstMatch.waitForExistence(timeout: 10), "\(scene): the page does not say \(message)")
             XCTAssertTrue(app.buttons["用通行密钥登录"].firstMatch.isEnabled, "\(scene): the passkey button is grey")
             XCTAssertTrue(app.buttons["第一次用？输入设置码"].firstMatch.isHittable, "\(scene): the setup code button cannot be tapped")
             app.terminate()

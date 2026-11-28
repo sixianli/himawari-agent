@@ -211,7 +211,9 @@ struct SetupCodePage: View {
                 TextField(L.text("signIn.code.placeholder"), text: Binding(
                     get: { code },
                     set: { typed in
-                        code = SetupCodeEntry.display(typed, rule: rule)
+                        let shown = SetupCodeEntry.display(typed, rule: rule)
+                        guard shown != code else { return }
+                        code = shown
                         model.clearSetupProblem()
                     }
                 ))
