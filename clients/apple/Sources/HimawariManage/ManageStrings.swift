@@ -53,12 +53,11 @@ enum M {
     static var herPage: String { text("Himawari", ja: "Himawari", en: "Himawari") }
     static var herMemory: String { text("Himawari 记得的", ja: "覚えていること", en: "What Himawari remembers") }
     static func memorySummary(_ summary: MemorySummary) -> String {
-        text(
-            "\(summary.memories) 条记忆 · \(summary.rules) 条规则",
-            ja: "記憶 \(summary.memories) 件 · ルール \(summary.rules) 件",
-            en: "\(summary.memories) memories · \(summary.rules) rules"
-        )
+        text("\(summary.memories) 条记忆", ja: "記憶 \(summary.memories) 件", en: "\(summary.memories) memories")
     }
+    static var herKnows: String { text("Himawari 知道的", ja: "Himawari が知っていること", en: "What Himawari Knows") }
+    static var herDoes: String { text("Himawari 能替你做的", ja: "Himawari に任せられること", en: "What Himawari Can Do for You") }
+    static var settingsTitle: String { text("设置", ja: "設定", en: "Settings") }
     static var privacy: String { text("隐私", ja: "プライバシー", en: "Privacy") }
     static var devicesTitle: String { text("设备", ja: "デバイス", en: "Devices") }
     static var nameTitle: String { text("你的称呼", ja: "呼び名", en: "What Himawari calls you") }

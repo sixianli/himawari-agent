@@ -72,7 +72,10 @@ describe("Mac 安装包发布工作流", () => {
     expect(check["runs-on"]).toBe(linuxRunnerLabel);
     expect(publish.if).toContain("github.ref == 'refs/heads/main'");
     expect(publish.if).toContain("github.event_name != 'schedule'");
-    expect(check.if).toContain("github.event_name == 'schedule'");
+    expect(check.if).toContain("github.event_name == 'schedule' || inputs.mode == 'check'");
+    expect(publish.if).toContain("inputs.mode != 'check'");
+    expect(workflow.on.workflow_dispatch.inputs.mode.options).toEqual(["build", "check"]);
+    expect(workflow.on.workflow_dispatch.inputs.mode.default).toBe("build");
     expect(finish.needs).toBe("check");
     expect(finish.if).toContain("needs.check.outputs.outcome == 'accepted'");
     expect(workflow.permissions).toEqual({ contents: "read" });
