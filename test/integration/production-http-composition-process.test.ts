@@ -2625,3 +2625,223 @@ it("[PR-A] [iOS-8] a half sentence prepared while the owner speaks sends the mod
     await service.stop();
   }
 }, 180_000);
+
+async function settingsConversation(service: Awaited<ReturnType<typeof openInstalledMain>>) {
+  const device = await pairInstalledDevice(service);
+  let script: ChatReply[] = [];
+  chatReply = (input) => {
+    if (!isAgentRequest({ path: "/v1/chat/completions", body: input }))
+      return answerMemoryCapture([])(input);
+    const messages = input["messages"] as { role: string }[];
+    if (messages.at(-1)?.role === "tool") return script.shift() ?? { text: "好了" };
+    return script.shift() ?? { text: "好了" };
+  };
+  const created = await device("threads", {
+    requestId: "device-request-settings-0001",
+    answerLocale: "zh-CN",
+  });
+  expect(created.status, created.raw).toBe(200);
+  const threadId = (created.body as { payload: { threadId: string } }).payload.threadId;
+  let sent = 0;
+  const say = async (text: string, replies: ChatReply[]) => {
+    script = [...replies];
+    const start = providerRequests.length;
+    const detail = await service.query("thread.detail", { threadId, afterSequence: 0, limit: 100 });
+    const revision = (detail.body as { payload: { thread: { revision: number } } }).payload.thread
+      .revision;
+    sent += 1;
+    const posted = await device("messages", {
+      messageId: `device-message-settings-${String(sent).padStart(4, "0")}`,
+      threadId,
+      expectedRevision: revision,
+      text,
+    });
+    expect(posted.status, posted.raw).toBe(200);
+    let status: string[] = [];
+    await expect
+      .poll(
+        async () => {
+          const current = await service.query("thread.detail", {
+            threadId,
+            afterSequence: 0,
+            limit: 100,
+          });
+          status = (current.body as { payload: { runs: { status: string }[] } }).payload.runs.map(
+            (run) => run.status,
+          );
+          return (
+            status.length === sent &&
+            !["accepted", "building_context", "running"].includes(status.at(-1) ?? "")
+          );
+        },
+        { timeout: 30_000, interval: 200 },
+      )
+      .toBe(true);
+    const results = agentRequests(start)
+      .flatMap((request) => request.body.messages)
+      .filter((message) => message.role === "tool")
+      .map((message) => JSON.parse(String(message.content)) as Record<string, unknown>);
+    return { status: status.at(-1), results, requests: agentRequests(start) };
+  };
+  let reads = 0;
+  const read = async (type: string, payload: object = {}) => {
+    reads += 1;
+    const answered = await device("gateway", {
+      gateway: "v2",
+      type,
+      messageId: `settings-read-${reads}`,
+      dataClassification: "private",
+      risk: "low",
+      payload,
+    });
+    expect(answered.status, answered.raw).toBe(200);
+    return (answered.body as { payload: Record<string, unknown> }).payload;
+  };
+  return { say, read };
+}
+
+function settingsApprovals() {
+  const database = openQualifiedDatabase(databasePath);
+  try {
+    return (
+      database
+        .prepare("SELECT status, record_json AS record FROM approval_requests ORDER BY rowid")
+        .all() as { status: string; record: string }[]
+    ).map(
+      ({ status, record }) =>
+        ({ ...(JSON.parse(record) as Record<string, unknown>), status }) as Record<string, unknown>,
+    );
+  } finally {
+    database.close();
+  }
+}
+
+it("[ADR 0315][SET-1] 在聊天里说“暂停记忆”就直接暂停，读回确认，设置页读到暂停；说“撤销”改回；“打开勿扰”直接打开", async () => {
+  const service = await openInstalledMain();
+  try {
+    const chat = await settingsConversation(service);
+    const listed = await chat.say("你能改哪些设置？", [
+      { tool: "settings_list", input: {} },
+      { text: "这些都能改。" },
+    ]);
+    const catalog = listed.results[0] as { settings: { setting: string; tier: number }[] };
+    expect(catalog.settings.map(({ setting }) => setting)).toEqual(
+      expect.arrayContaining(["memory.settings.set", "quiet_hours.set", "owner.preferences.set"]),
+    );
+    expect(JSON.stringify(catalog)).not.toMatch(/vault/iu);
+    const tools = (listed.requests[0]?.body.tools ?? []) as { function: { name: string } }[];
+    expect(tools.map((tool) => tool.function.name)).toEqual(
+      expect.arrayContaining(["settings_list", "settings_change", "settings_undo"]),
+    );
+    expect(JSON.stringify(tools)).not.toContain("quiet_hours");
+
+    expect((await chat.read("memory.overview.read"))["capturePaused"]).toBe(false);
+    const paused = await chat.say("暂停记忆", [
+      {
+        tool: "settings_change",
+        input: { setting: "memory.settings.set", values: { capturePaused: true } },
+      },
+      { text: "已暂停记忆，想撤销说一声就行。" },
+    ]);
+    expect(paused.status).toBe("completed");
+    const change = paused.results[0] as Record<string, unknown>;
+    expect(change).toMatchObject({
+      setting: "memory.settings.set",
+      tier: 1,
+      confirmed: true,
+      before: { capturePaused: false },
+      after: { capturePaused: true },
+    });
+    expect((await chat.read("memory.overview.read"))["capturePaused"]).toBe(true);
+
+    const undone = await chat.say("撤销", [
+      { tool: "settings_undo", input: { changeId: change["changeId"] } },
+      { text: "已恢复记忆。" },
+    ]);
+    expect(undone.results[0]).toMatchObject({
+      tier: 2,
+      confirmed: true,
+      after: { capturePaused: false },
+      undoOf: change["changeId"],
+    });
+    expect((await chat.read("memory.overview.read"))["capturePaused"]).toBe(false);
+
+    const quiet = await chat.read("quiet_hours.read");
+    const opened = await chat.say("打开勿扰", [
+      {
+        tool: "settings_change",
+        input: {
+          setting: "quiet_hours.set",
+          values: { enabled: true, start: "23:00", end: "07:00" },
+        },
+      },
+      { text: "已打开勿扰。" },
+    ]);
+    expect(opened.results[0]).toMatchObject({
+      tier: 1,
+      confirmed: true,
+      after: { enabled: true, start: "23:00", end: "07:00" },
+    });
+    const after = await chat.read("quiet_hours.read");
+    expect(after).toMatchObject({ enabled: true, start: "23:00", end: "07:00" });
+    expect(after["version"]).not.toBe(quiet["version"]);
+    expect(settingsApprovals()).toEqual([]);
+  } finally {
+    chatReply = undefined;
+    await service.stop();
+  }
+}, 180_000);
+
+it("[ADR 0315][SET-2][reverse] 只问用法不改设置；改名先出同意卡片、移除设备卡片要 Face ID，没点同意什么都不变；不存在的设置和保险箱被拒绝", async () => {
+  const service = await openInstalledMain();
+  try {
+    const chat = await settingsConversation(service);
+    const asked = await chat.say("记忆功能怎么用？", [{ text: "记忆会自动记下你说过的事。" }]);
+    expect(asked.results).toEqual([]);
+    expect((await chat.read("memory.overview.read"))["capturePaused"]).toBe(false);
+
+    const devices = (await chat.read("device.list.read"))["devices"] as {
+      id: string;
+      name: string;
+    }[];
+    const phone = devices[0];
+    if (!phone) throw new Error("DEVICE_MISSING");
+    const renamed = await chat.say("把这台手机改名叫小葵", [
+      {
+        tool: "settings_change",
+        input: { setting: "device.rename", values: { deviceId: phone.id, name: "小葵" } },
+      },
+      { text: "等你同意。" },
+    ]);
+    expect(renamed.status).not.toBe("completed");
+    const card = settingsApprovals().at(-1);
+    expect(card).toMatchObject({
+      status: "pending",
+      recentAuthenticationRequired: false,
+      display: { displayTitle: "改设置 · 给设备改名" },
+    });
+    expect(String((card?.["display"] as { bodyPreview: string }).bodyPreview)).toContain("小葵");
+    const named = (await chat.read("device.list.read"))["devices"] as { name: string }[];
+    expect(named[0]?.name).toBe(phone.name);
+
+    const removed = await chat.say("把这台手机移除", [
+      {
+        tool: "settings_change",
+        input: { setting: "device.revoke", values: { deviceId: phone.id } },
+      },
+      { text: "等你确认。" },
+    ]);
+    expect(removed.status).not.toBe("completed");
+    expect(settingsApprovals().at(-1)).toMatchObject({
+      status: "pending",
+      recentAuthenticationRequired: true,
+      display: { displayTitle: "改设置 · 移除一台设备" },
+    });
+    expect(((await chat.read("device.list.read"))["devices"] as unknown[]).length).toBe(
+      devices.length,
+    );
+  } finally {
+    chatReply = undefined;
+    await service.stop();
+  }
+}, 180_000);

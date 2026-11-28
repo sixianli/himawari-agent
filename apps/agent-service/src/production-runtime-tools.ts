@@ -68,6 +68,7 @@ import {
   TOOL_RESULT_REMINDER_REJECTED,
   TOOL_RESULT_REMINDER_UNAVAILABLE,
   TOOL_RESULT_RULE_REJECTED,
+  TOOL_RESULT_SETTINGS_REJECTED,
   TOOL_RESULT_SUBTHREAD_REJECTED,
   TOOL_RESULT_TELL_OWNER_REJECTED,
   TOOL_RESULT_VAULT_UNAVAILABLE,
@@ -98,15 +99,15 @@ import {
   type ProductionAppTools,
 } from "./production-app-tools.js";
 import {
+  type BackgroundCommandLimits,
+  ProductionBackgroundCommands,
+} from "./production-background-commands.js";
+import {
   BROWSER_SITE_TARGET,
   BrowserToolError,
   browserToolDescriptors,
   type ProductionBrowserTools,
 } from "./production-browser-tools.js";
-import {
-  type BackgroundCommandLimits,
-  ProductionBackgroundCommands,
-} from "./production-background-commands.js";
 import {
   executeProductionCodingRequest,
   fileVersionConflictResult,
@@ -182,6 +183,12 @@ import {
   type SandboxToolDelivery,
   sandboxCeilingExceededMessage,
 } from "./production-sandbox-tool-result.js";
+import {
+  type ProductionSettingsTools,
+  type SettingsAccess,
+  SettingsToolError,
+  settingsToolDescriptors,
+} from "./production-settings-tools.js";
 import { type StageTiming, stageTiming } from "./production-stage-timing.js";
 import {
   mainSubthreadDescriptors,
@@ -335,6 +342,38 @@ function appApproval(access: AppCallAccess, step?: string): OwnerScopeIntentExtr
   };
 }
 
+function settingsTierRow(row: ToolActionRow, tier: SettingsAccess["tier"]): ToolActionRow {
+  if (tier <= 2) return row;
+  const { himawariSideOnly: _side, ...rest } = row;
+  return {
+    ...rest,
+    reversible: false,
+    sideEffect: "irreversible",
+    ownerPresenceRequired: tier === 4,
+  };
+}
+
+function settingsApproval(access: SettingsAccess): OwnerScopeIntentExtras {
+  const changed = Object.fromEntries(
+    Object.entries(access.payload).filter(
+      ([key, value]) =>
+        value !== null &&
+        !(key in access.before && JSON.stringify(access.before[key]) === JSON.stringify(value)),
+    ),
+  );
+  return {
+    targets: [{ type: "setting", ref: access.setting.row.type }],
+    display: async () => ({
+      displayTitle: `改设置 · ${access.setting.row.name.zh}`,
+      bodyPreview: approvalBodyPreview(
+        JSON.stringify(changed),
+        APPROVAL_BODY_PREVIEW_DEFAULT_CHARACTERS,
+      ),
+      origin: null,
+    }),
+  };
+}
+
 function reject(): never {
   throw new ApplicationPortError(PORT_ERROR_CODES.HANDLE_REVOKED, "Runtime tool is not authorized");
 }
@@ -466,6 +505,8 @@ export interface ProductionRuntimeToolsOptions {
   readonly vault?: Pick<ProductionVaultTools, "run">;
   readonly apps?: Pick<ProductionAppTools, "run">;
   readonly browser?: Pick<ProductionBrowserTools, "run">;
+  readonly settings?: Pick<ProductionSettingsTools, "run">;
+  readonly runSessionId?: (runId: RuntimeRequest["runId"]) => Promise<string | undefined>;
   readonly toolActions?: ToolActionRegistry;
   readonly readOnlyRun?: (runId: RuntimeRequest["runId"]) => Promise<boolean>;
   readonly ownerScope?: Pick<OwnerScopeAuthorization, "authorize">;
@@ -741,6 +782,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     if (this.#options.vault) descriptors.push(...vaultToolDescriptors());
     if (this.#options.apps) descriptors.push(...appToolDescriptors());
     if (this.#options.browser) descriptors.push(...browserToolDescriptors());
+    if (this.#options.settings) descriptors.push(...settingsToolDescriptors());
     this.#exposed.set(runId, new Set(refs));
     const readOnly = (await this.#options.readOnlyRun?.(runId)) === true;
     const offered = this.#registry.offer(descriptors, { readOnly });
@@ -817,6 +859,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     | ((
         invocation: RuntimeToolInvocation,
         gate: OwnerScopeGate,
+        gateFor?: (row: ToolActionRow) => OwnerScopeGate,
       ) => Promise<RuntimeToolExecutionResult>)
     | undefined {
     if (row.executor !== "owner_scoped") return undefined;
@@ -848,6 +891,8 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       return (invocation, gate) => this.#app(invocation, gate);
     if (row.targetType === "owner-browser" && this.#options.browser)
       return (invocation, gate) => this.#browser(invocation, gate);
+    if (row.targetType === "owner-settings" && this.#options.settings)
+      return (invocation, _gate, gateFor) => this.#settings(invocation, row, gateFor);
     return undefined;
   }
   #ownerScopeGate(
@@ -1006,6 +1051,42 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
         error instanceof BrowserToolError
           ? { errorCode: error.code, note: error.note }
           : { errorCode: "BROWSER_UNAVAILABLE", note: TOOL_RESULT_BROWSER_UNAVAILABLE.text },
+    );
+  }
+  async #settings(
+    invocation: RuntimeToolInvocation,
+    row: ToolActionRow,
+    gateFor: ((row: ToolActionRow) => OwnerScopeGate) | undefined,
+  ): Promise<RuntimeToolExecutionResult> {
+    const settings = this.#options.settings;
+    return this.#ownerScoped(
+      invocation,
+      "settings",
+      undefined,
+      settings
+        ? async (call) => ({
+            value: await settings.run(call, {
+              sessionId: async () => this.#options.runSessionId?.(call.runId),
+              externalSources: async () =>
+                originsOf(await this.#options.externalContent?.read(call.runId)),
+              authorize: async (access) => {
+                const gate = gateFor?.(settingsTierRow(row, access.tier));
+                if (!gate) reject();
+                const stopped = await gate(settingsApproval(access));
+                if (stopped) throw new OwnerScopeStop(stopped);
+                return { recentlyAuthenticated: access.tier === 4 };
+              },
+            }),
+            contentClassification: "private",
+          })
+        : undefined,
+      (error) =>
+        error instanceof SettingsToolError
+          ? {
+              errorCode: error.code,
+              note: error.detail ? `${error.note}（${error.detail.slice(0, 300)}）` : error.note,
+            }
+          : { errorCode: "SETTINGS_REJECTED", note: TOOL_RESULT_SETTINGS_REJECTED.text },
     );
   }
   async #ownerRule(
@@ -1267,7 +1348,8 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       | "plan"
       | "vault"
       | "app"
-      | "browser",
+      | "browser"
+      | "settings",
     gate: OwnerScopeGate,
     run:
       | ((call: RuntimeToolInvocation) => Promise<{
@@ -1309,7 +1391,8 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       | "plan"
       | "vault"
       | "app"
-      | "browser",
+      | "browser"
+      | "settings",
     gate: OwnerScopeGate,
     run: (call: RuntimeToolInvocation) => Promise<{
       readonly value: unknown;
@@ -1785,7 +1868,9 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     if (row) {
       const run = this.#builtinExecutor(row);
       if (!run) reject();
-      return run(invocation, this.#ownerScopeGate(invocation, row, signal));
+      return run(invocation, this.#ownerScopeGate(invocation, row, signal), (tierRow) =>
+        this.#ownerScopeGate(invocation, tierRow, signal),
+      );
     }
     if (this.#background && this.#codingTool(invocation) === "bash") {
       const key = digest([invocation.runId, invocation.toolCallId]);

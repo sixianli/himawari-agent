@@ -231,6 +231,10 @@ import {
   type ProductionTaskEnvironments,
 } from "./production-sandbox-services.js";
 import { ProductionServiceLifecycle } from "./production-service-lifecycle.js";
+import {
+  ProductionSettingsTools,
+  scopedSettingsChangeRecords,
+} from "./production-settings-tools.js";
 import { ProductionSubthreads } from "./production-subthreads.js";
 import { ProductionTellOwner } from "./production-tell-owner.js";
 import { ProductionThreadTasks } from "./production-thread-tasks.js";
@@ -2028,6 +2032,20 @@ export async function startTenantRuntime(
           scope: perceptionScope,
           list: (scope) => activeVault.listForModel(scope),
         }),
+        settings: new ProductionSettingsTools({
+          gateway: () => http?.ownerSettings,
+          records: scopedSettingsChangeRecords({
+            ownerId: configuration.ownerId,
+            agentId: configuration.agentId,
+            state: repository,
+            authority: () => invocationAuthority().lease,
+            now: () => clock.now(),
+          }),
+        }),
+        runSessionId: async (runId) => {
+          const source = await runSources.read(runId);
+          return source?.sourceType === "user_message" ? source.sessionId : undefined;
+        },
         fileReadEnabled: configuration.runPolicy?.fileRead !== undefined,
         readOnlyRun: async (runId) => {
           const source = await runSources.read(runId);

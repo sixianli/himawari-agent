@@ -11,8 +11,15 @@ export class ContractValidationError extends Error {
   }
 }
 
+export type SchemaDescription = Readonly<Record<string, unknown>>;
+
 export interface Schema<T> {
   parse(input: unknown, path?: string): T;
+  describe?(): SchemaDescription;
+}
+
+export function describeSchema(schema: Schema<unknown>): SchemaDescription {
+  return schema.describe ? schema.describe() : {};
 }
 
 export type InferSchema<TSchema> = TSchema extends Schema<infer TValue> ? TValue : never;
@@ -25,6 +32,7 @@ export function literal<const TValue extends string | number | boolean | null>(
   expected: TValue,
 ): Schema<TValue> {
   return {
+    describe: () => ({ const: expected }),
     parse(input, path = "$") {
       if (input !== expected) fail(path, `expected ${JSON.stringify(expected)}`);
       return expected;
@@ -37,6 +45,7 @@ export function enumeration<const TValues extends readonly string[]>(
 ): Schema<TValues[number]> {
   const allowed = new Set<string>(values);
   return {
+    describe: () => ({ type: "string", enum: [...values] }),
     parse(input, path = "$") {
       if (typeof input !== "string" || !allowed.has(input)) {
         fail(path, `expected one of ${values.join(", ")}`);
@@ -49,6 +58,11 @@ export function enumeration<const TValues extends readonly string[]>(
 export const MACHINE_STRING_MAX_LENGTH = 128;
 
 export const machineString: Schema<string> = {
+  describe: () => ({
+    type: "string",
+    maxLength: MACHINE_STRING_MAX_LENGTH,
+    pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+  }),
   parse(input, path = "$") {
     if (
       typeof input !== "string" ||
@@ -64,6 +78,7 @@ export const machineString: Schema<string> = {
 export const PROACTIVE_SOURCE_NAME_PATTERN = /^[a-z][a-z0-9_]{0,63}$/u;
 
 export const proactiveSourceName: Schema<string> = {
+  describe: () => ({ type: "string", pattern: PROACTIVE_SOURCE_NAME_PATTERN.source }),
   parse(input, path = "$") {
     if (typeof input !== "string" || !PROACTIVE_SOURCE_NAME_PATTERN.test(input)) {
       fail(path, "expected a registered proactive source name");
@@ -84,6 +99,7 @@ export const gmailMessageId: Schema<string> = {
 };
 
 export const modelRefString: Schema<string> = {
+  describe: () => ({ type: "string", maxLength: 128 }),
   parse(input, path = "$") {
     if (
       typeof input !== "string" ||
@@ -101,6 +117,7 @@ export const modelRefString: Schema<string> = {
 
 export function boundedString(maximum = 2048): Schema<string> {
   return {
+    describe: () => ({ type: "string", minLength: 1, maxLength: maximum }),
     parse(input, path = "$") {
       if (
         typeof input !== "string" ||
@@ -123,6 +140,7 @@ export function codePointString(
   options: { readonly allowLineBreaks?: boolean } = {},
 ): Schema<string> {
   return {
+    describe: () => ({ type: "string", minLength: 1, maxLength: maximum }),
     parse(input, path = "$") {
       if (typeof input !== "string") fail(path, `expected a 1-${maximum} character string`);
       const characters = [...(input as string)];
@@ -143,6 +161,7 @@ export function codePointString(
 }
 
 export const booleanValue: Schema<boolean> = {
+  describe: () => ({ type: "boolean" }),
   parse(input, path = "$") {
     if (typeof input !== "boolean") fail(path, "expected a boolean");
     return input;
@@ -150,6 +169,7 @@ export const booleanValue: Schema<boolean> = {
 };
 
 export const timestamp: Schema<string> = {
+  describe: () => ({ type: "string", format: "date-time" }),
   parse(input, path = "$") {
     if (typeof input !== "string") fail(path, "expected an RFC 3339 timestamp string");
 
@@ -163,6 +183,7 @@ export const timestamp: Schema<string> = {
 
 export function integer(minimum: number, maximum = Number.MAX_SAFE_INTEGER): Schema<number> {
   return {
+    describe: () => ({ type: "integer", minimum, maximum }),
     parse(input, path = "$") {
       if (
         !Number.isSafeInteger(input) ||
@@ -178,6 +199,7 @@ export function integer(minimum: number, maximum = Number.MAX_SAFE_INTEGER): Sch
 
 export function nullable<TValue>(schema: Schema<TValue>): Schema<TValue | null> {
   return {
+    describe: () => ({ anyOf: [describeSchema(schema), { type: "null" }] }),
     parse(input, path = "$") {
       return input === null ? null : schema.parse(input, path);
     },
@@ -186,6 +208,7 @@ export function nullable<TValue>(schema: Schema<TValue>): Schema<TValue | null> 
 
 export function array<TValue>(schema: Schema<TValue>): Schema<readonly TValue[]> {
   return {
+    describe: () => ({ type: "array", items: describeSchema(schema) }),
     parse(input, path = "$") {
       if (!Array.isArray(input)) fail(path, "expected an array");
       return Object.freeze(input.map((value, index) => schema.parse(value, `${path}[${index}]`)));
@@ -195,13 +218,25 @@ export function array<TValue>(schema: Schema<TValue>): Schema<readonly TValue[]>
 
 type Shape = Readonly<Record<string, Schema<unknown>>>;
 
-export function object<const TShape extends Shape>(
-  shape: TShape,
-): Schema<Readonly<{ [TKey in keyof TShape]: InferSchema<TShape[TKey]> }>> {
+export interface ObjectSchema<TShape extends Shape>
+  extends Schema<Readonly<{ [TKey in keyof TShape]: InferSchema<TShape[TKey]> }>> {
+  readonly shape: TShape;
+}
+
+export function object<const TShape extends Shape>(shape: TShape): ObjectSchema<TShape> {
   const expectedKeys = Object.keys(shape);
   const expectedKeySet = new Set(expectedKeys);
 
   return {
+    shape,
+    describe: () => ({
+      type: "object",
+      properties: Object.fromEntries(
+        expectedKeys.map((key) => [key, describeSchema(shape[key] as Schema<unknown>)]),
+      ),
+      required: [...expectedKeys],
+      additionalProperties: false,
+    }),
     parse(input, path = "$") {
       if (input === null || typeof input !== "object" || Array.isArray(input)) {
         fail(path, "expected an object");
