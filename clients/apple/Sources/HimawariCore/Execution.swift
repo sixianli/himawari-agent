@@ -192,3 +192,40 @@ public enum ExecutionRefresh {
         return !ProcessLine.terminalRunStatuses.contains(runStatus)
     }
 }
+
+public enum TranscriptLayout {
+    public enum Entry: Equatable, Sendable {
+        case message(ThreadMessage)
+        case process(runId: String)
+    }
+
+    public static let unansweredEndings: Set<String> = ["failed", "cancelled"]
+
+    public static func entries(messages: [ThreadMessage], runs: [ThreadRunSummary]) -> [Entry] {
+        let status = Dictionary(runs.map { ($0.runId, $0.status) }, uniquingKeysWith: { _, last in last })
+        let answered = Set(messages.compactMap { $0.role == .agent ? $0.runId : nil })
+        var shown = Set<String>()
+        var entries: [Entry] = []
+        for message in messages {
+            if message.role == .agent, let runId = message.runId, status[runId] != nil, shown.insert(runId).inserted {
+                entries.append(.process(runId: runId))
+            }
+            entries.append(.message(message))
+            if message.role == .owner, let runId = message.runId, let ended = status[runId], !answered.contains(runId),
+               unansweredEndings.contains(ended), shown.insert(runId).inserted {
+                entries.append(.process(runId: runId))
+            }
+        }
+        for run in runs where !shown.contains(run.runId) && !ProcessLine.terminalRunStatuses.contains(run.status) {
+            shown.insert(run.runId)
+            entries.append(.process(runId: run.runId))
+        }
+        return entries
+    }
+
+    public static func line(records: [ExecutionRecord]?, runStatus: String) -> ProcessLine? {
+        if ProcessLine.terminalRunStatuses.contains(runStatus), records == nil, !unansweredEndings.contains(runStatus) { return nil }
+        let line = ProcessLine.make(records: records ?? [], runStatus: runStatus)
+        return line.hasNothingToShow ? nil : line
+    }
+}

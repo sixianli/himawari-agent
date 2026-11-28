@@ -7,6 +7,7 @@ unit="${HIMAWARI_OPS_UNIT:-himawari-prod.service}"
 side_units="${HIMAWARI_OPS_SIDE_UNITS:-magpie.service}"
 node_bin="${HIMAWARI_OPS_NODE:-/opt/himawari/node/bin/node}"
 database="${HIMAWARI_OPS_DATABASE:-/var/lib/himawari/state/data/product.sqlite}"
+config="${HIMAWARI_OPS_CONFIG:-/etc/himawari/config.json}"
 public_key="${HIMAWARI_OPS_PUBLIC_KEY:-}"
 lock_file="${HIMAWARI_OPS_LOCK:-}"
 systemctl_bin="${HIMAWARI_OPS_SYSTEMCTL:-systemctl}"
@@ -19,7 +20,7 @@ refuse() {
   exit "${3:-64}"
 }
 
-[[ "$action" == diagnose || "$action" == restart ]] || refuse ACTION_INVALID "only diagnose or restart"
+[[ "$action" == diagnose || "$action" == restart || "$action" == allow-sensitive ]] || refuse ACTION_INVALID "only diagnose, restart or allow-sensitive"
 [[ -n "$public_key" && -s "$public_key" ]] || refuse KEY_MISSING "HIMAWARI_OPS_PUBLIC_KEY must name the public key that seals the full diagnostics" 70
 
 service_line() {
@@ -38,8 +39,9 @@ summary() {
   events="$("$journalctl_bin" -u "$unit" --since "$window" --no-pager -q -o cat 2>/dev/null | grep -oE '"event":"[a-z_.]+"|"code":"[A-Z0-9_]+"|"reasonCode":"[A-Z0-9_]+"|"lastDrop":"[A-Za-z]+"' | sort | uniq -c | sort -rn | head -40 | awk '{print $2 "=" $1}' | tr '\n' ' ')"
   echo "OPS_JOURNAL_NAMES ${events:-none}"
   if [[ -x "$node_bin" && -f "$database" ]]; then
-    (cd /tmp && "$node_bin" --no-warnings - "$database" <<'JS'
+    (cd /tmp && "$node_bin" --no-warnings - "$database" "$config" <<'JS'
 const { DatabaseSync } = require("node:sqlite");
+const { readFileSync } = require("node:fs");
 const database = new DatabaseSync(process.argv[2], { readOnly: true });
 const all = (sql, ...values) => {
   try {
@@ -53,6 +55,17 @@ const terminal = ["completed", "failed", "cancelled"];
 console.log(`OPS_RUNS_BY_STATUS ${JSON.stringify(all("SELECT status, count(*) AS n FROM runs GROUP BY status ORDER BY status"))}`);
 console.log(`OPS_RUNS_OPEN ${JSON.stringify(all("SELECT id, thread_id, status, created_at, updated_at FROM runs WHERE status NOT IN (?, ?, ?) ORDER BY created_at", ...terminal))}`);
 console.log(`OPS_RUNS_RECENT ${JSON.stringify(all("SELECT id, thread_id, status, created_at, updated_at FROM runs WHERE created_at > ? ORDER BY created_at", since))}`);
+console.log(`OPS_OWNER_MODEL ${JSON.stringify(all("SELECT model_ref, thinking_level, updated_at FROM owner_preferences"))}`);
+console.log(`OPS_MODEL_INVOCATIONS ${JSON.stringify(all("SELECT model_ref, data_classification, source, status, count(*) AS n, max(reserved_at) AS last FROM model_invocation_identities WHERE reserved_at > ? GROUP BY model_ref, data_classification, source, status ORDER BY last", since))}`);
+let descriptors;
+try {
+  descriptors = (JSON.parse(readFileSync(process.argv[3], "utf8")).modelDescriptors ?? []).map(
+    ({ ref, role, provider, model, routingClass, allowedDataClassifications }) => ({ ref, role, provider, model, routingClass, allowedDataClassifications }),
+  );
+} catch (error) {
+  descriptors = `ERROR ${error.message}`;
+}
+console.log(`OPS_MODEL_DESCRIPTORS ${JSON.stringify(descriptors)}`);
 JS
     ) 2>&1 | cut -c1-6000
   else
@@ -88,17 +101,16 @@ sealed() {
   rm -rf "$work"
 }
 
-if [[ "$action" == restart ]]; then
+take_lock() {
   if [[ -n "$lock_file" ]]; then
     exec 9> "$lock_file"
-    flock -n 9 || refuse BUSY "a deploy holds $lock_file; not restarting in the middle of it" 75
+    flock -n 9 || refuse BUSY "a deploy holds $lock_file; not changing the service in the middle of it" 75
   fi
-  echo "OPS_BEFORE_RESTART"
-  summary
-  sealed
+}
+
+restart_service() {
   "$systemctl_bin" restart "$unit" || refuse RESTART_FAILED "systemctl restart $unit failed" 70
-  deadline=$(( SECONDS + start_wait ))
-  state=""
+  local deadline=$(( SECONDS + start_wait )) state=""
   while (( SECONDS < deadline )); do
     state="$("$systemctl_bin" is-active "$unit" 2>/dev/null || true)"
     [[ "$state" == active ]] && break
@@ -107,6 +119,56 @@ if [[ "$action" == restart ]]; then
   [[ "$state" == active ]] || { service_line "$unit"; refuse NOT_ACTIVE "$unit is $state after restart" 70; }
   echo "OPS_RESTARTED $(date -u +%Y-%m-%dT%H:%M:%SZ)"
   service_line "$unit"
+}
+
+allow_sensitive() {
+  [[ -x "$node_bin" ]] || refuse NODE_MISSING "$node_bin" 70
+  [[ -f "$config" ]] || refuse CONFIG_MISSING "$config" 70
+  local backup="$config.before-allow-sensitive-$(date -u +%Y%m%dT%H%M%SZ)" next="$config.allow-sensitive-next"
+  cp -p "$config" "$backup" || refuse BACKUP_FAILED "$backup" 70
+  echo "OPS_CONFIG_BACKUP $backup"
+  local changed
+  changed="$("$node_bin" --no-warnings - "$config" "$next" <<'JS'
+const { readFileSync, writeFileSync } = require("node:fs");
+const [source, target] = process.argv.slice(2);
+const configuration = JSON.parse(readFileSync(source, "utf8"));
+const changed = [];
+for (const descriptor of configuration.modelDescriptors ?? []) {
+  const allowed = descriptor.allowedDataClassifications;
+  if (descriptor.role === "embedding" || !Array.isArray(allowed)) continue;
+  if (!allowed.includes("private") || allowed.includes("sensitive")) continue;
+  descriptor.allowedDataClassifications = ["public", "private", "sensitive"].filter(
+    (value) => value === "sensitive" || allowed.includes(value),
+  );
+  changed.push(descriptor.ref);
+}
+if (changed.length > 0) writeFileSync(target, `${JSON.stringify(configuration, null, 2)}\n`);
+process.stdout.write(changed.join(" "));
+JS
+  )" || refuse CONFIG_UNREADABLE "$config" 70
+  if [[ -z "$changed" ]]; then
+    echo "OPS_CONFIG_UNCHANGED every generation model already allows sensitive"
+    return 1
+  fi
+  chown --reference="$config" "$next" && chmod --reference="$config" "$next" && mv -f "$next" "$config" || refuse CONFIG_WRITE_FAILED "$config" 70
+  echo "OPS_CONFIG_CHANGED allow sensitive for: $changed"
+}
+
+if [[ "$action" == restart ]]; then
+  take_lock
+  echo "OPS_BEFORE_RESTART"
+  summary
+  sealed
+  restart_service
+  exit 0
+fi
+
+if [[ "$action" == allow-sensitive ]]; then
+  take_lock
+  if allow_sensitive; then
+    restart_service
+    summary
+  fi
   exit 0
 fi
 
