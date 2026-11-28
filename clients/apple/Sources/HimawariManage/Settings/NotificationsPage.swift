@@ -10,7 +10,7 @@ struct NotificationsPage: View {
 
     var body: some View {
         SettingsPage(gap: SL.pageGap) {
-            SheetHeader(title: M.notificationsTitle, leading: .back, action: back)
+            SheetHeader(title: M.quietTitle, leading: .back, action: back)
             if let hours = store.hours, let shown = store.shown {
                 let start = shown.start
                 let end = shown.end

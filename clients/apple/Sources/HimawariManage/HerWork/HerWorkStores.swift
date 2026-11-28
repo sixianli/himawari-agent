@@ -87,44 +87,6 @@ public final class SpokenExplanationStore {
 
 @MainActor
 @Observable
-public final class DecisionStatsStore {
-    public private(set) var phase: LoadPhase = .loading
-    public private(set) var stats: [StatsSpan: DecisionStats] = [:]
-
-    @ObservationIgnored private let read: (StatsSpan) async throws -> DecisionStats
-
-    public init(gateway: ManageGateway) {
-        read = { span in
-            try DecisionStats.decode(try await gateway.read(.v2, "decision.stats.read", payload: ["span": .string(span.rawValue)]))
-        }
-    }
-
-    init(stats: [DecisionStats]?) {
-        let shown = Dictionary(uniqueKeysWithValues: (stats ?? []).map { ($0.span, $0) })
-        read = { span in
-            guard let value = shown[span] else { throw ManageGatewayError.unknownType(.v2, "decision.stats.read") }
-            return value
-        }
-        self.stats = shown
-        phase = stats == nil ? .unsupported : .loaded
-    }
-
-    public func load(_ span: StatsSpan) async {
-        do {
-            stats[span] = try await read(span)
-            phase = .loaded
-        } catch {
-            if unsupported(error) {
-                phase = .unsupported
-            } else if stats[span] == nil {
-                phase = .failed
-            }
-        }
-    }
-}
-
-@MainActor
-@Observable
 public final class OwnerFilesStore {
     public private(set) var phase: LoadPhase = .loading
     public private(set) var files: [OwnerFile] = []

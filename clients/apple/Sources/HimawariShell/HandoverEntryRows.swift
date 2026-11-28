@@ -5,9 +5,11 @@ import HimawariShare
 import SwiftUI
 
 struct HandoverEntryRows: View {
+    var separated = true
+
     var body: some View {
         ForEach(Array(HandoverEntry.allCases.enumerated()), id: \.element) { index, entry in
-            if index > 0 { RowSeparator() }
+            if separated, index > 0 { RowSeparator() }
             NavigationLink {
                 HandoverEntryRoute(entry)
             } label: {

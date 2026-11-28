@@ -28,7 +28,7 @@
 "item.calendar.synced" = "%d events synced";
 "item.calendar.confirm" = "The copy of your events on the server will be deleted. Your iPhone calendar stays as it is.";
 
-"item.health.name" = "Health & Motion";
+"item.health.name" = "Health";
 "item.health.detail" = "Steps, sleep, heart rate";
 "item.health.headline" = "Let it know how your body is doing";
 "item.health.records" = "Steps, sleep, heart rate, workouts, and whether you're walking, running or driving";

@@ -10,7 +10,6 @@ extension M {
         )
     }
     static var agentsEmpty: String { text("还没有接入的 agent", ja: "まだ接続した agent はありません", en: "No connected agents yet") }
-    static func agentsSummary(_ names: [String]) -> String { names.formatted(.list(type: .and)) }
     static var agentPushLabel: String { text("送来记忆时", ja: "記憶を送ってきたとき", en: "When it sends memories") }
     static func agentPush(_ policy: AgentPushPolicy) -> String {
         switch policy {

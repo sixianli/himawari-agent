@@ -94,17 +94,24 @@
       ]
     },
     {
-      "feature": "Himawari 页：入口、隐私、关于、名字、模型",
+      "feature": "Himawari 页：十个入口分四组，个性化、通知、语音、数据和应用、你的数据、关于、名字、模型",
       "scenes": [
         "next-3-her",
-        "next-3-her-privacy",
+        "next-3-her-personalization",
+        "next-3-her-notifications-hub",
+        "next-3-her-voice",
+        "next-3-her-data",
+        "next-3-her-your-data",
         "next-6-her-about",
         "next-10-her-name",
         "next-10-her-model"
       ],
-      "checks": "Himawari 页每一行点开都有页面、能回来（先试左边缘右滑，再试返回钮或下滑）；各页在最大字号下能滑到最后一行（改名字、换模型等操作还没测）",
+      "checks": "Himawari 页列出照片和文件、个性化、通知、语音、数据和应用、不用再问、你的数据、设备、关于，评测、隐私、设置和旧组名都不再出现；Himawari 页和个性化、通知、数据和应用、你的数据每一行点开都有页面、能回来（先试左边缘右滑，再试返回钮或下滑）；语音页有“一直听着”开关，点已录的声纹先问要不要删；各页在最大字号下能滑到最后一行（改名字、换模型等操作还没测）",
       "tests": [
         "HimawariUITests/SettingsPagesTests/testEveryRowOnTheHimawariPageOpensAPageYouCanGoBackFrom",
+        "HimawariUITests/SettingsPagesTests/testTheHimawariPageShowsTheTenEntriesInFourGroupsAndNoOldOnes",
+        "HimawariUITests/SettingsPagesTests/testEveryRowOnTheHimawariSubpagesOpensAPageYouCanGoBackFrom",
+        "HimawariUITests/SettingsPagesTests/testTheVoicePageListsListeningAndTheVoiceprintAndAsksBeforeDeletingIt",
         "HimawariUITests/SettingsPagesTests/testEverySettingsPageScrollsToItsLastLineAtTheLargestTextSize"
       ]
     },

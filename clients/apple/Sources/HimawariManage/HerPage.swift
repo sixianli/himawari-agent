@@ -20,10 +20,12 @@ public struct HerPage: View {
     enum Page: Hashable {
         case memory
         case rules
+        case personalization
+        case notificationsHub
         case notifications
-        case privacy
-        case connections
-        case agents
+        case voice
+        case dataAndApps
+        case sense(SenseItem)
         case agent(String)
         case gmail
         case app(String)
@@ -38,13 +40,13 @@ public struct HerPage: View {
         case name
         case model
         case serverStatus
-        case transfer
+        case yourData
+        case exportData
+        case importData
         case importPaste
         case importPreview
         case files
-        case evaluation
         case talkTiming
-        case settings
     }
 
     @State private var settings: SettingsStore
@@ -54,7 +56,6 @@ public struct HerPage: View {
     @State private var quietHours: QuietHoursStore
     @State private var timers: TimersStore
     @State private var personal: PersonalStore
-    @State private var stats: DecisionStatsStore
     @State private var files: OwnerFilesStore
     @State private var connections: ConnectionsStore
     @State private var agents: AgentsStore
@@ -63,7 +64,6 @@ public struct HerPage: View {
     @State private var memoryImport: MemoryImportStore
     @State private var serverStatus: ServerStatusStore
     @State private var path: [Page] = []
-    @State private var sensesOpen = false
     @State private var vaultCount: HerVaultCount = .unknown
     @State private var vaultOpen = false
     @State private var deletionOpen = false
@@ -71,9 +71,8 @@ public struct HerPage: View {
     private let actions: DeviceActionsModel?
     private let openListening: () -> Void
     private let openVoiceprint: () -> Void
-    private let senses: AnyView?
+    private let senses: HerSenses?
     private let perceptionDeletion: ((@escaping () -> Void) -> AnyView)?
-    private let sensesOn: () -> Int?
     private let talk: (String) -> Void
     private let close: () -> Void
     private let removedThisDevice: () -> Void
@@ -89,9 +88,8 @@ public struct HerPage: View {
         actions: DeviceActionsModel? = nil,
         openListening: @escaping () -> Void = {},
         openVoiceprint: @escaping () -> Void = {},
-        senses: AnyView? = nil,
+        senses: HerSenses? = nil,
         perceptionDeletion: ((@escaping () -> Void) -> AnyView)? = nil,
-        sensesOn: @escaping () -> Int? = { nil },
         talk: @escaping (String) -> Void,
         close: @escaping () -> Void,
         removedThisDevice: @escaping () -> Void
@@ -106,7 +104,6 @@ public struct HerPage: View {
         _quietHours = State(initialValue: QuietHoursStore(gateway: gateway))
         _timers = State(initialValue: TimersStore(gateway: gateway))
         _personal = State(initialValue: PersonalStore(gateway: gateway, loadModels: { try? await api.configuration().chatModels }))
-        _stats = State(initialValue: DecisionStatsStore(gateway: gateway))
         _files = State(initialValue: OwnerFilesStore(gateway: gateway, api: api))
         _connections = State(initialValue: ConnectionsStore(gateway: gateway))
         _agents = State(initialValue: AgentsStore(gateway: gateway))
@@ -120,7 +117,6 @@ public struct HerPage: View {
         self.openVoiceprint = openVoiceprint
         self.senses = senses
         self.perceptionDeletion = perceptionDeletion
-        self.sensesOn = sensesOn
         self.talk = talk
         self.close = close
         self.removedThisDevice = removedThisDevice
@@ -141,14 +137,13 @@ public struct HerPage: View {
         #endif
     }
 
-    init(settings: SettingsStore, memory: MemoryStore, quietHours: QuietHoursStore, timers: TimersStore? = nil, connections: ConnectionsStore? = nil, agents: AgentsStore? = nil, gmail: GmailStore? = nil, personal: PersonalStore? = nil, gateway: ManageGateway? = nil, memoryImport: MemoryImportStore? = nil, listening: (any HerListening)? = nil, actions: DeviceActionsModel? = nil, senses: AnyView? = nil, vaultItems: HerVaultCount = .items(3), path: [Page] = []) {
+    init(settings: SettingsStore, memory: MemoryStore, quietHours: QuietHoursStore, timers: TimersStore? = nil, connections: ConnectionsStore? = nil, agents: AgentsStore? = nil, gmail: GmailStore? = nil, personal: PersonalStore? = nil, files: OwnerFilesStore? = nil, gateway: ManageGateway? = nil, memoryImport: MemoryImportStore? = nil, listening: (any HerListening)? = nil, actions: DeviceActionsModel? = nil, senses: HerSenses? = nil, perceptionDeletion: AnyView? = nil, vault: AnyView? = nil, vaultItems: HerVaultCount = .items(3), path: [Page] = []) {
         _settings = State(initialValue: settings)
         _memory = State(initialValue: memory)
         _quietHours = State(initialValue: quietHours)
         _timers = State(initialValue: timers ?? TimersStore(timers: nil))
         _personal = State(initialValue: personal ?? PersonalStore(gateway: settings.gateway, loadModels: { nil }))
-        _stats = State(initialValue: DecisionStatsStore(stats: nil))
-        _files = State(initialValue: OwnerFilesStore(files: nil))
+        _files = State(initialValue: files ?? OwnerFilesStore(files: nil))
         _connections = State(initialValue: connections ?? ConnectionsStore(connections: nil))
         _agents = State(initialValue: agents ?? AgentsStore(agents: nil))
         _gmail = State(initialValue: gmail ?? GmailStore(overview: nil))
@@ -162,111 +157,55 @@ public struct HerPage: View {
         openListening = {}
         openVoiceprint = {}
         self.senses = senses
-        perceptionDeletion = senses.map { shown in { _ in shown } }
-        sensesOn = { 4 }
+        self.perceptionDeletion = perceptionDeletion.map { shown in { _ in shown } }
         talk = { _ in }
         close = {}
         removedThisDevice = {}
         let shown = vaultItems
         countVault = { shown }
         server = "https://himawari.example"
-        vault = nil
+        self.vault = vault.map { shown in { _ in shown } }
         voiceTimings = { [] }
     }
 
     public var body: some View {
         NavigationStack(path: $path) {
-            ScrollView {
-                VStack(spacing: DesignTokens.Her.pageGap) {
+            List {
+                Section {
                     HerHero()
                         .scrollTransition(.interactive, axis: .vertical) { hero, phase in
                             hero
                                 .scaleEffect(phase.value < 0 ? 1 + phase.value / 2 : 1, anchor: .top)
                                 .opacity(phase.value < 0 ? 1 + phase.value : 1)
                         }
-                    if let actions, actions.waitingCount > 0 {
-                        SettingsGroup(label: nil) {
-                            Button { path.append(.approvals) } label: {
-                                HerRow(icon: .hourglass, title: M.approvalsWaiting(actions.waitingCount), last: true)
-                            }
-                            .buttonStyle(.pressable)
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets())
+                }
+                if let actions, actions.waitingCount > 0 {
+                    Section {
+                        NavigationLink(value: Page.approvals) {
+                            HerLinkLabel(title: M.approvalsWaiting(actions.waitingCount), icon: .hourglass)
                         }
-                    }
-                    SettingsGroup(label: M.herKnows) {
-                        Button { path.append(.memory) } label: {
-                            HerRow(icon: .brain, title: M.herMemory, subtitle: memory.summary(categoryLabel: M.category).map(M.memorySummary))
-                        }
-                        .buttonStyle(.pressable)
-                        Button { path.append(.rules) } label: {
-                            HerRow(icon: .clipboardList, title: M.rules, subtitle: memory.phase == .loaded ? M.rulesSummary(RulesPage.ownPageRules(memory.rules, quietHours: quietHours.hours).count) : nil, last: files.phase == .unsupported && stats.phase == .unsupported)
-                        }
-                        .buttonStyle(.pressable)
-                        if files.phase != .unsupported {
-                            Button { path.append(.files) } label: {
-                                HerRow(icon: .folder, title: M.filesTitle, last: stats.phase == .unsupported)
-                            }
-                            .buttonStyle(.pressable)
-                        }
-                        if stats.phase != .unsupported {
-                            Button { path.append(.evaluation) } label: {
-                                HerRow(icon: .listCheck, title: M.evalTitle, last: true)
-                            }
-                            .buttonStyle(.pressable)
-                        }
-                    }
-                    SettingsGroup(label: M.herDoes) {
-                        if timers.phase != .unsupported {
-                            Button { path.append(.timers) } label: {
-                                HerRow(icon: .alarm, title: M.timersTitle, subtitle: timersSummary)
-                            }
-                            .buttonStyle(.pressable)
-                        }
-                        if connections.available || actions != nil {
-                            Button { path.append(.connections) } label: {
-                                HerRow(icon: .puzzle, title: M.connectionsTitle, subtitle: connectionsSummary)
-                            }
-                            .buttonStyle(.pressable)
-                        }
-                        if agents.available {
-                            Button { path.append(.agents) } label: {
-                                HerRow(icon: .affiliate, title: M.agentsTitle, subtitle: M.agentsSummary(agents.shown.map(\.name)))
-                            }
-                            .buttonStyle(.pressable)
-                        }
-                        Button { path.append(.allowances) } label: {
-                            HerRow(icon: .shieldCheck, title: M.allowancesTitle, subtitle: M.allowancesSummary(memory.allowances.count), last: vaultCount == .unsupported)
-                        }
-                        .buttonStyle(.pressable)
-                        if vaultCount != .unsupported {
-                            Button { vaultOpen = true } label: {
-                                HerRow(icon: .key, title: M.vaultTitle, subtitle: M.vaultSummary(vaultCount), last: true)
-                            }
-                            .buttonStyle(.pressable)
-                        }
-                    }
-                    SettingsGroup(label: nil) {
-                        Button { path.append(.settings) } label: {
-                            HerRow(icon: .settings, title: M.settingsTitle, last: true)
-                        }
-                        .buttonStyle(.pressable)
                     }
                 }
-                .padding(.top, 8)
-                .padding(.horizontal, DesignTokens.Size.pagePaddingX)
-                .padding(.bottom, DesignTokens.Size.sheetPaddingBottom)
+                ForEach(HerEntryGroup.allCases, id: \.self) { group in
+                    let shown = HerEntry.entries(in: group).filter { isAvailable($0) }
+                    if !shown.isEmpty {
+                        Section {
+                            ForEach(shown, id: \.self) { entry in
+                                row(entry)
+                            }
+                        }
+                    }
+                }
             }
-            .scrollIndicators(.hidden)
             .onScrollGeometryChange(for: Bool.self) { geometry in
                 geometry.contentOffset.y + geometry.contentInsets.top > DesignTokens.Her.heroPaddingTop + DesignTokens.Her.heroAvatar
             } action: { _, away in
                 withAnimation(reduceMotion ? nil : .easeInOut) { heroScrolledAway = away }
             }
             .refreshable { await load() }
-            .himawariScreenBackground()
-            .navigationTitle(M.herPage)
-            #if os(iOS)
-            .navigationBarTitleDisplayMode(.inline)
-            #endif
+            .herList(M.herPage)
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     HerTitle()
@@ -278,89 +217,10 @@ public struct HerPage: View {
                 }
             }
             .navigationDestination(for: Page.self) { page in
-                switch page {
-                case .settings:
-                    settingsPage
-                case .memory:
-                    MemoryRootView(store: memory, talk: talk)
-                case .rules:
-                    RulesPage(store: memory, quietHours: quietHours.hours, talk: talk)
-                case .notifications:
-                    NotificationsPage(store: quietHours) { path.removeLast() }
-                case .privacy:
-                    PrivacyPage(
-                        memory: memory,
-                        listening: listening,
-                        openListening: openListening,
-                        openVoiceprint: openVoiceprint,
-                        openSenses: senses == nil ? nil : { sensesOpen = true },
-                        openDeletion: perceptionDeletion == nil ? nil : { deletionOpen = true },
-                        sensesSummary: sensesOn().map(M.sensesOn)
-                    ) { path.removeLast() }
-                case .connections:
-                    ConnectionsPage(store: connections, actions: actions, openSenses: senses == nil ? nil : { sensesOpen = true }, open: { connection in
-                        path.append(connection.name == GmailStore.source ? .gmail : .app(connection.name))
-                    }, add: { path.append(.addApp) }) { path.removeLast() }
-                case .agents:
-                    AgentsPage(store: agents, open: { path.append(.agent($0)) }) { path.removeLast() }
-                case .agent(let id):
-                    AgentPage(store: agents, agentId: id) { path.removeLast() }
-                case .gmail:
-                    GmailPage(store: gmail) { path.removeLast() }
-                        .onDisappear { Task { await connections.load() } }
-                case .app(let name):
-                    AppConnectionPage(store: connections, name: name) { path.removeLast() }
-                case .addApp:
-                    AddAppConnectionPage(store: connections, added: { connection in
-                        path.removeLast()
-                        path.append(.app(connection.name))
-                    }) { path.removeLast() }
-                case .devices:
-                    HerDevicesPage(store: settings, open: { path.append(.device($0.id)) }, removedThisDevice: removedThisDevice) { path.removeLast() }
-                case .device(let id):
-                    DevicePage(store: settings, deviceId: id, actions: actions, removedThisDevice: removedThisDevice) { path.removeLast() }
-                case .allowances:
-                    HerAllowancesPage(memory: memory) { path.removeLast() }
-                case .timers:
-                    TimersPage(store: timers, open: { path.append(.timer($0)) }) { path.removeLast() }
-                case .timer(let id):
-                    TimerDetailPage(store: timers, timerId: id) { path.removeLast() }
-                case .about:
-                    AboutPage(server: server, openStatus: { path.append(.serverStatus) }, openTiming: { path.append(.talkTiming) }) { path.removeLast() }
-                case .serverStatus:
-                    ServerStatusPage(store: serverStatus) { path.removeLast() }
-                case .transfer:
-                    DataTransferPage(
-                        export: dataExport,
-                        importer: memoryImport,
-                        openPaste: { path.append(.importPaste) },
-                        openPreview: { path.append(.importPreview) }
-                    ) { path.removeLast() }
-                case .importPaste:
-                    MemoryImportPastePage(store: memoryImport, openPreview: { path.append(.importPreview) }) { path.removeLast() }
-                case .importPreview:
-                    MemoryImportPreviewPage(store: memoryImport, finish: finishImport) { path.removeLast() }
-                case .files:
-                    FilesPage(store: files)
-                case .evaluation:
-                    EvaluationPage(store: stats)
-                case .talkTiming:
-                    TalkTimingPage(load: voiceTimings)
-                case .name:
-                    NamePage(store: personal) { path.removeLast() }
-                case .model:
-                    ModelPage(store: personal) { path.removeLast() }
-                case .approvals:
-                    if let actions {
-                        ApprovalsView(model: actions, openThread: { _ in close() }) { path.removeLast() }
-                    }
-                }
+                destination(page)
             }
         }
         .task { await load() }
-        .sheet(isPresented: $sensesOpen) {
-            senses
-        }
         .sheet(isPresented: $deletionOpen) {
             perceptionDeletion?({ deletionOpen = false })
         }
@@ -369,55 +229,123 @@ public struct HerPage: View {
         }
     }
 
-    private var settingsPage: some View {
-        ScrollView {
-            VStack(spacing: DesignTokens.Her.pageGap) {
-                SettingsGroup(label: nil) {
-                    if personal.phase == .loaded {
-                        Button { path.append(.name) } label: {
-                            HerRow(icon: .user, title: M.nameTitle, value: personal.name ?? M.nameUnset)
-                        }
-                        .buttonStyle(.pressable)
-                    }
-                    if personal.canChooseModel, let model = personal.chosenModel {
-                        Button { path.append(.model) } label: {
-                            HerRow(icon: .bulb, title: M.modelTitle, value: M.modelName(model))
-                        }
-                        .buttonStyle(.pressable)
-                    }
-                    if let hours = quietHours.hours {
-                        Button { path.append(.notifications) } label: {
-                            HerRow(icon: .bell, title: M.notificationsTitle, subtitle: M.quietSummary(hours))
-                        }
-                        .buttonStyle(.pressable)
-                    }
-                    Button { path.append(.privacy) } label: {
-                        HerRow(icon: .handStop, title: M.privacy)
-                    }
-                    .buttonStyle(.pressable)
-                    Button { path.append(.devices) } label: {
-                        HerRow(icon: .deviceMobilePlain, title: M.devicesTitle, subtitle: devicesSummary, last: true)
-                    }
-                    .buttonStyle(.pressable)
-                }
-                SettingsGroup(label: nil) {
-                    Button { path.append(.transfer) } label: {
-                        HerRow(icon: .download, title: M.transferTitle)
-                    }
-                    .buttonStyle(.pressable)
-                    Button { path.append(.about) } label: {
-                        HerRow(icon: .infoCircle, title: M.aboutTitle, subtitle: AboutPage.versionLine, last: true)
-                    }
-                    .buttonStyle(.pressable)
-                }
+    @ViewBuilder
+    private func row(_ entry: HerEntry) -> some View {
+        if entry == .passwords {
+            Button { vaultOpen = true } label: {
+                HerButtonLabel(title: entry.title, icon: entry.icon)
             }
-            .padding(.top, 8)
-            .padding(.horizontal, DesignTokens.Size.pagePaddingX)
-            .padding(.bottom, DesignTokens.Size.sheetPaddingBottom)
+        } else if let page = page(entry) {
+            NavigationLink(value: page) {
+                HerLinkLabel(title: entry.title, icon: entry.icon)
+            }
         }
-        .scrollIndicators(.hidden)
-        .himawariScreenBackground()
-        .navigationTitle(M.settingsTitle)
+    }
+
+    private func page(_ entry: HerEntry) -> Page? {
+        switch entry {
+        case .files: .files
+        case .personalization: .personalization
+        case .notifications: .notificationsHub
+        case .voice: .voice
+        case .dataAndApps: .dataAndApps
+        case .passwords: nil
+        case .noMoreAsking: .allowances
+        case .yourData: .yourData
+        case .devices: .devices
+        case .about: .about
+        }
+    }
+
+    private func isAvailable(_ entry: HerEntry) -> Bool {
+        switch entry {
+        case .files: files.phase != .unsupported
+        case .personalization, .noMoreAsking, .yourData, .devices, .about: true
+        case .notifications: timers.phase != .unsupported || quietHours.hours != nil
+        case .voice: listening != nil
+        case .dataAndApps: connections.phase == .loaded || agents.phase == .loaded || actions != nil || senses != nil
+        case .passwords: vault != nil && vaultCount != .unsupported
+        }
+    }
+
+    @ViewBuilder
+    private func destination(_ page: Page) -> some View {
+        switch page {
+        case .personalization:
+            PersonalizationPage(personal: personal)
+        case .notificationsHub:
+            NotificationsHubPage(timers: timers, quietHours: quietHours)
+        case .voice:
+            if let listening {
+                VoicePage(listening: listening, openListening: openListening, openVoiceprint: openVoiceprint)
+            }
+        case .dataAndApps:
+            DataAndAppsPage(connections: connections, agents: agents, actions: actions, senses: senses)
+        case .sense(let item):
+            if let senses {
+                senses.screen(item) { path.removeLast() }
+            }
+        case .yourData:
+            YourDataPage(openDeletion: perceptionDeletion == nil ? nil : { deletionOpen = true })
+        case .memory:
+            MemoryRootView(store: memory, talk: talk)
+        case .rules:
+            RulesPage(store: memory, quietHours: quietHours.hours, talk: talk)
+        case .notifications:
+            NotificationsPage(store: quietHours) { path.removeLast() }
+        case .agent(let id):
+            AgentPage(store: agents, agentId: id) { path.removeLast() }
+        case .gmail:
+            GmailPage(store: gmail) { path.removeLast() }
+                .onDisappear { Task { await connections.load() } }
+        case .app(let name):
+            AppConnectionPage(store: connections, name: name) { path.removeLast() }
+        case .addApp:
+            AddAppConnectionPage(store: connections, added: { connection in
+                path.removeLast()
+                path.append(.app(connection.name))
+            }) { path.removeLast() }
+        case .devices:
+            HerDevicesPage(store: settings, open: { path.append(.device($0.id)) }, removedThisDevice: removedThisDevice) { path.removeLast() }
+        case .device(let id):
+            DevicePage(store: settings, deviceId: id, actions: actions, removedThisDevice: removedThisDevice) { path.removeLast() }
+        case .allowances:
+            HerAllowancesPage(memory: memory) { path.removeLast() }
+        case .timers:
+            TimersPage(store: timers, open: { path.append(.timer($0)) }) { path.removeLast() }
+        case .timer(let id):
+            TimerDetailPage(store: timers, timerId: id) { path.removeLast() }
+        case .about:
+            AboutPage(server: server, openStatus: { path.append(.serverStatus) }) { path.removeLast() }
+        case .serverStatus:
+            ServerStatusPage(store: serverStatus) { path.removeLast() }
+        case .exportData:
+            DataTransferPage(export: dataExport, importer: memoryImport, part: .export, openPaste: {}, openPreview: {}) { path.removeLast() }
+        case .importData:
+            DataTransferPage(
+                export: dataExport,
+                importer: memoryImport,
+                part: .importing,
+                openPaste: { path.append(.importPaste) },
+                openPreview: { path.append(.importPreview) }
+            ) { path.removeLast() }
+        case .importPaste:
+            MemoryImportPastePage(store: memoryImport, openPreview: { path.append(.importPreview) }) { path.removeLast() }
+        case .importPreview:
+            MemoryImportPreviewPage(store: memoryImport, finish: finishImport) { path.removeLast() }
+        case .files:
+            FilesPage(store: files)
+        case .talkTiming:
+            TalkTimingPage(load: voiceTimings)
+        case .name:
+            NamePage(store: personal) { path.removeLast() }
+        case .model:
+            ModelPage(store: personal) { path.removeLast() }
+        case .approvals:
+            if let actions {
+                ApprovalsView(model: actions, openThread: { _ in close() }) { path.removeLast() }
+            }
+        }
     }
 
     private func finishImport() {
@@ -426,36 +354,18 @@ public struct HerPage: View {
         Task { await memory.load() }
     }
 
-    private var timersSummary: String? {
-        guard timers.phase == .loaded else { return nil }
-        let counts = timers.counts
-        return M.timersSummary(active: counts.active, paused: counts.paused)
-    }
-
-    private var connectionsSummary: String {
-        if connections.needsReconnect { return M.connectionExpired }
-        let titles = connections.connectedTitles
-        return titles.isEmpty ? M.connectionsNoneConnected : titles.formatted(.list(type: .and))
-    }
-
-    private var devicesSummary: String? {
-        guard settings.phase == .loaded, settings.devices.contains(where: settings.isThisDevice) else { return nil }
-        return M.thisIPhone
-    }
-
     private func load() async {
         async let settingsLoaded: Void = settings.load()
         async let memoryLoaded: Void = memory.load()
         async let quietLoaded: Void = quietHours.load()
         async let timersLoaded: Void = timers.load()
-        async let statsLoaded: Void = stats.load(.week)
         async let filesLoaded: Void = files.load()
         async let personalLoaded: Void = personal.load()
         async let connectionsLoaded: Void = connections.load()
         async let agentsLoaded: Void = agents.load()
         await actions?.refreshPermissions()
         vaultCount = await countVault()
-        _ = await (settingsLoaded, memoryLoaded, quietLoaded, timersLoaded, personalLoaded, statsLoaded, filesLoaded, connectionsLoaded, agentsLoaded)
+        _ = await (settingsLoaded, memoryLoaded, quietLoaded, timersLoaded, personalLoaded, filesLoaded, connectionsLoaded, agentsLoaded)
     }
 }
 
