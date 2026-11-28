@@ -10,7 +10,7 @@ permissions:
   contents: read
 concurrency:
   group: apple-screens-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 defaults:
   run:
     shell: bash

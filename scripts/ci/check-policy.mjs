@@ -947,6 +947,97 @@ export function validateHostedRunners(workflows) {
   }
 }
 
+export function validateAppleMacSlots(text) {
+  const jobs = parseDocument(text, { uniqueKeys: true }).toJS()?.jobs ?? {};
+  const mac = Object.entries(jobs).filter(([, job]) => job["runs-on"] === macRunnerLabel);
+  const macIds = new Set(mac.map(([id]) => id));
+  const onPullRequest = mac.filter(
+    ([, job]) => !String(job.if).includes("github.event_name != 'pull_request'"),
+  );
+  assert(
+    onPullRequest.length <= 1 && onPullRequest.every(([, job]) => job.strategy === undefined),
+    `APPLE_MAC_SLOTS a pull request starts ${onPullRequest.length} Mac jobs; it may use one`,
+  );
+  const macNeeds = new Map(
+    mac.map(([id, job]) => [id, [job.needs ?? []].flat().filter((need) => macIds.has(need))]),
+  );
+  const roots = mac.filter(([id]) => macNeeds.get(id).length === 0).map(([id]) => id);
+  assert(
+    mac.length === 0 || roots.length === 1,
+    `APPLE_MAC_SLOTS main starts ${roots.length} Mac jobs at once (${roots.join(", ")}); chain them so main holds one Mac and pull requests keep the rest`,
+  );
+  for (const [id, job] of mac) {
+    const needs = macNeeds.get(id);
+    const followers = mac.filter(([other]) => macNeeds.get(other).includes(id));
+    assert(needs.length <= 1, `APPLE_MAC_SLOTS ${id} waits on ${needs.length} Mac jobs`);
+    assert(
+      followers.length <= 1,
+      `APPLE_MAC_SLOTS ${id} starts ${followers.length} Mac jobs at once`,
+    );
+    assert(
+      job.strategy?.matrix === undefined || job.strategy["max-parallel"] === 1,
+      `APPLE_MAC_SLOTS ${id} runs its matrix in parallel; set max-parallel: 1`,
+    );
+    assert(
+      needs.length === 0 || String(job.if).includes("!cancelled()"),
+      `APPLE_MAC_SLOTS ${id} is skipped when ${needs[0]} fails; add !cancelled() to its if`,
+    );
+  }
+}
+
+export function validateManualMacRunsSupersede(workflows) {
+  for (const [file, text] of Object.entries(workflows)) {
+    const workflow = parseDocument(text, { uniqueKeys: true }).toJS() ?? {};
+    if (!Object.hasOwn(workflow.on ?? {}, "workflow_dispatch")) continue;
+    const jobs = workflow.jobs ?? {};
+    const mainOnly = (id, seen = new Set()) => {
+      if (seen.has(id) || !jobs[id]) return false;
+      seen.add(id);
+      return (
+        String(jobs[id].if).includes("github.ref == 'refs/heads/main'") ||
+        [jobs[id].needs ?? []].flat().some((need) => mainOnly(need, seen))
+      );
+    };
+    const branchMac = Object.keys(jobs).filter(
+      (id) => jobs[id]["runs-on"] === macRunnerLabel && !mainOnly(id),
+    );
+    if (branchMac.length === 0) continue;
+    const cancel = workflow.concurrency?.["cancel-in-progress"];
+    assert(
+      String(workflow.concurrency?.group).includes("github.ref") &&
+        (cancel === true || String(cancel).includes("github.event_name == 'workflow_dispatch'")),
+      `MANUAL_MAC_RUN_SUPERSEDE ${file}: a manual run on a branch must cancel the older run of the same branch (concurrency group by github.ref, cancel-in-progress)`,
+    );
+  }
+}
+
+export function validateAppleAuditSchedule(text) {
+  const workflow = parseDocument(text, { uniqueKeys: true }).toJS() ?? {};
+  const crons = (workflow.on?.schedule ?? []).map((entry) => entry.cron);
+  assert(
+    crons.includes("0 18 * * *"),
+    'APPLE_AUDIT_SCHEDULE the accessibility audit runs nightly at 03:00 JST (cron "0 18 * * *")',
+  );
+  for (const id of ["iphone-accessibility-build", "iphone-accessibility"]) {
+    const condition = String(workflow.jobs?.[id]?.if);
+    assert(
+      condition.includes("github.event_name != 'push'") &&
+        condition.includes("github.event_name != 'pull_request'"),
+      `APPLE_AUDIT_SCHEDULE ${id} must not run on push or pull_request`,
+    );
+  }
+  assert(
+    String(workflow.jobs?.changes?.steps?.at(-1)?.env?.BASE).includes(
+      "github.event_name == 'schedule' && '--since-audit'",
+    ),
+    "APPLE_AUDIT_SCHEDULE the nightly run must skip when nothing changed since the last audit (--since-audit)",
+  );
+  assert(
+    String(workflow.jobs?.claim?.if).includes("github.event_name == 'schedule'"),
+    "APPLE_AUDIT_SCHEDULE a failed nightly audit must be claimed",
+  );
+}
+
 export function inspectTestSource(source, filename) {
   const ast = ts.createSourceFile(
     filename,
@@ -1778,14 +1869,17 @@ export function validateWorkflowsAgainstPolicy({ root, source, proposed }) {
     lock,
   );
   const workflowDirectory = path.join(root, ".github/workflows");
-  validateHostedRunners(
-    Object.fromEntries(
-      readdirSync(workflowDirectory)
-        .filter((name) => /\.ya?ml$/u.test(name))
-        .sort()
-        .map((name) => [name, readFileSync(path.join(workflowDirectory, name), "utf8")]),
-    ),
+  const appleWorkflow = readFileSync(path.join(workflowDirectory, "apple.yml"), "utf8");
+  validateAppleMacSlots(appleWorkflow);
+  validateAppleAuditSchedule(appleWorkflow);
+  const workflows = Object.fromEntries(
+    readdirSync(workflowDirectory)
+      .filter((name) => /\.ya?ml$/u.test(name))
+      .sort()
+      .map((name) => [name, readFileSync(path.join(workflowDirectory, name), "utf8")]),
   );
+  validateHostedRunners(workflows);
+  validateManualMacRunsSupersede(workflows);
 }
 
 export async function validateTestsAgainstPolicy({ root, source, proposed }) {
