@@ -520,7 +520,7 @@ describe("[FD-1] thread artifact storage", () => {
         {
           fileId: "d1",
           threadId: "thread-2",
-          threadTitle: null,
+          threadTitle: "体检结果",
           name: "plan.md",
           kind: "document",
           origin: "generated",

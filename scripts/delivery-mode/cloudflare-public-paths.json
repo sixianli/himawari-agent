@@ -10,8 +10,9 @@
     "/api/mcp-auth/v1",
     "/api/mcp/v1",
     "/api/connections/v1/callback",
+    "/api/connections/v1/client.json",
     "/api/device/v1",
     "/api/proactive/v1/google/callback"
   ],
-  "retireApplications": []
+  "retireApplications": ["Himawari devices", "himawari-mcp"]
 }

@@ -8,50 +8,40 @@ struct ChatInputBar: View {
     let sending: Bool
     var hasAttachments = false
     var voice = false
-    var hold: HoldPhase?
     var dictating = false
     var offline = false
     var openAttach: (() -> Void)?
     var stop: (() -> Void)?
     var startTalk: (() -> Void)?
     var toggleDictation: () -> Void = {}
-    var holdChanged: (HoldEvent) -> Void = { _ in }
     let send: () -> Void
 
-    private static let holdDelay = 0.35
     private static let inset = (DesignTokens.Size.composerHeight - DesignTokens.Size.composerButton) / 2
 
     private var canSend: Bool {
         !sending && (hasAttachments || !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     }
 
-    private var holdEnabled: Bool {
-        hold != nil || (voice && text.isEmpty && !dictating && !hasAttachments)
-    }
-
     var body: some View {
         HStack(alignment: .bottom, spacing: DesignTokens.Size.composerGap) {
-            if let openAttach, hold == nil {
+            if let openAttach {
                 circle(.plus, label: L.text("attach.add"), fill: Color.hmFill, foreground: Color.hmText, action: openAttach)
             }
             middle
-                .overlay {
-                    if holdEnabled { holdArea }
-                }
-            if voice, hold == nil {
-                circle(.microphone, label: L.text("chat.dictate"), fill: dictating ? Color.hmSpeak : Color.hmFill, foreground: dictating ? Color.hmOnSpeak : Color.hmText, action: toggleDictation)
+            if voice {
+                circle(.microphone, label: L.text(dictating ? "chat.dictate.stop" : "chat.dictate"), fill: dictating ? Color.hmText : Color.hmFill, foreground: dictating ? Color.hmOnText : Color.hmText, action: toggleDictation)
+                    .accessibilityIdentifier("chat.microphone")
             }
-            if hold == nil {
-                if let stop, !canSend {
-                    circle(.playerStop, label: L.text("chat.stop"), fill: Color.hmSpeak, foreground: Color.hmOnSpeak, action: stop)
-                        .transition(.scale.combined(with: .opacity))
-                } else if canSend {
-                    circle(.arrowUp, label: L.text("chat.send"), fill: Color.hmSpeak, foreground: Color.hmOnSpeak, action: send)
-                        .transition(.scale.combined(with: .opacity))
-                } else {
-                    circle(.voiceWave, label: L.text("chat.talk"), fill: Color.hmSpeak, foreground: Color.hmOnSpeak) { startTalk?() }
-                        .allowsHitTesting(startTalk != nil)
-                }
+            if let stop, !canSend {
+                circle(.playerStop, label: L.text("chat.stop"), fill: Color.hmText, foreground: Color.hmOnText, action: stop)
+                    .transition(.scale.combined(with: .opacity))
+            } else if canSend {
+                circle(.arrowUp, label: L.text("chat.send"), fill: Color.hmText, foreground: Color.hmOnText, action: send)
+                    .accessibilityIdentifier("chat.send")
+                    .transition(.scale.combined(with: .opacity))
+            } else {
+                circle(.voiceWave, label: L.text("chat.talk"), fill: Color.hmText, foreground: Color.hmOnText) { startTalk?() }
+                    .allowsHitTesting(startTalk != nil)
             }
         }
         .padding(.horizontal, Self.inset)
@@ -63,56 +53,17 @@ struct ChatInputBar: View {
         .keepsKeyboardOnTap()
     }
 
-    @ViewBuilder
     private var middle: some View {
-        switch hold {
-        case let .listening(heard):
-            Text(heard.isEmpty ? L.text("chat.hold.hint") : heard)
-                .hmType(DesignTokens.TypeScale.body)
-                .foregroundStyle(heard.isEmpty ? Color.hmMuted : Color.hmText)
-                .lineLimit(1...6)
-                .frame(maxWidth: .infinity, minHeight: DesignTokens.Size.composerButton, alignment: .leading)
-                .padding(.horizontal, DesignTokens.Size.composerPadding)
-        case .cancelling:
-            HStack(spacing: DesignTokens.Chat.listMarkerGap) {
-                Icon(.x, size: DesignTokens.IconSize.glassButton)
-                Text(L.text("chat.hold.cancel")).hmType(DesignTokens.TypeScale.body)
-            }
-            .foregroundStyle(Color.hmDanger)
-            .frame(maxWidth: .infinity, minHeight: DesignTokens.Size.composerButton)
-        case nil:
-            TextField(L.text(offline ? "chat.offline" : "chat.input.placeholder"), text: $text, axis: .vertical)
-                .hmType(DesignTokens.TypeScale.body)
-                .foregroundStyle(Color.hmText)
-                .lineLimit(1...6)
-                .focused(focused)
-                .submitLabel(.send)
-                .onSubmit(send)
-                .padding(.horizontal, DesignTokens.Size.composerPadding)
-                .frame(minHeight: DesignTokens.Size.composerButton)
-        }
-    }
-
-    private var holdArea: some View {
-        GeometryReader { proxy in
-            Color.clear
-                .contentShape(Rectangle())
-                .onTapGesture { focused.wrappedValue = true }
-                .gesture(
-                    LongPressGesture(minimumDuration: Self.holdDelay)
-                        .sequenced(before: DragGesture(minimumDistance: 0))
-                        .onChanged { value in
-                            guard case let .second(true, drag) = value else { return }
-                            if hold == nil {
-                                holdChanged(.began)
-                            } else if let drag {
-                                holdChanged(.moved(outside: drag.location.y < -proxy.size.height / 2))
-                            }
-                        }
-                        .onEnded { _ in holdChanged(.ended) }
-                )
-                .accessibilityHidden(true)
-        }
+        TextField(L.text(offline ? "chat.offline" : "chat.input.placeholder"), text: $text, axis: .vertical)
+            .hmType(DesignTokens.TypeScale.body)
+            .foregroundStyle(Color.hmText)
+            .lineLimit(1...6)
+            .accessibilityIdentifier("chat.input")
+            .focused(focused)
+            .submitLabel(.send)
+            .onSubmit(send)
+            .padding(.horizontal, DesignTokens.Size.composerPadding)
+            .frame(minHeight: DesignTokens.Size.composerButton)
     }
 
     private func circle(_ icon: IconName, label: String, fill: Color, foreground: Color, action: @escaping () -> Void) -> some View {

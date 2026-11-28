@@ -159,8 +159,10 @@ struct ScaledType: ViewModifier {
 }
 
 extension View {
-    public func hmShadow(_ token: ShadowToken) -> some View {
-        shadow(color: token.color.color, radius: token.blur / 2, x: token.x, y: token.y)
+    public func hmRaised<S: Shape, F: ShapeStyle>(_ shape: S, fill: F, shadow token: ShadowToken) -> some View {
+        background {
+            shape.fill(fill).shadow(color: token.color.color, radius: token.blur / 2, x: token.x, y: token.y)
+        }
     }
 
     @MainActor
@@ -192,12 +194,10 @@ extension Color {
     public static var hmSun: Color { DesignTokens.Colors.sun.color }
     public static var hmSunBright: Color { DesignTokens.Colors.sunBright.color }
     public static var hmDanger: Color { DesignTokens.Colors.danger.color }
-    public static var hmSuccess: Color { DesignTokens.Colors.success.color }
     public static var hmSeparator: Color { DesignTokens.Colors.separator.color }
     public static var hmGlow: Color { DesignTokens.Colors.glow.color }
     public static var hmOnText: Color { DesignTokens.Colors.onText.color }
     public static var hmSpeak: Color { DesignTokens.Colors.speak.color }
-    public static var hmOnSpeak: Color { DesignTokens.Colors.onSpeak.color }
     public static var hmTile: Color { DesignTokens.Colors.iconTile.color }
     public static var hmGlyph: Color { DesignTokens.Colors.glyph.color }
     public static var hmScrim: Color { DesignTokens.Colors.scrim.color }

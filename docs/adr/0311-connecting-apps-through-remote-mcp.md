@@ -7,7 +7,7 @@ superseded_by: ""
 date: "2026-11-26"
 implementation: in_progress
 covers: "packages/platform-node/src/app-connections.ts, packages/persistence-sqlite/src/sqlite-app-connection-operations.ts, apps/agent-service/src/production-app-tools.ts, apps/agent-service/src/production-runtime-tools.ts, apps/agent-service/src/production-tool-actions.ts, packages/prompt-catalog/src/apps.ts"
-verified_at: "b08a65a20cda4f6bc90c2a5946b3e5123b88f032"
+verified_at: "8a676abcace6a7343efd3c7cb0df75a0f652a4bc"
 ---
 
 # ADR 0311：其他应用一律通过远程 MCP 加 OAuth 连接
@@ -60,7 +60,7 @@ verified_at: "b08a65a20cda4f6bc90c2a5946b3e5123b88f032"
 
 ### Himawari 怎样用
 
-4. **一个固定的 `app_action` 工具**，不按应用加工具：`describe` 列出接着的应用和工具（带上 app 和 tool 时给完整参数），`call` 调用。工具定义是提示词目录里的固定文字，接多少应用、应用有多少工具都不改它，也不改已经发出的请求开头。
+4. **一个固定的 `app_action` 工具**，不按应用加工具：`describe` 列出接着的应用和工具（带上 app 和 tool 时给完整参数），`call` 调用，`run` 运行模型写的代码（Code Mode，见 [ADR 0313](0313-app-code-mode.md)）。工具定义是提示词目录里的固定文字，接多少应用、应用有多少工具都不改它，也不改已经发出的请求开头。
 5. 应用返回的内容和应用写的工具说明都是外来内容：调用和列出工具时给这一轮记上外来内容，之后有后果的动作照 [ADR 0285](0285-one-main-thread-subthreads-and-one-inbox.md) 的规则先问。
 
 <a id="ask"></a>

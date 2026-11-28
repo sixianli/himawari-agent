@@ -828,6 +828,7 @@ function isContextEnvelope(value: unknown): value is ProductContextEnvelopeV1 {
       return (
         (item["kind"] === "thread-summary" ||
           item["kind"] === "memory" ||
+          item["kind"] === "conversation-recall" ||
           item["kind"] === "owner-rules" ||
           item["kind"] === "memory-snapshot" ||
           item["kind"] === "owner-profile" ||

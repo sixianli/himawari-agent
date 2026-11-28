@@ -1,14 +1,14 @@
 # Himawari Agent Logo
 
-当前界面使用 `v4/` 的“生长”葵盘标志，种子数按显示大小取 21、34、55、89 或 144 粒（2026-11-25 Andy 定，[ADR 0308](../../../docs/adr/0308-sunflower-mark-seed-count-follows-its-size-except-the-chat-puck.md)）；`v4/` 的 SVG 文件是 55 粒那一档；`v3/` 是 2026-10-30 选定的 233 粒版本（[ADR 0126](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0126-sunflower-mark-grows-233-seeds.md)），保留作历史参照；`v2/` 是 2026-10-26 选定的 96 粒葵盘，保留作历史参照；`v1/` 是 2026-09-10 确认的原始 PNG，保留作历史参照，不再被界面引用。
+当前苹果三端的桌面图标和 App 里的标志用 105 粒、一色金的“生长”葵盘：所有种子同一种向日葵金，最新几粒浅金；App 里的标志按显示大小取 21、34、55 或 105 粒（2026-11-28 Andy 定，[ADR 0314](../../../docs/adr/0314-app-icon-and-apple-mark-use-105-seeds-in-one-gold.md)）。苹果三端的桌面图标（`clients/apple/App/Brand.xcassets` 里的 `AppIcon`、`WatchAppIcon`）由 `node clients/apple/scripts/make-app-icons.mjs` 生成（需要 Chromium，可用环境变量 `CHROMIUM_PATH` 指定），不依赖网页端代码。网页端要删除，删除前仍用 `v4/` 的褐到金配色、按 21 到 144 粒分档；`v4/` 的 SVG 文件是 55 粒那一档；`v3/` 是 2026-10-30 选定的 233 粒版本（[ADR 0126](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0126-sunflower-mark-grows-233-seeds.md)），保留作历史参照；`v2/` 是 2026-10-26 选定的 96 粒葵盘，保留作历史参照；`v1/` 是 2026-09-10 确认的原始 PNG，保留作历史参照，不再被界面引用。
 
-## v4 生长葵盘（当前）
+## v4 生长葵盘（网页端，删除前仍在用）
 
 | 文件 | 用途 | 格式与边界 |
 | --- | --- | --- |
 | [logo-sunflower-disc.svg](v4/logo-sunflower-disc.svg) | 独立图标，透明底 | 矢量 SVG，55 粒种子按 137.508° 黄金角排布，画布 48×48；第 n 粒距中心 `19.7/√55 × √年龄`，半径 `0.8 + 1.33 × √(年龄占比)`，颜色从最新的亮白金色经深褐、琥珀过渡到金色 |
 
-界面里的标志由 `apps/control-center/src/components/brand-seeds.ts` 里的 `seedsAt` 画出，`brand.tsx` 只负责显示和动画；种子数由 `seedCountFor` 按标志量出的实际大小选（苹果端是 `SunflowerSeeds.seedCount(forDiameter:)`），网页标签页图标 `apps/control-center/public/favicon.svg` 用 21 粒。`v4` 的 SVG、4 张网页应用图标（`apps/control-center/public/icons/` 下 3 张 PWA 图标和 `public/apple-touch-icon.png`）和苹果三端的桌面图标（`clients/apple/App/Brand.xcassets` 里的 `AppIcon`、`WatchAppIcon`）都由 `node scripts/render-brand-assets.mjs` 生成（需要 Chromium，可用环境变量 `CHROMIUM_PATH` 指定）；`node scripts/render-brand-assets.mjs --svg-only` 只重新生成两个 SVG；`npm run check:brand` 检查两个 SVG 和代码一致。
+界面里的标志由 `apps/control-center/src/components/brand-seeds.ts` 里的 `seedsAt` 画出，`brand.tsx` 只负责显示和动画；种子数由 `seedCountFor` 按标志量出的实际大小选，网页标签页图标 `apps/control-center/public/favicon.svg` 用 21 粒。`v4` 的 SVG 和 4 张网页应用图标（`apps/control-center/public/icons/` 下 3 张 PWA 图标和 `public/apple-touch-icon.png`）由 `node scripts/render-brand-assets.mjs` 生成（需要 Chromium，可用环境变量 `CHROMIUM_PATH` 指定）；`node scripts/render-brand-assets.mjs --svg-only` 只重新生成两个 SVG；`npm run check:brand` 检查两个 SVG 和代码一致。
 
 ## v3 生长葵盘（历史参照）
 
@@ -35,4 +35,4 @@
 
 以上文件逐字节保留已确认的生成结果。展示图中的不同应用方式仍是整张图片的一部分，尚未拆成独立透明图标或 SVG。不要将棋盘格背景的失败生成稿、旧稿或重新生成的近似图形加入此版本。
 
-完整外观、交互和版本维护说明见 [Web 与 Logo 设计基准](../../../docs/assets/control-center/2026-09-10-visual-baseline.md)。品牌金色与聊天界面可切换的主题色分别管理；`v1/` 留作原始参照，后续衍生资源另存并说明用途。
+品牌金色与聊天界面可切换的主题色分别管理；`v1/` 留作原始参照，后续衍生资源另存并说明用途。

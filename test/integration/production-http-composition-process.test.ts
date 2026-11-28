@@ -18,7 +18,11 @@ import {
   writeAuthorityFile,
   writeSetupCode,
 } from "@himawari-agent/platform-node";
-import { CHAT_MEMORY_SNAPSHOT_MARKER, MEMORY_CAPTURE } from "@himawari-agent/prompt-catalog";
+import {
+  CHAT_MEMORY_SNAPSHOT_MARKER,
+  CONVERSATION_RECALL_HEADER,
+  MEMORY_CAPTURE,
+} from "@himawari-agent/prompt-catalog";
 import {
   buildDeviceTestRequest,
   generateDeviceTestKeyPair,
@@ -2436,7 +2440,7 @@ async function pairInstalledDevice(service: Awaited<ReturnType<typeof openInstal
   });
   expect(finished.status, finished.raw).toBe(201);
   const device = (finished.body as { device: { id: string; revision: number } }).device;
-  return async (route: string, body: object) => {
+  const post = async (route: string, body: object, nonce?: string) => {
     const signed = buildDeviceTestRequest({
       origin: publicOrigin,
       deviceId: device.id,
@@ -2444,12 +2448,19 @@ async function pairInstalledDevice(service: Awaited<ReturnType<typeof openInstal
       method: "POST",
       path: `/api/device/v1/${route}`,
       body: JSON.stringify(body),
+      ...(nonce === undefined ? {} : { confirmKey: confirmKeys.privateKey, nonce }),
     });
     return httpRequest(service.running().address, `/api/device/v1/${route}`, {
       method: "POST",
       headers: signed.headers,
       body: signed.body?.toString("utf8") ?? "",
     });
+  };
+  return async (route: string, body: object, confirmed = false) => {
+    if (!confirmed) return post(route, body);
+    const issued = await post("approvals/challenge", {});
+    expect(issued.status, issued.raw).toBe(201);
+    return post(route, body, (issued.body as { challenge: string }).challenge);
   };
 }
 
@@ -2601,11 +2612,340 @@ it("[PR-A] [iOS-8] a half sentence prepared while the owner speaks sends the mod
     expect(order(lastCold)).not.toContain("主人的牙医是樱井医生");
     expect(order(outsideSnapshot(lastMessage(warm.request)))).toEqual(order(lastCold));
     expect(lastCold).toContain(finalWords);
-    expect(withoutTurnTime(warm.request.raw)).toBe(withoutTurnTime(cold.request.raw));
+    const withoutRecall = (raw: string) => {
+      const header = raw.indexOf(CONVERSATION_RECALL_HEADER.text);
+      if (header < 0) return raw;
+      const start = raw.lastIndexOf("\\n[Himawari 资料 ", header);
+      const ends = ["\\n[Himawari", "\\n[记忆变化", "\\n</himawari-context>"]
+        .map((next) => raw.indexOf(next, header))
+        .filter((at) => at >= 0);
+      if (start < 0 || ends.length === 0) throw new Error("CONVERSATION_RECALL_BLOCK_UNBOUNDED");
+      return raw.slice(0, start) + raw.slice(Math.min(...ends));
+    };
+    expect(withoutTurnTime(withoutRecall(warm.request.raw))).toBe(
+      withoutTurnTime(withoutRecall(cold.request.raw)),
+    );
     expect(warm.request.raw.match(turnTime)).toHaveLength(1);
   } finally {
     chatReply = undefined;
     embedByCharacters = false;
+    await service.stop();
+  }
+}, 180_000);
+
+async function settingsConversation(service: Awaited<ReturnType<typeof openInstalledMain>>) {
+  const device = await pairInstalledDevice(service);
+  let script: ChatReply[] = [];
+  let captured: readonly object[] = [];
+  chatReply = (input) => {
+    if (!isAgentRequest({ path: "/v1/chat/completions", body: input }))
+      return answerMemoryCapture(captured)(input);
+    const messages = input["messages"] as { role: string }[];
+    if (messages.at(-1)?.role === "tool") return script.shift() ?? { text: "好了" };
+    return script.shift() ?? { text: "好了" };
+  };
+  const created = await device("threads", {
+    requestId: "device-request-settings-0001",
+    answerLocale: "zh-CN",
+  });
+  expect(created.status, created.raw).toBe(200);
+  const threadId = (created.body as { payload: { threadId: string } }).payload.threadId;
+  let sent = 0;
+  const say = async (text: string, replies: ChatReply[], memories: readonly object[] = []) => {
+    script = [...replies];
+    captured = memories;
+    const start = providerRequests.length;
+    const detail = await service.query("thread.detail", { threadId, afterSequence: 0, limit: 100 });
+    const revision = (detail.body as { payload: { thread: { revision: number } } }).payload.thread
+      .revision;
+    sent += 1;
+    const posted = await device("messages", {
+      messageId: `device-message-settings-${String(sent).padStart(4, "0")}`,
+      threadId,
+      expectedRevision: revision,
+      text,
+    });
+    expect(posted.status, posted.raw).toBe(200);
+    let status: string[] = [];
+    await expect
+      .poll(
+        async () => {
+          const current = await service.query("thread.detail", {
+            threadId,
+            afterSequence: 0,
+            limit: 100,
+          });
+          status = (current.body as { payload: { runs: { status: string }[] } }).payload.runs.map(
+            (run) => run.status,
+          );
+          return (
+            status.length === sent &&
+            !["accepted", "building_context", "running"].includes(status.at(-1) ?? "")
+          );
+        },
+        { timeout: 30_000, interval: 200 },
+      )
+      .toBe(true);
+    const messages = agentRequests(start).at(-1)?.body.messages ?? [];
+    const asked = messages.map((message) => message.role).lastIndexOf("user");
+    const results = messages
+      .slice(asked + 1)
+      .filter((message) => message.role === "tool")
+      .map((message) => JSON.parse(String(message.content)) as Record<string, unknown>);
+    return { status: status.at(-1), results, requests: agentRequests(start) };
+  };
+  let reads = 0;
+  const read = async (type: string, payload: object = {}) => {
+    reads += 1;
+    const answered = await device("gateway", {
+      gateway: "v2",
+      type,
+      messageId: `settings-read-${reads}`,
+      dataClassification: "private",
+      risk: "low",
+      payload,
+    });
+    expect(answered.status, answered.raw).toBe(200);
+    return (answered.body as { payload: Record<string, unknown> }).payload;
+  };
+  let approvals = 0;
+  const approve = async (detail: Record<string, unknown>) => {
+    approvals += 1;
+    const approval = detail as {
+      approvalRequestId: string;
+      revision: number;
+      finalRisk: string;
+      semanticSnapshotHash: string;
+    };
+    const answered = await device(
+      "gateway",
+      {
+        gateway: "v2",
+        type: "approval.respond",
+        messageId: `settings-approve-${approvals}`,
+        idempotencyKey: `settings-approve-key-${approvals}`,
+        dataClassification: "private",
+        risk: approval.finalRisk,
+        payload: {
+          approvalRequestId: approval.approvalRequestId,
+          expectedRevision: approval.revision,
+          decision: "approved",
+          semanticSnapshotHash: approval.semanticSnapshotHash,
+          editedPayloadRef: null,
+          recentAuthenticationRef: "device",
+        },
+      },
+      true,
+    );
+    expect(answered.status, answered.raw).toBe(200);
+    await expect
+      .poll(
+        async () => {
+          const current = await service.query("thread.detail", {
+            threadId,
+            afterSequence: 0,
+            limit: 100,
+          });
+          const runs = (current.body as { payload: { runs: { status: string }[] } }).payload.runs;
+          return runs.at(-1)?.status;
+        },
+        { timeout: 30_000, interval: 200 },
+      )
+      .toBe("completed");
+  };
+  return { say, read, approve };
+}
+
+function settingsApprovals() {
+  const database = openQualifiedDatabase(databasePath);
+  try {
+    return (
+      database
+        .prepare("SELECT status, record_json AS record FROM approval_requests ORDER BY rowid")
+        .all() as { status: string; record: string }[]
+    ).map(
+      ({ status, record }) =>
+        ({ ...(JSON.parse(record) as Record<string, unknown>), status }) as Record<string, unknown>,
+    );
+  } finally {
+    database.close();
+  }
+}
+
+it("[ADR 0315][SET-1] 在聊天里说“暂停记忆”就直接暂停，读回确认，设置页读到暂停；说“撤销”改回；“打开勿扰”直接打开", async () => {
+  const service = await openInstalledMain();
+  try {
+    const chat = await settingsConversation(service);
+    const listed = await chat.say("你能改哪些设置？", [
+      { tool: "settings_list", input: {} },
+      { text: "这些都能改。" },
+    ]);
+    const catalog = listed.results[0] as { settings: { setting: string; tier: number }[] };
+    expect(catalog.settings.map(({ setting }) => setting)).toEqual(
+      expect.arrayContaining(["memory.settings.set", "quiet_hours.set", "owner.preferences.set"]),
+    );
+    expect(JSON.stringify(catalog)).not.toMatch(/vault/iu);
+    const tools = (listed.requests[0]?.body.tools ?? []) as { function: { name: string } }[];
+    expect(tools.map((tool) => tool.function.name)).toEqual(
+      expect.arrayContaining(["settings_list", "settings_change", "settings_undo"]),
+    );
+    expect(JSON.stringify(tools)).not.toContain("quiet_hours.set");
+
+    expect((await chat.read("memory.overview.read"))["capturePaused"]).toBe(false);
+    const paused = await chat.say("暂停记忆", [
+      {
+        tool: "settings_change",
+        input: { setting: "memory.settings.set", values: { capturePaused: true } },
+      },
+      { text: "已暂停记忆，想撤销说一声就行。" },
+    ]);
+    expect(paused.status).toBe("completed");
+    const change = paused.results[0] as Record<string, unknown>;
+    expect(change).toMatchObject({
+      setting: "memory.settings.set",
+      tier: 1,
+      confirmed: true,
+      before: { capturePaused: false },
+      after: { capturePaused: true },
+    });
+    expect((await chat.read("memory.overview.read"))["capturePaused"]).toBe(true);
+
+    const undone = await chat.say("撤销", [
+      { tool: "settings_undo", input: { changeId: change["changeId"] } },
+      { text: "已恢复记忆。" },
+    ]);
+    expect(undone.results[0]).toMatchObject({
+      tier: 2,
+      confirmed: true,
+      after: { capturePaused: false },
+      undoOf: change["changeId"],
+    });
+    expect((await chat.read("memory.overview.read"))["capturePaused"]).toBe(false);
+
+    const quiet = await chat.read("quiet_hours.read");
+    const opened = await chat.say("打开勿扰", [
+      {
+        tool: "settings_change",
+        input: {
+          setting: "quiet_hours.set",
+          values: { enabled: true, start: "23:00", end: "07:00" },
+        },
+      },
+      { text: "已打开勿扰。" },
+    ]);
+    expect(opened.results[0]).toMatchObject({
+      tier: 1,
+      confirmed: true,
+      after: { enabled: true, start: "23:00", end: "07:00" },
+    });
+    const after = await chat.read("quiet_hours.read");
+    expect(after).toMatchObject({ enabled: true, start: "23:00", end: "07:00" });
+    expect(after["version"]).not.toBe(quiet["version"]);
+    expect(settingsApprovals().filter((card) => card["status"] === "pending")).toEqual([]);
+  } finally {
+    chatReply = undefined;
+    await service.stop();
+  }
+}, 180_000);
+
+it("[ADR 0315][SET-2][reverse] 只问用法不改设置；改名先出同意卡片、移除设备卡片要 Face ID，没点同意什么都不变；不存在的设置和保险箱被拒绝", async () => {
+  const service = await openInstalledMain();
+  try {
+    const chat = await settingsConversation(service);
+    const asked = await chat.say("记忆功能怎么用？", [{ text: "记忆会自动记下你说过的事。" }]);
+    expect(asked.results).toEqual([]);
+    expect((await chat.read("memory.overview.read"))["capturePaused"]).toBe(false);
+
+    const devices = (await chat.read("device.list.read"))["devices"] as {
+      id: string;
+      name: string;
+    }[];
+    const phone = devices[0];
+    if (!phone) throw new Error("DEVICE_MISSING");
+    const renamed = await chat.say("把这台手机改名叫小葵", [
+      {
+        tool: "settings_change",
+        input: { setting: "device.rename", values: { deviceId: phone.id, name: "小葵" } },
+      },
+      { text: "等你同意。" },
+    ]);
+    expect(renamed.status).not.toBe("completed");
+    const card = settingsApprovals().at(-1);
+    expect(card).toMatchObject({
+      status: "pending",
+      recentAuthenticationRequired: false,
+      display: { displayTitle: "改设置 · 给设备改名" },
+    });
+    const preview = String((card?.["display"] as { bodyPreview: string }).bodyPreview);
+    expect(preview).toContain("小葵");
+    expect(preview).not.toContain("expectedRevision");
+    const named = (await chat.read("device.list.read"))["devices"] as { name: string }[];
+    expect(named[0]?.name).toBe(phone.name);
+
+    const detail = await chat.read("approval.detail", { approvalRequestId: card?.["id"] });
+    await chat.approve(detail);
+    await expect
+      .poll(
+        async () =>
+          ((await chat.read("device.list.read"))["devices"] as { name: string }[])[0]?.name,
+        { timeout: 30_000, interval: 200 },
+      )
+      .toBe("小葵");
+
+    const removed = await chat.say("把这台手机移除", [
+      {
+        tool: "settings_change",
+        input: { setting: "device.revoke", values: { deviceId: phone.id } },
+      },
+      { text: "等你确认。" },
+    ]);
+    expect(removed.status).not.toBe("completed");
+    expect(settingsApprovals().at(-1)).toMatchObject({
+      status: "pending",
+      recentAuthenticationRequired: true,
+      display: { displayTitle: "改设置 · 移除一台设备" },
+    });
+    expect(((await chat.read("device.list.read"))["devices"] as unknown[]).length).toBe(
+      devices.length,
+    );
+  } finally {
+    chatReply = undefined;
+    await service.stop();
+  }
+}, 180_000);
+
+it("[FIRST-1] 全新安装、Himawari 还没记下任何事：第一句话就能设提醒、打开勿扰，记忆页能手动添加", async () => {
+  const service = await openInstalledMain();
+  try {
+    const chat = await settingsConversation(service);
+    expect((await chat.read("memory.overview.read"))["manualAddReady"]).toBe(true);
+    const reminded = await chat.say("提醒我 2030 年 1 月 2 日上午 9 点交房租", [
+      {
+        tool: "reminder_set",
+        input: {
+          text: "交房租",
+          due: `${new Date(Date.now() + 3 * 86_400_000).toISOString().slice(0, 10)}T09:00`,
+        },
+      },
+      { text: "记下了。" },
+    ]);
+    expect(reminded.results).toHaveLength(1);
+    expect(JSON.stringify(reminded.results[0])).not.toMatch(/NOT_READY|GENERATION_MISSING/u);
+    expect(reminded.results[0]).not.toHaveProperty("error");
+    const opened = await chat.say("打开勿扰", [
+      {
+        tool: "settings_change",
+        input: {
+          setting: "quiet_hours.set",
+          values: { enabled: true, start: "23:00", end: "07:00" },
+        },
+      },
+      { text: "已打开勿扰。" },
+    ]);
+    expect(opened.results[0]).toMatchObject({ tier: 1, confirmed: true });
+    expect(await chat.read("quiet_hours.read")).toMatchObject({ enabled: true });
+  } finally {
+    chatReply = undefined;
     await service.stop();
   }
 }, 180_000);

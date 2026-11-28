@@ -3,6 +3,7 @@ import {
   type ApprovalRequest,
   HER_WORDS_PUSH_PREFIX,
   herWordsPushKey,
+  isModelVisible,
   type MemoryReminder,
   type MemoryReminderStorePort,
   type MessageUrgency,
@@ -197,7 +198,7 @@ export interface ProductionWebPushOptions {
   readonly ownerId: RuntimeRequest["ownerId"];
   readonly agentId: RuntimeRequest["agentId"];
   readonly store: WebPushStorePort;
-  readonly sender: WebPushSenderPort;
+  readonly sender?: WebPushSenderPort;
   readonly presence: WebPushPresence;
   readonly reminders: Pick<MemoryReminderStorePort, "listDue" | "read">;
   readonly remindersViaInbox?: boolean;
@@ -262,8 +263,8 @@ export class ProductionWebPush {
     this.#options = options;
   }
 
-  get publicKey(): string {
-    return this.#options.sender.publicKey;
+  get publicKey(): string | null {
+    return this.#options.sender?.publicKey ?? null;
   }
 
   #resumed = false;
@@ -294,7 +295,8 @@ export class ProductionWebPush {
   }
 
   async sendTest(subscriptionId: string): Promise<WebPushSendResult> {
-    const { store, ownerId, agentId } = this.#options;
+    const { store, ownerId, agentId, sender } = this.#options;
+    if (!sender) return { kind: "gone", code: "WEB_PUSH_NOT_CONFIGURED" };
     const subscription = (await store.listSubscriptions({ ownerId, agentId })).find(
       ({ id }) => id === subscriptionId,
     );
@@ -302,7 +304,7 @@ export class ProductionWebPush {
     const locale = (await this.#options.readLocale?.()) ?? subscription.locale;
     const text = WEB_PUSH_TEXT[locale];
     const sourceKey = `test:${subscription.id}:${this.#options.now()}`;
-    const result = await this.#options.sender.send({
+    const result = await sender.send({
       endpoint: subscription.endpoint,
       p256dh: subscription.p256dh,
       auth: subscription.auth,
@@ -511,6 +513,7 @@ export class ProductionWebPush {
         batch,
       })
       .catch(this.#options.onFailure);
+    if (!this.#options.sender) return;
     const due = await store.listDue({ ownerId, agentId, now, limit: batch });
     for (const entry of due) {
       const { item } = entry;
@@ -678,8 +681,7 @@ export class ProductionWebPush {
         ? await this.#options.readMessage(item.threadId, item.sourceRef)
         : undefined;
       if (!message || message.internal === true) return { expired: true };
-      const hidden =
-        message.dataClassification === "sensitive" || message.dataClassification === "restricted";
+      const hidden = !isModelVisible(message.dataClassification);
       const text = hidden ? undefined : (await message.readText())?.trim();
       if (!hidden && !text) return { expired: true };
       return {
@@ -726,8 +728,7 @@ export class ProductionWebPush {
         memoryIds: [reminder.memoryId],
       });
       if (!memory || memory.status !== "active") return { expired: true };
-      const hidden =
-        memory.dataClassification === "sensitive" || memory.dataClassification === "restricted";
+      const hidden = !isModelVisible(memory.dataClassification);
       const text = hidden
         ? undefined
         : (await this.#options.readMemoryText(memory))?.replace(/\s+/gu, " ").trim();
@@ -812,9 +813,11 @@ export class ProductionWebPush {
     const chosen = item.sourceKey.startsWith(HER_WORDS_PUSH_PREFIX)
       ? await this.#options.messageUrgency?.(item.sourceRef)
       : undefined;
+    const sender = this.#options.sender;
+    if (!sender) return;
     let result: WebPushSendResult;
     try {
-      result = await this.#options.sender.send({
+      result = await sender.send({
         endpoint: subscription.endpoint,
         p256dh: subscription.p256dh,
         auth: subscription.auth,

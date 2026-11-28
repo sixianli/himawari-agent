@@ -44,7 +44,6 @@ import {
   MCP_PROPOSE_RULE_ALREADY_SAVED,
   MCP_PROPOSE_RULE_DECLINED,
   MCP_PROPOSE_RULE_INVALID,
-  MCP_PROPOSE_RULE_NOT_READY,
   MCP_PROPOSE_RULE_REPLAY_UNAVAILABLE,
   MCP_PROPOSE_RULE_SAVED,
   renderPrompt,
@@ -140,7 +139,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       readonly readOnly?: boolean;
       readonly failRuleMarker?: boolean;
       readonly slowDecidedMs?: number;
-      readonly notReady?: boolean;
+      readonly fresh?: boolean;
       readonly replay?: boolean;
       readonly direct?: boolean;
     } = {},
@@ -160,22 +159,24 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
         VALUES (?, ?, ?, 1, 'open', ?, ?)`,
       )
       .run(THREAD_ID, OWNER_ID, AGENT_ID, NOW, NOW);
-    database
-      .prepare(
-        `INSERT INTO thread_checkpoint_jobs (
-          id, generation_id, owner_id, agent_id, thread_id, revision, source_watermark,
-          policy_version, status, attempt_count, requested_at
-        ) VALUES ('checkpoint-mcp-write', ?, ?, ?, ?, 1, 1, 'memory-policy-v1', 'completed', 1, ?)`,
-      )
-      .run(GENERATION_ID, OWNER_ID, AGENT_ID, THREAD_ID, NOW);
-    database
-      .prepare(
-        `INSERT INTO memory_generations (
-          id, checkpoint_job_id, owner_id, agent_id, thread_id, status,
-          model_descriptor_ref, policy_version, output_ref
-        ) VALUES (?, 'checkpoint-mcp-write', ?, ?, ?, 'completed', 'model-fixture', 'memory-policy-v1', NULL)`,
-      )
-      .run(GENERATION_ID, OWNER_ID, AGENT_ID, THREAD_ID);
+    if (!options.fresh) {
+      database
+        .prepare(
+          `INSERT INTO thread_checkpoint_jobs (
+            id, generation_id, owner_id, agent_id, thread_id, revision, source_watermark,
+            policy_version, status, attempt_count, requested_at
+          ) VALUES ('checkpoint-mcp-write', ?, ?, ?, ?, 1, 1, 'memory-policy-v1', 'completed', 1, ?)`,
+        )
+        .run(GENERATION_ID, OWNER_ID, AGENT_ID, THREAD_ID, NOW);
+      database
+        .prepare(
+          `INSERT INTO memory_generations (
+            id, checkpoint_job_id, owner_id, agent_id, thread_id, status,
+            model_descriptor_ref, policy_version, output_ref
+          ) VALUES (?, 'checkpoint-mcp-write', ?, ?, ?, 'completed', 'model-fixture', 'memory-policy-v1', NULL)`,
+        )
+        .run(GENERATION_ID, OWNER_ID, AGENT_ID, THREAD_ID);
+    }
     database.close();
     const clock = new ManualClock(NOW);
     const repository = await SqliteProductStateRepository.open({
@@ -334,7 +335,6 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
         get(inner, key) {
           const value = Reflect.get(inner, key, inner);
           if (typeof value !== "function") return value;
-          if (key === "ready" && options.notReady) return async () => false;
           if (key !== "decided") return value.bind(inner);
           return async (proposalId: string) => {
             const found = await value.call(inner, proposalId);
@@ -395,7 +395,6 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     await app.listen({ host: "127.0.0.1", port: 0 });
     await oauth.connect({
       id: CONNECTION_ID,
-      readCeiling: "private",
       pushPolicy: options.direct ? "direct" : "ask",
     });
     const url = new URL(
@@ -773,14 +772,16 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     expect(await f.storedRules()).toEqual([]);
   });
 
-  it("[P5-2][P5-3] keeps a memory proposal waiting without asking while the memory book is not ready", async () => {
-    const f = await setup({ notReady: true });
+  it("[P5-2][P5-3][FIRST] on a fresh install with nothing remembered yet, the owner can still confirm a memory and a rule", async () => {
+    const f = await setup({ fresh: true });
     const client = await f.connect();
-    const waiting = await f.propose(client, { text: COFFEE });
-    expect(waiting.result.isError).not.toBe(true);
-    expect(await f.pending()).toHaveLength(1);
-    expect((await f.proposeRule(client, RULE)).text).toBe(MCP_PROPOSE_RULE_NOT_READY.text);
-    expect(f.elicitations).toEqual([]);
+    const saved = await f.propose(client, { text: COFFEE });
+    expect(saved.text).toBe(MCP_PROPOSE_MEMORY_SAVED.text);
+    expect(await f.external()).toHaveLength(1);
+    const rule = await f.proposeRule(client, RULE);
+    expect(rule.text).toBe(MCP_PROPOSE_RULE_SAVED.text);
+    expect(await f.storedRules()).toHaveLength(1);
+    expect(f.elicitations).toHaveLength(2);
   });
 
   it("[P5-3] keeps the proposal waiting for the owner when the client cannot show a dialog, and answers resends the same way", async () => {
@@ -1801,7 +1802,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     expect(overview.externalProposals.items.every(({ text }) => text.length <= 2000)).toBe(true);
   });
 
-  it("[P5-3] raises a waiting proposal to sensitive when the same text comes back as health", async () => {
+  it("[P5-3][I-129] keeps a waiting proposal ordinary when the same text comes back as health", async () => {
     const f = await setup();
     const muse = await f.connect({ elicitation: false, name: "muse" });
     const text = "主人每晚十点吃降压药";
@@ -1809,17 +1810,17 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     expect((await f.pending())[0]?.dataClassification).toBe("private");
     await f.propose(muse, { text, category: "health" });
     const [waiting] = await f.pending();
-    expect(waiting?.dataClassification).toBe("sensitive");
-    expect((await f.payloads.get(waiting?.contentRef ?? ""))?.dataClassification).toBe("sensitive");
+    expect(await f.pending()).toHaveLength(1);
+    expect(waiting?.dataClassification).toBe("private");
+    expect((await f.payloads.get(waiting?.contentRef ?? ""))?.dataClassification).toBe("private");
     expect(await f.writer.readText(waiting ?? { contentRef: null })).toBe(text);
     await f.writer.respond(
       [{ proposalId: waiting?.id ?? "", decision: "keep", editedText: null }],
       "external-batch-health",
     );
     const [saved] = await f.external();
-    expect(saved?.dataClassification).toBe("sensitive");
-    expect(saved?.attributes?.category).toBe("health");
-    expect(saved?.attributes?.sensitiveTopic).toBe("health");
+    expect(saved?.dataClassification).toBe("private");
+    expect(saved?.attributes?.sensitiveTopic).toBeUndefined();
   });
 
   it("[P5-3] saves one memory when two waiting proposals are edited to the same text, and the client dialog links to an existing memory too", async () => {
@@ -2013,7 +2014,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     expect(waiting.map(({ client }) => client)).toEqual(["claude-code"]);
   });
 
-  it("[P5-3] a sensitive proposal is not hung on a private memory with the same text", async () => {
+  it("[P5-3][I-129] a health proposal with the same text links to the memory already saved", async () => {
     const f = await setup();
     const text = "主人每晚十点吃降压药";
     await f.writer.submit({
@@ -2049,9 +2050,8 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       "external-batch-sensitive",
     );
     const saved = await f.writer.read("proposal-sensitive");
-    expect(saved?.memoryId).not.toBe(privateMemory?.id);
-    const memories = await f.external();
-    expect(memories.find(({ id }) => id === saved?.memoryId)?.dataClassification).toBe("sensitive");
+    expect(saved?.memoryId).toBe(privateMemory?.id);
+    expect(await f.external()).toHaveLength(1);
   });
 
   it("[P5-3] confirming items that were all decided elsewhere reports a conflict", async () => {
@@ -2284,17 +2284,16 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     );
   });
 
-  it("[direct] still holds sensitive proposals for the owner, and a connection set to ask keeps asking", async () => {
+  it("[direct][I-129] saves a health proposal directly like any other, and a connection set to ask keeps asking", async () => {
     const f = await setup({ direct: true });
     const claude = await f.connect({ elicitation: false });
-    const sensitive = await f.propose(claude, {
+    const health = await f.propose(claude, {
       text: "主人有高血压，每天吃降压药",
       category: "health",
     });
-    expect(sensitive.text).not.toBe(MCP_PROPOSE_MEMORY_SAVED_DIRECT.text);
-    expect(sensitive.text).toContain("待确认");
-    expect(await f.external()).toEqual([]);
-    expect(await f.pending()).toHaveLength(1);
+    expect(health.text).toBe(MCP_PROPOSE_MEMORY_SAVED_DIRECT.text);
+    expect(await f.external()).toHaveLength(1);
+    expect(await f.pending()).toEqual([]);
     const asking = await setup();
     const muse = await asking.connect({ elicitation: false });
     expect((await asking.propose(muse, { text: COFFEE })).text).toContain("待确认");
@@ -2302,7 +2301,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     expect(await asking.pending()).toHaveLength(1);
   });
 
-  it("[direct] saves a whole propose_memories call as one batch the owner can undo, and does not save replaced or sensitive ones", async () => {
+  it("[direct] saves a whole propose_memories call as one batch the owner can undo, and does not save replaced ones", async () => {
     const f = await setup({ direct: true });
     const web = control(f);
     const muse = await f.connect({ elicitation: false, name: "muse" });
@@ -2316,19 +2315,19 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     expect(sent.parsed.results.map(({ status }) => status)).toEqual([
       "saved",
       "saved",
-      "pending",
+      "saved",
       "replaced",
       "saved",
     ]);
     const saved = await f.external();
-    expect(saved).toHaveLength(3);
+    expect(saved).toHaveLength(4);
     const batchIds = new Set(saved.map(({ id }) => id.split(":").at(-1)));
     expect(batchIds.size).toBe(1);
     const [batchId] = [...batchIds];
     expect(batchId).toMatch(/^batch-direct-/);
-    expect(await f.pending()).toHaveLength(1);
+    expect(await f.pending()).toEqual([]);
     expect((await web.overview()).externalProposals.batches).toEqual([
-      { batchId, decidedAt: NOW, committed: 3, rejected: 0 },
+      { batchId, decidedAt: NOW, committed: 4, rejected: 0 },
     ]);
     const again = await batch(muse, [{ text: PARK }]);
     expect(again.parsed.results.map(({ status }) => status)).toEqual(["already_saved"]);
@@ -2346,13 +2345,13 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     expect(f.activeScanCount() - before).toBe(1);
   });
 
-  it("[direct] keeps proposals waiting while the memory book is not ready, and an all-duplicate batch has nothing to undo", async () => {
-    const waiting = await setup({ direct: true, notReady: true });
-    const client = await waiting.connect({ elicitation: false });
-    const held = await waiting.propose(client, { text: COFFEE });
-    expect(held.result.isError).not.toBe(true);
-    expect(held.text).toContain("待确认");
-    expect(await waiting.external()).toEqual([]);
+  it("[direct][FIRST] saves straight away on a fresh install with nothing remembered yet, and an all-duplicate batch has nothing to undo", async () => {
+    const fresh = await setup({ direct: true, fresh: true });
+    const client = await fresh.connect({ elicitation: false });
+    const kept = await fresh.propose(client, { text: COFFEE });
+    expect(kept.result.isError).not.toBe(true);
+    expect(kept.text).toBe(MCP_PROPOSE_MEMORY_SAVED_DIRECT.text);
+    expect(await fresh.external()).toHaveLength(1);
     const f = await setup({ direct: true });
     const web = control(f);
     const muse = await f.connect({ elicitation: false, name: "muse" });
@@ -2535,7 +2534,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       expect(await f.external()).toEqual([]);
     });
 
-    it("keeps a confirmed sensitive project note above a private ceiling", async () => {
+    it("[I-129] shows an approved health project note under the default ceiling", async () => {
       const f = await setup();
       const client = await f.connect();
       await callSync(client, {
@@ -2558,15 +2557,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
         database.close();
       }
       const search = { query: "医院复查", project: "Health" };
-      expect((await callFind(client, search)).notes).toEqual([]);
-      await f.repository.mcpConnections().change({
-        ...scope,
-        id: CONNECTION_ID,
-        updatedAt: NOW,
-        readCeiling: "sensitive",
-      });
-      const raised = await f.connect();
-      expect((await callFind(raised, search)).notes).toHaveLength(1);
+      expect((await callFind(client, search)).notes).toHaveLength(1);
     });
   });
 });

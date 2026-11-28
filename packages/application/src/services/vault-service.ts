@@ -1,6 +1,7 @@
 import {
   VAULT_LIMITS,
   VAULT_PHONE_ONLY_FIELDS,
+  type VaultCodeRequestRecord,
   type VaultCryptoPort,
   type VaultEphemeralKey,
   type VaultItemInput,
@@ -39,6 +40,8 @@ export const VAULT_ERROR_CODES = Object.freeze({
   REQUEST_CLOSED: "VAULT_REQUEST_CLOSED",
   CONFIRMATION_REQUIRED: "VAULT_CONFIRMATION_REQUIRED",
   RELEASE_UNREADABLE: "VAULT_RELEASE_UNREADABLE",
+  CODE_UNAVAILABLE: "VAULT_CODE_UNAVAILABLE",
+  TOO_MANY_CODE_REQUESTS: "VAULT_TOO_MANY_CODE_REQUESTS",
 } as const);
 
 export type VaultErrorCode = (typeof VAULT_ERROR_CODES)[keyof typeof VAULT_ERROR_CODES];
@@ -79,6 +82,11 @@ export interface ReleasedVaultSecrets {
   wipe(): void;
 }
 
+export type VaultCodeOutcome =
+  | { readonly kind: "answered"; readonly code: string }
+  | { readonly kind: "declined" }
+  | { readonly kind: "expired" };
+
 export type VaultReleaseOutcome =
   | { readonly kind: "approved"; readonly secrets: ReleasedVaultSecrets }
   | { readonly kind: "denied" }
@@ -90,6 +98,13 @@ export interface VaultServiceOptions {
   readonly notifier: VaultNotifierPort;
   readonly now: () => Date;
   readonly setTimer?: (callback: () => void, milliseconds: number) => { cancel(): void };
+}
+
+interface CodeWaiter {
+  readonly scope: VaultScope;
+  readonly record: VaultCodeRequestRecord;
+  readonly resolve: (outcome: VaultCodeOutcome) => void;
+  readonly timer: { cancel(): void };
 }
 
 interface Waiter {
@@ -201,6 +216,7 @@ export function listedVaultItems(items: readonly VaultItemRecord[]): readonly Va
 export class VaultService {
   readonly #options: VaultServiceOptions;
   readonly #waiters = new Map<string, Waiter>();
+  readonly #codes = new Map<string, CodeWaiter>();
 
   constructor(options: VaultServiceOptions) {
     this.#options = options;
@@ -574,6 +590,111 @@ export class VaultService {
         wipe: wipeAll,
       }),
     });
+  }
+
+  async requestCode(
+    input: VaultScope & {
+      readonly origin: string;
+      readonly purpose: string;
+    },
+  ): Promise<VaultCodeOutcome> {
+    const scope: VaultScope = { ownerId: input.ownerId, agentId: input.agentId };
+    const origin = vaultOrigin(input.origin) ?? invalid();
+    const purpose = [...input.purpose.trim()].slice(0, VAULT_LIMITS.purposeCharacters).join("");
+    if (purpose.length === 0 || vaultTextHasHiddenCharacter(purpose)) invalid();
+    if (!this.#options.notifier.codeNeeded)
+      throw new VaultError(VAULT_ERROR_CODES.CODE_UNAVAILABLE, 503);
+    if (this.#pendingCodes(scope).length >= VAULT_LIMITS.pendingCodeRequests)
+      throw new VaultError(VAULT_ERROR_CODES.TOO_MANY_CODE_REQUESTS, 429);
+    const now = this.#now();
+    const record: VaultCodeRequestRecord = Object.freeze({
+      id: `vc_${this.#options.crypto.randomToken(16)}`,
+      origin,
+      purpose,
+      createdAt: now.toISOString(),
+      expiresAt: new Date(now.getTime() + VAULT_LIMITS.codeRequestTtlSeconds * 1000).toISOString(),
+    });
+    const outcome = new Promise<VaultCodeOutcome>((resolve) => {
+      const timer = this.#timer(
+        () => this.#settleCode(record.id, { kind: "expired" }),
+        VAULT_LIMITS.codeRequestTtlSeconds * 1000,
+      );
+      this.#codes.set(record.id, { scope, record, resolve, timer });
+    });
+    try {
+      await this.#options.notifier.codeNeeded({
+        ...scope,
+        requestId: record.id,
+        origin,
+        purpose,
+        expiresAt: record.expiresAt,
+      });
+    } catch (error) {
+      this.#settleCode(record.id, { kind: "declined" });
+      throw error;
+    }
+    return outcome;
+  }
+
+  pendingCodes(scope: VaultScope): readonly VaultCodeRequestRecord[] {
+    return this.#pendingCodes(scope);
+  }
+
+  #pendingCodes(scope: VaultScope): readonly VaultCodeRequestRecord[] {
+    const now = this.#now().getTime();
+    return [...this.#codes.values()]
+      .filter(
+        (waiter) =>
+          waiter.scope.ownerId === scope.ownerId &&
+          waiter.scope.agentId === scope.agentId &&
+          Date.parse(waiter.record.expiresAt) > now,
+      )
+      .map((waiter) => waiter.record)
+      .sort((left, right) => (left.createdAt < right.createdAt ? -1 : 1));
+  }
+
+  answerCode(scope: VaultScope, body: unknown): void {
+    const input = record(body);
+    exactKeys(input, ["requestId", "code"]);
+    const id = this.#codeId(input["requestId"]);
+    const code =
+      typeof input["code"] === "string" ? input["code"].replace(/[\s-]/gu, "") : invalid();
+    if (!VAULT_PATTERNS.code.test(code)) invalid();
+    this.#ownCode(scope, id);
+    this.#settleCode(id, { kind: "answered", code });
+  }
+
+  declineCode(scope: VaultScope, body: unknown): void {
+    const input = record(body);
+    exactKeys(input, ["requestId"]);
+    const id = this.#codeId(input["requestId"]);
+    this.#ownCode(scope, id);
+    this.#settleCode(id, { kind: "declined" });
+  }
+
+  #codeId(value: unknown): string {
+    return typeof value === "string" && VAULT_PATTERNS.codeRequestId.test(value)
+      ? value
+      : invalid();
+  }
+
+  #ownCode(scope: VaultScope, id: string): void {
+    const waiter = this.#codes.get(id);
+    if (
+      !waiter ||
+      waiter.scope.ownerId !== scope.ownerId ||
+      waiter.scope.agentId !== scope.agentId ||
+      Date.parse(waiter.record.expiresAt) <= this.#now().getTime()
+    )
+      throw new VaultError(VAULT_ERROR_CODES.REQUEST_CLOSED, 410);
+  }
+
+  #settleCode(id: string, outcome: VaultCodeOutcome): void {
+    const waiter = this.#codes.get(id);
+    if (!waiter) return;
+    this.#codes.delete(id);
+    waiter.timer.cancel();
+    waiter.resolve(outcome);
   }
 
   async recordFill(

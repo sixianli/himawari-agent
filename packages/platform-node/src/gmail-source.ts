@@ -1,9 +1,10 @@
 import {
+  type FlatMailFetchResult,
   GMAIL_SOURCE,
   mailReader,
-  type FlatMailFetchResult,
   type ProactiveMail,
   type ProactiveMailReader,
+  ProactiveSourceUnauthorizedError,
 } from "@himawari-agent/application";
 import { extractGmailBody, type GmailPart } from "./gmail-body.js";
 
@@ -31,7 +32,7 @@ const CATEGORY_LABELS: Readonly<Record<string, string>> = {
   SPAM: "spam",
 };
 
-export class GoogleUnauthorizedError extends Error {
+export class GoogleUnauthorizedError extends ProactiveSourceUnauthorizedError {
   constructor() {
     super("GOOGLE_UNAUTHORIZED");
   }
@@ -259,10 +260,53 @@ export function createGmailReader(options: {
         },
       );
       if (response.status === 404) return undefined;
+      if (response.status === 401) throw new GoogleUnauthorizedError();
       if (!response.ok) throw new GoogleRequestError("thread", response.status);
       const thread = (await response.json()) as { messages?: GmailMessage[] };
       return (thread.messages ?? []).flatMap((message) => {
         const item = gmailItem(message, { history: true });
+        return item ? [item] : [];
+      });
+    },
+    async search({ token, query, limit, signal }) {
+      const access = await options.oauth.accessToken(token, signal);
+      const get = async <T>(step: string, url: string): Promise<T | undefined> => {
+        const response = await send(url, {
+          method: "GET",
+          headers: { authorization: `Bearer ${access}`, accept: "application/json" },
+          signal: withTimeout(signal),
+        });
+        if (response.status === 404) return undefined;
+        if (response.status === 401) throw new GoogleUnauthorizedError();
+        if (!response.ok) throw new GoogleRequestError(step, response.status);
+        return (await response.json()) as T;
+      };
+      const listed = await get<{ messages?: { id?: string }[] }>(
+        "search",
+        `${GMAIL_API}/messages?${new URLSearchParams({ q: query, maxResults: String(limit) })}`,
+      );
+      const ids = (listed?.messages ?? []).flatMap(({ id }) => (id ? [id] : []));
+      const messages: (GmailMessage | undefined)[] = [];
+      for (let start = 0; start < ids.length; start += PARALLEL_READS) {
+        messages.push(
+          ...(await Promise.all(
+            ids.slice(start, start + PARALLEL_READS).map((id) =>
+              get<GmailMessage>(
+                "message",
+                `${GMAIL_API}/messages/${encodeURIComponent(id)}?${new URLSearchParams([
+                  ["format", "metadata"],
+                  ["metadataHeaders", "From"],
+                  ["metadataHeaders", "To"],
+                  ["metadataHeaders", "Cc"],
+                  ["metadataHeaders", "Subject"],
+                ])}`,
+              ),
+            ),
+          )),
+        );
+      }
+      return messages.flatMap((message) => {
+        const item = message ? gmailItem(message, { history: true }) : undefined;
         return item ? [item] : [];
       });
     },

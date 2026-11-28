@@ -585,45 +585,94 @@ function discardPrefix(prefix) {
   rmSync(trash, { recursive: true, force: true });
 }
 
-function installBesideThenRename(prefix, lockDir, binary, lock) {
+function installBesideThenRename(prefix, lockDir, lock) {
   const staging = `${prefix}.staging-${process.pid}-${randomBytes(4).toString("hex")}`;
   try {
     npmCi(staging, lockDir, join(staging, "node_modules", ".bin", "opencode"));
     const stagedProblems = installedIntegrityProblems(staging, lock);
     if (stagedProblems.length > 0)
       throw new Error(`OPENCODE_INTEGRITY_MISMATCH ${prefix} ${stagedProblems.join(" | ")}`);
-    try {
-      renameSync(staging, prefix);
-    } catch {
-      if (!existsSync(binary)) {
-        discardPrefix(prefix);
-        try {
-          renameSync(staging, prefix);
-        } catch (error) {
-          if (!existsSync(binary)) throw error;
-        }
-      }
-    }
+    discardPrefix(prefix);
+    renameSync(staging, prefix);
   } finally {
     rmSync(staging, { recursive: true, force: true });
+  }
+}
+
+const INSTALL_LOCK_WAIT_MS = 15 * 60_000;
+const INSTALL_LOCK_POLL_MS = 200;
+const INSTALL_LOCK_UNOWNED_GRACE_MS = 30_000;
+
+function processAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error.code === "EPERM";
+  }
+}
+
+function installLockAbandoned(lockPath) {
+  let owner;
+  try {
+    owner = Number.parseInt(readFileSync(join(lockPath, "owner"), "utf8"), 10);
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+    try {
+      return Date.now() - statSync(lockPath).mtimeMs > INSTALL_LOCK_UNOWNED_GRACE_MS;
+    } catch (statError) {
+      if (statError.code === "ENOENT") return false;
+      throw statError;
+    }
+  }
+  return !Number.isInteger(owner) || !processAlive(owner);
+}
+
+function withInstallLock(prefix, action) {
+  const lockPath = `${prefix}.lock`;
+  mkdirSync(dirname(prefix), { recursive: true });
+  const deadline = Date.now() + INSTALL_LOCK_WAIT_MS;
+  const pause = new Int32Array(new SharedArrayBuffer(4));
+  for (;;) {
+    try {
+      mkdirSync(lockPath);
+      writeFileSync(join(lockPath, "owner"), String(process.pid));
+      break;
+    } catch (error) {
+      if (error.code !== "EEXIST") throw error;
+      if (installLockAbandoned(lockPath)) {
+        process.stderr.write(`OPENCODE_INSTALL_LOCK_ABANDONED ${lockPath}\n`);
+        discardPrefix(lockPath);
+        continue;
+      }
+      if (Date.now() > deadline) throw new Error(`OPENCODE_INSTALL_LOCK_TIMEOUT ${lockPath}`);
+      Atomics.wait(pause, 0, 0, INSTALL_LOCK_POLL_MS);
+    }
+  }
+  try {
+    return action();
+  } finally {
+    rmSync(lockPath, { recursive: true, force: true });
   }
 }
 
 export function installOpencode({ prefix, lockDir = OPENCODE_LOCK_DIR }) {
   const lock = JSON.parse(readFileSync(join(lockDir, "package-lock.json"), "utf8"));
   const binary = join(prefix, "node_modules", ".bin", "opencode");
-  const reused = existsSync(binary);
-  if (!reused) installBesideThenRename(prefix, lockDir, binary, lock);
-  let problems = installedIntegrityProblems(prefix, lock);
-  if (problems.length > 0 && reused) {
-    process.stderr.write(`OPENCODE_REINSTALL ${prefix} ${problems.join(" | ")}\n`);
-    discardPrefix(prefix);
-    installBesideThenRename(prefix, lockDir, binary, lock);
-    problems = installedIntegrityProblems(prefix, lock);
-  }
-  if (problems.length > 0)
-    throw new Error(`OPENCODE_INTEGRITY_MISMATCH ${prefix} ${problems.join(" | ")}`);
-  return binary;
+  if (existsSync(binary) && installedIntegrityProblems(prefix, lock).length === 0) return binary;
+  return withInstallLock(prefix, () => {
+    const reused = existsSync(binary);
+    if (!reused) installBesideThenRename(prefix, lockDir, lock);
+    let problems = installedIntegrityProblems(prefix, lock);
+    if (problems.length > 0 && reused) {
+      process.stderr.write(`OPENCODE_REINSTALL ${prefix} ${problems.join(" | ")}\n`);
+      installBesideThenRename(prefix, lockDir, lock);
+      problems = installedIntegrityProblems(prefix, lock);
+    }
+    if (problems.length > 0)
+      throw new Error(`OPENCODE_INTEGRITY_MISMATCH ${prefix} ${problems.join(" | ")}`);
+    return binary;
+  });
 }
 
 export function opencodeInstallDir(lockDir = OPENCODE_LOCK_DIR) {

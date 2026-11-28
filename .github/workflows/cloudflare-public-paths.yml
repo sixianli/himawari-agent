@@ -1,0 +1,47 @@
+name: Cloudflare public paths
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: plan 只读出计划和冲突的旧应用；apply 按清单改门禁并从外网核对
+        required: true
+        default: plan
+        type: choice
+        options:
+          - plan
+          - apply
+permissions:
+  contents: read
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+defaults:
+  run:
+    shell: bash
+jobs:
+  sync:
+    name: cloudflare/public-paths
+    if: ${{ github.repository == 'sixianli/himawari-agent' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: production
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: main
+          persist-credentials: false
+      - name: 按清单检查或放行 App 用的路径
+        env:
+          CLOUDFLARE_ACCESS_TOKEN: ${{ secrets.CLOUDFLARE_ACCESS_TOKEN }}
+          MODE: ${{ inputs.mode }}
+        run: |
+          if [ -z "$CLOUDFLARE_ACCESS_TOKEN" ]; then
+            echo "::error::production 环境缺 CLOUDFLARE_ACCESS_TOKEN(secret)"
+            exit 1
+          fi
+          flag=""
+          [ "$MODE" = plan ] && flag="--plan"
+          node scripts/delivery-mode/sync-cloudflare-public-paths.mjs $flag | tee access-sync.log
+          status="${PIPESTATUS[0]}"
+          { echo '```'; grep -E '^PUBLIC_PATHS_' access-sync.log | cut -c1-600 || true; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"

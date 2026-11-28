@@ -6,16 +6,19 @@ import hashlib
 import importlib.util
 import json
 import os
+import pwd
 import re
 from pathlib import Path
 import shlex
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
 import unittest
 import unittest.mock
 
+sys.dont_write_bytecode = True
 HERE = Path(__file__).resolve().parent
 FIXTURES = HERE / 'fixtures'
 TWELFTH = json.loads((FIXTURES / 'twelfth-parameters.json').read_text())
@@ -28,12 +31,13 @@ INTENDED_CHANGES = {
     'measurement/probe/read-driver.mjs', 'signing/verify-finalize-capability-check.py', 'acceptance/cloud/adapters/probe-public-search.mjs', 'acceptance/cloud/adapters/probe-linux-worker-loss.mjs',
     'acceptance/cloud/probe-source/packages/runtime-sandbox/scripts/probe-linux-worker-loss.mjs', 'acceptance/cloud/probe-source/packages/runtime-sandbox/scripts/probe-authorized-network.mjs', 'acceptance/cloud/probe-source/packages/runtime-sandbox/scripts/probe-network-boundary.mjs', 'acceptance/cloud/probe-source/packages/runtime-sandbox/scripts/probe-public-search.mjs',
     'acceptance/helpers/collect-installer-dependencies.mjs', 'install/collect-installer-dependencies.mjs', 'steps/transport-packet.py', 'steps/packet-common.py',
+    'systemd/run-user-s7.sh', 'signing/sign-twelfth.sh', 'steps/run-user-step.sh', 'signing/prepare-twelfth-snapshot.sh', 'maintenance/run-user-maintenance.sh', 'maintenance/run-user-control-rollback.sh',
     'acceptance/OWNED-SHA256SUMS', 'acceptance/S6-limited-host-acceptance.sh', 'acceptance/cloud/adaptation-manifest.json',
     'acceptance/cloud/adapters/probe-authorized-network.mjs', 'acceptance/cloud/adapters/probe-foreground.mjs', 'acceptance/cloud/adapters/probe-network-boundary.mjs', 'acceptance/cloud/probe-source/packages/runtime-pi/scripts/probe-foreground.mjs', 'acceptance/cloud/cloud-inputs.draft.json',
     'acceptance/cloud/run-cloud-acceptance.sh', 'acceptance/cloud/run-stage-03.py', 'acceptance/cloud/run-question12-downloads.sh', 'inputs/bindings.draft.json',
     'inputs/check-packet-consistency.py', 'inputs/verify-packet-consistency.py', 'inputs/finalize-bindings.py', 'install/twelfth-artifact-install.mjs', 'install/verify-s9-clean-transport-fixtures.py', 'install/P5-new-prefix.md', 'inputs/verify-finalize-bindings.py', 'maintenance/OWNED-SHA256SUMS', 'maintenance/P-readback-design.md', 'maintenance/S9-control-files.py', 'maintenance/maintenance-common.mjs',
     'maintenance/production-shape-config-template.json', 'acceptance/cloud/download-question-12.py', 'acceptance/cloud/adapters/failure-scene.py', 'acceptance/cloud/verify-failure-scene-fixtures.py',
-    'acceptance/helpers/test-resource-retention.py', 'acceptance/helpers/check-p5-scratch-cleanup.py', 'measurement/probe/run-service-probe.py', 'install/S9-clean-transport.py', 'signing/finalize-binding-inputs.py',
+    'acceptance/helpers/test-resource-retention.py', 'acceptance/helpers/check-p5-scratch-cleanup.py', 'measurement/probe/run-service-probe.py', 'install/S9-clean-transport.py', 'signing/finalize-binding-inputs.py', 'signing/workspace-grant-binding.py',
     'maintenance/raw-copy-recovery.mjs', 'maintenance/run-maintenance.mjs', 'maintenance/verify-fixtures.mjs', 'measurement/OWNED-SHA256SUMS', 'measurement/S6-service-read.py', 'measurement/probe/bootstrap.mjs', 's0-db/read-s0-db.mjs',
     'signing/cloud-protected-prepare.mjs', 'signing/cloud-seal.mjs', 'signing/publish-runtime-protection.mjs', 'steps/README.md', 'steps/run-local-step.py', 'steps/run-step.py', 'steps/verify-steps.py', 'systemd/OWNED-SHA256SUMS', 'systemd/P9-switch-start-readback.md',
     's0-db/verify-catalog-runtime-switch.mjs', 'signing/cloud-capability-manifest.mjs', 'signing/verify-capability-manifest.mjs',
@@ -68,6 +72,7 @@ def production_facts(running='eleventh', date='2026-10-26', public_fetch=102400,
         'execStart': ['ExecStart=/opt/himawari/node/bin/node --no-global-search-paths /opt/himawari/operations/' + running + '-' + compact + '/pair-supervisor.mjs --prefix ' + prefix + ' --config /etc/himawari/config.json --worker-token-file /var/lib/himawari/state/secrets/worker-token.json'],
         'staticRoot': prefix + '/share/control-center',
         'modelCount': 1,
+        'primaryClassifications': [['public', 'private', 'sensitive']],
         'model': {'contextWindow': context_window, 'maxTokens': max_tokens},
         'publicFetchMaximumBytes': public_fetch,
         'budgetsPresent': False,
@@ -419,6 +424,8 @@ class TemplateTest(RenderedPacket):
             ({'staticRoot': '/opt/himawari/releases/2026-10-20-tenth/share/control-center'}, 'PACKET_STATIC_ROOT_NOT_RUNNING_RELEASE'),
             ({'budgetsPresent': True}, 'PACKET_CONFIG_BUDGETS_PRESENT'),
             ({'model': None, 'modelCount': 0}, 'PACKET_CONFIG_MODEL_LIMITS_NOT_READABLE'),
+            ({'primaryClassifications': [['public', 'private']]}, 'PACKET_PRIMARY_MODEL_CANNOT_SEE_SENSITIVE'),
+            ({'primaryClassifications': []}, 'PACKET_PRIMARY_MODEL_CANNOT_SEE_SENSITIVE'),
             ({'newPathsExist': ['/opt/himawari/releases/2026-10-26-twelfth']}, 'PACKET_TARGET_PATHS_EXIST'),
             ({'execStart': ['ExecStart=/usr/bin/node /srv/other.mjs']}, 'PACKET_RUNNING_UNIT_NOT_RECOGNIZED'),
         ]
@@ -474,7 +481,7 @@ class TemplateTest(RenderedPacket):
     SWITCH_FILES = ('systemd/S2-stop-and-inspect.py', 'systemd/S7-startup-readback.mjs', 'systemd/S7-switch-start-readback.py', 'install/S9-clean-transport.py')
     UPGRADE_SWITCH_SHA256 = {
     'systemd/S2-stop-and-inspect.py': 'c466dde3068064600fb817631b3fa282eac1cc47539a11635953f0518b5e4fee',
-    'systemd/S7-startup-readback.mjs': '0d258810e6a4809a742b2bca8a9734353cce0114fbee4de8f2a554c78bb022fc',
+    'systemd/S7-startup-readback.mjs': '80e880d599317d208c4300bbfbcb255cb8ecb098cfa0e4bfa5282149b990200c',
     'systemd/S7-switch-start-readback.py': 'b154d5b181215b884e3011797f7d3127c101a3c9db415d242ff46ee037c1fdc9',
     'install/S9-clean-transport.py': '235a7d2882edaa304097746315a4be7f5c5f467fea83cd1522a43a1e3b223533',    }
 
@@ -865,6 +872,38 @@ class DerivedExpectationsTest(RenderedPacket):
             with self.subTest(candidate=candidate), self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_APP_CONNECTIONS_TARGET_INVALID'):
                 packet_maker.run_policy_target(None, candidate)
 
+    APPLE_PUSH_TARGET = {'teamId': 'TEAM123456', 'keyId': 'KEY1234567', 'topics': ['win.example.app'], 'environments': ['development', 'production'], 'secret': {'ref': 'apple-push', 'version': 'v1'}}
+    APPLE_PUSH_SECRET = {'ref': 'apple-push', 'version': 'v1', 'purpose': 'apple-push', 'scope': 'agent'}
+
+    def test_an_apple_push_target_adds_only_apple_push_and_its_secret_reference(self):
+        additions = json.loads(packet_maker.run_policy_target(None, None, self.APPLE_PUSH_TARGET))
+        self.assertEqual(additions, {'applePush': {'secretRef': 'apple-push', 'teamId': 'TEAM123456', 'keyId': 'KEY1234567', 'topics': ['win.example.app'], 'environments': ['development', 'production']}})
+        self.assertNotIn('webPush', json.loads(packet_maker.run_policy_target(self.COMPUTERS_TARGET, self.APP_CONNECTIONS_TARGET, self.APPLE_PUSH_TARGET)))
+        self.assertEqual(json.loads(packet_maker.secret_references_target(self.APP_CONNECTIONS_TARGET, self.APPLE_PUSH_TARGET)), [self.APP_CONNECTION_SECRET, self.APPLE_PUSH_SECRET])
+        packet = self.render(
+            TARGET_RUN_POLICY_JSON=packet_maker.run_policy_target(None, None, self.APPLE_PUSH_TARGET),
+            TARGET_SECRET_REFERENCES_JSON=packet_maker.secret_references_target(None, self.APPLE_PUSH_TARGET),
+        )
+        original = production_config(TWELFTH['OLD_PREFIX'], TWELFTH['ORIGINAL_PUBLIC_FETCH_BYTES'], TWELFTH['ORIGINAL_CONTEXT_WINDOW'], TWELFTH['ORIGINAL_MAX_TOKENS'])
+        switched = static_root_configuration(packet)(copy.deepcopy(original))
+        self.assertEqual(switched['runPolicy']['applePush'], additions['applePush'])
+        self.assertNotIn('webPush', switched['runPolicy'])
+        self.assertEqual(switched['secretReferences'], [*(original.get('secretReferences') or []), self.APPLE_PUSH_SECRET])
+        fixtures = subprocess.run([sys.executable, '-I', str(packet / 'systemd' / 'verify-switch-config-fixtures.py'), shutil.which('node')], capture_output=True, text=True, check=False)
+        self.assertEqual(fixtures.returncode, 0, fixtures.stdout + fixtures.stderr)
+
+    def test_an_apple_push_target_outside_the_supported_shape_is_refused(self):
+        valid = self.APPLE_PUSH_TARGET
+        for candidate in (
+            {}, 'apple', {**valid, 'teamId': 'team'}, {**valid, 'keyId': 'KEY12345678'}, {**valid, 'topics': []}, {**valid, 'topics': ['a.b', 'a.b']},
+            {**valid, 'topics': ['bad topic']}, {**valid, 'environments': ['staging']}, {**valid, 'secret': 'inline-key'}, {**valid, 'secret': {'ref': '../x', 'version': 'v1'}},
+            {**valid, 'signingKey': 'x'}, {key: value for key, value in valid.items() if key != 'keyId'},
+        ):
+            with self.subTest(candidate=candidate), self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_APPLE_PUSH_TARGET_INVALID'):
+                packet_maker.run_policy_target(None, None, candidate)
+        with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_SECRET_REFERENCE_DUPLICATE'):
+            packet_maker.secret_references_target(self.APP_CONNECTIONS_TARGET, {**valid, 'secret': {'ref': 'github-app-client', 'version': 'v1'}})
+
     def test_a_speech_target_outside_the_supported_shape_is_refused(self):
         self.assertEqual(packet_maker.speech_target(None), 'null')
         self.assertEqual(json.loads(packet_maker.speech_target(self.SPEECH_TARGET)), self.SPEECH_TARGET)
@@ -1019,6 +1058,166 @@ class ArmTargetTest(RenderedPacket):
         self.assertEqual((upload[0], upload[-2], upload[-1]), ('scp', '/tmp/a', 'himawari-build@192.0.2.7:/remote/b'))
 
 
+class ServiceAccountContractTest(unittest.TestCase):
+    SCRIPTS = ('run-question12-downloads.sh', 'run-cloud-acceptance.sh')
+
+    def account_block(self, name):
+        lines = (HERE / 'packet-template/acceptance/cloud' / name).read_text().splitlines()
+        start = next(index for index, line in enumerate(lines) if line.startswith('account=$(getent passwd himawari-prod)'))
+        end = next(index for index, line in enumerate(lines) if line.startswith('test "$(id -G himawari-prod)"'))
+        return '\n'.join(lines[start:end + 1])
+
+    def run_block(self, name, passwd_line, groups):
+        program = 'set -euo pipefail\ngetent() { printf "%s\\n" "$PASSWD_LINE"; }\nid() { printf "%s\\n" "$GROUPS_LINE"; }\n' + self.account_block(name) + '\necho ACCOUNT_OK\n'
+        return subprocess.run(['bash', '-c', program], capture_output=True, text=True, env={'PATH': '/usr/bin:/bin', 'PASSWD_LINE': passwd_line, 'GROUPS_LINE': groups})
+
+    def first_install_account(self):
+        line = next(line for line in (HERE.parents[1] / 'scripts/install/first-install.sh').read_text().splitlines() if 'useradd' in line and '"$service_user"' in line)
+        home = re.search(r'--home-dir "([^"]+)"', line).group(1).replace('$state_parent', '/var/lib/himawari')
+        shell = re.search(r'--shell (\S+)', line).group(1)
+        return home, shell
+
+    def test_I120_acceptance_accepts_the_service_account_first_install_created_on_tokyo(self):
+        for name in self.SCRIPTS:
+            with self.subTest(script=name):
+                tokyo = self.run_block(name, 'himawari-prod:x:999:988::/var/lib/himawari:/usr/sbin/nologin', '988')
+                self.assertIn('ACCOUNT_OK', tokyo.stdout, tokyo.stderr)
+                home, shell = self.first_install_account()
+                fresh = self.run_block(name, 'himawari-prod:x:999:988::' + home + ':' + shell, '988')
+                self.assertIn('ACCOUNT_OK', fresh.stdout, fresh.stderr)
+
+    def test_acceptance_still_rejects_a_service_account_that_can_log_in_or_has_extra_groups(self):
+        for name in self.SCRIPTS:
+            with self.subTest(script=name):
+                self.assertNotIn('ACCOUNT_OK', self.run_block(name, 'himawari-prod:x:999:988::/var/lib/himawari/state:/bin/bash', '988').stdout)
+                self.assertNotIn('ACCOUNT_OK', self.run_block(name, 'himawari-prod:x:999:988::/var/lib/himawari/state:/usr/sbin/nologin', '988 27').stdout)
+                self.assertNotIn('ACCOUNT_OK', self.run_block(name, 'himawari-prod:x:0:0::/var/lib/himawari/state:/usr/sbin/nologin', '0').stdout)
+
+    def test_first_install_gives_the_service_account_the_state_root_as_home(self):
+        self.assertEqual(self.first_install_account(), ('/var/lib/himawari/state', '/usr/sbin/nologin'))
+
+
+class WorkspaceGrantExpiryTest(unittest.TestCase):
+    def setUp(self):
+        self.binding = load('workspace_grant_binding', 'packet-template/signing/workspace-grant-binding.py')
+
+    def test_I120_an_existing_grant_expiry_without_milliseconds_or_in_another_zone_is_read_as_utc(self):
+        from datetime import datetime, timezone
+        expected = datetime(2099, 1, 1, tzinfo=timezone.utc)
+        for value in ['2099-01-01T00:00:00Z', '2099-01-01T00:00:00.000Z', '2099-01-01T09:00:00+09:00', '2098-12-31T19:00:00.000000-05:00']:
+            self.assertEqual(self.binding.utc(value), expected, value)
+
+    def test_an_expiry_without_a_zone_or_in_another_shape_is_rejected(self):
+        for value in ['2099-01-01T00:00:00', '2099-01-01', 'tomorrow', 1, None]:
+            with self.assertRaisesRegex(RuntimeError, 'G90_ZONED_TIMESTAMP_REQUIRED'):
+                self.binding.utc(value)
+
+
+class ProductionRehearsalTest(unittest.TestCase):
+    def grant(self, **changes):
+        grant = {'routeKey': 'coding', 'grantId': 'directory:himawari-prod-workspace-20261015', 'capabilityRef': 'himawari.pi-coding', 'capabilityVersion': '1.0.0', 'revision': 1, 'stateRevision': 1, 'hostId': 'host:tokyo', 'canonicalRootId': '1:2', 'displayPath': '/var/lib/himawari/workspace', 'device': '1', 'inode': '2', 'pathPolicy': 'same_filesystem_no_links', 'mountPolicy': 'fixed_device', 'expiresAt': '2099-01-01T00:00:00Z', 'revokedAt': None, 'readAllowed': True, 'hostMatchesRoute': True, 'rootMatchesSnapshot': True, 'currentlyUsable': True, 'metadataSha256': 'a' * 64}
+        grant.update(changes)
+        return grant
+
+    def inputs(self, grant):
+        frozen = {'workspace': {'decisionRef': 'G90', 'routeKey': 'coding', 'grantId': 'directory:himawari-prod-workspace-20261015', 'canonicalPath': '/var/lib/himawari/workspace', 'subdirectories': ['files', 'repos']}, 'paths': {'oldPrefix': '/opt/himawari/releases/2026-11-25-db0859f5'}, 'service': {'oldConfigSha256': 'b' * 64}, 'host': {'uid': 1, 'gid': 1}, 'identity': {}, 'authority': {}}
+        s0 = {'identity': {'hostId': 'host:tokyo'}, 'authorization': {'directoryGrants': [grant], 'capabilities': []}}
+        return frozen, s0
+
+    def test_I120_one_rehearsal_lists_every_problem_the_signing_step_would_hit_on_production_data(self):
+        binding = load('workspace_grant_binding_rehearsal', 'packet-template/signing/workspace-grant-binding.py')
+        frozen, s0 = self.inputs(self.grant(expiresAt='next year'))
+        with tempfile.TemporaryDirectory() as directory:
+            configuration = Path(directory) / 'config.json'
+            configuration.write_text('{"runPolicy": {}}')
+            _, problems = binding.check_production_authorization(frozen, s0, new_capability_refs=['himawari.pi-coding', 'himawari.public-search', 'himawari.public-fetch'], configuration_path=str(configuration), service_uid=os.getuid(), service_gid=os.getgid())
+        self.assertEqual(problems, ['G90_ZONED_TIMESTAMP_REQUIRED', 'G90_ZONED_TIMESTAMP_REQUIRED', 'ORIGINAL_CONFIGURATION_CHANGED', 'FIRST_TOOLS_WORKER_IDENTITY_REQUIRED'])
+
+    def test_I120_the_signing_step_reads_the_original_configuration_as_the_service_account_owns_it(self):
+        binding = load('workspace_grant_binding_owner', 'packet-template/signing/workspace-grant-binding.py')
+        frozen, s0 = self.inputs(self.grant())
+        with tempfile.TemporaryDirectory() as directory:
+            configuration = Path(directory) / 'config.json'
+            configuration.write_text('{"runPolicy": {"coding": {"workerInstanceId": "worker-1"}}}')
+            configuration.chmod(0o600)
+            frozen['service']['oldConfigSha256'] = binding.digest(configuration.read_bytes())
+            check = lambda uid: binding.check_production_authorization(frozen, s0, new_capability_refs=['himawari.pi-coding', 'himawari.public-search', 'himawari.public-fetch'], configuration_path=str(configuration), service_uid=uid, service_gid=os.getgid())[1]
+            owned = check(os.getuid())
+            someone_else = check(os.getuid() + 1)
+        self.assertFalse([problem for problem in owned if 'CONFIGURATION' in problem], owned)
+        self.assertIn('ORIGINAL_CONFIGURATION_UNREADABLE:G90_VERIFICATION_FILE_UNSAFE', someone_else)
+        signing = (HERE / 'packet-template/signing/finalize-binding-inputs.py').read_text()
+        self.assertNotIn("read(Path('/etc/himawari/config.json'), 0)", signing)
+
+    def test_the_signing_step_and_the_freeze_rehearsal_run_the_same_check(self):
+        signing = (HERE / 'packet-template/signing/finalize-binding-inputs.py').read_text()
+        self.assertIn('grant_validator.check_production_authorization(', signing)
+        self.assertNotIn('bind_existing_grant(', signing)
+        self.assertIn("'signing/workspace-grant-binding.py'", (HERE / 'make-packet.py').read_text())
+        self.assertIn('module.check_production_authorization(', packet_maker.REHEARSAL_DRIVER)
+        self.assertIn('common.staticRootConfiguration(original)', packet_maker.MAINTENANCE_REHEARSAL_DRIVER)
+        self.assertIn('common.routeIdentity(original, payload.plan)', packet_maker.MAINTENANCE_REHEARSAL_DRIVER)
+        self.assertIn('rehearse_production_data(packet, instance, parameters)', (HERE / 'make-packet.py').read_text())
+
+    def test_I120_freeze_refuses_the_packet_with_every_problem_the_rehearsal_found_on_the_target(self):
+        with tempfile.TemporaryDirectory() as directory:
+            packet = Path(directory) / 'packet'
+            packet_maker.render(packet, {**TWELFTH, **FIRST_TOOLS_PARAMETERS, 'BUILDER_HOSTNAME': socket.gethostname()})
+            frozen, s0 = self.inputs(self.grant(expiresAt='next year'))
+            frozen['service']['oldUnitSha256'] = 'c' * 64
+            (packet / 'inputs/bindings.json').write_text(json.dumps(frozen))
+            (packet / 'inputs/s0-db-readback.json').write_text(json.dumps(s0))
+            configuration = Path(directory) / 'config.json'
+            configuration.write_text('{"runPolicy": {}}')
+            unit = Path(directory) / 'himawari-prod.service'
+            unit.write_text('[Service]\n')
+            instance = {'fixedByTemplate': {'serviceAccount': pwd.getpwuid(os.getuid()).pw_name, 'config': str(configuration), 'unit': 'himawari-rehearsal-absent.service', 'unitPath': str(unit), 'nodePath': shutil.which('node')}}
+            parameters = {'HOSTNAME': socket.gethostname(), 'NEW_CAPABILITY_REFS_JSON': FIRST_TOOLS_PARAMETERS['NEW_CAPABILITY_REFS_JSON']}
+
+            def local(_instance, remote, stdin_bytes, timeout=300):
+                return subprocess.run(['/bin/bash', '-c', remote], input=stdin_bytes, capture_output=True, check=True).stdout
+
+            with unittest.mock.patch.object(packet_maker, 'run_remote', local):
+                with self.assertRaises(packet_maker.PacketError) as raised:
+                    packet_maker.rehearse_production_data(packet, instance, parameters)
+            problems = str(raised.exception).split(' ')
+            self.assertEqual(problems[0], 'PACKET_PRODUCTION_REHEARSAL_FAILED')
+            for expected in ['G90_ZONED_TIMESTAMP_REQUIRED', 'ORIGINAL_CONFIGURATION_CHANGED', 'FIRST_TOOLS_WORKER_IDENTITY_REQUIRED', 'ORIGINAL_UNIT_CHANGED_BEFORE_SWITCH', 'staticRootConfiguration:TWELFTH_MAINTENANCE_ORIGINAL_STATIC_ROOT_CHANGED', 'routeIdentity:TWELFTH_MAINTENANCE_ROUTE_IDENTITY_INVALID']:
+                self.assertIn(expected, problems)
+            self.assertTrue(any(problem.startswith('STOPPED_ORIGINAL_SERVICE_PROPERTIES_CHANGED:User=') for problem in problems), problems)
+
+
+class DeployScriptErrorLineTest(unittest.TestCase):
+    TRAP = """trap 'echo "SCRIPT_COMMAND_FAILED file=${BASH_SOURCE[0]} line=$LINENO exit=$? command=$BASH_COMMAND" >&2' ERR"""
+
+    def scripts(self):
+        found = sorted((HERE / 'packet-template').rglob('*.sh')) + [HERE / 'rollback.sh']
+        self.assertGreaterEqual(len(found), 10)
+        return found
+
+    def header(self, path):
+        lines = path.read_text().splitlines()
+        index = next(index for index, line in enumerate(lines) if line.startswith('set -'))
+        return lines[index:index + 2]
+
+    def test_I120_every_deploy_script_turns_on_the_shared_error_line(self):
+        for path in self.scripts():
+            with self.subTest(script=path.name):
+                self.assertEqual(self.header(path), ['set -Eeuo pipefail', self.TRAP])
+
+    def test_I120_a_failure_inside_any_child_script_or_function_prints_the_failing_line(self):
+        for path in self.scripts():
+            with self.subTest(script=path.name), tempfile.TemporaryDirectory() as directory:
+                child = Path(directory) / 'child.sh'
+                child.write_text('\n'.join(self.header(path) + ['inner() {', '  false', '}', 'inner']) + '\n')
+                parent = Path(directory) / 'parent.sh'
+                parent.write_text('\n'.join(self.header(path) + ['run_child() {', '  /bin/bash "$1"', '}', 'run_child ' + str(child)]) + '\n')
+                result = subprocess.run(['/bin/bash', str(parent)], capture_output=True, text=True, env={'PATH': '/usr/bin:/bin'})
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('SCRIPT_COMMAND_FAILED file=' + str(child) + ' line=4 exit=1 command=false', result.stderr)
+                self.assertIn('SCRIPT_COMMAND_FAILED file=' + str(parent) + ' line=4 exit=1 command=/bin/bash "$1"', result.stderr)
+
+
 class ArmHostPathsTest(unittest.TestCase):
     TAG = '[PG-6]'
     OPTIONAL_LIB64 = '...["/lib64"].filter(existsSync)'
@@ -1066,6 +1265,7 @@ class FinalizeCapabilityFixtureTest(unittest.TestCase):
             (packet / 'inputs').mkdir()
             shutil.copy(HERE / 'packet-template/signing/verify-finalize-capability-check.py', packet / 'signing')
             shutil.copy(HERE / 'packet-template/signing/finalize-binding-inputs.py', packet / 'signing')
+            shutil.copy(HERE / 'packet-template/signing/workspace-grant-binding.py', packet / 'signing')
             (packet / 'inputs/s0-db-readback.json').write_text(json.dumps({'identity': {'hostId': 'host:fixture'}, 'authorization': {'capabilities': capabilities}}))
             (packet / 'inputs/bindings.draft.json').write_text(json.dumps({'paths': {'oldPrefix': '/opt/himawari/releases/old'}}))
             child = subprocess.run([sys.executable, '-I', str(packet / 'signing/verify-finalize-capability-check.py')], capture_output=True, text=True, check=False)
@@ -1341,6 +1541,31 @@ class ReleaseWalkthroughTest(unittest.TestCase):
         self.assertEqual(seen['HIMAWARI_CI_PYTHON'], str(self.tools / 'python/python/bin/python3'))
         self.assertEqual(seen['HIMAWARI_CI_TOOLS'], str(self.tools))
         self.assertEqual(seen['HIMAWARI_TEST_PI_TOOLBIN'], str(self.toolbin))
+
+    def failing_node(self, report):
+        self.executable(self.tools / 'bin' / 'node', 'for a in "$@"; do case "$a" in --outputFile=*) out="${a#--outputFile=}";; esac; done\n'
+                        'mkdir -p "$HIMAWARI_PRODUCT_PATH_OUTPUT"\necho "{}" > "$HIMAWARI_PRODUCT_PATH_OUTPUT/browser-acceptance.json"\n'
+                        'echo "vitest says the page never showed the reply"\n' + report + '\nexit 1')
+
+    def test_a_failed_walkthrough_names_the_failing_test_and_its_message(self):
+        report = {'testResults': [{'status': 'failed', 'message': '', 'assertionResults': [
+            {'status': 'passed', 'fullName': 'release acceptance in a real browser signs in', 'failureMessages': []},
+            {'status': 'failed', 'fullName': 'release acceptance in a real browser answers', 'failureMessages': ['AssertionError: expected\n  reply to be visible']}]}]}
+        self.failing_node('cat > "$out" <<\'JSON\'\n' + json.dumps(report) + '\nJSON')
+        run = self.walkthrough('walk-1')
+        self.assertEqual(run.returncode, 4, run.stdout + run.stderr)
+        self.assertIn('HERMES_WALKTHROUGH_TEST_FAILED release acceptance in a real browser answers :: AssertionError: expected reply to be visible', run.stderr)
+        self.assertNotIn('signs in', run.stderr)
+        self.assertIn('vitest says the page never showed the reply', run.stderr)
+        self.assertEqual(run.stderr.strip().splitlines()[-1], 'HERMES_WALKTHROUGH_FAILED VITEST_EXIT 1')
+
+    def test_a_walkthrough_that_left_no_report_still_shows_the_end_of_the_vitest_output(self):
+        self.failing_node('true')
+        run = self.walkthrough('walk-1')
+        self.assertEqual(run.returncode, 4, run.stdout + run.stderr)
+        self.assertIn('HERMES_WALKTHROUGH_NO_TEST_REPORT', run.stderr)
+        self.assertIn('vitest says the page never showed the reply', run.stderr)
+        self.assertEqual(run.stderr.strip().splitlines()[-1], 'HERMES_WALKTHROUGH_FAILED VITEST_EXIT 1')
 
     def test_a_missing_pi_tool_stops_the_preflight_before_any_test(self):
         self.assertEqual(self.walkthrough('--preflight').stdout.strip(), 'HERMES_WALKTHROUGH_PREFLIGHT_OK')
@@ -2095,6 +2320,60 @@ class ServiceReadCgroupTest(unittest.TestCase):
         self.assertIn('remaining = cgroup_pids(pids)', (PACKET_TEMPLATE / relative).read_text())
 
 
+class ServiceReadPrivateJobsTest(unittest.TestCase):
+    def test_I120_the_read_unit_hides_the_private_jobs_root_without_requiring_it_to_exist(self):
+        source = (PACKET_TEMPLATE / 'measurement/S6-service-read.py').read_text()
+        self.assertIn("'InaccessiblePaths=/var/lib/himawari/state -/var/lib/himawari/jobs /etc/himawari'", source)
+        self.assertIn("{'/var/lib/himawari/state', '-/var/lib/himawari/jobs', '/etc/himawari'}", source)
+        self.assertNotIn(" /var/lib/himawari/jobs ", source)
+
+
+class MaintenanceFailureDetailTest(unittest.TestCase):
+    def test_I261128_a_maintenance_step_that_fails_before_its_report_names_the_failed_condition(self):
+        source = (PACKET_TEMPLATE / 'maintenance/run-maintenance.mjs').read_text()
+        self.assertIn('_MAINTENANCE_PRECHECK_FAILED ${precheckFailureCode(error)}', source)
+        start = source.index('export function precheckFailureCode')
+        function = source[start:source.index('\n}\n', start) + 3].replace('export function', 'function')
+        script = function + '\n'.join([
+            'import assert from "node:assert/strict";',
+            'const lines = [];',
+            'try { assert.equal(1, 2, "FIRST_MAINTENANCE_STOPPED_AUTHORITY_CHANGED"); } catch (error) { lines.push(precheckFailureCode(error)); }',
+            'const missing = new Error("ENOENT: no such file"); missing.code = "ENOENT"; missing.path = "/var/lib/x.json"; lines.push(precheckFailureCode(missing));',
+            'lines.push(precheckFailureCode(new TypeError("Cannot read properties of undefined")));',
+            'console.log(JSON.stringify(lines));',
+        ])
+        child = subprocess.run(['node', '--input-type=module', '-e', script], capture_output=True, text=True, check=False)
+        self.assertEqual(child.returncode, 0, child.stderr)
+        self.assertEqual(json.loads(child.stdout), ['FIRST_MAINTENANCE_STOPPED_AUTHORITY_CHANGED', 'ENOENT:/var/lib/x.json', 'TypeError'])
+
+    def test_I261128_an_unexpected_s9_control_failure_records_what_failed_and_where(self):
+        import errno
+        import re
+        import traceback
+        relative = 'maintenance/S9-control-files.py'
+        self.assertIn("report['failureDetail'] = unexpected_failure_detail(error)", (PACKET_TEMPLATE / relative).read_text())
+        namespace = execute_definitions(relative, template_definitions(relative, {'unexpected_failure_detail'}), {'errno': errno, 're': re, 'traceback': traceback})
+        detail = namespace['unexpected_failure_detail']
+
+        def raised(error):
+            try:
+                raise error
+            except Exception as caught:
+                return detail(caught)
+
+        missing = raised(FileNotFoundError(errno.ENOENT, 'No such file or directory', '/var/lib/himawari/x.json'))
+        self.assertEqual((missing['type'], missing['errno'], missing['filename']), ('FileNotFoundError', 'ENOENT', '/var/lib/himawari/x.json'))
+        self.assertEqual(raised(KeyError('newUnitSha256'))['key'], 'newUnitSha256')
+        self.assertNotIn('key', raised(KeyError('a sentence with spaces')))
+        self.assertEqual(raised(RuntimeError('FIRST_S9_SOMETHING:detail'))['code'], 'FIRST_S9_SOMETHING:detail')
+        self.assertEqual(raised(ValueError('free text'))['function'], 'raised')
+
+    def test_I261128_step_and_deploy_failure_lines_carry_the_failed_condition(self):
+        for relative in ('packet-template/steps/run-step.py', 'last-failure-report.py'):
+            source = (HERE / relative).read_text()
+            self.assertIn("'failedCondition', 'failureDetail'", source, relative)
+
+
 class QuestionTwelveDownloadRetryTest(unittest.TestCase):
     RELATIVE = 'acceptance/cloud/download-question-12.py'
 
@@ -2274,6 +2553,19 @@ class FirstToolsMaintenanceTest(RenderedPacket):
         first = self.hashes(self.render(**FIRST_TOOLS_PARAMETERS))
         self.assertEqual(set(upgrade), set(first))
         self.assertEqual({name for name in upgrade if upgrade[name] != first[name]}, {'signing/cloud-capability-manifest.mjs', 'signing/verify-capability-manifest.mjs', 'signing/finalize-binding-inputs.py', 'inputs/finalize-bindings.py', 'inputs/verify-finalize-bindings.py', 'systemd/S2-stop-and-inspect.py', 'systemd/S7-switch-start-readback.py', 'systemd/S7-startup-readback.mjs', 'install/S9-clean-transport.py'})
+
+    def test_maintenance_fixtures_pass_with_every_config_target_andy_production_sets(self):
+        targets = INSTANCE['configTargets']
+        self.assertTrue(targets.get('speech') and targets.get('computers') and targets.get('appConnections') and targets.get('applePush'))
+        packet = self.render(**FIRST_TOOLS_PARAMETERS,
+                             TARGET_SPEECH_JSON=packet_maker.speech_target(targets.get('speech')),
+                             TARGET_RUN_POLICY_JSON=packet_maker.run_policy_target(targets.get('computers'), targets.get('appConnections'), targets.get('applePush')),
+                             TARGET_SECRET_REFERENCES_JSON=packet_maker.secret_references_target(targets.get('appConnections'), targets.get('applePush')))
+        self.assertEqual({secret['purpose'] for secret in json.loads(packet_maker.secret_references_target(targets.get('appConnections'), targets.get('applePush')))}, {'app-connection-client', 'apple-push'})
+        scratch = self.root / 'fixture-temp-production-targets'
+        scratch.mkdir()
+        result = subprocess.run([shutil.which('node'), str(packet / 'maintenance' / 'verify-fixtures.mjs')], capture_output=True, text=True, cwd=HERE.parents[1], env={**os.environ, 'HIMAWARI_TEST_TEMP_ROOT': str(scratch)}, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr[-2000:])
 
     def test_maintenance_fixtures_pass_in_the_first_tools_render(self):
         packet = self.render(**FIRST_TOOLS_PARAMETERS)

@@ -266,8 +266,8 @@ export interface AppConnectionConfiguration {
   readonly name: string;
   readonly title: string;
   readonly serverUrl: string;
-  readonly clientId: string;
-  readonly clientSecretRef: string;
+  readonly clientId?: string;
+  readonly clientSecretRef?: string;
   readonly trustsReadOnlyLabels: boolean;
 }
 

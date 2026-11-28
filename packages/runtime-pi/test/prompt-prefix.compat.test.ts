@@ -39,7 +39,7 @@ import {
 } from "./helpers/prompt-prefix.js";
 
 const NOW = "2026-11-02T00:44:00.000Z";
-const CARD = "4111 1111 1111 1111";
+const PASSWORD = "Qz7mWx42Lp";
 const servers: Server[] = [];
 
 let PROMPT_TOKENS = 10;
@@ -751,23 +751,23 @@ describe("[I-66] PROMPT-PREFIX every request only appends to the one before it",
     });
   });
 
-  it("keeps a turn that carries a bank card number append-only after redaction", async () => {
+  it("keeps a turn that carries a password append-only after redaction", async () => {
     const { bodies } = await conversation(
       [
-        { prompt: `我的卡号 ${CARD}，帮我记着`, blocks: [ownerProfile] },
-        { prompt: "刚才那张卡是什么类型？", blocks: [ownerProfile] },
+        { prompt: `我的网银密码：${PASSWORD}，帮我记着`, blocks: [ownerProfile] },
+        { prompt: "刚才那个密码有几位？", blocks: [ownerProfile] },
         { prompt: "谢谢", blocks: [ownerProfile] },
       ],
       (index) => ({ text: `回答${index}` }),
     );
-    expect(bodies.join("")).not.toContain(CARD);
+    expect(bodies.join("")).not.toContain(PASSWORD);
     expect(findConversationBreak(bodies)).toBeNull();
   });
 
-  it("[SI-2] records a masked card once per request with the same identity, and sends the same bytes as without recording", async () => {
+  it("[SI-2] records a masked password once per request with the same identity, and sends the same bytes as without recording", async () => {
     const turns = [
-      { prompt: `我的卡号 ${CARD}，帮我记着`, blocks: [ownerProfile] },
-      { prompt: "刚才那张卡是什么类型？", blocks: [ownerProfile] },
+      { prompt: `我的网银密码：${PASSWORD}，帮我记着`, blocks: [ownerProfile] },
+      { prompt: "刚才那个密码有几位？", blocks: [ownerProfile] },
       { prompt: "谢谢", blocks: [ownerProfile] },
     ];
     const reports: { context: unknown; sightings: readonly unknown[] }[] = [];
@@ -791,10 +791,10 @@ describe("[I-66] PROMPT-PREFIX every request only appends to the one before it",
     }
     expect(reports[0]?.sightings[0]).toMatchObject({
       part: "owner_message",
-      category: "bank-card",
-      ruleId: "bank-card",
+      category: "password",
+      ruleId: "password-keyword",
     });
-    expect(JSON.stringify(reports)).not.toContain(CARD.replaceAll(" ", ""));
+    expect(JSON.stringify(reports)).not.toContain(PASSWORD);
   });
 
   it("keeps long attachment text and many memories append-only", async () => {

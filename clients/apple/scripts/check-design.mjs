@@ -30,10 +30,7 @@ export const TEXT_CONTRAST = {
   minimum: 4.5,
   foregrounds: ["text", "muted", "sun", "danger", "success", "glyph"],
   backgrounds: ["bg", "surface"],
-  pairs: [
-    ["onSpeak", "speak"],
-    ["onText", "text"],
-  ],
+  pairs: [["onText", "text"]],
 };
 
 const WEB_RULES = [
@@ -95,8 +92,16 @@ const RULES = [
     pattern: /\.preferredColorScheme\(/u,
   },
   {
+    code: "content-shadow",
+    pattern: /(?<!\.fill\([^()]*\)\.)\bshadow\(/u,
+  },
+  {
     code: "fixed-font",
     pattern: /\.font\(\s*\.system\(\s*size:/u,
+  },
+  {
+    code: "screen-height-lock",
+    pattern: /\.containerRelativeFrame\(\s*(?:\.vertical|\[[^\]]*\.vertical)/u,
   },
   {
     code: "number-literal",
@@ -127,17 +132,42 @@ function modifierChain(lines, start) {
 
 export const FONT_DIRECTORIES = ["Sources", "App"];
 
-const FONT_RULE = {
-  code: "custom-font",
-  pattern:
-    /(?:Font)?\.custom\([^)]*\b(?:size|fixedSize):|design:\s*\.serif\b|\.withDesign\(\s*\.serif\s*\)|\b(?:UIFont|NSFont)\(\s*name:|\bCTFontCreateWithName\b/u,
-};
+const CUSTOM_FONT =
+  /(?:Font)?\.custom\([^)]*\b(?:size|fixedSize):|\b(?:UIFont|NSFont)\(\s*name:|\bCTFontCreateWithName\b/u;
+const SERIF_FONT = /design:\s*\.serif\b|\.withDesign\(\s*\.serif\s*\)/u;
+export const SERIF_ALLOWED = ["Sources/HimawariChat/AnswerFont.swift"];
 
-export function findFontViolations(source, file) {
+const PRONOUN_DIRECTORIES = ["Sources", "App"];
+const PRONOUN_FILE = /\.(?:swift|strings|plist)$/u;
+const PRONOUN_HAN = /她|彼女/u;
+const PRONOUN_LITERAL = /"(?:[^"\\\n]|\\.)*"/gu;
+const PRONOUN_ENGLISH = /\b(?:[Ss]he|[Hh]er|[Hh]ers|[Hh]erself)\b/u;
+
+export function findPronounViolations(source, file) {
   const violations = [];
   source.split("\n").forEach((line, index) => {
-    if (FONT_RULE.pattern.test(line))
-      violations.push({ file, line: index + 1, code: FONT_RULE.code, text: line.trim() });
+    const prose = (line.match(PRONOUN_LITERAL) ?? []).filter((text) => /\s/u.test(text));
+    if (PRONOUN_HAN.test(line) || prose.some((text) => PRONOUN_ENGLISH.test(text)))
+      violations.push({ file, line: index + 1, code: "himawari-pronoun", text: line.trim() });
+  });
+  return violations;
+}
+
+function pronounFiles(directory) {
+  if (!existsSync(directory)) return [];
+  return readdirSync(directory).flatMap((entry) => {
+    const full = path.join(directory, entry);
+    if (statSync(full).isDirectory()) return pronounFiles(full);
+    return PRONOUN_FILE.test(entry) ? [full] : [];
+  });
+}
+
+export function findFontViolations(source, file) {
+  const serifAllowed = SERIF_ALLOWED.some((allowed) => file.endsWith(allowed));
+  const violations = [];
+  source.split("\n").forEach((line, index) => {
+    if (CUSTOM_FONT.test(line) || (!serifAllowed && SERIF_FONT.test(line)))
+      violations.push({ file, line: index + 1, code: "custom-font", text: line.trim() });
   });
   return violations;
 }
@@ -238,6 +268,13 @@ export function checkDesign(root = appleRoot, repo = repositoryRoot) {
   for (const directory of FONT_DIRECTORIES) {
     for (const file of swiftFiles(path.join(root, directory))) {
       problems.push(...findFontViolations(readFileSync(file, "utf8"), path.relative(root, file)));
+    }
+  }
+  for (const directory of PRONOUN_DIRECTORIES) {
+    for (const file of pronounFiles(path.join(root, directory))) {
+      problems.push(
+        ...findPronounViolations(readFileSync(file, "utf8"), path.relative(root, file)),
+      );
     }
   }
   const web = path.join(root, WEB_DIRECTORY);

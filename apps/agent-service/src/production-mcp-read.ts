@@ -15,8 +15,8 @@ import type {
   StoredOwnerRule,
 } from "@himawari-agent/application";
 import {
-  classificationRank,
   enforceableOwnerRule,
+  isModelVisible,
   parseOwnerRuleParameters,
   ruleBookFor,
 } from "@himawari-agent/application";
@@ -34,7 +34,6 @@ import {
   MCP_PROPOSE_MEMORY_SAVED,
   MCP_PROPOSE_MEMORY_SAVED_DIRECT,
   MCP_PROPOSE_MEMORY_SECRET,
-  MCP_PROPOSE_MEMORY_SENSITIVE_NOTE,
   MCP_PROPOSE_MEMORY_UNSUPPORTED,
   MCP_PROPOSE_NOT_SHOWN,
   MCP_PROPOSE_RULE_ALREADY_SAVED,
@@ -45,7 +44,6 @@ import {
   MCP_PROPOSE_RULE_INVALID,
   MCP_PROPOSE_RULE_KIND_NOTIFY,
   MCP_PROPOSE_RULE_KIND_WHOLE_THREAD,
-  MCP_PROPOSE_RULE_NOT_READY,
   MCP_PROPOSE_RULE_REPLAY,
   MCP_PROPOSE_RULE_REPLAY_UNAVAILABLE,
   MCP_PROPOSE_RULE_SAVED,
@@ -53,18 +51,18 @@ import {
   MCP_START_HERE_OMITTED,
   MCP_START_HERE_RULES_NOTE,
   MCP_START_HERE_RULES_OMITTED,
-  MCP_TOOL_FIND_MEMORIES,
-  MCP_TOOL_PROPOSE_MEMORIES,
-  MCP_TOOL_PROPOSE_MEMORY,
-  MCP_TOOL_PROPOSE_RULE,
-  MCP_TOOL_SYNC_MEMORIES,
-  MCP_TOOL_RESULT_FAILED,
   MCP_SYNC_MEMORIES_FAILED,
   MCP_SYNC_MEMORIES_FULL,
   MCP_SYNC_MEMORIES_INVALID,
   MCP_SYNC_MEMORIES_RESULT,
+  MCP_TOOL_FIND_MEMORIES,
+  MCP_TOOL_PROPOSE_MEMORIES,
+  MCP_TOOL_PROPOSE_MEMORY,
+  MCP_TOOL_PROPOSE_RULE,
+  MCP_TOOL_RESULT_FAILED,
   MCP_TOOL_RULE_BOOK,
   MCP_TOOL_START_HERE,
+  MCP_TOOL_SYNC_MEMORIES,
   MCP_TOOL_TODAY_CONTEXT,
   renderPrompt,
   TOOL_RESULT_RECALL_INPUT_INVALID,
@@ -89,10 +87,11 @@ import {
 } from "@modelcontextprotocol/server";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { AdmissionWindows } from "./bearer-admission.js";
+import { checkProjectName } from "./mcp-project-name.js";
 import {
-  type McpBearerAccess,
   MCP_READ_SCOPE,
   MCP_WRITE_SCOPE,
+  type McpBearerAccess,
 } from "./production-mcp-authorization.js";
 import {
   type McpUsageRecorder,
@@ -111,7 +110,6 @@ import {
   type ExternalProposalSubmission,
   externalDirectBatchId,
   normalizeProposalText,
-  proposalClassification,
   proposalHasMachineSecret,
 } from "./production-mcp-memory-writer.js";
 import {
@@ -120,7 +118,6 @@ import {
   type ExternalRuleProposal,
   type ExternalRuleType,
 } from "./production-mcp-rule-writer.js";
-import { checkProjectName } from "./mcp-project-name.js";
 import {
   MCP_SYNC_BATCH_TOO_LARGE,
   MCP_SYNC_FULL,
@@ -156,12 +153,13 @@ export const TODAY_CONTEXT_SUMMARY_LIMIT = 8;
 export const START_HERE_RULES_CHARACTER_BUDGET = 1_200;
 export const AUTO_FIND_LIMIT = 3;
 const START_HERE_MEMORY_ID_LIMIT = 200;
-export const MCP_READ_DEFAULT_CEILING: McpReadCeiling = "private";
 const SERVER_NAME = "himawari";
 const SERVER_VERSION = "1.0.0";
 const CLIENT_NAME = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,63}/u;
 
 export type McpReadCeiling = Exclude<DataClassification, "restricted">;
+
+const READ_LIMIT: McpReadCeiling = "sensitive";
 
 type Within = <T>(slot: string, operation: () => Promise<T>) => Promise<T>;
 
@@ -304,7 +302,6 @@ export interface McpProposalReceipt {
 }
 
 export interface McpMemoryProposals {
-  readonly ready: () => Promise<boolean>;
   readonly submit: (input: ExternalProposalSubmission) => Promise<{
     readonly proposal: McpProposalReceipt;
     readonly created: boolean;
@@ -625,7 +622,6 @@ export class ProductionMcpRead {
         scopes,
         expiresAt: access.expiresAt,
         extra: {
-          [READ_CEILING_KEY]: connection.readCeiling,
           [ENTRY_KEY]: "oauth" satisfies McpConnectionEntry,
           [PUSH_POLICY_KEY]: connection.pushPolicy,
         },
@@ -764,7 +760,6 @@ export class ProductionMcpRead {
     );
     if (connection === null) return server;
     const userAgent = request?.headers.get("user-agent") ?? null;
-    const ceiling = ceilingOf(context.authInfo);
     for (const tool of this.#readTools)
       server.registerTool(
         tool.name,
@@ -776,7 +771,6 @@ export class ProductionMcpRead {
         async (args: JsonObject, handlerContext) =>
           this.#call(
             tool,
-            ceiling,
             connection,
             clientNameOf(handlerContext.mcpReq.envelope, userAgent),
             args,
@@ -1029,8 +1023,6 @@ export class ProductionMcpRead {
       if (state === undefined) {
         if (!elicitationSupported(context.mcpReq.envelope))
           return proposalReply(MCP_PROPOSE_MEMORY_UNSUPPORTED.text, true);
-        if (!(await this.#options.write?.proposals.ready()))
-          return proposalReply(MCP_PROPOSE_RULE_NOT_READY.text, true);
         return await this.#askRuleConfirmation(
           rules,
           { tool: "propose_rule", proposalId: randomUUID(), argsHash, client },
@@ -1254,7 +1246,7 @@ export class ProductionMcpRead {
           replaced.has(result["proposalId"])
         )
           result["status"] = "replaced";
-      if (direct && (await proposals.ready())) {
+      if (direct) {
         const batchId = externalDirectBatchId(randomUUID());
         const digestCache: ExternalProposalDigestCache = {};
         for (const result of results) {
@@ -1323,7 +1315,7 @@ export class ProductionMcpRead {
           return proposalReply(MCP_PROPOSE_MEMORY_ALREADY_SAVED.text, false);
         if (proposal.status === "rejected")
           return proposalReply(MCP_PROPOSE_MEMORY_DECLINED.text, false);
-        if (direct && (await proposals.ready())) {
+        if (direct) {
           const kept = await this.#keepDirect(proposals, proposal.id, started);
           if (kept === "saved") return proposalReply(MCP_PROPOSE_MEMORY_SAVED_DIRECT.text, false);
           if (kept === "existing")
@@ -1331,8 +1323,7 @@ export class ProductionMcpRead {
           if (kept === "settled") return this.#settledReply(proposal.id);
           return this.#pendingReply(proposal);
         }
-        if (!elicitationSupported(context.mcpReq.envelope) || !(await proposals.ready()))
-          return this.#pendingReply(proposal);
+        if (!elicitationSupported(context.mcpReq.envelope)) return this.#pendingReply(proposal);
         return await this.#askConfirmation(
           { tool: "propose_memory", proposalId: proposal.id, argsHash, client },
           { text, category, client },
@@ -1426,14 +1417,12 @@ export class ProductionMcpRead {
     },
     context: ServerContext,
   ): Promise<InputRequiredResult> {
-    const sensitive = proposalClassification(proposal.text, proposal.category) === "sensitive";
     return inputRequired({
       inputRequests: {
         [MCP_PROPOSAL_CONFIRM_KEY]: inputRequired.elicit({
           message: renderPrompt(MCP_PROPOSE_MEMORY_CONFIRM, {
             client: proposal.client,
             category: proposal.category,
-            sensitive: sensitive ? MCP_PROPOSE_MEMORY_SENSITIVE_NOTE.text : "",
             text: proposal.text,
           }),
           requestedSchema: { type: "object", properties: {} },
@@ -1452,10 +1441,8 @@ export class ProductionMcpRead {
     });
   }
 
-  #reader(
-    ceiling: McpReadCeiling,
-    declared: readonly McpReadSourceName[],
-  ): Partial<McpCeilingReader> {
+  #reader(declared: readonly McpReadSourceName[]): Partial<McpCeilingReader> {
+    const ceiling = READ_LIMIT;
     const sources = this.#options.sources;
     const profile = sources.profile;
     const summaries = sources.summaries;
@@ -1465,9 +1452,9 @@ export class ProductionMcpRead {
       profile: async () => profile?.(ceiling),
       summaries: async ({ days, limit }) =>
         summaries?.({ days, limit, maxClassification: ceiling }),
-      ownerRules: () => ownerRulesWithin(sources, ceiling),
+      ownerRules: () => modelVisibleOwnerRules(sources),
       builtInRules: async () =>
-        sharedRulesWithin((sources.ruleBook ?? ruleBookFor)(await sources.settings()), ceiling),
+        sharedRules((sources.ruleBook ?? ruleBookFor)(await sources.settings())),
       projectNotes: async (input) =>
         (await this.#options.write?.sync?.projectNotes(input, ceiling)) ?? {
           found: false,
@@ -1487,7 +1474,6 @@ export class ProductionMcpRead {
 
   async #call(
     tool: McpReadToolEntry,
-    ceiling: McpReadCeiling,
     connection: ConnectionRef,
     client: string,
     args: JsonObject,
@@ -1497,7 +1483,7 @@ export class ProductionMcpRead {
     const auto = args["auto"] === true;
     await touchMcpConnection(this.#usage, connection.id, client === UNKNOWN_CLIENT ? null : client);
     const trace: ReadTrace = { costMicros: 0, summariesTried: false };
-    const read = this.#reader(ceiling, tool.readCeiling.sources);
+    const read = this.#reader(tool.readCeiling.sources);
     let delivered:
       | {
           readonly text: string;
@@ -1596,7 +1582,6 @@ export class ProductionMcpRead {
   }
 }
 
-const READ_CEILING_KEY = "readCeiling";
 const ENTRY_KEY = "entry";
 const PUSH_POLICY_KEY = "pushPolicy";
 const CALL_KEY = "callKey";
@@ -1641,28 +1626,18 @@ function toolCallOf(body: unknown): { readonly name: string; readonly auto: bool
   };
 }
 
-export function sharedRulesWithin(
-  rules: readonly RuleRecord[],
-  ceiling: McpReadCeiling,
-): readonly SharedRule[] {
+export function sharedRules(rules: readonly RuleRecord[]): readonly SharedRule[] {
   return rules.map((rule) => ({
     rule,
     parameters:
-      rule.sharedParameters &&
-      classificationRank(rule.sharedParameters.classification) <= classificationRank(ceiling)
+      rule.sharedParameters && isModelVisible(rule.sharedParameters.classification)
         ? rule.sharedParameters.values
         : {},
   }));
 }
 
-function ceilingOf(authInfo: AuthInfo | undefined): McpReadCeiling {
-  const value = authInfo?.extra?.[READ_CEILING_KEY];
-  return value === "public" || value === "private" || value === "sensitive" ? value : "public";
-}
-
-async function ownerRulesWithin(
+async function modelVisibleOwnerRules(
   sources: McpReadSources,
-  ceiling: McpReadCeiling,
 ): Promise<readonly StoredOwnerRule[]> {
   const rows = sources.ownerRules ? await sources.ownerRules() : [];
   const memoryIds = [
@@ -1675,11 +1650,7 @@ async function ownerRulesWithin(
   return [...rows]
     .filter(({ sourceMemoryId }) => {
       const classification = sourceMemoryId ? classifications.get(sourceMemoryId) : undefined;
-      return (
-        classification !== undefined &&
-        classification !== "restricted" &&
-        classificationRank(classification) <= classificationRank(ceiling)
-      );
+      return classification !== undefined && isModelVisible(classification);
     })
     .sort((a, b) => compareText(a.ruleId, b.ruleId));
 }

@@ -111,8 +111,6 @@ export function createProductionAutomaticReview(
         request.configurationVersion !== review.configurationVersion
       )
         throw new Error("AUTOMATIC_REVIEW_MODEL_CONFIGURATION_INVALID");
-      if (!descriptor.allowedDataClassifications.includes("private"))
-        throw new Error("AUTOMATIC_REVIEW_DISCLOSURE_DENIED");
       const requirement = descriptor.secretRequirement;
       if (!requirement)
         return {

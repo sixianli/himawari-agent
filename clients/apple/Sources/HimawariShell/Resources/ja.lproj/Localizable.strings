@@ -42,3 +42,6 @@
 "signIn.server.footer" = "サーバを変えるときだけ変更します。既定値はアプリに組み込まれたアドレスです。パスキーはアプリに登録されたドメインでしか使えません。";
 "signIn.server.unreachable" = "このアドレスに接続できません";
 "signIn.server.default" = "既定に戻す";
+"push.vaultCode.enter" = "コードを入力";
+"push.vaultCode.fill" = "入力する";
+"push.vaultCode.placeholder" = "確認コード";

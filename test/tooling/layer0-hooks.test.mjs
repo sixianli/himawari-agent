@@ -61,6 +61,11 @@ function fixture() {
     "scripts/check-conflict-markers.mjs",
     "console.error('MARKERS_STUB_RAN');\nprocess.exit(0);\n",
   );
+  write(
+    root,
+    "scripts/check-incident-gates.mjs",
+    "console.error('INCIDENT_STUB_RAN');\nprocess.exit(0);\n",
+  );
   write(root, "DELIVERY_MODE", "fast\n");
   write(
     root,

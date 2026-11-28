@@ -22,9 +22,8 @@ import {
   TOOL_REMINDER_SET,
   TOOL_RESULT_REMINDER_SET,
 } from "@himawari-agent/prompt-catalog";
-import { classificationWithIdentifiers } from "@himawari-agent/sensitive-capture";
-import { reminderSchedule } from "./production-memory-capture.js";
 import { externalContentSourceRefs } from "./context-external-content.js";
+import { reminderSchedule } from "./production-memory-capture.js";
 
 export const REMINDER_SET_CAPABILITY_REF = "reminder.set";
 export const REMINDER_LIST_CAPABILITY_REF = "reminder.list";
@@ -125,7 +124,7 @@ export interface ProductionReminderWriterOptions {
   readonly memory: Pick<DurableMemoryService, "applyProposal"> &
     Partial<Pick<DurableMemoryService, "delete">>;
   readonly state: Pick<ProductMemoryStatePort, "read">;
-  readonly book: Pick<MemoryBookStorePort, "latestGeneration">;
+  readonly book: Pick<MemoryBookStorePort, "directGeneration">;
   readonly reminders: Pick<
     MemoryReminderStorePort,
     "schedule" | "read" | "update" | "listUpcoming"
@@ -221,17 +220,14 @@ export class ProductionReminderWriter {
           ? "REMINDER_INPUT_INVALID"
           : "REMINDER_TEXT_REFUSED",
       );
-    const generation: GenerationId | undefined = await this.#options.book.latestGeneration(
-      this.#scope(),
-    );
-    if (!generation) throw new ReminderInputError("REMINDER_MEMORY_NOT_READY");
+    const generation: GenerationId = await this.#options.book.directGeneration(this.#scope());
     if (input.contentRef === undefined && !(await this.#options.payloads.get(contentRef)))
       await this.#options.payloads.put(
         await this.#options.protector.protect({
           ...this.#scope(),
           ref: contentRef,
           contentType: "text/plain",
-          dataClassification: classificationWithIdentifiers(text, "private"),
+          dataClassification: "private",
           plaintext: new TextEncoder().encode(text),
           createdAt: now,
         }),
@@ -388,8 +384,7 @@ export class ProductionReminderWriter {
     const remove = this.#options.memory.delete;
     if (remove === undefined) throw new ReminderInputError("REMINDER_MEMORY_NOT_READY");
     const reminder = await this.cancel(reminderId);
-    const generation = await this.#options.book.latestGeneration(this.#scope());
-    if (!generation) throw new ReminderInputError("REMINDER_MEMORY_NOT_READY");
+    const generation = await this.#options.book.directGeneration(this.#scope());
     const memory = await this.#options.state.read(reminder.memoryId);
     if (
       memory === undefined ||

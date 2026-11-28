@@ -60,6 +60,8 @@ public final class AppModel {
     @ObservationIgnored private var configurationRetry: Task<Void, Never>?
     private static let recordAccount = SharedVault.recordAccount
 
+    public static let launched = AppModel()
+
     public convenience init(bundle: Bundle = .main, kind: DeviceKind = .iphone, passkeys: PasskeyCeremony? = nil) {
         Self.logUnknownServerValues(subsystem: bundle.bundleIdentifier ?? "himawari")
         self.init(bundle: bundle, kind: kind, passkeys: passkeys, restoring: true)

@@ -1,6 +1,6 @@
 "talk" = "Talk to Himawari";
 "common.close" = "Close";
-"main.retry" = "Can't reach her. Tap to try again";
+"main.retry" = "Can't reach Himawari. Tap to try again";
 "push.approve" = "Approve";
 "push.deny" = "Decline";
 "signIn.hello" = "Hi, I'm Himawari";
@@ -42,3 +42,6 @@
 "signIn.server.footer" = "Only change this to switch servers. The default is the address built into the app. Passkeys only work with domains listed in the app.";
 "signIn.server.unreachable" = "Can’t reach this address";
 "signIn.server.default" = "Restore Default";
+"push.vaultCode.enter" = "Enter the code";
+"push.vaultCode.fill" = "Fill in";
+"push.vaultCode.placeholder" = "Verification code";

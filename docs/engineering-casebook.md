@@ -119,6 +119,8 @@ verified_at: ""
   90. [让模型替主人先打一遍分，什么时候才敢少给主人看：一致率按区间下限算，还要比瞎猜准](#case-model-prereview)
   91. [对外开了 MCP 入口，别的 agent 却未必来读来存：补上触发和身份，把 Himawari 做成记忆中心](#case-memory-hub)
   92. [改了一条记忆，依据它推出来的记忆和由它立的规则还按旧的走：沿依据链标待重审，规则由模型重读后对不上就暂停](#case-correction-propagation)
+  93. [用公开基准给记忆打分：LoCoMo 记忆作答 77.6%，原文全塞是 92.5%，差距在“找回来”而不在“记下来”](#case-public-memory-benchmarks)
+  94. [新用户第一句话就设不了勿扰：直接写入的记忆借用“对话整理”的编号，改表又差点连带删掉子表](#case-direct-memory-generation)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -140,7 +142,7 @@ verified_at: ""
 
 | 岗位常见要求 | 可以讲的案例 |
 | --- | --- |
-| Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[真模型跑 Jarvis Test](#case-jarvis-test-evals)、[找记忆的向量化绕路](#case-memory-embedding-route)、[新消息被当成档案的一行](#case-owner-material-position)、[记忆搜索没有相关度门槛](#case-memory-relevance-threshold)、[检索合并后怎么划“相关”的线](#case-relevance-cutoff)、[记忆变化历史完整保留](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories)、[用真实记忆每周评测](#case-real-memory-eval)、[其他 agent 写记忆先待确认](#case-external-memory-proposals)、[别的 agent 共用一个记忆中心](#case-memory-hub)、[改记忆后沿依据链标待重审](#case-correction-propagation) |
+| Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[真模型跑 Jarvis Test](#case-jarvis-test-evals)、[找记忆的向量化绕路](#case-memory-embedding-route)、[新消息被当成档案的一行](#case-owner-material-position)、[记忆搜索没有相关度门槛](#case-memory-relevance-threshold)、[检索合并后怎么划“相关”的线](#case-relevance-cutoff)、[记忆变化历史完整保留](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories)、[用真实记忆每周评测](#case-real-memory-eval)、[其他 agent 写记忆先待确认](#case-external-memory-proposals)、[别的 agent 共用一个记忆中心](#case-memory-hub)、[改记忆后沿依据链标待重审](#case-correction-propagation)、[用公开基准给记忆打分](#case-public-memory-benchmarks)、[新用户第一句话就设不了勿扰](#case-direct-memory-generation) |
 | 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[文档技能：提示里一行索引](#case-document-tools)、[工具隔离架构](#case-tool-isolation)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[并行搜索各要一次审批](#case-approval-stall)、[命令和主服务断联](#case-command-disconnect)、[执行进程卡住没人发现](#case-command-hang-heartbeat)、[对话并发](#case-concurrent-dispatch) |
 | Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user)、[命令可写工作目录并留档](#case-bash-workspace-write)、[生产机防火墙](#case-prod-firewall)、[最低 TLS 改 1.2](#case-min-tls)、[不放宽安全策略显示 Word](#case-file-preview)、[发给模型的敏感信息统一遮盖](#case-model-egress-redaction)、[自己写的指令不该被当成外来内容检查](#case-trusted-prompt-text)、[沙箱保护不能静默失效](#case-srt-locked-seccomp-helper) |
 | 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[做 Word 要 50 秒：服务器没装文档库](#case-document-tools)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send)、[找记忆的向量化绕路](#case-memory-embedding-route)、[启动时逐个查权限](#case-startup-permission-audit)、[工具前后空等](#case-tool-gap-host-check)、[简单问题也要 10 秒](#case-conversation-speed)、[回答写完才整块出现](#case-streaming-answers)、[提前收尾抢掉迟到结果恢复](#case-unknown-settle-vs-late-recovery) |
@@ -152,7 +154,7 @@ verified_at: ""
 | 多用户 / 多租户隔离和登录方式选择 | [多用户隔离](#case-multi-user)、[改登录方式停服](#case-login-switch-outage)、[验证码后自动进入](#case-silent-access-entry) |
 | 多端接入、主动推送和语音入口 | [要不要做 iOS App](#case-mobile-client)、[推送只留一条路](#case-web-push-only)、[推送反馈记录](#case-push-feedback)、[iPhone 安全区和灰色横条](#case-ios-safe-area-scrollbar)、[主动看邮件不乱打扰](#case-proactive-gmail)、[设置各端同步：版本号防旧设备覆盖](#case-settings-everywhere)、[通知设置点了没反应](#case-push-ready-hang) |
 | 系统提示设计、Agent 身份和行为约束、提示注入边界 | [Himawari 身份系统提示](#case-identity-prompt)、[产品愿景定为顶层文档](#case-product-vision) |
-| 产品判断：定位、差异化和用评测证明产品价值 | [产品愿景定为顶层文档](#case-product-vision)、[真模型跑 Jarvis Test](#case-jarvis-test-evals)、[推送反馈记录](#case-push-feedback)、[多用户隔离](#case-multi-user)、[要不要做 iOS App](#case-mobile-client)、[主动看邮件不乱打扰](#case-proactive-gmail)、[记忆要不要改成主模型自己存](#case-memory-capture-eval)、[用真实记忆每周评测](#case-real-memory-eval) |
+| 产品判断：定位、差异化和用评测证明产品价值 | [产品愿景定为顶层文档](#case-product-vision)、[真模型跑 Jarvis Test](#case-jarvis-test-evals)、[推送反馈记录](#case-push-feedback)、[多用户隔离](#case-multi-user)、[要不要做 iOS App](#case-mobile-client)、[主动看邮件不乱打扰](#case-proactive-gmail)、[记忆要不要改成主模型自己存](#case-memory-capture-eval)、[用真实记忆每周评测](#case-real-memory-eval)、[用公开基准给记忆打分](#case-public-memory-benchmarks) |
 
 [返回目录](#contents)
 
@@ -2163,7 +2165,7 @@ Andy 在卡片上选了“加一个看图模型”。动手前我先查现有的
 **结果数据**
 
 - 单元测试：`apps/control-center` 全部 485 项通过（含改写的 `answer-footer.unit.test.ts` 和 `memory-interactions.unit.test.ts` 记忆跳转用例）。
-- Chromium 390×844 手机视口、模拟上 47px 下 34px 安全区：对话区 `scrollWidth` 等于 `clientWidth`（390），没有元素超出屏幕；改前 token 数右边到 399px。截图在 [2026-10-27-v7](assets/control-center/2026-10-27-v7/SHA256SUMS)。
+- Chromium 390×844 手机视口、模拟上 47px 下 34px 安全区：对话区 `scrollWidth` 等于 `clientWidth`（390），没有元素超出屏幕；改前 token 数右边到 399px。截图在 [2026-10-27-v7](https://github.com/sixianli/himawari-agent/blob/794124398468fd3977891e4baee0c582f0ca1e5d/docs/assets/control-center/2026-10-27-v7/SHA256SUMS)。
 - iPhone 真机效果：未测量（等第十五版上线后看）。
 
 **相关 ADR/PR**
@@ -2420,12 +2422,12 @@ Andy 定后台命令最长 30 分钟（原话“30 分钟”），随后要求�
 
 **结果数据**
 
-- 设计：电脑和手机原型、中英日三种语言、三个场景，Andy 2026-10-28 11:44（日本时间）批准：“原型和方案都审核了，全部按照你的设计和推荐来做！”定稿副本在 `docs/assets/control-center/2026-10-28-v8/`。
+- 设计：电脑和手机原型、中英日三种语言、三个场景，Andy 2026-10-28 11:44（日本时间）批准：“原型和方案都审核了，全部按照你的设计和推荐来做！”定稿副本在 [docs/assets/control-center/2026-10-28-v8](https://github.com/sixianli/himawari-agent/tree/794124398468fd3977891e4baee0c582f0ca1e5d/docs/assets/control-center/2026-10-28-v8)。
 - 实现后的效果：未测量（实施计划见下）。
 
 **相关 ADR/PR**
 
-[ADR 0100](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0100-conversation-more-panel-files-and-background-commands.md)、[控制中心 Spec 的 v8 增补](assets/control-center/2026-09-15-v4-design.md#v8-more-panel)、[实施计划](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-10-28-file-delivery-and-more-panel-plan.md)、[ADR 0091](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0091-chat-ui-v6-file-preview-and-sidebar.md)、[ADR 0097](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0097-bash-writes-workspace-with-change-ledger.md)；PR #63（后台命令）、本设计的文档 PR 见分支 `claude/project-thread-3hdzxk`。
+[ADR 0100](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0100-conversation-more-panel-files-and-background-commands.md)、[控制中心 Spec 的 v8 增补](https://github.com/sixianli/himawari-agent/blob/794124398468fd3977891e4baee0c582f0ca1e5d/docs/assets/control-center/2026-09-15-v4-design.md#v8-more-panel)、[实施计划](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-10-28-file-delivery-and-more-panel-plan.md)、[ADR 0091](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0091-chat-ui-v6-file-preview-and-sidebar.md)、[ADR 0097](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0097-bash-writes-workspace-with-change-ledger.md)；PR #63（后台命令）、本设计的文档 PR 见分支 `claude/project-thread-3hdzxk`。
 
 **面试 30 秒版**
 
@@ -2974,12 +2976,12 @@ PR #82（2026-10-28 合并）。只改了返回格式、没改模型和数据，
 **结果数据**
 
 - 测试：`apps/control-center/test/` 下 35 个文件 516 个测试全部通过（合并 main 之后，含本批改写的过程区、回答底栏、设置、欢迎语、文件筛选测试）；`npm run check` 和 `npm run build` 通过。
-- 三语排版：改过的过程区、设置、文件页、侧栏在中英日三种语言、电脑和手机两种宽度、亮暗两种主题下截图检查，截图存为基线 `docs/assets/control-center/2026-10-28-v9/`。
+- 三语排版：改过的过程区、设置、文件页、侧栏在中英日三种语言、电脑和手机两种宽度、亮暗两种主题下截图检查，截图存为基线 [docs/assets/control-center/2026-10-28-v9](https://github.com/sixianli/himawari-agent/tree/794124398468fd3977891e4baee0c582f0ca1e5d/docs/assets/control-center/2026-10-28-v9)。
 - 页面加载和渲染耗时：未测量。加粗规则的效果：未在生产回答上测量，也没有用评测集实测。
 
 **相关 ADR/PR**
 
-[ADR 0105](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0105-ui-batch-2026-10-28-show-what-the-owner-needs.md)（部分替换 [ADR 0087](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0087-chat-ui-v6-process-timeline.md) 和 [ADR 0096](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0096-phone-chat-page-safe-area-and-quiet-answer-line.md)）；[v4 设计说明 · v9 增补](assets/control-center/2026-09-15-v4-design.md#v9-ui-batch)；PR #80（分支 `claude/project-thread-di5x9h`）。
+[ADR 0105](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0105-ui-batch-2026-10-28-show-what-the-owner-needs.md)（部分替换 [ADR 0087](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0087-chat-ui-v6-process-timeline.md) 和 [ADR 0096](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0096-phone-chat-page-safe-area-and-quiet-answer-line.md)）；[v4 设计说明 · v9 增补](https://github.com/sixianli/himawari-agent/blob/794124398468fd3977891e4baee0c582f0ca1e5d/docs/assets/control-center/2026-09-15-v4-design.md#v9-ui-batch)；PR #80（分支 `claude/project-thread-di5x9h`）。
 
 **面试 30 秒版**
 
@@ -3044,7 +3046,7 @@ PR #82（2026-10-28 合并）。只改了返回格式、没改模型和数据，
 
 **结果数据**
 
-截至设计定稿（2026-10-29）还没有代码。命中率、多余提醒率、漏提醒率和每封邮件的花费都未测量，上线第一周再补。原型存为基线 `docs/assets/control-center/2026-10-29-v10/`：中英日三种语言、电脑和手机两种宽度，共 42 张截图。
+截至设计定稿（2026-10-29）还没有代码。命中率、多余提醒率、漏提醒率和每封邮件的花费都未测量，上线第一周再补。原型存为基线 [docs/assets/control-center/2026-10-29-v10](https://github.com/sixianli/himawari-agent/tree/794124398468fd3977891e4baee0c582f0ca1e5d/docs/assets/control-center/2026-10-29-v10)：中英日三种语言、电脑和手机两种宽度，共 42 张截图。
 
 **相关 ADR/PR**
 
@@ -3447,7 +3449,7 @@ Andy 2026-10-29 00:56 定了规则，记在 [ADR 0107](https://github.com/sixian
 
 **我们的方案**
 
-- **每次提交都跑的真浏览器检查** `scripts/check-layout-audit.mjs`（`npm run check:layout`，是 `npm run check` 的一步）：先用 vite 把网页构建到临时目录，用假服务器开起来，再用 Playwright（浏览器自动化工具）的 Chromium 打开 10 个页面（欢迎页、对话、执行过程、分出的对话、设置三个标签、记忆、提醒、文件），在中英日 × 1280/390 宽 × 浅色深色下逐个检查：横向滚动、元素超出屏幕、按钮被别的元素盖住、文字被挤成竖排、截断没有省略号、浏览器原生下拉框、没点过就有焦点描边、中日界面里的英文月份星期和 AM/PM。每次运行先在一页故意做坏的页面和一页干净的页面上自检，坏页面查不出问题就直接失败，避免检查本身悄悄失效。
+- **每次提交都跑的真浏览器检查** `scripts/check-layout-audit.mjs`（`npm run check:layout`，当时是 `npm run check` 的一步；2026-11-27 网页决定删除后移出）：先用 vite 把网页构建到临时目录，用假服务器开起来，再用 Playwright（浏览器自动化工具）的 Chromium 打开 10 个页面（欢迎页、对话、执行过程、分出的对话、设置三个标签、记忆、提醒、文件），在中英日 × 1280/390 宽 × 浅色深色下逐个检查：横向滚动、元素超出屏幕、按钮被别的元素盖住、文字被挤成竖排、截断没有省略号、浏览器原生下拉框、没点过就有焦点描边、中日界面里的英文月份星期和 AM/PM。每次运行先在一页故意做坏的页面和一页干净的页面上自检，坏页面查不出问题就直接失败，避免检查本身悄悄失效。
 - **分出的对话显示来源**：对话摘要加上 `sourceThreadId` 和 `sourceWatermark` 两个字段；网页按来源记录分页读原对话，把到分出那一轮为止的消息颜色稍淡地显示在分隔线上方，顶部写“从「原标题」第 N 轮分出 · 打开原对话”，原对话被删时写明“原对话已删除”。假服务器的分出行为改成和真实服务器一样。
 - **设置存在服务器上**：称呼、界面语言、主题色进新表 `owner_preferences`（迁移 0063），没送到服务器的本地改动下次打开先补发。
 - **其余按 Andy 的批注做**：顶栏改成左右两组彼此分开的悬浮圆按钮（防误触），设置挪到侧栏底部；“运行命令”只显示成没成功，命令本身收进“命令详情”；联网搜索说明列出配置里真正会收到数据的网址，不写厂商名，换厂商时不用改文字；上传的文件进文件页（迁移 0064）；页面自己画下拉菜单；没发过消息的空对话不进侧栏。
@@ -3483,7 +3485,7 @@ Andy 2026-10-29 00:56 定了规则，记在 [ADR 0107](https://github.com/sixian
 
 **相关 ADR/PR**
 
-[ADR 0110](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0110-ui-batch-2026-10-29-check-it-before-the-owner-does.md)；[ADR 0100](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0100-conversation-more-panel-files-and-background-commands.md)、[ADR 0105](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0105-ui-batch-2026-10-28-show-what-the-owner-needs.md) 的后续说明；[事故与门槛清单 I-15 至 I-18](incidents-and-gates.md)；[设计规范](ui-ux-design-guide.md)；截图基线 `docs/assets/control-center/2026-10-29-v11/`；PR #99（分支 `claude/project-thread-89xntg`）。
+[ADR 0110](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0110-ui-batch-2026-10-29-check-it-before-the-owner-does.md)；[ADR 0100](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0100-conversation-more-panel-files-and-background-commands.md)、[ADR 0105](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0105-ui-batch-2026-10-28-show-what-the-owner-needs.md) 的后续说明；[事故与门槛清单 I-15 至 I-18](incidents-and-gates.md)；[设计规范](ui-ux-design-guide.md)；截图基线 [docs/assets/control-center/2026-10-29-v11](https://github.com/sixianli/himawari-agent/tree/794124398468fd3977891e4baee0c582f0ca1e5d/docs/assets/control-center/2026-10-29-v11)；PR #99（分支 `claude/project-thread-89xntg`）。
 
 **面试 30 秒版**
 
@@ -3610,7 +3612,7 @@ Claude 让用户按主题看、改、删记忆，但没有告诉用户每轮实�
 
 - 测试（本线程云端容器）：`npx vitest run --config vitest.workspace.ts apps/control-center/test` 共 76 个文件 1074 条通过；新增的 `[MEM-PIN]` 测试覆盖开关、放不下的条目、上次打开以来新记住的条数、45 条分页、手动添加的主题和开关。
 - 事故 I-21 的门槛：没猜中关键词时归“其他”的测试在修复前的代码上失败（`expected { category: 'identity' } to deeply equal { category: 'other' }`），修复后通过。
-- 截图核对：中英日三语、电脑 1280 像素和手机 390 像素共 21 张，无横向滚动、无页面报错（脚本输出 NO_PROBLEMS），存为基线 `docs/assets/control-center/2026-10-29-v12/`。
+- 截图核对：中英日三语、电脑 1280 像素和手机 390 像素共 21 张，无横向滚动、无页面报错（脚本输出 NO_PROBLEMS），存为基线 [docs/assets/control-center/2026-10-29-v12](https://github.com/sixianli/himawari-agent/tree/794124398468fd3977891e4baee0c582f0ca1e5d/docs/assets/control-center/2026-10-29-v12)。
 - 记忆页脚本体积（`npm run build` 输出）：50.88 kB，gzip 后 13.46 kB；改动前的体积未测量。
 - 真实使用效果（Andy 是否更快找到记忆、开关用了几次）：未测量，等上线后看。
 - 2026-10-29 追加（合成数据对比，Andy 同意后跑，数据和脚本在项目文件 `memory-importance-eval/`）：用 36 句虚构主人说的话，比较现行规则（DeepSeek V4.1 Flash 打分）和 Jev 判断“该不该每次都带上”。28 句明确的里，现行规则判对 24 句、Jev 21 句，两者都没有把不该带的错带上；两次重跑结果完全一致。现行规则漏掉的 4 句重要度都在 850 以上，原因是提取提示词把家人的名字和职业算成“他人隐私”、把“花钱先问我”算成“财务”，都标成敏感，敏感记忆不进档案。改了提示词的分类说明后复测 11 句：家人 3 句和这条规矩两次都改判为普通信息并进档案，家人的心理咨询、存款、朋友分手 3 句仍是敏感。费用：对比 0.0798 美元，复测 0.0228 美元。
@@ -4562,7 +4564,7 @@ OpenAI 的“流式”Himawari 早已做到，但第一个字本身就要 5 秒�
 
 **相关 ADR/PR**
 
-[ADR 0126](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0126-sunflower-mark-grows-233-seeds.md)；[想法 IDEA-20261030-001](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/ideas/IDEA-20261030-001-himawari-logo-candidates-grow-and-hi.md)；PR #134；v13 基准 `docs/assets/control-center/2026-10-30-v13/`。
+[ADR 0126](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0126-sunflower-mark-grows-233-seeds.md)；[想法 IDEA-20261030-001](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/ideas/IDEA-20261030-001-himawari-logo-candidates-grow-and-hi.md)；PR #134；v13 基准 [docs/assets/control-center/2026-10-30-v13](https://github.com/sixianli/himawari-agent/tree/794124398468fd3977891e4baee0c582f0ca1e5d/docs/assets/control-center/2026-10-30-v13)。
 
 **面试 30 秒版**
 
@@ -5881,6 +5883,140 @@ Himawari 整理记忆时会从几条记忆推出一条新结论（`reflect`）�
 
 **面试 30 秒版**
 “我的个人 agent 会从几条记忆推出新结论，主人的硬规则也挂在某条记忆上。主人改了一条记忆，下游的结论和规则还按旧的走。我让数据库触发器在同一事务里标直接下游，程序再沿依据链展开，因为 SQLite 触发器里不能递归；规则由模型重读来源后程序比参数，对不上就暂停、给建议值，模型挂了不停规则。主人每次处理都记进决策记录，周报算‘标了多少、认可多少’，样本不到 5 条不出比例。”
+
+[返回目录](#contents)
+
+<a id="case-public-memory-benchmarks"></a>
+
+## 案例 93：用公开基准给记忆打分：LoCoMo 记忆作答 77.6%，原文全塞是 92.5%，差距在“找回来”而不在“记下来”
+
+**背景与现象**
+
+2026-11-27 Andy 要求“按照现在主流的记忆产品评测方法，主流的这些记忆评测 benchmark，来评测我们记忆的各种指标”。之前项目里的记忆评测都是自己出的题（见[案例 78](#case-memory-capture-eval)、[案例 87](#case-real-memory-eval)），没法和业界同一把尺子比。试跑时还发现，生产整理记忆会把模型标成“敏感”的健康、财务内容挂起等主人批准，和 [ADR 0286](adr/0286-the-main-model-reads-and-writes-memory-itself.md) 定的“除了密码、密钥都记”不一致。
+
+**根因**
+
+评测本身不是修故障；试跑暴露的问题有两个，都有代码证据：
+
+- 敏感内容挂起：`automatic-memory-service.ts` 里“分类是敏感且主人没明说记住就建待批请求”的分支一直在，ADR 0286 定了取消审批，但代码还没改（PR 747 删掉了这条分支）。
+- 评测跑不完：云端机器重启一次，后台命令 2 小时上限掐断一次，单个测试 6 小时超时又掐断一次。整理记忆是逐轮累积的，中途断了接不上，只能从头重跑。
+
+**我们的方案**
+
+- 选两个最常被记忆产品引用的基准：LoCoMo（10 段两人长对话，只用 1–4 类题，共 1540 题）和 LongMemEval_S（6 类题型分层各抽 5 题，共 30 题）。
+- 对话一轮一轮走生产的整理记忆代码 `ProductionMemoryCapture`，用真 SQLite、本机 jina 向量。答题时模型只看到“每次都带上”的记忆清单和检索出的相关记忆。另跑一组让模型直接读整段原文，作为对照。
+- LoCoMo 每段对话建两份记忆，两位说话人各当一次主人，因为生产只从主人的话里整理记忆。判分用各基准公开的提示词：LoCoMo 用 Mem0 评测仓库的 CORRECT/WRONG 提示词，LongMemEval 用官方的是/否提示词。
+- 模型一律走 OpenCode Go 套餐里的 DeepSeek V4.1 Flash，不走按 token 计费的渠道；程序里写了花费上限，限流（HTTP 429）时整体暂停。
+- 加了“断点续跑”：同一个输出目录再跑一次时，跳过已经整理完、每道题两组都答完的对话；只跑了一半的从头重跑；花费上限按累计算（PR 749）。
+- CI 规则检查原本让任何新登记的评测测试都不可能变绿，经 Andy 同意，只放行全新文件的登记（PR 749）。
+
+**方案讨论与备选**
+
+- 只跑部分题（例如 LoCoMo 抽 2 段）：便宜，但各类题的样本太少。Andy 选了全量，约 8 美元。
+- 修复后只重跑受挂起影响的题：行不通。整理是逐轮累积的，一道题依赖整段对话的整理结果，只能按整份记忆重放。最后修复前后的对比，用的是修复前那轮被中断前已经答完的 91 道题。
+- 判分用 GPT-4o（论文和排行榜的做法）：项目规定不调按 token 计费的 OpenAI/Claude，所以改用 DeepSeek 当裁判。代价是分数不能直接和排行榜比，只能和同一裁判下的“原文全塞”对照组比。
+
+**业界主流做法**
+
+- ✅ Mem0 论文（<https://arxiv.org/abs/2504.19413>）在 LoCoMo 上和原文全塞比：“Mem0 attains a 91% lower p95 latency and saves more than 90% token cost”。
+- ✅ LongMemEval（<https://github.com/xiaowu0162/LongMemEval>）：“We release 500 high quality questions to test five core long-term memory abilities”；LongMemEval_S 每题的历史“roughly consumes 115k tokens”。
+- ✅ LoCoMo（<https://snap-research.github.io/locomo/>）：“a dataset of very long-term conversations, each encompassing 300 turns and 9K tokens on avg., over up to 35 sessions”。
+
+**对比与取舍**
+
+和 Mem0 一样，我们拿“原文全塞”当对照，看准确率和上下文长度两头的取舍。不同点有三个：
+
+- 裁判换成了 DeepSeek，所以只比同一裁判下的差距，不比排行榜绝对分。
+- 只从主人的话里整理记忆条目，助手说过的话不进记忆条目，这和 Mem0 默认的用户记忆提示词一样（“GENERATE FACTS SOLELY BASED ON THE USER'S MESSAGES”，<https://github.com/mem0ai/mem0/blob/main/mem0/configs/prompts.py>）。助手说过的话靠另一条路找回：原始对话按轮存（主人和助手两边都存），主模型用 `conversation_search` 搜原话。这也是 LongMemEval 论文（<https://arxiv.org/abs/2410.10813>）的结论：只压成用户事实“harms overall performance due to information loss”，原话按轮存、事实只当检索索引更好。第一轮评测只测了记忆条目这条路，第二轮把原话检索也接上。
+- 整理提示词是中文，数据是英文。
+
+**结果数据**
+
+数据都出自 `evals/memory-benchmark/2026-11-27/round.json` 和 `outcomes.jsonl`。
+
+- LoCoMo 1540 题：记忆作答 77.6%，原文全塞 92.5%。平均上下文分别约 8,900 和 29,000 token。
+- LoCoMo 分题型（记忆 / 原文）：
+  - 单句事实 80.6% / 96.2%
+  - 跨多句推理 85.1% / 95.4%
+  - 时间推理 72.6% / 89.7%
+  - 需要常识的开放题 45.8% / 60.4%
+- LoCoMo 每题依据的那段原话，100% 被整理进了记忆，答题时检索回来的占 91.3%。也就是说，记下来没问题，差距在找回来和用好。
+- LongMemEval 30 题：记忆作答和原文全塞都是 73.3%。平均上下文约 4,300 对 105,000 token，答题耗时中位数约 2.7 秒对 8.5 秒。分题型（记忆 / 原文，各 5 题）：
+  - 知识更新 100% / 100%
+  - 主人说过的事 100% / 100%
+  - 偏好 100% / 60%
+  - 跨会话 60% / 40%
+  - 时间推理 60% / 40%
+  - 助手说过的事 20% / 100%
+- 修复前后（同一批 91 道 LoCoMo 题）：修复前答对 71 题，修复后答对 70 题。修复前 4 份记忆里分别挂起 1、0、8、4 条，修复后全是 0。差别在误差范围内。
+- 花费合计约 7.94 美元（Andy 先批 7 美元，补跑 LongMemEval 时又批了约 1 美元）。
+- 第二轮（2026-11-28，数据在 `evals/memory-benchmark/2026-11-28-conversation-search/`）：同样 30 道 LongMemEval 题重新整理记忆，答题多一组“记忆 + 可以搜原话”，工具和结果页大小都用生产的 `ProductionConversationTools`。
+  - 只用记忆 80.0%，记忆加原话检索 83.3%；“助手说过的事”从 20% 升到 60%，证据找回率从 93.3% 升到 96.7%，平均上下文约 4,200 对 7,200 token。
+  - 模型只在 30 题里的 3 题主动搜了原话，搜了的 2 道“助手说过的事”都答对；有 4 题它没搜就回答“不知道”。所以短板不在存没存原话，而在模型该搜的时候不去搜。
+  - 同样 30 题，只用记忆这一组两轮分别是 73.3% 和 80.0%，说明 30 题的样本里差 2 题都算正常波动。第二轮这台云端机器只有 4 个核，整理记忆时有 222 轮因为写库超过 2 秒的保护上限而失败（第一轮全部只有 11 轮），这一轮的记忆条目比生产略少。
+  - 花费约 2.73 美元（Andy 说“不用担心钱，你就跑就行了”）。
+
+**相关 ADR/PR**
+
+- [ADR 0286](adr/0286-the-main-model-reads-and-writes-memory-itself.md)（决定 4：除密码、密钥都记）
+- [ADR 0300](adr/0300-how-memory-works-now.md)
+- PR 747（取消敏感内容挂起审批，密码、密钥拒存）
+- PR 749（评测程序、断点续跑、CI 只放行全新的资格测试登记）
+- PR 791（评测答题接上原话检索 `conversation_search`）
+
+**面试 30 秒版**
+
+我们用业界常用的 LoCoMo 和 LongMemEval，让每段对话逐轮走生产的整理记忆代码，再拿“原文全塞”当对照。LoCoMo 上记忆作答 77.6%，全塞 92.5%，但上下文只有全塞的三分之一。证据 100% 记下来了、91% 找得回来，所以下一步该优化检索和作答，而不是整理。LongMemEval 上两者打平（73.3%），上下文却只有全塞的 4%。评测还顺带抓出一个违背产品规则的问题：健康、财务内容被挂起等批准，已经修掉。
+
+[返回目录](#contents)
+
+<a id="case-direct-memory-generation"></a>
+
+## 案例 94：新用户第一句话就设不了勿扰：直接写入的记忆借用“对话整理”的编号，改表又差点连带删掉子表
+
+**背景与现象**
+
+2026-11-28 做“在聊天里改设置”（PR 829）时发现：全新安装、Himawari 还没记下任何事的时候，在聊天里说“打开勿扰”会失败，报“规则要写的记忆还没准备好”。同样失败的还有设提醒（`REMINDER_MEMORY_NOT_READY`）、记忆页手动添加（按钮灰着）、别的 agent 经 MCP（让外部 agent 调用 Himawari 工具的协议）推来的记忆（只能一直待确认）。自 v2.4 起 Himawari 是每人一个（[ADR 0310](adr/0310-adopt-product-vision-v2-4.md)），每个新用户第一次用都会碰到。
+
+**根因**
+
+记忆的每次写入都要挂在一个“整理编号”（`memory_generations` 表的一行）下，后台的索引任务（`memory_projection_jobs`）再按这个编号建索引。表里 `checkpoint_job_id`、`thread_id` 都是 `NOT NULL`，也就是说每个整理编号都必须属于某段对话的某次整理。规则、勿扰、提醒、手动添加、MCP 推送这些“不经过对话整理、直接写入”的路径，于是都去借“最近一次对话整理”的编号；新用户还没有任何一次整理，就借不到，直接报错。用新加的端到端测试 `[FIRST-1]` 在修复前复现：全新安装时 `manualAddReady` 是 `false`、设提醒报错。
+
+**我们的方案**
+
+- 让整理编号可以不属于任何对话：`checkpoint_job_id`、`thread_id` 改成可空，并加 `CHECK`，要求两者同时为空或同时不空。两者都空的就是“直接写入”的编号。
+- 每个主人一个直接写入编号（`memory-direct:<主人>:<agent>`），第一次用到时创建（`INSERT ... ON CONFLICT DO NOTHING`）。借用最近整理编号的地方全部改用它，“还没准备好”的分支和提示随之删掉。
+- 改列约束在 SQLite 里只能重建表。原来的迁移程序把每个迁移放在一个开着外键的事务里跑；这样重建 `memory_generations` 时，删旧表会连带删掉所有子表里指向它的行。所以先让迁移程序支持官方的重建步骤：迁移的 meta 文件写 `"rebuilds"` 时，在事务外关外键、事务里重建、提交前跑 `foreign_key_check`、最后再开外键。
+
+**方案讨论与备选**
+
+- A：新用户第一次用时，伪造一次“对话整理”。改动最小，但会在对话列表和整理记录里留下假数据，删掉那段假对话又会连带删掉规则的索引任务。放弃。
+- B（采用，Andy 2026-11-28 在决策卡片上同意）：单独的直接写入编号。要改表结构。
+- 最初的 B 只写了“迁移让两列可空”。动手前核对时发现，照原来的迁移程序做会连带删掉子表数据，于是又请 Andy 选：先改迁移程序支持官方步骤（采用），还是绕开重建表、另建一张新表。另建新表要把所有读编号的地方都改成读两张表，改动更散。
+- 方案文档写了一个 `origin` 列来区分来源；实现时发现“对话和整理任务都为空”本身就能区分，`CHECK` 又保证不会只空一半，就没有加这一列。
+
+**业界主流做法**
+
+- ✅ SQLite 官方 ALTER TABLE 文档（<https://www.sqlite.org/lang_altertable.html#otheralter>）的 12 步：“If foreign key constraints are enabled, disable them using PRAGMA foreign_keys=OFF.”“If foreign key constraints were originally enabled then run PRAGMA foreign_key_check to verify that the schema change did not break any foreign key constraints.”新表先用一个新名字建好，“Drop the old table X”，再“Change the name of new_X to X”。
+- ✅ SQLite 外键文档（<https://www.sqlite.org/foreignkeys.html>）：“If foreign key constraints are enabled when it is prepared, the DROP TABLE command performs an implicit DELETE to remove all rows from the table before dropping it. The implicit DELETE does not cause any SQL triggers to fire, but may invoke foreign key actions or constraint violations.”以及“It is not possible to enable or disable foreign key constraints in the middle of a multi-statement transaction ... Attempting to do so does not return an error; it simply has no effect.”
+
+**对比与取舍**
+
+和官方步骤一致：事务外关外键、事务里建新表、复制、删旧表、改名、`foreign_key_check`、提交后再开。不同点是检查只看和被重建的表有关的外键问题（被重建的表自己，或者父表是它的），别处早已存在的问题不拦这次迁移；如果整库检查，任何一处历史遗留问题都会卡住上线。迁移程序还拒绝在外层事务里跑重建迁移，因为那时关外键不会生效、也不报错，只会悄悄照旧连带删除；为此把 5 处测试里“外面包一层事务再跑全部迁移”的写法去掉了。
+
+**结果数据**
+
+- 迁移合约测试 `packages/persistence-sqlite/test/direct-memory-generations-migration.contract.test.ts`：重建前放 1 条整理编号和 1 条挂在它下面的索引任务，按新迁移跑完，索引任务还是 1 条；同一迁移去掉 `"rebuilds"` 声明再跑，索引任务变成 0 条，复现了“连带删除”；重建后故意留下断掉的引用，迁移报 `INTEGRITY_CHECK_FAILED` 并整体回滚，外键重新打开。
+- 端到端测试 `[FIRST-1]`（真构建产物、真 HTTP）：全新安装第一句话就能设提醒、打开勿扰，记忆页 `manualAddReady` 为 `true`；修复前失败。
+- 生产上的效果：未测量（等上线后补）。
+
+**相关 ADR/PR**
+
+[ADR 0310](adr/0310-adopt-product-vision-v2-4.md)（每人一个 Himawari）；PR 829（在聊天里改设置，发现问题的地方）；本案例所在的 PR（修复）；迁移写法见 [.agents/instructions/migrations.md](../.agents/instructions/migrations.md)。
+
+**面试 30 秒版**
+
+新用户第一句话说“打开勿扰”就失败，因为所有直接写入的记忆都要借“最近一次对话整理”的编号，新用户一次都还没有。我们给每个用户单独一个不属于任何对话的直接写入编号，这需要改表约束；SQLite 只能重建表，而外键开着时删旧表会连带删掉子表，所以先让迁移程序照官方 12 步关外键、重建、`foreign_key_check`。一个反向测试证明：不照这个步骤，子表的数据会被删光。
 
 [返回目录](#contents)
 

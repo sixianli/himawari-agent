@@ -7,53 +7,23 @@ enum BubbleSide {
     case owner
 }
 
-struct BubbleTail: Shape {
-    let side: BubbleSide
-    var radius: CGFloat = DesignTokens.Chat.bubbleRadius
-
-    func path(in rect: CGRect) -> Path {
-        let width = DesignTokens.Chat.bubbleTailWidth
-        let height = min(DesignTokens.Chat.bubbleTailHeight, rect.height / 2)
-        let x = rect.maxX
-        let y = rect.maxY
-        var hook = Path()
-        hook.move(to: CGPoint(x: x - 1, y: y - height))
-        hook.addCurve(
-            to: CGPoint(x: x + width, y: y),
-            control1: CGPoint(x: x - 1, y: y - height * 0.3),
-            control2: CGPoint(x: x + width * 0.4, y: y - 0.5)
-        )
-        hook.addCurve(
-            to: CGPoint(x: x - radius * 0.7, y: y - 1.5),
-            control1: CGPoint(x: x + width * 0.2, y: y + 0.8),
-            control2: CGPoint(x: x - radius * 0.3, y: y)
-        )
-        hook.addLine(to: CGPoint(x: x - radius, y: y - height))
-        hook.closeSubpath()
-        guard side == .her else { return hook }
-        return hook.applying(CGAffineTransform(translationX: rect.minX + rect.maxX, y: 0).scaledBy(x: -1, y: 1))
-    }
-}
-
 struct BubbleBackground: ViewModifier {
     let side: BubbleSide
-    let tail: Bool
+    let menu: MessageMenuActions?
 
     @ScaledMetric(relativeTo: .body) private var paddingX = DesignTokens.Chat.bubblePaddingX
     @ScaledMetric(relativeTo: .body) private var paddingY = DesignTokens.Chat.bubblePaddingY
     @ScaledMetric(relativeTo: .body) private var radius = DesignTokens.Chat.bubbleRadius
 
     func body(content: Content) -> some View {
-        let fill = side == .her ? Color.hmBubble : Color.hmText
+        let fill = side == .her ? Color.hmBubble : Color.hmBubbleOwner
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
         content
             .padding(.horizontal, paddingX)
             .padding(.vertical, paddingY)
-            .background {
-                if tail { BubbleTail(side: side, radius: radius).fill(fill) }
-            }
             .background(fill, in: shape)
             .menuPreviewShape(shape)
+            .messageMenu(menu)
     }
 }
 
@@ -69,8 +39,8 @@ extension View {
 }
 
 extension View {
-    func bubble(_ side: BubbleSide, tail: Bool) -> some View {
-        modifier(BubbleBackground(side: side, tail: tail))
+    func bubble(_ side: BubbleSide, menu: MessageMenuActions? = nil) -> some View {
+        modifier(BubbleBackground(side: side, menu: menu))
     }
 }
 
@@ -119,5 +89,7 @@ enum BubbleDates {
 
 extension Color {
     static var hmBubble: Color { DesignTokens.Colors.bubble.color }
+    static var hmBubbleOwner: Color { DesignTokens.Colors.bubbleOwner.color }
+    static var hmOnBubbleOwner: Color { DesignTokens.Colors.onBubbleOwner.color }
     static var hmBubbleCode: Color { DesignTokens.Colors.bubbleCode.color }
 }

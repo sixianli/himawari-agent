@@ -192,11 +192,35 @@ public enum CalendarOccurrenceId {
         "\(eventIdentifier)\(separator)\(DeviceActionTime.localText(start, in: timeZone))"
     }
 
+    public static func of(eventIdentifier: String, start: Date, recurring: Bool, in timeZone: TimeZone = .current) -> String {
+        recurring ? make(eventIdentifier: eventIdentifier, start: start, in: timeZone) : eventIdentifier
+    }
+
     public static func split(_ id: String, in timeZone: TimeZone = .current) -> (eventIdentifier: String, start: Date?) {
         guard let index = id.lastIndex(of: separator),
               let start = DeviceActionTime.localDate(String(id[id.index(after: index)...]), in: timeZone) else {
             return (id, nil)
         }
         return (String(id[..<index]), start)
+    }
+}
+
+public enum DeviceActionListing {
+    public static func fit(_ items: [JSONObject], as key: String, within limit: Int?) -> JSONObject {
+        guard let limit else { return [key: .array(items.map(DeviceActionValue.object)), "truncated": .bool(false)] }
+        var kept: [DeviceActionValue] = []
+        var used = size(of: ["done": .object([key: .array([]), "truncated": .bool(false)])]) ?? 0
+        for item in items {
+            guard let encoded = size(of: item) else { continue }
+            let added = encoded + (kept.isEmpty ? 0 : 1)
+            if used + added > limit { return [key: .array(kept), "truncated": .bool(true)] }
+            used += added
+            kept.append(.object(item))
+        }
+        return [key: .array(kept), "truncated": .bool(false)]
+    }
+
+    static func size(of evidence: JSONObject) -> Int? {
+        try? JSONEncoder().encode(evidence).count
     }
 }

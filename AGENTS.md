@@ -35,7 +35,7 @@ Andy 的全局指令已复制到 [.claude/rules/owner-global-instructions.md](.c
 <a id="incidents-and-repeated-mistakes"></a>
 ## 事故和反复犯的错误
 
-每个会话都遵守 [.claude/rules/incident-gates.md](.claude/rules/incident-gates.md)：每个事故都要有一道自动检查，同一个错误出现三次必须上硬门槛。
+每个会话都遵守 [.claude/rules/incident-gates.md](.claude/rules/incident-gates.md)：每个事故都要有一道自动检查，同一个错误出现两次必须上硬门槛（程序检查，过不去就报错，不靠模型判断）；PR 的 CI 红了两次，PR 说明里要写复盘（含共同前提和验证）才能合并；修一个事故第二次出现的提交要写 `Premise:` 行，说明当初哪个想法错了。改到 `ci/core-areas.json` 列出的核心目录的 PR，说明里要有“## 安全依据”并点名一个 CI 会跑的测试。新事故的编号用 `npm run incident:new` 生成，不手挑。每个提交说明都要写一行 `Incident: I-<编号>`、`Incident-follow-up: I-<编号>` 或 `Incident: none`，次数由检查从提交记录里数，不靠手记。
 
 <a id="prompt-prefix-append-only"></a>
 ## 发给模型的内容只追加
@@ -94,10 +94,10 @@ Andy 的全局指令已复制到 [.claude/rules/owner-global-instructions.md](.c
 
 创建或修订项目文档之前，先读[文档写法](.agents/instructions/writing-docs.md)（目录、章节内链接、锚点）。
 
-<a id="approved-web-design-baselines"></a>
-## 已批准的网页设计基线
+<a id="apple-client-design"></a>
+## 苹果客户端的界面设计
 
-设计或修改 Himawari 网页（视觉设计、聊天交互、品牌素材）之前，先读[网页设计基线](.agents/instructions/web-design-baselines.md)。iPhone、Apple Watch、Mac 三个 App 的界面和交互一律照苹果最新的《Human Interface Guidelines》（苹果官方界面设计规范）做，能用系统组件就用系统组件，见 [Andy 定的长期规则](.claude/rules/owner-standing-rules.md#apple-clients-follow-the-hig)。
+设计或修改 iPhone、Apple Watch、Mac 三个 App 的界面和交互之前，先读 [docs/ui-ux-design-guide.md](docs/ui-ux-design-guide.md)。界面和交互一律照苹果最新的《Human Interface Guidelines》（苹果官方界面设计规范）做，能用系统组件就用系统组件，见 [Andy 定的长期规则](.claude/rules/owner-standing-rules.md#apple-clients-follow-the-hig)。网页已决定删除（[ADR 0309](docs/adr/0309-apps-sign-in-with-passkeys-and-the-web-is-removed.md)），不得拿网页的页面、原型或设计规则当 App 设计的依据或对照；`npm run check:design-sources` 拦下这类写法。
 
 <a id="engineering-diagrams"></a>
 ## 工程图
@@ -117,6 +117,7 @@ Andy 的全局指令已复制到 [.claude/rules/owner-global-instructions.md](.c
 每个提交立即推送到 `origin` 上同名的分支（见全局指令的“Git 与操作”一节）。项目补充：
 
 - 它适用于所有代理做的提交。
+- 例外：PR 已标成“准备合并”后，一轮修改在本地改完、检查过再一次推送；PR 什么时候开成草稿、什么时候标准备合并，见[草稿和准备合并](.agents/instructions/delivery-mode.md#draft-then-ready)。
 - 已推送的提交不等于已充分测试的提交。提交说明仍必须写明实际运行了哪些测试层；第 3 层在 PR 或合并之前运行，而不是在每次推送之前。
 
 <a id="test-and-production-hosts"></a>

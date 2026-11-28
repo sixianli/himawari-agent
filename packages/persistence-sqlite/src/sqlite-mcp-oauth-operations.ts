@@ -2,7 +2,6 @@ import { createHash, randomBytes } from "node:crypto";
 import {
   MCP_CONNECTION_MAXIMUM,
   MCP_CONNECTION_PUSH_POLICIES,
-  MCP_CONNECTION_READ_CEILINGS,
   type McpConnectionRecord,
   type McpConnectionScope,
 } from "@himawari-agent/application/mcp-connections";
@@ -262,7 +261,6 @@ export class SqliteMcpOAuthOperations {
       typeof connection?.id !== "string" ||
       !MCP_CONNECTION_ID_PATTERN.test(connection.id) ||
       !validConnectionName(connection.name) ||
-      !oneOf(MCP_CONNECTION_READ_CEILINGS, connection.readCeiling) ||
       !oneOf(MCP_CONNECTION_PUSH_POLICIES, connection.pushPolicy)
     )
       return this.invalid();
@@ -303,7 +301,7 @@ export class SqliteMcpOAuthOperations {
           `INSERT INTO mcp_connections (
             id, owner_id, agent_id, name, secret_sha256, capabilities, read_ceiling, push_policy,
             status, reported_client, created_at, updated_at, secret_rotated_at, last_seen_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', NULL, ?, ?, NULL, NULL)`,
+          ) VALUES (?, ?, ?, ?, ?, ?, 'sensitive', ?, 'active', NULL, ?, ?, NULL, NULL)`,
         )
         .run(
           connection.id,
@@ -312,7 +310,6 @@ export class SqliteMcpOAuthOperations {
           connection.name,
           createHash("sha256").update(randomBytes(32)).digest("hex"),
           sortedCapabilities(["mcp"]),
-          connection.readCeiling,
           connection.pushPolicy,
           input.now,
           input.now,

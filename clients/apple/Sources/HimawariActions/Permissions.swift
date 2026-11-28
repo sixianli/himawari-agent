@@ -26,10 +26,10 @@ public struct CalendarPermission: DevicePermission {
 
     public var purpose: LocalizedLine {
         entity == .event
-            ? line("你让 Himawari 建、改、删日程时，它在这台 iPhone 的日历里替你做，做完读回来核对一遍。",
+            ? line("你让 Himawari 建、改、删日程时，Himawari 在这台 iPhone 的日历里替你做，做完读回来核对一遍。",
                    "When you ask Himawari to add, change or delete an event, it does it in this iPhone's Calendar and reads it back to check.",
                    "予定の追加・変更・削除を頼むと、この iPhone のカレンダーで行い、読み返して確認します。")
-            : line("你让 Himawari 记一件事或标成完成时，它在这台 iPhone 的“提醒事项”里替你做，做完读回来核对一遍。",
+            : line("你让 Himawari 记一件事或标成完成时，Himawari 在这台 iPhone 的“提醒事项”里替你做，做完读回来核对一遍。",
                    "When you ask Himawari to add a reminder or mark one done, it does it in this iPhone's Reminders and reads it back to check.",
                    "リマインダーの追加や完了を頼むと、この iPhone の「リマインダー」で行い、読み返して確認します。")
     }
@@ -61,7 +61,7 @@ public struct ContactsPermission: DevicePermission {
     public var name: LocalizedLine { line("通讯录", "Contacts", "連絡先") }
     public var settingsPath: LocalizedLine { SettingsPath.app }
     public var purpose: LocalizedLine {
-        line("你让 Himawari 改某个联系人的电话、邮箱或公司时，它在这台 iPhone 的通讯录里替你改，改之前先存一份原样。",
+        line("你让 Himawari 改某个联系人的电话、邮箱或公司时，Himawari 在这台 iPhone 的通讯录里替你改，改之前先存一份原样。",
              "When you ask Himawari to change a contact's phone, email or company, it does it in this iPhone's Contacts and saves how it was first.",
              "連絡先の電話・メール・会社の変更を頼むと、この iPhone の連絡先で行い、変更前の状態を先に保存します。")
     }

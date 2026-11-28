@@ -28,6 +28,7 @@ import {
   type GatewayAuthenticationContext,
   type GatewayV2InboundMessage,
   GMAIL_SOURCE,
+  isModelVisible,
   MAIL_INBOX_SOURCE_KIND,
   type McpMemorySyncStorePort,
   type OwnerIdentityStatePort,
@@ -64,6 +65,7 @@ import {
 import {
   CloudflareAccessJwtVerifier as AccessJwtVerifier,
   APP_CONNECTIONS_CALLBACK_PATH,
+  APP_CONNECTIONS_CLIENT_METADATA_PATH,
   assertProductionSecretSource,
   assertUnixSocketPathLength,
   authenticateHttpRequest,
@@ -139,6 +141,7 @@ import {
   ProductionDataExportControl,
   registerDataExportRoute,
 } from "./production-data-export.js";
+import { deviceChatModels } from "./production-device-chat-models.js";
 import {
   PRODUCTION_DEVICE_OPERATIONS,
   ProductionDeviceControl,
@@ -219,6 +222,10 @@ import {
   readServerDisk,
   readServerRelease,
 } from "./production-server-status-control.js";
+import {
+  type OwnerSettingsGatewayPort,
+  ProductionOwnerSettingsGateway,
+} from "./production-settings-gateway.js";
 import { createProductionSpeech } from "./production-speech.js";
 import {
   PRODUCTION_SPOKEN_DECISION_OPERATIONS,
@@ -405,6 +412,7 @@ export interface ProductionHttpComposition {
   readonly metrics: RuntimeMetricsRegistry;
   readonly home: Pick<ProductionHomeControl, "awaitingCount">;
   readonly perception: Pick<PerceptionService, "reserveModelCost">;
+  readonly ownerSettings: OwnerSettingsGatewayPort;
   listen(): Promise<string>;
   close(): Promise<void>;
 }
@@ -749,7 +757,9 @@ function deviceConnections(
           ? proactive.completeAppAuthorization(input)
           : Promise.resolve("failed"),
     disconnect: async ({ connection }) =>
-      apps?.definition(connection) ? apps.disconnect(connection) : undefined,
+      apps && (await apps.definition(connection)) ? apps.disconnect(connection) : undefined,
+    add: async (input) => apps?.add(input),
+    remove: async ({ connection }) => apps?.remove(connection),
   };
 }
 
@@ -757,6 +767,12 @@ export function registerAppConnectionRoutes(
   app: FastifyInstance,
   connections: ProductionAppConnections,
 ): void {
+  app.get(APP_CONNECTIONS_CLIENT_METADATA_PATH, async (_request, reply) =>
+    reply
+      .header("cache-control", "public, max-age=300")
+      .type("application/json")
+      .send(JSON.stringify(connections.clientMetadataDocument())),
+  );
   app.get(APP_CONNECTIONS_CALLBACK_PATH, async (request, reply) => {
     const query = request.query as Record<string, unknown>;
     const text = (key: string) =>
@@ -994,6 +1010,11 @@ export async function createProductionHttpComposition(
       chatModel?.input.includes("image") ??
       false,
   });
+  const deviceModels = deviceChatModels({
+    catalog: options.modelCatalog,
+    configuration,
+    preferences: repository.ownerPreferences(),
+  });
   const speech = createProductionSpeech(configuration, (ref, version) =>
     secretSources.provider.resolve(ref, version),
   );
@@ -1182,7 +1203,8 @@ export async function createProductionHttpComposition(
       if (
         !model ||
         !model.thinkingLevels.includes(selection.thinkingLevel) ||
-        !descriptor?.allowedDataClassifications.some((value) => value === classification)
+        !descriptor ||
+        !isModelVisible(classification)
       )
         throw new ApplicationPortError(
           PORT_ERROR_CODES.NOT_AUTHORITATIVE,
@@ -1986,6 +2008,7 @@ export async function createProductionHttpComposition(
       home: { resolveAction: (input) => home.resolveAction(input) },
       configuration: () => deviceConfiguration,
       chatAttachments: () => chatAttachments,
+      ...(deviceModels ? { chatModels: deviceModels } : {}),
       recordVoiceTiming: (input) => recordVoiceTiming(input),
       listVoiceTiming: (limit) => listVoiceTiming(limit),
       audit: repository.auditLedger(),
@@ -2114,6 +2137,17 @@ export async function createProductionHttpComposition(
     metrics,
     home,
     perception,
+    ownerSettings: new ProductionOwnerSettingsGateway({
+      ownerId,
+      gateway: gatewayV2,
+      sessions: sessionsState,
+      authority: () => ({
+        agentId,
+        deploymentId: configuration.deploymentId,
+        authorityEpoch: authority.authorityEpoch,
+        fencingToken: authority.fencingToken,
+      }),
+    }),
     listen: async () => {
       if (unixSocketPath === undefined) {
         const address = await app.listen({

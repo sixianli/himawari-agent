@@ -61,7 +61,7 @@ describe("[P5-C] sync_memories storage and deletion rules", () => {
         registration: "dynamic",
         clientName: `接入-${id}`,
         redirectUris: ["http://127.0.0.1/callback"],
-        newConnection: { id, name: `接入-${id}`, readCeiling: "private", pushPolicy: "ask" },
+        newConnection: { id, name: `接入-${id}`, pushPolicy: "ask" },
         now: NOW,
       });
       return id;
@@ -276,7 +276,7 @@ describe("[P5-C] sync_memories storage and deletion rules", () => {
     });
   });
 
-  it("checks the category hint and judges sensitivity itself", async () => {
+  it("[I-129] checks the category hint and treats health entries like any other", async () => {
     const { sync, first, raw } = await setup();
     const result = await sync.sync(
       { id: first, entry: OAUTH },
@@ -295,7 +295,7 @@ describe("[P5-C] sync_memories storage and deletion rules", () => {
       "invalid",
       "invalid",
       "pending",
-      "pending",
+      "awaiting_project_approval",
     ]);
     expect(result.entries[1]).toMatchObject({
       reason: "category_unknown",
@@ -312,13 +312,13 @@ describe("[P5-C] sync_memories storage and deletion rules", () => {
         .prepare("SELECT classification FROM external_memory_proposals WHERE category = 'health'")
         .get(),
     ).toEqual({
-      classification: "sensitive",
+      classification: "private",
     });
     expect(
       raw.prepare("SELECT state, classification FROM mcp_sync_entries WHERE stable_id = 'e'").get(),
     ).toEqual({
-      state: "awaiting_confirmation",
-      classification: "sensitive",
+      state: "awaiting_project_approval",
+      classification: "private",
     });
   });
 
@@ -769,7 +769,7 @@ describe("[P5-C] sync_memories storage and deletion rules", () => {
       ]);
     });
 
-    it("declining also refuses a sensitive note already waiting for confirmation, and later ones", async () => {
+    it("[I-129] saves a health note as soon as its project is approved, without a second confirmation", async () => {
       const harness = await setup();
       await harness.sync.sync(
         { id: harness.first, entry: OAUTH },
@@ -778,6 +778,7 @@ describe("[P5-C] sync_memories storage and deletion rules", () => {
       const store = harness.repository.mcpMemorySync();
       const before = await store.overview({ ...scope, limit: 50 });
       const projectId = before.entries[0]?.projectId as string;
+      expect(stateOf(harness.raw)).toEqual(["awaiting_project_approval"]);
       await store.decideProject({
         ...scope,
         connectionId: harness.first,
@@ -785,25 +786,12 @@ describe("[P5-C] sync_memories storage and deletion rules", () => {
         decision: "approve",
         now: NOW,
       });
-      expect(stateOf(harness.raw)).toEqual(["awaiting_confirmation"]);
-      await store.decideProject({
-        ...scope,
-        connectionId: harness.first,
-        projectId,
-        decision: "decline",
-        now: NOW,
-      });
-      expect(stateOf(harness.raw)).toEqual(["refused"]);
-      const entryId = (await store.overview({ ...scope, limit: 50 })).entries[0]?.entryId as string;
-      expect(await store.decideNote({ ...scope, entryId, decision: "confirm", now: NOW })).toEqual({
-        found: true,
-        state: "refused",
-      });
+      expect(stateOf(harness.raw)).toEqual(["active"]);
       await harness.sync.sync(
         { id: harness.first, entry: OAUTH },
         { entries: [note("s2", "另一份体检记录", "甲", { category: "health" })] },
       );
-      expect(stateOf(harness.raw)).toEqual(["refused", "refused"]);
+      expect(stateOf(harness.raw)).toEqual(["active", "active"]);
     });
 
     it("answers not found for a project or note that is not there or belongs to nothing", async () => {

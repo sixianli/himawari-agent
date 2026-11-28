@@ -144,6 +144,52 @@ describe("[vault-approval] device API", () => {
   });
 });
 
+describe("[vault-approval] verification codes the owner types on the phone", () => {
+  it("lists the waiting request and hands the typed code to the task, once", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    const waiting = h.vault.requestCode({
+      ...scope,
+      origin: BANK,
+      purpose: "招商银行发到你手机的短信验证码",
+    });
+    await vi.waitFor(() => expect(h.vaultNotified).toHaveLength(1), { timeout: 10_000 });
+    const listed = await send(
+      h,
+      signedRequest(h, client, { method: "GET", path: "/api/device/v1/vault/codes" }),
+    );
+    expect(listed.statusCode).toBe(200);
+    const requests = (listed.json() as { requests: { id: string; origin: string }[] }).requests;
+    expect(requests).toMatchObject([{ origin: BANK, purpose: "招商银行发到你手机的短信验证码" }]);
+    const id = requests[0]?.id as string;
+    const answered = await post(h, client, "vault/codes/answer", {
+      requestId: id,
+      code: "48-29 10",
+    });
+    expect(answered.status, JSON.stringify(answered.body)).toBe(200);
+    await expect(waiting).resolves.toEqual({ kind: "answered", code: "482910" });
+    const again = await post(h, client, "vault/codes/answer", { requestId: id, code: "111111" });
+    expect(again.status).toBe(410);
+    const empty = await send(
+      h,
+      signedRequest(h, client, { method: "GET", path: "/api/device/v1/vault/codes" }),
+    );
+    expect((empty.json() as { requests: unknown[] }).requests).toEqual([]);
+    await h.repository.close();
+  });
+
+  it("declining ends the wait without a code", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    const waiting = h.vault.requestCode({ ...scope, origin: BANK, purpose: "邮件验证码" });
+    await vi.waitFor(() => expect(h.vaultNotified).toHaveLength(1), { timeout: 10_000 });
+    const id = h.vaultNotified[0] as string;
+    expect((await post(h, client, "vault/codes/decline", { requestId: id })).status).toBe(200);
+    await expect(waiting).resolves.toEqual({ kind: "declined" });
+    await h.repository.close();
+  });
+});
+
 describe("[vault-recovery] device API", () => {
   it("a revoked phone can no longer approve", async () => {
     const h = await harness();

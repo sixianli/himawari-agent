@@ -3,11 +3,6 @@ import HimawariDesign
 import SwiftUI
 
 public struct MemoryRootView: View {
-    enum Tab: Hashable {
-        case remembered
-        case rules
-    }
-
     enum SearchState: Equatable {
         case idle
         case searching
@@ -18,18 +13,14 @@ public struct MemoryRootView: View {
     enum Opening: Equatable {
         case memory(String)
         case edit(String)
-        case rule(String)
     }
 
     @State private var store: MemoryStore
-    @State private var tab: Tab = .remembered
     @State private var selected: MemoryItem?
     @State private var editing: MemoryItem?
     @State private var pendingEdit: MemoryItem?
-    @State private var pendingMemory: String?
     @State private var detailHeight: CGFloat = 0
     @State private var actionFailed = false
-    @State private var selectedRule: RuleSummary?
     @State private var trashOpen = false
     @State private var query = ""
     @State private var search = SearchState.idle
@@ -43,9 +34,8 @@ public struct MemoryRootView: View {
         opening = nil
     }
 
-    init(store: MemoryStore, tab: Tab = .remembered, opening: Opening? = nil, talk: @escaping (String) -> Void = { _ in }) {
+    init(store: MemoryStore, opening: Opening? = nil, talk: @escaping (String) -> Void = { _ in }) {
         _store = State(initialValue: store)
-        _tab = State(initialValue: tab)
         self.opening = opening
         self.talk = talk
     }
@@ -54,10 +44,9 @@ public struct MemoryRootView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 if Self.trimmed(query).isEmpty {
-                    MemorySegment(selection: $tab)
                     content
                 } else {
-                    MemorySearchList(store: store, query: Self.trimmed(query), state: search, openMemory: { selected = $0 }, openRule: { selectedRule = $0 })
+                    MemorySearchList(store: store, query: Self.trimmed(query), state: search) { selected = $0 }
                 }
             }
             .padding(.horizontal, DesignTokens.Size.pagePaddingX)
@@ -110,31 +99,6 @@ public struct MemoryRootView: View {
             .presentationCornerRadius(DesignTokens.Radius.sheetTop)
             .presentationBackground(Color.hmBackground)
         }
-        .sheet(item: $selectedRule, onDismiss: openPendingMemory) { rule in
-            RuleDetailSheet(
-                rule: rule,
-                close: { selectedRule = nil },
-                respond: { action in
-                    Task {
-                        let reason = action == "undo" ? M.confirmUndoRule : M.confirmReconfirmRule
-                        if await perform({ try await store.respond(rule, action: action, reason: reason) }) {
-                            selectedRule = nil
-                        }
-                    }
-                },
-                talk: {
-                    selectedRule = nil
-                    talk(M.ruleDraft(rule.summary))
-                },
-                openMemory: { id in
-                    pendingMemory = id
-                    selectedRule = nil
-                }
-            )
-            .presentationDetents([.large])
-            .presentationCornerRadius(DesignTokens.Radius.sheetTop)
-            .presentationBackground(Color.hmBackground)
-        }
         .alert(M.actionFailed, isPresented: $actionFailed) {}
         .navigationDestination(isPresented: $trashOpen) {
             MemoryTrashPage(store: store) { trashOpen = false }
@@ -156,7 +120,7 @@ public struct MemoryRootView: View {
         do {
             let hits = try await store.search(text)
             guard !Task.isCancelled else { return }
-            search = .found(hits)
+            search = .found(hits.filter { !$0.isRule })
         } catch {
             guard !Task.isCancelled else { return }
             search = .failed
@@ -168,15 +132,8 @@ public struct MemoryRootView: View {
         switch opening {
         case .memory(let id): selected = memories.first { $0.memoryId == id }
         case .edit(let id): editing = memories.first { $0.memoryId == id }
-        case .rule(let id): selectedRule = store.rules.first { $0.ruleId == id }
         case nil: break
         }
-    }
-
-    private func openPendingMemory() {
-        guard let id = pendingMemory else { return }
-        pendingMemory = nil
-        open(.memory(id))
     }
 
     private func openPendingEdit() {
@@ -201,24 +158,14 @@ public struct MemoryRootView: View {
     }
 
     @ViewBuilder private var content: some View {
-        switch (store.phase, tab) {
-        case (.loading, _):
+        switch store.phase {
+        case .loading:
             ProgressView().frame(maxWidth: .infinity, minHeight: DesignTokens.Size.emptyMinHeight)
-        case (.failed, _):
+        case .failed:
             EmptyStateView(Text(M.loadFailed)).frame(minHeight: DesignTokens.Size.emptyMinHeight)
-        case (.loaded, .remembered):
+        case .loaded:
             RememberedList(store: store, openTrash: { trashOpen = true }) { selected = $0 }
-        case (.loaded, .rules):
-            RuleList(rules: store.rules) { selectedRule = $0 }
         }
-    }
-}
-
-struct MemorySegment: View {
-    @Binding var selection: MemoryRootView.Tab
-
-    var body: some View {
-        SegmentPicker(selection: $selection, options: [(.remembered, M.remembered), (.rules, M.rules)])
     }
 }
 
@@ -227,7 +174,6 @@ struct MemorySearchList: View {
     let query: String
     let state: MemoryRootView.SearchState
     let openMemory: (MemoryItem) -> Void
-    let openRule: (RuleSummary) -> Void
 
     var body: some View {
         switch state {
@@ -248,11 +194,8 @@ struct MemorySearchList: View {
     }
 
     @ViewBuilder private func row(_ hit: MemorySearchHit) -> some View {
-        let detail = hit.isRule ? M.rules : M.category(hit.category)
-        if hit.isRule, let rule = store.rule(hit.ruleId) {
-            Button { openRule(rule) } label: { MemoryRow(text: hit.text, detail: detail) }
-                .buttonStyle(.pressable)
-        } else if let item = store.memory(hit.memoryId) {
+        let detail = M.category(hit.category)
+        if let item = store.memory(hit.memoryId) {
             Button { openMemory(item) } label: { MemoryRow(text: hit.text, detail: detail) }
                 .buttonStyle(.pressable)
         } else {
@@ -326,31 +269,5 @@ struct MemoryRow: View {
         .padding(.vertical, DesignTokens.Size.rowGap)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
-    }
-}
-
-struct RuleList: View {
-    let rules: [RuleSummary]
-    let open: (RuleSummary) -> Void
-
-    var body: some View {
-        if rules.isEmpty {
-            EmptyStateView(Text(M.noRules)).frame(minHeight: DesignTokens.Size.emptyMinHeight)
-        } else {
-            GroupedSection {
-                ForEach(Array(rules.enumerated()), id: \.element.id) { index, rule in
-                    Button { open(rule) } label: {
-                        MemoryRow(text: rule.summary, detail: status(rule))
-                    }
-                    .buttonStyle(.pressable)
-                    if index < rules.count - 1 { RowSeparator() }
-                }
-            }
-        }
-    }
-
-    private func status(_ rule: RuleSummary) -> String? {
-        if rule.status == "needs_review" { return M.ruleNeedsReview }
-        return rule.enforced ? nil : M.rulePaused
     }
 }

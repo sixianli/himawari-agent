@@ -61,39 +61,6 @@
       "outputs": ["json", "artifact"]
     },
     {
-      "id": "browser",
-      "needs": ["build"],
-      "timeoutMinutes": 90,
-      "members": [
-        {
-          "key": "chromium",
-          "runner": "ubuntu-24.04",
-          "os": "linux",
-          "arch": "x64",
-          "node": "22.22.3",
-          "browser": "chromium"
-        },
-        {
-          "key": "firefox",
-          "runner": "ubuntu-24.04",
-          "os": "linux",
-          "arch": "x64",
-          "node": "22.22.3",
-          "browser": "firefox"
-        },
-        {
-          "key": "webkit",
-          "runner": "ubuntu-24.04",
-          "os": "linux",
-          "arch": "x64",
-          "node": "22.22.3",
-          "browser": "webkit"
-        }
-      ],
-      "projects": [],
-      "outputs": ["json", "artifact"]
-    },
-    {
       "id": "tests",
       "needs": ["policy", "build"],
       "timeoutMinutes": 60,
@@ -170,7 +137,7 @@
     },
     {
       "id": "required",
-      "needs": ["policy", "static", "build", "browser", "tests", "tooling", "security"],
+      "needs": ["policy", "static", "build", "tests", "tooling", "security"],
       "timeoutMinutes": 15,
       "members": [
         {
@@ -208,11 +175,14 @@
         "test/integration/openrouter-embedding-live.test.ts",
         "test/integration/jarvis-test/live-round.test.ts",
         "test/integration/memory-retrieval-eval/live.test.ts",
+        "test/integration/memory-benchmark/live.test.ts",
         "test/integration/container-execution-backend-qualification.test.ts",
         "test/integration/container-runtime-restart-qualification.test.ts",
         "test/integration/container-browser-qualification.test.ts",
         "test/integration/container-pi-runner-qualification.test.ts",
-        "test/integration/product-path-browser.test.ts"
+        "test/integration/product-path-browser.test.ts",
+        "test/integration/browser-tool-real-sites.test.ts",
+        "test/integration/browser-vault.test.ts"
       ],
       "fileParallelism": true,
       "workerLimits": {
@@ -277,6 +247,13 @@
       "allowedModifiers": ["skipIf"]
     },
     {
+      "path": "test/integration/memory-benchmark/live.test.ts",
+      "kind": "qualification",
+      "project": "qualification-memory-benchmark-live",
+      "reason": "LoCoMo 和 LongMemEval 记忆基准要逐轮调用真实模型并产生费用，只在显式运行时执行",
+      "allowedModifiers": ["skipIf"]
+    },
+    {
       "path": "test/integration/openrouter-embedding-live.test.ts",
       "kind": "qualification",
       "project": "qualification-embedding-live",
@@ -317,6 +294,20 @@
       "project": "qualification-product-path",
       "reason": "产品路径浏览器 E2E 需要已构建的安装包、本机 Chrome 和沙箱运行时，单次运行十几分钟，只能单独 opt-in",
       "allowedModifiers": ["skip"]
+    },
+    {
+      "path": "test/integration/browser-tool-real-sites.test.ts",
+      "kind": "qualification",
+      "project": "qualification-browser-real-sites",
+      "reason": "浏览器工具访问 en.wikipedia.org、example.com 等真实外网，外网慢或改版会让和本 PR 无关的合并被拦；只在 main 推送后由 real-sites.yml 跑，失败在合进来的 PR 上留言认领",
+      "allowedModifiers": []
+    },
+    {
+      "path": "test/integration/browser-vault.test.ts",
+      "kind": "qualification",
+      "project": "qualification-browser-vault-real-sites",
+      "reason": "浏览器工具用保险箱在真实网站 the-internet.herokuapp.com 上登录和填验证码，外网慢或改版会让和本 PR 无关的合并被拦；只在 main 推送后由 real-sites.yml 跑，失败在合进来的 PR 上留言认领",
+      "allowedModifiers": []
     },
     {
       "path": "test/fixtures/durable-phase-child.test.ts",

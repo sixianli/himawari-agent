@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 import datetime
+import errno
 import hashlib
 import json
 import os
@@ -12,6 +13,7 @@ import stat
 import subprocess
 import sys
 import time
+import traceback
 
 OPS = Path('/opt/himawari/operations/__PKT_LABEL__-__PKT_DATE_COMPACT__')
 EVIDENCE = Path('/var/lib/himawari/__PKT_LABEL__-__PKT_DATE_COMPACT__-evidence')
@@ -321,6 +323,22 @@ def clear_prepare_leftovers(suffix):
     return cleared
 
 
+def unexpected_failure_detail(error):
+    detail = {'type': type(error).__name__}
+    if isinstance(error, OSError):
+        detail['errno'] = errno.errorcode.get(error.errno, error.errno)
+        detail['filename'] = str(error.filename) if error.filename is not None else None
+    elif isinstance(error, KeyError) and error.args and re.fullmatch('[A-Za-z0-9_.-]{1,80}', str(error.args[0])):
+        detail['key'] = str(error.args[0])
+    elif re.fullmatch('[A-Z0-9_]+(:[A-Za-z0-9._-]+)?', str(error)):
+        detail['code'] = str(error)
+    frames = traceback.extract_tb(error.__traceback__)
+    if frames:
+        detail['line'] = frames[-1].lineno
+        detail['function'] = frames[-1].name
+    return detail
+
+
 def main():
     require(len(sys.argv) == 2 and sys.argv[1] == 'S9_RAW_RESTORE51' and sys.executable == '/usr/bin/python3' and sys.flags.isolated == 1 and sys.platform == 'linux' and os.geteuid() == 0 and socket.gethostname() == '__PKT_HOSTNAME__', '__PKT_LABEL_UPPER___S9_EXPLICIT_ROOT_TARGET_REQUIRED')
     require(Path(__file__).resolve() == OPS / 'maintenance/S9-control-files.py', '__PKT_LABEL_UPPER___S9_EXECUTION_PATH_CHANGED')
@@ -404,6 +422,7 @@ def main():
         report['finishedAt'] = utc()
         text = str(error)
         report['failureCode'] = text if re.fullmatch('__PKT_LABEL_UPPER___S9_[A-Z_]+', text) else '__PKT_LABEL_UPPER___S9_UNEXPECTED_FAILURE'
+        report['failureDetail'] = unexpected_failure_detail(error)
         retained = retain_json('s9-control-failure-' + suffix + '.json', report)
         print(json.dumps({'passed': False, 'report': retained, 'automaticRollbackOrStart': False}))
         return 1

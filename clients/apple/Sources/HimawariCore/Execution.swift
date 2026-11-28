@@ -29,6 +29,7 @@ public struct ExecutionRecord: Codable, Sendable, Equatable, Identifiable {
     public let occurredAt: Date
     public let activity: String?
     public let activityIcon: String?
+    public let output: String?
 
     public init(
         id: String,
@@ -40,7 +41,8 @@ public struct ExecutionRecord: Codable, Sendable, Equatable, Identifiable {
         text: String = "",
         occurredAt: Date,
         activity: String? = nil,
-        activityIcon: String? = nil
+        activityIcon: String? = nil,
+        output: String? = nil
     ) {
         self.id = id
         self.sequence = sequence
@@ -52,6 +54,39 @@ public struct ExecutionRecord: Codable, Sendable, Equatable, Identifiable {
         self.occurredAt = occurredAt
         self.activity = activity
         self.activityIcon = activityIcon
+        self.output = output
+    }
+}
+
+public struct RecalledConversation: Sendable, Equatable, Identifiable, Decodable {
+    public let day: String
+    public let conversationId: String
+    public let sequence: Int
+    public let preview: String
+
+    public var id: String { "\(conversationId):\(sequence)" }
+
+    public init(day: String, conversationId: String, sequence: Int, preview: String) {
+        self.day = day
+        self.conversationId = conversationId
+        self.sequence = sequence
+        self.preview = preview
+    }
+
+    public static let recordName = "conversation.recall"
+
+    public static func used(in records: [ExecutionRecord]) -> [RecalledConversation] {
+        let decoder = JSONDecoder()
+        var seen = Set<String>()
+        return records
+            .filter { $0.kind == .status && $0.name == recordName }
+            .sorted { $0.sequence < $1.sequence }
+            .flatMap { record in
+                (record.output ?? "").split(separator: "\n").compactMap { line in
+                    try? decoder.decode(RecalledConversation.self, from: Data(line.utf8))
+                }
+            }
+            .filter { seen.insert($0.id).inserted }
     }
 }
 
@@ -174,11 +209,58 @@ public extension ProcessLine {
         if case let .finished(steps, _) = self { return steps.isEmpty }
         return false
     }
+
+    public var showsInTranscript: Bool {
+        if case .finished = self { return false }
+        return true
+    }
+
+    public var finishedSteps: [ProcessStep]? {
+        if case let .finished(steps, _) = self, !steps.isEmpty { return steps }
+        return nil
+    }
 }
 
 public enum ExecutionRefresh {
     public static func needed(loaded: Bool, runStatus: String?) -> Bool {
         guard loaded, let runStatus else { return true }
         return !ProcessLine.terminalRunStatuses.contains(runStatus)
+    }
+}
+
+public enum TranscriptLayout {
+    public enum Entry: Equatable, Sendable {
+        case message(ThreadMessage)
+        case process(runId: String)
+    }
+
+    public static let unansweredEndings: Set<String> = ["failed", "cancelled"]
+
+    public static func entries(messages: [ThreadMessage], runs: [ThreadRunSummary]) -> [Entry] {
+        let status = Dictionary(runs.map { ($0.runId, $0.status) }, uniquingKeysWith: { _, last in last })
+        let answered = Set(messages.compactMap { $0.role == .agent ? $0.runId : nil })
+        var shown = Set<String>()
+        var entries: [Entry] = []
+        for message in messages {
+            if message.role == .agent, let runId = message.runId, status[runId] != nil, shown.insert(runId).inserted {
+                entries.append(.process(runId: runId))
+            }
+            entries.append(.message(message))
+            if message.role == .owner, let runId = message.runId, let ended = status[runId], !answered.contains(runId),
+               unansweredEndings.contains(ended), shown.insert(runId).inserted {
+                entries.append(.process(runId: runId))
+            }
+        }
+        for run in runs where !shown.contains(run.runId) && !ProcessLine.terminalRunStatuses.contains(run.status) {
+            shown.insert(run.runId)
+            entries.append(.process(runId: run.runId))
+        }
+        return entries
+    }
+
+    public static func line(records: [ExecutionRecord]?, runStatus: String) -> ProcessLine? {
+        if ProcessLine.terminalRunStatuses.contains(runStatus), records == nil, !unansweredEndings.contains(runStatus) { return nil }
+        let line = ProcessLine.make(records: records ?? [], runStatus: runStatus)
+        return line.hasNothingToShow ? nil : line
     }
 }

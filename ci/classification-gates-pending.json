@@ -1,0 +1,59 @@
+{
+  "files": [
+    {
+      "path": "apps/agent-service/src/production-mcp-memory-writer.ts",
+      "count": 3,
+      "reason": "记忆仍按“敏感”分流，第二个 PR 删"
+    },
+    {
+      "path": "apps/control-center/src/components/external-proposals.tsx",
+      "count": 1,
+      "reason": "记忆仍按“敏感”分流，第二个 PR 删"
+    },
+    {
+      "path": "apps/control-center/src/components/memory-page.tsx",
+      "count": 2,
+      "reason": "记忆仍按“敏感”分流，第二个 PR 删"
+    },
+    {
+      "path": "packages/application/src/services/automatic-memory-service.ts",
+      "count": 4,
+      "reason": "记忆仍按“敏感”分流，第二个 PR 删"
+    },
+    {
+      "path": "packages/application/src/services/sandbox-scope-service.ts",
+      "count": 1,
+      "reason": "存储层的完整性校验，不决定模型能看什么"
+    },
+    {
+      "path": "packages/integration-github/src/monitor-control.ts",
+      "count": 1,
+      "reason": "配置解析和旧的允许名单字段，第三个 PR 删"
+    },
+    {
+      "path": "packages/persistence-sqlite/src/sqlite-external-memory-proposal-operations.ts",
+      "count": 2,
+      "reason": "记忆仍按“敏感”分流，第二个 PR 删"
+    },
+    {
+      "path": "packages/persistence-sqlite/src/sqlite-recovery-point.ts",
+      "count": 1,
+      "reason": "存储层的完整性校验，不决定模型能看什么"
+    },
+    {
+      "path": "packages/platform-node/src/strict-configuration.ts",
+      "count": 4,
+      "reason": "配置解析和旧的允许名单字段，第三个 PR 删"
+    },
+    {
+      "path": "packages/testing/src/beef-restaurant-fixture.ts",
+      "count": 2,
+      "reason": "配置解析和旧的允许名单字段，第三个 PR 删"
+    },
+    {
+      "path": "packages/testing/src/conformance/suites.ts",
+      "count": 1,
+      "reason": "配置解析和旧的允许名单字段，第三个 PR 删"
+    }
+  ]
+}

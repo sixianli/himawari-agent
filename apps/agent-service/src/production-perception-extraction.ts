@@ -28,7 +28,7 @@ export interface ProductionPerceptionExtractionOptions {
   readonly model: PerceptionExtractionModel;
   readonly memory: Pick<DurableMemoryService, "applyProposal">;
   readonly memories: Pick<ProductMemoryStatePort, "read">;
-  readonly book: Pick<MemoryBookStorePort, "latestGeneration">;
+  readonly book: Pick<MemoryBookStorePort, "directGeneration">;
   readonly reminders: Pick<ProductionReminderWriter, "list">;
   readonly proposals?: PerceptionProposalPort;
   readonly onEpisode?: PerceptionExtractionOptions["onEpisode"];
@@ -62,7 +62,7 @@ export function createPerceptionExtractionService(
     tag: options.tag,
     memory: options.memory,
     memories: options.memories,
-    generation: () => options.book.latestGeneration(scope),
+    generation: () => options.book.directGeneration(scope),
     storeText: async ({ key, text, dataClassification, createdAt }) => {
       const ref = `memory-content:${key}` as PayloadRef;
       if (!(await payloads.get(ref)))

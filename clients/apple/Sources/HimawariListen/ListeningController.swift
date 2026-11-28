@@ -13,9 +13,18 @@ import UIKit
 
 public enum EnrollmentState: Equatable {
     case idle
+    case preparing
     case recording(EnrollmentProgress)
-    case failed
+    case failed(EnrollmentFailure)
 }
+
+#if os(iOS)
+extension EnrollmentFailure {
+    static func of(_ error: Error) -> EnrollmentFailure {
+        error is SpeechPipelineError ? .speech : .microphone
+    }
+}
+#endif
 
 @MainActor
 @Observable
@@ -43,6 +52,7 @@ public final class ListeningController {
     @ObservationIgnored private let policy: ListeningPolicy
     @ObservationIgnored private var utteranceOpen = false
     @ObservationIgnored private var touchPending = false
+    @ObservationIgnored private var microphoneForEnrollmentOnly = false
     #if os(iOS)
     @ObservationIgnored private var capture: AudioCapture?
     @ObservationIgnored private var pipeline: SpeechPipeline?
@@ -70,6 +80,9 @@ public final class ListeningController {
         ListenCommandCenter.shared.handler = { [weak self] command in
             await self?.perform(command)
         }
+        #if os(iOS)
+        ListenActivities.endExisting()
+        #endif
     }
 
     public static func defaultVoiceprintStore() -> VoiceprintStore {
@@ -114,20 +127,18 @@ public final class ListeningController {
         #if os(iOS)
         do {
             await notices.prepare()
-            capture?.stop(deactivate: true)
-            let capture = AudioCapture()
-            self.capture = capture
-            try capture.configureSession()
-            try await startPipeline(capture)
+            if !microphoneForEnrollmentOnly || capture == nil {
+                try await openMicrophone()
+            }
+            microphoneForEnrollmentOnly = false
             let now = Date()
             apply(session.handle(.ownerStarted(at: now)), at: now)
-            observe(capture)
             schedulePeriodicWork()
             activity.start(state: liveState(phase: .listening, at: now))
             Task { try? await embedder.prepare() }
         } catch {
             problem = String(describing: error)
-            capture?.stop(deactivate: true)
+            closeMicrophone()
         }
         #endif
     }
@@ -175,15 +186,40 @@ public final class ListeningController {
         hasVoiceprint = false
     }
 
-    public func beginEnrollment() {
+    public func beginEnrollment() async {
+        guard enrollment != .preparing else { return }
+        enrollmentDraft = nil
+        enrollment = .preparing
+        #if os(iOS)
+        do {
+            try await embedder.prepare()
+        } catch {
+            enrollment = .failed(.model)
+            return
+        }
+        if !isListening {
+            do {
+                try await openMicrophone()
+                microphoneForEnrollmentOnly = true
+            } catch {
+                closeMicrophone()
+                enrollment = .failed(EnrollmentFailure.of(error))
+                return
+            }
+        }
         let draft = VoiceprintEnrollment(prompts: ListenText.enrollmentPrompts())
         enrollmentDraft = draft
-        enrollment = .recording(EnrollmentProgress(index: 0, total: draft.prompts.count, prompt: draft.prompts[0], levels: Array(VoiceLevels.resting.prefix(27))))
+        levels = VoiceLevels.resting
+        enrollment = .recording(EnrollmentProgress(index: 0, total: draft.prompts.count, prompt: draft.prompts[0], levels: levels))
+        #else
+        enrollment = .failed(.microphone)
+        #endif
     }
 
     public func skipEnrollment() {
         enrollmentDraft = nil
         enrollment = .idle
+        if microphoneForEnrollmentOnly { closeMicrophone() }
     }
 
     private func apply(_ transition: ListeningTransition, at now: Date) {
@@ -225,6 +261,19 @@ public final class ListeningController {
     }
 
     private func tearDown() {
+        if enrollmentDraft != nil || enrollment == .preparing {
+            enrollmentDraft = nil
+            enrollment = .idle
+        }
+        closeMicrophone()
+        #if os(iOS)
+        activity.end()
+        #endif
+        live = nil
+    }
+
+    private func closeMicrophone() {
+        microphoneForEnrollmentOnly = false
         for task in tasks { task.cancel() }
         tasks.removeAll()
         #if os(iOS)
@@ -235,9 +284,7 @@ public final class ListeningController {
         let pipeline = pipeline
         self.pipeline = nil
         Task { await pipeline?.finish() }
-        activity.end()
         #endif
-        live = nil
     }
 
     private func returnToListening() {
@@ -253,6 +300,15 @@ public final class ListeningController {
     }
 
     #if os(iOS)
+    private func openMicrophone() async throws {
+        closeMicrophone()
+        let capture = AudioCapture()
+        self.capture = capture
+        try capture.configureSession()
+        try await startPipeline(capture)
+        observe(capture)
+    }
+
     private func startPipeline(_ capture: AudioCapture) async throws {
         let locale = Locale(identifier: Locale.preferredLanguages.first ?? "zh-Hans")
         let created = try await SpeechPipeline.make(preferred: locale, sensitivity: .medium)
@@ -280,16 +336,30 @@ public final class ListeningController {
     }
 
     private func feed(_ captured: CapturedBuffer) {
-        guard session.isCapturing else { return }
+        guard session.isCapturing || microphoneForEnrollmentOnly else { return }
         pipeline?.feed(captured.buffer)
         window.append(captured.buffer)
         if live?.phase == .calling || enrollmentDraft != nil, let level = AudioCapture.dbfs(captured.buffer) {
             let unit = max(0, min(1, (level + 60) / 60))
             levels = Array((levels + [unit]).suffix(levels.count))
+            if case let .recording(progress) = enrollment {
+                enrollment = .recording(EnrollmentProgress(index: progress.index, total: progress.total, prompt: progress.prompt, levels: levels))
+            }
         }
     }
 
     private func handle(_ event: CaptureEvent) async {
+        if microphoneForEnrollmentOnly {
+            switch event {
+            case .interruptionBegan, .mediaServicesReset:
+                closeMicrophone()
+                enrollmentDraft = nil
+                enrollment = .failed(.interrupted)
+            case .interruptionEnded, .routeChanged:
+                break
+            }
+            return
+        }
         let now = Date()
         switch event {
         case .interruptionBegan:
@@ -379,26 +449,43 @@ public final class ListeningController {
     private func enroll(start: TimeInterval, end: TimeInterval) async {
         guard var draft = enrollmentDraft else { return }
         let samples = window.slice(from: start, to: end)
-        guard let embedding = try? await embedder.embedding(samples: samples, sampleRate: FluidSpeakerEmbedder.sampleRate) else { return }
+        let embedding: [Float]
+        do {
+            embedding = try await embedder.embedding(samples: samples, sampleRate: FluidSpeakerEmbedder.sampleRate)
+        } catch FluidSpeakerEmbedder.Failure.tooShort {
+            if case let .recording(progress) = enrollment {
+                enrollment = .recording(EnrollmentProgress(index: progress.index, total: progress.total, prompt: progress.prompt, levels: levels, tooShort: true))
+            }
+            return
+        } catch {
+            finishEnrollment(.failed(.model))
+            return
+        }
+        guard enrollmentDraft != nil else { return }
         draft.add(embedding)
         if let next = draft.currentIndex {
             enrollmentDraft = draft
-            enrollment = .recording(EnrollmentProgress(index: next, total: draft.prompts.count, prompt: draft.prompts[next], levels: Array(levels.suffix(27))))
+            enrollment = .recording(EnrollmentProgress(index: next, total: draft.prompts.count, prompt: draft.prompts[next], levels: levels))
             return
         }
-        enrollmentDraft = nil
         guard let made = draft.voiceprint(model: embedder.model, at: Date()) else {
-            enrollment = .failed
+            finishEnrollment(.failed(.model))
             return
         }
         do {
             try voiceprints.save(made)
             voiceprint = made
             hasVoiceprint = true
-            enrollment = .idle
+            finishEnrollment(.idle)
         } catch {
-            enrollment = .failed
+            finishEnrollment(.failed(.save))
         }
+    }
+
+    private func finishEnrollment(_ state: EnrollmentState) {
+        enrollmentDraft = nil
+        enrollment = state
+        if microphoneForEnrollmentOnly { closeMicrophone() }
     }
 
     private func ownerScore(_ samples: [Float]) async -> Int? {

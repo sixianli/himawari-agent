@@ -8,6 +8,7 @@ import {
   EXTERNAL_PROPOSAL_REASON_CODES,
   type ExternalMemoryProposalRecord,
   type ExternalMemoryProposalStorePort,
+  isModelVisible,
   type MemoryBookStorePort,
   type MemoryCategory,
   type PayloadProtectorPort,
@@ -20,18 +21,14 @@ import {
 import {
   EXTERNAL_DIRECT_BATCH_PREFIX,
   EXTERNAL_PROPOSAL_TEXT_MAXIMUM,
-  MEMORY_SENSITIVE_CATEGORY_NAMES,
 } from "@himawari-agent/gateway-contracts";
 import { normalizeProposalText, proposalTextDigest } from "@himawari-agent/persistence-sqlite";
 export { EXTERNAL_PROPOSAL_TEXT_MAXIMUM };
 
-import {
-  classificationWithIdentifiers,
-  scanMachineSecrets,
-} from "@himawari-agent/sensitive-capture";
+import { scanMachineSecrets } from "@himawari-agent/sensitive-capture";
 
 type MemoryId = Parameters<ProductMemoryStatePort["read"]>[0];
-type GenerationId = NonNullable<Awaited<ReturnType<MemoryBookStorePort["latestGeneration"]>>>;
+type GenerationId = Awaited<ReturnType<MemoryBookStorePort["directGeneration"]>>;
 
 export const EXTERNAL_PROPOSAL_MEMORY_PREFIX = "memory:mcp:";
 export const EXTERNAL_PROPOSAL_CONTENT_PREFIX = "memory-content:mcp:";
@@ -91,15 +88,6 @@ export function proposalHasMachineSecret(text: string): boolean {
   return scanMachineSecrets(text).length > 0;
 }
 
-export function proposalClassification(
-  text: string,
-  category: ExternalProposalCategory,
-): "private" | "sensitive" {
-  return (MEMORY_SENSITIVE_CATEGORY_NAMES as readonly string[]).includes(category)
-    ? "sensitive"
-    : classificationWithIdentifiers(text, "private");
-}
-
 function sensitiveTopicFor(category: ExternalProposalCategory): SensitiveMemoryTopic {
   return category === "health" || category === "finance" ? category : "other";
 }
@@ -137,7 +125,7 @@ export interface ProductionMcpMemoryWriterOptions {
   readonly configuration: Pick<ProductConfiguration, "ownerId" | "agentId">;
   readonly memory: Pick<DurableMemoryService, "applyProposal">;
   readonly state: Pick<ProductMemoryStatePort, "read" | "listActive">;
-  readonly book: Pick<MemoryBookStorePort, "latestGeneration">;
+  readonly book: Pick<MemoryBookStorePort, "directGeneration">;
   readonly ledger: Pick<DecisionLedgerPort, "append" | "read">;
   readonly proposals: ExternalMemoryProposalStorePort;
   readonly replaced?: (proposalId: string) => Promise<string | null>;
@@ -158,10 +146,6 @@ export class ProductionMcpMemoryWriter {
   #scope() {
     const { ownerId, agentId } = this.#options.configuration;
     return { ownerId, agentId };
-  }
-
-  async ready(): Promise<boolean> {
-    return (await this.#options.book.latestGeneration(this.#scope())) !== undefined;
   }
 
   async submit(input: ExternalProposalSubmission): Promise<{
@@ -197,7 +181,7 @@ export class ProductionMcpMemoryWriter {
     )
       throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, "MEMORY_TEXT_REFUSED");
     const textSha256 = proposalTextDigest(text);
-    const dataClassification = proposalClassification(text, input.category);
+    const dataClassification = "private";
     const scope = this.#scope();
     const contentRef = `${EXTERNAL_PROPOSAL_PENDING_CONTENT_PREFIX}${createHash("sha256")
       .update(
@@ -284,7 +268,7 @@ export class ProductionMcpMemoryWriter {
   ): Promise<"saved" | "existing" | "pending"> {
     return this.#serially(async () => {
       const proposal = await this.#pending(proposalId);
-      if (proposal.status === "pending" && proposal.dataClassification !== "private")
+      if (proposal.status === "pending" && !isModelVisible(proposal.dataClassification))
         return "pending";
       const memoryId = await this.#keep(proposalId, { ...input, direct: true }, digestCache);
       return memoryId === externalProposalMemoryId(proposalId, input.batchId)
@@ -316,9 +300,7 @@ export class ProductionMcpMemoryWriter {
         existing?.status === "active" &&
         CLASSIFICATION_RANK.indexOf(existing.dataClassification) >=
           CLASSIFICATION_RANK.indexOf(
-            proposal.dataClassification === "sensitive"
-              ? "sensitive"
-              : proposalClassification(text, proposal.category),
+            proposal.dataClassification === "sensitive" ? "sensitive" : "private",
           )
           ? linked
           : undefined;
@@ -341,17 +323,9 @@ export class ProductionMcpMemoryWriter {
         const contentRef = `${EXTERNAL_PROPOSAL_CONTENT_PREFIX}${proposal.id}${
           input.batchId === null ? "" : `:${input.batchId}`
         }`;
-        const generation: GenerationId | undefined = await this.#options.book.latestGeneration(
-          this.#scope(),
-        );
-        if (!generation)
-          throw new ApplicationPortError(
-            PORT_ERROR_CODES.INVALID_OPERATION,
-            "MEMORY_GENERATION_MISSING",
-          );
-        const raised = proposalClassification(text, proposal.category);
+        const generation: GenerationId = await this.#options.book.directGeneration(this.#scope());
         const dataClassification =
-          proposal.dataClassification === "sensitive" ? "sensitive" : raised;
+          proposal.dataClassification === "sensitive" ? "sensitive" : "private";
         await this.#storeText(contentRef, text, dataClassification);
         const replacedId = (await this.#options.replaced?.(proposal.id)) ?? null;
         const replaced = replacedId

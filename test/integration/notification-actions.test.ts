@@ -482,6 +482,70 @@ describe("[IOS-4] 登记苹果推送令牌", () => {
     expect(rows()).toHaveLength(3);
   });
 
+  it("后台办事的实时活动单独登记：收启动的令牌和每个活动的更新令牌，传 null 是注销，不进运行的登记表", async () => {
+    const h = await start();
+    const client = await pairAndConfirm(h);
+    const register = (body: Record<string, unknown>) => post(h, client, "push/register", body);
+    const base = {
+      pushType: "liveactivity",
+      activityKind: "background_work",
+      environment: "production",
+      topic: TOPIC,
+      locale: "zh-CN",
+    };
+    const starter = await register({ ...base, token });
+    expect(starter.statusCode, starter.body).toBe(200);
+    expect(starter.json()).toMatchObject({
+      registration: {
+        pushType: "liveactivity",
+        activityKind: "background_work",
+        activityRef: "",
+        status: "active",
+      },
+    });
+    const update = await register({ ...base, activityRef: "sub-1", token: "cd".repeat(40) });
+    expect(update.statusCode).toBe(200);
+    const again = await register({ ...base, activityRef: "sub-1", token: "ef".repeat(32) });
+    expect(again.statusCode).toBe(200);
+    const rows = () =>
+      sql(h, (database) =>
+        database
+          .prepare(
+            "SELECT subthread_id AS subthreadId, token FROM background_work_activities ORDER BY subthread_id",
+          )
+          .all(),
+      );
+    expect(rows()).toEqual([
+      { subthreadId: "", token },
+      { subthreadId: "sub-1", token: "ef".repeat(32) },
+    ]);
+    expect(
+      sql(h, (database) =>
+        database.prepare("SELECT count(*) FROM apns_registrations").pluck().get(),
+      ),
+    ).toBe(0);
+    const removed = await register({
+      pushType: "liveactivity",
+      activityKind: "background_work",
+      activityRef: "sub-1",
+      token: null,
+    });
+    expect(removed.json()).toEqual({ registration: null });
+    expect(rows()).toEqual([{ subthreadId: "", token }]);
+    for (const body of [
+      { ...base, pushType: "alert", token },
+      { ...base, activityKind: "other", token },
+      { ...base, activityRef: "bad ref", token },
+    ]) {
+      const response = await register(body);
+      expect([response.statusCode, response.json()], JSON.stringify(body)).toEqual([
+        400,
+        { error: { code: "DEVICE_PUSH_REQUEST_INVALID" } },
+      ]);
+    }
+    expect(rows()).toHaveLength(1);
+  });
+
   it("不在配置里的 App 标识或环境、格式不对的令牌、多余的字段都被拒，什么都不存", async () => {
     const h = await start();
     const client = await pairAndConfirm(h);

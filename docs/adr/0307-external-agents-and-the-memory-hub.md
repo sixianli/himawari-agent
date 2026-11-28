@@ -66,7 +66,7 @@ Andy 要 Himawari 当他的记忆中心：别的 AI agent（Claude Code、Codex�
 ### 接入
 
 6. 接入不再由主人手动建：对方第一次经主人同意拿到令牌时，服务端按批准页上的设置建一条接入（表 `mcp_connections`），客户端登记记下它绑定的接入；同一个客户端再次授权沿用原来的接入，编号、设置和统计不变。日志、错误和决策记录只写接入编号，不写令牌。`mcp_connections.secret_sha256` 这一列已不使用，新接入填一个随机值（SQLite 删不掉带唯一约束的列）。
-7. 每个接入有：名字、读取上限（`public`、`private`、`sensitive`，默认 `private`）、推送设置 `pushPolicy`（`ask` 先问我，`direct` 直接存；批准页默认选直接存，`MCP_DEFAULT_PUSH_POLICY`，Andy 2026-11-15 定）、状态（在用、暂停、撤销）。在 App 的“接入的 agent”里可以改名、改上限和推送设置、暂停、撤销（网关操作 `mcp.connection.change`）；撤销后这个接入的令牌立刻失效，对方再来要重新经主人同意，并建新的接入。
+7. 每个接入有：名字、推送设置 `pushPolicy`（`ask` 先问我，`direct` 直接存；批准页默认选直接存，`MCP_DEFAULT_PUSH_POLICY`，Andy 2026-11-15 定）、状态（在用、暂停、撤销）。在 App 的“接入的 agent”里可以改名、改推送设置、暂停、撤销（网关操作 `mcp.connection.change`）；撤销后这个接入的令牌立刻失效，对方再来要重新经主人同意，并建新的接入。
 8. 对方自报的客户端名只当附注显示，标“自称”，不当权限。能分清是哪个接入的只有令牌。不写死客户端名单。
 9. 令牌在请求头里，不在网址里，不会留在对方的配置文件或沿途访问日志里。残余风险：动态登记的客户端名字是对方自己写的，可能冒充；应对是批准页标出“未经核实”、显示回调地址的域名，回调指向本机的另外提示。
 
@@ -74,12 +74,12 @@ Andy 要 Himawari 当他的记忆中心：别的 AI agent（Claude Code、Codex�
 
 ### 读
 
-10. 只读工具在一处登记（`MCP_READ_TOOLS`），每个都必须写明读哪些数据源和受不受读取上限管，没写的登记不上（`MCP_READ_TOOL_CEILING_MISSING`）。现有四个，列出时顺序固定，都标为只读：
+10. 只读工具在一处登记（`MCP_READ_TOOLS`），每个都必须写明读哪些数据源，没写的登记不上（`MCP_READ_TOOL_CEILING_MISSING`）。现有四个，列出时顺序固定，都标为只读：
     - `start_here`：一次返回主人概况和习惯（`OwnerProfileService`，2000 字预算，带内容摘要当版本号）、正在执行的主人规则摘要（每条一句话、不带参数，1200 字预算）、今天的情况；固定的在前，会变的在后，键顺序固定。
     - `find_memories`：调用聊天里 `recall` 用的同一套检索。可选参数 `project` 只搜某个项目的笔记；`auto` 给钩子用，最多 3 条（`AUTO_FIND_LIMIT`），相关度不够就返回空，不带“没找到”这类文字。
     - `today_context`：主人时区的今天日期和时间、48 小时内的提醒、今天和昨天的对话摘要（最多 8 段，只读已生成的，不补生成）；摘要读失败不挡提醒，标 `recentDaysComplete: false`。
-    - `rule_book`：内置规则和主人立的生效中、待重新确认的规则，带编号、版本、作用在哪一步、结果、来源、状态；不给表达式。内置规则带哪些参数由规则自己声明（`RuleRecord.sharedParameters`），主人规则只在出处记忆的分级不高于读取上限时列出。
-11. 四个读工具按接入的读取上限过滤，提醒正文、对话摘要也一样；restricted 永远不给。
+    - `rule_book`：内置规则和主人立的生效中、待重新确认的规则，带编号、版本、作用在哪一步、结果、来源、状态；不给表达式。内置规则带哪些参数由规则自己声明（`RuleRecord.sharedParameters`），主人规则只在出处记忆找得到、而且不是 restricted 时列出。
+11. 所有接入读到的范围一样：健康等存成 sensitive 的内容和普通记忆一样给，只有 restricted（密码、密钥）永远不给，提醒正文、对话摘要也一样（Andy 2026-11-28 定，I-129；原先每个接入有自己的读取上限，默认 `private`，已删掉。数据库里的 `read_ceiling` 列不再读写，新建的接入写 `sensitive`，等以后一次迁移删掉）。
 12. 返回之前把全部文字一起交给 `maskSensitiveTexts` 遮盖（机器密钥、密码、验证码、银行卡号、证件号），一次返回里点名过的密码在别处单独出现也遮；占位符只写类别不带序号，所以同一段文字的遮法不随同批其他内容变。外部 agent 会把内容转给它自己的模型，这一段不经 Himawari 的出口，所以在这里先遮。
 13. 每次交出了内容的读取写一条 `external_read` 决策记录：`reasonCode` 是工具名，`subjectRef` 是接入编号，`inputs.memoryIds` 只写返回了正文的记忆编号，`costMicros` 是算问题向量的钱。决策记录写不进去，这次读取按失败处理，不交出内容。钩子自动搜索空手而归的只在按天统计表里计数，不写决策记录。
 14. 服务带使用说明，同样的触发条件也写进每个工具的描述；这些文字是固定的，登记在提示词目录（`mcp.*`）。它们只发给外部客户端，Himawari 自己发给模型的请求一个字节都不变。
@@ -104,7 +104,7 @@ Andy 要 Himawari 当他的记忆中心：别的 AI agent（Claude Code、Codex�
 ### 待确认和保存
 
 19. 推来的关于主人的内容先进待确认表 `external_memory_proposals`，主人确认后才成为正式记忆（Andy 2026-11-11：“推过来的记忆先让我确认，我觉得 OK 了，再存到我们自己的记忆里面去”）。这张表只有写工具和记忆页的确认操作读写，组装发给模型的内容的代码不读它：没确认的内容不进记忆、不进概况、不进对话请求。
-20. 分级由 Himawari 自己判，不信对方标的种类：健康、财务两类，或正文带证件号这类标识（`classificationWithIdentifiers`），按敏感处理；只升不降。像规则的话（“以后都不要……”）按偏好类记忆进待确认。
+20. 分级由 Himawari 自己判，不信对方标的种类：健康、财务两类，或正文带证件号这类标识（[`classificationWithIdentifiers`](https://github.com/sixianli/himawari-agent/blob/97e905c7a44c6ac0574933695c16b0e501b7f21e/packages/sensitive-capture/src/identifiers.ts)，2026-11-28 已删，见 I-129），按敏感处理；只升不降。像规则的话（“以后都不要……”）按偏好类记忆进待确认。
 21. 去重按正文摘要，不按客户端：同一作用域里除被替换的以外同一摘要只有一行；同样的正文再来，回原来那一行的结论（待确认、已保存过、主人没有同意）。带固定编号的，同一编号带来新正文时旧的待确认标为被替换（`superseded`）；编号按客户端分开，一段正文被几个编号同时指着时，全都换掉才算被替换。待确认最多 1000 条，待确认加 30 天内拒绝和被替换还留正文的合计最多 5000 条，满了不收新正文（回 `mcp.propose-memory-full`）。
 22. 直接存：接入设成 `direct` 时，先照常提交进待确认，再由写入器的 `keepDirect` 在同一把队列锁里检查，敏感的留在待确认，其余按网页确认同一套代码保存，批次号 `batch-direct-` 开头，可以整批撤销。来源写“外部 agent 送来，未经确认直接保存”，决策记录原因码 `mcp_proposal_kept_direct`。依据“边界与可逆性”：敏感内容存错的代价更大。
 23. 网页确认：记忆页最上面一节“来自其他 agent · N 条待确认”（N 是 `status = 'pending'` 的行数，最多列 100 条），可以勾选后整批保存或不要、单条改一下再保存（最多 2000 字）；下面列最近 10 批，每批可以撤销。网关操作 `memory.external.respond`（一次 1 到 500 条）和 `memory.external.undo`。撤销把这批新建的记忆移进回收站，条目回到待确认。保存时用最终正文重算分级；已有一条正文完全相同、分级不低于它的正式记忆时，挂到那条上，不新建。记忆和“保存”决策记录在同一个事务里写（`DurableMemoryService.applyProposal`）。
@@ -188,4 +188,4 @@ Andy 要 Himawari 当他的记忆中心：别的 AI agent（Claude Code、Codex�
 
 - 确认之后的记忆和主人自己在 Himawari 里产生的记忆走同一条路，后面的检索、概况、主动提议不按“它是哪个 agent 推来的”分别处理。
 - 第二、三档仍靠对方模型自觉，产品里如实标为“尽力而为”。
-- 门槛：`test/integration/mcp-read.test.ts`（令牌、遮盖、读取上限）、`test/integration/mcp-connections-store.test.ts`（令牌轮换和重用吊销）、`apps/agent-service/test/production-http-composition.unit.test.ts`（从发现到换令牌、调用、吊销的整条流程）、`npm run check:data-export`（待确认表的导出导入）、`npm run check:prompt-catalog`（工具说明文字）。
+- 门槛：`test/integration/mcp-read.test.ts`（令牌、遮盖、各接入读到的范围）、`test/integration/mcp-connections-store.test.ts`（令牌轮换和重用吊销）、`apps/agent-service/test/production-http-composition.unit.test.ts`（从发现到换令牌、调用、吊销的整条流程）、`npm run check:data-export`（待确认表的导出导入）、`npm run check:prompt-catalog`（工具说明文字）。

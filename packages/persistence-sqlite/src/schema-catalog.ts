@@ -1259,6 +1259,13 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "disabled when Apple reports the token invalid or the device is revoked; removed with the device, Owner or Agent",
   ),
   entry(
+    "background_work_activities",
+    "ApplePushStorePort",
+    "one row per Live Activity of her background work on a paired device: the device's push-to-start token (no subthread), or the update token of one subthread's activity, with the digest and time of the last state pushed; never exported",
+    "metadata_only",
+    "removed when the activity ends or Apple reports the token invalid; removed with the device, Owner or Agent",
+  ),
+  entry(
     "notification_action_tokens",
     "ApplePushStorePort",
     "one row per button on a delivered notification: only the SHA-256 of the one-time token, the action, the device it was issued to, and for approval buttons the approval revision and content fingerprint at issue time; never exported",
@@ -1341,6 +1348,20 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "one row per app the owner connected through its remote MCP server (for example GitHub): the connection name, whether it is connected or needs the owner to sign in again, and when it was connected; the OAuth tokens live only in a protected payload",
     "payload_reference",
     "removed with its payload when the owner disconnects the app",
+  ),
+  entry(
+    "app_connection_apps",
+    "AppConnectionStorePort",
+    "one row per app the owner added by typing its remote MCP server address in the app: the connection name, the shown title, the server address and when it was added",
+    "metadata_only",
+    "removed with the app's tokens and client identity when the owner removes the app",
+  ),
+  entry(
+    "app_connection_clients",
+    "AppConnectionStorePort",
+    "one row per app whose OAuth client identity Himawari holds (typed by the owner, a client ID metadata document or dynamic registration); the client ID, any secret and the issuer live only in a protected payload",
+    "payload_reference",
+    "removed with its payload when the owner removes the app or the issuer changes",
   ),
   entry(
     "decision_ledger",

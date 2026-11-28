@@ -39,6 +39,7 @@ import {
   restorePlaceholders,
 } from "@himawari-agent/sensitive-capture";
 import { judgeOrDefault } from "./auxiliary-judgment.js";
+import { externalContentSourceRefs } from "./context-external-content.js";
 import {
   captureErrorCode,
   createProductionAutomaticMemory,
@@ -50,7 +51,6 @@ import {
   type SupportCheck,
   SupportVerdictCache,
 } from "./production-memory-capture.js";
-import { externalContentSourceRefs } from "./context-external-content.js";
 
 type MemoryId = ProductMemoryRecord["id"];
 type ProductThreadMessage = Awaited<ReturnType<ThreadRepositoryPort["listMessages"]>>[number];
@@ -193,9 +193,7 @@ function jsonObject(output: string): unknown {
 }
 
 function sensitive(candidate: ExtractedMemoryCandidate): boolean {
-  return (
-    candidate.dataClassification === "sensitive" || candidate.dataClassification === "restricted"
-  );
+  return candidate.dataClassification === "restricted";
 }
 
 export function parseConversationReview(input: {

@@ -1,5 +1,8 @@
 import type { ThreadId } from "@himawari-agent/domain";
-import { EGRESS_RULESET_CURRENT } from "@himawari-agent/sensitive-capture";
+import {
+  EGRESS_RULESET_CURRENT,
+  EGRESS_RULESET_FIRST_KEEPS_IDENTIFIERS,
+} from "@himawari-agent/sensitive-capture";
 import { sha256 as sha256Bytes } from "@noble/hashes/sha2.js";
 import { bytesToHex } from "@noble/hashes/utils.js";
 import type { DataClassification } from "../ports/common.js";
@@ -20,6 +23,7 @@ import { canonicalAuthorizationSnapshot } from "./action-intent-snapshot.js";
 import type { RecordTraceInput } from "./session-trace-recorder.js";
 
 export const LEGACY_REDACTION_RULESET = 1;
+export const MINIMUM_THREAD_RULESET = EGRESS_RULESET_FIRST_KEEPS_IDENTIFIERS;
 function storedRuleset(record: ThreadPromptBundleRecord): number {
   const stored = record.identity.redactionRuleset;
   if (stored === undefined || !Number.isSafeInteger(stored) || stored < 1)
@@ -84,6 +88,7 @@ export function promptBundleChange(
   classification: DataClassification,
 ): ThreadPromptBundleOrigin | undefined {
   if (record.supersededAt !== null) return "rebuild_requested";
+  if (storedRuleset(record) < MINIMUM_THREAD_RULESET) return "rebuild_requested";
   if (CLASSIFICATION_RANK[classification] < CLASSIFICATION_RANK[record.dataClassification])
     return "classification_lower";
   if (!sameNames(record.identity.toolNames, identity.toolNames)) return "tool_set_changed";
@@ -265,7 +270,6 @@ export class ThreadPromptBundleService implements RuntimePromptBundlePort {
     latest: ThreadPromptBundleRecord | undefined,
     input: RuntimePromptBundleResolveInput,
   ): number {
-    if (origin === "rollout") return LEGACY_REDACTION_RULESET;
     if (
       origin === "classification_lower" &&
       latest &&

@@ -205,11 +205,13 @@ public struct HandoverSheet: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(EdgeInsets(top: DesignTokens.Handover.fieldPaddingVertical, leading: DesignTokens.Handover.fieldPaddingHorizontal, bottom: DesignTokens.Handover.fieldPaddingVertical, trailing: DesignTokens.Handover.fieldPaddingHorizontal))
                         .background(Color.hmFill, in: RoundedRectangle(cornerRadius: DesignTokens.Handover.fieldRadius, style: .continuous))
+                        .accessibilityIdentifier("handover.sent")
                 }
                 Text(model.note)
                     .hmType(DesignTokens.TypeScale.caption)
                     .foregroundStyle(Color.hmMuted)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, DesignTokens.Handover.noteInset)
             }
             footer
@@ -266,6 +268,7 @@ public struct HandoverSheet: View {
         .hmType(DesignTokens.TypeScale.bubble)
         .foregroundStyle(Color.hmText)
         .lineLimit(3...8)
+        .accessibilityIdentifier("handover.request")
         .focused($typing)
         .disabled(model.phase != .editing)
         .padding(EdgeInsets(top: DesignTokens.Handover.fieldPaddingVertical, leading: DesignTokens.Handover.fieldPaddingHorizontal, bottom: DesignTokens.Handover.fieldPaddingVertical, trailing: DesignTokens.Handover.fieldPaddingHorizontal))
@@ -286,12 +289,13 @@ public struct HandoverSheet: View {
             VStack(spacing: DesignTokens.Handover.outcomeGap) {
                 HStack(spacing: DesignTokens.Size.composerGap + 2) {
                     if model.isDone {
-                        Icon(.check, size: DesignTokens.Handover.doneIcon).foregroundStyle(Color.hmSuccess)
+                        Icon(.check, size: DesignTokens.Handover.doneIcon).foregroundStyle(Color.hmSun)
                     }
                     Text(model.outcomeLine ?? "")
                         .hmType(DesignTokens.TypeScale.body)
                         .foregroundStyle(Color.hmText)
                         .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, minHeight: DesignTokens.Size.pillBig)
                 if let title = model.followUpTitle {
@@ -311,6 +315,6 @@ struct HandoverSheetScene: View {
             Spacer(minLength: 0)
             HandoverSheet(model: model)
         }
-        .ignoresSafeArea(edges: .bottom)
+        .ignoresSafeArea(.container, edges: .bottom)
     }
 }

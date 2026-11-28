@@ -107,10 +107,6 @@ struct MacSettingsView: View {
                 Button(recording ? L.text("pairing.cancel") : L.text("settings.shortcut.record")) { recording ? stopRecording() : startRecording() }
                     .buttonStyle(MacButtonStyle(role: .secondary, height: DesignTokens.Mac.smallButtonHeight, small: true))
             }
-            Text(L.text("settings.elsewhere"))
-                .hmType(DesignTokens.TypeScale.macSmall)
-                .foregroundStyle(Color.hmMuted)
-                .padding(.top, DesignTokens.Mac.statusBadgeGap)
         }
         .padding(.horizontal, DesignTokens.Mac.settingsPaddingX)
         .padding(.vertical, DesignTokens.Mac.inputChipsTop)

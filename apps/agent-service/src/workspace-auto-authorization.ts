@@ -8,10 +8,11 @@ import {
   hostDirectoryGrantStateKey,
   type IdempotentAgentCommand,
   type IdGeneratorPort,
+  isModelVisible,
   type ProductConfiguration,
 } from "@himawari-agent/application";
-import { CapabilityDeploymentSnapshotLoader } from "@himawari-agent/platform-node";
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
+import { CapabilityDeploymentSnapshotLoader } from "@himawari-agent/platform-node";
 import { appendAuditRecord, applyOwnerPolicyAuthorization } from "./owner-policy-authorization.js";
 import { configuredModelDisclosureIdentity } from "./production-model-disclosure.js";
 
@@ -100,10 +101,7 @@ export class WorkspaceAutoAuthorization {
 
   private models(): readonly string[] {
     return (this.options.configuration.modelDescriptors ?? [])
-      .filter(
-        (model) =>
-          model.role !== "embedding" && model.allowedDataClassifications.includes("private"),
-      )
+      .filter((model) => model.role !== "embedding")
       .map(configuredModelDisclosureIdentity)
       .sort();
   }
@@ -204,7 +202,7 @@ export class WorkspaceAutoAuthorization {
       Date.parse(grant.expiresAt) > Date.parse(now) &&
       grant.pathPolicy === "same_filesystem_no_links" &&
       grant.mountPolicy === "fixed_device" &&
-      grant.dataClassification === "private" &&
+      isModelVisible(grant.dataClassification) &&
       ["model", "external_approved"].includes(grant.disclosure) &&
       Number.isSafeInteger(grant.revision) &&
       grant.revision >= 1 &&
@@ -226,7 +224,7 @@ export class WorkspaceAutoAuthorization {
       intent.capabilityVersion !== route.capabilityVersion ||
       !(WORKSPACE_OPERATIONS as readonly string[]).includes(intent.operation) ||
       intent.actionKind === "DELETE" ||
-      intent.dataClassification !== "private" ||
+      !isModelVisible(intent.dataClassification) ||
       intent.credentialOrAccessChange ||
       intent.disclosure !== "named_recipients" ||
       intent.estimatedCostMicros !== 0 ||

@@ -4,6 +4,7 @@ import type {
 } from "../ports/automatic-action-review.js";
 import type { ModelDescriptor, ModelInvocationRequest, ModelPort } from "../ports/intelligence.js";
 import type { ClockPort } from "../ports/system.js";
+import { isModelVisible } from "./model-visibility.js";
 
 type ReviewModelAuthority = Pick<
   ModelInvocationRequest,
@@ -69,10 +70,7 @@ export class ModelActionReviewer implements AutomaticActionReviewerPort {
         throw new Error("AUTOMATIC_REVIEW_MODEL_CHANGED");
       const authority = await d.authorize(request, structuredClone(this.descriptor), cancellation);
       assertCurrent();
-      if (
-        !authority.allowedDisclosureRef ||
-        !this.descriptor.allowedDataClassifications.includes(authority.dataClassification)
-      )
+      if (!authority.allowedDisclosureRef || !isModelVisible(authority.dataClassification))
         throw new Error("AUTOMATIC_REVIEW_DISCLOSURE_DENIED");
       const invocation: ModelInvocationRequest = {
         invocationId: request.reviewId,

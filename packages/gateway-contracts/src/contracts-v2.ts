@@ -431,6 +431,7 @@ const proactiveTextSchema = (maximum: number): Schema<string> => ({
   },
 });
 const proactiveClockSchema: Schema<string> = {
+  describe: () => ({ type: "string", pattern: "^(?:[01]\\d|2[0-3]):[0-5]\\d$" }),
   parse(input, path = "$") {
     if (typeof input !== "string" || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(input))
       throw new ContractValidationError(path, "expected an HH:MM clock time");
@@ -968,10 +969,10 @@ const timersSnapshotSchema = object({
       object({
         timerId: machineString,
         kind: enumeration(["reminder", "follow_up", "recurring"]),
-        title: nullable(boundedString(20)),
-        task: boundedString(4000),
-        ownerWords: nullable(boundedString(4000)),
-        schedule: boundedString(200),
+        title: nullable(codePointString(20)),
+        task: codePointString(4000, { allowLineBreaks: true }),
+        ownerWords: nullable(codePointString(4000, { allowLineBreaks: true })),
+        schedule: codePointString(200),
         createdBy: enumeration(["owner", "agreed", "self"]),
         status: enumeration(["active", "paused", "cancelled", "finished"]),
         nextAt: nullable(timestamp),
@@ -979,7 +980,9 @@ const timersSnapshotSchema = object({
         runCount: integer(0),
         spentMicros: integer(0),
         runBudgetMicros: nullable(integer(1)),
-        lastResult: nullable(object({ text: boundedString(2000), at: timestamp })),
+        lastResult: nullable(
+          object({ text: codePointString(2000, { allowLineBreaks: true }), at: timestamp }),
+        ),
         createdAt: timestamp,
       }),
     ),
@@ -1355,7 +1358,6 @@ const loginDeviceRevokeCommandSchema = object({
   }),
 });
 export const MCP_CONNECTION_STATUS_NAMES = ["active", "paused", "revoked"] as const;
-export const MCP_CONNECTION_READ_CEILING_NAMES = ["public", "private", "sensitive"] as const;
 export const MCP_CONNECTION_PUSH_POLICY_NAMES = ["ask", "direct"] as const;
 export const MCP_CONNECTION_CAPABILITY_NAMES = ["command_hooks", "mcp", "scheduled_tasks"] as const;
 export const MCP_OAUTH_REGISTRATION_NAMES = ["dynamic", "metadata_document"] as const;
@@ -1422,7 +1424,6 @@ const mcpConnectionsSnapshotSchema = object({
         id: machineString,
         name: mcpConnectionNameSchema,
         capabilities: mcpConnectionCapabilitiesSchema,
-        readCeiling: enumeration(MCP_CONNECTION_READ_CEILING_NAMES),
         pushPolicy: enumeration(MCP_CONNECTION_PUSH_POLICY_NAMES),
         status: enumeration(MCP_CONNECTION_STATUS_NAMES),
         reportedClient: nullable(boundedString(64)),
@@ -1452,7 +1453,6 @@ const mcpConnectionChangeCommandSchema = object({
     connectionId: machineString,
     name: nullable(mcpConnectionNameSchema),
     capabilities: nullable(mcpConnectionCapabilitiesSchema),
-    readCeiling: nullable(enumeration(MCP_CONNECTION_READ_CEILING_NAMES)),
     pushPolicy: nullable(enumeration(MCP_CONNECTION_PUSH_POLICY_NAMES)),
     status: nullable(enumeration(MCP_CONNECTION_STATUS_NAMES)),
   }),
@@ -1477,7 +1477,6 @@ const mcpGrantsSnapshotSchema = object({
           object({
             id: machineString,
             name: mcpConnectionNameSchema,
-            readCeiling: enumeration(MCP_CONNECTION_READ_CEILING_NAMES),
             pushPolicy: enumeration(MCP_CONNECTION_PUSH_POLICY_NAMES),
           }),
         ),
@@ -1486,7 +1485,6 @@ const mcpGrantsSnapshotSchema = object({
       }),
     ),
     defaults: object({
-      readCeiling: enumeration(MCP_CONNECTION_READ_CEILING_NAMES),
       pushPolicy: enumeration(MCP_CONNECTION_PUSH_POLICY_NAMES),
     }),
     generatedAt: timestamp,
@@ -1497,7 +1495,6 @@ const mcpGrantApproveCommandSchema = object({
   payload: object({
     grantId: machineString,
     name: nullable(mcpConnectionNameSchema),
-    readCeiling: nullable(enumeration(MCP_CONNECTION_READ_CEILING_NAMES)),
     pushPolicy: nullable(enumeration(MCP_CONNECTION_PUSH_POLICY_NAMES)),
     write: booleanValue,
   }),
@@ -4077,3 +4074,11 @@ export const gatewayV2MessageSchema = Object.freeze({
     return JSON.stringify(parseGatewayV2Message(message));
   },
 });
+
+export function gatewayV2PayloadSchema(type: string): Schema<unknown> | undefined {
+  if (!Object.hasOwn(schemasByType, type)) return undefined;
+  const schema = schemasByType[type as keyof SchemaByType] as Schema<unknown> & {
+    readonly shape?: { readonly payload?: Schema<unknown> };
+  };
+  return schema.shape?.payload;
+}

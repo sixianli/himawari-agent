@@ -5,16 +5,11 @@ on:
     paths:
       - clients/apple/**
       - .github/workflows/testflight.yml
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-    paths:
-      - clients/apple/**
-      - .github/workflows/testflight.yml
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: testflight-${{ github.event.pull_request.number || github.ref }}
+  group: testflight-${{ github.ref }}
   cancel-in-progress: true
 defaults:
   run:
@@ -24,20 +19,9 @@ env:
   HIMAWARI_BUILD_NUMBER: ${{ github.run_number }}
   HIMAWARI_SERVER_ORIGIN: ${{ vars.HIMAWARI_SERVER_ORIGIN }}
 jobs:
-  archive:
-    name: testflight/archive
-    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft != true }}
-    runs-on: macos-26
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-        with:
-          persist-credentials: false
-      - name: 打 Release 归档并核对权限仍在签名里
-        run: clients/apple/scripts/testflight.sh archive
   upload:
     name: testflight/upload
-    if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && github.repository == 'sixianli/himawari-agent' }}
+    if: ${{ github.ref == 'refs/heads/main' && github.repository == 'sixianli/himawari-agent' }}
     runs-on: macos-26
     timeout-minutes: 60
     environment: testflight
@@ -59,9 +43,12 @@ jobs:
           if [ -z "$missing" ]; then
             echo "ready=true" >> "$GITHUB_OUTPUT"
           else
-            echo "::warning::testflight 环境还缺：$missing，这次不上传"
+            echo "::warning::testflight 环境还缺：$missing，这次只归档、核对权限，不上传"
             echo "ready=false" >> "$GITHUB_OUTPUT"
           fi
+      - name: 没有密钥时只打 Release 归档并核对权限仍在签名里
+        if: ${{ steps.keys.outputs.ready != 'true' }}
+        run: clients/apple/scripts/testflight.sh archive
       - name: 归档并上传 TestFlight（苹果云端签名）
         if: ${{ steps.keys.outputs.ready == 'true' }}
         env:
@@ -72,3 +59,21 @@ jobs:
       - name: 写运行摘要
         if: ${{ steps.keys.outputs.ready == 'true' }}
         run: echo "已上传 TestFlight，build 号 $HIMAWARI_BUILD_NUMBER（提交 ${GITHUB_SHA::8}）" >> "$GITHUB_STEP_SUMMARY"
+  claim:
+    name: testflight/claim
+    needs: upload
+    if: ${{ failure() && github.event_name == 'push' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: main 上失败时找出改了苹果客户端的 PR，在 PR 上留言请它的线程认领
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ci/main-claim.mjs testflight.yml apple testflight/upload

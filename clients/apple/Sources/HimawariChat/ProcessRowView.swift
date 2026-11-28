@@ -63,16 +63,16 @@ public struct ProcessRowView: View {
             .animation(.easeInOut(duration: 0.25), value: current.id)
         case let .waiting(step):
             ProcessLineLabel(icon: .handStop, text: step.title.isEmpty ? L.text("process.waiting") : step.title, tint: .hmSun, shimmering: false)
-        case let .finished(steps, seconds):
-            summary(icon: .check, text: L.format("process.didThings", steps.count), steps: steps, seconds: seconds)
-        case let .stopped(steps, seconds):
-            summary(icon: .stop, text: L.text("process.stopped"), steps: steps, seconds: seconds)
-        case let .failed(steps, seconds):
-            summary(icon: .alertCircle, text: L.text("process.failed"), steps: steps, seconds: seconds)
+        case let .finished(steps, _):
+            summary(icon: .check, text: L.format("process.didThings", steps.count), steps: steps)
+        case let .stopped(steps, _):
+            summary(icon: .stop, text: L.text("process.stopped"), steps: steps)
+        case let .failed(steps, _):
+            summary(icon: .alertCircle, text: L.text("process.failed"), steps: steps)
         }
     }
 
-    private func summary(icon: IconName, text: String, steps: [ProcessStep], seconds: Int) -> some View {
+    private func summary(icon: IconName, text: String, steps: [ProcessStep]) -> some View {
         Button {
             showingSteps = true
         } label: {
@@ -81,9 +81,6 @@ public struct ProcessRowView: View {
                 Text(text)
                     .hmType(ProcessRowText.type)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                Text(L.format("process.seconds", seconds))
-                    .hmType(DesignTokens.TypeScale.caption)
-                    .monospacedDigit()
                 if !steps.isEmpty {
                     Icon(.chevronRight, size: DesignTokens.IconSize.chevron)
                 }
@@ -152,8 +149,7 @@ struct ProcessStepsSheet: View {
                     }
                 }
                 .padding(.horizontal, DesignTokens.Size.cardPaddingX)
-                .background(Color.hmSurface, in: RoundedRectangle(cornerRadius: DesignTokens.Radius.card, style: .continuous))
-                .hmShadow(DesignTokens.Shadows.lift)
+                .hmRaised(RoundedRectangle(cornerRadius: DesignTokens.Radius.card, style: .continuous), fill: Color.hmSurface, shadow: DesignTokens.Shadows.lift)
             }
             .scrollIndicators(.hidden)
         }

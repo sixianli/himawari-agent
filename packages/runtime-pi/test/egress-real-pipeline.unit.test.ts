@@ -7,7 +7,7 @@ import { restoreModelStream, withPlaceholderLegend } from "../src/egress-context
 import { testModelEgress } from "./helpers/model-egress.js";
 
 const KEY = ["loopback", "fixture", "key"].join("-");
-const CARD = "4111 1111 1111 1111";
+const PASSWORD = "Qz7mWx42Lp";
 const PLACEHOLDER = /\[(?:密码|验证码|证件号|银行卡 尾号\d{4})#[a-z]{8}\]/u;
 const servers: Server[] = [];
 
@@ -31,7 +31,7 @@ async function loopback(): Promise<{ baseUrl: string; bodies: string[] }> {
     const raw = await readBody(request);
     bodies.push(raw);
     const placeholder = [...raw.matchAll(new RegExp(PLACEHOLDER, "gu"))].at(-1)?.[0] ?? "无";
-    const reply = `你的卡是 ${placeholder} 。`;
+    const reply = `你的密码是 ${placeholder} 。`;
     const cut = Math.max(1, reply.indexOf("#") + 3);
     response.writeHead(200, { "content-type": "text/event-stream" });
     const frame = (delta: Record<string, unknown>, finish?: string) =>
@@ -97,25 +97,25 @@ const user = (text: string) => ({ role: "user" as const, content: text, timestam
 it("masks a real request from the pinned Pi runtime and shows the user the original value", async () => {
   const server = await loopback();
   const events = await run(
-    { systemPrompt: "你是 Himawari", messages: [user(`我的卡号 ${CARD}`)] },
+    { systemPrompt: "你是 Himawari", messages: [user(`我的密码：${PASSWORD}`)] },
     server.baseUrl,
   );
 
   expect(server.bodies).toHaveLength(1);
-  expect(server.bodies[0]).not.toContain(CARD);
+  expect(server.bodies[0]).not.toContain(PASSWORD);
   expect(server.bodies[0]).toMatch(PLACEHOLDER);
 
   const deltas = events.flatMap((event) => (event.type === "text_delta" ? [event.delta] : []));
-  expect(deltas.join("")).toBe(`你的卡是 ${CARD} 。`);
+  expect(deltas.join("")).toBe(`你的密码是 ${PASSWORD} 。`);
   for (const delta of deltas) expect(delta).not.toMatch(/#[a-z]{8}/u);
 
   const done = events.find((event) => event.type === "done");
   expect(done?.type === "done" && done.message.content[0]).toMatchObject({
     type: "text",
-    text: `你的卡是 ${CARD} 。`,
+    text: `你的密码是 ${PASSWORD} 。`,
   });
   const end = events.find((event) => event.type === "text_end");
-  expect(end?.type === "text_end" && end.content).toBe(`你的卡是 ${CARD} 。`);
+  expect(end?.type === "text_end" && end.content).toBe(`你的密码是 ${PASSWORD} 。`);
   for (const event of events) {
     if ("partial" in event) {
       const text = event.partial.content.find((block) => block.type === "text");
@@ -127,13 +127,13 @@ it("masks a real request from the pinned Pi runtime and shows the user the origi
 it("masks the restored reply to the same bytes on the next turn, so the cached prefix holds", async () => {
   const server = await loopback();
   const first = await run(
-    { systemPrompt: "S", messages: [user(`我的卡号 ${CARD}`)] },
+    { systemPrompt: "S", messages: [user(`我的密码：${PASSWORD}`)] },
     server.baseUrl,
   );
   const done = first.find((event) => event.type === "done");
   if (done?.type !== "done") throw new Error("no done event");
   await run(
-    { systemPrompt: "S", messages: [user(`我的卡号 ${CARD}`), done.message, user("谢谢")] },
+    { systemPrompt: "S", messages: [user(`我的密码：${PASSWORD}`), done.message, user("谢谢")] },
     server.baseUrl,
   );
 
@@ -142,14 +142,14 @@ it("masks the restored reply to the same bytes on the next turn, so the cached p
     role: string;
     content: string;
   }[];
-  expect(server.bodies[1]).not.toContain(CARD);
+  expect(server.bodies[1]).not.toContain(PASSWORD);
   expect(JSON.stringify(turnTwo.slice(0, turnOne.length))).toBe(JSON.stringify(turnOne));
   expect(turnTwo[2]?.content).toMatch(PLACEHOLDER);
 });
 
 it("sends the same bytes for the same conversation on every call", async () => {
   const server = await loopback();
-  const context = { systemPrompt: "S", messages: [user(`卡 ${CARD}，验证码 482910`)] };
+  const context = { systemPrompt: "S", messages: [user(`密码：${PASSWORD}，验证码 482910`)] };
   await run(context, server.baseUrl);
   await run(context, server.baseUrl);
   expect(server.bodies[0]).toBe(server.bodies[1]);

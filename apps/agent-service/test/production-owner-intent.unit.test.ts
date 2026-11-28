@@ -48,17 +48,20 @@ const source = (sequence: number): RunExecutionSource =>
     payloadRef: `ref:${sequence}`,
   }) as never;
 
-it("[ADR-0257] sends only the owner's own sendable words: no agent text, no sensitive or secret-looking messages, nothing after the triggering message", async () => {
+it("[ADR-0257][I-129] sends only the owner's own words, health and card numbers included: no agent text, no password or key, nothing after the triggering message", async () => {
   const messages = [
     message(1, "帮我看看这个网页"),
     message(2, "好的，我读了这个网页", { role: "agent" }),
     message(3, "我的健康情况不好", { dataClassification: "sensitive" }),
     message(4, "我的银行卡是 4111 1111 1111 1111"),
-    message(5, "明天九点提醒我给房东回电话"),
-    message(6, "之后才说的话"),
+    message(5, "我的密码是 Tr0ub4dor&3xyz"),
+    message(6, "明天九点提醒我给房东回电话"),
+    message(7, "之后才说的话"),
   ];
-  expect(await collectOwnerWords(dependencies(messages), source(5))).toEqual([
+  expect(await collectOwnerWords(dependencies(messages), source(6))).toEqual([
     "帮我看看这个网页",
+    "我的健康情况不好",
+    "我的银行卡是 4111 1111 1111 1111",
     "明天九点提醒我给房东回电话",
   ]);
 });

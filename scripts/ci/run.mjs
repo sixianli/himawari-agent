@@ -12,7 +12,6 @@ import {
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
-import { runBrowser } from "./browser.mjs";
 import { build } from "./build.mjs";
 import { resolvePolicySource } from "./check-policy.mjs";
 import { runSecurityChecks } from "./check-security.mjs";
@@ -28,7 +27,6 @@ import {
 } from "./contracts.mjs";
 import { prepareCoverageComparison, retainComparisonEvidence } from "./coverage-comparison.mjs";
 import { coverageProjects, strategyDigest, validateCoveragePolicy } from "./coverage-model.mjs";
-import { planTestScope, zeroCounts } from "./test-scope.mjs";
 import { execute, sumCounts, vitestCounts } from "./execute.mjs";
 import { startHostLoad } from "./host-load.mjs";
 import { isolatedEnvironment, verifyInstalledTools } from "./install-tools.mjs";
@@ -36,6 +34,7 @@ import { artifactPlatformKey, hostArch, hostOs } from "./platforms.mjs";
 import { observeResources } from "./resources.mjs";
 import { redactText } from "./security-redaction.mjs";
 import { runTests } from "./test.mjs";
+import { planTestScope, zeroCounts } from "./test-scope.mjs";
 import { cacheEnvironment } from "./verified-download.mjs";
 import { verifyArtifact } from "./verify-artifact.mjs";
 
@@ -101,7 +100,7 @@ export async function runCheck({
     (checkId !== "tests" || baselineCandidate !== "initial-only")
   )
     throw new Error("CI_INITIAL_BASELINE_CANDIDATE_OPTION_INVALID");
-  if (["build", "browser", "tests"].includes(checkId)) artifactPlatformKey();
+  if (["build", "tests"].includes(checkId)) artifactPlatformKey();
   const directory = outputPath(output, root);
   const source = resolvePolicySource({ root, base: context.baseSha });
   if (!source.policy.events.includes(context.event)) throw new Error("CI_EVENT_UNSUPPORTED");
@@ -111,7 +110,7 @@ export async function runCheck({
   if (existsSync(directory)) throw new Error("CI_OUTPUT_ALREADY_EXISTS");
   if (artifact && (!existsSync(artifact) || !statSync(artifact).isFile()))
     throw new Error("CI_ARTIFACT_INVALID");
-  if (["browser", "tests"].includes(checkId) && !artifact) throw new Error("CI_ARTIFACT_REQUIRED");
+  if (checkId === "tests" && !artifact) throw new Error("CI_ARTIFACT_REQUIRED");
   mkdirSync(directory, { recursive: true });
   json(path.join(directory, "context.json"), context);
   const started = performance.now();
@@ -269,11 +268,20 @@ export async function runCheck({
         "scripts/ci/check-policy.mjs",
         "--base",
         context.baseSha,
+        "--part",
+        "workflows",
       ]);
       await command("toolchain", tools.node, ["scripts/ci/install-tools.mjs", "--check"]);
       if (check.projects.length) await vitest(check.projects);
       else result.counts = { files: 2, executed: 2, passed: 2, failed: 0, skipped: 0 };
     } else if (checkId === "tooling") {
+      await command("policy-tests", tools.node, [
+        "scripts/ci/check-policy.mjs",
+        "--base",
+        context.baseSha,
+        "--part",
+        "tests",
+      ]);
       await vitest(check.projects, relatedScope(check.projects));
     } else if (checkId === "static") {
       await command("check", tools.node, [tools.npmCli, "run", "check"]);
@@ -285,7 +293,9 @@ export async function runCheck({
         ".github/workflows/merge-queue.yml",
         ".github/workflows/pr-closed.yml",
         ".github/workflows/apple.yml",
+        ".github/workflows/ci-cache.yml",
         ".github/workflows/docs-drift.yml",
+        ".github/workflows/real-sites.yml",
       ]);
       await command("diff", "git", ["diff", "--check"]);
       result.counts = { files: 3, executed: 3, passed: 3, failed: 0, skipped: 0 };
@@ -306,12 +316,19 @@ export async function runCheck({
         skipped: 0,
       };
       for (const entry of security.checks)
-        if (entry.status !== "passed")
+        if (entry.status !== "passed") {
           process.stdout.write(
             redactText(
               `security scan ${entry.id}: ${entry.status}${/^[A-Z_]+$/.test(entry.error ?? "") ? ` ${entry.error}` : ""}\n`,
             ),
           );
+          for (const finding of entry.blocking ?? [])
+            process.stdout.write(
+              redactText(
+                `security finding ${entry.id} ${finding.id} ${finding.path}${finding.line ? `:${finding.line}` : ""}${finding.scope ? ` ${finding.scope}` : ""}${finding.commit ? ` ${finding.commit.slice(0, 12)}` : ""}\n`,
+              ),
+            );
+        }
       if (security.status !== "passed") {
         result.status = security.status;
         throw new Error("CI_SECURITY_FAILED");
@@ -497,44 +514,30 @@ export async function runCheck({
         );
         if (!measured.baseline) throw new Error("CI_INITIAL_BASELINE_CANDIDATE_UNMEASURED");
       }
-    } else {
+    } else if (checkId === "build") {
       const previous = process.env;
       process.env = env;
       try {
-        let outcome;
-        if (checkId === "build") {
-          outcome = await build({
-            root,
-            output: path.join(directory, "build"),
-            context,
-            cleanupCoordinator: resourceObserver.withPausedSampling,
-          });
-        } else {
-          outcome = await runBrowser({
-            root,
-            artifact,
-            output: path.join(directory, "browser"),
-            context,
-            engine: member.browser,
-            port: 0,
-          });
-        }
+        const outcome = await build({
+          root,
+          output: path.join(directory, "build"),
+          context,
+          cleanupCoordinator: resourceObserver.withPausedSampling,
+        });
         result.counts = outcome.counts;
         result.projects = outcome.projects ?? [];
         for (const report of outcome.reports) if (report.kind !== "artifact") files.push(report);
-        if (["build", "browser"].includes(checkId)) {
-          const archive = outcome.archive ?? outcome.artifact?.path ?? artifact;
-          const retained = path.join(directory, path.basename(archive));
-          if (path.resolve(archive) !== retained) copyFileSync(archive, retained);
-          const entry = reportEntry(retained, "artifact", directory);
-          files.push({ path: retained, kind: "artifact" });
-          result.artifacts.push({
-            role: checkId === "build" ? "produced" : "consumed",
-            platform: artifactPlatformKey(),
-            path: entry.path,
-            sha256: entry.sha256,
-          });
-        }
+        const archive = outcome.archive ?? outcome.artifact?.path ?? artifact;
+        const retained = path.join(directory, path.basename(archive));
+        if (path.resolve(archive) !== retained) copyFileSync(archive, retained);
+        const entry = reportEntry(retained, "artifact", directory);
+        files.push({ path: retained, kind: "artifact" });
+        result.artifacts.push({
+          role: "produced",
+          platform: artifactPlatformKey(),
+          path: entry.path,
+          sha256: entry.sha256,
+        });
         if (outcome.exitCode !== 0) {
           result.status = "failed";
           result.exitCode =
@@ -596,6 +599,22 @@ export async function runCheck({
   return result;
 }
 
+export function failureLines(result, details) {
+  if (result.status === "passed") return [];
+  const commands = (details?.commands ?? [])
+    .filter((command) => command.exitCode !== 0)
+    .map(
+      (command) =>
+        `CI_CHECK_COMMAND ${command.name} exit=${command.exitCode}${command.error ? ` error=${command.error}` : ""}${command.termination ? ` termination=${command.termination}` : ""}`,
+    );
+  const failures = (details?.failures ?? []).map((failure) => `CI_CHECK_FAILURE ${failure}`);
+  return [
+    `CI_CHECK_STATUS ${result.checkId}/${result.matrixKey} ${result.status}`,
+    ...commands,
+    ...failures,
+  ].map((line) => redactText(line));
+}
+
 export async function main(argv = process.argv.slice(2)) {
   const args = parseArguments(argv, [
     "--check",
@@ -653,6 +672,9 @@ export async function main(argv = process.argv.slice(2)) {
   process.stdout.write(
     `${result.checkId}/${result.matrixKey}: ${result.status} (${result.counts.passed} passed, ${result.counts.failed} failed)\n`,
   );
+  const detailsPath = path.join(outputPath(args["--output"]), "details.json");
+  const details = existsSync(detailsPath) ? readJson(detailsPath) : null;
+  for (const line of failureLines(result, details)) process.stdout.write(`${line}\n`);
   process.exitCode = result.exitCode;
   return result;
 }

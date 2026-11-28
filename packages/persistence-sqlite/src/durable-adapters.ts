@@ -23,8 +23,8 @@ import type {
   InboxStorePort,
   LedgerObservationPort,
   McpConnectionStorePort,
-  McpOAuthStorePort,
   McpMemorySyncStorePort,
+  McpOAuthStorePort,
   MemoryBookStorePort,
   MemoryCaptureBacklogPort,
   MemoryCheckupStorePort,
@@ -975,6 +975,7 @@ export class SqliteDurableAdapters {
       setProfilePin: (input) => this.context.write("memoryBook.setProfilePin", input),
       listProfilePins: (scope) => this.context.read("memoryBook.listProfilePins", scope),
       latestGeneration: (scope) => this.context.read("memoryBook.latestGeneration", scope),
+      directGeneration: (scope) => this.context.write("memoryBook.directGeneration", scope),
       listInactive: (input) => this.context.read("memory.listInactive", input),
       listExpiredTrash: (input) => this.context.read("memoryBook.listExpiredTrash", input),
       listSubCategories: (scope) => this.context.read("memoryBook.listSubCategories", scope),
@@ -1243,6 +1244,11 @@ export class SqliteDurableAdapters {
       save: (input) => this.context.write("appConnections.save", input),
       mark: (input) => this.context.write("appConnections.mark", input),
       remove: (input) => this.context.write("appConnections.remove", input),
+      listApps: (input) => this.context.read("appConnections.listApps", input),
+      addApp: (input) => this.context.write("appConnections.addApp", input),
+      removeApp: (input) => this.context.write("appConnections.removeApp", input),
+      readClient: (input) => this.context.read("appConnections.readClient", input),
+      saveClient: (input) => this.context.write("appConnections.saveClient", input),
     });
   }
   ownerPreferences(): OwnerPreferencesStorePort {
@@ -1352,6 +1358,14 @@ export class SqliteDurableAdapters {
       setCompanion: (input) => this.context.write("applePush.setCompanion", input),
       listActivityRuns: (input) => this.context.read("applePush.listActivityRuns", input),
       readActivityRuns: (input) => this.context.read("applePush.readActivityRuns", input),
+      saveBackgroundActivity: (input) =>
+        this.context.write("applePush.saveBackgroundActivity", input),
+      removeBackgroundActivity: (input) =>
+        this.context.write("applePush.removeBackgroundActivity", input),
+      listBackgroundActivities: (input) =>
+        this.context.read("applePush.listBackgroundActivities", input),
+      markBackgroundActivity: (input) =>
+        this.context.write("applePush.markBackgroundActivity", input),
       prune: (input) => this.context.write("applePush.prune", input),
     });
   }

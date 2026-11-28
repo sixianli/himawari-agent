@@ -1,17 +1,5 @@
 [
   {
-    "file": "Sources/HimawariListen/ListenEntry.swift",
-    "code": "color-literal",
-    "count": 1,
-    "why": "收听功能的界面早于 2026-11-12 的设计令牌，颜色和尺寸还是写死的；收听界面重做时一并清掉"
-  },
-  {
-    "file": "Sources/HimawariListen/ListenEntry.swift",
-    "code": "number-literal",
-    "count": 1,
-    "why": "收听功能的界面早于 2026-11-12 的设计令牌，颜色和尺寸还是写死的；收听界面重做时一并清掉"
-  },
-  {
     "file": "Sources/HimawariListen/ListenEvalKitView.swift",
     "code": "color-literal",
     "count": 1,
@@ -56,31 +44,37 @@
   {
     "file": "Sources/HimawariListenUI/ListenLiveViews.swift",
     "code": "color-literal",
-    "count": 26,
+    "count": 18,
     "why": "收听功能的界面早于 2026-11-12 的设计令牌，颜色和尺寸还是写死的；收听界面重做时一并清掉"
   },
   {
     "file": "Sources/HimawariListenUI/ListenLiveViews.swift",
     "code": "fixed-font",
-    "count": 14,
+    "count": 9,
     "why": "收听功能的界面早于 2026-11-12 的设计令牌，颜色和尺寸还是写死的；收听界面重做时一并清掉"
   },
   {
     "file": "Sources/HimawariListenUI/ListenLiveViews.swift",
     "code": "number-literal",
-    "count": 44,
+    "count": 31,
     "why": "收听功能的界面早于 2026-11-12 的设计令牌，颜色和尺寸还是写死的；收听界面重做时一并清掉"
   },
   {
     "file": "Sources/HimawariListenUI/ListenSheets.swift",
     "code": "fixed-font",
-    "count": 6,
+    "count": 5,
     "why": "收听功能的界面早于 2026-11-12 的设计令牌，颜色和尺寸还是写死的；收听界面重做时一并清掉"
   },
   {
     "file": "Sources/HimawariListenUI/ListenSheets.swift",
     "code": "number-literal",
-    "count": 19,
+    "count": 18,
     "why": "收听功能的界面早于 2026-11-12 的设计令牌，颜色和尺寸还是写死的；收听界面重做时一并清掉"
+  },
+  {
+    "file": "Sources/HimawariShell/DemoScenes.swift",
+    "code": "app-color-scheme",
+    "count": 1,
+    "why": "只给示例场景用：无障碍审计启动 App 时带 -HimawariDemoAppearance dark，靠它真正切到深色（GitHub 的 Mac 模拟器不跟着 XCUIDevice.appearance 切，见事故 I-121）；正式 App 不带这个参数，照样跟随系统外观"
   }
 ]

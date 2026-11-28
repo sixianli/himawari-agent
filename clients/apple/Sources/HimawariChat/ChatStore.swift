@@ -249,28 +249,20 @@ public final class ChatStore {
 
     public func processLine(for runId: String, in threadId: String) -> ProcessLine? {
         guard let run = run(runId, in: threadId) else { return nil }
-        let records = executions[runId]
-        let line = ProcessLine.make(records: records ?? [], runStatus: run.status)
-        if ProcessLine.terminalRunStatuses.contains(run.status) && records == nil { return nil }
-        return line.hasNothingToShow ? nil : line
+        return TranscriptLayout.line(records: executions[runId], runStatus: run.status)
+    }
+
+    public func recalledConversations(for runId: String) -> [RecalledConversation] {
+        RecalledConversation.used(in: executions[runId] ?? [])
     }
 
     public func transcript(in threadId: String) -> [TranscriptItem] {
-        let messages = messages(in: threadId)
-        let runs = details[threadId]?.runs ?? []
-        var shown = Set<String>()
-        var items: [TranscriptItem] = []
-        for message in messages {
-            if message.role == .agent, let runId = message.runId, !shown.contains(runId), runs.contains(where: { $0.runId == runId }) {
-                shown.insert(runId)
-                items.append(.process(runId: runId))
+        TranscriptLayout.entries(messages: messages(in: threadId), runs: details[threadId]?.runs ?? []).map { entry in
+            switch entry {
+            case let .message(message): .message(message)
+            case let .process(runId): .process(runId: runId)
             }
-            items.append(.message(message))
         }
-        for run in runs where !shown.contains(run.runId) && !ProcessLine.terminalRunStatuses.contains(run.status) {
-            items.append(.process(runId: run.runId))
-        }
-        return items
     }
 
     public func showExecution(_ runId: String, in threadId: String) async {

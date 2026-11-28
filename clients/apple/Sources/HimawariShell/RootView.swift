@@ -9,7 +9,7 @@ import HimawariShare
 import SwiftUI
 
 public struct HimawariRootView: View {
-    @State private var model = AppModel()
+    @State private var model = AppModel.launched
     @Environment(\.scenePhase) private var scenePhase
 
     public init() {}
@@ -35,9 +35,11 @@ public struct HimawariRootView: View {
             #endif
         }
         .dismissesKeyboardOnOutsideTap()
+        .tint(Color.hmSun)
     }
 
     @State private var handoverEntry: HandoverEntryLink?
+    @State private var otpauthImport: VaultOTPAuthImport?
 
     private var app: some View {
         Group {
@@ -54,6 +56,12 @@ public struct HimawariRootView: View {
             NavigationStack {
                 HandoverEntryRoute(link.entry, safariURL: model.vault.pairingRecord()?.origin)
             }
+        }
+        .onOpenURL { url in
+            if model.phase == .active, let link = VaultOTPAuthImport(url: url) { otpauthImport = link }
+        }
+        .sheet(item: $otpauthImport) { link in
+            VaultOTPAuthImportView(api: model.api, confirmKey: model.confirmKey, link: link) { otpauthImport = nil }
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { model.becameActive() }
@@ -79,6 +87,7 @@ struct MainShell: View {
     @State private var herListenOpen = false
     @State private var herOpensDevices = false
     @State private var herHighlightsDevice: String?
+    @State private var herVoiceprintOpen = false
     #if os(iOS)
     @State private var dictation = ChatDictation()
     @State private var talkSession: ChatTalkSession
@@ -161,6 +170,20 @@ struct MainShell: View {
             herOpensDevices = true
             herOpen = true
         }
+        .agentGrantPrompt(
+            api: model.api,
+            confirmKey: model.confirmKey,
+            requested: NotificationRouter.shared.agentGrantRequested
+        ) {
+            NotificationRouter.shared.agentGrantRequested = false
+        }
+        .vaultPrompt(
+            api: model.api,
+            confirmKey: model.confirmKey,
+            requested: NotificationRouter.shared.vaultRequested
+        ) {
+            NotificationRouter.shared.vaultRequested = false
+        }
         #endif
     }
 
@@ -201,6 +224,7 @@ struct MainShell: View {
             listening: listening,
             actions: actions,
             openListening: { herListenOpen = true },
+            openVoiceprint: { herVoiceprintOpen = true },
             senses: model.senses.map { senses in
                 AnyView(SensesView(model: senses) { HandoverEntryRows() })
             },
@@ -228,6 +252,12 @@ struct MainShell: View {
         .sheet(isPresented: $herListenOpen) {
             if let listening {
                 ListenEntrySheet(controller: listening) { herListenOpen = false }
+                    .presentationCornerRadius(DesignTokens.Radius.sheetTop)
+            }
+        }
+        .sheet(isPresented: $herVoiceprintOpen) {
+            if let listening {
+                VoiceprintEnrollScreen(controller: listening) { herVoiceprintOpen = false }
                     .presentationCornerRadius(DesignTokens.Radius.sheetTop)
             }
         }
