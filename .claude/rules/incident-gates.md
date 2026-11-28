@@ -25,6 +25,8 @@
 - `Incident-follow-up: I-<编号>`：同一次事故的后续修改（例如同一个 PR 里的第二个提交），不再算一次。
 - `Incident: none`：和任何事故无关。只要这次修改起因于上面“什么算数”里的任何一种情况（包括一次失败的自动上线），就不得写 `none`，先在清单里新加一行或找到原有那一行。
 
+两个分支各自给新事故取了同一个编号、先合进 main 的占了这个号时，后合的一方要改用新编号；它已推送的提交不能改写，所以在一个新提交里加一行 `Incident-renumbered: <提交哈希> I-<旧编号> I-<新编号>`，把那个提交的那一次从旧编号挪到新编号下计数。哈希对不上旧编号下计数的提交时，检查报 `INCIDENT_RENUMBER_UNMATCHED`。
+
 程序门槛：
 
 - 提交钩子 `scripts/git-hooks/commit-msg` 运行 `node scripts/check-incident-gates.mjs --commit-msg`：没有事故标记、写法不对、或写的编号清单里没有，提交直接失败。
