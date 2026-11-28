@@ -38,6 +38,15 @@ enum DemoApp {
         return element.isHittable
     }
 
+    static func barTitle(_ app: XCUIApplication) -> String? {
+        guard let bar = try? app.navigationBars.firstMatch.snapshot() else { return nil }
+        return bar.identifier
+    }
+
+    static func showing(_ row: XCUIElement, under title: String?, in app: XCUIApplication) -> Bool {
+        barTitle(app) == title && canTap(row, in: app)
+    }
+
     static func scrollUntilOnScreen(_ element: XCUIElement, in app: XCUIApplication, swipes: Int = 10) -> Bool {
         for _ in 0..<swipes {
             if onScreen(element, in: app) { return true }
@@ -65,25 +74,26 @@ enum DemoApp {
                 XCTFail("\(label): could not scroll to the row on \(name)")
                 continue
             }
+            let title = barTitle(app)
             row.tap()
-            guard waitUntil(timeout: 5, { !canTap(row, in: app) }) else {
+            guard waitUntil(timeout: 5, { !showing(row, under: title, in: app) }) else {
                 XCTFail("\(label): tapping the row on \(name) opened nothing")
                 continue
             }
             var way = "edge swipe"
             swipeBackFromTheLeftEdge(app)
-            if !waitUntil(timeout: 3, { canTap(row, in: app) }) {
+            if !waitUntil(timeout: 3, { showing(row, under: title, in: app) }) {
                 let back = app.navigationBars.firstMatch.buttons.firstMatch
                 if back.exists, back.isHittable {
                     way = "back button \(back.label)"
                     back.tap()
                 }
             }
-            if !waitUntil(timeout: 3, { canTap(row, in: app) }) {
+            if !waitUntil(timeout: 3, { showing(row, under: title, in: app) }) {
                 way = "swipe down"
                 app.swipeDown(velocity: .fast)
             }
-            XCTAssertTrue(waitUntil(timeout: 5) { canTap(row, in: app) }, "\(label): a swipe from the left edge, the back button and a swipe down all failed to go back to \(name)")
+            XCTAssertTrue(waitUntil(timeout: 5) { showing(row, under: title, in: app) }, "\(label): a swipe from the left edge, the back button and a swipe down all failed to go back to \(name)")
             print("UI_ROW_OPENED \(label) back=\(way)")
         }
     }
