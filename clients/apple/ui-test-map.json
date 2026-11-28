@@ -164,15 +164,24 @@
       ]
     },
     {
-      "feature": "后台在办：入口、详情、子线程、往来记录",
+      "feature": "后台在办：入口胶囊、列表、子线程、往来记录",
       "scenes": [
         "next-8-background",
         "next-8-background-none",
         "next-8-background-sheet",
         "next-8-background-subthread",
-        "next-8-background-exchanges",
-        "next-8-background-quiet"
+        "next-8-background-exchanges"
       ],
+      "checks": "有后台事时聊天顶上出现胶囊、没有时不出现，点开能关；列表里每个子线程点开都有页面、能回来；往来记录点一下展开、再点收起",
+      "tests": [
+        "HimawariUITests/BackgroundWorkTests/testTheCapsuleOpensBackgroundWorkAndShowsOnlyWhenThereIsSome",
+        "HimawariUITests/BackgroundWorkTests/testEverySubthreadInBackgroundWorkOpensAPageYouCanGoBackFrom",
+        "HimawariUITests/BackgroundWorkTests/testTheExchangesOpenAndClose"
+      ]
+    },
+    {
+      "feature": "后台在办：“报销”子线程页",
+      "scenes": ["next-8-background-quiet"],
       "uncovered": "还没有操作这个功能的 UI 测试"
     },
     {
@@ -182,7 +191,12 @@
         "next-7-delete-perception-days",
         "next-7-delete-perception-episode"
       ],
-      "uncovered": "还没有操作这个功能的 UI 测试"
+      "checks": "左滑一段经历先问再删，取消不删、确认后报删了几条；按经历和按天能来回切；经历详情页删整段先问、确认后报删了几条",
+      "tests": [
+        "HimawariUITests/PerceptionDeletionTests/testSwipingAnEpisodeAsksFirstAndCancelKeepsIt",
+        "HimawariUITests/PerceptionDeletionTests/testTheSegmentsSwitchBetweenEpisodesAndDays",
+        "HimawariUITests/PerceptionDeletionTests/testDeletingAWholeEpisodeAsksFirst"
+      ]
     },
     {
       "feature": "登录和连接服务器",
@@ -242,15 +256,21 @@
       "uncovered": "还没有操作这个功能的 UI 测试"
     },
     {
-      "feature": "分享给 Himawari：分享面板、回答、排队、入口关闭、移除、未登录",
+      "feature": "分享给 Himawari：分享面板、交过之后、入口开关",
+      "scenes": ["19-senses-6-share-sheet", "19-senses-6b-share-answered", "19-senses-share-entry"],
+      "checks": "分享面板里能接着打字、交之前有“交给 Himawari”钮；交过之后不能再改、钮没了；“让别的 App 能交给 Himawari”开关能关能开（演示里点“交给 Himawari”不会真交出去）",
+      "tests": [
+        "HimawariUITests/ShareToHimawariTests/testTheShareSheetTakesWhatYouTypeAndLocksOnceHandedOver",
+        "HimawariUITests/ShareToHimawariTests/testTheShareSwitchTurnsOffAndBackOn"
+      ]
+    },
+    {
+      "feature": "分享给 Himawari：排队、入口关闭、设备被移除、未登录",
       "scenes": [
-        "19-senses-6-share-sheet",
-        "19-senses-6b-share-answered",
         "19-senses-6c-share-queued",
         "19-senses-6d-share-entry-off",
         "19-senses-6e-share-removed",
-        "19-senses-6f-share-unpaired",
-        "19-senses-share-entry"
+        "19-senses-6f-share-unpaired"
       ],
       "uncovered": "还没有操作这个功能的 UI 测试"
     },

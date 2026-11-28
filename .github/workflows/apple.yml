@@ -81,7 +81,7 @@ jobs:
           -quiet
       - name: 等模拟器开机完成
         run: xcrun simctl bootstatus "${{ steps.simulator.outputs.udid }}" -b
-      - name: 在示例场景里真点、真滑、真打字的 UI 测试（聊天输入框、断连提示、Himawari 页和设置各页、位置一直允许开关）
+      - name: 在示例场景里真点、真滑、真打字的 UI 测试（聊天输入框、断连提示、Himawari 页和设置各页、位置一直允许开关、删除感知记录、后台在办、分享给 Himawari）
         run: >-
           set -o pipefail;
           xcodebuild test-without-building
@@ -93,6 +93,9 @@ jobs:
           -only-testing:HimawariUITests/ChatComposerTests
           -only-testing:HimawariUITests/SettingsPagesTests
           -only-testing:HimawariUITests/SensesPageTests
+          -only-testing:HimawariUITests/PerceptionDeletionTests
+          -only-testing:HimawariUITests/BackgroundWorkTests
+          -only-testing:HimawariUITests/ShareToHimawariTests
           -resultBundlePath feature-ui-tests.xcresult
           | tee feature-ui-tests.log
           | grep -E 'UI_|error:|Test Case .* (passed|failed)|\*\* TEST'
