@@ -5,6 +5,7 @@ import SwiftUI
 public protocol ChatVoiceInput: AnyObject, Sendable {
     func start(onText: @escaping @MainActor (String) -> Void) async throws
     func finish() async -> String
+    func cancel() async
 }
 
 public enum TalkPhase: Equatable, Sendable {
