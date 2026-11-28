@@ -6,6 +6,7 @@ import {
   type GovernedActionIntent,
   type IdempotentAgentCommand,
   type IdGeneratorPort,
+  isModelVisible,
   PORT_ERROR_CODES,
   type ProductConfiguration,
   webProviderEgress,
@@ -59,10 +60,7 @@ export class PublicSearchAuthorization {
   }
   private models() {
     return (this.options.configuration.modelDescriptors ?? [])
-      .filter(
-        (model) =>
-          model.role !== "embedding" && model.allowedDataClassifications.includes("private"),
-      )
+      .filter((model) => model.role !== "embedding")
       .map(configuredModelDisclosureIdentity);
   }
   private agreedRecipients(state: SearchAuthorizationState) {
@@ -227,7 +225,7 @@ export class PublicSearchAuthorization {
       intent.sideEffect !== "none" ||
       intent.credentialOrAccessChange ||
       intent.disclosure !== "named_recipients" ||
-      intent.dataClassification !== "private" ||
+      !isModelVisible(intent.dataClassification) ||
       intent.estimatedCostMicros !== 0 ||
       intent.recipients.length !== recipients.length + 1 ||
       !recipients.every((value) => intent.recipients.includes(value)) ||

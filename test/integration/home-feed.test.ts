@@ -1031,13 +1031,13 @@ describe.each(["worker", "direct"] as const)("home feed through %s", (execution)
         .prepare("UPDATE memory_records SET status = 'trashed' WHERE id = ?")
         .run("memory-rule-immigration"),
     );
-    expect((await f.control.rulesNeedingReview())[0]?.dataClassification).toBe("sensitive");
+    expect((await f.control.rulesNeedingReview())[0]?.dataClassification).toBe("private");
     f.sql((handle) =>
       handle
         .prepare("UPDATE rule_book_rules SET source_memory_id = NULL WHERE rule_id = ?")
         .run("owner:immigration"),
     );
-    expect((await f.control.rulesNeedingReview())[0]?.dataClassification).toBe("sensitive");
+    expect((await f.control.rulesNeedingReview())[0]?.dataClassification).toBe("private");
   });
 
   it("shows unattended runs and failures without counting them, and never an empty sentence", async () => {

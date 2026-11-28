@@ -39,9 +39,9 @@ describe("approval display facts", () => {
     const shown = await build({
       threadId: "thread-1",
       tool: "bash",
-      arguments: { command: `${"x".repeat(52)} 4111 1111 1111 1111 ${"y".repeat(100)}` },
+      arguments: { command: `${"x".repeat(44)} 密码：Qz7mWx42LpRs8Tv ${"y".repeat(100)}` },
     })();
-    expect(shown.bodyPreview).not.toContain("4111");
+    expect(shown.bodyPreview).not.toContain("Qz7m");
     expect([...(shown.bodyPreview ?? "")].length).toBeLessThanOrEqual(61);
     expect(shown.origin).toEqual({ threadId: "thread-1", threadTitle: "周五去大阪" });
     expect(shown.displayTitle).toBeNull();

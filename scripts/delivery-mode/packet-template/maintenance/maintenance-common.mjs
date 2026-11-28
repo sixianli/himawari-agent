@@ -264,6 +264,19 @@ export function readCatalogState(binding, { prepared = false, upgraded = false, 
   }
 }
 
+export function sameHolderSinceFreeze(observed, frozen, code = "__PKT_LABEL_UPPER___MAINTENANCE_DB_AUTHORITY_CHANGED") {
+  assert.deepEqual({ ...observed, fencingToken: frozen.fencingToken }, frozen, code);
+  assert(Number.isSafeInteger(observed.fencingToken) && observed.fencingToken >= frozen.fencingToken, code);
+  return observed;
+}
+
+export function withAuthorityAtStop(binding) {
+  const filename = `${evidenceRoot}/s3-copy-before__PKT_CURRENT_SCHEMA__.json`;
+  safeFile(filename, [fixed.uid]);
+  const observed = JSON.parse(readFileSync(filename, "utf8")).authority;
+  return { ...binding, authority: sameHolderSinceFreeze(observed, binding.authority, "__PKT_LABEL_UPPER___MAINTENANCE_STOPPED_AUTHORITY_CHANGED") };
+}
+
 export function readPreUpgradeAuthorization(binding) {
   requireStopped();
   const current = readCatalogState(binding);
@@ -967,6 +980,8 @@ export async function readMaintenanceState(binding, prefix = newPrefix, allowSta
       assert(state.authority.fencingToken >= binding.authority.fencingToken, "__PKT_LABEL_UPPER___MAINTENANCE_ROLLBACK_CURRENT_FENCING_INVALID");
     } else if (allowStartupAuthority === true) {
       verifyStartupAuthority(state.authority, { ...binding, authority: expectedAuthority }, rootJsonFile(`${evidenceRoot}/s7-startup-verification.json`));
+    } else if (allowStartupAuthority === "since-freeze") {
+      sameHolderSinceFreeze(state.authority, expectedAuthority);
     } else {
       assert.deepEqual(state.authority, expectedAuthority, "__PKT_LABEL_UPPER___MAINTENANCE_DB_AUTHORITY_CHANGED");
     }

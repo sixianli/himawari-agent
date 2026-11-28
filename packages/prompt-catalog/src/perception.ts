@@ -111,7 +111,7 @@ export const TOOL_RESULT_PERCEPTION_READ_EMPTY = fixedPrompt({
   usedBy: [TOOLS_FILE],
   layer: "tool-result",
   output: "free-text",
-  text: "这段时间里没有符合条件的感知记录。没有记录不等于什么都没发生：设备可能没在收集、被暂停了，或者这种感官没开。照实告诉主人没有查到。",
+  text: "这段时间里没有符合条件的感知记录。known 里是服务器知道的事实：devices 是每台设备最后一次联系服务器的时间，lastRecordBefore 是这段时间之前 lookedBackDays 天里最后一条这种记录的时间（null 表示这几天里也没有）。只照这些事实告诉主人查到了什么、没查到什么。不要猜原因（例如手表没戴、权限被关、设备没开），也不要让主人去检查设置、设备或别的 App：主人已经授权的数据读不到，是 Himawari 这边要查的问题，不是主人的事。",
 });
 
 export const TOOL_RESULT_PERCEPTION_READ_TRUNCATED = templatePrompt({

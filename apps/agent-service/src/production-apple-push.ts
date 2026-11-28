@@ -10,6 +10,7 @@ import {
   type ApplePushSendResult,
   type ApplePushStorePort,
   type ApprovalRequest,
+  type BackgroundWorkActivityRegistration,
   type DeviceActionRecord,
   HER_WORDS_PUSH_PREFIX,
   type MemoryReminder,
@@ -20,7 +21,17 @@ import {
   type WebPushLocale,
   type WebPushOutboxItem,
 } from "@himawari-agent/application";
+import type { ThreadBackgroundWork } from "@himawari-agent/gateway-contracts";
 import { notificationActionHash } from "@himawari-agent/platform-node";
+import {
+  BACKGROUND_WORK_ACTIVITY_ATTRIBUTES_TYPE,
+  type BackgroundWorkEntry,
+  backgroundWorkContentState,
+  backgroundWorkEntries,
+  backgroundWorkStateDigest,
+  isBackgroundWorkFinished,
+  isBackgroundWorkLive,
+} from "./background-work-activity.js";
 import {
   type PushCompanionChannel,
   type PushContent,
@@ -33,6 +44,7 @@ const PAYLOAD_BYTES = 4_096;
 const WIDGET_EXPIRY_SECONDS = 3_600;
 const ACTIVITY_BATCH = 20;
 const ACTIVITY_READ_BATCH = 500;
+const BACKGROUND_END_LINGER_SECONDS = 30;
 const TOKEN_PRUNE_AFTER_MS = 7 * 24 * 3_600_000;
 const TERMINAL_PHASES: ReadonlySet<AppleLiveActivityPhase> = new Set([
   "completed",
@@ -312,6 +324,7 @@ export interface ProductionApplePushOptions extends PairedDeviceScope {
   readonly sender: ApplePushSenderPort;
   readonly configuration: () => ApplePushConfiguration;
   readonly threadTitle: (threadId: string) => Promise<{ readonly title: string | null } | null>;
+  readonly backgroundWork?: () => Promise<ThreadBackgroundWork>;
   readonly publicOrigin: string;
   readonly messageUrgency?: (messageId: string) => Promise<MessageUrgency | undefined>;
   readonly now: () => string;
@@ -338,6 +351,12 @@ export class ProductionApplePush implements PushCompanionChannel {
     string,
     { readonly phase: string; readonly attempts: number; readonly notBefore: number }
   >();
+  readonly #backgroundStarts = new Map<
+    string,
+    { readonly attempts: number; readonly notBefore: number }
+  >();
+  readonly #backgroundLiveSince = new Map<string, number>();
+  readonly #backgroundIdleSince = new Map<string, number>();
   #widgetsDirtyForAll = true;
   #homeDigest: string | undefined;
 
@@ -350,7 +369,7 @@ export class ProductionApplePush implements PushCompanionChannel {
     return { ownerId: this.#options.ownerId, agentId: this.#options.agentId };
   }
 
-  #configured(registration: ApplePushRegistration): boolean {
+  #configured(registration: Pick<ApplePushRegistration, "topic" | "environment">): boolean {
     const configuration = this.#options.configuration();
     return (
       configuration.topics.includes(registration.topic) &&
@@ -815,6 +834,7 @@ export class ProductionApplePush implements PushCompanionChannel {
     }
     await this.#refreshWidgets(input.now);
     await this.#updateActivities(input.now, input.accountLocale, input.visible);
+    await this.#updateBackgroundActivities(input.now, input.accountLocale, input.visible);
   }
 
   async #refreshWidgets(now: string): Promise<void> {
@@ -855,6 +875,247 @@ export class ProductionApplePush implements PushCompanionChannel {
 
   async #title(threadId: string, locale: WebPushLocale): Promise<string> {
     return (await this.#options.threadTitle(threadId))?.title ?? APPLE_PUSH_TEXT[locale].untitled;
+  }
+
+  async #updateBackgroundActivities(
+    now: string,
+    accountLocale: WebPushLocale | null,
+    visible: boolean,
+  ): Promise<void> {
+    const { store, backgroundWork } = this.#options;
+    if (!backgroundWork) return;
+    const registrations = await store.listBackgroundActivities(this.#scope());
+    if (registrations.length === 0) {
+      this.#backgroundStarts.clear();
+      this.#backgroundLiveSince.clear();
+      this.#backgroundIdleSince.clear();
+      return;
+    }
+    let entries: readonly BackgroundWorkEntry[];
+    try {
+      entries = backgroundWorkEntries(await backgroundWork());
+    } catch (error) {
+      this.#options.onFailure(error);
+      return;
+    }
+    const configuration = this.#options.configuration();
+    const at = Date.parse(now);
+    const seconds = Math.floor(at / 1_000);
+    const bySubthread = new Map(entries.map((entry) => [entry.subthread.subthreadId, entry]));
+    for (const [id, entry] of bySubthread) {
+      const { subthread } = entry;
+      if (isBackgroundWorkLive(subthread)) {
+        if (!this.#backgroundLiveSince.has(id)) this.#backgroundLiveSince.set(id, at);
+        this.#backgroundIdleSince.delete(id);
+      } else {
+        this.#backgroundLiveSince.delete(id);
+        if (!this.#backgroundIdleSince.has(id)) this.#backgroundIdleSince.set(id, at);
+      }
+    }
+    for (const map of [this.#backgroundLiveSince, this.#backgroundIdleSince])
+      for (const id of map.keys()) if (!bySubthread.has(id)) map.delete(id);
+    const starters = registrations.filter(({ subthreadId }) => subthreadId === "");
+    const running = registrations.filter(({ subthreadId }) => subthreadId !== "");
+    const startAfter = configuration.liveActivityStartAfterSeconds * 1_000;
+    const minimum = configuration.liveActivityUpdateMinimumSeconds * 1_000;
+    for (const registration of running) {
+      const entry = bySubthread.get(registration.subthreadId);
+      if (registration.token === null) {
+        const waiting = this.#backgroundIdleSince.get(registration.subthreadId);
+        if (
+          !entry ||
+          isBackgroundWorkFinished(entry.subthread) ||
+          (waiting !== undefined && at - waiting >= startAfter)
+        )
+          await this.#dropBackgroundActivity(registration.deviceId, registration.subthreadId);
+        continue;
+      }
+      const idleSince = this.#backgroundIdleSince.get(registration.subthreadId);
+      const ended =
+        !entry ||
+        isBackgroundWorkFinished(entry.subthread) ||
+        (idleSince !== undefined && at - idleSince >= startAfter);
+      if (!this.#configured(registration)) {
+        if (ended)
+          await this.#dropBackgroundActivity(registration.deviceId, registration.subthreadId);
+        continue;
+      }
+      const state = entry
+        ? backgroundWorkContentState(entry.subthread, clip)
+        : {
+            phase: "finished" as const,
+            step: 0,
+            stepCount: 0,
+            completedCount: 0,
+            activity: null,
+            updatedAt: now,
+          };
+      const finalState = ended ? { ...state, phase: "finished" as const } : state;
+      const digest = backgroundWorkStateDigest(finalState);
+      if (!ended) {
+        if (registration.stateDigest === digest) continue;
+        if (registration.pushedAt !== null && at - Date.parse(registration.pushedAt) < minimum)
+          continue;
+      }
+      const result = await this.#transmit(
+        "liveactivity",
+        ended ? "background_end" : "background_update",
+        {
+          token: registration.token,
+          environment: registration.environment,
+          topic: registration.topic,
+          pushType: "liveactivity",
+          priority: ended || finalState.phase === "waiting_for_owner" ? 10 : 5,
+          expiresAtSeconds: seconds + configuration.liveActivityStaleAfterSeconds,
+          collapseId: null,
+          payload: JSON.stringify({
+            aps: {
+              timestamp: seconds,
+              event: ended ? "end" : "update",
+              "content-state": finalState,
+              ...(ended
+                ? { "dismissal-date": seconds + BACKGROUND_END_LINGER_SECONDS }
+                : { "stale-date": seconds + configuration.liveActivityStaleAfterSeconds }),
+            },
+          }),
+        },
+      );
+      if (ended || result.kind === "gone") {
+        await this.#dropBackgroundActivity(registration.deviceId, registration.subthreadId);
+        continue;
+      }
+      await store.markBackgroundActivity({
+        ...this.#scope(),
+        registrationId: registration.id,
+        stateDigest: result.kind === "retry" || result.kind === "rate_limited" ? null : digest,
+        pushedAt: now,
+      });
+    }
+    const live = [...bySubthread.values()].filter(({ subthread }) => {
+      const since = this.#backgroundLiveSince.get(subthread.subthreadId);
+      return since !== undefined && at - since >= startAfter;
+    });
+    if (starters.length === 0 || visible || live.length === 0) {
+      this.#pruneBackgroundStarts(starters, live);
+      return;
+    }
+    const limit = configuration.liveActivityRegistrationsPerDevice;
+    let started = 0;
+    for (const starter of starters) {
+      const present = new Set(
+        registrations
+          .filter(
+            ({ deviceId, subthreadId }) => deviceId === starter.deviceId && subthreadId !== "",
+          )
+          .map(({ subthreadId }) => subthreadId),
+      );
+      for (const entry of live) {
+        const { subthread } = entry;
+        const key = `${starter.deviceId}\n${subthread.subthreadId}`;
+        const remembered = this.#backgroundStarts.get(key);
+        if (
+          started >= ACTIVITY_BATCH ||
+          present.size >= limit ||
+          present.has(subthread.subthreadId) ||
+          (remembered !== undefined && at < remembered.notBefore) ||
+          starter.token === null ||
+          !this.#configured(starter)
+        )
+          continue;
+        const locale = accountLocale ?? starter.locale;
+        const state = backgroundWorkContentState(subthread, clip);
+        const pending = await store.saveBackgroundActivity({
+          ...this.#scope(),
+          id: `bwa_${(this.#options.randomBytes ?? randomBytes)(16).toString("base64url")}`,
+          deviceId: starter.deviceId,
+          subthreadId: subthread.subthreadId,
+          token: null,
+          environment: starter.environment,
+          topic: starter.topic,
+          locale: starter.locale,
+          startedAt: now,
+          activityLimit: limit,
+          now,
+        });
+        started += 1;
+        const result = await this.#transmit("liveactivity", "background_start", {
+          token: starter.token,
+          environment: starter.environment,
+          topic: starter.topic,
+          pushType: "liveactivity",
+          priority: 10,
+          expiresAtSeconds: seconds + configuration.liveActivityStaleAfterSeconds,
+          collapseId: null,
+          payload: JSON.stringify({
+            aps: {
+              timestamp: seconds,
+              event: "start",
+              "content-state": state,
+              "stale-date": seconds + configuration.liveActivityStaleAfterSeconds,
+              "attributes-type": BACKGROUND_WORK_ACTIVITY_ATTRIBUTES_TYPE,
+              attributes: {
+                subthreadId: subthread.subthreadId,
+                matter: entry.matter,
+                title: subthread.title,
+              },
+              alert: {
+                title: APPLE_PUSH_TEXT[locale].progress,
+                body: clip(subthread.title ?? entry.matter, 120),
+              },
+            },
+          }),
+        });
+        if (result.kind === "sent") {
+          present.add(subthread.subthreadId);
+          this.#backgroundStarts.delete(key);
+          await store.markBackgroundActivity({
+            ...this.#scope(),
+            registrationId: pending.id,
+            stateDigest: backgroundWorkStateDigest(state),
+            pushedAt: now,
+          });
+          continue;
+        }
+        await this.#dropBackgroundActivity(starter.deviceId, subthread.subthreadId);
+        const attempts = (remembered?.attempts ?? 0) + 1;
+        this.#backgroundStarts.set(key, {
+          attempts,
+          notBefore:
+            (result.kind === "rate_limited" || result.kind === "retry") &&
+            attempts <= RETRY_DELAYS_MS.length
+              ? at + (RETRY_DELAYS_MS[attempts - 1] ?? RATE_LIMIT_DELAY_MS)
+              : Number.POSITIVE_INFINITY,
+        });
+        if (result.kind === "gone")
+          await store.removeBackgroundActivity({
+            ...this.#scope(),
+            deviceId: starter.deviceId,
+            subthreadId: "",
+          });
+      }
+    }
+    this.#pruneBackgroundStarts(starters, live);
+  }
+
+  #pruneBackgroundStarts(
+    starters: readonly BackgroundWorkActivityRegistration[],
+    live: readonly BackgroundWorkEntry[],
+  ): void {
+    const devices = new Set(starters.map(({ deviceId }) => deviceId));
+    const subthreads = new Set(live.map(({ subthread }) => subthread.subthreadId));
+    for (const key of this.#backgroundStarts.keys()) {
+      const separator = key.indexOf("\n");
+      if (!devices.has(key.slice(0, separator)) || !subthreads.has(key.slice(separator + 1)))
+        this.#backgroundStarts.delete(key);
+    }
+  }
+
+  async #dropBackgroundActivity(deviceId: string, subthreadId: string): Promise<void> {
+    await this.#options.store.removeBackgroundActivity({
+      ...this.#scope(),
+      deviceId,
+      subthreadId,
+    });
   }
 
   async #updateActivities(

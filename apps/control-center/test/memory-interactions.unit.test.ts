@@ -1564,7 +1564,7 @@ describe("memory approval and management", () => {
     expect(document.querySelector(add)).toBeNull();
   });
 
-  it("[mask-not-block][RULE-memory-visible] marks a memory or reminder that holds a card number as sensitive, keeps the text as typed and still lets a goal be pinned", async () => {
+  it("[mask-not-block][RULE-memory-visible] [I-129] saves a memory or reminder that holds a card number as ordinary, keeps the text as typed and still lets a goal be pinned", async () => {
     await render();
     const memoryAdd = "#settings .memory-card[data-kind=add]";
     await click("#settings .memory-search-row", "添加");
@@ -1581,11 +1581,11 @@ describe("memory approval and management", () => {
     await click(memoryAdd, "保存");
     expect(protectText).toHaveBeenLastCalledWith(
       "今年的目标是还清卡 6222020200112233445",
-      "sensitive",
+      "private",
     );
     expect(lastCommand()).toMatchObject({
       type: "memory.create",
-      payload: { category: "goal", topic: "other", pinned: false },
+      payload: { category: "goal", topic: null, pinned: false },
     });
     expect(text("#settings .memory-notice")).not.toContain("以后每次对话都会带上");
     const reminderAdd = "#reminders-page .memory-card[data-kind=add]";
@@ -1593,7 +1593,7 @@ describe("memory approval and management", () => {
     await type(`${reminderAdd} textarea`, "还信用卡 6222020200112233445");
     await type(`${reminderAdd} input[type=datetime-local]`, "2099-01-02T09:30");
     await click(reminderAdd, "保存");
-    expect(protectText).toHaveBeenLastCalledWith("还信用卡 6222020200112233445", "sensitive");
+    expect(protectText).toHaveBeenLastCalledWith("还信用卡 6222020200112233445", "private");
   });
 
   it("[REM-1] does not offer a new reminder before the first memory is learned", async () => {
@@ -1620,14 +1620,14 @@ describe("memory approval and management", () => {
     expect(document.querySelector<HTMLSelectElement>(`${add} select`)?.value).toBe("");
     classifyAnswers = [classified("health", "sensitive", "health")];
     await click(add, "保存");
-    expect(protectText).toHaveBeenLastCalledWith("每天早上吃一片降压药", "sensitive");
+    expect(protectText).toHaveBeenLastCalledWith("每天早上吃一片降压药", "private");
     expect(lastCommand()).toMatchObject({
       type: "memory.create",
       payload: {
         contentRef: "payload-edit",
         category: "health",
         subCategory: null,
-        topic: "health",
+        topic: null,
         pinned: false,
       },
     });
@@ -1668,23 +1668,18 @@ describe("memory approval and management", () => {
     classifyAnswers = [
       classified("other"),
       classified("rule"),
-      classified("other", "sensitive", "other"),
+      classified("other"),
       classified("health", "sensitive", "health"),
     ];
     duplicateAnswers = ["same", "different", "skipped", "different"];
     await click("#settings .memory-import", "拆成一条条");
     const preview = text("#settings .memory-import");
-    expect(duplicateAsked.map((refs) => refs.length)).toEqual([2]);
-    expect(preview).toContain("找到 4 条，已勾 1 条");
+    expect(duplicateAsked.map((refs) => refs.length)).toEqual([4]);
+    expect(preview).toContain("找到 4 条，已勾 2 条");
     expect(preview).toContain("已经记着，跳过");
-    expect(preview).toContain("敏感，默认不导入");
+    expect(preview).not.toContain("敏感，默认不导入");
     expect(preview).not.toContain("分类中");
     expect(preview).not.toContain("已直接丢掉");
-    const boxes = document.querySelectorAll<HTMLInputElement>(
-      "#settings .memory-preview input[type=checkbox]",
-    );
-    await act(async () => boxes[2]?.click());
-    expect(text("#settings .memory-import")).toContain("找到 4 条，已勾 2 条");
     protectText.mockClear();
     await click("#settings .memory-import", "导入勾选的 2 条");
     expect(protectText).not.toHaveBeenCalled();
@@ -1694,7 +1689,7 @@ describe("memory approval and management", () => {
         source: "assistant",
         items: [
           { contentRef: "payload-edit", category: "rule", subCategory: null, topic: null },
-          { contentRef: "payload-edit", category: "other", topic: "other" },
+          { contentRef: "payload-edit", category: "health", topic: null },
         ],
       },
     });
@@ -2019,21 +2014,15 @@ describe("memory import parsing", () => {
       classified("health", "sensitive", "health"),
     ]);
     expect(
-      sorted.map((item) => [
-        item.category,
-        item.sensitive,
-        item.duplicate,
-        item.duplicateCheck,
-        item.checked,
-      ]),
+      sorted.map((item) => [item.category, item.duplicate, item.duplicateCheck, item.checked]),
     ).toEqual([
-      ["project", false, false, "clear", true],
-      ["goal", false, false, "clear", true],
-      ["rule", false, true, "clear", false],
-      ["rule", false, false, "similar", false],
-      ["project", true, false, "unchecked", false],
+      ["project", false, "clear", true],
+      ["goal", false, "clear", true],
+      ["rule", true, "clear", false],
+      ["rule", false, "similar", false],
+      ["project", false, "unchecked", false],
     ]);
-    expect(sorted[4]?.topic).toBe("health");
+    expect(sorted[4]?.topic).toBeNull();
   });
 
   it("[MP-8][A4] never decides sameness from the words: text that merely contains an existing memory stays importable until the server says it is the same", () => {
@@ -2083,26 +2072,22 @@ describe("memory import parsing", () => {
     });
   });
 
-  it("[MP-8][T5] keeps an entry the server could not sort private and unchecked, and never guesses from words", () => {
+  it("[MP-8][T5] keeps an entry the server could not sort unchecked, and never guesses from words", () => {
     const parsed = parseMemoryText("answer.md", "- 我对青霉素过敏\n- 我最喜欢的颜色是蓝色");
-    expect(parsed.items.map((item) => [item.category, item.sensitive])).toEqual([
-      ["other", false],
-      ["other", false],
-    ]);
+    expect(parsed.items.map((item) => item.category)).toEqual(["other", "other"]);
     const sorted = applyImportClassifications(
       applyImportDuplicates(parsed.items, ["different", "different"]),
       [
-        { category: "other", classification: "sensitive", topic: "other", failed: true },
+        { category: "other", classification: "private", topic: null, failed: true },
         classified("preference"),
       ],
     );
-    expect(sorted.map((item) => [item.status, item.sensitive, item.topic, item.checked])).toEqual([
-      ["unclassified", true, "other", false],
-      ["ready", false, null, true],
+    expect(sorted.map((item) => [item.status, item.topic, item.checked])).toEqual([
+      ["unclassified", null, false],
+      ["ready", null, true],
     ]);
     expect(applyImportClassifications(parsed.items, [])[1]).toMatchObject({
       status: "unclassified",
-      sensitive: true,
       checked: false,
     });
   });
@@ -2151,9 +2136,9 @@ describe("memory import parsing", () => {
         checked: true,
         topic: null,
       }),
-      expect.objectContaining({ text: "对青霉素过敏", category: "health", checked: false }),
-      expect.objectContaining({ text: "每周日去教堂", topic: "beliefs", sensitive: true }),
-      expect.objectContaining({ text: "常去的那家店", topic: null, sensitive: true }),
+      expect.objectContaining({ text: "对青霉素过敏", category: "health", checked: true }),
+      expect.objectContaining({ text: "每周日去教堂", topic: null, checked: true }),
+      expect.objectContaining({ text: "常去的那家店", topic: null, checked: true }),
     ]);
     expect(() => parseMemoryExport("x.json", "{}")).toThrow("MEMORY_EXPORT_INVALID");
   });

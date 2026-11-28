@@ -9,6 +9,7 @@ import {
   LOCAL_ONNX_EMBEDDING_PROVIDER,
   type MemoryIndexStorePort,
   type ModelEgress,
+  modelVisibleClassifications,
   type ProductConfiguration,
 } from "@himawari-agent/application";
 import {
@@ -207,7 +208,7 @@ export async function createProductionMemoryCompositionFromConfiguration(
     index: options.index,
     embedder: shared.leader,
     minimumSimilarity,
-    embeddableClassifications: embedding.allowedDataClassifications,
+    embeddableClassifications: modelVisibleClassifications(),
     now: () => new Date().toISOString(),
     ...(options.configuration.runPolicy?.timeZone
       ? { timeZone: options.configuration.runPolicy.timeZone }

@@ -475,7 +475,7 @@ export const MCP_TOOL_PROPOSE_MEMORY = fixedPrompt({
   usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
   layer: "tools",
   output: "free-text",
-  text: "向主人提议在 Himawari 里新存一条长期记忆。主人给这个接入设了「直接存」时，这条会马上存下，主人之后可以在 Himawari 里整批撤销，回执会写明已经存下；你把分类选成健康或财务的内容，或正文里含证件号、银行卡号的内容，即使设了直接存也先放进「待确认」。没设直接存时：客户端能弹确认框时，主人在确认框里选同意就存下、选拒绝就不存；客户端不能弹框、主人没回答或关掉了确认框时，这条先存进「待确认」，主人之后在 Himawari 里确认了才会保存，确认前 Himawari 不会用它。text 写一条完整、单独看也能懂的事实或偏好；category 选最贴近的分类；key 可选，写这条在你那边的固定编号（例如记忆文件里的条目路径），同一个 key 带来新内容时，还没确认的旧内容会被替换。同样的内容只会存一条，主人拒绝过的不会再出现。「以后每次都怎样做」这类规则不要用这个工具提。",
+  text: "向主人提议在 Himawari 里新存一条长期记忆。主人给这个接入设了「直接存」时，这条会马上存下，主人之后可以在 Himawari 里整批撤销，回执会写明已经存下。没设直接存时：客户端能弹确认框时，主人在确认框里选同意就存下、选拒绝就不存；客户端不能弹框、主人没回答或关掉了确认框时，这条先存进「待确认」，主人之后在 Himawari 里确认了才会保存，确认前 Himawari 不会用它。text 写一条完整、单独看也能懂的事实或偏好；category 选最贴近的分类；key 可选，写这条在你那边的固定编号（例如记忆文件里的条目路径），同一个 key 带来新内容时，还没确认的旧内容会被替换。同样的内容只会存一条，主人拒绝过的不会再出现。「以后每次都怎样做」这类规则不要用这个工具提。",
 });
 
 export const MCP_TOOL_PROPOSE_MEMORIES = fixedPrompt({
@@ -485,7 +485,7 @@ export const MCP_TOOL_PROPOSE_MEMORIES = fixedPrompt({
   usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
   layer: "tools",
   output: "free-text",
-  text: "一次向主人提议多条长期记忆（最多 50 条），适合定时把你那边新记下的内容搬给 Himawari。主人给这个接入设了「直接存」时，非敏感的条目马上存下，这一次调用存下的可以在 Himawari 里整批撤销；敏感的条目和没设直接存时的所有条目，先存进「待确认」，主人之后在 Himawari 里确认了才会保存，确认前 Himawari 不会用它们；这个工具不弹确认框。每条的 text、category、key 和 propose_memory 的意思相同。结果按顺序逐条列出：saved 是已经存下，pending 是已存进待确认，replaced 是被同一次调用里后面同一个 key 的条目替换了，already_saved 是同样的内容已经保存过，declined_before 是主人拒绝过同样的内容，invalid 是正文为空或超过 2000 字（分类不在九种里、超过 50 条时整次调用被拒），secret 是正文或 key 里像有密码、密钥或令牌，full 是主人那边待确认或刚处理过的内容太多，这一条没有存。同样的内容只会存一条，可以放心重发。",
+  text: "一次向主人提议多条长期记忆（最多 50 条），适合定时把你那边新记下的内容搬给 Himawari。主人给这个接入设了「直接存」时，条目马上存下，这一次调用存下的可以在 Himawari 里整批撤销；没设直接存时，所有条目先存进「待确认」，主人之后在 Himawari 里确认了才会保存，确认前 Himawari 不会用它们；这个工具不弹确认框。每条的 text、category、key 和 propose_memory 的意思相同。结果按顺序逐条列出：saved 是已经存下，pending 是已存进待确认，replaced 是被同一次调用里后面同一个 key 的条目替换了，already_saved 是同样的内容已经保存过，declined_before 是主人拒绝过同样的内容，invalid 是正文为空或超过 2000 字（分类不在九种里、超过 50 条时整次调用被拒），secret 是正文或 key 里像有密码、密钥或令牌，full 是主人那边待确认或刚处理过的内容太多，这一条没有存。同样的内容只会存一条，可以放心重发。",
 });
 
 export const MCP_TOOL_SYNC_MEMORIES = fixedPrompt({
@@ -495,7 +495,7 @@ export const MCP_TOOL_SYNC_MEMORIES = fixedPrompt({
   usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
   layer: "tools",
   output: "free-text",
-  text: "把你那边记下的内容同步给 Himawari，可以放心重发。entries 是要新增或更新的条目，每条有：id（你那边的稳定编号，例如笔记文件路径，同一条每次用同一个）、text（正文）、kind（about_owner 是关于主人的话，project_note 是某个项目的笔记、不是关于主人的话）、category（可不填；要填只能是 identity、preference、relationship、goal、project、health、finance、event、other）、project（项目名，项目笔记要填；不要带登录名、令牌或查询参数，带了这一条会被拒）。about_owner 的条目先存进「待确认」，主人在 Himawari 里确认了才会保存，确认前 Himawari 不会用；project_note 第一次同步某个项目时要主人批准一次，涉及健康、财务等敏感内容的仍要主人逐条确认。正文里不要写密码、密钥、令牌。deletes 只有主人电脑上的助手程序用，报告某条在你那边已经删了，每条带 project、id 和你上次收到的 versionTag；模型自己调用时会返回 not_accepted。结果按提交顺序逐条列出，status 是：pending（待确认）、saved（已存）、unchanged（没变）、updated（已更新，新内容按上面的规则处理）、declined_before（主人拒绝过同样的内容）、owner_deleted（主人已删除，不再接收）、awaiting_project_approval（等主人批准这个项目）、invalid（不合格，reason 写原因）；成功的带 versionTag。一次最多的条数超过时整次被拒，分成几次发。",
+  text: "把你那边记下的内容同步给 Himawari，可以放心重发。entries 是要新增或更新的条目，每条有：id（你那边的稳定编号，例如笔记文件路径，同一条每次用同一个）、text（正文）、kind（about_owner 是关于主人的话，project_note 是某个项目的笔记、不是关于主人的话）、category（可不填；要填只能是 identity、preference、relationship、goal、project、health、finance、event、other）、project（项目名，项目笔记要填；不要带登录名、令牌或查询参数，带了这一条会被拒）。about_owner 的条目先存进「待确认」，主人在 Himawari 里确认了才会保存，确认前 Himawari 不会用；project_note 第一次同步某个项目时要主人批准一次。正文里不要写密码、密钥、令牌。deletes 只有主人电脑上的助手程序用，报告某条在你那边已经删了，每条带 project、id 和你上次收到的 versionTag；模型自己调用时会返回 not_accepted。结果按提交顺序逐条列出，status 是：pending（待确认）、saved（已存）、unchanged（没变）、updated（已更新，新内容按上面的规则处理）、declined_before（主人拒绝过同样的内容）、owner_deleted（主人已删除，不再接收）、awaiting_project_approval（等主人批准这个项目）、invalid（不合格，reason 写原因）；成功的带 versionTag。一次最多的条数超过时整次被拒，分成几次发。",
 });
 
 export const MCP_SYNC_MEMORIES_RESULT = fixedPrompt({
@@ -558,17 +558,7 @@ export const MCP_PROPOSE_MEMORY_CONFIRM = templatePrompt({
     slot("client"),
     text("（对方自称）；分类："),
     slot("category"),
-    slot("sensitive"),
   ],
-});
-
-export const MCP_PROPOSE_MEMORY_SENSITIVE_NOTE = fixedPrompt({
-  id: "mcp.propose-memory-sensitive-note",
-  purpose: "外部提议的记忆会按敏感记忆保存时，确认框里的提示",
-  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
-  layer: "tool-result",
-  output: "free-text",
-  text: "\n这条含敏感内容，会按敏感记忆加密保存。",
 });
 
 export const MCP_PROPOSE_MEMORY_SAVED = fixedPrompt({

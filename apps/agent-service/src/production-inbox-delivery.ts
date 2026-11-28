@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type {
   CancelCoordinatedRunInput,
   ClockPort,
+  DataClassification,
   DecisionLedgerPort,
   PayloadProtectorPort,
   PayloadStorePort,
@@ -16,18 +17,17 @@ import {
   INBOX_EVENTS_PREFACE,
   renderPrompt,
 } from "@himawari-agent/prompt-catalog";
-import { classificationWithIdentifiers } from "@himawari-agent/sensitive-capture";
 import {
   type ContextExternalContent,
   INBOX_EVENT_MESSAGE_PREFIX,
   inboxEventOrigin,
 } from "./context-external-content.js";
+import { isApprovalAnswerEvent } from "./production-approval-answers.js";
 import type {
   InboxDelivery,
   InboxDeliveryEvent,
   InboxDeliveryResult,
 } from "./production-inbox-worker.js";
-import { isApprovalAnswerEvent } from "./production-approval-answers.js";
 import type { ProductionMainThread } from "./production-main-thread.js";
 import { isReminderEvent, type ProductionReminderInbox } from "./production-reminder-inbox.js";
 import type { ProductionSubthreads } from "./production-subthreads.js";
@@ -377,7 +377,7 @@ export class ProductionInboxDelivery implements InboxDelivery {
 
   async #writeMessage(ref: string, message: string) {
     const { payloads, protector, clock } = this.#options;
-    const classification = classificationWithIdentifiers(message, "private");
+    const classification: DataClassification = "private";
     if (!(await payloads.get(ref as never)))
       await payloads.put(
         await protector.protect({

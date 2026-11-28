@@ -7,11 +7,13 @@
   ],
   "features": [
     {
-      "feature": "聊天输入框：打字出现发送钮、没连上时提示",
+      "feature": "聊天输入框：打字出现发送钮、长按空输入框能粘贴、长按消息出菜单再收起、没连上时提示",
       "scenes": ["04-chat", "16-chat-states-4-offline"],
-      "checks": "打字后出现发送钮、只有空格不出现；没连上的聊天提示没连上，连上的不提示",
+      "checks": "打字后出现发送钮、只有空格不出现；长按空输入框出现“粘贴”，粘贴后字进输入框并出现发送钮；长按回答出现菜单，点别处菜单收起、回答停回原处；没连上的聊天提示没连上，连上的不提示",
       "tests": [
         "HimawariUITests/ChatComposerTests/testTypingTurnsTheTalkButtonIntoSend",
+        "HimawariUITests/ChatComposerTests/testLongPressingTheEmptyInputOffersPaste",
+        "HimawariUITests/ChatComposerTests/testDismissingTheMessageMenuLeavesTheBubbleWhereItWas",
         "HimawariUITests/ChatComposerTests/testTheOfflineChatSaysItIsNotConnectedAndTheOnlineChatDoesNot"
       ]
     },
@@ -51,7 +53,7 @@
       "uncovered": "还没有操作这个功能的 UI 测试"
     },
     {
-      "feature": "按住说话和语音对话",
+      "feature": "语音对话",
       "scenes": ["next-2-chat-talk-listening", "next-2-chat-talk-her"],
       "uncovered": "还没有操作这个功能的 UI 测试"
     },
@@ -258,8 +260,16 @@
       "uncovered": "还没有操作这个功能的 UI 测试"
     },
     {
-      "feature": "动效：闪光、弹层、玻璃下滚动",
-      "scenes": ["motion-shimmer", "motion-sheet", "motion-scroll-under-glass"],
+      "feature": "聊天：往上翻后点“跳到最新”回到最后一条",
+      "scenes": ["motion-scroll-under-glass"],
+      "checks": "长对话翻到最上面后出现“跳到最新”钮，点它后钮消失，最后一条回答的结尾整段露在输入条上方",
+      "tests": [
+        "HimawariUITests/ChatComposerTests/testJumpingToTheLatestShowsTheWholeLastMessageAboveTheInputBar"
+      ]
+    },
+    {
+      "feature": "动效：闪光、弹层",
+      "scenes": ["motion-shimmer", "motion-sheet"],
       "uncovered": "还没有操作这个功能的 UI 测试"
     }
   ]

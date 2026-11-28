@@ -8,6 +8,7 @@ import {
   type HostDirectoryGrant,
   hostDirectoryGrantStateKey,
   type IdGeneratorPort,
+  isModelVisible,
   type PayloadProtectorPort,
   PORT_ERROR_CODES,
   type ProductConfiguration,
@@ -79,7 +80,7 @@ export function createProductionRunPolicy(options: {
           (model) => model.ref === source.modelSelection?.modelRef && model.role !== "embedding",
         )
       : primary;
-    if (!selected || !selected.allowedDataClassifications.includes(source.dataClassification))
+    if (!selected || !isModelVisible(source.dataClassification))
       throw new ApplicationPortError(
         PORT_ERROR_CODES.INVALID_OPERATION,
         "RUN_POLICY_MODEL_DISCLOSURE_DENIED",

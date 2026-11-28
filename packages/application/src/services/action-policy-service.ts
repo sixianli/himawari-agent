@@ -1,6 +1,5 @@
 import type {
   ActionKind,
-  AutomaticActionReviewPort,
   ActionRiskLevel,
   ApprovalAskedBecause,
   ApprovalDisplay,
@@ -8,6 +7,7 @@ import type {
   ApprovalRequest,
   AuthorizationReservation,
   AuthorizationStorePort,
+  AutomaticActionReviewPort,
   GovernedActionIntent,
   GovernedApprovalRequest,
   GovernedGrantRecord,
@@ -17,17 +17,18 @@ import type {
 } from "../ports/authorization.js";
 import { ACTION_KINDS, ACTION_RISK_LEVELS } from "../ports/authorization.js";
 import {
-  capabilityLifecycleHasActiveAuthority,
   type CapabilityManifest,
   type CapabilityRegistryLifecycle,
+  capabilityLifecycleHasActiveAuthority,
 } from "../ports/capabilities.js";
 import { ApplicationPortError, PORT_ERROR_CODES } from "../ports/common.js";
 import type { ClockPort, IdGeneratorPort } from "../ports/system.js";
 import {
+  approvalMatchesIntent,
   canonicalAuthorizationSnapshot,
   governedGrantAuthorityCovers,
-  approvalMatchesIntent,
 } from "./action-intent-snapshot.js";
+import { isModelVisible } from "./model-visibility.js";
 import { actionIntentFingerprint } from "./permission-service.js";
 import { assertPolicyFactCodes, POLICY_FACT_CODES } from "./policy-fact-registry.js";
 
@@ -269,6 +270,24 @@ export interface ActionPolicyServiceDependencies {
   readonly automaticReview?: AutomaticActionReviewPort;
 }
 
+export function capabilityDenial(
+  facts: CapabilityAuthorizationFacts | undefined,
+  intent: GovernedActionIntent,
+): string | null {
+  if (!facts) return "capability_not_registered";
+  if (!capabilityLifecycleHasActiveAuthority(facts.lifecycle)) return "capability_not_active";
+  if (facts.manifest.health.status !== "healthy") return "capability_not_healthy";
+  if (facts.manifest.version !== intent.capabilityVersion) return "capability_version_mismatch";
+  if (!facts.manifest.operations.includes(intent.operation)) return "operation_not_declared";
+  if (
+    !isModelVisible(intent.dataClassification) &&
+    !facts.manifest.scopes.dataClassifications.includes(intent.dataClassification)
+  ) {
+    return "data_scope_not_declared";
+  }
+  return null;
+}
+
 export class ActionPolicyService {
   private readonly dependencies: ActionPolicyServiceDependencies;
 
@@ -319,7 +338,7 @@ export class ActionPolicyService {
       options.signal?.throwIfAborted();
       now = this.dependencies.clock.now();
       if (now >= intent.expiresAt) return this.finish(intent, "DENY", "intent_expired", now, false);
-      const denial = this.capabilityDenial(capability, intent);
+      const denial = capabilityDenial(capability, intent);
       if (denial) return this.finish(intent, "DENY", denial, now, false);
 
       const deniedRule = this.dependencies.policy.rules.find(
@@ -559,21 +578,6 @@ export class ActionPolicyService {
     });
   }
 
-  private capabilityDenial(
-    facts: CapabilityAuthorizationFacts | undefined,
-    intent: GovernedActionIntent,
-  ): string | null {
-    if (!facts) return "capability_not_registered";
-    if (!capabilityLifecycleHasActiveAuthority(facts.lifecycle)) return "capability_not_active";
-    if (facts.manifest.health.status !== "healthy") return "capability_not_healthy";
-    if (facts.manifest.version !== intent.capabilityVersion) return "capability_version_mismatch";
-    if (!facts.manifest.operations.includes(intent.operation)) return "operation_not_declared";
-    if (!facts.manifest.scopes.dataClassifications.includes(intent.dataClassification)) {
-      return "data_scope_not_declared";
-    }
-    return null;
-  }
-
   private governedGrantCovers(
     grant: GovernedGrantRecord,
     intent: GovernedActionIntent,
@@ -593,8 +597,7 @@ export class ActionPolicyService {
       intent.disclosure === "none" &&
       intent.recipients.length === 0 &&
       intent.credentialOrAccessChange === false &&
-      intent.dataClassification !== "sensitive" &&
-      intent.dataClassification !== "restricted" &&
+      isModelVisible(intent.dataClassification) &&
       rule.capabilityRefs.includes(intent.capabilityRef) &&
       rule.operations.includes(intent.operation) &&
       intent.resourceRefs.every((ref) =>

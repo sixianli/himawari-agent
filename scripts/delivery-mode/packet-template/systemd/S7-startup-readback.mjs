@@ -128,6 +128,7 @@ async function inspect(mode, invocationId) {
   assert.deepEqual(receipt.bindingInputs.workspaceGrant, binding.workspace, "__PKT_LABEL_UPPER___STARTUP_WORKSPACE_PLAN_CHANGED");
   assert.equal(receipt.bindingInputs.originalConfigurationSha256, binding.service.oldConfigSha256, "__PKT_LABEL_UPPER___STARTUP_ORIGINAL_CONFIGURATION_BINDING_CHANGED");
   const catalogReader = await loadCatalogReader();
+  const authorityAtStop = catalogReader.withAuthorityAtStop(binding).authority;
   assert.equal(catalogReader.configurationStage(original, current), "prepared", "__PKT_LABEL_UPPER___STARTUP_NEW_SNAPSHOT_REQUIRED");
 __PKT_WHEN_FIRST_TOOLS__
   assert(!Object.hasOwn(original, "capabilityDeployment"), "__PKT_LABEL_UPPER___STARTUP_FIRST_TOOLS_ORIGINAL_HAS_TOOLS");
@@ -208,7 +209,7 @@ __PKT_END_WHEN__
   if (mode === "--preflight") {
     assert.equal(hash(configurationBytes), upgrade.report.catalog.preparedConfigurationSha256, "__PKT_LABEL_UPPER___STARTUP_PREPARED_CONFIG_CHANGED");
     assert.equal(hash(snapshotBytes), upgrade.report.catalog.snapshotSha256, "__PKT_LABEL_UPPER___STARTUP_PREPARED_SNAPSHOT_CHANGED");
-    assert.deepEqual(catalog.authority, binding.authority, "__PKT_LABEL_UPPER___STARTUP_PRESWITCH_DB_AUTHORITY_CHANGED");
+    assert.deepEqual(catalog.authority, authorityAtStop, "__PKT_LABEL_UPPER___STARTUP_PRESWITCH_DB_AUTHORITY_CHANGED");
     return preflight;
   }
   assert(/^[a-f0-9]{32}$/.test(invocationId), "__PKT_LABEL_UPPER___STARTUP_INVOCATION_INVALID");
@@ -245,8 +246,8 @@ __PKT_END_WHEN__
   const layout = { root: stateRoot, data: stateRoot + "/data", runtime: stateRoot + "/runtime", cache: stateRoot + "/cache", payloadCiphertext: stateRoot + "/data/payload-ciphertext", authorityFile: stateRoot + "/authority.json", agentServiceBootBindingFile: stateRoot + "/runtime/agent-service.boot.json" };
   const [authority, agent, worker] = await Promise.all([platform.readAuthorityFile(layout), platform.readAgentServiceBootBinding(layout), platform.readWorkerServiceBootBinding(layout)]);
   assert.equal(authority.status, "active", "__PKT_LABEL_UPPER___STARTUP_AUTHORITY_NOT_ACTIVE");
-  assert.equal(authority.authorityEpoch, binding.authority.authorityEpoch, "__PKT_LABEL_UPPER___STARTUP_AUTHORITY_EPOCH_CHANGED");
-  assert(Number.isSafeInteger(authority.fencingToken) && authority.fencingToken > binding.authority.fencingToken, "__PKT_LABEL_UPPER___STARTUP_NEW_LEASE_FENCE_REQUIRED");
+  assert.equal(authority.authorityEpoch, authorityAtStop.authorityEpoch, "__PKT_LABEL_UPPER___STARTUP_AUTHORITY_EPOCH_CHANGED");
+  assert(Number.isSafeInteger(authority.fencingToken) && authority.fencingToken > authorityAtStop.fencingToken, "__PKT_LABEL_UPPER___STARTUP_NEW_LEASE_FENCE_REQUIRED");
   assert.deepEqual(catalog.authority, { deploymentId: authority.id, ownerId: authority.ownerId, agentId: authority.agentId, status: authority.status, authorityEpoch: authority.authorityEpoch, fencingToken: authority.fencingToken }, "__PKT_LABEL_UPPER___STARTUP_LIVE_DB_AUTHORITY_CHANGED");
   for (const value of [authority, agent, worker]) {
     assert.equal(value.deploymentId ?? value.id, binding.identity.deploymentId, "__PKT_LABEL_UPPER___STARTUP_DEPLOYMENT_CHANGED");

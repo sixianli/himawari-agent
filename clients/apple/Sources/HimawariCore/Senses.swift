@@ -195,3 +195,11 @@ public final class SenseSwitches: @unchecked Sendable {
         return result
     }
 }
+
+public enum HealthReadWindow {
+    public static let reread: TimeInterval = 48 * 3600
+
+    public static func start(anchor: Date, lastFullHour: Date) -> Date {
+        min(anchor, lastFullHour.addingTimeInterval(-reread))
+    }
+}

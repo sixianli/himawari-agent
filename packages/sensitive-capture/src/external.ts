@@ -10,6 +10,7 @@ import {
 export interface ExternalRedactionOptions {
   readonly tag?: (kind: EgressPlaceholderKind, value: string) => string;
   readonly known?: Map<string, string>;
+  readonly ruleset?: number;
 }
 
 const KNOWN_VALUE_MINIMUM_LENGTH = 6;
@@ -80,6 +81,7 @@ export function redactForExternalText(
   return redactForEgress(input, {
     known: options.known ?? new Map<string, string>(),
     tag: options.tag ?? sequentialPlaceholderTag(),
+    ...(options.ruleset === undefined ? {} : { ruleset: options.ruleset }),
   });
 }
 

@@ -156,12 +156,12 @@ describe("[OM-11] Gmail body extraction", () => {
     expect(result.text).toContain("-END");
   });
 
-  it("[OM-17] masks a card number that straddles the hard-limit cut before cutting", () => {
+  it("[OM-17] masks a password that straddles the hard-limit cut before cutting", () => {
     const head = Math.floor(GMAIL_BODY_HARD_LIMIT * 0.7);
-    const huge = `${"あ".repeat(head - 15)}4111 1111 1111 1111${"あ".repeat(GMAIL_BODY_HARD_LIMIT)}`;
+    const huge = `${"あ".repeat(head - 15)}密码：Qz7mWx42LpRs8Tv ${"あ".repeat(GMAIL_BODY_HARD_LIMIT)}`;
     const result = extractGmailBody(text("text/plain", huge));
     expect(result.truncated).toBe(true);
-    expect(result.text).not.toContain("4111");
-    expect(result.text).not.toContain("1111");
+    expect(result.text).not.toContain("Qz7m");
+    expect(result.text).not.toContain("Rs8Tv");
   });
 });

@@ -19,6 +19,7 @@ import {
   type RunExecutionLease,
   type RunExecutionLeaseClaim,
 } from "../ports/index.js";
+import { isModelVisible } from "./model-visibility.js";
 
 const CLASSIFICATIONS = ["public", "private", "sensitive", "restricted"] as const;
 const SOURCES = ["model-port", "agent-stream", "embedding"] as const;
@@ -479,8 +480,8 @@ export class ModelInvocationAdmissionService implements ModelInvocationAdmission
       });
     }
     const dataClassification = classification(input.dataClassification, "dataClassification");
-    if (!bound.descriptor.allowedDataClassifications.includes(dataClassification)) {
-      throw invalid("Model descriptor does not allow the requested data classification", {
+    if (!isModelVisible(dataClassification)) {
+      throw invalid("Passwords and keys are never sent to a model", {
         modelRef: bound.descriptor.ref,
         dataClassification,
       });

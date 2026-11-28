@@ -15,6 +15,7 @@ import {
   type ApplePushDue,
   type ApplePushRegistration,
   type ApplePushStorePort,
+  type BackgroundWorkActivityRegistration,
   NOTIFICATION_ACTIONS,
   type NotificationAction,
   type NotificationActionToken,
@@ -29,6 +30,11 @@ const registrationColumns = `r.id, r.owner_id AS ownerId, r.agent_id AS agentId,
   r.device_id AS deviceId, r.push_type AS pushType, r.activity_ref AS activityRef, r.token,
   r.environment, r.topic, r.locale, r.status, r.failure_code AS failureCode,
   r.created_at AS createdAt, r.updated_at AS updatedAt, r.last_delivered_at AS lastDeliveredAt`;
+
+const backgroundColumns = `b.id, b.owner_id AS ownerId, b.agent_id AS agentId,
+  b.device_id AS deviceId, b.subthread_id AS subthreadId, b.token, b.environment, b.topic,
+  b.locale, b.started_at AS startedAt, b.state_digest AS stateDigest, b.pushed_at AS pushedAt,
+  b.created_at AS createdAt, b.updated_at AS updatedAt`;
 
 const ELIGIBLE_ALERT_REGISTRATION = `r.push_type = 'alert' AND r.status = 'active'
   AND EXISTS (SELECT 1 FROM paired_devices d
@@ -79,9 +85,13 @@ export function disablePushForRevokedDevices(
       WHERE device_id = ? AND status = 'active'`,
   );
   const forget = database.prepare("DELETE FROM notification_action_tokens WHERE device_id = ?");
+  const forgetActivities = database.prepare(
+    "DELETE FROM background_work_activities WHERE device_id = ?",
+  );
   for (const deviceId of deviceIds) {
     disable.run(now, deviceId);
     forget.run(deviceId);
+    forgetActivities.run(deviceId);
   }
 }
 
@@ -128,6 +138,14 @@ export class SqliteApplePushOperations {
         return this.listActivityRuns(payload as Input<"listActivityRuns">);
       case "applePush.readActivityRuns":
         return this.readActivityRuns(payload as Input<"readActivityRuns">);
+      case "applePush.saveBackgroundActivity":
+        return this.saveBackgroundActivity(payload as Input<"saveBackgroundActivity">);
+      case "applePush.removeBackgroundActivity":
+        return this.removeBackgroundActivity(payload as Input<"removeBackgroundActivity">);
+      case "applePush.listBackgroundActivities":
+        return this.listBackgroundActivities(payload as Input<"listBackgroundActivities">);
+      case "applePush.markBackgroundActivity":
+        return this.markBackgroundActivity(payload as Input<"markBackgroundActivity">);
       case "applePush.prune":
         return this.prune(payload as Input<"prune">);
       default:
@@ -652,6 +670,7 @@ export class SqliteApplePushOperations {
            AND status NOT IN ('completed', 'failed', 'cancelled')
            AND NOT EXISTS (SELECT 1 FROM threads hidden
              WHERE hidden.id = runs.thread_id AND hidden.origin = 'think')
+           AND NOT EXISTS (SELECT 1 FROM subthreads sub WHERE sub.thread_id = runs.thread_id)
            AND created_at > ? AND created_at <= ?
          ORDER BY created_at, id LIMIT ?`,
       )
@@ -676,6 +695,112 @@ export class SqliteApplePushOperations {
       const run = read.get(input.ownerId, input.agentId, runId) as ApplePushActivityRun | undefined;
       return run ? [run] : [];
     });
+  }
+
+  private saveBackgroundActivity(
+    input: Input<"saveBackgroundActivity">,
+  ): BackgroundWorkActivityRegistration {
+    this.assertDiskHeadroom();
+    const now = this.time(input.now);
+    if (input.startedAt !== null) this.time(input.startedAt);
+    if (
+      !/^bwa_[A-Za-z0-9_-]{22}$/u.test(input.id) ||
+      (input.subthreadId !== "" && !APPLE_PUSH_ACTIVITY_REF_PATTERN.test(input.subthreadId)) ||
+      (input.token === null
+        ? input.subthreadId === ""
+        : !APPLE_PUSH_TOKEN_PATTERN.test(input.token)) ||
+      !APPLE_PUSH_ENVIRONMENTS.includes(input.environment) ||
+      !APPLE_PUSH_TOPIC_PATTERN.test(input.topic) ||
+      !LOCALES.includes(input.locale) ||
+      !Number.isSafeInteger(input.activityLimit) ||
+      input.activityLimit <
+        APPLE_PUSH_CONFIGURATION_BOUNDS.liveActivityRegistrationsPerDevice.minimum ||
+      input.activityLimit >
+        APPLE_PUSH_CONFIGURATION_BOUNDS.liveActivityRegistrationsPerDevice.maximum
+    )
+      this.fail("PORT_INVALID_OPERATION", "Background work activity registration is invalid");
+    return this.database.transaction(() => {
+      this.activeDevice(input, input.deviceId);
+      this.database
+        .prepare(
+          `INSERT INTO background_work_activities (
+            id, owner_id, agent_id, device_id, subthread_id, token, environment, topic, locale,
+            started_at, state_digest, pushed_at, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)
+          ON CONFLICT (device_id, subthread_id) DO UPDATE SET
+            token = COALESCE(excluded.token, background_work_activities.token),
+            environment = excluded.environment, topic = excluded.topic, locale = excluded.locale,
+            started_at = COALESCE(excluded.started_at, background_work_activities.started_at),
+            updated_at = excluded.updated_at`,
+        )
+        .run(
+          input.id,
+          input.ownerId,
+          input.agentId,
+          input.deviceId,
+          input.subthreadId,
+          input.token,
+          input.environment,
+          input.topic,
+          input.locale,
+          input.startedAt,
+          now,
+          now,
+        );
+      const saved = this.database
+        .prepare(`SELECT ${backgroundColumns} FROM background_work_activities b
+            WHERE b.device_id = ? AND b.subthread_id = ?`)
+        .get(input.deviceId, input.subthreadId) as BackgroundWorkActivityRegistration;
+      if (input.subthreadId !== "")
+        this.database
+          .prepare(
+            `DELETE FROM background_work_activities
+              WHERE device_id = ? AND subthread_id <> ''
+                AND id NOT IN (
+                  SELECT id FROM background_work_activities
+                   WHERE device_id = ? AND subthread_id <> ''
+                   ORDER BY (id = ?) DESC, updated_at DESC, id DESC LIMIT ?)`,
+          )
+          .run(input.deviceId, input.deviceId, saved.id, input.activityLimit);
+      return Object.freeze(saved);
+    })();
+  }
+
+  private removeBackgroundActivity(input: Input<"removeBackgroundActivity">): boolean {
+    return (
+      this.database
+        .prepare(
+          `DELETE FROM background_work_activities
+            WHERE owner_id = ? AND agent_id = ? AND device_id = ? AND subthread_id = ?`,
+        )
+        .run(input.ownerId, input.agentId, input.deviceId, input.subthreadId).changes > 0
+    );
+  }
+
+  private listBackgroundActivities(
+    input: Input<"listBackgroundActivities">,
+  ): readonly BackgroundWorkActivityRegistration[] {
+    return (
+      this.database
+        .prepare(
+          `SELECT ${backgroundColumns} FROM background_work_activities b
+            JOIN paired_devices d ON d.id = b.device_id AND d.status = 'active'
+            WHERE b.owner_id = ? AND b.agent_id = ?
+            ORDER BY b.created_at, b.id`,
+        )
+        .all(input.ownerId, input.agentId) as BackgroundWorkActivityRegistration[]
+    ).map((row) => Object.freeze(row));
+  }
+
+  private markBackgroundActivity(input: Input<"markBackgroundActivity">): void {
+    const pushedAt = this.time(input.pushedAt);
+    this.database
+      .prepare(
+        `UPDATE background_work_activities
+            SET state_digest = COALESCE(?, state_digest), pushed_at = ?
+          WHERE id = ? AND owner_id = ? AND agent_id = ?`,
+      )
+      .run(input.stateDigest, pushedAt, input.registrationId, input.ownerId, input.agentId);
   }
 
   private prune(input: Input<"prune">): number {

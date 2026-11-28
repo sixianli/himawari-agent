@@ -110,18 +110,18 @@ describe("perception extraction prompt", () => {
   });
 
   it("masks secrets in the text and raises the classification to the highest record", () => {
-    const secret = source("perception:a", "我的银行卡号是 4111 1111 1111 1111");
+    const secret = source("perception:a", "我的网银密码是 Qz7mWx42Lp");
     const sensitive = source("perception:b", "体检报告出来了", {
       dataClassification: "sensitive",
       occurredAtMs: Date.parse(NOW) - 1000,
     });
     const { chunks: built, placeholders } = chunks([secret, sensitive]);
-    expect(built[0]?.prompt).not.toContain("4111 1111 1111 1111");
+    expect(built[0]?.prompt).not.toContain("Qz7mWx42Lp");
     expect(placeholders.size).toBeGreaterThan(0);
     expect(built[0]?.dataClassification).toBe("sensitive");
     const [chunk] = built;
     if (!chunk) throw new Error("chunk missing");
-    expect(quotedSource(chunk, "4111 1111 1111 1111", ["perception:a"])).toBeNull();
+    expect(quotedSource(chunk, "Qz7mWx42Lp", ["perception:a"])).toBeNull();
     expect(quotedSource(chunk, "体检报告出来了", ["perception:b"])?.record.id).toBe("perception:b");
     expect(quotedSource(chunk, "体检报告出来了", ["perception:a"])).toBeNull();
     expect(quotedSource(chunk, "体检报告已经出来了", ["perception:b"])).toBeNull();

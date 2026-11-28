@@ -8,7 +8,6 @@ import {
   type PayloadProtectorPort,
   type PayloadStorePort,
 } from "@himawari-agent/application";
-import { classificationWithIdentifiers } from "@himawari-agent/sensitive-capture";
 
 export type InboxScope = Parameters<InboxStorePort["usage"]>[0];
 
@@ -227,7 +226,7 @@ export class ProductionInbox {
             ...this.#options.scope,
             ref: summaryRef,
             contentType: "text/plain",
-            dataClassification: classificationWithIdentifiers(summary, "private"),
+            dataClassification: "private",
             plaintext: new TextEncoder().encode(summary),
             createdAt: now,
           }),

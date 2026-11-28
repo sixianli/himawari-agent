@@ -2164,7 +2164,7 @@ Andy 在卡片上选了“加一个看图模型”。动手前我先查现有的
 **结果数据**
 
 - 单元测试：`apps/control-center` 全部 485 项通过（含改写的 `answer-footer.unit.test.ts` 和 `memory-interactions.unit.test.ts` 记忆跳转用例）。
-- Chromium 390×844 手机视口、模拟上 47px 下 34px 安全区：对话区 `scrollWidth` 等于 `clientWidth`（390），没有元素超出屏幕；改前 token 数右边到 399px。截图在 [2026-10-27-v7](assets/control-center/2026-10-27-v7/SHA256SUMS)。
+- Chromium 390×844 手机视口、模拟上 47px 下 34px 安全区：对话区 `scrollWidth` 等于 `clientWidth`（390），没有元素超出屏幕；改前 token 数右边到 399px。截图在 [2026-10-27-v7](https://github.com/sixianli/himawari-agent/blob/794124398468fd3977891e4baee0c582f0ca1e5d/docs/assets/control-center/2026-10-27-v7/SHA256SUMS)。
 - iPhone 真机效果：未测量（等第十五版上线后看）。
 
 **相关 ADR/PR**
@@ -2421,12 +2421,12 @@ Andy 定后台命令最长 30 分钟（原话“30 分钟”），随后要求�
 
 **结果数据**
 
-- 设计：电脑和手机原型、中英日三种语言、三个场景，Andy 2026-10-28 11:44（日本时间）批准：“原型和方案都审核了，全部按照你的设计和推荐来做！”定稿副本在 `docs/assets/control-center/2026-10-28-v8/`。
+- 设计：电脑和手机原型、中英日三种语言、三个场景，Andy 2026-10-28 11:44（日本时间）批准：“原型和方案都审核了，全部按照你的设计和推荐来做！”定稿副本在 [docs/assets/control-center/2026-10-28-v8](https://github.com/sixianli/himawari-agent/tree/794124398468fd3977891e4baee0c582f0ca1e5d/docs/assets/control-center/2026-10-28-v8)。
 - 实现后的效果：未测量（实施计划见下）。
 
 **相关 ADR/PR**
 
-[ADR 0100](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0100-conversation-more-panel-files-and-background-commands.md)、[控制中心 Spec 的 v8 增补](assets/control-center/2026-09-15-v4-design.md#v8-more-panel)、[实施计划](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-10-28-file-delivery-and-more-panel-plan.md)、[ADR 0091](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0091-chat-ui-v6-file-preview-and-sidebar.md)、[ADR 0097](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0097-bash-writes-workspace-with-change-ledger.md)；PR #63（后台命令）、本设计的文档 PR 见分支 `claude/project-thread-3hdzxk`。
+[ADR 0100](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0100-conversation-more-panel-files-and-background-commands.md)、[控制中心 Spec 的 v8 增补](https://github.com/sixianli/himawari-agent/blob/794124398468fd3977891e4baee0c582f0ca1e5d/docs/assets/control-center/2026-09-15-v4-design.md#v8-more-panel)、[实施计划](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-10-28-file-delivery-and-more-panel-plan.md)、[ADR 0091](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0091-chat-ui-v6-file-preview-and-sidebar.md)、[ADR 0097](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0097-bash-writes-workspace-with-change-ledger.md)；PR #63（后台命令）、本设计的文档 PR 见分支 `claude/project-thread-3hdzxk`。
 
 **面试 30 秒版**
 
@@ -2975,12 +2975,12 @@ PR #82（2026-10-28 合并）。只改了返回格式、没改模型和数据，
 **结果数据**
 
 - 测试：`apps/control-center/test/` 下 35 个文件 516 个测试全部通过（合并 main 之后，含本批改写的过程区、回答底栏、设置、欢迎语、文件筛选测试）；`npm run check` 和 `npm run build` 通过。
-- 三语排版：改过的过程区、设置、文件页、侧栏在中英日三种语言、电脑和手机两种宽度、亮暗两种主题下截图检查，截图存为基线 `docs/assets/control-center/2026-10-28-v9/`。
+- 三语排版：改过的过程区、设置、文件页、侧栏在中英日三种语言、电脑和手机两种宽度、亮暗两种主题下截图检查，截图存为基线 [docs/assets/control-center/2026-10-28-v9](https://github.com/sixianli/himawari-agent/tree/794124398468fd3977891e4baee0c582f0ca1e5d/docs/assets/control-center/2026-10-28-v9)。
 - 页面加载和渲染耗时：未测量。加粗规则的效果：未在生产回答上测量，也没有用评测集实测。
 
 **相关 ADR/PR**
 
-[ADR 0105](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0105-ui-batch-2026-10-28-show-what-the-owner-needs.md)（部分替换 [ADR 0087](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0087-chat-ui-v6-process-timeline.md) 和 [ADR 0096](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0096-phone-chat-page-safe-area-and-quiet-answer-line.md)）；[v4 设计说明 · v9 增补](assets/control-center/2026-09-15-v4-design.md#v9-ui-batch)；PR #80（分支 `claude/project-thread-di5x9h`）。
+[ADR 0105](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0105-ui-batch-2026-10-28-show-what-the-owner-needs.md)（部分替换 [ADR 0087](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0087-chat-ui-v6-process-timeline.md) 和 [ADR 0096](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0096-phone-chat-page-safe-area-and-quiet-answer-line.md)）；[v4 设计说明 · v9 增补](https://github.com/sixianli/himawari-agent/blob/794124398468fd3977891e4baee0c582f0ca1e5d/docs/assets/control-center/2026-09-15-v4-design.md#v9-ui-batch)；PR #80（分支 `claude/project-thread-di5x9h`）。
 
 **面试 30 秒版**
 
@@ -3045,7 +3045,7 @@ PR #82（2026-10-28 合并）。只改了返回格式、没改模型和数据，
 
 **结果数据**
 
-截至设计定稿（2026-10-29）还没有代码。命中率、多余提醒率、漏提醒率和每封邮件的花费都未测量，上线第一周再补。原型存为基线 `docs/assets/control-center/2026-10-29-v10/`：中英日三种语言、电脑和手机两种宽度，共 42 张截图。
+截至设计定稿（2026-10-29）还没有代码。命中率、多余提醒率、漏提醒率和每封邮件的花费都未测量，上线第一周再补。原型存为基线 [docs/assets/control-center/2026-10-29-v10](https://github.com/sixianli/himawari-agent/tree/794124398468fd3977891e4baee0c582f0ca1e5d/docs/assets/control-center/2026-10-29-v10)：中英日三种语言、电脑和手机两种宽度，共 42 张截图。
 
 **相关 ADR/PR**
 
@@ -3484,7 +3484,7 @@ Andy 2026-10-29 00:56 定了规则，记在 [ADR 0107](https://github.com/sixian
 
 **相关 ADR/PR**
 
-[ADR 0110](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0110-ui-batch-2026-10-29-check-it-before-the-owner-does.md)；[ADR 0100](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0100-conversation-more-panel-files-and-background-commands.md)、[ADR 0105](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0105-ui-batch-2026-10-28-show-what-the-owner-needs.md) 的后续说明；[事故与门槛清单 I-15 至 I-18](incidents-and-gates.md)；[设计规范](ui-ux-design-guide.md)；截图基线 `docs/assets/control-center/2026-10-29-v11/`；PR #99（分支 `claude/project-thread-89xntg`）。
+[ADR 0110](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0110-ui-batch-2026-10-29-check-it-before-the-owner-does.md)；[ADR 0100](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0100-conversation-more-panel-files-and-background-commands.md)、[ADR 0105](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0105-ui-batch-2026-10-28-show-what-the-owner-needs.md) 的后续说明；[事故与门槛清单 I-15 至 I-18](incidents-and-gates.md)；[设计规范](ui-ux-design-guide.md)；截图基线 [docs/assets/control-center/2026-10-29-v11](https://github.com/sixianli/himawari-agent/tree/794124398468fd3977891e4baee0c582f0ca1e5d/docs/assets/control-center/2026-10-29-v11)；PR #99（分支 `claude/project-thread-89xntg`）。
 
 **面试 30 秒版**
 
@@ -3611,7 +3611,7 @@ Claude 让用户按主题看、改、删记忆，但没有告诉用户每轮实�
 
 - 测试（本线程云端容器）：`npx vitest run --config vitest.workspace.ts apps/control-center/test` 共 76 个文件 1074 条通过；新增的 `[MEM-PIN]` 测试覆盖开关、放不下的条目、上次打开以来新记住的条数、45 条分页、手动添加的主题和开关。
 - 事故 I-21 的门槛：没猜中关键词时归“其他”的测试在修复前的代码上失败（`expected { category: 'identity' } to deeply equal { category: 'other' }`），修复后通过。
-- 截图核对：中英日三语、电脑 1280 像素和手机 390 像素共 21 张，无横向滚动、无页面报错（脚本输出 NO_PROBLEMS），存为基线 `docs/assets/control-center/2026-10-29-v12/`。
+- 截图核对：中英日三语、电脑 1280 像素和手机 390 像素共 21 张，无横向滚动、无页面报错（脚本输出 NO_PROBLEMS），存为基线 [docs/assets/control-center/2026-10-29-v12](https://github.com/sixianli/himawari-agent/tree/794124398468fd3977891e4baee0c582f0ca1e5d/docs/assets/control-center/2026-10-29-v12)。
 - 记忆页脚本体积（`npm run build` 输出）：50.88 kB，gzip 后 13.46 kB；改动前的体积未测量。
 - 真实使用效果（Andy 是否更快找到记忆、开关用了几次）：未测量，等上线后看。
 - 2026-10-29 追加（合成数据对比，Andy 同意后跑，数据和脚本在项目文件 `memory-importance-eval/`）：用 36 句虚构主人说的话，比较现行规则（DeepSeek V4.1 Flash 打分）和 Jev 判断“该不该每次都带上”。28 句明确的里，现行规则判对 24 句、Jev 21 句，两者都没有把不该带的错带上；两次重跑结果完全一致。现行规则漏掉的 4 句重要度都在 850 以上，原因是提取提示词把家人的名字和职业算成“他人隐私”、把“花钱先问我”算成“财务”，都标成敏感，敏感记忆不进档案。改了提示词的分类说明后复测 11 句：家人 3 句和这条规矩两次都改判为普通信息并进档案，家人的心理咨询、存款、朋友分手 3 句仍是敏感。费用：对比 0.0798 美元，复测 0.0228 美元。
@@ -4563,7 +4563,7 @@ OpenAI 的“流式”Himawari 早已做到，但第一个字本身就要 5 秒�
 
 **相关 ADR/PR**
 
-[ADR 0126](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0126-sunflower-mark-grows-233-seeds.md)；[想法 IDEA-20261030-001](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/ideas/IDEA-20261030-001-himawari-logo-candidates-grow-and-hi.md)；PR #134；v13 基准 `docs/assets/control-center/2026-10-30-v13/`。
+[ADR 0126](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0126-sunflower-mark-grows-233-seeds.md)；[想法 IDEA-20261030-001](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/ideas/IDEA-20261030-001-himawari-logo-candidates-grow-and-hi.md)；PR #134；v13 基准 [docs/assets/control-center/2026-10-30-v13](https://github.com/sixianli/himawari-agent/tree/794124398468fd3977891e4baee0c582f0ca1e5d/docs/assets/control-center/2026-10-30-v13)。
 
 **面试 30 秒版**
 

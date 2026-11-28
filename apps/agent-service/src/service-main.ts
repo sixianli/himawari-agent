@@ -125,6 +125,7 @@ import { backgroundCommandLimits } from "./production-background-commands.js";
 import { createConfiguredBrowserTools } from "./production-browser-tools.js";
 import { createProductionCapabilityReactivationVerifier } from "./production-capability-reactivation.js";
 import { createConfiguredComputerTools } from "./production-computer-tools.js";
+import { ProductionConversationRecall } from "./production-conversation-recall.js";
 import {
   DEFAULT_TOOL_RESULT_SHARE,
   MEMORY_SNAPSHOT_WINDOW_SHARE,
@@ -132,7 +133,6 @@ import {
   toolResultCharacters,
 } from "./production-conversation-tools.js";
 import { retrievalDegradeRecorder } from "./production-decision-ledger.js";
-import { ProductionConversationRecall } from "./production-conversation-recall.js";
 import { productionDeviceActionAuthorization } from "./production-device-action-authorization.js";
 import { createProductionDeviceActions } from "./production-device-actions.js";
 import { ProductionExecutionAdmissionHandler } from "./production-execution-admission-handler.js";
@@ -1171,6 +1171,8 @@ export async function startTenantRuntime(
     const hostWeb = createConfiguredHostWeb({
       runPolicy: configuration.runPolicy,
       secrets: sources.provider,
+      onReadFailed: (failure) =>
+        writeServiceDiagnostic(errorOutput, { component: "agent-service", ...failure }),
     });
     const hostReadOnlyPort = new DescriptorRelativeReadOnly();
     const computer = await createConfiguredComputerTools(configuration, clock);
@@ -3023,7 +3025,9 @@ export async function startTenantRuntime(
             ({ ref, purpose }) => ref === webPushConfiguration.secretRef && purpose === "web-push",
           )
         : undefined;
-      if (webPushConfiguration && webPushSecret && episodeProtector) {
+      const notificationsConfigured =
+        (webPushConfiguration && webPushSecret) || configuration.runPolicy?.applePush;
+      if (notificationsConfigured && episodeProtector) {
         const pushRepository = repository;
         const messageUrgency = async (messageId: string) =>
           (
@@ -3086,6 +3090,10 @@ export async function startTenantRuntime(
             sender: applePushSender,
             configuration: () => applePushConfiguration,
             threadTitle,
+            backgroundWork: async () => {
+              if (!timerSubthreads) return { matters: [] };
+              return timerSubthreads.backgroundWork();
+            },
             publicOrigin: configuration.publicOrigin,
             now: () => clock.now(),
             onDelivery: (outcome) =>
@@ -3110,10 +3118,17 @@ export async function startTenantRuntime(
           agentId: configuration.agentId,
           messageUrgency,
           store: pushRepository.webPush(),
-          sender: createWebPushSender({
-            privateKey: await pushSources.keys.resolve(webPushSecret.ref, webPushSecret.version),
-            subject: webPushConfiguration.subject,
-          }),
+          ...(webPushConfiguration && webPushSecret
+            ? {
+                sender: createWebPushSender({
+                  privateKey: await pushSources.keys.resolve(
+                    webPushSecret.ref,
+                    webPushSecret.version,
+                  ),
+                  subject: webPushConfiguration.subject,
+                }),
+              }
+            : {}),
           presence: webPushPresence,
           readLocale: async () =>
             (
@@ -3689,11 +3704,7 @@ export async function startTenantRuntime(
         },
         modelCatalog: await Promise.all(
           modelComposition.descriptors.generation
-            .filter(
-              (descriptor) =>
-                descriptor.api === "openai-completions" &&
-                descriptor.allowedDataClassifications.includes("private"),
-            )
+            .filter((descriptor) => descriptor.api === "openai-completions")
             .map(async (descriptor) => ({
               ...getPiModelPresentation(await configuredPiModels.resolve(descriptor.ref)),
               ...modelCatalogTags(descriptor.ref),

@@ -1,5 +1,4 @@
 import type {
-  ModelEgress,
   ClockPort,
   ConfiguredCompletionsGenerationModelDescriptor,
   ConfiguredEmbeddingModelDescriptor,
@@ -7,6 +6,7 @@ import type {
   IdGeneratorPort,
   ModelCostDescriptor,
   ModelDescriptor,
+  ModelEgress,
   ModelInvocationAdmissionPort,
   ModelInvocationAdmissionResolver,
   ModelPort,
@@ -21,6 +21,7 @@ import type {
   RuntimeRequest,
   SecretPort,
 } from "@himawari-agent/application";
+import { isModelVisible, modelVisibleClassifications } from "@himawari-agent/application";
 import {
   assertProductionSecretSource,
   type HostProviderSecretSource,
@@ -506,10 +507,7 @@ export function createProductionModelComposition(
     },
   ): ProactiveModelInvoker => {
     const descriptor = options.descriptors.find((item) => item.ref === modelRef);
-    if (
-      descriptor?.api !== "openai-completions" ||
-      !descriptor.allowedDataClassifications.includes("private")
-    )
+    if (descriptor?.api !== "openai-completions")
       throw new Error("PROACTIVE_MODEL_DISCLOSURE_DENIED");
     const model = auxiliaryModelFor(
       descriptor,
@@ -527,9 +525,9 @@ export function createProductionModelComposition(
     return Object.freeze<ProactiveModelInvoker>({
       model,
       modelRef,
-      allowedDataClassifications: Object.freeze([...descriptor.allowedDataClassifications]),
+      allowedDataClassifications: modelVisibleClassifications(),
       async prepare({ invocationId, prompt, deadlineAt, dataClassification }) {
-        if (!descriptor.allowedDataClassifications.includes(dataClassification))
+        if (!isModelVisible(dataClassification))
           throw new Error("PROACTIVE_MODEL_DISCLOSURE_DENIED");
         const runId = `proactive:${invocationId}` as RunId;
         const inputRef = await payloadBoundary.writeText({
@@ -576,10 +574,7 @@ export function createProductionModelComposition(
     text: AuxiliaryTextOptions,
   ): Promise<string> => {
     const descriptor = options.descriptors.find((item) => item.ref === request.modelRef);
-    if (
-      descriptor?.api !== "openai-completions" ||
-      !descriptor.allowedDataClassifications.includes(request.dataClassification)
-    )
+    if (descriptor?.api !== "openai-completions" || !isModelVisible(request.dataClassification))
       throw new Error(`${text.errorPrefix}_DISCLOSURE_DENIED`);
     const invocationId = text.invocationId;
     const inputRef = await payloadBoundary.writeText({

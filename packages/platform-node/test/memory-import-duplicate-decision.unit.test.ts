@@ -38,7 +38,7 @@ describe("[A4] memory import duplicate decision", () => {
   it("asks one choice question per candidate with zero data retention and no raw secrets", () => {
     const body = JSON.parse(
       importDuplicateRequestBody("typesafe-ai/jev", {
-        existing: [{ key: "m0", text: "我的银行卡是 4111 1111 1111 1111" }, existing[1] as never],
+        existing: [{ key: "m0", text: "我的银行卡密码是 Qz7mWx42Lp" }, existing[1] as never],
         candidates: [{ text: "喝不了牛奶" }, { text: "在上海工作" }],
       }),
     ) as {
@@ -54,7 +54,7 @@ describe("[A4] memory import duplicate decision", () => {
       ["c1", "choice"],
     ]);
     expect(body.questions[0]?.choices.map(({ value }) => value)).toEqual(["m0", "m1", "none"]);
-    expect(JSON.stringify(body.input)).not.toContain("4111 1111 1111 1111");
+    expect(JSON.stringify(body.input)).not.toContain("Qz7mWx42Lp");
   });
 
   it("sends the key as a bearer token and returns the parsed answers", async () => {
