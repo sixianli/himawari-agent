@@ -266,9 +266,7 @@ export class ThreadCheckpointService {
       };
       const candidates: ThreadDerivativeCandidateRecord[] = [];
       for (const [ordinal, candidate] of result.candidates.entries()) {
-        const sensitive =
-          candidate.dataClassification === "sensitive" ||
-          candidate.dataClassification === "restricted";
+        const sensitive = candidate.dataClassification === "restricted";
         const contentRef = sensitive
           ? null
           : await this.options.content.store({

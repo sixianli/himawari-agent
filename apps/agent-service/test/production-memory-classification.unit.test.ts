@@ -45,7 +45,7 @@ describe("[T5] memory classifier", () => {
     expect(results.map(({ failed }) => failed)).toEqual([false, false, false]);
   });
 
-  it("stops asking the model once today's limit is spent and marks the rest sensitive, then starts again the next day", async () => {
+  it("stops asking the model once today's limit is spent and leaves the rest unsorted but ordinary, then starts again the next day", async () => {
     const { classifier, prompts, failures } = harness({
       dailyLimitMicros: 120,
       batchCharacters: 6000,
@@ -62,8 +62,8 @@ describe("[T5] memory classifier", () => {
     const blocked = await classifier.classify(["我喜欢游泳"]);
     expect(blocked[0]).toEqual({
       category: "other",
-      classification: "sensitive",
-      topic: "other",
+      classification: "private",
+      topic: null,
       failed: true,
     });
     expect(prompts).toHaveLength(1);

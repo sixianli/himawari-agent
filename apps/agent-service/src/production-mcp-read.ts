@@ -34,7 +34,6 @@ import {
   MCP_PROPOSE_MEMORY_SAVED,
   MCP_PROPOSE_MEMORY_SAVED_DIRECT,
   MCP_PROPOSE_MEMORY_SECRET,
-  MCP_PROPOSE_MEMORY_SENSITIVE_NOTE,
   MCP_PROPOSE_MEMORY_UNSUPPORTED,
   MCP_PROPOSE_NOT_SHOWN,
   MCP_PROPOSE_RULE_ALREADY_SAVED,
@@ -53,18 +52,18 @@ import {
   MCP_START_HERE_OMITTED,
   MCP_START_HERE_RULES_NOTE,
   MCP_START_HERE_RULES_OMITTED,
-  MCP_TOOL_FIND_MEMORIES,
-  MCP_TOOL_PROPOSE_MEMORIES,
-  MCP_TOOL_PROPOSE_MEMORY,
-  MCP_TOOL_PROPOSE_RULE,
-  MCP_TOOL_SYNC_MEMORIES,
-  MCP_TOOL_RESULT_FAILED,
   MCP_SYNC_MEMORIES_FAILED,
   MCP_SYNC_MEMORIES_FULL,
   MCP_SYNC_MEMORIES_INVALID,
   MCP_SYNC_MEMORIES_RESULT,
+  MCP_TOOL_FIND_MEMORIES,
+  MCP_TOOL_PROPOSE_MEMORIES,
+  MCP_TOOL_PROPOSE_MEMORY,
+  MCP_TOOL_PROPOSE_RULE,
+  MCP_TOOL_RESULT_FAILED,
   MCP_TOOL_RULE_BOOK,
   MCP_TOOL_START_HERE,
+  MCP_TOOL_SYNC_MEMORIES,
   MCP_TOOL_TODAY_CONTEXT,
   renderPrompt,
   TOOL_RESULT_RECALL_INPUT_INVALID,
@@ -89,10 +88,11 @@ import {
 } from "@modelcontextprotocol/server";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { AdmissionWindows } from "./bearer-admission.js";
+import { checkProjectName } from "./mcp-project-name.js";
 import {
-  type McpBearerAccess,
   MCP_READ_SCOPE,
   MCP_WRITE_SCOPE,
+  type McpBearerAccess,
 } from "./production-mcp-authorization.js";
 import {
   type McpUsageRecorder,
@@ -111,7 +111,6 @@ import {
   type ExternalProposalSubmission,
   externalDirectBatchId,
   normalizeProposalText,
-  proposalClassification,
   proposalHasMachineSecret,
 } from "./production-mcp-memory-writer.js";
 import {
@@ -120,7 +119,6 @@ import {
   type ExternalRuleProposal,
   type ExternalRuleType,
 } from "./production-mcp-rule-writer.js";
-import { checkProjectName } from "./mcp-project-name.js";
 import {
   MCP_SYNC_BATCH_TOO_LARGE,
   MCP_SYNC_FULL,
@@ -1426,14 +1424,12 @@ export class ProductionMcpRead {
     },
     context: ServerContext,
   ): Promise<InputRequiredResult> {
-    const sensitive = proposalClassification(proposal.text, proposal.category) === "sensitive";
     return inputRequired({
       inputRequests: {
         [MCP_PROPOSAL_CONFIRM_KEY]: inputRequired.elicit({
           message: renderPrompt(MCP_PROPOSE_MEMORY_CONFIRM, {
             client: proposal.client,
             category: proposal.category,
-            sensitive: sensitive ? MCP_PROPOSE_MEMORY_SENSITIVE_NOTE.text : "",
             text: proposal.text,
           }),
           requestedSchema: { type: "object", properties: {} },

@@ -20,7 +20,6 @@ import {
   TOOL_TASK_LIST,
   TOOL_TASK_UPDATE,
 } from "@himawari-agent/prompt-catalog";
-import { classificationWithIdentifiers } from "@himawari-agent/sensitive-capture";
 
 export const THREAD_TASK_CAPABILITY_PREFIX = "owner.plan.";
 export const THREAD_TASK_TOOLS = ["task_create", "task_update", "task_list", "task_get"] as const;
@@ -210,10 +209,7 @@ export class ProductionThreadTasks {
       .digest("hex")
       .slice(0, 32)}`;
     const body = JSON.stringify(content);
-    const classification = classificationWithIdentifiers(
-      `${content.subject}\n${content.description}\n${content.activeForm}`,
-      "private",
-    );
+    const classification: DataClassification = "private";
     if (!(await this.#options.payloads.get(ref as never)))
       await this.#options.payloads.put(
         await this.#options.protector.protect({

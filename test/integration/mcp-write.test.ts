@@ -1801,7 +1801,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     expect(overview.externalProposals.items.every(({ text }) => text.length <= 2000)).toBe(true);
   });
 
-  it("[P5-3] raises a waiting proposal to sensitive when the same text comes back as health", async () => {
+  it("[P5-3][I-129] keeps a waiting proposal ordinary when the same text comes back as health", async () => {
     const f = await setup();
     const muse = await f.connect({ elicitation: false, name: "muse" });
     const text = "主人每晚十点吃降压药";
@@ -1809,17 +1809,17 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     expect((await f.pending())[0]?.dataClassification).toBe("private");
     await f.propose(muse, { text, category: "health" });
     const [waiting] = await f.pending();
-    expect(waiting?.dataClassification).toBe("sensitive");
-    expect((await f.payloads.get(waiting?.contentRef ?? ""))?.dataClassification).toBe("sensitive");
+    expect(await f.pending()).toHaveLength(1);
+    expect(waiting?.dataClassification).toBe("private");
+    expect((await f.payloads.get(waiting?.contentRef ?? ""))?.dataClassification).toBe("private");
     expect(await f.writer.readText(waiting ?? { contentRef: null })).toBe(text);
     await f.writer.respond(
       [{ proposalId: waiting?.id ?? "", decision: "keep", editedText: null }],
       "external-batch-health",
     );
     const [saved] = await f.external();
-    expect(saved?.dataClassification).toBe("sensitive");
-    expect(saved?.attributes?.category).toBe("health");
-    expect(saved?.attributes?.sensitiveTopic).toBe("health");
+    expect(saved?.dataClassification).toBe("private");
+    expect(saved?.attributes?.sensitiveTopic).toBeUndefined();
   });
 
   it("[P5-3] saves one memory when two waiting proposals are edited to the same text, and the client dialog links to an existing memory too", async () => {
@@ -2013,7 +2013,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     expect(waiting.map(({ client }) => client)).toEqual(["claude-code"]);
   });
 
-  it("[P5-3] a sensitive proposal is not hung on a private memory with the same text", async () => {
+  it("[P5-3][I-129] a health proposal with the same text links to the memory already saved", async () => {
     const f = await setup();
     const text = "主人每晚十点吃降压药";
     await f.writer.submit({
@@ -2049,9 +2049,8 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       "external-batch-sensitive",
     );
     const saved = await f.writer.read("proposal-sensitive");
-    expect(saved?.memoryId).not.toBe(privateMemory?.id);
-    const memories = await f.external();
-    expect(memories.find(({ id }) => id === saved?.memoryId)?.dataClassification).toBe("sensitive");
+    expect(saved?.memoryId).toBe(privateMemory?.id);
+    expect(await f.external()).toHaveLength(1);
   });
 
   it("[P5-3] confirming items that were all decided elsewhere reports a conflict", async () => {
@@ -2284,17 +2283,16 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     );
   });
 
-  it("[direct] still holds sensitive proposals for the owner, and a connection set to ask keeps asking", async () => {
+  it("[direct][I-129] saves a health proposal directly like any other, and a connection set to ask keeps asking", async () => {
     const f = await setup({ direct: true });
     const claude = await f.connect({ elicitation: false });
-    const sensitive = await f.propose(claude, {
+    const health = await f.propose(claude, {
       text: "主人有高血压，每天吃降压药",
       category: "health",
     });
-    expect(sensitive.text).not.toBe(MCP_PROPOSE_MEMORY_SAVED_DIRECT.text);
-    expect(sensitive.text).toContain("待确认");
-    expect(await f.external()).toEqual([]);
-    expect(await f.pending()).toHaveLength(1);
+    expect(health.text).toBe(MCP_PROPOSE_MEMORY_SAVED_DIRECT.text);
+    expect(await f.external()).toHaveLength(1);
+    expect(await f.pending()).toEqual([]);
     const asking = await setup();
     const muse = await asking.connect({ elicitation: false });
     expect((await asking.propose(muse, { text: COFFEE })).text).toContain("待确认");
@@ -2302,7 +2300,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     expect(await asking.pending()).toHaveLength(1);
   });
 
-  it("[direct] saves a whole propose_memories call as one batch the owner can undo, and does not save replaced or sensitive ones", async () => {
+  it("[direct] saves a whole propose_memories call as one batch the owner can undo, and does not save replaced ones", async () => {
     const f = await setup({ direct: true });
     const web = control(f);
     const muse = await f.connect({ elicitation: false, name: "muse" });
@@ -2316,19 +2314,19 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     expect(sent.parsed.results.map(({ status }) => status)).toEqual([
       "saved",
       "saved",
-      "pending",
+      "saved",
       "replaced",
       "saved",
     ]);
     const saved = await f.external();
-    expect(saved).toHaveLength(3);
+    expect(saved).toHaveLength(4);
     const batchIds = new Set(saved.map(({ id }) => id.split(":").at(-1)));
     expect(batchIds.size).toBe(1);
     const [batchId] = [...batchIds];
     expect(batchId).toMatch(/^batch-direct-/);
-    expect(await f.pending()).toHaveLength(1);
+    expect(await f.pending()).toEqual([]);
     expect((await web.overview()).externalProposals.batches).toEqual([
-      { batchId, decidedAt: NOW, committed: 3, rejected: 0 },
+      { batchId, decidedAt: NOW, committed: 4, rejected: 0 },
     ]);
     const again = await batch(muse, [{ text: PARK }]);
     expect(again.parsed.results.map(({ status }) => status)).toEqual(["already_saved"]);
@@ -2535,7 +2533,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       expect(await f.external()).toEqual([]);
     });
 
-    it("keeps a confirmed sensitive project note above a private ceiling", async () => {
+    it("[I-129] shows an approved health project note under the default ceiling", async () => {
       const f = await setup();
       const client = await f.connect();
       await callSync(client, {
@@ -2558,15 +2556,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
         database.close();
       }
       const search = { query: "医院复查", project: "Health" };
-      expect((await callFind(client, search)).notes).toEqual([]);
-      await f.repository.mcpConnections().change({
-        ...scope,
-        id: CONNECTION_ID,
-        updatedAt: NOW,
-        readCeiling: "sensitive",
-      });
-      const raised = await f.connect();
-      expect((await callFind(raised, search)).notes).toHaveLength(1);
+      expect((await callFind(client, search)).notes).toHaveLength(1);
     });
   });
 });

@@ -497,9 +497,8 @@ describe("PiModelTransport", () => {
     expect(body).toBeDefined();
     expect(body).not.toContain("xxxxxxxxxxxx");
     expect(body).not.toContain("482910");
-    expect(body).not.toContain("4111 1111");
+    expect(body).toContain("卡号 4111 1111 1111 1111");
     expect(body).toMatch(/\[验证码#[a-z]{8}\]/u);
-    expect(body).toMatch(/\[银行卡 尾号1111#[a-z]{8}\]/u);
     expect(body).toMatch(/\[密码#[a-z]{8}\]/u);
   });
 

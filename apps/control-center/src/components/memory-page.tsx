@@ -2021,14 +2021,14 @@ function ImportPanel({
       if (round.current !== current) return;
       const sorted = applyImportClassifications(all, classifications);
       setItems(sorted);
-      const askable = sorted.filter((item) => !item.sensitive && item.status === "ready");
+      const askable = sorted.filter((item) => item.status === "ready");
       const answers = askable.length
         ? await memory.importDuplicates(askable.map((item) => item.text))
         : [];
       if (round.current !== current) return;
       let next = 0;
       const verdicts = sorted.map((item) => {
-        if (item.sensitive || item.status !== "ready") return "skipped" as const;
+        if (item.status !== "ready") return "skipped" as const;
         const verdict = answers[next] ?? "skipped";
         next += 1;
         return verdict;
@@ -2101,8 +2101,7 @@ function ImportPanel({
                         {message("memory.cat", { c: item.category })}
                         {item.subCategory ? ` · ${item.subCategory}` : ""}
                       </span>
-                      {item.sensitive ||
-                      item.duplicate ||
+                      {item.duplicate ||
                       item.coding ||
                       item.duplicateCheck !== "clear" ||
                       item.status === "classifying" ? (
@@ -2114,13 +2113,11 @@ function ImportPanel({
                                 ? "classifying"
                                 : item.status === "unclassified"
                                   ? "unclassified"
-                                  : item.sensitive
-                                    ? "sensitive"
-                                    : item.duplicateCheck === "similar"
-                                      ? "similar"
-                                      : item.duplicateCheck === "unchecked"
-                                        ? "unchecked"
-                                        : "coding",
+                                  : item.duplicateCheck === "similar"
+                                    ? "similar"
+                                    : item.duplicateCheck === "unchecked"
+                                      ? "unchecked"
+                                      : "coding",
                           })}
                         </span>
                       ) : null}

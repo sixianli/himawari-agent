@@ -25,7 +25,7 @@
   },
   "overrides": [
     {
-      "includes": ["docs/assets/control-center/**/*.html", "docs/assets/apple-clients/**/*.html"],
+      "includes": ["docs/assets/apple-clients/**/*.html"],
       "linter": {
         "enabled": false
       }
@@ -62,32 +62,7 @@
       }
     },
     {
-      "includes": [
-        "docs/assets/control-center/2026-09-15-v4/source.html",
-        "docs/assets/control-center/2026-09-15-v4/index.html",
-        "docs/assets/control-center/2026-09-16-state-review-r3/source.html",
-        "docs/assets/control-center/2026-09-16-state-review-r3/index.html",
-        "docs/assets/control-center/2026-09-27-v5/source.html",
-        "docs/assets/control-center/2026-09-27-v5/index.html"
-      ],
-      "linter": {
-        "enabled": false
-      }
-    },
-    {
-      "includes": [
-        "docs/assets/control-center/2026-09-10-v1/index.html",
-        "docs/assets/control-center/2026-09-10-v1/source.html",
-        "docs/assets/control-center/2026-10-26-v6/index.html",
-        "docs/assets/control-center/2026-10-26-v6/mark-options.html",
-        "docs/assets/control-center/2026-10-28-v8/desktop.dc.html",
-        "docs/assets/control-center/2026-10-28-v8/phone.dc.html",
-        "docs/assets/control-center/2026-10-28-v8/canvas.json",
-        "docs/assets/control-center/2026-10-29-v11/prototype.html",
-        "docs/assets/control-center/2026-10-29-v12/memory-page-prototype.html",
-        "docs/assets/control-center/2026-10-30-v13/logo-growth-prototype.html",
-        "docs/assets/brand-candidates/2026-10-30-logo/index.html"
-      ],
+      "includes": ["docs/assets/brand-candidates/2026-10-30-logo/index.html"],
       "formatter": {
         "enabled": false
       },

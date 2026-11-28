@@ -74,6 +74,10 @@ const positives: ReadonlyArray<readonly [string, string, string]> = [
   ["个人番号", "マイナンバー 123456789018 です", "マイナンバー [证件号] です"],
 ];
 
+const RULESET_BEFORE_KEEPING_IDENTIFIERS = { ruleset: 2 } as const;
+const optionsFor = (expected: string) =>
+  /银行卡|证件号/u.test(expected) ? RULESET_BEFORE_KEEPING_IDENTIFIERS : {};
+
 const negatives: readonly string[] = [
   "订单号 20261101123456 已发货",
   "快递单号 SF1234567890123",
@@ -121,8 +125,24 @@ const negatives: readonly string[] = [
 
 describe("outbound redaction", () => {
   it.each(positives)("redacts %s", (_name, input, expected) => {
-    expect(redactForEgress(input).text).toBe(expected);
-    expect(redactForEgress(input).findings.length).toBeGreaterThan(0);
+    expect(redactForEgress(input, optionsFor(expected)).text).toBe(expected);
+    expect(redactForEgress(input, optionsFor(expected)).findings.length).toBeGreaterThan(0);
+  });
+
+  it("[I-129] keeps card and identity numbers from ruleset 3, and still masks passwords and codes next to them", () => {
+    for (const text of [
+      "卡号 4111 1111 1111 1111 已绑定",
+      "amex 378282246310005",
+      "身份证 11010519491231002X",
+      "IBAN GB82 WEST 1234 5698 7654 32",
+      "マイナンバー 123456789018 です",
+    ]) {
+      expect(redactForEgress(text).text).toBe(text);
+      expect(redactForEgress(text).findings).toEqual([]);
+    }
+    expect(redactForEgress("验证码 482910\n卡号 4111 1111 1111 1111").text).toBe(
+      "验证码 [验证码]\n卡号 4111 1111 1111 1111",
+    );
   });
 
   it.each(negatives)("leaves benign text untouched: %s", (input) => {
@@ -132,9 +152,9 @@ describe("outbound redaction", () => {
   });
 
   it("never leaves the original sensitive value behind", () => {
-    for (const [, input] of positives) {
+    for (const [, input, expected] of positives) {
       const digits = input.match(/\d{4,}/gu) ?? [];
-      const out = redactForEgress(input).text;
+      const out = redactForEgress(input, optionsFor(expected)).text;
       for (const run of digits) {
         if (!/尾号/u.test(out)) expect(out).not.toContain(run);
       }
@@ -142,10 +162,11 @@ describe("outbound redaction", () => {
   });
 
   it("is deterministic and idempotent", () => {
-    for (const [, input] of positives) {
-      const once = redactForEgress(input).text;
-      expect(redactForEgress(input).text).toBe(once);
-      expect(redactForEgress(once).text).toBe(once);
+    for (const [, input, expected] of positives) {
+      const options = optionsFor(expected);
+      const once = redactForEgress(input, options).text;
+      expect(redactForEgress(input, options).text).toBe(once);
+      expect(redactForEgress(once, options).text).toBe(once);
     }
   });
 
@@ -164,7 +185,6 @@ describe("outbound redaction", () => {
   it("reports counts by kind without echoing values", () => {
     const result = redactForEgress("验证码 482910，密码：abc123，卡号 4111111111111111");
     expect(result.findings.map(({ kind }) => kind).sort()).toEqual([
-      "bank-card",
       "password",
       "verification-code",
     ]);
@@ -202,7 +222,8 @@ describe("stable placeholders", () => {
     const table = new Map<string, string>();
     const result = redactForEgress("密码：hunter22abc，卡号 4111 1111 1111 1111", { tag, table });
     expect(result.text).not.toContain("hunter22abc");
-    expect([...table.values()].sort()).toEqual(["4111 1111 1111 1111", "hunter22abc"]);
+    expect([...table.values()]).toEqual(["hunter22abc"]);
+    expect(result.text).toContain("4111 1111 1111 1111");
   });
 
   it("masks a value everywhere once it has been masked earlier, without looking ahead", () => {
@@ -256,13 +277,10 @@ describe("reporting what was masked", () => {
     }).text;
     expect(observed).toBe(redactForEgress(mixed, { tag, known: new Map() }).text);
     expect(seen.map(({ kind, ruleId }) => `${kind}/${ruleId}`).sort()).toEqual([
-      "bank-card/bank-card",
-      "identity-number/cn-identity-number",
       "machine-secret/openai-api-key",
       "password/password-keyword",
       "verification-code/verification-code-keyword",
     ]);
-    expect(seen.find(({ kind }) => kind === "bank-card")?.value).toBe("4111111111111111");
     const later: string[] = [];
     redactForEgress("好的，hunter22abc 已经记下", {
       tag,
@@ -304,7 +322,6 @@ describe("locating masked values in the masked text", () => {
     ).toEqual([
       ["[密码]", "password", "hunter22abc"],
       ["[密钥]", "machine-secret", key],
-      ["[银行卡 尾号1111]", "bank-card", "4111111111111111"],
       ["[密钥]", "machine-secret", key],
     ]);
   });

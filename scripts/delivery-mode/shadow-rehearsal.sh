@@ -31,6 +31,7 @@ probe_timeout="${HIMAWARI_SHADOW_PROBE_TIMEOUT:-15}"
 lease_wait_max="${HIMAWARI_SHADOW_LEASE_WAIT_MAX:-180}"
 masked_units="${HIMAWARI_SHADOW_MASKED_UNITS:-oracle-keepalive.service cloudflared.service}"
 config="${HIMAWARI_SHADOW_CONFIG:-/etc/himawari/config.json}"
+workspace="${HIMAWARI_SHADOW_WORKSPACE:-/var/lib/himawari/workspace}"
 socat="$tools/socat"
 egress_pids=()
 shadow=""
@@ -129,6 +130,11 @@ if [[ -n "$lease_expiry" ]]; then
 fi
 
 mkdir "$shadow/layer" "$shadow/root" "$shadow/journal" "$shadow/egress"
+workspace_bind=()
+if [[ -d "$workspace" ]]; then
+  workspace_bind=("--bind-ro=$workspace")
+  echo "SHADOW_WORKSPACE_READ_ONLY $workspace (seen with its real device and inode, which the directory grant names; the overlay would show another device)"
+fi
 egress_spec=""
 number=0
 while read -r egress_host egress_port; do
@@ -175,7 +181,7 @@ printf "%s" "$4" | while read -r number host port; do
 done
 shift 4
 exec "$@"
-' shadow-root "$mount" "$shadow" "$masked_units" "$egress_spec" "$nspawn" --quiet --directory="$shadow/root" --private-network --link-journal=no --machine="$machine" --hostname="$(hostname)" --console=pipe --bind="$shadow/state:$state_root" --bind="$shadow/journal:/var/log/journal" --bind="$shadow/egress:/run/himawari-shadow-egress" --property="MemoryMax=$memory_max" --boot < /dev/null > "$shadow/boot.log" 2>&1 9>&- &
+' shadow-root "$mount" "$shadow" "$masked_units" "$egress_spec" "$nspawn" --quiet --directory="$shadow/root" --private-network --link-journal=no --machine="$machine" --hostname="$(hostname)" --console=pipe --bind="$shadow/state:$state_root" --bind="$shadow/journal:/var/log/journal" --bind="$shadow/egress:/run/himawari-shadow-egress" "${workspace_bind[@]}" --property="MemoryMax=$memory_max" --boot < /dev/null > "$shadow/boot.log" 2>&1 9>&- &
 launcher=$!
 booted=1
 leader=""

@@ -65,7 +65,17 @@
         },
         "trustsReadOnlyLabels": true
       }
-    ]
+    ],
+    "applePush": {
+      "teamId": "WS6PVS5YQP",
+      "keyId": "BG737TB8TB",
+      "topics": ["win.siyi.himawari.app", "win.siyi.himawari.mac"],
+      "environments": ["development", "production"],
+      "secret": {
+        "ref": "apple-push",
+        "version": "v1"
+      }
+    }
   },
   "onDeployFailure": "rollback",
   "materialCache": {

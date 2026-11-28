@@ -50,7 +50,11 @@ function readConfig(file) {
   if (typeof stillGatedPath !== "string" || !stillGatedPath.startsWith("/")) {
     fail("CONFIG_INVALID", "stillGatedPath");
   }
-  return { ...config, retireApplications: config.retireApplications ?? [], stillGatedPath };
+  return {
+    ...config,
+    retireApplications: config.retireApplications ?? [],
+    stillGatedPath,
+  };
 }
 
 function splitUri(uri) {
@@ -81,11 +85,23 @@ function overlaps(left, right) {
   );
 }
 
+function coveredBy(desiredParts, part) {
+  return desiredParts.some(
+    (wanted) =>
+      wanted.host === part.host &&
+      part.path !== "" &&
+      (part.path === wanted.path || part.path.startsWith(`${wanted.path}/`)),
+  );
+}
+
 function client(token) {
   async function call(method, route, body) {
     const response = await fetch(`${apiBase}${route}`, {
       method,
-      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     const payload = await response.json().catch(() => null);
@@ -168,6 +184,8 @@ async function sync({ configFile, planOnly }) {
   for (const app of retiring) {
     const foreign = destinationsOf(app).filter((uri) => splitUri(uri).host !== config.hostname);
     if (foreign.length > 0) fail("RETIRE_OUTSIDE_HOST", `${app.name}: ${foreign.join(", ")}`);
+    const uncovered = destinationsOf(app).filter((uri) => !coveredBy(desiredParts, splitUri(uri)));
+    if (uncovered.length > 0) fail("RETIRE_UNCOVERED_PATH", `${app.name}: ${uncovered.join(", ")}`);
   }
   const conflicts = [];
   for (const app of apps) {
@@ -183,7 +201,10 @@ async function sync({ configFile, planOnly }) {
   const plan = {
     managed: managed.length === 1 ? "update" : desired.length > 0 ? "create" : "none",
     destinations: desired,
-    retire: retiring.map((app) => app.name),
+    retire: retiring.map((app) => ({
+      name: app.name,
+      destinations: destinationsOf(app),
+    })),
   };
   if (planOnly) {
     console.log(`PUBLIC_PATHS_PLAN ${JSON.stringify(plan)}`);

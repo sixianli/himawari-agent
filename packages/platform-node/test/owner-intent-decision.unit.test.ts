@@ -64,7 +64,7 @@ describe("[ADR-0257] owner intent decision", () => {
     const body = JSON.parse(
       ownerIntentRequestBody("typesafe-ai/jev", {
         ...request,
-        ownerWords: ["我的银行卡是 4111 1111 1111 1111，明天提醒我还款"],
+        ownerWords: ["我的银行卡密码是 Qz7mWx42Lp，明天提醒我还款"],
       }),
     ) as {
       model: string;
@@ -79,7 +79,7 @@ describe("[ADR-0257] owner intent decision", () => {
       "explicit",
       "not_explicit",
     ]);
-    expect(JSON.stringify(body.input)).not.toContain("4111 1111 1111 1111");
+    expect(JSON.stringify(body.input)).not.toContain("Qz7mWx42Lp");
     expect(JSON.stringify(body.input)).not.toContain("capabilityRef");
   });
 
@@ -265,8 +265,8 @@ describe("[ADR-0257] owner intent answer parsing fails closed", () => {
   it("redacts sensitive text in parameter keys", () => {
     const body = ownerIntentRequestBody(MODEL, {
       ...request,
-      action: { ...request.action, parameters: { "4111 1111 1111 1111": "x" } },
+      action: { ...request.action, parameters: { "密码：Qz7mWx42Lp": "x" } },
     });
-    expect(body).not.toContain("4111 1111 1111 1111");
+    expect(body).not.toContain("Qz7mWx42Lp");
   });
 });

@@ -48,7 +48,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 1. **图片交给现在的主模型看。** 生产配置里 `deepseek/deepseek-v4.1-flash` 的 `input` 改成 `["text","image"]`，带图的那一轮照常用它回答。不另加第二个模型，少一次调用，也守住 ADR 0048。
 2. **能加的图片：** PNG、JPG、WebP、GIF（GIF 只取第一帧），原图最大 20 MB，和其他附件合计每条消息最多 10 个。iPhone 的 HEIC 照片和 SVG 暂不支持，并提示原因。
 3. **浏览器先压缩：** 长边超过 1568 像素就按比例缩小，再存成 JPG（质量 0.85，透明处填白）；1 MB 以内、不用缩小的 PNG、JPG、WebP 原样保留。压缩后仍超过约 1.1 MB 时依次把长边缩到 1200、900 像素再试。
-4. **输入框和聊天记录：** 输入框上方图片显示成 46 像素的方形缩略图，右上角是移除按钮，悬停显示名字和大小（[v6 原型](../assets/control-center/2026-10-26-v6/index.html)里的样式）。发出去的消息里，图片在正文上方显示成 132 像素的方形缩略图，其他文件仍是文件卡片。
+4. **输入框和聊天记录：** 输入框上方图片显示成 46 像素的方形缩略图，右上角是移除按钮，悬停显示名字和大小（[v6 原型](https://github.com/sixianli/himawari-agent/blob/794124398468fd3977891e4baee0c582f0ca1e5d/docs/assets/control-center/2026-10-26-v6/index.html)里的样式）。发出去的消息里，图片在正文上方显示成 132 像素的方形缩略图，其他文件仍是文件卡片。
 5. **模型看不了图时如实说明：** 网页从模型列表知道每个模型能不能看图。选中的模型看不了图而草稿里有图片时，输入框下方写“某某模型看不了图片，这一条里的图片会被略过”。发出去后由 Pi 把图片换成“图片已略过”的文字，这一轮照常回答。
 6. 新文字都有中文、英文、日文三种。
 
@@ -102,6 +102,5 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 - [ADR 0048：改用 Vercel AI Gateway，文本模型只用 DeepSeek V4.1 Flash](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0048-vercel-ai-gateway-replaces-openrouter.md)
 - [ADR 0090：对话界面 v6 第二期（附件）](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0090-chat-ui-v6-answer-and-composer.md#attachments)
 - [ADR 0091：对话界面 v6 第三期](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0091-chat-ui-v6-file-preview-and-sidebar.md)
-- [控制中心 v4 设计 Spec 的附件图片增补](../assets/control-center/2026-09-15-v4-design.md#v6-attachment-images)
+- [控制中心 v4 设计 Spec 的附件图片增补](https://github.com/sixianli/himawari-agent/blob/794124398468fd3977891e4baee0c582f0ca1e5d/docs/assets/control-center/2026-09-15-v4-design.md#v6-attachment-images)
 - [案例 28：回答下方一行和附件](../engineering-casebook.md#case-answer-line-attachments)
-- [SOURCE: docs/assets/control-center/2026-09-15-v4-design.md]

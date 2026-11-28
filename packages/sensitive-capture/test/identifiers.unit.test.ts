@@ -1,12 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
-  classificationWithIdentifiers,
-  containsCredential,
   containsRestrictedIdentifier,
   isSensitiveFieldName,
   isSensitiveQueryParameter,
   isSensitiveTraceKey,
-  mentionsSensitiveMaterial,
   redactWebContentSecrets,
 } from "../src/index.js";
 
@@ -21,18 +18,6 @@ describe("storage-boundary identifiers", () => {
     expect(containsRestrictedIdentifier("订单 20261105 已发货")).toBe(false);
     expect(containsRestrictedIdentifier("电话 090-1234-5678")).toBe(false);
     expect(containsRestrictedIdentifier("明天下午三点开会")).toBe(false);
-  });
-});
-
-describe("import hints", () => {
-  it("flags lines that mention a password, a card or a long number", () => {
-    expect(mentionsSensitiveMaterial("家里的 Wi-Fi 密码要换")).toBe(true);
-    expect(mentionsSensitiveMaterial("卡号记在本子上")).toBe(true);
-    expect(mentionsSensitiveMaterial("会员号 123456789012345")).toBe(true);
-  });
-
-  it("REVERSE: leaves ordinary preferences alone", () => {
-    expect(mentionsSensitiveMaterial("喜欢喝无糖咖啡")).toBe(false);
   });
 });
 
@@ -69,42 +54,5 @@ describe("trace field names", () => {
   it("REVERSE: matches whole names only, unlike the diagnostic field rule", () => {
     expect(isSensitiveTraceKey("tokenizer")).toBe(false);
     expect(isSensitiveTraceKey("keyboard")).toBe(false);
-  });
-});
-
-describe("classificationWithIdentifiers", () => {
-  it("[mask-not-block] raises private text holding a card or identity number to sensitive", () => {
-    expect(classificationWithIdentifiers("卡号 6222020200112233445", "private")).toBe("sensitive");
-    expect(classificationWithIdentifiers("身份证 110101199003071234", "private")).toBe("sensitive");
-  });
-
-  it("[mask-not-block] raises private text holding a password, a key or a code to sensitive", () => {
-    const key = ["sk", "proj", "abcdefghijklmnopqrstuvwxyz0123456789"].join("-");
-    expect(classificationWithIdentifiers("主人家的 Wi-Fi 密码是 abc12345", "private")).toBe(
-      "sensitive",
-    );
-    expect(classificationWithIdentifiers(`主人的接口密钥是 ${key}`, "private")).toBe("sensitive");
-    expect(classificationWithIdentifiers("482910 是验证码", "public")).toBe("sensitive");
-    expect(containsCredential("我的密码: hunter2abc")).toBe(true);
-    expect(classificationWithIdentifiers("Wi-Fi 密码 abc12345", "private")).toBe("sensitive");
-    expect(classificationWithIdentifiers("the password is abc12345", "private")).toBe("sensitive");
-  });
-
-  it("REVERSE: ordinary words near the same topics stay private", () => {
-    expect(containsCredential("主人喜欢在咖啡馆改密码管理器的设置")).toBe(false);
-    expect(containsCredential("the password is required")).toBe(false);
-    expect(containsCredential("密码改成每月一次")).toBe(false);
-    expect(classificationWithIdentifiers("主人最喜欢的颜色是蓝色", "private")).toBe("private");
-    expect(classificationWithIdentifiers("主人的订单号是 12345", "private")).toBe("private");
-  });
-
-  it("leaves ordinary text and already stricter levels as they are", () => {
-    expect(classificationWithIdentifiers("订单号 12345", "private")).toBe("private");
-    expect(classificationWithIdentifiers("卡号 6222020200112233445", "restricted")).toBe(
-      "restricted",
-    );
-    expect(classificationWithIdentifiers("卡号 6222020200112233445", "sensitive")).toBe(
-      "sensitive",
-    );
   });
 });

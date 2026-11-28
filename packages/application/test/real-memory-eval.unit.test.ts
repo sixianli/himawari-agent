@@ -155,7 +155,7 @@ describe("[P4-5] generated questions are untrusted", () => {
   it("rejects a question carrying a sensitive value", () => {
     expect(
       parseGeneratedQuestion(
-        '{"question":"我的银行卡号 4111111111111111 是哪家银行？","kind":"fact"}',
+        '{"question":"我的网银密码：Qz7mWx42Lp 是哪家银行的？","kind":"fact"}',
         { memory: "主人用招商银行。", quote: "我用招行" },
       ),
     ).toEqual({ rejected: "sensitive" });

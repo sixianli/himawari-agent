@@ -141,21 +141,21 @@ describe("[P4-5] real eval sample for the owner's review", () => {
         {
           panel: "fresh",
           kind: "fact",
-          question: "我常用哪张卡？",
-          response: "你常用 4111111111111111 这张卡。",
+          question: "我网银登录用什么？",
+          response: "你的网银密码：Qz7mWx42Lp",
           verdict: "correct",
-          quote: "我常用的卡号是 4111111111111111",
-          memory: "主人常用的银行卡是 4111111111111111",
+          quote: "我的网银密码：Qz7mWx42Lp",
+          memory: "主人的网银密码：Qz7mWx42Lp",
         },
       ],
     };
     const file = await writeRealEvalSample(path.join(directory, "real-eval"), report);
     expect(path.basename(file)).toBe(REAL_EVAL_SAMPLE_FILE);
     const body = await readFile(file, "utf8");
-    expect(body).not.toContain("4111111111111111");
+    expect(body).not.toContain("Qz7mWx42Lp");
     expect(JSON.parse(body)).toMatchObject({
       runId: "run-1",
-      items: [{ verdict: "correct", question: "我常用哪张卡？" }],
+      items: [{ verdict: "correct", question: "我网银登录用什么？" }],
     });
     expect((await stat(file)).mode & 0o777).toBe(0o600);
     expect((await stat(path.join(directory, "real-eval"))).mode & 0o777).toBe(0o700);

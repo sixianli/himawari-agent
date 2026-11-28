@@ -211,7 +211,7 @@ describe("local ONNX memory embedding", () => {
     expect(composition.localRuntime?.state).toBe("ready");
     await composition.projection.upsert({
       memory: memory(config, "memory-card"),
-      content: "主人的工资卡号是 4111 1111 1111 1111",
+      content: "主人的网银密码：Qz7mWx42Lp",
     });
     const hits = await composition.projection.search({
       ownerId: config.ownerId,
@@ -221,9 +221,9 @@ describe("local ONNX memory embedding", () => {
     });
     expect(hits.map(({ productMemoryId }) => productMemoryId)).toEqual(["memory-card"]);
     expect(network).not.toHaveBeenCalled();
-    expect(seen[0]).toMatch(/^Document: 主人的工资卡号是 \[银行卡 尾号1111#[a-z]{8}\]$/u);
+    expect(seen[0]).toMatch(/^Document: 主人的网银密码：\[密码#[a-z]{8}\]$/u);
     expect(seen[1]).toBe("Query: 晚饭推荐");
-    expect(seen.join("\n")).not.toContain("4111 1111 1111 1111");
+    expect(seen.join("\n")).not.toContain("Qz7mWx42Lp");
     expect(embeddingAdmissionDescriptor(config).estimatedCostMicros).toBe(0);
     await composition.close();
   });
@@ -246,7 +246,7 @@ describe("local ONNX memory embedding", () => {
     await expect(
       composition.projection.upsert({
         memory: memory(config, "memory-card"),
-        content: "主人的工资卡号是 4111 1111 1111 1111",
+        content: "主人的网银密码：Qz7mWx42Lp",
       }),
     ).rejects.toThrow("NETWORK_CUT_OFF");
     const hits = await composition.projection.search({

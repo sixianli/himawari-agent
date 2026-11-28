@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type {
   ClockPort,
+  DataClassification,
   DecisionLedgerPort,
   InboxStorePort,
   PayloadProtectorPort,
@@ -17,7 +18,6 @@ import {
   SPOKEN_REASON_CODES,
 } from "@himawari-agent/application";
 import { TOOL_TELL_OWNER } from "@himawari-agent/prompt-catalog";
-import { classificationWithIdentifiers } from "@himawari-agent/sensitive-capture";
 import {
   decisionDurationMs,
   type InboxRunRegistry,
@@ -206,7 +206,7 @@ export class ProductionTellOwner {
 
   async #write(ref: string, text: string) {
     const { payloads, protector, clock } = this.#options;
-    const dataClassification = classificationWithIdentifiers(text, "private");
+    const dataClassification: DataClassification = "private";
     if (!(await payloads.get(ref as never)))
       await payloads.put(
         await protector.protect({
