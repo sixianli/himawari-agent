@@ -37,9 +37,6 @@ struct AgentGrantSheet: View {
                         get: { choice.name },
                         set: { choice.name = String($0.prefix(AgentsStore.nameCharacters)) }
                     ))
-                    Picker(M.agentCeilingLabel, selection: $choice.readCeiling) {
-                        ForEach(AgentReadCeiling.allCases) { Text(M.agentCeiling($0)).tag($0) }
-                    }
                     if grant.wantsWrite {
                         Toggle(M.agentGrantWrite, isOn: $choice.write)
                     }

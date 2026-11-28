@@ -47,7 +47,7 @@
         "next-5-chat-rich",
         "next-5-chat-replied"
       ],
-      "uncovered": "还没有操作这个功能的 UI 测试"
+      "uncovered": "只显示排版，没有可操作的东西；长按菜单由“消息菜单”一行的测试操作"
     },
     {
       "feature": "消息里的选项：点选项、显示选了哪一个",
@@ -69,7 +69,7 @@
     {
       "feature": "语音对话",
       "scenes": ["next-2-chat-talk-listening", "next-2-chat-talk-her"],
-      "uncovered": "还没有操作这个功能的 UI 测试"
+      "uncovered": "要真麦克风和语音识别，演示场景里的开始、停止钮不做事，等端到端测试接上真服务器后补"
     },
     {
       "feature": "记忆：列表、详情、编辑、历史版本、回收站",
@@ -201,7 +201,7 @@
     {
       "feature": "后台在办：“报销”子线程页",
       "scenes": ["next-8-background-quiet"],
-      "uncovered": "还没有操作这个功能的 UI 测试"
+      "uncovered": "只显示没有往来记录的子线程，没有可操作的东西；子线程的点开和往来记录由上面一行的测试操作"
     },
     {
       "feature": "删除感知记录：按天、按次删除",
@@ -228,7 +228,7 @@
         "15-pairing-flow-4-unreachable",
         "15-pairing-flow-5-removed"
       ],
-      "uncovered": "还没有操作这个功能的 UI 测试"
+      "uncovered": "这套配对流程要被通行密钥登录（PR 721）换掉，等它合并后和端到端测试一起补"
     },
     {
       "feature": "感知：位置详情的“一直允许”开关",
@@ -239,14 +239,17 @@
       ]
     },
     {
-      "feature": "感知：总览、介绍、系统授权、被拒绝",
-      "scenes": [
-        "19-senses-1-overview",
-        "19-senses-2-intro",
-        "19-senses-3-system-prompt",
-        "19-senses-5-denied"
-      ],
-      "uncovered": "还没有操作这个功能的 UI 测试"
+      "feature": "感知：总览",
+      "scenes": ["19-senses-1-overview"],
+      "checks": "感知页每一行点开都有页面、能回来",
+      "tests": [
+        "HimawariUITests/SensesPageTests/testEveryRowOnTheSensesPageOpensAPageYouCanGoBackFrom"
+      ]
+    },
+    {
+      "feature": "感知：介绍、系统授权、被拒绝",
+      "scenes": ["19-senses-2-intro", "19-senses-3-system-prompt", "19-senses-5-denied"],
+      "uncovered": "“允许”要系统弹权限框、“去设置”会跳出 App，演示场景里没法真操作"
     },
     {
       "feature": "设备动作：能力列表",
@@ -259,7 +262,7 @@
     {
       "feature": "设备动作：授权说明、授权被拒",
       "scenes": ["19-settings-more-2-permission-primer", "19-settings-more-3-permission-denied"],
-      "uncovered": "还没有操作这个功能的 UI 测试"
+      "uncovered": "“允许”要系统弹权限框、“去设置”会跳出 App，演示场景里按钮不做事"
     },
     {
       "feature": "一直听着：介绍、录声纹、收听、被打断、来电、提问、停止",
@@ -272,7 +275,7 @@
         "23-listen-5",
         "23-listen-6"
       ],
-      "uncovered": "还没有操作这个功能的 UI 测试"
+      "uncovered": "要真麦克风录声纹和收听，演示场景里的按钮不做事，等端到端测试接上真服务器后补"
     },
     {
       "feature": "分享给 Himawari：分享面板、交过之后、入口开关",
@@ -291,12 +294,12 @@
         "19-senses-6e-share-removed",
         "19-senses-6f-share-unpaired"
       ],
-      "uncovered": "还没有操作这个功能的 UI 测试"
+      "uncovered": "这几个状态只显示一句说明，没有可操作的东西"
     },
     {
       "feature": "Safari 扩展：引导和已开启",
       "scenes": ["22-gaps-1-safari-guide", "22-gaps-1b-safari-on"],
-      "uncovered": "还没有操作这个功能的 UI 测试"
+      "uncovered": "打开扩展要去系统设置，演示场景里只显示引导"
     },
     {
       "feature": "聊天：往上翻后点“跳到最新”回到最后一条",
@@ -309,7 +312,7 @@
     {
       "feature": "动效：闪光、弹层",
       "scenes": ["motion-shimmer", "motion-sheet"],
-      "uncovered": "还没有操作这个功能的 UI 测试"
+      "uncovered": "只是动画，没有可操作的东西"
     }
   ]
 }

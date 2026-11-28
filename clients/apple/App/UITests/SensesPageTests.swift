@@ -7,6 +7,14 @@ final class SensesPageTests: XCTestCase {
         continueAfterFailure = false
     }
 
+    func testEveryRowOnTheSensesPageOpensAPageYouCanGoBackFrom() throws {
+        let app = DemoApp.launch("19-senses-1-overview")
+        let page = app.scrollViews.firstMatch
+        XCTAssertTrue(page.waitForExistence(timeout: 10), "the senses page has no scroll view")
+        Thread.sleep(forTimeInterval: 1)
+        try DemoApp.openEveryRow(in: page, of: app, named: "the senses page", atLeast: 4)
+    }
+
     func testTheLocationAlwaysAllowSwitchCanBeTappedAndFollowsTheSystemAnswer() {
         let app = DemoApp.launch("19-senses-4-detail")
         let title = SourceText.zh("HimawariSenses", "detail.always")

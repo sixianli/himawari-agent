@@ -3,7 +3,6 @@ import {
   type ClockPort,
   type GatewayAuthenticationContext,
   type GatewayV2QueryContext,
-  MCP_CONNECTION_DEFAULT_READ_CEILING,
   MCP_CONNECTION_MAXIMUM,
   MCP_CONNECTION_NAME_MAXIMUM,
   type McpConnectionChange,
@@ -105,7 +104,6 @@ export class ProductionMcpConnectionsControl {
             expiresAt: grant.expiresAt,
           })),
           defaults: {
-            readCeiling: MCP_CONNECTION_DEFAULT_READ_CEILING,
             pushPolicy: MCP_DEFAULT_PUSH_POLICY,
           },
           generatedAt: this.#options.clock.now(),
@@ -143,7 +141,6 @@ export class ProductionMcpConnectionsControl {
             id: view.id,
             name: view.name,
             capabilities: [...view.capabilities],
-            readCeiling: view.readCeiling,
             pushPolicy: view.pushPolicy,
             status: view.status,
             reportedClient: view.reportedClient,
@@ -198,11 +195,10 @@ export class ProductionMcpConnectionsControl {
     const now = this.#options.clock.now();
     if (command.type === "mcp.grant.approve") {
       this.#scope(authentication, command.scope);
-      const { grantId, name, readCeiling, pushPolicy, write } = command.payload;
+      const { grantId, name, pushPolicy, write } = command.payload;
       const connectionId = await this.#options.authorization.approve({
         grantId,
         name,
-        readCeiling,
         pushPolicy,
         write,
       });
@@ -215,14 +211,8 @@ export class ProductionMcpConnectionsControl {
     }
     if (command.type === "mcp.connection.change") {
       const scope = this.#scope(authentication, command.scope);
-      const { connectionId, name, capabilities, readCeiling, pushPolicy, status } = command.payload;
-      if (
-        name === null &&
-        capabilities === null &&
-        readCeiling === null &&
-        pushPolicy === null &&
-        status === null
-      )
+      const { connectionId, name, capabilities, pushPolicy, status } = command.payload;
+      if (name === null && capabilities === null && pushPolicy === null && status === null)
         throw new ApplicationPortError(
           PORT_ERROR_CODES.INVALID_OPERATION,
           "MCP_CONNECTION_CHANGE_EMPTY",
@@ -233,7 +223,6 @@ export class ProductionMcpConnectionsControl {
         updatedAt: now,
         ...(name === null ? {} : { name }),
         ...(capabilities === null ? {} : { capabilities }),
-        ...(readCeiling === null ? {} : { readCeiling }),
         ...(pushPolicy === null ? {} : { pushPolicy }),
         ...(status === null ? {} : { status }),
       };

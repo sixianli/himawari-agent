@@ -11,14 +11,6 @@ extension M {
     }
     static var agentsEmpty: String { text("还没有接入的 agent", ja: "まだ接続した agent はありません", en: "No connected agents yet") }
     static func agentsSummary(_ names: [String]) -> String { names.formatted(.list(type: .and)) }
-    static var agentCeilingLabel: String { text("最多能读到", ja: "読める範囲の上限", en: "Can read up to") }
-    static func agentCeiling(_ ceiling: AgentReadCeiling) -> String {
-        switch ceiling {
-        case .public: text("公开", ja: "公開", en: "Public")
-        case .private: text("私人", ja: "個人", en: "Private")
-        case .sensitive: text("敏感", ja: "機微", en: "Sensitive")
-        }
-    }
     static var agentPushLabel: String { text("送来记忆时", ja: "記憶を送ってきたとき", en: "When it sends memories") }
     static func agentPush(_ policy: AgentPushPolicy) -> String {
         switch policy {

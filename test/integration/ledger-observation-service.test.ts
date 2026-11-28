@@ -124,7 +124,6 @@ describe.each(["worker", "direct"] as const)(
           newConnection: {
             id: "conn-weekly",
             name: "Claude Code",
-            readCeiling: "private",
             pushPolicy: "ask",
           },
           now: "2026-11-05T03:00:00.000Z",

@@ -61,7 +61,7 @@ describe("[P5-C] sync_memories storage and deletion rules", () => {
         registration: "dynamic",
         clientName: `接入-${id}`,
         redirectUris: ["http://127.0.0.1/callback"],
-        newConnection: { id, name: `接入-${id}`, readCeiling: "private", pushPolicy: "ask" },
+        newConnection: { id, name: `接入-${id}`, pushPolicy: "ask" },
         now: NOW,
       });
       return id;

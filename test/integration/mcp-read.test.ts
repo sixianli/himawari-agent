@@ -111,7 +111,6 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       readonly loseTodaySummary?: boolean;
       readonly withoutSummaries?: boolean;
       readonly failTokens?: boolean;
-      readonly readCeiling?: Exclude<DataClassification, "restricted">;
       readonly hookReadsPerMinute?: number;
       readonly sensitiveSummary?: boolean;
       readonly hiddenRules?: boolean;
@@ -482,11 +481,9 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       onSummariesFailed: (error) => summaryFailures.push(error),
     });
     const connections = repository.mcpConnections();
-    const createConnection = async (
-      id: string,
-      readCeiling: Exclude<DataClassification, "restricted"> = "private",
-    ) => (await oauth.connect({ id, readCeiling, pushPolicy: "ask", write: false })).token;
-    const token = await createConnection(CONNECTION_ID, options.readCeiling);
+    const createConnection = async (id: string) =>
+      (await oauth.connect({ id, pushPolicy: "ask", write: false })).token;
+    const token = await createConnection(CONNECTION_ID);
     const app = Fastify({ logger: false });
     registerMcpReadRoute(app, mcp);
     closers.push(() => app.close());
@@ -608,7 +605,7 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
   it.each(["legacy", "modern"] as const)(
     "finds the owner's memory through the existing recall, masks secrets and records an external read (%s)",
     async (era) => {
-      const f = await setup({ readCeiling: "sensitive" });
+      const f = await setup();
       const client = await f.connect(era);
       const found = await f.call(client, "find_memories", { query: "牙医" });
       expect(found.result.isError).not.toBe(true);
@@ -651,7 +648,7 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
   });
 
   it("gives today's date and only the reminders due within 48 hours, with secrets masked", async () => {
-    const f = await setup({ readCeiling: "sensitive" });
+    const f = await setup();
     const client = await f.connect("modern");
     const today = await f.call(client, "today_context");
     const output = JSON.parse(today.text) as {
@@ -931,89 +928,46 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
     expect(f.failures.length).toBeGreaterThan(0);
   });
 
-  describe("[P5-B] every read tool honours the read ceiling", () => {
+  describe("[P5-B][I-129] every read tool reads memories saved as sensitive like any other", () => {
     const memoriesOf = (text: string) =>
       (JSON.parse(text) as { memories: { text: string }[] }).memories.map(({ text }) => text);
 
-    it("find_memories leaves a sensitive memory out under the default ceiling and shows it when allowed", async () => {
-      const closed = await setup();
-      const closedClient = await closed.connect("modern");
-      const hidden = await closed.call(closedClient, "find_memories", { query: "Wi-Fi" });
-      expect(memoriesOf(hidden.text).some((text) => text.includes("家里 Wi-Fi 密码"))).toBe(false);
-      const [closedRow] = await closed.ledger();
-      expect(closedRow?.inputs.memoryIds).not.toContain("memory:reminder:wifi");
-      const open = await setup({ readCeiling: "sensitive" });
+    it("find_memories shows a memory saved as sensitive, with its password masked", async () => {
+      const open = await setup();
       const openClient = await open.connect("modern");
       const shown = await open.call(openClient, "find_memories", { query: "Wi-Fi" });
       expect(memoriesOf(shown.text).some((text) => text.includes("家里 Wi-Fi 密码"))).toBe(true);
+      expect(shown.text).not.toContain("Sunflower-8841");
+      const [row] = await open.ledger();
+      expect(row?.inputs.memoryIds).toContain("memory:reminder:wifi");
     });
 
-    it("REVERSE: find_memories under a public ceiling gives none of the private memories", async () => {
-      const f = await setup({ readCeiling: "public" });
-      const client = await f.connect("modern");
-      const found = await f.call(client, "find_memories", { query: "牙医" });
-      expect(memoriesOf(found.text)).not.toContain(DENTIST);
-    });
-
-    it("today_context leaves sensitive reminders and day summaries out under the default ceiling", async () => {
-      const closed = await setup({ sensitiveSummary: true });
-      const closedClient = await closed.connect("modern");
-      const hidden = await closed.call(closedClient, "today_context");
-      expect(hidden.text).toContain("牙医");
-      expect(hidden.text).not.toContain("Wi-Fi");
-      expect(hidden.text).not.toContain("慢性病");
-      const [row] = await closed.ledger();
-      expect(row?.inputs.memoryIds).toEqual(["memory:reminder:dentist"]);
-      const open = await setup({ sensitiveSummary: true, readCeiling: "sensitive" });
+    it("today_context shows reminders and day summaries saved as sensitive", async () => {
+      const open = await setup({ sensitiveSummary: true });
       const openClient = await open.connect("modern");
       const shown = await open.call(openClient, "today_context");
+      expect(shown.text).toContain("牙医");
       expect(shown.text).toContain("Wi-Fi");
       expect(shown.text).toContain("慢性病");
     });
 
-    it("rule_book hides rules whose source sentence is above the ceiling, and rules with no known source", async () => {
-      const closed = await setup({ hiddenRules: true });
-      const closedClient = await closed.connect("modern");
-      const hidden = await closed.call(closedClient, "rule_book");
-      expect(hidden.text).not.toContain("心理诊所");
-      expect(hidden.text).not.toContain("找不到出处");
-      expect(hidden.text).toContain("日本入管局");
-      const open = await setup({ hiddenRules: true, readCeiling: "sensitive" });
+    it("rule_book shows rules from sentences saved as sensitive, and REVERSE: hides rules with no known source", async () => {
+      const open = await setup({ hiddenRules: true });
       const openClient = await open.connect("modern");
       const shown = await open.call(openClient, "rule_book");
       expect(shown.text).toContain("心理诊所");
       expect(shown.text).not.toContain("找不到出处");
     });
 
-    it("REVERSE: rule_book under a public ceiling gives no owner rules and no private rule parameters", async () => {
-      const f = await setup({ readCeiling: "public" });
-      const client = await f.connect("modern");
-      const output = JSON.parse((await f.call(client, "rule_book")).text) as {
-        rules: Record<string, unknown>[];
-      };
-      expect(output.rules.map(({ id }) => id)).toEqual([
-        "floor_important_sender",
-        "floor_public_domain",
-        "floor_money_words",
-        "quiet_hours",
-      ]);
-      expect(output.rules[0]).not.toHaveProperty("importantSenders");
-      expect(output.rules[3]).not.toHaveProperty("quietHours");
-    });
-
-    it("start_here leaves rules from sensitive sentences out of the rule summaries under the default ceiling", async () => {
-      const closed = await setup({ hiddenRules: true });
-      const closedClient = await closed.connect("modern");
-      const hidden = JSON.parse((await closed.call(closedClient, "start_here")).text) as StartHere;
-      expect(hidden.rules.items).toEqual(["退款邮件先读完整串", "日本入管局相关的邮件一律提醒"]);
-      const open = await setup({ hiddenRules: true, readCeiling: "sensitive" });
+    it("start_here lists rules from sentences saved as sensitive in the rule summaries", async () => {
+      const open = await setup({ hiddenRules: true });
       const openClient = await open.connect("modern");
       const shown = JSON.parse((await open.call(openClient, "start_here")).text) as StartHere;
       expect(shown.rules.items).toContain("心理诊所的邮件一律提醒");
       expect(shown.rules.items).not.toContain("找不到出处的规则");
     });
 
-    it("rule_book gives the parameters a built-in rule declares, only within the ceiling", async () => {
+    it("rule_book gives the parameters a built-in rule declares", async () => {
       const extra = {
         id: "floor_project_sender",
         revision: 2,
@@ -1042,17 +996,9 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
         projects: ["京都"],
         revision: 2,
       });
-      const closed = await setup({ ruleBook: withRule, readCeiling: "public" });
-      const closedClient = await closed.connect("modern");
-      const hidden = JSON.parse((await closed.call(closedClient, "rule_book")).text) as {
-        rules: Record<string, unknown>[];
-      };
-      expect(hidden.rules.find(({ id }) => id === "floor_project_sender")).not.toHaveProperty(
-        "projects",
-      );
     });
 
-    it("refuses to register a read tool that does not declare its read ceiling", async () => {
+    it("refuses to register a read tool that does not declare its read sources", async () => {
       const bare = {
         name: "peek",
         description: "看一眼",
@@ -1107,7 +1053,7 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       expect((await client.listTools()).tools.map(({ name }) => name)).toContain(longest.name);
     });
 
-    it("a newly registered read tool reads only through its declared sources, bounded by the ceiling", async () => {
+    it("a newly registered read tool reads only through its declared sources", async () => {
       const peek: McpReadToolEntry = {
         name: "peek",
         description: "看一眼提醒",
@@ -1127,7 +1073,8 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       const result = await f.call(client, "peek");
       expect(result.result.isError).not.toBe(true);
       expect(result.text).toContain("牙医");
-      expect(result.text).not.toContain("Wi-Fi");
+      expect(result.text).toContain("Wi-Fi");
+      expect(result.text).not.toContain("Sunflower-8841");
       const [row] = await f.ledger();
       expect(row?.reasonCode).toBe("peek");
     });
@@ -1184,47 +1131,30 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       expect(JSON.stringify(after.rules)).toBe(JSON.stringify(before.rules));
     });
 
-    it("holds sensitive memories back by default and shows them only when the ceiling allows", async () => {
+    it("[I-129] shows a profile memory saved as sensitive, and REVERSE: never a restricted one", async () => {
       const secretLine = "主人正在治疗一种慢性病";
       const hidden = await setup();
-      await hidden.seedProfile("memory-health", "identity", 900, secretLine, "sensitive");
+      await hidden.seedProfile(
+        "memory-key",
+        "identity",
+        900,
+        "主人的保险柜钥匙放在书房",
+        "restricted",
+      );
       const hiddenClient = await hidden.connect("modern");
-      expect((await hidden.call(hiddenClient, "start_here")).text).not.toContain(secretLine);
-      const open = await setup({ readCeiling: "sensitive" });
+      expect((await hidden.call(hiddenClient, "start_here")).text).not.toContain("保险柜");
+      const open = await setup();
       await open.seedProfile("memory-health", "identity", 900, secretLine, "sensitive");
       const openClient = await open.connect("modern");
       expect((await open.call(openClient, "start_here")).text).toContain(secretLine);
     });
 
-    it("REVERSE: leaves sensitive reminders and sensitive day summaries out of today under the default ceiling", async () => {
-      const hidden = await setup({ sensitiveSummary: true });
-      const hiddenClient = await hidden.connect("modern");
-      const closed = await hidden.call(hiddenClient, "start_here");
-      expect(closed.text).not.toContain("Wi-Fi");
-      expect(closed.text).not.toContain("慢性病");
-      expect(closed.text).toContain("牙医");
-      const open = await setup({ sensitiveSummary: true, readCeiling: "sensitive" });
+    it("shows reminders and day summaries saved as sensitive in today", async () => {
+      const open = await setup({ sensitiveSummary: true });
       const openClient = await open.connect("modern");
       const opened = await open.call(openClient, "start_here");
       expect(opened.text).toContain("Wi-Fi");
       expect(opened.text).toContain("慢性病");
-    });
-
-    it("fills today with eligible reminders when reminders saved as sensitive come first", async () => {
-      const f = await setup();
-      for (let index = 0; index < 22; index += 1)
-        await f.sensitiveReminder(
-          `secret-${index}`,
-          `家里 Wi-Fi 密码：Key-${index}-abc`,
-          `2026-11-12T08:${String(index).padStart(2, "0")}`,
-        );
-      const client = await f.connect("modern");
-      const output = JSON.parse((await f.call(client, "start_here")).text) as StartHere;
-      const texts = (output.today as unknown as { reminders: { text: string }[] }).reminders.map(
-        ({ text }) => text,
-      );
-      expect(texts).toContain(DENTIST);
-      expect(texts.some((text) => text.includes("Wi-Fi"))).toBe(false);
     });
 
     it("says there may be more reminders when the scan ends before enough eligible ones are found", async () => {
@@ -1317,7 +1247,7 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
 
     it("keeps a value masked by today's part out of the profile version", async () => {
       const versionFor = async (code: string, named: boolean) => {
-        const f = await setup({ readCeiling: "sensitive" });
+        const f = await setup();
         await f.seedProfile("memory-number", "preference", 900, `常用的号码 ${code}`);
         await f.writer.create({
           key: "login-code",
@@ -1333,7 +1263,7 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
     });
 
     it("masks a code named in today's part where the same value stands alone in the profile, through a real start_here call", async () => {
-      const f = await setup({ readCeiling: "sensitive" });
+      const f = await setup();
       await f.seedProfile("memory-number", "preference", 900, "常用的号码 482913");
       await f.writer.create({
         key: "login-code",
@@ -1391,7 +1321,7 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
     });
   });
 
-  describe("[P5-B] each connection has its own token, ceiling and counts", () => {
+  describe("[P5-B] each connection has its own token and counts", () => {
     const post = async (target: URL, token: string | null, body: unknown) =>
       fetch(target, {
         method: "POST",
@@ -1437,14 +1367,14 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       expect(await f.usage()).toEqual([]);
     });
 
-    it("keeps one connection's ceiling and counts apart from another's", async () => {
-      const f = await setup({ readCeiling: "sensitive" });
-      const otherToken = await f.createConnection("conn-public", "public");
+    it("keeps one connection's counts apart from another's, and both read the same memories", async () => {
+      const f = await setup();
+      const otherToken = await f.createConnection("conn-public");
       const open = await f.connect("modern");
       const closed = await f.connect("modern", otherToken);
       const wifi = (text: string) => text.includes("家里 Wi-Fi 密码");
       expect(wifi((await f.call(open, "find_memories", { query: "Wi-Fi" })).text)).toBe(true);
-      expect(wifi((await f.call(closed, "find_memories", { query: "Wi-Fi" })).text)).toBe(false);
+      expect(wifi((await f.call(closed, "find_memories", { query: "Wi-Fi" })).text)).toBe(true);
       await f.call(closed, "today_context");
       const rows = counted(await f.usage());
       expect(rows[`${CONNECTION_ID}/find_memories/model/calls`]).toBe(1);

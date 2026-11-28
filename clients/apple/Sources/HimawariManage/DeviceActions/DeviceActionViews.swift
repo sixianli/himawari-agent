@@ -86,15 +86,14 @@ public struct ApprovalsView: View {
     }
 
     public var body: some View {
-        ZStack {
-            if let opened {
-                ApprovalDetailView(model: model, approval: opened, openThread: openThread) { withAnimation(.snappy) { self.opened = nil } }
-                    .transition(.move(edge: .trailing))
-            } else {
-                list.transition(.opacity)
+        list
+            .himawariScreenBackground()
+            .navigationDestination(isPresented: Binding(get: { opened != nil }, set: { if !$0 { opened = nil } })) {
+                if let opened {
+                    ApprovalDetailView(model: model, approval: opened, openThread: openThread) { self.opened = nil }
+                        .himawariScreenBackground()
+                }
             }
-        }
-        .himawariScreenBackground()
         .task {
             await model.refresh()
             await model.loadHandled()
@@ -167,7 +166,7 @@ public struct ApprovalsView: View {
     }
 
     private func open(_ approval: PendingApproval) {
-        withAnimation(.snappy) { opened = approval }
+        opened = approval
     }
 }
 

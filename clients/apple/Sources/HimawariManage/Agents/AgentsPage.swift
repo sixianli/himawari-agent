@@ -64,9 +64,6 @@ struct AgentPage: View {
             if let agent = store.agent(agentId), agent.status != .revoked {
                 List {
                     Section {
-                        Picker(M.agentCeilingLabel, selection: binding(agent, \.readCeiling) { try await store.change(agent, readCeiling: $0) }) {
-                            ForEach(AgentReadCeiling.allCases) { Text(M.agentCeiling($0)).tag($0) }
-                        }
                         Picker(M.agentPushLabel, selection: binding(agent, \.pushPolicy) { try await store.change(agent, pushPolicy: $0) }) {
                             ForEach(AgentPushPolicy.allCases) { Text(M.agentPush($0)).tag($0) }
                         }

@@ -2,10 +2,8 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import {
   ApplicationPortError,
   type ClockPort,
-  MCP_CONNECTION_DEFAULT_READ_CEILING,
   MCP_CONNECTION_NAME_MAXIMUM,
   type McpConnectionPushPolicy,
-  type McpConnectionReadCeiling,
   type McpConnectionRecord,
   type McpConnectionScope,
   type McpConnectionStorePort,
@@ -51,7 +49,6 @@ export interface McpGrantView {
   readonly existingConnection: {
     readonly id: string;
     readonly name: string;
-    readonly readCeiling: McpConnectionReadCeiling;
     readonly pushPolicy: McpConnectionPushPolicy;
   } | null;
   readonly createdAt: string;
@@ -505,7 +502,6 @@ export class ProductionMcpAuthorization {
     return {
       id: connection.id,
       name: connection.name,
-      readCeiling: connection.readCeiling,
       pushPolicy: connection.pushPolicy,
     };
   }
@@ -529,7 +525,6 @@ export class ProductionMcpAuthorization {
   async approve(input: {
     readonly grantId: string;
     readonly name: string | null;
-    readonly readCeiling: McpConnectionReadCeiling | null;
     readonly pushPolicy: McpConnectionPushPolicy | null;
     readonly write: boolean;
   }): Promise<string> {
@@ -544,7 +539,6 @@ export class ProductionMcpAuthorization {
       newConnection: {
         id: newMcpConnectionId(),
         name: connectionName(input.name ?? grant.clientName, hostOf(grant.clientId)),
-        readCeiling: input.readCeiling ?? MCP_CONNECTION_DEFAULT_READ_CEILING,
         pushPolicy: input.pushPolicy ?? MCP_DEFAULT_PUSH_POLICY,
       },
       now,

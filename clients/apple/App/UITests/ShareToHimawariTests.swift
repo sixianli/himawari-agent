@@ -30,11 +30,11 @@ final class ShareToHimawariTests: XCTestCase {
         field.tap()
         field.typeText("，要能订座")
         XCTAssertTrue(DemoApp.waitUntil(timeout: 5) { ((field.value as? String) ?? "").contains("，要能订座") }, "typing did not go into the request field, it reads \((field.value as? String) ?? "nothing")")
-        XCTAssertTrue(typing.buttons[send].firstMatch.exists, "the \(send) button is not there while typing")
+        XCTAssertTrue(typing.buttons[send].firstMatch.isHittable, "the keyboard covers the \(send) button while typing")
         typing.terminate()
         let answered = DemoApp.launch("19-senses-6b-share-answered")
-        let title = SourceText.zh(module, "sheet.title")
-        XCTAssertTrue(answered.staticTexts[title].firstMatch.waitForExistence(timeout: 10), "the answered share sheet did not open")
+        let sent = answered.descendants(matching: .any)["handover.sent"].firstMatch
+        XCTAssertTrue(sent.waitForExistence(timeout: 10), "the answered share sheet does not show what was handed over")
         XCTAssertFalse(answered.descendants(matching: .any)["handover.request"].exists, "the request can still be edited after it was handed over")
         XCTAssertFalse(answered.buttons[send].exists, "the \(send) button is still there after handing over")
     }

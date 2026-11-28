@@ -1,6 +1,5 @@
 import type {
   McpConnectionPushPolicy,
-  McpConnectionReadCeiling,
   McpConnectionRecord,
   McpConnectionScope,
 } from "./mcp-connections.js";
@@ -43,7 +42,6 @@ export interface McpOAuthGrantBind extends McpConnectionScope {
   readonly newConnection: {
     readonly id: string;
     readonly name: string;
-    readonly readCeiling: McpConnectionReadCeiling;
     readonly pushPolicy: McpConnectionPushPolicy;
   };
   readonly now: string;

@@ -205,6 +205,7 @@ public struct HandoverSheet: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(EdgeInsets(top: DesignTokens.Handover.fieldPaddingVertical, leading: DesignTokens.Handover.fieldPaddingHorizontal, bottom: DesignTokens.Handover.fieldPaddingVertical, trailing: DesignTokens.Handover.fieldPaddingHorizontal))
                         .background(Color.hmFill, in: RoundedRectangle(cornerRadius: DesignTokens.Handover.fieldRadius, style: .continuous))
+                        .accessibilityIdentifier("handover.sent")
                 }
                 Text(model.note)
                     .hmType(DesignTokens.TypeScale.caption)
@@ -314,6 +315,6 @@ struct HandoverSheetScene: View {
             Spacer(minLength: 0)
             HandoverSheet(model: model)
         }
-        .ignoresSafeArea(edges: .bottom)
+        .ignoresSafeArea(.container, edges: .bottom)
     }
 }
