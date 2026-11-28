@@ -15,9 +15,11 @@ const REPOSITORY_PATH = /`((?:\.?[A-Za-z0-9_-][A-Za-z0-9_.-]*\/)+[A-Za-z0-9_.-]+
 export const REPEAT_LIMIT = 2;
 export const RULE_FILE = "scripts/check-incident-gates.mjs";
 export const RULE_MARK = "INCIDENT_TRAILER_MISSING";
+export const PREMISE_MARK = "INCIDENT_PREMISE_MISSING";
 const INCIDENT_ID = /^I-\d{2,}$/;
 const INCIDENT_LINE = /^Incident:[ \t]*(.*?)[ \t]*$/gm;
 const FOLLOW_UP_LINE = /^Incident-follow-up:[ \t]*(.*?)[ \t]*$/gm;
+const PREMISE_LINE = /^Premise:[ \t]*\S/m;
 const GITHUB_COMMITTER = "noreply@github.com";
 const TEST_FILE = /(^|\/)test_[^/]+\.py$|\.test\.[cm]?[jt]sx?$|Tests\.swift$/;
 const RUNNER_FILES = ["package.json"];
@@ -131,6 +133,7 @@ export function readCommitIncidents(message) {
     ...followUps.filter((value) => !INCIDENT_ID.test(value)),
   ];
   return {
+    premise: PREMISE_LINE.test(text),
     declared: values.length + followUps.length > 0,
     occurrences: [...new Set(values.filter((value) => INCIDENT_ID.test(value)))],
     followUps: [...new Set(followUps.filter((value) => INCIDENT_ID.test(value)))],
@@ -138,13 +141,20 @@ export function readCommitIncidents(message) {
   };
 }
 
-export function checkCommitMessage(message, known) {
-  const { declared, occurrences, followUps, invalid } = readCommitIncidents(message);
+function repeatsWithoutPremise(occurrences, premise, counts) {
+  if (premise) return [];
+  return occurrences.filter((id) => Number.parseInt(counts.get(id) ?? "", 10) >= REPEAT_LIMIT);
+}
+
+export function checkCommitMessage(message, counts) {
+  const { declared, occurrences, followUps, invalid, premise } = readCommitIncidents(message);
   const errors = [];
   if (!declared) errors.push(`${RULE_MARK} commit-msg`);
   for (const value of invalid) errors.push(`INCIDENT_TRAILER_INVALID commit-msg ${value}`);
   for (const id of [...occurrences, ...followUps])
-    if (!known.has(id)) errors.push(`INCIDENT_TRAILER_UNKNOWN commit-msg ${id}`);
+    if (!counts.has(id)) errors.push(`INCIDENT_TRAILER_UNKNOWN commit-msg ${id}`);
+  for (const id of repeatsWithoutPremise(occurrences, premise, counts))
+    errors.push(`${PREMISE_MARK} commit-msg ${id}`);
   return errors;
 }
 
@@ -157,17 +167,8 @@ function git(root, args) {
   });
 }
 
-function ruleActivation(root) {
-  const found = git(root, [
-    "log",
-    "--reverse",
-    "--format=%H",
-    "-S",
-    RULE_MARK,
-    "HEAD",
-    "--",
-    RULE_FILE,
-  ])
+function ruleActivation(root, mark) {
+  const found = git(root, ["log", "--reverse", "--format=%H", "-S", mark, "HEAD", "--", RULE_FILE])
     .split("\n")
     .filter(Boolean);
   return found[0] ?? "";
@@ -183,6 +184,16 @@ function requiredCommits(root, activation) {
   );
 }
 
+function countsAt(root, sha) {
+  let text;
+  try {
+    text = git(root, ["show", `${sha}:${INCIDENT_LIST}`]);
+  } catch {
+    return new Map();
+  }
+  return new Map(readIncidents(text).incidents.map((incident) => [incident.id, incident.count]));
+}
+
 export function checkIncidentHistory({ root = repositoryRoot, incidents } = {}) {
   const errors = [];
   try {
@@ -196,18 +207,27 @@ export function checkIncidentHistory({ root = repositoryRoot, incidents } = {}) 
   const table = new Map(
     incidents.map((incident) => [incident.id, Number.parseInt(incident.count ?? "", 10)]),
   );
-  const required = requiredCommits(root, ruleActivation(root));
+  const required = requiredCommits(root, ruleActivation(root, RULE_MARK));
+  const premiseRequired = requiredCommits(root, ruleActivation(root, PREMISE_MARK));
   const log = git(root, ["log", "--no-merges", "--format=%H%x00%ce%x00%B%x1e", "HEAD"]);
   const seen = new Map();
   for (const record of log.split("\x1e")) {
     const [sha, committer, message] = record.replace(/^\n/, "").split("\0");
     if (!sha || message === undefined) continue;
     const short = sha.slice(0, 12);
-    const { declared, occurrences, followUps, invalid } = readCommitIncidents(message);
+    const { declared, occurrences, followUps, invalid, premise } = readCommitIncidents(message);
     if (required.has(sha) && committer !== GITHUB_COMMITTER) {
       if (!declared) errors.push(`${RULE_MARK} ${short}`);
       for (const value of invalid) errors.push(`INCIDENT_TRAILER_INVALID ${short} ${value}`);
     }
+    if (
+      premiseRequired.has(sha) &&
+      committer !== GITHUB_COMMITTER &&
+      occurrences.length > 0 &&
+      !premise
+    )
+      for (const id of repeatsWithoutPremise(occurrences, premise, countsAt(root, sha)))
+        errors.push(`${PREMISE_MARK} ${short} ${id}`);
     for (const id of [...occurrences, ...followUps])
       if (!table.has(id)) errors.push(`INCIDENT_TRAILER_UNKNOWN ${short} ${id}`);
     for (const id of occurrences) seen.set(id, [...(seen.get(id) ?? []), short]);
@@ -248,15 +268,15 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     } catch {}
     if (!merging) {
       const { incidents, errors: listErrors } = checkIncidentGates();
-      const known = new Set(incidents.map((incident) => incident.id));
+      const counts = new Map(incidents.map((incident) => [incident.id, incident.count]));
       const errors = [
         ...listErrors,
-        ...checkCommitMessage(readFileSync(argumentsGiven[1], "utf8"), known),
+        ...checkCommitMessage(readFileSync(argumentsGiven[1], "utf8"), counts),
       ];
       for (const error of errors) process.stderr.write(`${error}\n`);
       if (errors.length > 0) {
         process.stderr.write(
-          "INCIDENT_TRAILER_HELP every commit needs a line `Incident: I-<n>` (this commit fixes one more occurrence of that incident), `Incident-follow-up: I-<n>` (more work on an occurrence already counted) or `Incident: none`; see .claude/rules/incident-gates.md\n",
+          "INCIDENT_TRAILER_HELP every commit needs a line `Incident: I-<n>` (this commit fixes one more occurrence of that incident), `Incident-follow-up: I-<n>` (more work on an occurrence already counted) or `Incident: none`; a commit that fixes the second or a later occurrence of an incident also needs a line `Premise: <the assumption that turned out wrong>`; see .claude/rules/incident-gates.md\n",
         );
         process.exit(1);
       }

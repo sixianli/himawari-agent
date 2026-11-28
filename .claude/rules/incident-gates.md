@@ -25,12 +25,14 @@
 - `Incident-follow-up: I-<编号>`：同一次事故的后续修改（例如同一个 PR 里的第二个提交），不再算一次。
 - `Incident: none`：和任何事故无关。只要这次修改起因于上面“什么算数”里的任何一种情况（包括一次失败的自动上线），就不得写 `none`，先在清单里新加一行或找到原有那一行。
 
+修的是一个事故第二次或更晚出现（也就是这条事故在清单里的次数已经到 2）时，提交说明还要再写一行 `Premise: <当初哪个想法错了>`。例如 `Premise: 以为重试时会读到新配置`。写下错的前提，下一次才能对着它查，而不是只修眼前这一处。
+
 程序门槛：
 
-- 提交钩子 `scripts/git-hooks/commit-msg` 运行 `node scripts/check-incident-gates.mjs --commit-msg`：没有事故标记、写法不对、或写的编号清单里没有，提交直接失败。
-- `npm run check:incident-gates`（CI 每次都跑）读完整的提交记录：规则生效之后的提交缺标记、标记的编号不在清单里、清单里的次数少于提交记录里 `Incident:` 指向它的提交数，都失败；次数一到 2，原有的“没有硬门槛就失败”随之生效。浅克隆读不全记录，直接失败，先运行 `git fetch --unshallow origin`。
+- 提交钩子 `scripts/git-hooks/commit-msg` 运行 `node scripts/check-incident-gates.mjs --commit-msg`：没有事故标记、写法不对、写的编号清单里没有，或者修第二次及以后的出现却没有 `Premise:` 行，提交直接失败。
+- `npm run check:incident-gates`（CI 每次都跑）读完整的提交记录：规则生效之后的提交缺标记、标记的编号不在清单里、清单里的次数少于提交记录里 `Incident:` 指向它的提交数，都失败；次数一到 2，原有的“没有硬门槛就失败”随之生效；`Premise:` 规则生效之后，提交时清单次数已到 2、却没写 `Premise:` 行的 `Incident:` 提交，也失败。浅克隆读不全记录，直接失败，先运行 `git fetch --unshallow origin`。
 - main（默认分支）上失败的运行也由程序自动数，不靠人发现：CI 的 `ci/required` 在每个 PR 上运行 `node scripts/check-incident-runs.mjs`，向 GitHub 读这条规则生效以来 main 上结论为失败的全部运行（自动上线、main 上的 CI、iPhone 作业等所有工作流）。同一个工作流有 2 次或以上失败没有被认领时，改到这个工作流或它运行的文件（工作流文件本身，以及工作流里写到的仓库路径所在的目录，例如上线工作流的 `scripts/delivery-mode/`）的 PR 合不进去；没碰它的 PR 不拦，只在日志里列出来，免得一个工作流的失败卡住全仓库。每天 09:17 JST 还有一个定时作业（`.github/workflows/incident-runs-report.yml`）把全部没认领的失败列在运行摘要里。认领的写法是在提交说明里加一行 `Incident-run: <运行编号> [<运行编号> ...] I-<编号>`（运行编号是 Actions 网址里 `runs/` 后面的数字），并且这条事故的次数不少于认领到它名下的运行数；次数到 2 时，上面的门槛规则同样生效。读不到 GitHub 时检查直接失败。
-- 一个 PR 自己的 CI 红了 2 次或以上，也要复盘：`ci/required` 运行 `node scripts/check-pr-reflection.mjs`，向 GitHub 数这个 PR 开出以后、它的分支上结论为失败、而且除 `ci/required` 以外还有作业失败的运行（只因草稿或上游被取消而失败的不算）。到 2 次时，PR 说明里必须有 `## 复盘` 一节，并写出每一次红的运行编号；没有这一节或漏了编号，PR 就合不进去。复盘里写清每次为什么红、现在靠什么挡住；同一原因已经出现两次的，按本文件记进事故清单并落门槛。补好说明后重跑失败的 `ci/required` 作业即可。读不到 GitHub 时检查直接失败。
+- 一个 PR 自己的 CI 红了 2 次或以上，也要复盘：`ci/required` 运行 `node scripts/check-pr-reflection.mjs`，向 GitHub 数这个 PR 开出以后、它的分支上结论为失败、而且除 `ci/required` 以外还有作业失败的运行（只因草稿或上游被取消而失败的不算）。到 2 次时，PR 说明里必须有 `## 复盘` 一节，写出每一次红的运行编号，并且有一行 `共同前提：`（这几次失败背后共同的那个错误想法）和一行 `验证：`（怎么确认修好了）；没有这一节、漏了编号或缺了这两行，PR 就合不进去。复盘里写清每次为什么红、现在靠什么挡住；同一原因已经出现两次的，按本文件记进事故清单并落门槛。补好说明后重跑失败的 `ci/required` 作业即可。读不到 GitHub 时检查直接失败。
 - 次数达到 2 的“已落门槛”条目，门槛一栏至少要有一个会自动运行的文件：测试文件，或者 `package.json`、`scripts/git-hooks/`、`.github/workflows/` 里会调用的脚本；只点名一个没有任何东西运行的文件，检查失败。
 
 <a id="keeping-the-list"></a>

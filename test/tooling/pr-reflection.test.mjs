@@ -121,11 +121,22 @@ describe("a PR whose CI went red twice needs a written reflection before it merg
   });
 
   it("passes once the reflection names every red run", async () => {
-    const body = "## 复盘\n\n- 21：格式没跑\n- 22：测试里重复声明权限\n";
+    const body =
+      "## 复盘\n\n- 21：格式没跑\n- 22：测试里重复声明权限\n- 共同前提：以为本地跑过的检查和 CI 一样\n- 验证：推送前钩子拦下了同样的错\n";
     const { api } = await github({ body, runs: [red(21), red(22)] });
     const result = await check(api);
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("PR_REFLECTION passed");
+  });
+
+  it("refuses a reflection without the shared assumption or how the fix was checked", async () => {
+    const body = "## 复盘\n\n- 21：格式没跑\n- 22：测试里重复声明权限\n- 验证：\n";
+    const { api } = await github({ body, runs: [red(21), red(22)] });
+    const result = await check(api);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("PR_REFLECTION_PREMISE_MISSING red=2");
+    expect(result.stderr).toContain("PR_REFLECTION_VERIFICATION_MISSING red=2");
+    expect(result.stderr).not.toContain("PR_REFLECTION_RUN_MISSING");
   });
 
   it("passes one red run, and does not count runs where only ci/required failed", async () => {
