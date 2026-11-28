@@ -88,7 +88,8 @@ public struct HerSectionPane: View {
             sensesOn: { model.senses?.status?.senses.count },
             talk: talk,
             openChat: openChat,
-            removedThisDevice: { model.removedThisDevice() }
+            removedThisDevice: { model.removedThisDevice() },
+            unsentMessages: { model.unsentMessages }
         )
         .id(section)
     }

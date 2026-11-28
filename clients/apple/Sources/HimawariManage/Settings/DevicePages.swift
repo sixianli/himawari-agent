@@ -28,10 +28,7 @@ struct DevicePage: View {
                         LabeledContent(M.deviceName, value: device.name)
                     }
                     .foregroundStyle(Color.hmText)
-                    let presence = store.presence(device)
-                    LabeledContent(presence == .connected ? M.deviceNow : M.lastConnected) {
-                        Text(M.presence(presence)).foregroundStyle(presence == .connected ? Color.hmSuccess : Color.hmMuted)
-                    }
+                    presenceRow(store.presence(device))
                     if let signedIn = Timestamp.parse(device.pairedAt) {
                         LabeledContent(M.signedInOn, value: M.pairedDay(signedIn))
                     }
@@ -68,6 +65,15 @@ struct DevicePage: View {
         .signOutDialog(store: store, signingOut: $signingOut, failure: $failure, unsentMessages: unsentMessages, signedOut: removedThisDevice)
         .alert(failure ?? "", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
             Button(M.ok) {}
+        }
+    }
+
+    private func presenceRow(_ presence: DevicePresence) -> some View {
+        let connected = presence == .connected
+        let title: String = connected ? M.deviceNow : M.lastConnected
+        let tint: Color = connected ? Color.hmSuccess : Color.hmMuted
+        return LabeledContent(title) {
+            Text(M.presence(presence)).foregroundStyle(tint)
         }
     }
 
