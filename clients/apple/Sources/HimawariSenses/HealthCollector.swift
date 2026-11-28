@@ -129,20 +129,17 @@ public final class HealthCollector: SenseCollector {
         }
     }
 
-    private func read<Value>(_ work: () async throws -> Value) async -> Value? {
-        do {
-            return try await work()
-        } catch {
-            failure = error
-            return nil
-        }
-    }
-
     private func hourly(_ identifier: HKQuantityTypeIdentifier, unit: HKUnit, options: HKStatisticsOptions, from start: Date, to end: Date, kind: SenseObservations.HealthKind, unitName: String) async -> Bool {
         let type = HKQuantityType(identifier)
         let predicate = HKSamplePredicate.quantitySample(type: type, predicate: HKQuery.predicateForSamples(withStart: start, end: end))
         let descriptor = HKStatisticsCollectionQueryDescriptor(predicate: predicate, options: options, anchorDate: start, intervalComponents: DateComponents(hour: 1))
-        guard let collection = await read({ try await descriptor.result(for: self.store) }) else { return false }
+        let collection: HKStatisticsCollection
+        do {
+            collection = try await descriptor.result(for: store)
+        } catch {
+            failure = error
+            return false
+        }
         collection.enumerateStatistics(from: start, to: end) { statistics, _ in
             let quantity = options.contains(.cumulativeSum) ? statistics.sumQuantity() : statistics.averageQuantity()
             guard let quantity else { return }
@@ -158,7 +155,13 @@ public final class HealthCollector: SenseCollector {
     private func samples(from start: Date, to end: Date) async -> Bool {
         let window = HKQuery.predicateForSamples(withStart: start, end: end)
         let sleep = HKSampleQueryDescriptor(predicates: [.categorySample(type: HKCategoryType(.sleepAnalysis), predicate: window)], sortDescriptors: [SortDescriptor(\.startDate)])
-        guard let sleeps = await read({ try await sleep.result(for: self.store) }) else { return false }
+        let sleeps: [HKCategorySample]
+        do {
+            sleeps = try await sleep.result(for: store)
+        } catch {
+            failure = error
+            return false
+        }
         for sample in sleeps {
             guard HKCategoryValueSleepAnalysis.allAsleepValues.map(\.rawValue).contains(sample.value) else { continue }
             let minutes = sample.endDate.timeIntervalSince(sample.startDate) / 60
@@ -166,7 +169,13 @@ public final class HealthCollector: SenseCollector {
             sink?.record(observation, id: SenseRecordBuilder.stableId(["health", "sleep", sample.uuid.uuidString]), captureSource: SenseRecordBuilder.sensorSource)
         }
         let workouts = HKSampleQueryDescriptor(predicates: [.workout(window)], sortDescriptors: [SortDescriptor(\.startDate)])
-        guard let found = await read({ try await workouts.result(for: self.store) }) else { return false }
+        let found: [HKWorkout]
+        do {
+            found = try await workouts.result(for: store)
+        } catch {
+            failure = error
+            return false
+        }
         for workout in found {
             let minutes = workout.duration / 60
             let observation = SenseObservations.health(.workout, value: minutes.rounded(), unit: "min", start: workout.startDate, end: workout.endDate, workoutType: Self.name(workout.workoutActivityType))
