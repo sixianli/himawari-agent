@@ -2738,6 +2738,20 @@ async function settingsConversation(service: Awaited<ReturnType<typeof openInsta
       true,
     );
     expect(answered.status, answered.raw).toBe(200);
+    await expect
+      .poll(
+        async () => {
+          const current = await service.query("thread.detail", {
+            threadId,
+            afterSequence: 0,
+            limit: 100,
+          });
+          const runs = (current.body as { payload: { runs: { status: string }[] } }).payload.runs;
+          return runs.at(-1)?.status;
+        },
+        { timeout: 30_000, interval: 200 },
+      )
+      .toBe("completed");
   };
   return { say, read, approve };
 }
@@ -2808,36 +2822,6 @@ it("[ADR 0315][SET-1] 在聊天里说“暂停记忆”就直接暂停，读回�
     });
     expect((await chat.read("memory.overview.read"))["capturePaused"]).toBe(false);
 
-    const fact = "主人的牙医是樱井医生";
-    await chat.say(
-      "请记住，我的牙医是樱井医生",
-      [{ text: "记下了。" }],
-      [
-        {
-          kind: "durable_fact",
-          decision: "create",
-          text: fact,
-          classification: "private",
-          confidence: 950,
-          explicit: true,
-          category: "health",
-          quote: "请记住，我的牙医是樱井医生",
-        },
-      ],
-    );
-    await expect
-      .poll(
-        () => {
-          const database = openQualifiedDatabase(databasePath);
-          try {
-            return database.prepare("SELECT count(*) AS made FROM memory_generations").get();
-          } finally {
-            database.close();
-          }
-        },
-        { timeout: 30_000 },
-      )
-      .not.toEqual({ made: 0 });
     const quiet = await chat.read("quiet_hours.read");
     const opened = await chat.say("打开勿扰", [
       {
@@ -2924,6 +2908,42 @@ it("[ADR 0315][SET-2][reverse] 只问用法不改设置；改名先出同意卡�
     expect(((await chat.read("device.list.read"))["devices"] as unknown[]).length).toBe(
       devices.length,
     );
+  } finally {
+    chatReply = undefined;
+    await service.stop();
+  }
+}, 180_000);
+
+it("[FIRST-1] 全新安装、Himawari 还没记下任何事：第一句话就能设提醒、打开勿扰，记忆页能手动添加", async () => {
+  const service = await openInstalledMain();
+  try {
+    const chat = await settingsConversation(service);
+    expect((await chat.read("memory.overview.read"))["manualAddReady"]).toBe(true);
+    const reminded = await chat.say("提醒我 2030 年 1 月 2 日上午 9 点交房租", [
+      {
+        tool: "reminder_set",
+        input: {
+          text: "交房租",
+          due: `${new Date(Date.now() + 3 * 86_400_000).toISOString().slice(0, 10)}T09:00`,
+        },
+      },
+      { text: "记下了。" },
+    ]);
+    expect(reminded.results).toHaveLength(1);
+    expect(JSON.stringify(reminded.results[0])).not.toMatch(/NOT_READY|GENERATION_MISSING/u);
+    expect(reminded.results[0]).not.toHaveProperty("error");
+    const opened = await chat.say("打开勿扰", [
+      {
+        tool: "settings_change",
+        input: {
+          setting: "quiet_hours.set",
+          values: { enabled: true, start: "23:00", end: "07:00" },
+        },
+      },
+      { text: "已打开勿扰。" },
+    ]);
+    expect(opened.results[0]).toMatchObject({ tier: 1, confirmed: true });
+    expect(await chat.read("quiet_hours.read")).toMatchObject({ enabled: true });
   } finally {
     chatReply = undefined;
     await service.stop();

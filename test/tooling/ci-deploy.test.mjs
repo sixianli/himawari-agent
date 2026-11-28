@@ -235,6 +235,34 @@ describe("ci-deploy.sh", () => {
     expect(child.status).toBe(4);
   });
 
+  it("runs deploy.sh without the shadow rehearsal only when the owner asked to skip it", () => {
+    const { repo, fakeSsh } = workspace();
+    const scripts = path.join(repo, "scripts/delivery-mode");
+    const packet = path.join(repo, "built-packet");
+    const seen = `${repo}-deploy-environment`;
+    directories.push(seen);
+    writeFileSync(
+      path.join(scripts, "make-packet.py"),
+      `import json\nprint("PACKET_READY " + json.dumps({"packet": ${JSON.stringify(packet)}}))\n`,
+    );
+    writeFileSync(
+      path.join(scripts, "deploy.sh"),
+      `echo "shadow=$HIMAWARI_DEPLOY_SHADOW_REHEARSAL onFailure=$HIMAWARI_DEPLOY_ON_FAILURE" > ${JSON.stringify(seen)}\nexit 10\n`,
+    );
+    mkdirSync(packet, { recursive: true });
+    writeFileSync(path.join(packet, "keep"), "");
+    const second = commitFile(repo, "src/app.ts", "changed");
+    const child = run(repo, {
+      HIMAWARI_PACKET_HOST: "198.51.100.9",
+      HIMAWARI_PACKET_SSH: fakeSsh,
+      HIMAWARI_DEPLOY_COMMIT: second,
+      HIMAWARI_DEPLOY_SKIP_SHADOW: "1",
+    });
+    expect(readFileSync(seen, "utf8")).toBe("shadow=0 onFailure=rollback\n");
+    expect(child.stdout).toContain("CI_DEPLOY_SHADOW_SKIPPED");
+    expect(child.status).toBe(4);
+  });
+
   it("warns and goes on when the backup is not installed yet", () => {
     const { repo, fakeSsh } = workspace();
     const second = commitFile(repo, "src/app.ts", "changed");

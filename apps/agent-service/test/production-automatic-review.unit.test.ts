@@ -213,7 +213,7 @@ async function fixture() {
   const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-review-wiring-"));
   const database = openQualifiedDatabase(path.join(stateRoot, "product.sqlite"));
   const migrations = await loadBundledMigrations();
-  database.transaction(() => applyMigrations(database, migrations)).immediate();
+  applyMigrations(database, migrations);
   database.prepare("INSERT INTO owners (id, revision) VALUES (?, 0)").run(OWNER_ID);
   database
     .prepare("INSERT INTO agents (id, owner_id, revision) VALUES (?, ?, 0)")

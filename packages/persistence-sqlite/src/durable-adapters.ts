@@ -975,6 +975,7 @@ export class SqliteDurableAdapters {
       setProfilePin: (input) => this.context.write("memoryBook.setProfilePin", input),
       listProfilePins: (scope) => this.context.read("memoryBook.listProfilePins", scope),
       latestGeneration: (scope) => this.context.read("memoryBook.latestGeneration", scope),
+      directGeneration: (scope) => this.context.write("memoryBook.directGeneration", scope),
       listInactive: (input) => this.context.read("memory.listInactive", input),
       listExpiredTrash: (input) => this.context.read("memoryBook.listExpiredTrash", input),
       listSubCategories: (scope) => this.context.read("memoryBook.listSubCategories", scope),
