@@ -33,6 +33,20 @@ final class ChatComposerTests: XCTestCase {
         XCTAssertTrue(app.buttons["chat.send"].firstMatch.waitForExistence(timeout: 5), "the send button did not show after pasting")
     }
 
+    func testJumpingToTheLatestShowsTheWholeLastMessageAboveTheInputBar() {
+        let app = DemoApp.launch("motion-scroll-under-glass")
+        let jump = app.buttons["chat.jumpLatest"].firstMatch
+        XCTAssertTrue(jump.waitForExistence(timeout: 15), "scrolling up the long chat did not bring up the jump-to-latest button")
+        Thread.sleep(forTimeInterval: 4)
+        jump.tap()
+        XCTAssertTrue(DemoApp.waitUntil(timeout: 5) { !jump.exists }, "the jump-to-latest button stayed after tapping it")
+        let field = input(in: app)
+        let answers = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "8:50 出门"))
+        let lastBottom = answers.allElementsBoundByIndex.filter(\.exists).map(\.frame.maxY).max() ?? 0
+        XCTAssertGreaterThan(lastBottom, 0, "the last answer is not on screen after jumping to the latest")
+        XCTAssertLessThanOrEqual(lastBottom, field.frame.minY, "the end of the last answer is still behind the input bar after jumping to the latest")
+    }
+
     func testTheOfflineChatSaysItIsNotConnectedAndTheOnlineChatDoesNot() {
         let notice = SourceText.zh("HimawariChat", "chat.offline")
         let offline = DemoApp.launch("16-chat-states-4-offline")

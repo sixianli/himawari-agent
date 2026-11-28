@@ -38,6 +38,7 @@ public struct ChatView: View {
     @State private var shownSteps: ShownSteps?
     @State private var farFromLatest = false
     @State private var latestJumps = 0
+    @State private var scrollPosition = ScrollPosition(edge: .bottom)
     @State private var copiedCount = 0
     @State private var copiedShown = false
     @State private var replyingTo: ThreadMessage?
@@ -433,8 +434,7 @@ public struct ChatView: View {
                     withAnimation(.easeInOut(duration: 3)) { proxy.scrollTo(first.id, anchor: .top) }
                 }
                 .onChange(of: latestJumps) { _, _ in
-                    guard let last = chatRows.last else { return }
-                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.3)) { proxy.scrollTo(last.id, anchor: .bottom) }
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.3)) { scrollPosition.scrollTo(edge: .bottom) }
                 }
         }
     }
@@ -467,6 +467,7 @@ public struct ChatView: View {
             .padding(.top, Self.headerHeight + DesignTokens.Chat.puckContentGap + (shownBackgroundWork == nil ? 0 : DesignTokens.Chat.puckBannerGap + DesignTokens.Avatar.backgroundPillHeight))
             .padding(.bottom, 110)
         }
+        .scrollPosition($scrollPosition)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { screenWidth = $0 }
         .onScrollGeometryChange(for: Bool.self) { geometry in
             geometry.contentSize.height - geometry.visibleRect.maxY > geometry.containerSize.height

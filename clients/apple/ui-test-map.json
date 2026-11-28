@@ -259,8 +259,16 @@
       "uncovered": "还没有操作这个功能的 UI 测试"
     },
     {
-      "feature": "动效：闪光、弹层、玻璃下滚动",
-      "scenes": ["motion-shimmer", "motion-sheet", "motion-scroll-under-glass"],
+      "feature": "聊天：往上翻后点“跳到最新”回到最后一条",
+      "scenes": ["motion-scroll-under-glass"],
+      "checks": "长对话翻到最上面后出现“跳到最新”钮，点它后钮消失，最后一条回答的结尾整段露在输入条上方",
+      "tests": [
+        "HimawariUITests/ChatComposerTests/testJumpingToTheLatestShowsTheWholeLastMessageAboveTheInputBar"
+      ]
+    },
+    {
+      "feature": "动效：闪光、弹层",
+      "scenes": ["motion-shimmer", "motion-sheet"],
       "uncovered": "还没有操作这个功能的 UI 测试"
     }
   ]
