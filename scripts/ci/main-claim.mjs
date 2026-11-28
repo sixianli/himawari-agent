@@ -1,7 +1,7 @@
 import { appendFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { touchesAppleClient } from "./apple-scope.mjs";
-import { findGreenBase, getJson, getPages, gh } from "./main-green.mjs";
+import { findGreenBase, getJson, getPages, gh, jobMatches } from "./main-green.mjs";
 
 export function marker(runId) {
   return `<!-- main-claim:${runId} -->`;
@@ -9,7 +9,7 @@ export function marker(runId) {
 
 export function failedJobs(jobs, prefixes) {
   return jobs
-    .filter((job) => prefixes.some((prefix) => job.name.startsWith(prefix)))
+    .filter((job) => prefixes.some((prefix) => jobMatches(job.name, prefix)))
     .filter((job) => job.conclusion === "failure" || job.conclusion === "timed_out")
     .map((job) => job.name);
 }
@@ -67,7 +67,15 @@ async function main() {
     process.stdout.write("MAIN_CLAIM nothing-failed\n");
     return;
   }
-  const base = await findGreenBase({ repo, workflow, prefixes, runId, getJson, getPages });
+  const base = await findGreenBase({
+    repo,
+    workflow,
+    prefixes,
+    runId,
+    getJson,
+    getPages,
+    event: process.env.GITHUB_EVENT_NAME === "schedule" ? "schedule" : "push",
+  });
   const commits = base
     ? (await getJson(`repos/${repo}/compare/${base}...${head}`)).commits.map((commit) => commit.sha)
     : [head];

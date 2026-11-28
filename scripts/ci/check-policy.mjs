@@ -985,6 +985,33 @@ export function validateAppleMacSlots(text) {
   }
 }
 
+export function validateAppleAuditSchedule(text) {
+  const workflow = parseDocument(text, { uniqueKeys: true }).toJS() ?? {};
+  const crons = (workflow.on?.schedule ?? []).map((entry) => entry.cron);
+  assert(
+    crons.includes("0 18 * * *"),
+    'APPLE_AUDIT_SCHEDULE the accessibility audit runs nightly at 03:00 JST (cron "0 18 * * *")',
+  );
+  for (const id of ["iphone-accessibility-build", "iphone-accessibility"]) {
+    const condition = String(workflow.jobs?.[id]?.if);
+    assert(
+      condition.includes("github.event_name != 'push'") &&
+        condition.includes("github.event_name != 'pull_request'"),
+      `APPLE_AUDIT_SCHEDULE ${id} must not run on push or pull_request`,
+    );
+  }
+  assert(
+    String(workflow.jobs?.changes?.steps?.at(-1)?.env?.BASE).includes(
+      "github.event_name == 'schedule' && '--since-audit'",
+    ),
+    "APPLE_AUDIT_SCHEDULE the nightly run must skip when nothing changed since the last audit (--since-audit)",
+  );
+  assert(
+    String(workflow.jobs?.claim?.if).includes("github.event_name == 'schedule'"),
+    "APPLE_AUDIT_SCHEDULE a failed nightly audit must be claimed",
+  );
+}
+
 export function inspectTestSource(source, filename) {
   const ast = ts.createSourceFile(
     filename,
@@ -1816,7 +1843,9 @@ export function validateWorkflowsAgainstPolicy({ root, source, proposed }) {
     lock,
   );
   const workflowDirectory = path.join(root, ".github/workflows");
-  validateAppleMacSlots(readFileSync(path.join(workflowDirectory, "apple.yml"), "utf8"));
+  const appleWorkflow = readFileSync(path.join(workflowDirectory, "apple.yml"), "utf8");
+  validateAppleMacSlots(appleWorkflow);
+  validateAppleAuditSchedule(appleWorkflow);
   validateHostedRunners(
     Object.fromEntries(
       readdirSync(workflowDirectory)

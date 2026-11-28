@@ -8,6 +8,8 @@ on:
       - ready_for_review
   push:
     branches: [main]
+  schedule:
+    - cron: "0 18 * * *"
   workflow_dispatch:
 permissions:
   contents: read
@@ -32,16 +34,16 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
-      - name: 看这次改动有没有碰苹果客户端（iPhone 和 Mac），没碰就不占 Mac 机器；main 上从这些检查上次全部通过的提交算起
+      - name: 看这次改动有没有碰苹果客户端（iPhone 和 Mac），没碰就不占 Mac 机器；main 上从这些检查上次全部通过的提交算起，凌晨审计从上次审计过的提交算起
         id: scope
         env:
-          BASE: ${{ github.event_name == 'push' && '--since-green' || github.event.pull_request.base.sha || '' }}
+          BASE: ${{ github.event_name == 'push' && '--since-green' || github.event_name == 'schedule' && '--since-audit' || github.event.pull_request.base.sha || '' }}
           GH_TOKEN: ${{ github.token }}
         run: node scripts/ci/apple-scope.mjs "$BASE" "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
   iphone:
     name: apple/iphone
     needs: changes
-    if: ${{ needs.changes.outputs.client == 'true' }}
+    if: ${{ github.event_name != 'schedule' && needs.changes.outputs.client == 'true' }}
     runs-on: macos-26
     timeout-minutes: 60
     steps:
@@ -72,7 +74,7 @@ jobs:
   iphone-accessibility-build:
     name: apple/iphone-accessibility-build
     needs: [changes, iphone]
-    if: ${{ !cancelled() && github.event_name != 'pull_request' && needs.changes.outputs.client == 'true' }}
+    if: ${{ !cancelled() && github.event_name != 'pull_request' && github.event_name != 'push' && needs.changes.outputs.client == 'true' }}
     runs-on: macos-26
     timeout-minutes: 60
     outputs:
@@ -102,7 +104,7 @@ jobs:
   iphone-accessibility:
     name: apple/iphone-accessibility ${{ matrix.shard }}
     needs: [changes, iphone-accessibility-build]
-    if: ${{ !cancelled() && needs.iphone-accessibility-build.result == 'success' && github.event_name != 'pull_request' && needs.changes.outputs.client == 'true' }}
+    if: ${{ !cancelled() && needs.iphone-accessibility-build.result == 'success' && github.event_name != 'pull_request' && github.event_name != 'push' && needs.changes.outputs.client == 'true' }}
     runs-on: macos-26
     timeout-minutes: 60
     strategy:
@@ -178,7 +180,7 @@ jobs:
   scroll:
     name: apple/scroll
     needs: [changes, iphone-accessibility]
-    if: ${{ !cancelled() && github.event_name != 'pull_request' && needs.changes.outputs.client == 'true' }}
+    if: ${{ !cancelled() && github.event_name != 'pull_request' && github.event_name != 'schedule' && needs.changes.outputs.client == 'true' }}
     runs-on: macos-26
     timeout-minutes: 60
     steps:
@@ -218,7 +220,7 @@ jobs:
   claim:
     name: apple/claim
     needs: [iphone, iphone-accessibility-build, iphone-accessibility, scroll]
-    if: ${{ failure() && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    if: ${{ failure() && (github.event_name == 'push' || github.event_name == 'schedule') && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -232,4 +234,9 @@ jobs:
       - name: main 上失败时找出改了苹果客户端的 PR，在 PR 上留言请它的线程认领
         env:
           GH_TOKEN: ${{ github.token }}
-        run: node scripts/ci/main-claim.mjs apple.yml apple apple/iphone apple/scroll
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = schedule ]; then
+            node scripts/ci/main-claim.mjs apple.yml apple apple/iphone-accessibility-build apple/iphone-accessibility
+          else
+            node scripts/ci/main-claim.mjs apple.yml apple apple/iphone apple/scroll
+          fi

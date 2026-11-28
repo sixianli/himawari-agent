@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
-import { findGreenBase, getJson, getPages } from "./main-green.mjs";
+import { findGreenBase, findLastRanBase, getJson, getPages } from "./main-green.mjs";
 
 const APPLE_CLIENT = [
   /^clients\/apple\//u,
@@ -10,6 +10,10 @@ const APPLE_CLIENT = [
 ];
 
 export const mainCheckPrefixes = ["apple/iphone", "apple/scroll"];
+export const auditCheckPrefixes = [
+  "apple/iphone-accessibility-build",
+  "apple/iphone-accessibility",
+];
 
 export function touchesAppleClient(files) {
   if (files === null) return true;
@@ -47,9 +51,31 @@ export async function sinceGreenBase({
   }
 }
 
+export async function sinceAuditBase({
+  repo = process.env.GITHUB_REPOSITORY,
+  runId = process.env.GITHUB_RUN_ID,
+  find = findLastRanBase,
+} = {}) {
+  try {
+    return await find({
+      repo,
+      workflow: "apple.yml",
+      job: auditCheckPrefixes[0],
+      event: "schedule",
+      runId,
+      getJson,
+      getPages,
+    });
+  } catch {
+    return null;
+  }
+}
+
+const bases = { "--since-green": sinceGreenBase, "--since-audit": sinceAuditBase };
+
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   const [first, head = "HEAD"] = process.argv.slice(2);
-  const base = first === "--since-green" ? await sinceGreenBase() : first;
+  const base = Object.hasOwn(bases, first ?? "") ? await bases[first]() : first;
   const files = changedFiles(base, head);
   const client = touchesAppleClient(files);
   process.stderr.write(
