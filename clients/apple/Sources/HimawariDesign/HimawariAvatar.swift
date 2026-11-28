@@ -27,6 +27,7 @@ public struct HimawariAvatar: View {
                     .frame(width: DesignTokens.Avatar.size, height: DesignTokens.Avatar.size)
                 SunflowerMark(growing: busy)
                     .frame(width: DesignTokens.Avatar.mark, height: DesignTokens.Avatar.mark)
+                    .environment(\.colorScheme, .dark)
             }
             .frame(width: DesignTokens.Avatar.size, height: DesignTokens.Avatar.size)
             Wordmark(size: DesignTokens.Avatar.wordmarkSize, lineHeight: DesignTokens.Avatar.wordmarkLineHeight)

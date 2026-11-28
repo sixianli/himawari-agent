@@ -87,4 +87,28 @@ final class SunflowerSeedsTests: XCTestCase {
         XCTAssertLessThan(idleAfterTen, busyAfterTen)
         XCTAssertGreaterThan(SunflowerSeeds.idling(seconds: 60, seeds: seeds), idleAfterTen)
     }
+
+    func testTheNewestSeedsStandOutOnTheLightBackgroundAndStayPaleOnTheDarkOne() {
+        let growth = SunflowerSeeds.resting(seeds: 89)
+        let newest = { (onLight: Bool) in
+            SunflowerSeeds.at(growth: growth, seeds: 89, onLight: onLight).filter { $0.radius > 0 }.min { $0.radius < $1.radius }!
+        }
+        let lightBackground = luminance(252, 252, 251)
+        let light = newest(true)
+        XCTAssertGreaterThanOrEqual(contrast(luminance(light.red * 255, light.green * 255, light.blue * 255), lightBackground), 4.5)
+        let dark = newest(false)
+        XCTAssertEqual([dark.red, dark.green, dark.blue].map { ($0 * 255).rounded() }, [255, 236, 170])
+    }
+
+    private func luminance(_ r: Double, _ g: Double, _ b: Double) -> Double {
+        let channel = { (value: Double) -> Double in
+            let c = value / 255
+            return c <= 0.03928 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4)
+        }
+        return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
+    }
+
+    private func contrast(_ a: Double, _ b: Double) -> Double {
+        (max(a, b) + 0.05) / (min(a, b) + 0.05)
+    }
 }
