@@ -3088,6 +3088,10 @@ export async function startTenantRuntime(
             sender: applePushSender,
             configuration: () => applePushConfiguration,
             threadTitle,
+            backgroundWork: async () => {
+              if (!timerSubthreads) return { matters: [] };
+              return timerSubthreads.backgroundWork();
+            },
             publicOrigin: configuration.publicOrigin,
             now: () => clock.now(),
             onDelivery: (outcome) =>
