@@ -91,6 +91,7 @@ export interface MemoryBookStorePort {
   ): Promise<void>;
   listProfilePins(scope: MemoryBookScope): Promise<readonly MemoryProfilePin[]>;
   latestGeneration(scope: MemoryBookScope): Promise<MemoryGenerationId | undefined>;
+  directGeneration(scope: MemoryBookScope): Promise<MemoryGenerationId>;
   listInactive(
     input: MemoryBookScope & { readonly trashedAfter: string; readonly limit: number },
   ): Promise<readonly ProductMemoryRecord[]>;

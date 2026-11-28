@@ -49,6 +49,50 @@ enum DemoApp {
         start.press(forDuration: 0.1, thenDragTo: end, withVelocity: .default, thenHoldForDuration: 0.1)
     }
 
+    static func openEveryRow(in page: XCUIElement, of app: XCUIApplication, named name: String, atLeast minimum: Int) throws {
+        let rows = try rowLabels(in: page, of: app)
+        XCTAssertGreaterThanOrEqual(rows.count, minimum, "found only these rows on \(name): \(rows)")
+        for label in rows {
+            let row = page.buttons[label].firstMatch
+            guard scrollUntilOnScreen(row, in: app) else {
+                XCTFail("\(label): could not scroll to the row on \(name)")
+                continue
+            }
+            row.tap()
+            guard waitUntil(timeout: 5, { !row.isHittable }) else {
+                XCTFail("\(label): tapping the row on \(name) opened nothing")
+                continue
+            }
+            var way = "edge swipe"
+            swipeBackFromTheLeftEdge(app)
+            if !waitUntil(timeout: 3, { row.isHittable }) {
+                let back = app.navigationBars.firstMatch.buttons.firstMatch
+                if back.exists, back.isHittable {
+                    way = "back button \(back.label)"
+                    back.tap()
+                }
+            }
+            if !waitUntil(timeout: 3, { row.isHittable }) {
+                way = "swipe down"
+                app.swipeDown(velocity: .fast)
+            }
+            XCTAssertTrue(waitUntil(timeout: 5) { row.isHittable }, "\(label): a swipe from the left edge, the back button and a swipe down all failed to go back to \(name)")
+            print("UI_ROW_OPENED \(label) back=\(way)")
+        }
+    }
+
+    static func rowLabels(in page: XCUIElement, of app: XCUIApplication) throws -> [String] {
+        var labels: [String] = []
+        for _ in 0..<6 {
+            for node in try nodes(of: .button, in: page) where !labels.contains(node.label) {
+                labels.append(node.label)
+            }
+            page.swipeUp()
+        }
+        for _ in 0..<6 { page.swipeDown() }
+        return labels
+    }
+
     static func nodes(of type: XCUIElement.ElementType, in element: XCUIElement) throws -> [(label: String, frame: CGRect)] {
         var found: [(label: String, frame: CGRect)] = []
         func walk(_ node: XCUIElementSnapshot) {
@@ -68,11 +112,20 @@ enum SourceText {
 
     static func zh(_ module: String, _ key: String) -> String {
         let url = appleRoot.appendingPathComponent("Sources/\(module)/Resources/zh-Hans.lproj/Localizable.strings")
-        guard let text = (NSDictionary(contentsOf: url) as? [String: String])?[key] else {
+        guard let text = table(module)[key] else {
             XCTFail("\(key) is not in \(url.path)")
             return key
         }
         return text
+    }
+
+    static func zh(_ module: String, keysStartingWith prefix: String) -> [String] {
+        table(module).filter { $0.key.hasPrefix(prefix) }.map(\.value).sorted()
+    }
+
+    private static func table(_ module: String) -> [String: String] {
+        let url = appleRoot.appendingPathComponent("Sources/\(module)/Resources/zh-Hans.lproj/Localizable.strings")
+        return NSDictionary(contentsOf: url) as? [String: String] ?? [:]
     }
 
     static func cases(of name: String, in file: String) throws -> [String] {

@@ -414,13 +414,7 @@ export class ProductionMemoryControl {
     const own = memoryId
       ? (await this.options.jobs.listByMemory(memoryId)).at(-1)?.generationId
       : undefined;
-    const generation = own ?? (await this.options.book.latestGeneration(this.#scope()));
-    if (!generation)
-      throw new ApplicationPortError(
-        PORT_ERROR_CODES.INVALID_OPERATION,
-        "MEMORY_GENERATION_MISSING",
-      );
-    return generation;
+    return own ?? (await this.options.book.directGeneration(this.#scope()));
   }
 
   async #purgeExpiredTrash() {
@@ -1447,7 +1441,6 @@ export class ProductionMemoryControl {
     const externalProposals = await this.#externalProposals(EXTERNAL_PROPOSALS_SHOWN);
     const mcpSync = await this.#mcpSyncView();
     const { capturePaused, lastViewedAt } = await this.options.book.readSettings(scope);
-    const manualAddReady = (await this.options.book.latestGeneration(scope)) !== undefined;
     return {
       ...query,
       kind: "snapshot",
@@ -1467,7 +1460,7 @@ export class ProductionMemoryControl {
         personSuggestions,
         imports,
         capturePaused,
-        manualAddReady,
+        manualAddReady: true,
         lastViewedAt,
         profileUsage: {
           used: outline?.usage.used ?? 0,

@@ -67,6 +67,10 @@ if [[ "$since" == "$commit" ]]; then
   echo "CI_DEPLOY_SKIPPED already-running"
   exit 0
 fi
+if git -C "$repo" merge-base --is-ancestor "$commit" "$since"; then
+  echo "CI_DEPLOY_SKIPPED running-is-newer"
+  exit 0
+fi
 git -C "$repo" merge-base --is-ancestor "$since" "$commit" || refuse SINCE_NOT_ANCESTOR "$since is not an ancestor of $commit"
 
 if [[ "${HIMAWARI_DEPLOY_FORCE:-0}" != 1 ]]; then

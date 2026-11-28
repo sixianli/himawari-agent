@@ -1833,14 +1833,6 @@ describe("production memory capture", () => {
         context: { threadId: THREAD_ID },
       } as never) as Promise<Record<string, unknown>>;
     await context.protect("payload-page", "给妈妈打电话");
-    await expect(
-      command(
-        context.control,
-        "memory.reminder.create",
-        { contentRef: "payload-page", due: "2026-10-26", repeat: "none" },
-        "page-early",
-      ),
-    ).rejects.toThrow("REMINDER_MEMORY_NOT_READY");
     await context.capture.start(context.request);
     await context.capture.stop();
     const reminders = context.repository.memoryReminders();
@@ -3332,7 +3324,7 @@ describe("production memory capture", () => {
     expect(await listed()).toMatchObject({ quoteSuperseded: true, quoteLatestMemoryId: null });
   });
 
-  it("tells the model when the reminder list is cut off and why a brand-new account cannot set one", async () => {
+  it("[FIRST] lets a brand-new account set a reminder and tells the model when the reminder list is cut off", async () => {
     const context = await setup(
       "请记住，我最喜欢的颜色是蓝色。",
       '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
@@ -3347,9 +3339,9 @@ describe("production memory capture", () => {
         dataClassification: "private",
         context: { threadId: THREAD_ID },
       } as never) as Promise<{ reminders?: unknown[]; more?: boolean }>;
-    await expect(
-      call("set", { text: "还没有记忆", due: "2026-10-30T09:00" }, "early"),
-    ).rejects.toMatchObject({ code: "REMINDER_MEMORY_NOT_READY" });
+    expect(
+      await call("set", { text: "还没有记忆", due: "2026-10-30T09:00" }, "early"),
+    ).toMatchObject({ created: true });
     await context.capture.start(context.request);
     await context.capture.stop();
     for (let index = 0; index < 21; index += 1)
@@ -3525,13 +3517,13 @@ describe("production memory capture", () => {
     ).toBe("deletion_pending");
   });
 
-  it("[MP-3] adds a Memory the Owner types in once one was learned and stores a card number as typed", async () => {
+  it("[MP-3][FIRST] lets the Owner add a Memory before Himawari learned anything and stores a card number as typed", async () => {
     const context = await setup(
       "请记住，我最喜欢的颜色是蓝色。",
       '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
     );
     await context.protect("payload-manual", "主人喜欢早上跑步");
-    expect((await overview(context.control)).manualAddReady).toBe(false);
+    expect((await overview(context.control)).manualAddReady).toBe(true);
     await context.capture.start(context.request);
     await context.capture.stop();
     expect((await overview(context.control)).manualAddReady).toBe(true);

@@ -15,7 +15,7 @@ async function buildTemplate(): Promise<string> {
   const database = openQualifiedDatabase(databasePath);
   try {
     const migrations = await loadBundledMigrations();
-    database.transaction(() => applyMigrations(database, migrations)).immediate();
+    applyMigrations(database, migrations);
     database.pragma("wal_checkpoint(TRUNCATE)");
   } finally {
     database.close();

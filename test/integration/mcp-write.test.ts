@@ -44,7 +44,6 @@ import {
   MCP_PROPOSE_RULE_ALREADY_SAVED,
   MCP_PROPOSE_RULE_DECLINED,
   MCP_PROPOSE_RULE_INVALID,
-  MCP_PROPOSE_RULE_NOT_READY,
   MCP_PROPOSE_RULE_REPLAY_UNAVAILABLE,
   MCP_PROPOSE_RULE_SAVED,
   renderPrompt,
@@ -140,7 +139,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       readonly readOnly?: boolean;
       readonly failRuleMarker?: boolean;
       readonly slowDecidedMs?: number;
-      readonly notReady?: boolean;
+      readonly fresh?: boolean;
       readonly replay?: boolean;
       readonly direct?: boolean;
     } = {},
@@ -160,22 +159,24 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
         VALUES (?, ?, ?, 1, 'open', ?, ?)`,
       )
       .run(THREAD_ID, OWNER_ID, AGENT_ID, NOW, NOW);
-    database
-      .prepare(
-        `INSERT INTO thread_checkpoint_jobs (
-          id, generation_id, owner_id, agent_id, thread_id, revision, source_watermark,
-          policy_version, status, attempt_count, requested_at
-        ) VALUES ('checkpoint-mcp-write', ?, ?, ?, ?, 1, 1, 'memory-policy-v1', 'completed', 1, ?)`,
-      )
-      .run(GENERATION_ID, OWNER_ID, AGENT_ID, THREAD_ID, NOW);
-    database
-      .prepare(
-        `INSERT INTO memory_generations (
-          id, checkpoint_job_id, owner_id, agent_id, thread_id, status,
-          model_descriptor_ref, policy_version, output_ref
-        ) VALUES (?, 'checkpoint-mcp-write', ?, ?, ?, 'completed', 'model-fixture', 'memory-policy-v1', NULL)`,
-      )
-      .run(GENERATION_ID, OWNER_ID, AGENT_ID, THREAD_ID);
+    if (!options.fresh) {
+      database
+        .prepare(
+          `INSERT INTO thread_checkpoint_jobs (
+            id, generation_id, owner_id, agent_id, thread_id, revision, source_watermark,
+            policy_version, status, attempt_count, requested_at
+          ) VALUES ('checkpoint-mcp-write', ?, ?, ?, ?, 1, 1, 'memory-policy-v1', 'completed', 1, ?)`,
+        )
+        .run(GENERATION_ID, OWNER_ID, AGENT_ID, THREAD_ID, NOW);
+      database
+        .prepare(
+          `INSERT INTO memory_generations (
+            id, checkpoint_job_id, owner_id, agent_id, thread_id, status,
+            model_descriptor_ref, policy_version, output_ref
+          ) VALUES (?, 'checkpoint-mcp-write', ?, ?, ?, 'completed', 'model-fixture', 'memory-policy-v1', NULL)`,
+        )
+        .run(GENERATION_ID, OWNER_ID, AGENT_ID, THREAD_ID);
+    }
     database.close();
     const clock = new ManualClock(NOW);
     const repository = await SqliteProductStateRepository.open({
@@ -334,7 +335,6 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
         get(inner, key) {
           const value = Reflect.get(inner, key, inner);
           if (typeof value !== "function") return value;
-          if (key === "ready" && options.notReady) return async () => false;
           if (key !== "decided") return value.bind(inner);
           return async (proposalId: string) => {
             const found = await value.call(inner, proposalId);
@@ -773,14 +773,16 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     expect(await f.storedRules()).toEqual([]);
   });
 
-  it("[P5-2][P5-3] keeps a memory proposal waiting without asking while the memory book is not ready", async () => {
-    const f = await setup({ notReady: true });
+  it("[P5-2][P5-3][FIRST] on a fresh install with nothing remembered yet, the owner can still confirm a memory and a rule", async () => {
+    const f = await setup({ fresh: true });
     const client = await f.connect();
-    const waiting = await f.propose(client, { text: COFFEE });
-    expect(waiting.result.isError).not.toBe(true);
-    expect(await f.pending()).toHaveLength(1);
-    expect((await f.proposeRule(client, RULE)).text).toBe(MCP_PROPOSE_RULE_NOT_READY.text);
-    expect(f.elicitations).toEqual([]);
+    const saved = await f.propose(client, { text: COFFEE });
+    expect(saved.text).toBe(MCP_PROPOSE_MEMORY_SAVED.text);
+    expect(await f.external()).toHaveLength(1);
+    const rule = await f.proposeRule(client, RULE);
+    expect(rule.text).toBe(MCP_PROPOSE_RULE_SAVED.text);
+    expect(await f.storedRules()).toHaveLength(1);
+    expect(f.elicitations).toHaveLength(2);
   });
 
   it("[P5-3] keeps the proposal waiting for the owner when the client cannot show a dialog, and answers resends the same way", async () => {
@@ -2344,13 +2346,13 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     expect(f.activeScanCount() - before).toBe(1);
   });
 
-  it("[direct] keeps proposals waiting while the memory book is not ready, and an all-duplicate batch has nothing to undo", async () => {
-    const waiting = await setup({ direct: true, notReady: true });
-    const client = await waiting.connect({ elicitation: false });
-    const held = await waiting.propose(client, { text: COFFEE });
-    expect(held.result.isError).not.toBe(true);
-    expect(held.text).toContain("待确认");
-    expect(await waiting.external()).toEqual([]);
+  it("[direct][FIRST] saves straight away on a fresh install with nothing remembered yet, and an all-duplicate batch has nothing to undo", async () => {
+    const fresh = await setup({ direct: true, fresh: true });
+    const client = await fresh.connect({ elicitation: false });
+    const kept = await fresh.propose(client, { text: COFFEE });
+    expect(kept.result.isError).not.toBe(true);
+    expect(kept.text).toBe(MCP_PROPOSE_MEMORY_SAVED_DIRECT.text);
+    expect(await fresh.external()).toHaveLength(1);
     const f = await setup({ direct: true });
     const web = control(f);
     const muse = await f.connect({ elicitation: false, name: "muse" });
