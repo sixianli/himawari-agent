@@ -330,7 +330,7 @@ export interface QuestionOutcome {
   readonly sampleId: string;
   readonly questionId: string;
   readonly category: string;
-  readonly arm: "memory" | "memory-conversation" | "full-context";
+  readonly arm: "memory" | "memory-conversation" | "memory-auto-turns" | "full-context";
   readonly correct: boolean | null;
   readonly response: string;
   readonly contextTokens: number;
@@ -338,6 +338,7 @@ export interface QuestionOutcome {
   readonly evidenceRecalled: boolean | null;
   readonly evidenceStored: boolean | null;
   readonly toolCalls?: number;
+  readonly recalledTurns?: boolean;
 }
 
 export interface ArmMetrics {

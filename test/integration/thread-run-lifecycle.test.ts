@@ -3250,7 +3250,7 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
     expect(await projection.read(query)).toEqual(page);
   });
 
-  it("shows the owner which memories the context formation brought to the model", async () => {
+  it("shows the owner which memories and old conversations the context formation brought to the model", async () => {
     const setup = await executionFixture();
     const payloads = setup.repository.payloadStore(ownerId, agentId);
     const storeText = async (
@@ -3339,6 +3339,21 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
         },
       },
       threads: setup.repository.threadRepository(),
+      conversations: {
+        recall: async () => ({
+          payloadRef: "payload-conversation-recall",
+          dataClassification: "private" as const,
+          turns: [
+            {
+              conversationId: "thread-books",
+              sequence: 3,
+              day: "2026-11-18",
+              startedAt: "2026-11-18T01:00:00.000Z",
+              preview: "推荐一本好看的科幻小说",
+            },
+          ],
+        }),
+      },
       profile: {
         compose: async () => {
           const memoryIds = ["memory-color", "memory-city", "memory-health"].map(createMemoryId);
@@ -3391,6 +3406,17 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
       phase: "completed",
       text: "3",
       output: "- 主人最喜欢的颜色是 蓝色",
+    });
+    expect(records.find((record) => record.name === "conversation.recall")).toMatchObject({
+      kind: "status",
+      phase: "completed",
+      text: "1",
+      output: JSON.stringify({
+        day: "2026-11-18",
+        conversationId: "thread-books",
+        sequence: 3,
+        preview: "推荐一本好看的科幻小说",
+      }),
     });
     expect(reads).toEqual([["memory-tea"], ["memory-color", "memory-city", "memory-health"]]);
     expect(JSON.stringify(records)).not.toContain("PRIVATE_");

@@ -14,6 +14,7 @@ import type {
   ModelPort,
 } from "../ports/intelligence.js";
 import type { ClockPort, IdGeneratorPort } from "../ports/system.js";
+import { isModelVisible } from "./model-visibility.js";
 import type { SessionTraceRecorder } from "./session-trace-recorder.js";
 
 const DISCLOSURE_RANK = Object.freeze({
@@ -232,7 +233,7 @@ export class ModelRouterService {
     if (!request.requiredCapabilities.every((item) => descriptor.capabilities.includes(item))) {
       reasons.push("capability_mismatch");
     }
-    if (!descriptor.allowedDataClassifications.includes(request.dataClassification)) {
+    if (!isModelVisible(request.dataClassification)) {
       reasons.push("classification_not_allowed");
     }
     if (DISCLOSURE_RANK[descriptor.disclosure] > DISCLOSURE_RANK[request.maxDisclosure]) {

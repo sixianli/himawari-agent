@@ -6,6 +6,7 @@ export interface StoreContext {
   readonly ownerName: string | null;
   readonly profile: string;
   readonly related: readonly RelatedMemory[];
+  readonly recalledTurns?: string | null;
 }
 
 function day(at: string): string {
@@ -44,6 +45,14 @@ function relatedSection(context: StoreContext): string {
   return `${title}\n${lines}`;
 }
 
+function recalledTurnsSection(context: StoreContext): string | null {
+  if (context.recalledTurns === undefined) return null;
+  const title = context.ownerName
+    ? `## Original words from earlier conversations that ${owner(context)} found for this question (主人 is ${context.ownerName}; lines marked 你 are what the other person said, after their name)`
+    : "## Original words from earlier conversations you found for this question";
+  return `${title}\n${context.recalledTurns ?? "(none)"}`;
+}
+
 export function memoryAnswerMessages(
   sample: BenchmarkSample,
   question: BenchmarkQuestion,
@@ -56,7 +65,11 @@ export function memoryAnswerMessages(
     },
     {
       role: "user",
-      content: `${[...contexts.map(profileSection), ...contexts.map(relatedSection)].join("\n\n")}\n\nCurrent time: ${askedOn(question)}\nQuestion: ${question.question}`,
+      content: `${[
+        ...contexts.map(profileSection),
+        ...contexts.map(relatedSection),
+        ...contexts.flatMap((context) => recalledTurnsSection(context) ?? []),
+      ].join("\n\n")}\n\nCurrent time: ${askedOn(question)}\nQuestion: ${question.question}`,
     },
   ];
 }

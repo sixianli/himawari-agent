@@ -27,6 +27,7 @@ import {
   ProductionConversationTools,
   toolResultCharacters,
 } from "../../apps/agent-service/src/production-conversation-tools.ts";
+import { ProductionConversationRecall } from "../../apps/agent-service/src/production-conversation-recall.ts";
 import { ProductionMemoryEpisodes } from "../../apps/agent-service/src/production-memory-episodes.ts";
 import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
 
@@ -35,7 +36,10 @@ const AGENT_ID = createAgentId("agent-conversation-turns");
 const TALK = createThreadId("thread-conversation-turns-talk");
 const OTHER = createThreadId("thread-conversation-turns-other");
 const THINK = createThreadId("thread-conversation-turns-think");
+const BOOKS = createThreadId("thread-conversation-turns-books");
+const NOW = createThreadId("thread-conversation-turns-now");
 const DIMENSIONS = 16;
+const RECALL_DIMENSIONS = 256;
 const ALL = ["public", "private", "sensitive"] as const;
 
 type Row = readonly [ThreadId, number, "owner" | "agent" | "system", string, string, string];
@@ -53,8 +57,12 @@ const FIRST_ROWS: readonly Row[] = [
 
 class TermEmbedder implements Embedder {
   readonly model = "fixture-term-embedding";
-  readonly dimensions = DIMENSIONS;
+  readonly dimensions: number;
   fail = false;
+
+  constructor(dimensions = DIMENSIONS) {
+    this.dimensions = dimensions;
+  }
 
   embedQuery(query: string): Promise<Float32Array> {
     return this.embed(query);
@@ -66,11 +74,11 @@ class TermEmbedder implements Embedder {
 
   async embed(text: string): Promise<Float32Array> {
     if (this.fail) throw new Error("fixture embedding outage");
-    const vector = new Float32Array(DIMENSIONS);
+    const vector = new Float32Array(this.dimensions);
     for (const term of indexTerms(text)) {
       let hash = 0;
       for (const character of term) hash = (hash * 31 + (character.codePointAt(0) ?? 0)) >>> 0;
-      vector[hash % DIMENSIONS] = (vector[hash % DIMENSIONS] ?? 0) + 1;
+      vector[hash % this.dimensions] = (vector[hash % this.dimensions] ?? 0) + 1;
     }
     const norm = Math.hypot(...vector) || 1;
     return vector.map((value) => value / norm);
@@ -85,7 +93,7 @@ describe.each(["worker", "direct"] as const)("conversation turns through %s", (e
     await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true })));
   });
 
-  async function fixture() {
+  async function fixture(dimensions = DIMENSIONS) {
     const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-conversation-turns-"));
     directories.push(stateRoot);
     const file = path.join(stateRoot, "product.sqlite");
@@ -95,7 +103,7 @@ describe.each(["worker", "direct"] as const)("conversation turns through %s", (e
     database
       .prepare("INSERT INTO agents (id, owner_id, revision) VALUES (?, ?, 0)")
       .run(AGENT_ID, OWNER_ID);
-    for (const thread of [TALK, OTHER, THINK])
+    for (const thread of [TALK, OTHER, THINK, BOOKS, NOW])
       database
         .prepare(
           `INSERT INTO threads (id, owner_id, agent_id, revision, status, created_at, updated_at)
@@ -153,7 +161,7 @@ describe.each(["worker", "direct"] as const)("conversation turns through %s", (e
       minimumFreeBytes: 0,
       now: () => "2026-11-24T00:00:00.000Z",
     });
-    const embedder = new TermEmbedder();
+    const embedder = new TermEmbedder(dimensions);
     const unreadable = new Set<string>();
     const failures: unknown[] = [];
     const service = new ConversationTurnService({
@@ -934,6 +942,146 @@ describe.each(["worker", "direct"] as const)("conversation turns through %s", (e
         ["conversation.open", { conversationId: "", sequence: 1 }],
       ] as const)
         await expect(call(capability, args)).rejects.toBeInstanceOf(ConversationToolInputError);
+    } finally {
+      await resource.repository.close();
+    }
+  });
+
+  async function recallFixture(maximumCharacters = 20_000) {
+    const resource = await fixture(RECALL_DIMENSIONS);
+    resource.add([
+      [BOOKS, 1, "owner", "private", "2026-11-18T10:00:00.000Z", "推荐一本好看的科幻小说"],
+      [
+        BOOKS,
+        2,
+        "agent",
+        "private",
+        "2026-11-18T10:00:06.000Z",
+        "推荐你读刘慈欣的《三体》，第一部讲红岸基地，节奏很快。",
+      ],
+    ]);
+    await resource.service.indexDue({ ...resource.scope, limit: 50 });
+    const payloads = resource.repository.payloadStore(OWNER_ID, AGENT_ID);
+    const protector = new DeterministicPayloadProtector();
+    const slots: string[] = [];
+    const failures: unknown[] = [];
+    const recall = new ProductionConversationRecall({
+      turns: resource.service,
+      payloads,
+      protector,
+      embedWithin: (context, operation) => {
+        slots.push(`${context.slot}:${context.skipWhenSlow === true ? "skip" : "retry"}`);
+        return operation();
+      },
+      maximumCharacters,
+      providerRequestMs: 30_000,
+      timeZone: "Asia/Tokyo",
+      now: () => "2026-11-24T00:00:00.000Z",
+      onFailure: (error) => failures.push(error),
+    });
+    let asked = 0;
+    const ask = async (
+      question: string,
+      threadId: ThreadId = NOW,
+      threadInContextSince: string | null = null,
+    ) => {
+      asked += 1;
+      const queryRef = `payload-recall-query-${asked}`;
+      await payloads.put(
+        await protector.protect({
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          ref: queryRef,
+          contentType: "text/plain",
+          dataClassification: "private",
+          plaintext: new TextEncoder().encode(question),
+          createdAt: "2026-11-24T00:00:00.000Z",
+        }),
+      );
+      const found = await recall.recall({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        runId: `run-recall-${asked}` as never,
+        threadId,
+        threadInContextSince,
+        queryRef,
+        dataClassification: "private",
+        executionLease: { fencingToken: 1 } as never,
+      });
+      if (!found) return undefined;
+      const payload = await payloads.get(found.payloadRef);
+      if (!payload) throw new Error("Expected the recalled text to be stored");
+      return {
+        ...found,
+        text: new TextDecoder().decode(await protector.unprotect({ payload })),
+      };
+    };
+    return { resource, ask, slots, failures };
+  }
+
+  it("[自动原话] brings back what Himawari itself recommended in an old conversation, with day, conversation and sequence", async () => {
+    const { resource, ask, slots, failures } = await recallFixture();
+    try {
+      const found = await ask("你上次推荐的那本科幻小说叫什么");
+      expect(failures).toEqual([]);
+      expect(
+        found?.turns.map(({ conversationId, sequence, day }) => [conversationId, sequence, day]),
+      ).toEqual([[BOOKS, 1, "2026-11-18"]]);
+      expect(found?.turns[0]?.preview).toBe("推荐一本好看的科幻小说");
+      expect(found?.text.split("\n")).toEqual([
+        "以前对话里和主人这句话相关的原话（程序按相关度自动找出，按时间先后排列；“你”是 Himawari 自己当时说的话；要看前后文，用 conversation_open 传下面的对话编号和序号）：",
+        "",
+        `[2026-11-18 对话编号 ${BOOKS} 序号 1]`,
+        "主人：推荐一本好看的科幻小说",
+        "你：推荐你读刘慈欣的《三体》，第一部讲红岸基地，节奏很快。",
+      ]);
+      expect(slots).toEqual(["context-conversation-recall:v1:skip"]);
+    } finally {
+      await resource.repository.close();
+    }
+  });
+
+  it("[自动原话] REVERSE: brings nothing for an unrelated question, for the conversation the owner is in, or when the embedding is not available", async () => {
+    const { resource, ask, failures } = await recallFixture();
+    try {
+      expect(await ask("护照号码")).toBeUndefined();
+      expect(await ask("你上次推荐的那本科幻小说叫什么", BOOKS)).toBeUndefined();
+      resource.embedder.fail = true;
+      expect(await ask("你上次推荐的那本科幻小说叫什么")).toBeUndefined();
+      expect(failures).toEqual([]);
+    } finally {
+      await resource.repository.close();
+    }
+  });
+
+  it("[自动原话] in the one main conversation, brings back its own early words once they were compacted out, and REVERSE never repeats words still in context", async () => {
+    const { resource, ask, failures } = await recallFixture();
+    try {
+      const compacted = await ask(
+        "你上次推荐的那本科幻小说叫什么",
+        BOOKS,
+        "2026-11-20T00:00:00.000Z",
+      );
+      expect(
+        compacted?.turns.map(({ conversationId, sequence }) => [conversationId, sequence]),
+      ).toEqual([[BOOKS, 1]]);
+      expect(
+        await ask("你上次推荐的那本科幻小说叫什么", BOOKS, "2026-11-17T00:00:00.000Z"),
+      ).toBeUndefined();
+      expect(failures).toEqual([]);
+    } finally {
+      await resource.repository.close();
+    }
+  });
+
+  it("[自动原话] keeps the recalled words within the character budget worked out from the model window", async () => {
+    const { resource, ask } = await recallFixture(160);
+    try {
+      const found = await ask("你上次推荐的那本科幻小说叫什么");
+      expect([...(found?.text ?? "")].length).toBeLessThanOrEqual(160);
+      expect(found?.text).toContain(`[2026-11-18 对话编号 ${BOOKS} 序号 1]\n主人：推荐`);
+      expect(found?.text).not.toContain("《三体》");
+      expect(found?.text.endsWith("…")).toBe(true);
     } finally {
       await resource.repository.close();
     }

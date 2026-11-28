@@ -42,7 +42,7 @@ function keys(directory) {
 
 function fakes(directory) {
   const bin = path.join(directory, "bin");
-  mkdirSync(bin);
+  mkdirSync(bin, { recursive: true });
   const log = path.join(directory, "calls");
   writeFileSync(
     path.join(bin, "systemctl"),
@@ -92,6 +92,102 @@ describe("production-ops", () => {
     expect(opened.stdout).toContain("owner said: my secret dinner plans");
   });
 
+  it("names which model each recent call used and what the configured models allow, without their secrets", () => {
+    const directory = temporary();
+    const database = path.join(directory, "product.sqlite");
+    const seeded = spawnSync(
+      process.execPath,
+      [
+        "--no-warnings",
+        "-e",
+        `const { DatabaseSync } = require("node:sqlite");
+const db = new DatabaseSync(process.argv[1]);
+db.exec("CREATE TABLE runs (id TEXT, thread_id TEXT, status TEXT, created_at TEXT, updated_at TEXT)");
+db.exec("CREATE TABLE owner_preferences (model_ref TEXT, thinking_level TEXT, updated_at TEXT)");
+db.exec("CREATE TABLE model_invocation_identities (model_ref TEXT, data_classification TEXT, source TEXT, status TEXT, reserved_at TEXT)");
+db.prepare("INSERT INTO owner_preferences VALUES (?, ?, ?)").run("kimi-chat", "medium", new Date().toISOString());
+db.prepare("INSERT INTO model_invocation_identities VALUES (?, ?, ?, ?, ?)").run("kimi-chat", "private", "agent-stream", "settled", new Date().toISOString());`,
+        database,
+      ],
+      { encoding: "utf8" },
+    );
+    expect(seeded.status).toBe(0);
+    const config = path.join(directory, "config.json");
+    writeFileSync(
+      config,
+      JSON.stringify({
+        modelDescriptors: [
+          {
+            ref: "kimi-chat",
+            role: "primary",
+            provider: "magpie",
+            model: "kimi",
+            allowedDataClassifications: ["public", "private"],
+            secretRef: "magpie-token-value-should-not-print",
+          },
+        ],
+        runPolicy: {
+          publicSearch: {
+            providers: ["exa-public"],
+            providerSecrets: { deepseek: "web-secret-should-not-print" },
+          },
+        },
+      }),
+    );
+    const { child } = run("diagnose", directory, {
+      HIMAWARI_OPS_NODE: process.execPath,
+      HIMAWARI_OPS_DATABASE: database,
+      HIMAWARI_OPS_CONFIG: config,
+    });
+    expect(child.status).toBe(0);
+    expect(child.stdout).toContain('OPS_OWNER_MODEL [{"model_ref":"kimi-chat"');
+    expect(child.stdout).toContain('"model_ref":"kimi-chat","data_classification":"private"');
+    expect(child.stdout).toContain(
+      'OPS_MODEL_DESCRIPTORS [{"ref":"kimi-chat","role":"primary","provider":"magpie","model":"kimi","allowedDataClassifications":["public","private"]}]',
+    );
+    expect(child.stdout).not.toContain("magpie-token-value-should-not-print");
+    expect(child.stdout).toContain(
+      'OPS_WEB_ROUTES {"publicSearch":{"providers":["exa-public"]},"publicFetch":null}',
+    );
+    expect(child.stdout).not.toContain("web-secret-should-not-print");
+  });
+
+  it("counts each device's sense records by day and kind, sealed, without their content", () => {
+    const directory = temporary();
+    const database = path.join(directory, "product.sqlite");
+    const seeded = spawnSync(
+      process.execPath,
+      [
+        "--no-warnings",
+        "-e",
+        `const { DatabaseSync } = require("node:sqlite");
+const db = new DatabaseSync(process.argv[1]);
+db.exec("CREATE TABLE paired_devices (id TEXT, kind TEXT, status TEXT, last_seen_at TEXT)");
+db.exec("CREATE TABLE perception_settings (revision INTEGER, disabled_senses TEXT, paused_from TEXT, paused_until TEXT, limit_overrides TEXT, updated_at TEXT)");
+db.exec("CREATE TABLE perception_records (device_id TEXT, type TEXT, capture_source TEXT, occurred_at_ms INTEGER, received_at_ms INTEGER, local_day TEXT, evidence TEXT, status TEXT)");
+db.prepare("INSERT INTO paired_devices VALUES (?, ?, ?, ?)").run("dev_phone", "iphone", "active", new Date().toISOString());
+db.prepare("INSERT INTO perception_records VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run("dev_phone", "health.sample", "sensor", Date.now(), Date.now(), "2026-11-28", JSON.stringify({ subtype: "sleep", value: 420, note: "slept badly after the party" }), "active");`,
+        database,
+      ],
+      { encoding: "utf8" },
+    );
+    expect(seeded.status).toBe(0);
+    const { child, privateKey } = run("senses", directory, {
+      HIMAWARI_OPS_NODE: process.execPath,
+      HIMAWARI_OPS_DATABASE: database,
+    });
+    expect(child.status, child.stderr).toBe(0);
+    expect(child.stdout).not.toContain("health.sample");
+    expect(child.stdout).not.toContain("secret dinner");
+    const log = path.join(directory, "ops.log");
+    writeFileSync(log, child.stdout);
+    const opened = spawnSync("bash", [opener, log, privateKey], { encoding: "utf8" });
+    expect(opened.status).toBe(0);
+    expect(opened.stdout).toContain('"type":"health.sample","subtype":"sleep"');
+    expect(opened.stdout).toContain('SENSES_DEVICES [{"id":"dev_phone","kind":"iphone"');
+    expect(opened.stdout).not.toContain("slept badly");
+  });
+
   it("collects before it restarts and confirms the service came back", () => {
     const directory = temporary();
     const { child } = run("restart", directory, {
@@ -130,7 +226,59 @@ describe("production-ops", () => {
     }
   });
 
-  it("refuses anything but diagnose and restart", () => {
+  it("backs up the config, lets every model, embedding included, see sensitive content, then restarts", () => {
+    const directory = temporary();
+    const config = path.join(directory, "config.json");
+    const original = {
+      ownerId: "owner:one",
+      modelDescriptors: [
+        {
+          ref: "magpie-primary",
+          role: "primary",
+          allowedDataClassifications: ["public", "private"],
+        },
+        { ref: "search", role: "primary", allowedDataClassifications: ["public"] },
+        {
+          ref: "local-embedding",
+          role: "embedding",
+          allowedDataClassifications: ["public", "private"],
+        },
+      ],
+    };
+    writeFileSync(config, JSON.stringify(original));
+    const { child } = run("allow-sensitive", directory, {
+      HIMAWARI_OPS_NODE: process.execPath,
+      HIMAWARI_OPS_CONFIG: config,
+      HIMAWARI_OPS_LOCK: path.join(directory, "deploy.lock"),
+    });
+    expect(child.stderr).toBe("");
+    expect(child.status).toBe(0);
+    expect(child.stdout).toContain(
+      "OPS_CONFIG_CHANGED allow sensitive for: magpie-primary local-embedding",
+    );
+    const written = JSON.parse(readFileSync(config, "utf8"));
+    expect(written.modelDescriptors.map((entry) => entry.allowedDataClassifications)).toEqual([
+      ["public", "private", "sensitive"],
+      ["public"],
+      ["public", "private", "sensitive"],
+    ]);
+    const backup = child.stdout.match(/OPS_CONFIG_BACKUP (\S+)/)?.[1];
+    expect(JSON.parse(readFileSync(backup, "utf8"))).toEqual(original);
+    expect(readFileSync(path.join(directory, "calls"), "utf8")).toContain(
+      "systemctl restart himawari-prod.service",
+    );
+    expect(child.stdout).toContain("OPS_RESTARTED");
+
+    const again = run("allow-sensitive", directory, {
+      HIMAWARI_OPS_NODE: process.execPath,
+      HIMAWARI_OPS_CONFIG: config,
+    }).child;
+    expect(again.status).toBe(0);
+    expect(again.stdout).toContain("OPS_CONFIG_UNCHANGED");
+    expect(again.stdout).not.toContain("OPS_RESTARTED");
+  });
+
+  it("refuses anything but its own actions", () => {
     const directory = temporary();
     const { child } = run("stop", directory);
     expect(child.status).toBe(64);

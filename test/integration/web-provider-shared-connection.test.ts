@@ -165,3 +165,41 @@ describe("[NL-9] every web provider uses the shared service dispatcher", () => {
     },
   );
 });
+
+describe("[I-130] a web search or page fetch that fails is reported to developers with its code", () => {
+  it.each(Object.keys(WEB_PROVIDERS) as WebProviderId[])(
+    "%s: a failing provider writes web.read_failed and a working one writes nothing",
+    async (provider) => {
+      let failing = true;
+      const server = await providerServer((request, body) =>
+        failing ? { status: 503 } : fixtures[provider](request, body),
+      );
+      const { dispatcher } = sharedDispatcher(server.port);
+      const failures: unknown[] = [];
+      const web = createProductionHostWeb({
+        secrets: { resolve: async () => "fixture-credential-0123456789" },
+        dispatcher,
+        onReadFailed: (failure) => failures.push(failure),
+      });
+      const search = () =>
+        web.execute({
+          tool: "web_search",
+          arguments: { query: "Tokyo weather", limit: 1 },
+          providers: [provider],
+          secrets: [
+            { provider: "deepseek", secretRef: "fixture", secretVersion: "1", purpose: "web" },
+          ],
+          maximumBytes: 32 * 1024,
+        });
+      const failed = await search();
+      expect(failed.ok).toBe(false);
+      expect(failures).toEqual([
+        { event: "web.read_failed", tool: "web_search", code: failed.code, providers: [provider] },
+      ]);
+      expect(failed.code).toMatch(/^[A-Z][A-Z0-9_]+$/u);
+      failing = false;
+      expect((await search()).ok).toBe(true);
+      expect(failures).toHaveLength(1);
+    },
+  );
+});

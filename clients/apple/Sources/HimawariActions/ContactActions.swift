@@ -4,7 +4,8 @@ import Foundation
 import HimawariCore
 
 public final class ContactActions: DeviceActionHandler, @unchecked Sendable {
-    public let names = ["contact.update"]
+    public let names = ["contact.search", "contact.update"]
+    public let readOnly: Set<String> = ["contact.search"]
     private let store: CNContactStore
     public let permission: DevicePermission
 
@@ -17,6 +18,7 @@ public final class ContactActions: DeviceActionHandler, @unchecked Sendable {
 
     private static var keys: [CNKeyDescriptor] {
         [
+            CNContactFormatter.descriptorForRequiredKeys(for: .fullName),
             CNContactGivenNameKey as CNKeyDescriptor,
             CNContactFamilyNameKey as CNKeyDescriptor,
             CNContactPhoneNumbersKey as CNKeyDescriptor,
@@ -31,6 +33,7 @@ public final class ContactActions: DeviceActionHandler, @unchecked Sendable {
 
     public func perform(_ delivery: DeviceActionDelivery) async throws -> JSONObject {
         let args = delivery.args
+        if delivery.action == "contact.search" { return try search(delivery) }
         if try args.optionalString("notes") != nil { throw DeviceActionFailure(.cannotChange(Self.notes)) }
         guard let current = try contact(delivery), let contact = current.mutableCopy() as? CNMutableContact else {
             throw DeviceActionFailure(.targetMissing)
@@ -76,6 +79,31 @@ public final class ContactActions: DeviceActionHandler, @unchecked Sendable {
         } catch let error as CNError where error.code == .recordDoesNotExist {
             return nil
         }
+    }
+
+    private func search(_ delivery: DeviceActionDelivery) throws -> JSONObject {
+        let query = try delivery.args.string("query").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { throw DeviceActionFailure(.badArguments) }
+        let predicates = [
+            CNContact.predicateForContacts(matchingName: query),
+            CNContact.predicateForContacts(matching: CNPhoneNumber(stringValue: query)),
+            CNContact.predicateForContacts(matchingEmailAddress: query),
+        ]
+        var seen = Set<String>()
+        var found: [CNContact] = []
+        for predicate in predicates {
+            for contact in (try? store.unifiedContacts(matching: predicate, keysToFetch: Self.keys)) ?? [] where seen.insert(contact.identifier).inserted {
+                found.append(contact)
+            }
+        }
+        return DeviceActionListing.fit(found.map(Self.listed), as: "contacts", within: delivery.resultMaximumBytes)
+    }
+
+    static func listed(_ contact: CNContact) -> JSONObject {
+        var value = describe(contact)
+        let name = CNContactFormatter.string(from: contact, style: .fullName) ?? ""
+        value["name"] = .string(name.isEmpty ? contact.organizationName : name)
+        return value
     }
 
     static func describe(_ contact: CNContact) -> JSONObject {

@@ -7,18 +7,27 @@
   ],
   "features": [
     {
-      "feature": "对话：打开聊天、发消息、看回答和各种状态",
+      "feature": "聊天输入框：打字出现发送钮、长按空输入框能粘贴、长按消息出菜单再收起、没连上时提示",
+      "scenes": ["04-chat", "16-chat-states-4-offline"],
+      "checks": "打字后出现发送钮、只有空格不出现；长按空输入框出现“粘贴”，粘贴后字进输入框并出现发送钮；长按回答出现菜单，点别处菜单收起、回答停回原处；没连上的聊天提示没连上，连上的不提示",
+      "tests": [
+        "HimawariUITests/ChatComposerTests/testTypingTurnsTheTalkButtonIntoSend",
+        "HimawariUITests/ChatComposerTests/testLongPressingTheEmptyInputOffersPaste",
+        "HimawariUITests/ChatComposerTests/testDismissingTheMessageMenuLeavesTheBubbleWhereItWas",
+        "HimawariUITests/ChatComposerTests/testTheOfflineChatSaysItIsNotConnectedAndTheOnlineChatDoesNot"
+      ]
+    },
+    {
+      "feature": "对话：发消息后的进行中状态、空聊天、回答中、步骤",
       "scenes": [
-        "04-chat",
         "next-2-main",
         "next-6-chat-empty",
         "16-chat-states-1-empty",
         "16-chat-states-3-sending",
-        "16-chat-states-4-offline",
         "16-chat-states-5-answering",
         "16-chat-states-6-steps"
       ],
-      "uncovered": "还没有操作这个功能的 UI 测试"
+      "uncovered": "演示场景里发消息不会真发出去，进行中状态要连真服务器才能操作，等端到端测试接上登录后补"
     },
     {
       "feature": "消息排版：格式、边收边显示、富文本、选中、复制、回复",
@@ -44,7 +53,7 @@
       "uncovered": "还没有操作这个功能的 UI 测试"
     },
     {
-      "feature": "按住说话和语音对话",
+      "feature": "语音对话",
       "scenes": ["next-2-chat-talk-listening", "next-2-chat-talk-her"],
       "uncovered": "还没有操作这个功能的 UI 测试"
     },
@@ -57,12 +66,18 @@
         "next-4-memory-versions",
         "next-4-memory-trash"
       ],
-      "uncovered": "还没有操作这个功能的 UI 测试"
+      "checks": "每一页都在最大字号下能滑到最后一行（页里的编辑、删除等操作还没测）",
+      "tests": [
+        "HimawariUITests/SettingsPagesTests/testEverySettingsPageScrollsToItsLastLineAtTheLargestTextSize"
+      ]
     },
     {
       "feature": "规则：列表和详情",
       "scenes": ["18-memory-more-2-rules", "18-memory-more-3-rule-detail"],
-      "uncovered": "还没有操作这个功能的 UI 测试"
+      "checks": "每一页都在最大字号下能滑到最后一行（页里的编辑、删除等操作还没测）",
+      "tests": [
+        "HimawariUITests/SettingsPagesTests/testEverySettingsPageScrollsToItsLastLineAtTheLargestTextSize"
+      ]
     },
     {
       "feature": "Himawari 页：入口、隐私、关于、名字、模型",
@@ -73,17 +88,31 @@
         "next-10-her-name",
         "next-10-her-model"
       ],
-      "uncovered": "还没有操作这个功能的 UI 测试"
+      "checks": "Himawari 页每一行点开都有页面、能回来（先试左边缘右滑，再试返回钮或下滑）；各页在最大字号下能滑到最后一行（改名字、换模型等操作还没测）",
+      "tests": [
+        "HimawariUITests/SettingsPagesTests/testEveryRowOnTheHimawariPageOpensAPageYouCanGoBackFrom",
+        "HimawariUITests/SettingsPagesTests/testEverySettingsPageScrollsToItsLastLineAtTheLargestTextSize"
+      ]
     },
     {
       "feature": "设备页：看和管理登录的设备",
       "scenes": ["next-3-her-devices"],
-      "uncovered": "还没有操作这个功能的 UI 测试"
+      "checks": "每一页都在最大字号下能滑到最后一行（页里的编辑、删除等操作还没测）",
+      "tests": [
+        "HimawariUITests/SettingsPagesTests/testEverySettingsPageScrollsToItsLastLineAtTheLargestTextSize"
+      ]
     },
     {
-      "feature": "要你同意：待同意列表、详情、面容 ID 同意",
+      "feature": "要你同意：Himawari 页里的待同意列表",
+      "scenes": ["next-3-her-approvals"],
+      "checks": "在最大字号下能滑到最后一行（同意、拒绝还没测）",
+      "tests": [
+        "HimawariUITests/SettingsPagesTests/testEverySettingsPageScrollsToItsLastLineAtTheLargestTextSize"
+      ]
+    },
+    {
+      "feature": "要你同意：今天页的列表、详情、面容 ID 同意",
       "scenes": [
-        "next-3-her-approvals",
         "17-today-more-2-detail",
         "17-today-more-3-detail-face-id",
         "17-today-more-1-approvals"
@@ -93,7 +122,10 @@
     {
       "feature": "通知设置",
       "scenes": ["next-3-her-notifications"],
-      "uncovered": "还没有操作这个功能的 UI 测试"
+      "checks": "每一页都在最大字号下能滑到最后一行（页里的编辑、删除等操作还没测）",
+      "tests": [
+        "HimawariUITests/SettingsPagesTests/testEverySettingsPageScrollsToItsLastLineAtTheLargestTextSize"
+      ]
     },
     {
       "feature": "额度：每天能用多少、按天查看",
@@ -102,7 +134,10 @@
         "next-3-her-allowances-empty",
         "next-3-her-allowance-days"
       ],
-      "uncovered": "还没有操作这个功能的 UI 测试"
+      "checks": "每一页都在最大字号下能滑到最后一行（页里的编辑、删除等操作还没测）",
+      "tests": [
+        "HimawariUITests/SettingsPagesTests/testEverySettingsPageScrollsToItsLastLineAtTheLargestTextSize"
+      ]
     },
     {
       "feature": "定时：查看、暂停、继续、撤销",
@@ -115,12 +150,18 @@
         "next-9-timer-paused",
         "next-9-her-no-timers"
       ],
-      "uncovered": "还没有操作这个功能的 UI 测试"
+      "checks": "每一页都在最大字号下能滑到最后一行（页里的编辑、删除等操作还没测）",
+      "tests": [
+        "HimawariUITests/SettingsPagesTests/testEverySettingsPageScrollsToItsLastLineAtTheLargestTextSize"
+      ]
     },
     {
       "feature": "导出导入和服务器状态",
       "scenes": ["next-10-her-transfer", "next-10-her-import-preview", "next-10-her-server-status"],
-      "uncovered": "还没有操作这个功能的 UI 测试"
+      "checks": "每一页都在最大字号下能滑到最后一行（页里的编辑、删除等操作还没测）",
+      "tests": [
+        "HimawariUITests/SettingsPagesTests/testEverySettingsPageScrollsToItsLastLineAtTheLargestTextSize"
+      ]
     },
     {
       "feature": "后台在办：入口、详情、子线程、往来记录",
@@ -157,23 +198,34 @@
       "uncovered": "还没有操作这个功能的 UI 测试"
     },
     {
-      "feature": "感知：总览、介绍、系统授权、详情、被拒绝",
+      "feature": "感知：位置详情的“一直允许”开关",
+      "scenes": ["19-senses-4-detail"],
+      "checks": "开关能点、采集位置时不是灰的；系统没给一直允许时不会自己变成开（真系统授权弹窗在演示里测不了）",
+      "tests": [
+        "HimawariUITests/SensesPageTests/testTheLocationAlwaysAllowSwitchCanBeTappedAndFollowsTheSystemAnswer"
+      ]
+    },
+    {
+      "feature": "感知：总览、介绍、系统授权、被拒绝",
       "scenes": [
         "19-senses-1-overview",
         "19-senses-2-intro",
         "19-senses-3-system-prompt",
-        "19-senses-4-detail",
         "19-senses-5-denied"
       ],
       "uncovered": "还没有操作这个功能的 UI 测试"
     },
     {
-      "feature": "设备动作：能力列表、授权说明、授权被拒",
-      "scenes": [
-        "19-settings-more-1-abilities",
-        "19-settings-more-2-permission-primer",
-        "19-settings-more-3-permission-denied"
-      ],
+      "feature": "设备动作：能力列表",
+      "scenes": ["19-settings-more-1-abilities"],
+      "checks": "在最大字号下能滑到最后一行（授权还没测）",
+      "tests": [
+        "HimawariUITests/SettingsPagesTests/testEverySettingsPageScrollsToItsLastLineAtTheLargestTextSize"
+      ]
+    },
+    {
+      "feature": "设备动作：授权说明、授权被拒",
+      "scenes": ["19-settings-more-2-permission-primer", "19-settings-more-3-permission-denied"],
       "uncovered": "还没有操作这个功能的 UI 测试"
     },
     {
@@ -208,8 +260,16 @@
       "uncovered": "还没有操作这个功能的 UI 测试"
     },
     {
-      "feature": "动效：闪光、弹层、玻璃下滚动",
-      "scenes": ["motion-shimmer", "motion-sheet", "motion-scroll-under-glass"],
+      "feature": "聊天：往上翻后点“跳到最新”回到最后一条",
+      "scenes": ["motion-scroll-under-glass"],
+      "checks": "长对话翻到最上面后出现“跳到最新”钮，点它后钮消失，最后一条回答的结尾整段露在输入条上方",
+      "tests": [
+        "HimawariUITests/ChatComposerTests/testJumpingToTheLatestShowsTheWholeLastMessageAboveTheInputBar"
+      ]
+    },
+    {
+      "feature": "动效：闪光、弹层",
+      "scenes": ["motion-shimmer", "motion-sheet"],
       "uncovered": "还没有操作这个功能的 UI 测试"
     }
   ]

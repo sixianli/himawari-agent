@@ -153,6 +153,53 @@ import Testing
         #expect(plain.eventIdentifier == "ABC:123#x")
         #expect(plain.start == nil)
     }
+
+    @Test func readAndSyncNameAnEventTheSameWayChangeAndDeleteExpect() throws {
+        let tokyo = try #require(TimeZone(identifier: "Asia/Tokyo"))
+        let start = try #require(DeviceActionTime.localDate("2026-11-28T19:00", in: tokyo))
+        let repeating = CalendarOccurrenceId.of(eventIdentifier: "EV1", start: start, recurring: true, in: tokyo)
+        #expect(repeating == "EV1#2026-11-28T19:00")
+        #expect(CalendarOccurrenceId.split(repeating, in: tokyo).start == start)
+        let single = CalendarOccurrenceId.of(eventIdentifier: "EV2", start: start, recurring: false, in: tokyo)
+        #expect(single == "EV2")
+        #expect(CalendarOccurrenceId.split(single, in: tokyo).start == nil)
+    }
+}
+
+@Suite struct DeviceActionListingTests {
+    func item(_ index: Int) -> JSONObject {
+        ["eventId": .string("evt-\(index)"), "title": .string(String(repeating: "日", count: 40))]
+    }
+
+    @Test func keepsEveryItemThatFitsAndSaysNothingWasLeftOut() throws {
+        let listed = DeviceActionListing.fit((0..<3).map(item), as: "events", within: 64 * 1024)
+        #expect(listed["events"]?.arrayCount == 3)
+        #expect(listed["truncated"] == .bool(false))
+    }
+
+    @Test func stopsBeforeTheServerLimitAndSaysSomeWereLeftOut() throws {
+        let limit = 2_000
+        let listed = DeviceActionListing.fit((0..<100).map(item), as: "events", within: limit)
+        #expect(listed["truncated"] == .bool(true))
+        let kept = try #require(listed["events"]?.arrayCount)
+        #expect(kept > 0 && kept < 100)
+        let size = try JSONEncoder().encode(["done": DeviceActionValue.object(listed)]).count
+        #expect(size <= limit)
+        let oneMore = DeviceActionListing.fit((0...kept).map(item), as: "events", within: limit)
+        #expect(oneMore["truncated"] == .bool(true))
+    }
+
+    @Test func withoutALimitFromTheServerNothingIsLeftOut() {
+        let listed = DeviceActionListing.fit((0..<100).map(item), as: "events", within: nil)
+        #expect(listed["events"]?.arrayCount == 100)
+    }
+}
+
+private extension DeviceActionValue {
+    var arrayCount: Int? {
+        if case let .array(items) = self { return items.count }
+        return nil
+    }
 }
 
 @Suite struct DeviceActionSourceTests {

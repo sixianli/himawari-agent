@@ -48,7 +48,7 @@ const source = (sequence: number): RunExecutionSource =>
     payloadRef: `ref:${sequence}`,
   }) as never;
 
-it("[ADR-0257] sends only the owner's own sendable words: no agent text, no sensitive or secret-looking messages, nothing after the triggering message", async () => {
+it("[ADR-0257] sends only the owner's own words, health included: no agent text, no secret-looking messages, nothing after the triggering message", async () => {
   const messages = [
     message(1, "帮我看看这个网页"),
     message(2, "好的，我读了这个网页", { role: "agent" }),
@@ -59,6 +59,7 @@ it("[ADR-0257] sends only the owner's own sendable words: no agent text, no sens
   ];
   expect(await collectOwnerWords(dependencies(messages), source(5))).toEqual([
     "帮我看看这个网页",
+    "我的健康情况不好",
     "明天九点提醒我给房东回电话",
   ]);
 });

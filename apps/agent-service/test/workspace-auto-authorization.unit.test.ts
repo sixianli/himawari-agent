@@ -452,7 +452,7 @@ describe("[R2-T2] workspace auto authorization", { timeout: 30_000 }, () => {
     ["capability version", { capabilityVersion: "9.9.9" }],
     ["operation outside the seven", { operation: "move_directory" }],
     ["delete action kind", { operation: "write", actionKind: "DELETE" }],
-    ["non-private classification", { dataClassification: "sensitive" }],
+    ["a password or key classification", { dataClassification: "restricted" }],
     ["credential change", { credentialOrAccessChange: true }],
     ["nonzero estimated cost", { estimatedCostMicros: 5 }],
     ["an extra recipient", { recipients: [MODEL_IDENTITY, "model:other"] }],
@@ -480,7 +480,7 @@ describe("[R2-T2] workspace auto authorization", { timeout: 30_000 }, () => {
     ["revoked", directoryGrant({ revokedAt: NOW })],
     ["expired", directoryGrant({ expiresAt: new Date(WALL_NOW - 1000).toISOString() })],
     ["read only", directoryGrant({ operations: ["read"] })],
-    ["sensitive", directoryGrant({ dataClassification: "sensitive" })],
+    ["restricted", directoryGrant({ dataClassification: "restricted" })],
     [
       "an unknown path policy",
       directoryGrant({

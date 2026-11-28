@@ -2,6 +2,7 @@ import type { ProactiveMail, RuntimeToolInvocation } from "@himawari-agent/appli
 import { describe, expect, it } from "vitest";
 import {
   MailReadInputError,
+  type MailSearch,
   type MailThreadRead,
   ProductionMailRead,
 } from "../src/production-mail-read.js";
@@ -40,15 +41,20 @@ const call = (args: Record<string, unknown>) =>
     dataClassification: "private",
   }) as unknown as RuntimeToolInvocation;
 
-const reading = (result: MailThreadRead) => {
+const reading = (result: MailThreadRead, found: MailSearch = { kind: "found", mails: [] }) => {
   const asked: string[] = [];
+  const searched: { query: string; limit: number }[] = [];
   const tool = new ProductionMailRead(() => ({
     async readMailThread(threadId) {
       asked.push(threadId);
       return result;
     },
+    async searchMail(query, limit) {
+      searched.push({ query, limit });
+      return found;
+    },
   }));
-  return { tool, asked };
+  return { tool, asked, searched };
 };
 
 describe("mail_read reads one whole mail thread for her", () => {
@@ -113,9 +119,51 @@ describe("mail_read reads one whole mail thread for her", () => {
 
   it("[reverse] rejects a missing, blank or extra argument without reading the mailbox", async () => {
     const { tool, asked } = reading({ kind: "thread", mails: [] });
-    for (const args of [{}, { threadId: "  " }, { threadId: 7 }, { threadId: "t", limit: 5 }])
+    for (const args of [
+      {},
+      { threadId: "  " },
+      { threadId: 7 },
+      { threadId: "t", limit: 5 },
+      { query: "  " },
+      { query: "x", threadId: "t" },
+    ])
       await expect(tool.run(call(args))).rejects.toBeInstanceOf(MailReadInputError);
     expect(asked).toEqual([]);
+  });
+
+  it("searches the mailbox by a Gmail query and lists the newest matches with their thread ids", async () => {
+    const { tool, searched } = reading(
+      { kind: "thread", mails: [] },
+      {
+        kind: "found",
+        mails: [
+          mail("m-1", "2026-11-01T00:00:00.000Z"),
+          mail("m-2", "2026-11-05T00:00:00.000Z", { threadId: "thread-2" }),
+        ],
+      },
+    );
+    const result = (await tool.run(call({ query: " from:tanaka@example.com " }))) as {
+      status: string;
+      query: string;
+      mails: { id: string; threadId: string; subject: string; snippet: string }[];
+    };
+    expect(searched).toEqual([{ query: "from:tanaka@example.com", limit: 20 }]);
+    expect(result.status).toBe("found");
+    expect(result.mails.map(({ id, threadId }) => [id, threadId])).toEqual([
+      ["m-2", "thread-2"],
+      ["m-1", "thread-1"],
+    ]);
+    expect(result.mails[0]).toMatchObject({ subject: "見積もりの件", snippet: "開頭 m-2" });
+  });
+
+  it("[reverse] a search that matches nothing returns an empty list, and a mailbox that is not connected says so", async () => {
+    expect(
+      await reading({ kind: "thread", mails: [] }).tool.run(call({ query: "nothing" })),
+    ).toEqual({ status: "found", query: "nothing", mails: [] });
+    for (const kind of ["not_connected", "failed", "unsupported"] as const)
+      expect(
+        await reading({ kind: "thread", mails: [] }, { kind }).tool.run(call({ query: "x" })),
+      ).toEqual({ status: kind });
   });
 
   it("is a read whose result counts as outside content", () => {

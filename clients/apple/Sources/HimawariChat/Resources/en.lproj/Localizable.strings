@@ -1,5 +1,5 @@
 "chat.back" = "Back";
-"chat.input.placeholder" = "Type, or hold to talk";
+"chat.input.placeholder" = "Type, or tap the mic to talk";
 "chat.send" = "Send";
 "chat.queued.sending" = "Sending";
 "chat.queued.failed" = "Not sent";
@@ -40,9 +40,8 @@
 "attach.problem.unreadable" = "Himawari can't read this file yet";
 "attach.problem.location" = "Could not get your location. Check that Location is on";
 "chat.dictate" = "Dictate";
+"chat.dictate.stop" = "Stop dictating";
 "chat.talk" = "Talk to Himawari";
-"chat.hold.hint" = "Release to send · slide up to cancel";
-"chat.hold.cancel" = "Release to cancel";
 "chat.stop" = "Stop";
 "chat.stop.failed" = "Couldn’t stop it. Try again";
 "chat.talk.mute" = "Mute";
@@ -66,6 +65,7 @@
 "chat.why.hide" = "Hide";
 "chat.why.open" = "Shown";
 "chat.why.closed" = "Hidden";
+"chat.why.conversations" = "Earlier Conversations It Used";
 "chat.reply.toAgent" = "Replying to Himawari";
 "chat.reply.toOwner" = "Replying to yourself";
 "chat.reply.missing" = "Original message is gone";

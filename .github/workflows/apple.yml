@@ -52,17 +52,72 @@ jobs:
           persist-credentials: false
       - name: 显示 Xcode 版本
         run: xcodebuild -version && swift --version
+      - name: 选一台最新系统的 iPhone 模拟器，编译期间先让它开机
+        id: simulator
+        run: |
+          udid="$(xcrun simctl list devices available --json | python3 -c '
+          import json, re, sys
+          runtimes = json.load(sys.stdin)["devices"]
+          def version(key):
+              return [int(part) for part in re.findall(r"\d+", key.rsplit(".", 1)[-1])]
+          ios = sorted((key for key in runtimes if ".SimRuntime.iOS-" in key), key=version)
+          phones = [device for device in runtimes[ios[-1]] if device["name"].startswith("iPhone")]
+          print(phones[0]["udid"])
+          ')"
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+          xcrun simctl boot "$udid"
       - name: 跑 HimawariCore 单元测试
         working-directory: clients/apple
         run: swift test
-      - name: 不签名编译 iPhone App
+      - name: 不签名编译 iPhone App 和它的 UI 测试
         run: >-
-          xcodebuild build
+          xcodebuild build-for-testing
           -project clients/apple/App/Himawari.xcodeproj
           -scheme Himawari
           -configuration Debug
           -destination 'generic/platform=iOS Simulator'
+          -derivedDataPath "$RUNNER_TEMP/dd"
           CODE_SIGNING_ALLOWED=NO
+          -quiet
+      - name: 等模拟器开机完成
+        run: xcrun simctl bootstatus "${{ steps.simulator.outputs.udid }}" -b
+      - name: 在示例场景里真点、真滑、真打字的 UI 测试（聊天输入框、断连提示、Himawari 页和设置各页、位置一直允许开关）
+        run: >-
+          set -o pipefail;
+          xcodebuild test-without-building
+          -project clients/apple/App/Himawari.xcodeproj
+          -scheme Himawari
+          -configuration Debug
+          -destination "id=${{ steps.simulator.outputs.udid }}"
+          -derivedDataPath "$RUNNER_TEMP/dd"
+          -only-testing:HimawariUITests/ChatComposerTests
+          -only-testing:HimawariUITests/SettingsPagesTests
+          -only-testing:HimawariUITests/SensesPageTests
+          -resultBundlePath feature-ui-tests.xcresult
+          | tee feature-ui-tests.log
+          | grep -E 'UI_|error:|Test Case .* (passed|failed)|\*\* TEST'
+      - name: UI 测试没过时打印失败原因
+        if: ${{ failure() }}
+        run: |
+          test -d feature-ui-tests.xcresult || exit 0
+          xcrun xcresulttool get test-results tests --path feature-ui-tests.xcresult --compact | python3 -c '
+          import json, sys
+          def walk(node, name=""):
+              for child in node.get("children", []):
+                  if child.get("nodeType") == "Failure Message":
+                      print("UI_TEST_FAILURE", name, "::", child.get("name", ""))
+                  walk(child, child.get("name", name) if child.get("nodeType") == "Test Case" else name)
+          for plan in json.load(sys.stdin).get("testNodes", []):
+              walk(plan)
+          ' | sort -u | head -100 || true
+      - name: 保存 UI 测试结果包
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: feature-ui-tests
+          path: feature-ui-tests.xcresult
+          retention-days: 7
+          if-no-files-found: ignore
       - name: 不签名编译原生 Mac App
         run: >-
           xcodebuild build
@@ -142,6 +197,10 @@ jobs:
           ')"
           echo "udid=$udid" >> "$GITHUB_OUTPUT"
           xcrun simctl list devices | grep "$udid"
+      - name: 先把模拟器开机并等它完全起来，再开始审计
+        env:
+          UDID: ${{ steps.simulator.outputs.udid }}
+        run: xcrun simctl bootstatus "$UDID" -b
       - name: 每个示例场景跑苹果的无障碍审计（浅色全部审计项，深色对比度）
         env:
           TEST_RUNNER_HIMAWARI_AUDIT_SHARD: ${{ matrix.shard }}
@@ -150,7 +209,7 @@ jobs:
           xcodebuild test-without-building
           -xctestrun "${{ steps.build.outputs.xctestrun }}"
           -destination "id=${{ steps.simulator.outputs.udid }}"
-          -only-testing:HimawariUITests
+          -only-testing:HimawariUITests/AccessibilityAuditTests
           -resultBundlePath accessibility-audit.xcresult
           | tee accessibility-audit.log
           | grep -E 'A11Y_AUDIT_|error:|Test Case .* (passed|failed)|\*\* TEST'

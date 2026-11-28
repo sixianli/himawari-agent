@@ -32,8 +32,6 @@ public struct ChatView: View {
     @State private var attachProblem: String?
     @State private var uploadFailed = false
     @State private var sendRequestId = OutgoingMessage.newId()
-    @State private var hold: HoldPhase?
-    @State private var heard = ""
     @State private var dictating = false
     @State private var dictation = DictationDraft()
     @State private var selecting: SelectableMessage?
@@ -70,6 +68,7 @@ public struct ChatView: View {
     }
 
     private static let headerHeight = DesignTokens.Chat.puckTop + DesignTokens.Chat.puckSize
+    private static let transcriptEnd = "transcript.end"
 
     public var body: some View {
         withTalkFeed
@@ -163,14 +162,12 @@ public struct ChatView: View {
                 sending: uploading,
                 hasAttachments: !attachments.isEmpty,
                 voice: voice != nil,
-                hold: hold,
                 dictating: dictating,
                 offline: store.offlineShown,
                 openAttach: attachAction,
                 stop: stopAction,
                 startTalk: talkStarter,
                 toggleDictation: toggleDictation,
-                holdChanged: holdChanged,
                 send: submit
             )
         }
@@ -344,7 +341,16 @@ public struct ChatView: View {
     }
 
     private func explains(_ message: ThreadMessage) -> Bool {
+        explainsSpoken(message) || !recalled(message).isEmpty
+    }
+
+    private func explainsSpoken(_ message: ThreadMessage) -> Bool {
         message.role == .agent && message.spoken && explainSpoken != nil
+    }
+
+    private func recalled(_ message: ThreadMessage) -> [RecalledConversation] {
+        guard message.role == .agent, let runId = message.runId else { return [] }
+        return store.recalledConversations(for: runId)
     }
 
     private func toggleWhy(_ message: ThreadMessage) {
@@ -437,8 +443,7 @@ public struct ChatView: View {
                     withAnimation(.easeInOut(duration: 3)) { proxy.scrollTo(first.id, anchor: .top) }
                 }
                 .onChange(of: latestJumps) { _, _ in
-                    guard let last = chatRows.last else { return }
-                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.3)) { proxy.scrollTo(last.id, anchor: .bottom) }
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.3)) { proxy.scrollTo(Self.transcriptEnd, anchor: .bottom) }
                 }
         }
     }
@@ -461,15 +466,20 @@ public struct ChatView: View {
         let placed = BubbleLayout.place(rows.map(\.entry))
         let actions = rowActions(jump: jump)
         return ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0) {
-                ForEach(rows) { row in
-                    ChatRowView(model: model(of: row, placed: placed[row.id] ?? ChatRow.lone), actions: actions)
-                        .equatable()
+            VStack(spacing: 0) {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(rows) { row in
+                        ChatRowView(model: model(of: row, placed: placed[row.id] ?? ChatRow.lone), actions: actions)
+                            .equatable()
+                    }
                 }
+                .padding(.horizontal, DesignTokens.Chat.bubbleEdge)
+                .padding(.top, Self.headerHeight + DesignTokens.Chat.puckContentGap + (shownBackgroundWork == nil ? 0 : DesignTokens.Chat.puckBannerGap + DesignTokens.Avatar.backgroundPillHeight))
+                .padding(.bottom, 110)
+                Color.clear
+                    .frame(height: .zero)
+                    .id(Self.transcriptEnd)
             }
-            .padding(.horizontal, DesignTokens.Chat.bubbleEdge)
-            .padding(.top, Self.headerHeight + DesignTokens.Chat.puckContentGap + (shownBackgroundWork == nil ? 0 : DesignTokens.Chat.puckBannerGap + DesignTokens.Avatar.backgroundPillHeight))
-            .padding(.bottom, 110)
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { screenWidth = $0 }
         .onScrollGeometryChange(for: Bool.self) { geometry in
@@ -515,10 +525,14 @@ public struct ChatView: View {
         var quote: BubbleQuote?
         var flashes = false
         var why = ChatRowWhy.none
+        var usedConversations: [RecalledConversation] = []
         switch row {
         case let .message(message):
             text = store.texts[message.contentRef]
-            if explains(message) { why = explained.contains(message.messageId) ? .open : .closed }
+            if explains(message) {
+                why = explained.contains(message.messageId) ? .open : explainsSpoken(message) ? .closed : .none
+            }
+            if why == .open { usedConversations = recalled(message) }
             if message.role == .owner, message.chosenFrom == nil { quote = self.quote(inside: text) }
             flashes = flashing == message.messageId
         case let .queued(item):
@@ -526,7 +540,7 @@ public struct ChatView: View {
         default:
             break
         }
-        return ChatRowModel(row: row, text: text, quote: quote, placement: placed, herWidth: herWidth, ownerWidth: ownerWidth, flashing: flashes, online: store.connection == .online, why: why)
+        return ChatRowModel(row: row, text: text, quote: quote, placement: placed, herWidth: herWidth, ownerWidth: ownerWidth, flashing: flashes, online: store.connection == .online, why: why, recalled: usedConversations)
     }
 
     private func rowActions(jump: @escaping (String) -> Void) -> ChatRowActions {
@@ -540,7 +554,7 @@ public struct ChatView: View {
             discard: { id in Task { await store.discard(id) } },
             showExecution: { [store, threadId] runId in await store.showExecution(runId, in: threadId) },
             toggleWhy: { toggleWhy($0) },
-            explanation: { [explainSpoken] message in explainSpoken?(message) }
+            explanation: { [explainSpoken] message in message.spoken ? explainSpoken?(message) : nil }
         )
     }
 
@@ -671,43 +685,6 @@ public struct ChatView: View {
     }
     #endif
 
-    private func holdChanged(_ event: HoldEvent) {
-        guard let voice else { return }
-        switch event {
-        case .began:
-            guard hold == nil else { return }
-            Haptics.shared.report(.holdToTalkStarted)
-            heard = ""
-            hold = .listening("")
-            Task {
-                do {
-                    try await voice.start { text in
-                        heard = text
-                        if case .listening = hold { hold = .listening(text) }
-                    }
-                } catch {
-                    hold = nil
-                }
-            }
-        case let .moved(outside):
-            guard hold != nil else { return }
-            hold = outside ? .cancelling : .listening(heard)
-        case .ended:
-            guard let phase = hold else { return }
-            hold = nil
-            Haptics.shared.report(.holdToTalkReleased)
-            Task {
-                if phase == .cancelling {
-                    await voice.cancel()
-                    return
-                }
-                let said = await voice.finish().trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !said.isEmpty else { return }
-                deliver(said, clearDraft: false)
-            }
-        }
-    }
-
     private func toggleDictation() {
         guard let voice else { return }
         if dictating {
@@ -746,6 +723,7 @@ struct ChatRowModel: Equatable {
     let flashing: Bool
     let online: Bool
     let why: ChatRowWhy
+    let recalled: [RecalledConversation]
 }
 
 enum ChatRowWhy: Equatable {
@@ -830,8 +808,7 @@ struct ChatRowView: View, @MainActor Equatable {
         switch message.role {
         case .agent:
             VStack(alignment: .leading, spacing: DesignTokens.Options.afterMessage) {
-                HerBubble(text: text, failed: message.status == .failed, maxWidth: model.herWidth, copyCode: actions.copyCode, codeMenu: actions.codeMenu(message))
-                    .messageMenu(actions.menu(message))
+                HerBubble(text: text, failed: message.status == .failed, maxWidth: model.herWidth, copyCode: actions.copyCode, codeMenu: actions.codeMenu(message), menu: actions.menu(message))
                 if let options = message.options {
                     MessageOptionsView(options: options, choose: actions.choose(message))
                 }
@@ -842,8 +819,7 @@ struct ChatRowView: View, @MainActor Equatable {
         case .owner where message.chosenFrom != nil:
             ChosenOptionBubble(text: text, maxWidth: model.ownerWidth)
         case .owner:
-            OwnerBubble(text: text, quote: model.quote, jump: actions.jump, maxWidth: model.ownerWidth)
-                .messageMenu(actions.menu(message))
+            OwnerBubble(text: text, quote: model.quote, jump: actions.jump, maxWidth: model.ownerWidth, menu: actions.menu(message))
         case .system:
             Text(text)
                 .hmType(DesignTokens.TypeScale.caption)
@@ -869,6 +845,10 @@ extension ChatRowView {
         .accessibilityValue(L.text(open ? "chat.why.open" : "chat.why.closed"))
         if open, let explanation = actions.explanation(message) {
             explanation
+                .transition(.opacity.combined(with: .move(edge: .top)))
+        }
+        if open, !model.recalled.isEmpty {
+            RecalledConversationsCard(conversations: model.recalled)
                 .transition(.opacity.combined(with: .move(edge: .top)))
         }
     }
@@ -919,10 +899,11 @@ struct HerBubble: View {
     let maxWidth: CGFloat
     var copyCode: (String) -> Void = { _ in }
     var codeMenu: (String) -> MessageMenuActions? = { _ in nil }
+    var menu: MessageMenuActions?
 
     var body: some View {
         AnswerText(text: text, streaming: streaming, muted: failed, copyCode: copyCode, codeMenu: codeMenu)
-            .bubble(.her)
+            .bubble(.her, menu: menu)
             .frame(maxWidth: maxWidth, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityElement(children: .contain)
@@ -935,6 +916,7 @@ struct OwnerBubble: View {
     var quote: BubbleQuote?
     var jump: (String) -> Void = { _ in }
     var maxWidth: CGFloat = DesignTokens.Size.bubbleMaxWidth
+    var menu: MessageMenuActions?
 
     var body: some View {
         let shown = MessageAttachments.shown(text)
@@ -969,7 +951,7 @@ struct OwnerBubble: View {
                 }
                 .foregroundStyle(Color.hmOnBubbleOwner)
                 .tint(Color.hmOnBubbleOwner)
-                .bubble(.owner)
+                .bubble(.owner, menu: menu)
                 .frame(maxWidth: maxWidth, alignment: .trailing)
             }
         }

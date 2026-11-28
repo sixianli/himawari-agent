@@ -449,3 +449,30 @@ export const MEMORY_SNAPSHOT_OMITTED = templatePrompt({
     text(" 条因篇幅没有列出，可以用 recall 搜。"),
   ],
 });
+
+export const CONVERSATION_RECALL_HEADER = fixedPrompt({
+  id: "memory.conversation-recall.header",
+  purpose:
+    "每轮自动带上的旧对话原话的第一行：说明这是程序按相关度找出的原话、“你”是谁、要看前后文用哪个工具",
+  usedBy: ["packages/memory-engine/src/conversation-recall.ts"],
+  layer: "last-user-message",
+  output: "free-text",
+  text: "以前对话里和主人这句话相关的原话（程序按相关度自动找出，按时间先后排列；“你”是 Himawari 自己当时说的话；要看前后文，用 conversation_open 传下面的对话编号和序号）：",
+});
+
+export const CONVERSATION_RECALL_TURN = templatePrompt({
+  id: "memory.conversation-recall.turn",
+  purpose: "自动带上的每段旧对话前面的一行：哪天、哪个对话、从第几条开始",
+  usedBy: ["packages/memory-engine/src/conversation-recall.ts"],
+  layer: "last-user-message",
+  output: "free-text",
+  segments: [
+    text("["),
+    slot("day"),
+    text(" 对话编号 "),
+    slot("conversationId"),
+    text(" 序号 "),
+    slot("sequence"),
+    text("]"),
+  ],
+});
