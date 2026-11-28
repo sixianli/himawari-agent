@@ -267,6 +267,7 @@ public struct HandoverSheet: View {
         .hmType(DesignTokens.TypeScale.bubble)
         .foregroundStyle(Color.hmText)
         .lineLimit(3...8)
+        .accessibilityIdentifier("handover.request")
         .focused($typing)
         .disabled(model.phase != .editing)
         .padding(EdgeInsets(top: DesignTokens.Handover.fieldPaddingVertical, leading: DesignTokens.Handover.fieldPaddingHorizontal, bottom: DesignTokens.Handover.fieldPaddingVertical, trailing: DesignTokens.Handover.fieldPaddingHorizontal))
