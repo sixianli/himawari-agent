@@ -9,6 +9,7 @@ public final class ContactsCollector: SenseCollector {
     private let store = CNContactStore()
     private var sink: SenseSink?
     private var observer: NSObjectProtocol?
+    private var retry: Task<Void, Never>?
 
     public init() {}
 
@@ -32,16 +33,33 @@ public final class ContactsCollector: SenseCollector {
     public func stop() {
         if let observer { NotificationCenter.default.removeObserver(observer) }
         observer = nil
+        retry?.cancel()
+        retry = nil
         sink = nil
     }
 
     func sync() async {
         guard let sink, let kind = item.mirrorKind else { return }
-        let entries = await Task.detached(priority: .utility) { Self.entries() }.value
-        await sink.mirror(kind: kind, entries: entries)
+        retry?.cancel()
+        retry = nil
+        let read = await Task.detached(priority: .utility) { Result { try Self.entries() } }.value
+        switch read {
+        case let .success(entries):
+            await sink.readProblems.succeeded(.contacts)
+            await sink.mirror(kind: kind, entries: entries)
+        case let .failure(error):
+            guard Self.map(CNContactStore.authorizationStatus(for: .contacts)).permitsReading else { return }
+            let failures = await sink.readProblems.failed(.contacts, code: "CONTACTS_\((error as NSError).code)")
+            let delay = ReadRetry.delay(afterFailures: failures)
+            retry = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(delay))
+                guard !Task.isCancelled else { return }
+                await self?.sync()
+            }
+        }
     }
 
-    nonisolated static func entries() -> [MirrorEntry] {
+    nonisolated static func entries() throws -> [MirrorEntry] {
         let keys: [CNKeyDescriptor] = [
             CNContactFormatter.descriptorForRequiredKeys(for: .fullName),
             CNContactOrganizationNameKey as CNKeyDescriptor,
@@ -52,7 +70,7 @@ public final class ContactsCollector: SenseCollector {
         var result: [MirrorEntry] = []
         let request = CNContactFetchRequest(keysToFetch: keys)
         request.sortOrder = .none
-        try? CNContactStore().enumerateContacts(with: request) { contact, _ in
+        try CNContactStore().enumerateContacts(with: request) { contact, _ in
             let organization = contact.organizationName
             let name = CNContactFormatter.string(from: contact, style: .fullName) ?? ""
             let display = name.isEmpty ? organization : name

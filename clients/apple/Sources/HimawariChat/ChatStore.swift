@@ -252,6 +252,10 @@ public final class ChatStore {
         return TranscriptLayout.line(records: executions[runId], runStatus: run.status)
     }
 
+    public func recalledConversations(for runId: String) -> [RecalledConversation] {
+        RecalledConversation.used(in: executions[runId] ?? [])
+    }
+
     public func transcript(in threadId: String) -> [TranscriptItem] {
         TranscriptLayout.entries(messages: messages(in: threadId), runs: details[threadId]?.runs ?? []).map { entry in
             switch entry {

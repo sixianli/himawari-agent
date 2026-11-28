@@ -117,10 +117,12 @@ import { createLocalVectorCatchUp } from "./local-vector-catch-up.js";
 import { MAC_PRESENCE_WINDOW_SECONDS, MacPlacement } from "./mac-placement.js";
 import { OwnerAllowances } from "./owner-allowances.js";
 import { OwnerScopeAuthorization } from "./owner-scope-authorization.js";
+import { configuredAppCode, ProductionAppTools } from "./production-app-tools.js";
 import { ProductionApplePush } from "./production-apple-push.js";
 import { createProductionAuthorityLifecycle } from "./production-authority-lifecycle.js";
 import { createProductionAutomaticReview } from "./production-automatic-review.js";
 import { backgroundCommandLimits } from "./production-background-commands.js";
+import { createConfiguredBrowserTools } from "./production-browser-tools.js";
 import { createProductionCapabilityReactivationVerifier } from "./production-capability-reactivation.js";
 import { createConfiguredComputerTools } from "./production-computer-tools.js";
 import {
@@ -130,6 +132,7 @@ import {
   toolResultCharacters,
 } from "./production-conversation-tools.js";
 import { retrievalDegradeRecorder } from "./production-decision-ledger.js";
+import { ProductionConversationRecall } from "./production-conversation-recall.js";
 import { productionDeviceActionAuthorization } from "./production-device-action-authorization.js";
 import { createProductionDeviceActions } from "./production-device-actions.js";
 import { ProductionExecutionAdmissionHandler } from "./production-execution-admission-handler.js";
@@ -144,10 +147,7 @@ import {
 } from "./production-http-composition.js";
 import { InboxRunRegistry } from "./production-inbox-delivery.js";
 import { expandConfigurationWithMagpieModels, priceTiers } from "./production-magpie-models.js";
-import { configuredAppCode, ProductionAppTools } from "./production-app-tools.js";
 import { ProductionMailRead } from "./production-mail-read.js";
-import { ProductionMcpMemoryWriter } from "./production-mcp-memory-writer.js";
-import { MCP_READ_PATH, ProductionMcpRead } from "./production-mcp-read.js";
 import {
   acceptableRedirectUri,
   ProductionMcpAuthorization,
@@ -156,6 +156,8 @@ import {
   McpClientMetadataCache,
   nodeClientMetadataFetch,
 } from "./production-mcp-client-metadata.js";
+import { ProductionMcpMemoryWriter } from "./production-mcp-memory-writer.js";
+import { MCP_READ_PATH, ProductionMcpRead } from "./production-mcp-read.js";
 import { ProductionMcpRuleWriter } from "./production-mcp-rule-writer.js";
 import { ProductionMcpSync } from "./production-mcp-sync.js";
 import {
@@ -223,7 +225,6 @@ import {
 } from "./production-run-memory.js";
 import { configuredWorkspaceRoot, createProductionRunPolicy } from "./production-run-policy.js";
 import { recordInCurrentRun } from "./production-run-timing.js";
-import { createConfiguredBrowserTools } from "./production-browser-tools.js";
 import { ProductionRuntimeTools } from "./production-runtime-tools.js";
 import {
   createProductionSandboxServices,
@@ -1565,7 +1566,7 @@ export async function startTenantRuntime(
                 await turnProtector.unprotect({ ownerId, agentId, payload }),
               );
             },
-            embedder: memoryComposition.projection.embedder,
+            embedder: memoryComposition.conversationEmbedder,
             embeddableClassifications: memoryComposition.projection.embeddableClassifications,
             minimumSimilarity: memoryComposition.projection.minimumSimilarity,
             onEmbeddingFailure: conversationTurnFailure,
@@ -1808,6 +1809,8 @@ export async function startTenantRuntime(
             await applePush?.requestOpen(input);
           },
         },
+        onReadFailed: (failure) =>
+          writeServiceDiagnostic(errorOutput, { component: "agent-service", ...failure }),
       });
       const perceptionTools = new ProductionPerceptionTools({
         scope: perceptionScope,
@@ -2629,6 +2632,15 @@ export async function startTenantRuntime(
             writeServiceDiagnostic(errorOutput, {
               component: "agent-service",
               event: "proactive.failed",
+              code: stableErrorCode(error),
+            }),
+          onReadFailed: ({ source, operation, attempts, error }) =>
+            writeServiceDiagnostic(errorOutput, {
+              component: "agent-service",
+              event: "proactive.read_failed",
+              source,
+              operation,
+              attempts,
               code: stableErrorCode(error),
             }),
         });
@@ -3502,6 +3514,29 @@ export async function startTenantRuntime(
         ],
         protector,
         memory,
+        ...(conversationTurns
+          ? {
+              conversationRecall: new ProductionConversationRecall({
+                turns: conversationTurns,
+                payloads,
+                protector,
+                embedWithin: (context, operation) => memory.embedWithin(context, operation),
+                maximumCharacters: toolPageCharacters,
+                providerRequestMs: configuration.deadlines.providerRequestMs,
+                relevance: memoryComposition.projection.relevance,
+                ...(configuration.runPolicy?.timeZone
+                  ? { timeZone: configuration.runPolicy.timeZone }
+                  : {}),
+                now: () => clock.now(),
+                onFailure: (error) =>
+                  writeServiceDiagnostic(errorOutput, {
+                    component: "agent-service",
+                    event: "conversation-recall.failed",
+                    code: stableErrorCode(error),
+                  }),
+              }),
+            }
+          : {}),
         tools,
         policy: createProductionRunPolicy({
           configuration,

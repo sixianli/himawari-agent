@@ -275,6 +275,21 @@ export class ThreadExecutionProjection {
             text: String(memoryIds.length),
             output: await this.memoryLines(event, memoryIds),
           });
+          const turns = recalledConversationTurns(envelope["conversationRecall"]);
+          if (event.eventType === "context.formed" && turns.length > 0)
+            records.push({
+              ...base,
+              id: `${event.id}:conversations`,
+              itemId: `${event.id}:conversations`,
+              phase: "completed",
+              name: "conversation.recall",
+              text: String(turns.length),
+              output: turns
+                .map(({ day, conversationId, sequence, preview }) =>
+                  JSON.stringify({ day, conversationId, sequence, preview }),
+                )
+                .join("\n"),
+            });
         } else if (event.eventType === DEVICE_VOICE_TIMING_EVENT) {
           records.push({ ...base, phase: "updated", text: JSON.stringify(envelope) });
         } else if (
@@ -837,4 +852,32 @@ export class ThreadExecutionProjection {
     if (bytes.byteLength > 1024 * 1024) throw new Error("DISPLAY_PAYLOAD_TOO_LARGE");
     return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
   }
+}
+
+function recalledConversationTurns(value: unknown): {
+  readonly day: string;
+  readonly conversationId: string;
+  readonly sequence: number;
+  readonly preview: string;
+}[] {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return [];
+  const turns = (value as Record<string, unknown>)["turns"];
+  if (!Array.isArray(turns)) return [];
+  return turns.flatMap((item: unknown) => {
+    if (typeof item !== "object" || item === null) return [];
+    const turn = item as Record<string, unknown>;
+    return typeof turn["day"] === "string" &&
+      typeof turn["conversationId"] === "string" &&
+      Number.isSafeInteger(turn["sequence"]) &&
+      typeof turn["preview"] === "string"
+      ? [
+          {
+            day: turn["day"],
+            conversationId: turn["conversationId"],
+            sequence: turn["sequence"] as number,
+            preview: turn["preview"],
+          },
+        ]
+      : [];
+  });
 }

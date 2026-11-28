@@ -65,6 +65,7 @@
 "chat.why.hide" = "收起";
 "chat.why.open" = "已展开";
 "chat.why.closed" = "已收起";
+"chat.why.conversations" = "参考了以前的这些对话";
 "chat.reply.toAgent" = "回复 Himawari";
 "chat.reply.toOwner" = "回复你自己";
 "chat.reply.missing" = "原消息已不在";

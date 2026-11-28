@@ -3,13 +3,14 @@ on:
   workflow_dispatch:
     inputs:
       action:
-        description: diagnose 只读收集生产状态；restart 先收集再重启 himawari-prod 服务；allow-sensitive 先备份配置，让生成模型可以看到“敏感”等级的内容，再重启
+        description: diagnose 只读收集生产状态；senses 只读汇总最近 6 天各设备各类感知记录的条数和时间（加密）；restart 先收集再重启 himawari-prod 服务；allow-sensitive 先备份配置，让生成模型可以看到“敏感”等级的内容，再重启
         required: true
         type: choice
         options:
           - diagnose
           - restart
           - allow-sensitive
+          - senses
 permissions:
   contents: read
 concurrency:
@@ -50,7 +51,7 @@ jobs:
           PROD_HOST: ${{ vars.PROD_HOST }}
           ACTION: ${{ inputs.action }}
         run: |
-          case "$ACTION" in diagnose|restart|allow-sensitive) ;; *) echo "::error::action 只能是 diagnose、restart 或 allow-sensitive"; exit 1 ;; esac
+          case "$ACTION" in diagnose|restart|allow-sensitive|senses) ;; *) echo "::error::action 只能是 diagnose、restart、allow-sensitive 或 senses"; exit 1 ;; esac
           ssh -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=10 "himawari-deploy@$PROD_HOST" "ops $ACTION" 2>&1 | tee ops.log
           status="${PIPESTATUS[0]}"
           { echo '```'; grep -E '^OPS_(FROM|SERVICE|HOST|JOURNAL|RUNS|RESTARTED|REFUSED|DONE|CONFIG|OWNER|MODEL|SEALED_END|SEALED_FAILED)' ops.log | cut -c1-600 || true; echo '```'; } >> "$GITHUB_STEP_SUMMARY"

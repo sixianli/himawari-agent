@@ -341,7 +341,16 @@ public struct ChatView: View {
     }
 
     private func explains(_ message: ThreadMessage) -> Bool {
+        explainsSpoken(message) || !recalled(message).isEmpty
+    }
+
+    private func explainsSpoken(_ message: ThreadMessage) -> Bool {
         message.role == .agent && message.spoken && explainSpoken != nil
+    }
+
+    private func recalled(_ message: ThreadMessage) -> [RecalledConversation] {
+        guard message.role == .agent, let runId = message.runId else { return [] }
+        return store.recalledConversations(for: runId)
     }
 
     private func toggleWhy(_ message: ThreadMessage) {
@@ -516,10 +525,14 @@ public struct ChatView: View {
         var quote: BubbleQuote?
         var flashes = false
         var why = ChatRowWhy.none
+        var usedConversations: [RecalledConversation] = []
         switch row {
         case let .message(message):
             text = store.texts[message.contentRef]
-            if explains(message) { why = explained.contains(message.messageId) ? .open : .closed }
+            if explains(message) {
+                why = explained.contains(message.messageId) ? .open : explainsSpoken(message) ? .closed : .none
+            }
+            if why == .open { usedConversations = recalled(message) }
             if message.role == .owner, message.chosenFrom == nil { quote = self.quote(inside: text) }
             flashes = flashing == message.messageId
         case let .queued(item):
@@ -527,7 +540,7 @@ public struct ChatView: View {
         default:
             break
         }
-        return ChatRowModel(row: row, text: text, quote: quote, placement: placed, herWidth: herWidth, ownerWidth: ownerWidth, flashing: flashes, online: store.connection == .online, why: why)
+        return ChatRowModel(row: row, text: text, quote: quote, placement: placed, herWidth: herWidth, ownerWidth: ownerWidth, flashing: flashes, online: store.connection == .online, why: why, recalled: usedConversations)
     }
 
     private func rowActions(jump: @escaping (String) -> Void) -> ChatRowActions {
@@ -541,7 +554,7 @@ public struct ChatView: View {
             discard: { id in Task { await store.discard(id) } },
             showExecution: { [store, threadId] runId in await store.showExecution(runId, in: threadId) },
             toggleWhy: { toggleWhy($0) },
-            explanation: { [explainSpoken] message in explainSpoken?(message) }
+            explanation: { [explainSpoken] message in message.spoken ? explainSpoken?(message) : nil }
         )
     }
 
@@ -710,6 +723,7 @@ struct ChatRowModel: Equatable {
     let flashing: Bool
     let online: Bool
     let why: ChatRowWhy
+    let recalled: [RecalledConversation]
 }
 
 enum ChatRowWhy: Equatable {
@@ -831,6 +845,10 @@ extension ChatRowView {
         .accessibilityValue(L.text(open ? "chat.why.open" : "chat.why.closed"))
         if open, let explanation = actions.explanation(message) {
             explanation
+                .transition(.opacity.combined(with: .move(edge: .top)))
+        }
+        if open, !model.recalled.isEmpty {
+            RecalledConversationsCard(conversations: model.recalled)
                 .transition(.opacity.combined(with: .move(edge: .top)))
         }
     }

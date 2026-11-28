@@ -65,6 +65,7 @@
 "chat.why.hide" = "Hide";
 "chat.why.open" = "Shown";
 "chat.why.closed" = "Hidden";
+"chat.why.conversations" = "Earlier Conversations It Used";
 "chat.reply.toAgent" = "Replying to Himawari";
 "chat.reply.toOwner" = "Replying to yourself";
 "chat.reply.missing" = "Original message is gone";

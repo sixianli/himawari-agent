@@ -35,7 +35,7 @@ Andy 的全局指令已复制到 [.claude/rules/owner-global-instructions.md](.c
 <a id="incidents-and-repeated-mistakes"></a>
 ## 事故和反复犯的错误
 
-每个会话都遵守 [.claude/rules/incident-gates.md](.claude/rules/incident-gates.md)：每个事故都要有一道自动检查，同一个错误出现两次必须上硬门槛（程序检查，过不去就报错，不靠模型判断）；PR 的 CI 红了两次，PR 说明里要写复盘（含共同前提和验证）才能合并；修一个事故第二次出现的提交要写 `Premise:` 行，说明当初哪个想法错了。改到 `ci/core-areas.json` 列出的核心目录的 PR，说明里要有“## 安全依据”并点名一个 CI 会跑的测试。每个提交说明都要写一行 `Incident: I-<编号>`、`Incident-follow-up: I-<编号>` 或 `Incident: none`，次数由检查从提交记录里数，不靠手记。
+每个会话都遵守 [.claude/rules/incident-gates.md](.claude/rules/incident-gates.md)：每个事故都要有一道自动检查，同一个错误出现两次必须上硬门槛（程序检查，过不去就报错，不靠模型判断）；PR 的 CI 红了两次，PR 说明里要写复盘（含共同前提和验证）才能合并；修一个事故第二次出现的提交要写 `Premise:` 行，说明当初哪个想法错了。改到 `ci/core-areas.json` 列出的核心目录的 PR，说明里要有“## 安全依据”并点名一个 CI 会跑的测试。新事故的编号用 `npm run incident:new` 生成，不手挑。每个提交说明都要写一行 `Incident: I-<编号>`、`Incident-follow-up: I-<编号>` 或 `Incident: none`，次数由检查从提交记录里数，不靠手记。
 
 <a id="prompt-prefix-append-only"></a>
 ## 发给模型的内容只追加
