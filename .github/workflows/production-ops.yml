@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       action:
-        description: diagnose 只读收集生产状态；senses 只读汇总最近 6 天各设备各类感知记录的条数和时间（加密）；restart 先收集再重启 himawari-prod 服务；allow-sensitive 先备份配置，让生成模型可以看到“敏感”等级的内容，再重启
+        description: diagnose 只读收集生产状态；senses 只读汇总最近 6 天各设备各类感知记录的条数和时间（加密）；restart 先收集再重启 himawari-prod 服务；allow-sensitive 先备份配置，让生成模型可以看到“敏感”等级的内容，再重启；heartbeat-install 用 production 环境的 HEALTHCHECK_URL 装好每分钟一次的心跳
         required: true
         type: choice
         options:
@@ -11,6 +11,7 @@ on:
           - restart
           - allow-sensitive
           - senses
+          - heartbeat-install
 permissions:
   contents: read
 concurrency:
@@ -50,11 +51,18 @@ jobs:
         env:
           PROD_HOST: ${{ vars.PROD_HOST }}
           ACTION: ${{ inputs.action }}
+          HEALTHCHECK_URL: ${{ secrets.HEALTHCHECK_URL }}
         run: |
-          case "$ACTION" in diagnose|restart|allow-sensitive|senses) ;; *) echo "::error::action 只能是 diagnose、restart、allow-sensitive 或 senses"; exit 1 ;; esac
-          ssh -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=10 "himawari-deploy@$PROD_HOST" "ops $ACTION" 2>&1 | tee ops.log
-          status="${PIPESTATUS[0]}"
-          { echo '```'; grep -E '^OPS_(FROM|SERVICE|HOST|JOURNAL|RUNS|RESTARTED|REFUSED|DONE|CONFIG|OWNER|MODEL|WEB|SEALED_END|SEALED_FAILED)' ops.log | cut -c1-600 || true; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          case "$ACTION" in diagnose|restart|allow-sensitive|senses|heartbeat-install) ;; *) echo "::error::action 只能是 diagnose、restart、allow-sensitive、senses 或 heartbeat-install"; exit 1 ;; esac
+          if [ "$ACTION" = heartbeat-install ]; then
+            [ -n "$HEALTHCHECK_URL" ] || { echo "::error::production 环境还缺 HEALTHCHECK_URL(secret)"; exit 1; }
+            printf '%s\n' "$HEALTHCHECK_URL" | ssh -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=10 "himawari-deploy@$PROD_HOST" "ops $ACTION" 2>&1 | tee ops.log
+            status="${PIPESTATUS[1]}"
+          else
+            ssh -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=10 "himawari-deploy@$PROD_HOST" "ops $ACTION" < /dev/null 2>&1 | tee ops.log
+            status="${PIPESTATUS[0]}"
+          fi
+          { echo '```'; grep -E '^OPS_(FROM|SERVICE|HOST|JOURNAL|RUNS|RESTARTED|REFUSED|DONE|CONFIG|OWNER|MODEL|WEB|SEALED_END|SEALED_FAILED|HEARTBEAT)' ops.log | cut -c1-600 || true; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           exit "$status"
       - name: 清掉钥匙
         if: ${{ always() }}
