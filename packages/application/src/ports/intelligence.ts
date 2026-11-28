@@ -163,6 +163,7 @@ export interface RuntimeRequest {
   readonly thinkingLevel?: import("./run-execution-source.js").RunThinkingLevel;
   readonly continuationRef?: PayloadRef;
   readonly executionDeadlineAt?: string;
+  readonly historyFallback?: "thread_messages";
   readonly ownerId: OwnerId;
   readonly agentId: AgentId;
   readonly runId: RunId;
@@ -384,6 +385,7 @@ export type RuntimeProjectionRequest = Pick<
   | "contextEnvelopeRef"
   | "workerResultRefs"
   | "dataClassification"
+  | "historyFallback"
 >;
 
 export interface RuntimeProjection extends RuntimeProjectionContext {

@@ -181,4 +181,33 @@ import Testing
         #expect(page.nextSequence == nil)
         #expect(exchange.requests.first?.url?.absoluteString == "https://himawari.example.test/api/device/v1/threads/t1/runs/run:0a1b/execution?after=4")
     }
+
+    private func runFailure(_ sequence: Int, _ code: String, at second: TimeInterval) -> ExecutionRecord {
+        ExecutionRecord(
+            id: "f\(sequence)",
+            sequence: sequence,
+            itemId: "f\(sequence)",
+            kind: .status,
+            phase: .failed,
+            name: RunFailure.recordName,
+            text: code,
+            occurredAt: Date(timeIntervalSince1970: 1_800_000_000 + second)
+        )
+    }
+
+    @Test func aFailedTurnCarriesTheServersReasonAndWhetherItWasRetried() {
+        let once = ProcessLine.make(records: [runFailure(1, "PI_MODEL_UNAVAILABLE", at: 0)], runStatus: "failed")
+        #expect(once == .failed(steps: [], seconds: 0, failure: RunFailure(code: "PI_MODEL_UNAVAILABLE", retried: false)))
+        let twice = ProcessLine.make(
+            records: [runFailure(1, "PI_MODEL_ERROR", at: 0), runFailure(2, "PI_CONTEXT_WINDOW_EXHAUSTED", at: 3)],
+            runStatus: "failed"
+        )
+        #expect(twice == .failed(steps: [], seconds: 3, failure: RunFailure(code: "PI_CONTEXT_WINDOW_EXHAUSTED", retried: true)))
+    }
+
+    @Test func aTurnThatRecoveredOnTheRetryShowsNoFailure() {
+        let records = [runFailure(1, "PI_MODEL_ERROR", at: 0), record(2, "a", .completed, at: 1)]
+        #expect(ProcessLine.make(records: records, runStatus: "completed") == .finished(steps: ProcessLine.steps(from: records), seconds: 1))
+        #expect(ProcessLine.make(records: [record(1, "a", .failed, at: 0)], runStatus: "failed") == .failed(steps: ProcessLine.steps(from: [record(1, "a", .failed, at: 0)]), seconds: 0, failure: nil))
+    }
 }

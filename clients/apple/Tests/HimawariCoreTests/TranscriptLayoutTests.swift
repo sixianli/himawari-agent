@@ -17,7 +17,7 @@ import Testing
         let answer = message("a2", 3, .agent, run: "r2")
         let entries = TranscriptLayout.entries(messages: [question, later, answer], runs: [run("r1", "failed"), run("r2", "completed")])
         #expect(entries == [.message(question), .process(runId: "r1"), .message(later), .process(runId: "r2"), .message(answer)])
-        #expect(TranscriptLayout.line(records: nil, runStatus: "failed") == .failed(steps: [], seconds: 0))
+        #expect(TranscriptLayout.line(records: nil, runStatus: "failed") == .failed(steps: [], seconds: 0, failure: nil))
     }
 
     @Test func aStoppedRunWithoutAReplySaysItStopped() {

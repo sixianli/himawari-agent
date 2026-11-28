@@ -573,6 +573,10 @@ export class ThreadExecutionProjection {
                       "PI_MODEL_UNAVAILABLE",
                       "PI_MODEL_QUOTA_EXCEEDED",
                       "PI_CONTEXT_WINDOW_EXHAUSTED",
+                      "PI_MODEL_ERROR",
+                      "PI_TOOL_LOOP_DETECTED",
+                      "PI_FINAL_ANSWER_EMPTY",
+                      "PI_FINAL_ANSWER_INCOMPLETE",
                     ].includes(text(envelope["errorCode"]))
                       ? text(envelope["errorCode"])
                       : "RUNTIME_EXECUTION_FAILED",

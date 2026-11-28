@@ -35,7 +35,7 @@ public struct ProcessRowView: View {
             break
         case let (_, .finished(_, seconds)):
             Haptics.shared.report(failed ? .taskFailed : .longTaskFinished, ownerViewingThisPage: true, waitedSeconds: TimeInterval(seconds))
-        case let (_, .failed(_, seconds)):
+        case let (_, .failed(_, seconds, _)):
             Haptics.shared.report(.taskFailed, ownerViewingThisPage: true, waitedSeconds: TimeInterval(seconds))
         default:
             break
@@ -67,8 +67,8 @@ public struct ProcessRowView: View {
             summary(icon: .check, text: L.format("process.didThings", steps.count), steps: steps)
         case let .stopped(steps, _):
             summary(icon: .stop, text: L.text("process.stopped"), steps: steps)
-        case let .failed(steps, _):
-            summary(icon: .alertCircle, text: L.text("process.failed"), steps: steps)
+        case let .failed(steps, _, failure):
+            summary(icon: .alertCircle, text: Self.failedText(failure), steps: steps)
         }
     }
 
@@ -98,6 +98,19 @@ public struct ProcessRowView: View {
                 .presentationCornerRadius(DesignTokens.Radius.sheetTop)
                 .presentationBackground(Color.hmBackground)
         }
+    }
+
+    static let failureCodes: Set<String> = [
+        "PI_MODEL_RATE_LIMITED", "PI_MODEL_AUTH_FAILED", "PI_MODEL_UNAVAILABLE", "PI_MODEL_QUOTA_EXCEEDED",
+        "PI_CONTEXT_WINDOW_EXHAUSTED", "PI_MODEL_ERROR", "PI_TOOL_LOOP_DETECTED", "PI_FINAL_ANSWER_EMPTY",
+        "PI_FINAL_ANSWER_INCOMPLETE",
+    ]
+
+    static func failedText(_ failure: RunFailure?) -> String {
+        guard let failure else { return L.text("process.failed") }
+        let code = failureCodes.contains(failure.code) ? failure.code : "OTHER"
+        let reason = L.text("process.failure.\(code)")
+        return L.format(failure.retried ? "process.failedRetried" : "process.failedBecause", reason)
     }
 
     static func icon(_ icon: ProcessIcon) -> IconName {

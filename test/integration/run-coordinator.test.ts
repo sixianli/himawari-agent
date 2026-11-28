@@ -1434,3 +1434,105 @@ it.each(["missing-output", "unknown-result", "failed-runtime"] as const)(
     expect(runtime.run).toHaveBeenCalledOnce();
   },
 );
+
+describe("a failed turn is retried once without the saved runtime history", () => {
+  function scripted(passes: readonly RuntimeEvent[][]) {
+    const requests: RuntimeRequest[] = [];
+    const runtime: AgentRuntimePort = {
+      async *run(request) {
+        requests.push(request);
+        for (const event of passes[requests.length - 1] ?? []) yield event;
+      },
+      async cancel() {},
+    };
+    return { requests, runtime };
+  }
+  const failed = (runId: ReturnType<typeof createRunId>, errorCode: string): RuntimeEvent => ({
+    type: "runtime.failed",
+    runId,
+    errorCode,
+    occurredAt: T1,
+  });
+
+  it("answers on the retry when the saved history made the first pass fail", async () => {
+    const suffix = "history-retry-answers";
+    const runId = createRunId(`run-${suffix}`);
+    const { requests, runtime } = scripted([
+      [{ type: "runtime.model_started", runId, occurredAt: T0 }, failed(runId, "PI_MODEL_ERROR")],
+      [
+        { type: "runtime.model_started", runId, occurredAt: T1 },
+        {
+          type: "runtime.completed",
+          runId,
+          occurredAt: T2,
+          output: { kind: "assistant-answer", contentRef: "answer-after-retry" },
+        },
+      ],
+    ]);
+    const setup = await fixture(suffix, runtime);
+    const result = await setup.coordinator.execute(setup.input);
+    expect(result.run.run.status).toBe("completed");
+    expect(requests).toHaveLength(2);
+    expect(requests[0]?.historyFallback).toBeUndefined();
+    expect(requests[1]?.historyFallback).toBe("thread_messages");
+    expect(requests[1]?.contextEnvelopeRef).toBe(requests[0]?.contextEnvelopeRef);
+  });
+
+  it("fails with the second reason when the retry also fails, and tries only once more", async () => {
+    const suffix = "history-retry-fails";
+    const runId = createRunId(`run-${suffix}`);
+    const { requests, runtime } = scripted([
+      [failed(runId, "PI_MODEL_ERROR")],
+      [failed(runId, "PI_MODEL_UNAVAILABLE")],
+      [failed(runId, "PI_MODEL_ERROR")],
+    ]);
+    const setup = await fixture(suffix, runtime);
+    const result = await setup.coordinator.execute(setup.input);
+    expect(result.run.run.status).toBe("failed");
+    expect(result.checkpoint.diagnosticCode).toBe("PI_MODEL_UNAVAILABLE");
+    expect(requests).toHaveLength(2);
+    await setup.coordinator.execute(setup.input);
+    expect(requests).toHaveLength(2);
+  });
+
+  it("does not retry a pass that already started a tool, so no action runs twice", async () => {
+    const suffix = "history-retry-after-tool";
+    const runId = createRunId(`run-${suffix}`);
+    const { requests, runtime } = scripted([
+      [
+        {
+          type: "runtime.tool_intent",
+          runId,
+          capabilityRef: "send-mail",
+          payloadRef: "payload-send-mail",
+          occurredAt: T0,
+        },
+        failed(runId, "PI_MODEL_ERROR"),
+      ],
+      [
+        {
+          type: "runtime.completed",
+          runId,
+          occurredAt: T2,
+          output: { kind: "assistant-answer", contentRef: "should-not-run" },
+        },
+      ],
+    ]);
+    const setup = await fixture(suffix, runtime);
+    const result = await setup.coordinator.execute(setup.input);
+    expect(result.run.run.status).toBe("failed");
+    expect(requests).toHaveLength(1);
+  });
+
+  it("does not retry a turn that was stopped", async () => {
+    const suffix = "history-retry-cancelled";
+    const runId = createRunId(`run-${suffix}`);
+    const { requests, runtime } = scripted([
+      [{ type: "runtime.cancelled", runId, reasonCode: "PI_ABORTED", occurredAt: T1 }],
+    ]);
+    const setup = await fixture(suffix, runtime);
+    const result = await setup.coordinator.execute(setup.input);
+    expect(result.run.run.status).toBe("cancelled");
+    expect(requests).toHaveLength(1);
+  });
+});
