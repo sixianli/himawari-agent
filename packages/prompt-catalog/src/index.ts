@@ -10,6 +10,7 @@ export * from "./memory.js";
 export * from "./perception.js";
 export * from "./review.js";
 export * from "./runtime.js";
+export * from "./settings.js";
 export * from "./subthreads.js";
 export * from "./tools.js";
 export * from "./trusted.js";

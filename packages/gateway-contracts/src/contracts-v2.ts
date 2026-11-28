@@ -431,6 +431,7 @@ const proactiveTextSchema = (maximum: number): Schema<string> => ({
   },
 });
 const proactiveClockSchema: Schema<string> = {
+  describe: () => ({ type: "string", pattern: "^(?:[01]\\d|2[0-3]):[0-5]\\d$" }),
   parse(input, path = "$") {
     if (typeof input !== "string" || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(input))
       throw new ContractValidationError(path, "expected an HH:MM clock time");
@@ -4079,3 +4080,11 @@ export const gatewayV2MessageSchema = Object.freeze({
     return JSON.stringify(parseGatewayV2Message(message));
   },
 });
+
+export function gatewayV2PayloadSchema(type: string): Schema<unknown> | undefined {
+  if (!Object.hasOwn(schemasByType, type)) return undefined;
+  const schema = schemasByType[type as keyof SchemaByType] as Schema<unknown> & {
+    readonly shape?: { readonly payload?: Schema<unknown> };
+  };
+  return schema.shape?.payload;
+}

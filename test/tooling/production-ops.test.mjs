@@ -1,5 +1,14 @@
 import { spawn, spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -57,11 +66,33 @@ function fakes(directory) {
   return { bin, log };
 }
 
-function run(action, directory, extra = {}) {
+function mirrorOfMain(directory) {
+  const mirror = path.join(directory, "mirror");
+  const repository = path.resolve(operations, "../..");
+  for (const part of [
+    "scripts/operations/heartbeat",
+    "scripts/delivery-mode/instances/andy-production.json",
+  ])
+    cpSync(path.join(repository, part), path.join(mirror, part), {
+      recursive: true,
+    });
+  const git = (...args) =>
+    expect(
+      spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-C", mirror, ...args]).status,
+    ).toBe(0);
+  git("init", "--quiet", "--initial-branch=main");
+  git("add", ".");
+  git("commit", "--quiet", "-m", "main");
+  rmSync(path.join(mirror, "scripts"), { recursive: true });
+  return mirror;
+}
+
+function run(action, directory, extra = {}, input = "") {
   const { bin } = fakes(directory);
   const { publicKey, privateKey } = keys(directory);
   const child = spawnSync("bash", [script, action], {
     encoding: "utf8",
+    input,
     env: {
       PATH: process.env.PATH,
       HIMAWARI_OPS_PUBLIC_KEY: publicKey,
@@ -87,7 +118,9 @@ describe("production-ops", () => {
     expect(child.stdout).toContain("OPS_DONE");
     const log = path.join(directory, "ops.log");
     writeFileSync(log, child.stdout);
-    const opened = spawnSync("bash", [opener, log, privateKey], { encoding: "utf8" });
+    const opened = spawnSync("bash", [opener, log, privateKey], {
+      encoding: "utf8",
+    });
     expect(opened.status).toBe(0);
     expect(opened.stdout).toContain("owner said: my secret dinner plans");
   });
@@ -181,7 +214,9 @@ db.prepare("INSERT INTO perception_records VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run
     expect(child.stdout).not.toContain("secret dinner");
     const log = path.join(directory, "ops.log");
     writeFileSync(log, child.stdout);
-    const opened = spawnSync("bash", [opener, log, privateKey], { encoding: "utf8" });
+    const opened = spawnSync("bash", [opener, log, privateKey], {
+      encoding: "utf8",
+    });
     expect(opened.status).toBe(0);
     expect(opened.stdout).toContain('"type":"health.sample","subtype":"sleep"');
     expect(opened.stdout).toContain('SENSES_DEVICES [{"id":"dev_phone","kind":"iphone"');
@@ -237,7 +272,11 @@ db.prepare("INSERT INTO perception_records VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run
           role: "primary",
           allowedDataClassifications: ["public", "private"],
         },
-        { ref: "search", role: "primary", allowedDataClassifications: ["public"] },
+        {
+          ref: "search",
+          role: "primary",
+          allowedDataClassifications: ["public"],
+        },
         {
           ref: "local-embedding",
           role: "embedding",
@@ -276,6 +315,131 @@ db.prepare("INSERT INTO perception_records VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run
     expect(again.status).toBe(0);
     expect(again.stdout).toContain("OPS_CONFIG_UNCHANGED");
     expect(again.stdout).not.toContain("OPS_RESTARTED");
+  });
+
+  it("installs the heartbeat from main with the ping address read from standard input and never prints it", () => {
+    const directory = temporary();
+    const root = path.join(directory, "root");
+    const address = "https://hc-ping.com/0f4c2a6e-91d7-4b5e-a3c8-7d2e1f9b6a40";
+    const { child } = run(
+      "heartbeat-install",
+      directory,
+      { HIMAWARI_OPS_MIRROR: mirrorOfMain(directory), HEARTBEAT_ROOT: root },
+      `${address}\n`,
+    );
+    expect(child.stderr).toBe("");
+    expect(child.status).toBe(0);
+    expect(child.stdout).toMatch(/^OPS_HEARTBEAT_INSTALLED timer=active$/m);
+    expect(child.stdout).not.toContain(address);
+    expect(readFileSync(path.join(root, "etc/himawari-heartbeat/healthcheck-url"), "utf8")).toBe(
+      `${address}\n`,
+    );
+    expect(existsSync(path.join(root, "etc/systemd/system/himawari-outage-push.path"))).toBe(true);
+    expect(readFileSync(path.join(directory, "calls"), "utf8")).toContain(
+      "systemctl enable --now himawari-heartbeat.timer",
+    );
+  });
+
+  it("refuses a ping address that is not a Healthchecks ping and does not echo it", () => {
+    const directory = temporary();
+    const root = path.join(directory, "root");
+    const address = "https://example.com/not-a-ping";
+    const { child } = run(
+      "heartbeat-install",
+      directory,
+      { HIMAWARI_OPS_MIRROR: mirrorOfMain(directory), HEARTBEAT_ROOT: root },
+      `${address}\n`,
+    );
+    expect(child.status).toBe(70);
+    expect(child.stderr).toContain("HEARTBEAT_URL_INVALID");
+    expect(child.stderr).toContain("OPS_REFUSED HEARTBEAT_INSTALL_FAILED");
+    expect(`${child.stdout}${child.stderr}`).not.toContain(address);
+    expect(existsSync(path.join(root, "etc/himawari-heartbeat/healthcheck-url"))).toBe(false);
+  });
+
+  it("reports the per-user computers in the clear without container names", () => {
+    const directory = temporary();
+    const bin = path.join(directory, "computer-bin");
+    mkdirSync(bin, { recursive: true });
+    writeFileSync(
+      path.join(bin, "docker"),
+      `#!/bin/bash\ncase "$1" in\n  info) echo '{"io.containerd.runc.v2":{"path":"runc"},"runsc":{"path":"/usr/local/bin/runsc"}}' ;;\n  ps) echo running; echo exited; echo running ;;\nesac\n`,
+    );
+    writeFileSync(
+      path.join(bin, "runsc"),
+      "#!/bin/bash\necho 'runsc version release-20261123.1'\n",
+    );
+    chmodSync(path.join(bin, "docker"), 0o755);
+    chmodSync(path.join(bin, "runsc"), 0o755);
+    const config = path.join(directory, "config.json");
+    writeFileSync(
+      config,
+      JSON.stringify({
+        capabilityDeployment: { secret: "deployment-secret" },
+        runPolicy: {
+          coding: { grant: "/var/lib/himawari/workspace" },
+          userComputers: { socketPath: "/run/himawari-computers/computers.sock" },
+          browser: { maxOutputBytes: 8388608, maxTextChars: 20000, responseReserveMs: 5000 },
+        },
+      }),
+    );
+    const computersConfig = path.join(directory, "computers.json");
+    writeFileSync(
+      computersConfig,
+      JSON.stringify({
+        schemaVersion: "user-computers.v1",
+        runtime: "runsc",
+        image: { reference: null, digest: `sha256:${"a".repeat(64)}` },
+        disk: { kind: "loop", bytes: 10737418240 },
+        idle: { stopAfterMs: 900000 },
+      }),
+    );
+    const { child } = run("computers", directory, {
+      HIMAWARI_OPS_NODE: process.execPath,
+      HIMAWARI_OPS_CONFIG: config,
+      HIMAWARI_OPS_COMPUTERS_CONFIG: computersConfig,
+      HIMAWARI_OPS_COMPUTERS_SOCKET: path.join(directory, "no-socket"),
+      HIMAWARI_OPS_DOCKER: path.join(bin, "docker"),
+      HIMAWARI_OPS_RUNSC: path.join(bin, "runsc"),
+    });
+    expect(child.status, child.stderr).toBe(0);
+    expect(child.stdout).toContain("OPS_SERVICE himawari-computers.service ActiveState=active");
+    expect(child.stdout).toContain("OPS_COMPUTERS_SOCKET missing");
+    expect(child.stdout).toContain("OPS_COMPUTERS_RUNSC runsc version release-20261123.1");
+    expect(child.stdout).toMatch(/OPS_COMPUTERS_DOCKER_RUNTIMES .*runsc/);
+    expect(child.stdout).toContain("OPS_COMPUTERS_CONTAINERS exited=1 running=2");
+    expect(child.stdout).toContain('"capabilityDeployment":true');
+    expect(child.stdout).toContain(
+      '"userComputers":{"socketPath":"/run/himawari-computers/computers.sock"}',
+    );
+    expect(child.stdout).toContain('"maxTextChars":20000');
+    expect(child.stdout).toContain(`"digest":"sha256:${"a".repeat(64)}"`);
+    expect(child.stdout).not.toContain("deployment-secret");
+    expect(child.stdout).not.toContain("OPS_SEALED_BEGIN");
+    expect(child.stdout).toContain("OPS_DONE");
+  });
+
+  it("says plainly when the computers were never installed", () => {
+    const directory = temporary();
+    const config = path.join(directory, "config.json");
+    writeFileSync(config, JSON.stringify({ runPolicy: { coding: {} } }));
+    const { child } = run("computers", directory, {
+      HIMAWARI_OPS_NODE: process.execPath,
+      HIMAWARI_OPS_CONFIG: config,
+      HIMAWARI_OPS_COMPUTERS_CONFIG: path.join(directory, "absent.json"),
+      HIMAWARI_OPS_COMPUTERS_SOCKET: path.join(directory, "no-socket"),
+      HIMAWARI_OPS_DOCKER: path.join(directory, "no-docker"),
+      HIMAWARI_OPS_RUNSC: path.join(directory, "no-runsc"),
+    });
+    expect(child.status, child.stderr).toBe(0);
+    expect(child.stdout).toContain("OPS_COMPUTERS_SOCKET missing");
+    expect(child.stdout).toContain('"capabilityDeployment":false');
+    expect(child.stdout).toContain('"userComputers":null');
+    expect(child.stdout).toContain('"browser":null');
+    expect(child.stdout).toContain('OPS_COMPUTERS_CONFIG {"error":"ENOENT"}');
+    expect(child.stdout).toContain("OPS_COMPUTERS_RUNSC unavailable");
+    expect(child.stdout).toContain("OPS_COMPUTERS_DOCKER_RUNTIMES unavailable");
+    expect(child.stdout).toContain("OPS_COMPUTERS_CONTAINERS unavailable");
   });
 
   it("refuses anything but its own actions", () => {
