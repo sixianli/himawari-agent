@@ -405,6 +405,22 @@ describe("repeat counts come from the commit history", () => {
     expect(history(root)).toEqual([]);
   });
 
+  it("applies renumberings oldest first, so a commit renumbered twice after two collisions lands on the last number", () => {
+    const root = historyFixture([row({}), row({ id: "I-02" }), row({ id: "I-03" })]);
+    const theirs = commit(root, "fix: theirs\n\nIncident: I-01");
+    const mine = commit(root, "fix: mine\n\nIncident: I-01");
+    commit(
+      root,
+      `docs: renumber\n\nIncident-follow-up: I-02\nIncident-renumbered: ${mine.slice(0, 12)} I-01 I-02`,
+    );
+    commit(
+      root,
+      `docs: renumber again\n\nIncident-follow-up: I-03\nIncident-renumbered: ${mine.slice(0, 12)} I-02 I-03`,
+    );
+    expect(history(root)).toEqual([]);
+    expect(theirs).not.toBe(mine);
+  });
+
   it("refuses a renumbering that names no commit counted under the old number", () => {
     const root = historyFixture([row({}), row({ id: "I-02" })]);
     const other = commit(root, "fix: other\n\nIncident: none");
