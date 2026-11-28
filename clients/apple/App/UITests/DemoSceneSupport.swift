@@ -48,15 +48,18 @@ enum DemoApp {
     }
 
     static func scrollUntilOnScreen(_ element: XCUIElement, in app: XCUIApplication, swipes: Int = 10) -> Bool {
-        for _ in 0..<swipes {
+        for _ in 0..<(swipes * 3) {
             if onScreen(element, in: app) { return true }
-            if element.exists, element.frame.minY < app.windows.firstMatch.frame.minY {
-                app.swipeDown()
-            } else {
-                app.swipeUp()
-            }
+            let above = (try? element.snapshot().frame.minY).map { $0 < app.windows.firstMatch.frame.minY } ?? false
+            drag(app, contentUp: !above)
         }
         return onScreen(element, in: app)
+    }
+
+    static func drag(_ app: XCUIApplication, contentUp: Bool) {
+        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: contentUp ? 0.6 : 0.45))
+        let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: contentUp ? 0.45 : 0.6))
+        start.press(forDuration: 0.05, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.3)
     }
 
     static func swipeBackFromTheLeftEdge(_ app: XCUIApplication) {
