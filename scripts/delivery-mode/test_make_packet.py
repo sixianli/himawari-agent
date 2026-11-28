@@ -2320,6 +2320,14 @@ class ServiceReadCgroupTest(unittest.TestCase):
         self.assertIn('remaining = cgroup_pids(pids)', (PACKET_TEMPLATE / relative).read_text())
 
 
+class ServiceReadPrivateJobsTest(unittest.TestCase):
+    def test_I120_the_read_unit_hides_the_private_jobs_root_without_requiring_it_to_exist(self):
+        source = (PACKET_TEMPLATE / 'measurement/S6-service-read.py').read_text()
+        self.assertIn("'InaccessiblePaths=/var/lib/himawari/state -/var/lib/himawari/jobs /etc/himawari'", source)
+        self.assertIn("{'/var/lib/himawari/state', '-/var/lib/himawari/jobs', '/etc/himawari'}", source)
+        self.assertNotIn(" /var/lib/himawari/jobs ", source)
+
+
 class QuestionTwelveDownloadRetryTest(unittest.TestCase):
     RELATIVE = 'acceptance/cloud/download-question-12.py'
 
