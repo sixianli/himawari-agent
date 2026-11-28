@@ -85,6 +85,7 @@ struct ChatInputBar: View {
                 .hmType(DesignTokens.TypeScale.body)
                 .foregroundStyle(Color.hmText)
                 .lineLimit(1...6)
+                .accessibilityIdentifier("chat.input")
                 .focused(focused)
                 .submitLabel(.send)
                 .onSubmit(send)
