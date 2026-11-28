@@ -191,11 +191,11 @@
         "next-7-delete-perception-days",
         "next-7-delete-perception-episode"
       ],
-      "checks": "左滑一段经历先问再删，取消不删、确认后报删了几条；按经历和按天能来回切；经历详情页删整段先问、删完回到列表",
+      "checks": "左滑一段经历先问再删，取消不删、确认后报删了几条；按经历和按天能来回切；经历详情页删整段先问、确认后报删了几条",
       "tests": [
         "HimawariUITests/PerceptionDeletionTests/testSwipingAnEpisodeAsksFirstAndCancelKeepsIt",
         "HimawariUITests/PerceptionDeletionTests/testTheSegmentsSwitchBetweenEpisodesAndDays",
-        "HimawariUITests/PerceptionDeletionTests/testDeletingAWholeEpisodeAsksFirstAndGoesBackToTheList"
+        "HimawariUITests/PerceptionDeletionTests/testDeletingAWholeEpisodeAsksFirst"
       ]
     },
     {

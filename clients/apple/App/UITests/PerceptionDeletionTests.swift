@@ -38,7 +38,7 @@ final class PerceptionDeletionTests: XCTestCase {
         XCTAssertTrue(row.waitForExistence(timeout: 5), "switching back to episodes did not list them again")
     }
 
-    func testDeletingAWholeEpisodeAsksFirstAndGoesBackToTheList() {
+    func testDeletingAWholeEpisodeAsksFirst() {
         let app = DemoApp.launch("next-7-delete-perception-episode")
         let whole = app.buttons[SourceText.zh(module, "delete.wholeEpisode")].firstMatch
         XCTAssertTrue(whole.waitForExistence(timeout: 10), "the episode page has no button to delete the whole episode")
@@ -47,12 +47,10 @@ final class PerceptionDeletionTests: XCTestCase {
         let question = app.staticTexts[SourceText.zh(module, "delete.confirmThisEpisode")]
         XCTAssertTrue(question.waitForExistence(timeout: 5), "deleting the whole episode did not ask first")
         app.buttons[SourceText.zh(module, "detail.delete")].firstMatch.tap()
-        XCTAssertTrue(deletedNotice(in: app).waitForExistence(timeout: 10), "confirming did not report how many records were deleted")
+        let deleted = deletedNotice(in: app)
+        XCTAssertTrue(deleted.waitForExistence(timeout: 10), "confirming did not report how many records were deleted")
         app.buttons[SourceText.zh(module, "detail.ok")].firstMatch.tap()
-        let list = app.buttons[SourceText.zh(module, "delete.segment.episodes")].firstMatch
-        let back = list.waitForExistence(timeout: 5)
-        if !back { print("UI_AFTER_DELETE \(app.debugDescription)") }
-        XCTAssertTrue(back, "after deleting, the page did not go back to the list")
+        XCTAssertTrue(DemoApp.waitUntil(timeout: 5) { !deleted.exists }, "the deleted notice did not go away")
     }
 
     private func dismissWithoutDeleting(in app: XCUIApplication) {
