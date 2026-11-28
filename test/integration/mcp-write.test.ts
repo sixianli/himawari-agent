@@ -395,7 +395,6 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     await app.listen({ host: "127.0.0.1", port: 0 });
     await oauth.connect({
       id: CONNECTION_ID,
-      readCeiling: "private",
       pushPolicy: options.direct ? "direct" : "ask",
     });
     const url = new URL(

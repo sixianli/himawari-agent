@@ -3,7 +3,6 @@ import {
   MCP_CONNECTION_ENTRIES,
   MCP_CONNECTION_NAME_MAXIMUM,
   MCP_CONNECTION_PUSH_POLICIES,
-  MCP_CONNECTION_READ_CEILINGS,
   MCP_CONNECTION_REPORTED_CLIENT_MAXIMUM,
   MCP_CONNECTION_STATUSES,
   MCP_USAGE_COUNTERS,
@@ -25,7 +24,6 @@ export interface McpConnectionRow {
   readonly agentId: McpConnectionRecord["agentId"];
   readonly name: string;
   readonly capabilities: string;
-  readonly readCeiling: McpConnectionRecord["readCeiling"];
   readonly pushPolicy: McpConnectionRecord["pushPolicy"];
   readonly status: McpConnectionRecord["status"];
   readonly reportedClient: string | null;
@@ -37,7 +35,7 @@ export interface McpConnectionRow {
 
 export const MCP_CONNECTION_SELECT = `SELECT c.id AS id, c.owner_id AS ownerId,
   c.agent_id AS agentId, c.name AS name, c.capabilities AS capabilities,
-  c.read_ceiling AS readCeiling, c.push_policy AS pushPolicy, c.status AS status,
+  c.push_policy AS pushPolicy, c.status AS status,
   c.reported_client AS reportedClient, c.created_at AS createdAt, c.updated_at AS updatedAt,
   o.client_id AS oauthClientId, c.last_seen_at AS lastSeenAt
   FROM mcp_connections c LEFT JOIN mcp_oauth_clients o ON o.connection_id = c.id`;
@@ -152,8 +150,6 @@ export class SqliteMcpConnectionOperations {
       !validInstant(input.updatedAt) ||
       (input.name !== undefined && !validConnectionName(input.name)) ||
       (input.capabilities !== undefined && !capabilitiesValid(input.capabilities)) ||
-      (input.readCeiling !== undefined &&
-        !oneOf(MCP_CONNECTION_READ_CEILINGS, input.readCeiling)) ||
       (input.pushPolicy !== undefined && !oneOf(MCP_CONNECTION_PUSH_POLICIES, input.pushPolicy)) ||
       (input.status !== undefined && !oneOf(MCP_CONNECTION_STATUSES, input.status))
     )
@@ -164,14 +160,13 @@ export class SqliteMcpConnectionOperations {
       if (current.status === "revoked") return this.fail("PORT_CONFLICT", "MCP_CONNECTION_REVOKED");
       this.database
         .prepare(
-          `UPDATE mcp_connections SET name = ?, capabilities = ?, read_ceiling = ?,
+          `UPDATE mcp_connections SET name = ?, capabilities = ?,
             push_policy = ?, status = ?, updated_at = ?
            WHERE owner_id = ? AND agent_id = ? AND id = ?`,
         )
         .run(
           input.name ?? current.name,
           sortedCapabilities(input.capabilities ?? current.capabilities),
-          input.readCeiling ?? current.readCeiling,
           input.pushPolicy ?? current.pushPolicy,
           input.status ?? current.status,
           input.updatedAt,

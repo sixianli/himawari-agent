@@ -6,7 +6,6 @@ import { fixture } from "./gateway-v2.fixture.ts";
 const approve = {
   grantId: "grant-AAAAAAAAAAAAAAAAAAAAAA",
   name: null,
-  readCeiling: "private",
   pushPolicy: "direct",
   write: true,
 };
@@ -27,7 +26,6 @@ describe("MCP connection gateway messages", () => {
     ["an empty name", { name: "  " }],
     ["a name over 64 characters", { name: "名".repeat(65) }],
     ["a name with a hidden character", { name: "a​b" }],
-    ["the restricted ceiling", { readCeiling: "restricted" }],
     ["an unknown push policy", { pushPolicy: "auto" }],
     ["no write choice", { write: undefined }],
     ["an extra field", { secret: "x" }],

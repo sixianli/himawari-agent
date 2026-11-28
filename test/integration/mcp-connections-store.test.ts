@@ -69,7 +69,6 @@ describe("[P5-B] MCP connection store through the SQLite worker", () => {
         newConnection: {
           id,
           name: input.name ?? "Claude Code",
-          readCeiling: "private",
           pushPolicy: "ask",
         },
         now: NOW,
@@ -86,7 +85,6 @@ describe("[P5-B] MCP connection store through the SQLite worker", () => {
       id: "conn-a",
       name: "Claude Code",
       capabilities: ["mcp"],
-      readCeiling: "private",
       pushPolicy: "ask",
       status: "active",
       reportedClient: null,
@@ -112,7 +110,6 @@ describe("[P5-B] MCP connection store through the SQLite worker", () => {
         newConnection: {
           id,
           name: "x",
-          readCeiling: "private",
           pushPolicy: "ask",
           ...connection,
         } as never,
@@ -128,7 +125,6 @@ describe("[P5-B] MCP connection store through the SQLite worker", () => {
       ["conn-ok", { name: "Claude\u202eCode" }],
       ["conn-ok", { name: "Claude\u{E0001}Code" }],
       ["conn-ok", { name: "\u{1F600}".repeat(65) }],
-      ["conn-ok", { readCeiling: "restricted" }],
       ["conn-ok", { pushPolicy: "sometimes" }],
     ] as const)
       await expect(bind(id, connection)).rejects.toMatchObject({
@@ -274,7 +270,7 @@ describe("[P5-B] MCP connection store through the SQLite worker", () => {
         registration: "dynamic",
         clientName: "Muse",
         redirectUris: ["https://muse.example/callback"],
-        newConnection: { id: "conn-muse", name: "Muse", readCeiling: "private", pushPolicy: "ask" },
+        newConnection: { id: "conn-muse", name: "Muse", pushPolicy: "ask" },
         now: NOW,
       });
       const again = await oauth.bindGrant({
@@ -286,7 +282,6 @@ describe("[P5-B] MCP connection store through the SQLite worker", () => {
         newConnection: {
           id: "conn-other",
           name: "Other",
-          readCeiling: "public",
           pushPolicy: "ask",
         },
         now: LATER,
@@ -304,7 +299,7 @@ describe("[P5-B] MCP connection store through the SQLite worker", () => {
           registration: "metadata_document",
           clientName: "Muse",
           redirectUris: ["https://muse.example/callback"],
-          newConnection: { id: "conn-x", name: "x", readCeiling: "private", pushPolicy: "ask" },
+          newConnection: { id: "conn-x", name: "x", pushPolicy: "ask" },
           now: LATER,
         }),
       ).rejects.toMatchObject({ code: "PORT_CONFLICT" });

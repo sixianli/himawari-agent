@@ -15,8 +15,8 @@ import type {
   StoredOwnerRule,
 } from "@himawari-agent/application";
 import {
-  classificationRank,
   enforceableOwnerRule,
+  isModelVisible,
   parseOwnerRuleParameters,
   ruleBookFor,
 } from "@himawari-agent/application";
@@ -154,12 +154,13 @@ export const TODAY_CONTEXT_SUMMARY_LIMIT = 8;
 export const START_HERE_RULES_CHARACTER_BUDGET = 1_200;
 export const AUTO_FIND_LIMIT = 3;
 const START_HERE_MEMORY_ID_LIMIT = 200;
-export const MCP_READ_DEFAULT_CEILING: McpReadCeiling = "private";
 const SERVER_NAME = "himawari";
 const SERVER_VERSION = "1.0.0";
 const CLIENT_NAME = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,63}/u;
 
 export type McpReadCeiling = Exclude<DataClassification, "restricted">;
+
+const READ_LIMIT: McpReadCeiling = "sensitive";
 
 type Within = <T>(slot: string, operation: () => Promise<T>) => Promise<T>;
 
@@ -623,7 +624,6 @@ export class ProductionMcpRead {
         scopes,
         expiresAt: access.expiresAt,
         extra: {
-          [READ_CEILING_KEY]: connection.readCeiling,
           [ENTRY_KEY]: "oauth" satisfies McpConnectionEntry,
           [PUSH_POLICY_KEY]: connection.pushPolicy,
         },
@@ -762,7 +762,6 @@ export class ProductionMcpRead {
     );
     if (connection === null) return server;
     const userAgent = request?.headers.get("user-agent") ?? null;
-    const ceiling = ceilingOf(context.authInfo);
     for (const tool of this.#readTools)
       server.registerTool(
         tool.name,
@@ -774,7 +773,6 @@ export class ProductionMcpRead {
         async (args: JsonObject, handlerContext) =>
           this.#call(
             tool,
-            ceiling,
             connection,
             clientNameOf(handlerContext.mcpReq.envelope, userAgent),
             args,
@@ -1448,10 +1446,8 @@ export class ProductionMcpRead {
     });
   }
 
-  #reader(
-    ceiling: McpReadCeiling,
-    declared: readonly McpReadSourceName[],
-  ): Partial<McpCeilingReader> {
+  #reader(declared: readonly McpReadSourceName[]): Partial<McpCeilingReader> {
+    const ceiling = READ_LIMIT;
     const sources = this.#options.sources;
     const profile = sources.profile;
     const summaries = sources.summaries;
@@ -1461,9 +1457,9 @@ export class ProductionMcpRead {
       profile: async () => profile?.(ceiling),
       summaries: async ({ days, limit }) =>
         summaries?.({ days, limit, maxClassification: ceiling }),
-      ownerRules: () => ownerRulesWithin(sources, ceiling),
+      ownerRules: () => modelVisibleOwnerRules(sources),
       builtInRules: async () =>
-        sharedRulesWithin((sources.ruleBook ?? ruleBookFor)(await sources.settings()), ceiling),
+        sharedRules((sources.ruleBook ?? ruleBookFor)(await sources.settings())),
       projectNotes: async (input) =>
         (await this.#options.write?.sync?.projectNotes(input, ceiling)) ?? {
           found: false,
@@ -1483,7 +1479,6 @@ export class ProductionMcpRead {
 
   async #call(
     tool: McpReadToolEntry,
-    ceiling: McpReadCeiling,
     connection: ConnectionRef,
     client: string,
     args: JsonObject,
@@ -1493,7 +1488,7 @@ export class ProductionMcpRead {
     const auto = args["auto"] === true;
     await touchMcpConnection(this.#usage, connection.id, client === UNKNOWN_CLIENT ? null : client);
     const trace: ReadTrace = { costMicros: 0, summariesTried: false };
-    const read = this.#reader(ceiling, tool.readCeiling.sources);
+    const read = this.#reader(tool.readCeiling.sources);
     let delivered:
       | {
           readonly text: string;
@@ -1592,7 +1587,6 @@ export class ProductionMcpRead {
   }
 }
 
-const READ_CEILING_KEY = "readCeiling";
 const ENTRY_KEY = "entry";
 const PUSH_POLICY_KEY = "pushPolicy";
 const CALL_KEY = "callKey";
@@ -1637,28 +1631,18 @@ function toolCallOf(body: unknown): { readonly name: string; readonly auto: bool
   };
 }
 
-export function sharedRulesWithin(
-  rules: readonly RuleRecord[],
-  ceiling: McpReadCeiling,
-): readonly SharedRule[] {
+export function sharedRules(rules: readonly RuleRecord[]): readonly SharedRule[] {
   return rules.map((rule) => ({
     rule,
     parameters:
-      rule.sharedParameters &&
-      classificationRank(rule.sharedParameters.classification) <= classificationRank(ceiling)
+      rule.sharedParameters && isModelVisible(rule.sharedParameters.classification)
         ? rule.sharedParameters.values
         : {},
   }));
 }
 
-function ceilingOf(authInfo: AuthInfo | undefined): McpReadCeiling {
-  const value = authInfo?.extra?.[READ_CEILING_KEY];
-  return value === "public" || value === "private" || value === "sensitive" ? value : "public";
-}
-
-async function ownerRulesWithin(
+async function modelVisibleOwnerRules(
   sources: McpReadSources,
-  ceiling: McpReadCeiling,
 ): Promise<readonly StoredOwnerRule[]> {
   const rows = sources.ownerRules ? await sources.ownerRules() : [];
   const memoryIds = [
@@ -1671,11 +1655,7 @@ async function ownerRulesWithin(
   return [...rows]
     .filter(({ sourceMemoryId }) => {
       const classification = sourceMemoryId ? classifications.get(sourceMemoryId) : undefined;
-      return (
-        classification !== undefined &&
-        classification !== "restricted" &&
-        classificationRank(classification) <= classificationRank(ceiling)
-      );
+      return classification !== undefined && isModelVisible(classification);
     })
     .sort((a, b) => compareText(a.ruleId, b.ruleId));
 }

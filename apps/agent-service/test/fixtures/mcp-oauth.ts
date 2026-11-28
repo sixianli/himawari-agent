@@ -2,7 +2,6 @@ import { randomBytes } from "node:crypto";
 import type {
   ClockPort,
   McpConnectionPushPolicy,
-  McpConnectionReadCeiling,
   McpConnectionScope,
   McpConnectionStorePort,
   McpOAuthStorePort,
@@ -24,7 +23,6 @@ export interface McpOAuthFixture {
   readonly connect: (input: {
     readonly id: string;
     readonly name?: string;
-    readonly readCeiling?: McpConnectionReadCeiling;
     readonly pushPolicy?: McpConnectionPushPolicy;
     readonly write?: boolean;
   }) => Promise<{ readonly connectionId: string; readonly token: string }>;
@@ -84,7 +82,6 @@ export function createMcpOAuth(options: {
         newConnection: {
           id: input.id,
           name: input.name ?? input.id,
-          readCeiling: input.readCeiling ?? "private",
           pushPolicy: input.pushPolicy ?? "ask",
         },
         now: options.clock.now(),
