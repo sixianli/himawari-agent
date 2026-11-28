@@ -94,12 +94,12 @@ async function choose(h: H, modelRef: string | null, thinkingLevel: string | nul
 }
 
 describe("[MODELS] the model the owner picks on the phone", () => {
-  it("lists the models the server can use for private messages, in /config", async () => {
+  it("[I-129] lists every chat model the server has, whatever data it was once limited to, in /config", async () => {
     const h = await harness({ chatModels: MODELS });
     const client = await pairAndConfirm(h);
     expect((await config(h, client))["chatModels"]).toEqual({
       defaultRef: "magpie-main",
-      options: [MODELS.catalog[0], MODELS.catalog[1]],
+      options: MODELS.catalog,
     });
     await h.repository.close();
   });
@@ -137,7 +137,7 @@ describe("[MODELS] the model the owner picks on the phone", () => {
     const h = await harness({ chatModels: MODELS });
     const client = await pairAndConfirm(h);
     await createThread(h, "thread-device-models-gone");
-    await choose(h, "public-only", "off");
+    await choose(h, "retired-model", "off");
     expect(
       await say(h, client, "thread-device-models-gone", "device-message-models-03", 1),
     ).toBeNull();
