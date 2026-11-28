@@ -30,7 +30,7 @@
     "check:client-parity": "vitest run --config vitest.workspace.ts --project tooling --project contracts test/tooling/client-parity.test.ts packages/gateway-contracts/test/client-capabilities.contract.test.ts",
     "generate:client-capabilities": "HIMAWARI_WRITE_CLIENT_PARITY=1 vitest run --config vitest.workspace.ts --project tooling test/tooling/client-parity.test.ts",
     "check:conflict-markers": "node scripts/check-conflict-markers.mjs && vitest run --config vitest.workspace.ts --project tooling test/tooling/conflict-markers.test.mjs",
-    "check:incident-gates": "node scripts/check-incident-gates.mjs && vitest run --config vitest.workspace.ts --project tooling test/tooling/incident-gates.test.mjs test/tooling/incident-runs.test.mjs test/tooling/pr-reflection.test.mjs",
+    "check:incident-gates": "node scripts/check-incident-gates.mjs && vitest run --config vitest.workspace.ts --project tooling test/tooling/incident-gates.test.mjs test/tooling/incident-runs.test.mjs test/tooling/pr-reflection.test.mjs test/tooling/pr-safety.test.mjs",
     "check:glossary": "node scripts/check-glossary.mjs",
     "check:meaning-word-lists": "node scripts/check-meaning-word-lists.mjs",
     "check:apple-design": "node clients/apple/scripts/check-design.mjs && vitest run --config vitest.workspace.ts --project tooling test/tooling/apple-design-check.test.mjs test/tooling/apple-attachment-fixture.test.ts test/tooling/apple-icon-consistency.test.mjs",

@@ -1,0 +1,35 @@
+{
+  "areas": [
+    { "name": "记忆系统", "paths": ["packages/memory-engine/"] },
+    {
+      "name": "模型调用、路由和 Agent 循环",
+      "paths": [
+        "packages/runtime-pi/",
+        "packages/prompt-catalog/",
+        "apps/agent-service/src/production-model-",
+        "apps/agent-service/src/production-magpie-models.ts",
+        "apps/agent-service/src/production-device-chat-models.ts"
+      ]
+    },
+    {
+      "name": "权限和授权",
+      "paths": [
+        "packages/runtime-sandbox/",
+        "apps/agent-service/src/owner-",
+        "apps/agent-service/src/production-approval-",
+        "apps/agent-service/src/production-device-action-authorization.ts",
+        "apps/agent-service/src/production-mcp-authorization",
+        "apps/agent-service/src/public-search-authorization.ts",
+        "apps/agent-service/src/workspace-auto-authorization.ts"
+      ]
+    },
+    {
+      "name": "系统主动提醒",
+      "paths": [
+        "apps/agent-service/src/production-proactive.ts",
+        "apps/agent-service/src/production-reminder-"
+      ]
+    },
+    { "name": "数据存储结构", "paths": ["packages/persistence-sqlite/"] }
+  ]
+}
