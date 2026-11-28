@@ -62,7 +62,7 @@ def failure_tail(path, lines=40, width=300):
 
 FAILURE_FILE_SUFFIXES = ('.stderr', '.err', '.log')
 FAILURE_FILE_SKIPPED_DIRECTORIES = {'node_modules', '.git', 'source', 'scratch-failure-files'}
-FAILURE_REPORT_KEYS = ('failure', 'failureCode', 'error', 'errors', 'reason', 'runnerErrors', 'readbackErrors', 'runtimeIntegrityFailure', 'fault')
+FAILURE_REPORT_KEYS = ('failure', 'failureCode', 'failedCondition', 'failureDetail', 'error', 'errors', 'reason', 'runnerErrors', 'readbackErrors', 'runtimeIntegrityFailure', 'fault')
 
 
 def written_files(roots, since_ns, accept):

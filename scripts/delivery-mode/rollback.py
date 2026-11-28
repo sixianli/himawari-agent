@@ -6,7 +6,7 @@ import subprocess
 import sys
 
 HERE = Path(__file__).resolve().parent
-DATABASE_CHANGING_REPORTS = ['step-s4', 'step-s5', 'step-s7_']
+DATABASE_CHANGING_REPORTS = ['step-s4', 'step-s5', 'step-s7_config_apply', 'step-s7_catalog_upgrade', 'step-s7_switch_start']
 RECOVERY_COPY_ACTION = 'S3_COPY51'
 RESTORE_ACTION = 'S9_RAW_RESTORE51'
 CONTROL_ACTION = 'S9_RAW_CONTROL51'

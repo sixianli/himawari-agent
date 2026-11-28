@@ -2328,6 +2328,52 @@ class ServiceReadPrivateJobsTest(unittest.TestCase):
         self.assertNotIn(" /var/lib/himawari/jobs ", source)
 
 
+class MaintenanceFailureDetailTest(unittest.TestCase):
+    def test_I261128_a_maintenance_step_that_fails_before_its_report_names_the_failed_condition(self):
+        source = (PACKET_TEMPLATE / 'maintenance/run-maintenance.mjs').read_text()
+        self.assertIn('_MAINTENANCE_PRECHECK_FAILED ${precheckFailureCode(error)}', source)
+        start = source.index('export function precheckFailureCode')
+        function = source[start:source.index('\n}\n', start) + 3].replace('export function', 'function')
+        script = function + '\n'.join([
+            'import assert from "node:assert/strict";',
+            'const lines = [];',
+            'try { assert.equal(1, 2, "FIRST_MAINTENANCE_STOPPED_AUTHORITY_CHANGED"); } catch (error) { lines.push(precheckFailureCode(error)); }',
+            'const missing = new Error("ENOENT: no such file"); missing.code = "ENOENT"; missing.path = "/var/lib/x.json"; lines.push(precheckFailureCode(missing));',
+            'lines.push(precheckFailureCode(new TypeError("Cannot read properties of undefined")));',
+            'console.log(JSON.stringify(lines));',
+        ])
+        child = subprocess.run(['node', '--input-type=module', '-e', script], capture_output=True, text=True, check=False)
+        self.assertEqual(child.returncode, 0, child.stderr)
+        self.assertEqual(json.loads(child.stdout), ['FIRST_MAINTENANCE_STOPPED_AUTHORITY_CHANGED', 'ENOENT:/var/lib/x.json', 'TypeError'])
+
+    def test_I261128_an_unexpected_s9_control_failure_records_what_failed_and_where(self):
+        import errno
+        import re
+        import traceback
+        relative = 'maintenance/S9-control-files.py'
+        self.assertIn("report['failureDetail'] = unexpected_failure_detail(error)", (PACKET_TEMPLATE / relative).read_text())
+        namespace = execute_definitions(relative, template_definitions(relative, {'unexpected_failure_detail'}), {'errno': errno, 're': re, 'traceback': traceback})
+        detail = namespace['unexpected_failure_detail']
+
+        def raised(error):
+            try:
+                raise error
+            except Exception as caught:
+                return detail(caught)
+
+        missing = raised(FileNotFoundError(errno.ENOENT, 'No such file or directory', '/var/lib/himawari/x.json'))
+        self.assertEqual((missing['type'], missing['errno'], missing['filename']), ('FileNotFoundError', 'ENOENT', '/var/lib/himawari/x.json'))
+        self.assertEqual(raised(KeyError('newUnitSha256'))['key'], 'newUnitSha256')
+        self.assertNotIn('key', raised(KeyError('a sentence with spaces')))
+        self.assertEqual(raised(RuntimeError('FIRST_S9_SOMETHING:detail'))['code'], 'FIRST_S9_SOMETHING:detail')
+        self.assertEqual(raised(ValueError('free text'))['function'], 'raised')
+
+    def test_I261128_step_and_deploy_failure_lines_carry_the_failed_condition(self):
+        for relative in ('packet-template/steps/run-step.py', 'last-failure-report.py'):
+            source = (HERE / relative).read_text()
+            self.assertIn("'failedCondition', 'failureDetail'", source, relative)
+
+
 class QuestionTwelveDownloadRetryTest(unittest.TestCase):
     RELATIVE = 'acceptance/cloud/download-question-12.py'
 

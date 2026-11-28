@@ -174,6 +174,18 @@ class RouteTest(unittest.TestCase):
         (self.root / 'evidence' / 'step-s6_sign-1-result.json').write_text('{}')
         self.assertTrue(remote.untouched(self.plan))
 
+    def test_I261128_a_failed_read_only_database_status_check_only_needs_the_old_release_started(self):
+        (self.root / 'evidence' / 'step-s7_db_status-1795873685446334318-result.json').write_text('{}')
+        self.assertTrue(remote.untouched(self.plan))
+
+    def test_applied_config_needs_the_restore(self):
+        (self.root / 'evidence' / 'step-s7_config_apply-1-started.json').write_text('{}')
+        self.assertFalse(remote.untouched(self.plan))
+
+    def test_catalog_upgrade_needs_the_restore(self):
+        (self.root / 'evidence' / 'step-s7_catalog_upgrade-1-result.json').write_text('{}')
+        self.assertFalse(remote.untouched(self.plan))
+
     def test_started_new_release_needs_the_restore(self):
         (self.root / 'evidence' / 'step-s7_switch_start-1-started.json').write_text('{}')
         self.assertFalse(remote.untouched(self.plan))

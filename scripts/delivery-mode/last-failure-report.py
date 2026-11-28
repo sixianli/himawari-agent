@@ -50,7 +50,7 @@ def report_evidence(directory):
 
 
 SKIPPED_DIRECTORIES = {'node_modules', '.git', 'source', 'scratch-failure-files'}
-REPORT_KEYS = ('failure', 'failureCode', 'error', 'errors', 'reason', 'runnerErrors', 'readbackErrors', 'runtimeIntegrityFailure', 'fault')
+REPORT_KEYS = ('failure', 'failureCode', 'failedCondition', 'failureDetail', 'error', 'errors', 'reason', 'runnerErrors', 'readbackErrors', 'runtimeIntegrityFailure', 'fault')
 
 
 def files_under(root):
