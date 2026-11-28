@@ -506,6 +506,8 @@ public struct ChatView: View {
                 }
             }
         }
+        rows += store.acceptedMessages(in: threadId).map(ChatRow.sent)
+        if store.awaitsReply(in: threadId) { rows.append(.awaiting) }
         if let streaming = store.streamingText(in: threadId) { rows.append(.streaming(streaming)) }
         rows += store.queuedMessages(in: threadId).map(ChatRow.queued)
         if !talkHeard.isEmpty { rows.append(.hearing(talkHeard)) }
@@ -537,6 +539,8 @@ public struct ChatView: View {
             flashes = flashing == message.messageId
         case let .queued(item):
             quote = self.quote(inside: item.message.text)
+        case let .sent(message):
+            quote = self.quote(inside: message.text)
         default:
             break
         }
@@ -788,6 +792,10 @@ struct ChatRowView: View, @MainActor Equatable {
         case let .process(runId, line, failed):
             ProcessRowView(line: line, failed: failed)
                 .task(id: runId) { await actions.showExecution(runId) }
+        case let .sent(message):
+            OwnerBubble(text: message.text, quote: model.quote, maxWidth: model.ownerWidth)
+        case .awaiting:
+            ProcessRowView(line: .thinking, failed: false)
         case let .streaming(text):
             HerBubble(text: text, streaming: true, maxWidth: model.herWidth)
         case let .queued(item):
@@ -859,6 +867,8 @@ enum ChatRow: Identifiable, Equatable {
     case process(runId: String, line: ProcessLine, failed: Bool)
     case streaming(String)
     case queued(OutboxItem)
+    case sent(OutgoingMessage)
+    case awaiting
     case hearing(String)
 
     static let lone = BubblePlacement(timeAbove: nil, gapAbove: .newSpeaker)
@@ -869,6 +879,8 @@ enum ChatRow: Identifiable, Equatable {
         case let .process(runId, _, _): "process:\(runId)"
         case .streaming: "streaming"
         case let .queued(item): "queued:\(item.id)"
+        case let .sent(message): "sent:\(message.messageId)"
+        case .awaiting: "awaiting"
         case .hearing: "hearing"
         }
     }
@@ -882,11 +894,11 @@ enum ChatRow: Identifiable, Equatable {
             case .system: .other
             }
             return BubbleEntry(id: id, speaker: speaker, at: BubbleDates.date(message.committedAt))
-        case .process:
+        case .process, .awaiting:
             return .step(id: id)
         case .streaming:
             return BubbleEntry(id: id, speaker: .her, at: nil)
-        case .queued, .hearing:
+        case .queued, .sent, .hearing:
             return BubbleEntry(id: id, speaker: .owner, at: nil)
         }
     }

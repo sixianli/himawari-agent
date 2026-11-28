@@ -34,6 +34,8 @@ public final class ChatStore {
     public internal(set) var texts: [String: String] = [:]
     public internal(set) var details: [String: ThreadDetail] = [:]
     public internal(set) var queued: [OutboxItem] = []
+    public internal(set) var accepted: [OutgoingMessage] = []
+    private var sending: [String: OutgoingMessage] = [:]
     public internal(set) var streaming: [String: StreamingReply] = [:]
     public internal(set) var connection: ChatConnection = .offline {
         didSet { notice?.connectionChanged(online: connection == .online) }
@@ -192,6 +194,15 @@ public final class ChatStore {
         streaming[threadId].map { !$0.isSettled(in: details[threadId]) } ?? false || (details[threadId]?.runs ?? []).contains(where: \.isWorking)
     }
 
+    public func acceptedMessages(in threadId: String) -> [OutgoingMessage] {
+        accepted.filter { $0.threadId == threadId }
+    }
+
+    public func awaitsReply(in threadId: String) -> Bool {
+        streamingText(in: threadId) == nil
+            && TranscriptLayout.awaitsReply(runs: details[threadId]?.runs ?? [], acceptedNotShown: !acceptedMessages(in: threadId).isEmpty)
+    }
+
     public func workingRun(in threadId: String) -> ThreadRunSummary? {
         details[threadId]?.runs.last(where: \.isWorking)
     }
@@ -224,11 +235,14 @@ public final class ChatStore {
         }
     }
 
-    public func load(_ threadId: String) async {
-        guard !frozen else { return }
+    @discardableResult
+    public func load(_ threadId: String) async -> Bool {
+        guard !frozen else { return false }
+        let acceptedBefore = Set(accepted.filter { $0.threadId == threadId }.map(\.messageId))
         do {
             let detail = try await api.fullThread(threadId)
             details[threadId] = detail
+            accepted.removeAll { acceptedBefore.contains($0.messageId) }
             if let index = threads.firstIndex(where: { $0.threadId == threadId }) {
                 threads[index] = detail.thread
             }
@@ -238,8 +252,10 @@ public final class ChatStore {
                 streaming[threadId] = nil
             }
             persist()
+            return true
         } catch {
             await handle(error)
+            return false
         }
     }
 
@@ -332,7 +348,9 @@ public final class ChatStore {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         let revision = details[threadId]?.thread.revision ?? threads.first(where: { $0.threadId == threadId })?.revision ?? createdRevisions[threadId] ?? 1
-        await outbox.enqueue(OutgoingMessage(messageId: messageId, threadId: threadId, expectedRevision: revision, text: trimmed, createdAt: Date(), spoken: spoken))
+        let message = OutgoingMessage(messageId: messageId, threadId: threadId, expectedRevision: revision, text: trimmed, createdAt: Date(), spoken: spoken)
+        sending[messageId] = message
+        await outbox.enqueue(message)
         await flush()
     }
 
@@ -385,6 +403,20 @@ public final class ChatStore {
                 retryTask?.cancel()
                 retryTask = nil
             }
+            var deliveredThreads: [String] = []
+            for result in results {
+                switch result {
+                case let .delivered(messageId, _):
+                    guard let message = sending.removeValue(forKey: messageId) else { continue }
+                    accepted.append(message)
+                    if !deliveredThreads.contains(message.threadId) { deliveredThreads.append(message.threadId) }
+                case let .rejected(messageId, _):
+                    sending[messageId] = nil
+                case .retryLater:
+                    break
+                }
+            }
+            for threadId in deliveredThreads { await load(threadId) }
             if results.contains(where: { if case .delivered = $0 { true } else { false } }) {
                 await refreshThreads()
             }
