@@ -62,10 +62,12 @@ export type ProductContextBlockKind =
   | "memory-changes"
   | "owner-agenda"
   | "memory"
+  | "conversation-recall"
   | "capability-summary"
   | "runtime-environment";
 
 export const RUNTIME_ENVIRONMENT_BLOCK_REF = "runtime-environment";
+export const CONVERSATION_RECALL_BLOCK_REF = "conversation-recall";
 
 export interface ProductContextBlock {
   readonly kind: ProductContextBlockKind;

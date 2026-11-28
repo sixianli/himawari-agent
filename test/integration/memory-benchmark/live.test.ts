@@ -38,6 +38,7 @@ interface BenchEnvironment {
   readonly HIMAWARI_MEMORY_BENCH_LONGMEMEVAL_PER_TYPE?: string;
   readonly HIMAWARI_MEMORY_BENCH_FULL_CONTEXT?: string;
   readonly HIMAWARI_MEMORY_BENCH_CONVERSATION_TOOLS?: string;
+  readonly HIMAWARI_MEMORY_BENCH_AUTO_TURNS?: string;
   readonly HIMAWARI_MEMORY_BENCH_COST_CAP_USD?: string;
   readonly HIMAWARI_MEMORY_BENCH_SAMPLE_CONCURRENCY?: string;
   readonly HIMAWARI_MEMORY_BENCH_MODEL_CONCURRENCY?: string;
@@ -121,11 +122,13 @@ describe.skipIf(!LIVE)(
         expect(earlier.spentUsd).toBeLessThan(capUsd);
         const fullContext = environment.HIMAWARI_MEMORY_BENCH_FULL_CONTEXT === "1";
         const withConversationTools = environment.HIMAWARI_MEMORY_BENCH_CONVERSATION_TOOLS === "1";
+        const withAutoTurns = environment.HIMAWARI_MEMORY_BENCH_AUTO_TURNS === "1";
         const armsFor = (sample: BenchmarkSample): QuestionOutcome["arm"][] => [
           "memory",
           ...(withConversationTools && sample.benchmark === "longmemeval"
             ? (["memory-conversation"] as const)
             : []),
+          ...(withAutoTurns ? (["memory-auto-turns"] as const) : []),
           ...(fullContext ? (["full-context"] as const) : []),
         ];
         const perType = Number(environment.HIMAWARI_MEMORY_BENCH_LONGMEMEVAL_PER_TYPE ?? 0);
@@ -375,6 +378,49 @@ describe.skipIf(!LIVE)(
                   evidenceStored: evidenceHit(question, stored),
                 });
               }
+              if (armsFor(sample).includes("memory-auto-turns")) {
+                const [store] = ingested;
+                if (!store) throw new Error("BENCH_AUTO_TURNS_STORE");
+                const recalled = await store.recalledTurns(question.question, question.askedAt);
+                const withTurns = memoryAnswerMessages(
+                  sample,
+                  question,
+                  ingested.map((each, index) => ({
+                    ownerName: sample.benchmark === "locomo" ? each.store.ownerName : null,
+                    profile: profiles[index] ?? "",
+                    related: related[index] ?? [],
+                    ...(index === 0 ? { recalledTurns: recalled?.text ?? null } : {}),
+                  })),
+                );
+                const answeredWithTurns = await answerWithConversationTools({
+                  messages: withTurns,
+                  tools: conversationTools(),
+                  chat: (request) =>
+                    client.chat({
+                      ...request,
+                      purpose: `${sample.benchmark}:answer-auto-turns`,
+                      session: `himawari-bench-auto-turns-${sample.id}`,
+                      maxTokens: 400,
+                    }),
+                  runTool: (name, args, callId) => store.conversationTool(name, args, callId),
+                });
+                await record({
+                  ...base,
+                  arm: "memory-auto-turns",
+                  correct: await judge(sample, question, answeredWithTurns.text),
+                  response: answeredWithTurns.text,
+                  contextTokens: answeredWithTurns.promptTokens,
+                  answerMs: answeredWithTurns.ms,
+                  toolCalls: answeredWithTurns.toolCalls,
+                  recalledTurns: recalled !== null,
+                  evidenceRecalled: evidenceHit(question, [
+                    ...related.flat().flatMap(({ sessionIds }) => sessionIds),
+                    ...(recalled?.sessionIds ?? []),
+                    ...answeredWithTurns.sessionIds,
+                  ]),
+                  evidenceStored: evidenceHit(question, stored),
+                });
+              }
               if (!fullContext) return;
               const direct = await client.chat({
                 purpose: `${sample.benchmark}:full-context`,
@@ -445,11 +491,13 @@ describe.skipIf(!LIVE)(
           results: {
             locomo: {
               memory: byBenchmark("locomo", "memory"),
+              memoryAutoTurns: byBenchmark("locomo", "memory-auto-turns"),
               fullContext: byBenchmark("locomo", "full-context"),
             },
             longmemeval: {
               memory: byBenchmark("longmemeval", "memory"),
               memoryConversation: byBenchmark("longmemeval", "memory-conversation"),
+              memoryAutoTurns: byBenchmark("longmemeval", "memory-auto-turns"),
               fullContext: byBenchmark("longmemeval", "full-context"),
             },
           },

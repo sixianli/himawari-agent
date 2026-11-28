@@ -452,6 +452,103 @@ describe("Task 9 Memory and context formation", () => {
     });
   });
 
+  it("[自动原话] brings the recalled old conversations after the memories, records which ones in the trace, and answers without them when recall fails", async () => {
+    const recalled = {
+      payloadRef: "payload-conversation-recall-01",
+      dataClassification: "private" as const,
+      turns: [
+        {
+          conversationId: "thread-books",
+          sequence: 3,
+          day: "2026-08-20",
+          startedAt: "2026-08-20T01:00:00.000Z",
+          preview: "推荐一本科幻小说",
+        },
+      ],
+    };
+    const requests: unknown[] = [];
+    const adapters = createReferenceAdapterSet({ scope: { ownerId: OWNER_ID, agentId: AGENT_ID } });
+    const trace = new SessionTraceRecorder({
+      trace: adapters.trace,
+      artifacts: adapters.runPayloadArtifacts,
+      protector: adapters.payloadProtector,
+      audit: adapters.audit,
+      clock: adapters.clock,
+      ids: adapters.ids,
+    });
+    await seedMemory(adapters.memory, {
+      id: "memory-beef",
+      contentRef: "payload-memory-beef",
+      sourceRef: "trace-user-preference-beef",
+      searchTerms: ["beef"],
+      dataClassification: "private",
+    });
+    const dependencies = {
+      memory: adapters.memory,
+      trace,
+      artifacts: adapters.runPayloadArtifacts,
+      payloads: adapters.payload,
+      protector: adapters.payloadProtector,
+      clock: adapters.clock,
+      ids: adapters.ids,
+    };
+    const formed = await new ContextFormationService({
+      ...dependencies,
+      conversations: {
+        recall: async (input) => {
+          requests.push(input);
+          return recalled;
+        },
+      },
+    }).form(request("user_message"));
+    expect(requests).toEqual([
+      expect.objectContaining({
+        threadId: THREAD_ID,
+        queryRef: "payload-memory-query-01",
+        runId: RUN_ID,
+      }),
+    ]);
+    expect(formed.envelope.contextBlocks.map(({ kind }) => kind)).toEqual([
+      "memory",
+      "conversation-recall",
+      "capability-summary",
+    ]);
+    expect(formed.envelope.contextBlocks[1]).toEqual({
+      kind: "conversation-recall",
+      ref: "conversation-recall",
+      payloadRef: "payload-conversation-recall-01",
+      dataClassification: "private",
+    });
+    expect(formed.injectedContentRefs).toContain("payload-conversation-recall-01");
+    const events = await adapters.trace.readRun(RUN_ID, 0, 10);
+    const final = await adapters.payload.get(events.at(-1)?.payloadRef ?? "missing");
+    if (!final) throw new Error("Expected the context.formed payload");
+    await expect(adapters.payloadProtector.revealForTest(final)).resolves.toMatchObject({
+      conversationRecall: { payloadRef: recalled.payloadRef, turns: recalled.turns },
+    });
+
+    const failed = await new ContextFormationService({
+      ...dependencies,
+      conversations: {
+        recall: async () => {
+          throw new Error("conversation index unavailable");
+        },
+      },
+    }).form({ ...request("user_message"), runId: createRunId("run-context-recall-failed") });
+    expect(failed.envelope.contextBlocks.map(({ kind }) => kind)).toEqual([
+      "memory",
+      "capability-summary",
+    ]);
+
+    const restricted = await new ContextFormationService({
+      ...dependencies,
+      conversations: { recall: async () => ({ ...recalled, dataClassification: "restricted" }) },
+    }).form({ ...request("user_message"), runId: createRunId("run-context-recall-restricted") });
+    expect(
+      restricted.envelope.contextBlocks.some(({ kind }) => kind === "conversation-recall"),
+    ).toBe(false);
+  });
+
   it("[ADR-0286] brings every memory that clears the relevance threshold, with no count cap, and leaves out unrelated ones", async () => {
     const written: DecisionLedgerWrite[] = [];
     const { adapters, service } = createService(undefined, {

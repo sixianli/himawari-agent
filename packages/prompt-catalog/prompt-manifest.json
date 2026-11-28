@@ -1824,5 +1824,15 @@
     "sha256": "33373bc654f29839bcfbc37d7c4b48c301f36760a2c4eb5495ca35ef8f79a1e0",
     "changedIn": "ADR 0313",
     "reason": "新增：app_action 的 run（Code Mode）用到的说明"
+  },
+  "memory.conversation-recall.header": {
+    "sha256": "3760c8e35a53640ed199bc0ec566ae64a37bf075c42d4d9df1d3b57cc2459e27",
+    "changedIn": "自动带上原话",
+    "reason": "新增：每轮自动带上的旧对话原话，第一行说明和每段的抬头"
+  },
+  "memory.conversation-recall.turn": {
+    "sha256": "ec8c4c5d27063f5b40176f4f8ee36d227ffe3fffffa373a0c044a23028b55613",
+    "changedIn": "自动带上原话",
+    "reason": "新增：每轮自动带上的旧对话原话，第一行说明和每段的抬头"
   }
 }

@@ -63,6 +63,7 @@ export interface RunEmbeddingContext {
   readonly dataClassification: NonNullable<MemorySearchRequest["dataClassification"]>;
   readonly signal?: AbortSignal;
   readonly slot: string;
+  readonly skipWhenSlow?: boolean;
 }
 
 export interface MailEmbeddingContext {
@@ -106,7 +107,9 @@ export function createProductionRunMemory(options: {
     operation: () => Promise<T>,
   ) => Promise<T>;
 } {
-  const scope = new AsyncLocalStorage<MemorySearchRequest & { readonly embeddingSlot?: string }>();
+  const scope = new AsyncLocalStorage<
+    MemorySearchRequest & { readonly embeddingSlot?: string; readonly skipWhenSlow?: boolean }
+  >();
   const mailScope = new AsyncLocalStorage<MailEmbeddingContext>();
   const maintenanceScope = new AsyncLocalStorage<MaintenanceEmbeddingContext>();
   const projectionScope = new AsyncLocalStorage<{
@@ -401,7 +404,7 @@ export function createProductionRunMemory(options: {
       } catch (error) {
         if (!(error instanceof Error) || error.message !== EMBEDDING_ATTEMPT_TIMED_OUT) throw error;
         const search = scope.getStore();
-        if (search && search.embeddingSlot === undefined) {
+        if (search && (search.embeddingSlot === undefined || search.skipWhenSlow === true)) {
           skippedSearches.add(search);
           diagnose({
             component: "agent-service",
@@ -443,6 +446,7 @@ export function createProductionRunMemory(options: {
           queryTerms: [],
           limit: 0,
           embeddingSlot: context.slot,
+          ...(context.skipWhenSlow === true ? { skipWhenSlow: true } : {}),
         },
         operation,
       ),

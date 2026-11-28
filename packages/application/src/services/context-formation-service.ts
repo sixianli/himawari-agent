@@ -16,6 +16,7 @@ import type {
   TraceEventId,
 } from "../ports/common.js";
 import {
+  CONVERSATION_RECALL_BLOCK_REF,
   contextArtifactOperationKey,
   isProductContextRunState,
   type ProductContextBlock,
@@ -120,8 +121,39 @@ export interface FormedContext {
   readonly answerLocale: AnswerLocale | null;
 }
 
+export interface ContextConversationRecallRequest {
+  readonly ownerId: OwnerId;
+  readonly agentId: AgentId;
+  readonly runId: RunId;
+  readonly threadId: ThreadId | null;
+  readonly queryRef: PayloadRef;
+  readonly dataClassification: DataClassification;
+  readonly executionLease?: import("../ports/run-dispatch.js").RunExecutionLeaseClaim;
+  readonly signal?: AbortSignal;
+  readonly deadlineAt?: string;
+}
+
+export interface ContextRecalledConversationTurn {
+  readonly conversationId: string;
+  readonly sequence: number;
+  readonly day: string;
+  readonly startedAt: string;
+  readonly preview: string;
+}
+
+export interface ContextConversationRecall {
+  readonly payloadRef: PayloadRef;
+  readonly dataClassification: DataClassification;
+  readonly turns: readonly ContextRecalledConversationTurn[];
+}
+
+export interface ContextConversationRecallPort {
+  recall(request: ContextConversationRecallRequest): Promise<ContextConversationRecall | undefined>;
+}
+
 export interface ContextFormationServiceDependencies {
   readonly memory: Pick<MemoryPort, "search">;
+  readonly conversations?: ContextConversationRecallPort;
   readonly trace: SessionTraceRecorder;
   readonly artifacts: RunPayloadArtifactPort;
   readonly payloads: Pick<PayloadStorePort, "get">;
@@ -228,7 +260,7 @@ export class ContextFormationService implements ContextFormationPort {
       },
     });
 
-    const [profile, found] = await Promise.all([
+    const [profile, found, recalled] = await Promise.all([
       this.dependencies.profile
         ? this.dependencies.profile.compose({
             ownerId: request.ownerId,
@@ -249,7 +281,12 @@ export class ContextFormationService implements ContextFormationPort {
         queryTerms: request.memoryQueryTerms,
         limit: request.memoryLimit,
       }),
+      this.recallConversations(request),
     ]);
+    const conversationRecall =
+      recalled && CLASSIFICATION_RANK[recalled.dataClassification] <= VISIBLE_RANK
+        ? recalled
+        : undefined;
     const profileMemoryIds = new Set<string>(
       profile.blocks.flatMap(({ kind, memoryIds }) =>
         kind === "memory-snapshot" ? [] : memoryIds,
@@ -353,6 +390,7 @@ export class ContextFormationService implements ContextFormationPort {
       ...(request.answerLocalePolicy ? [request.answerLocalePolicy.payloadRef] : []),
       ...profile.blocks.map(({ payloadRef }) => payloadRef),
       ...selected.map(({ contentRef }) => contentRef),
+      ...(conversationRecall ? [conversationRecall.payloadRef] : []),
       ...request.capabilities.map(({ summaryRef }) => summaryRef),
       ...(request.runtimeEnvironmentRef ? [request.runtimeEnvironmentRef] : []),
     ]);
@@ -364,6 +402,7 @@ export class ContextFormationService implements ContextFormationPort {
       allowedSummary,
       selected,
       profile,
+      conversationRecall,
     });
     const contextPayloadRef = this.dependencies.ids.next("payload");
     const protectedContext = await this.dependencies.protector.protect({
@@ -435,6 +474,9 @@ export class ContextFormationService implements ContextFormationPort {
           contentRef,
           sourceRef,
         })),
+        conversationRecall: conversationRecall
+          ? { payloadRef: conversationRecall.payloadRef, turns: conversationRecall.turns }
+          : null,
         capabilities: request.capabilities,
         injectedContentRefs,
         contextEnvelopeRef: contextReceipt.ref,
@@ -459,6 +501,29 @@ export class ContextFormationService implements ContextFormationPort {
       ]),
       answerLocale: request.answerLocalePolicy?.locale ?? null,
     });
+  }
+
+  private async recallConversations(
+    request: ContextFormationRequest,
+  ): Promise<ContextConversationRecall | undefined> {
+    const conversations = this.dependencies.conversations;
+    if (!conversations) return undefined;
+    try {
+      return await conversations.recall({
+        ownerId: request.ownerId,
+        agentId: request.agentId,
+        runId: request.runId,
+        threadId: request.threadId,
+        queryRef: request.memoryQueryRef,
+        dataClassification: request.dataClassification,
+        ...(request.executionLease ? { executionLease: request.executionLease } : {}),
+        ...(request.signal ? { signal: request.signal } : {}),
+        ...(request.deadlineAt ? { deadlineAt: request.deadlineAt } : {}),
+      });
+    } catch (error) {
+      if (request.signal?.aborted) throw error;
+      return undefined;
+    }
   }
 
   private async readSnapshot(
@@ -573,6 +638,7 @@ export class ContextFormationService implements ContextFormationPort {
     readonly allowedSummary: ThreadSummaryRecord | undefined;
     readonly selected: readonly SelectedMemory[];
     readonly profile?: OwnerProfile;
+    readonly conversationRecall?: ContextConversationRecall | undefined;
   }): ProductContextEnvelopeV1 {
     const { request, selectedHistory, allowedSummary, selected } = input;
     const history = selectedHistory.map((message) => ({
@@ -625,6 +691,16 @@ export class ContextFormationService implements ContextFormationPort {
         dataClassification,
         ...(dates ? { dates } : {}),
       })),
+      ...(input.conversationRecall
+        ? [
+            {
+              kind: "conversation-recall" as const,
+              ref: CONVERSATION_RECALL_BLOCK_REF,
+              payloadRef: input.conversationRecall.payloadRef,
+              dataClassification: input.conversationRecall.dataClassification,
+            },
+          ]
+        : []),
       ...request.capabilities.map(({ ref, summaryRef }) => ({
         kind: "capability-summary" as const,
         ref,
@@ -789,6 +865,7 @@ function isProductContextEnvelopeV1(value: unknown): value is ProductContextEnve
       return (
         (item["kind"] === "thread-summary" ||
           item["kind"] === "memory" ||
+          item["kind"] === "conversation-recall" ||
           item["kind"] === "owner-rules" ||
           item["kind"] === "memory-snapshot" ||
           item["kind"] === "owner-profile" ||

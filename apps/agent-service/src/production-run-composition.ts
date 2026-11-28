@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import {
   type ClockPort,
+  type ContextConversationRecallPort,
   ContextFormationService,
   ContextProjectionService,
   type ExecutionLiveFeed,
@@ -152,6 +153,7 @@ export interface ProductionRunCompositionOptions {
   readonly modelRegistry: readonly ModelInvocationAdmissionDescriptor[];
   readonly protector: PayloadProtectorPort;
   readonly memory: Pick<MemoryPort, "search">;
+  readonly conversationRecall?: ContextConversationRecallPort;
   readonly tools: RuntimeToolPort;
   readonly backgroundCommands?: ProductionBackgroundCommands;
   readonly prepareQueuedSandboxExecutions?: (request: RuntimeRequest) => Promise<void>;
@@ -333,6 +335,7 @@ export function createProductionRunComposition(options: ProductionRunComposition
     new ContextFormationService({
       profile,
       memory,
+      ...(options.conversationRecall ? { conversations: options.conversationRecall } : {}),
       trace,
       artifacts,
       payloads,
