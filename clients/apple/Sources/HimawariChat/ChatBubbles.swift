@@ -9,6 +9,7 @@ enum BubbleSide {
 
 struct BubbleBackground: ViewModifier {
     let side: BubbleSide
+    let menu: MessageMenuActions?
 
     @ScaledMetric(relativeTo: .body) private var paddingX = DesignTokens.Chat.bubblePaddingX
     @ScaledMetric(relativeTo: .body) private var paddingY = DesignTokens.Chat.bubblePaddingY
@@ -22,6 +23,7 @@ struct BubbleBackground: ViewModifier {
             .padding(.vertical, paddingY)
             .background(fill, in: shape)
             .menuPreviewShape(shape)
+            .messageMenu(menu)
     }
 }
 
@@ -37,8 +39,8 @@ extension View {
 }
 
 extension View {
-    func bubble(_ side: BubbleSide) -> some View {
-        modifier(BubbleBackground(side: side))
+    func bubble(_ side: BubbleSide, menu: MessageMenuActions? = nil) -> some View {
+        modifier(BubbleBackground(side: side, menu: menu))
     }
 }
 

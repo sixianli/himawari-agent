@@ -1,3 +1,4 @@
+import UIKit
 import XCTest
 
 @MainActor
@@ -17,6 +18,50 @@ final class ChatComposerTests: XCTestCase {
         field.typeText("几点出门")
         XCTAssertTrue(send.waitForExistence(timeout: 5), "typing did not bring up the send button")
         XCTAssertTrue(send.isHittable, "the send button is covered")
+    }
+
+    func testLongPressingTheEmptyInputOffersPaste() {
+        let copied = "周五 9:30 的新干线，12:03 到"
+        UIPasteboard.general.string = copied
+        let app = DemoApp.launch("04-chat")
+        let field = input(in: app)
+        field.press(forDuration: 1.2)
+        let paste = app.descendants(matching: .any).matching(NSPredicate(format: "label IN %@", ["粘贴", "Paste"])).firstMatch
+        XCTAssertTrue(paste.waitForExistence(timeout: 5), "long-pressing the empty chat input did not offer Paste")
+        paste.tap()
+        XCTAssertTrue(DemoApp.waitUntil(timeout: 5) { (field.value as? String) == copied }, "Paste did not put the copied text into the chat input")
+        XCTAssertTrue(app.buttons["chat.send"].firstMatch.waitForExistence(timeout: 5), "the send button did not show after pasting")
+    }
+
+    func testJumpingToTheLatestShowsTheWholeLastMessageAboveTheInputBar() {
+        let app = DemoApp.launch("motion-scroll-under-glass")
+        let jump = app.buttons["chat.jumpLatest"].firstMatch
+        if !jump.waitForExistence(timeout: 12) {
+            for _ in 0..<4 where !jump.exists { app.swipeDown() }
+        }
+        XCTAssertTrue(jump.waitForExistence(timeout: 5), "scrolling up the long chat did not bring up the jump-to-latest button")
+        Thread.sleep(forTimeInterval: 1)
+        jump.tap()
+        XCTAssertTrue(DemoApp.waitUntil(timeout: 5) { !jump.exists }, "the jump-to-latest button stayed after tapping it")
+        let field = input(in: app)
+        let answers = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "8:50 出门"))
+        let lastBottom = answers.allElementsBoundByIndex.filter(\.exists).map(\.frame.maxY).max() ?? 0
+        XCTAssertGreaterThan(lastBottom, 0, "the last answer is not on screen after jumping to the latest")
+        XCTAssertLessThanOrEqual(lastBottom, field.frame.minY, "the end of the last answer is still behind the input bar after jumping to the latest")
+    }
+
+    func testDismissingTheMessageMenuLeavesTheBubbleWhereItWas() {
+        let app = DemoApp.launch("04-chat")
+        let answer = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "8:50 出门")).firstMatch
+        XCTAssertTrue(answer.waitForExistence(timeout: 10), "the answer text is not on screen")
+        XCTAssertTrue(DemoApp.waitUntil(timeout: 5) { answer.isHittable }, "the answer text cannot be touched")
+        let before = answer.frame
+        answer.press(forDuration: 1.5)
+        let copy = app.buttons[SourceText.zh("HimawariChat", "chat.menu.copy")].firstMatch
+        XCTAssertTrue(copy.waitForExistence(timeout: 5), "long-pressing the answer did not open its menu")
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08)).tap()
+        XCTAssertTrue(DemoApp.waitUntil(timeout: 5) { !copy.exists }, "tapping outside did not close the message menu")
+        XCTAssertTrue(DemoApp.waitUntil(timeout: 3) { answer.frame == before }, "the answer did not settle back where it was after the menu closed: \(before) became \(answer.frame)")
     }
 
     func testTheOfflineChatSaysItIsNotConnectedAndTheOnlineChatDoesNot() {

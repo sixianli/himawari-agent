@@ -95,6 +95,7 @@ struct JumpToLatestButton: View {
         .buttonBorderShape(.circle)
         .controlSize(.large)
         .accessibilityLabel(Text(L.text("chat.jumpLatest")))
+        .accessibilityIdentifier("chat.jumpLatest")
     }
 }
 

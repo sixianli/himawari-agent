@@ -126,6 +126,12 @@ db.prepare("INSERT INTO model_invocation_identities VALUES (?, ?, ?, ?, ?)").run
             secretRef: "magpie-token-value-should-not-print",
           },
         ],
+        runPolicy: {
+          publicSearch: {
+            providers: ["exa-public"],
+            providerSecrets: { deepseek: "web-secret-should-not-print" },
+          },
+        },
       }),
     );
     const { child } = run("diagnose", directory, {
@@ -140,6 +146,10 @@ db.prepare("INSERT INTO model_invocation_identities VALUES (?, ?, ?, ?, ?)").run
       'OPS_MODEL_DESCRIPTORS [{"ref":"kimi-chat","role":"primary","provider":"magpie","model":"kimi","allowedDataClassifications":["public","private"]}]',
     );
     expect(child.stdout).not.toContain("magpie-token-value-should-not-print");
+    expect(child.stdout).toContain(
+      'OPS_WEB_ROUTES {"publicSearch":{"providers":["exa-public"]},"publicFetch":null}',
+    );
+    expect(child.stdout).not.toContain("web-secret-should-not-print");
   });
 
   it("counts each device's sense records by day and kind, sealed, without their content", () => {

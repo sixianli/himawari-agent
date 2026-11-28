@@ -1171,6 +1171,8 @@ export async function startTenantRuntime(
     const hostWeb = createConfiguredHostWeb({
       runPolicy: configuration.runPolicy,
       secrets: sources.provider,
+      onReadFailed: (failure) =>
+        writeServiceDiagnostic(errorOutput, { component: "agent-service", ...failure }),
     });
     const hostReadOnlyPort = new DescriptorRelativeReadOnly();
     const computer = await createConfiguredComputerTools(configuration, clock);

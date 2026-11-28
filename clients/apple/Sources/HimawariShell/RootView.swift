@@ -9,7 +9,7 @@ import HimawariShare
 import SwiftUI
 
 public struct HimawariRootView: View {
-    @State private var model = AppModel()
+    @State private var model = AppModel.launched
     @Environment(\.scenePhase) private var scenePhase
 
     public init() {}
