@@ -388,13 +388,7 @@ function focused(
     for (const item of list) {
       if (!isRecord(item)) continue;
       if (targets.some(([key, value]) => item[key] === value || item["id"] === value))
-        return {
-          ...targets.reduce<Record<string, unknown>>(
-            (all, [key, value]) => ({ ...all, [key]: value }),
-            {},
-          ),
-          ...item,
-        };
+        return { ...Object.fromEntries(targets), ...item };
     }
   }
   return snapshot;

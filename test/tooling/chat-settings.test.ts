@@ -12,9 +12,9 @@ import {
   findChatSetting,
   findClientCapability,
   gatewayV2PayloadSchema,
-} from "../src/index.ts";
+} from "../../packages/gateway-contracts/src/index.ts";
 
-const ROOT = fileURLToPath(new URL("../../..", import.meta.url));
+const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const APPLE_SOURCES = join(ROOT, "clients/apple/Sources");
 const SETTINGS_PAGES = join(APPLE_SOURCES, "HimawariManage/Settings");
 

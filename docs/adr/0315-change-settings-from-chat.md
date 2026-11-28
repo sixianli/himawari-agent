@@ -92,7 +92,7 @@ Andy 2026-11-28 17:42 JST 在方案文档 <https://claude.ai/artifact/4ngT3J87EB
 
 ### 门槛
 
-13. 测试 `packages/gateway-contracts/test/chat-settings.contract.test.ts`（CI 的单元测试会跑）：命令表里每条手机能发的 v2 命令都必须在聊天表里有一行，聊天表不能有命令表里没有的类型；设置的读回查询必须是命令表里的查询；删除类、登录类不得登记成第 1、2 档，放宽类不得登记成第 1 档（反向用例）。
+13. 测试 `test/tooling/chat-settings.test.ts`（CI 的工具测试会跑）：命令表里每条手机能发的 v2 命令都必须在聊天表里有一行，聊天表不能有命令表里没有的类型；设置的读回查询必须是命令表里的查询；删除类、登录类不得登记成第 1、2 档，放宽类不得登记成第 1 档（反向用例）。
 14. 同一个测试扫描 iPhone、Mac 设置页（`clients/apple/Sources/HimawariManage/Settings/`）里发的每一条命令，必须登记成设置。
 
 <a id="consequences"></a>
