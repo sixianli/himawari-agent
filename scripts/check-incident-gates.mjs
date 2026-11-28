@@ -121,6 +121,10 @@ function runsAutomatically(relative, runners) {
   return TEST_FILE.test(relative) || runners.includes(relative);
 }
 
+export function runsAutomaticallyIn(root, relative) {
+  return existsSync(path.join(root, relative)) && runsAutomatically(relative, runnerText(root));
+}
+
 export function readCommitIncidents(message) {
   const text = message
     .split("\n")
