@@ -25,12 +25,21 @@ final class SettingsPagesTests: XCTestCase {
                 XCTFail("\(label): tapping the row opened nothing")
                 continue
             }
+            var way = "edge swipe"
             DemoApp.swipeBackFromTheLeftEdge(app)
             if !DemoApp.waitUntil(timeout: 3, { row.isHittable }) {
+                let back = app.navigationBars.firstMatch.buttons.firstMatch
+                if back.exists, back.isHittable {
+                    way = "back button \(back.label)"
+                    back.tap()
+                }
+            }
+            if !DemoApp.waitUntil(timeout: 3, { row.isHittable }) {
+                way = "swipe down"
                 app.swipeDown(velocity: .fast)
             }
-            XCTAssertTrue(DemoApp.waitUntil(timeout: 5) { row.isHittable }, "\(label): neither a swipe from the left edge nor a swipe down went back to the Himawari page")
-            print("UI_ROW_OPENED \(label)")
+            XCTAssertTrue(DemoApp.waitUntil(timeout: 5) { row.isHittable }, "\(label): a swipe from the left edge, the back button and a swipe down all failed to go back to the Himawari page")
+            print("UI_ROW_OPENED \(label) back=\(way)")
         }
     }
 
