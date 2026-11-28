@@ -384,11 +384,48 @@ export const TOOL_RESULT_DEVICE_ACTION_REASON_NOT_DELIVERED = fixedPrompt({
 
 export const TOOL_RESULT_DEVICE_ACTION_REASON_TARGET_UNKNOWN = fixedPrompt({
   id: "tools.result.device-action.reason.target-unknown",
-  purpose: "device_action 结果里的原因：动作指向的东西在设备同步来的数据里找不到时的说明",
+  purpose:
+    "device_action 结果里的原因：动作指向的东西在设备同步来的数据和最近读出的结果里都找不到时的说明",
   usedBy: [ACTIONS_FILE],
   layer: "tool-result",
   output: "free-text",
-  text: "参数里的编号在这台设备同步来的数据里找不到，什么都没有做。先读出这件东西现在的编号再试，不要猜编号。",
+  text: "参数里的编号在这台设备同步来的数据和最近读出的结果里都找不到，什么都没有做。先读出这件东西现在的编号再试，不要猜编号。",
+});
+
+export const TOOL_RESULT_DEVICE_ACTION_USAGE_CALENDAR_READ = fixedPrompt({
+  id: "tools.result.device-action.usage.calendar-read",
+  purpose: "device_action describe 结果里 calendar.read 的用法说明",
+  usedBy: [REGISTRY_FILE],
+  layer: "tool-result",
+  output: "free-text",
+  text: "在设备的日历里读出 from 到 to 之间的日程，时间都是设备当地时间。主人问起安排、要改或删某个日程时先用它：结果 done.events 里每项的 eventId 就是 calendar.update、calendar.delete 要的编号，照抄，不要猜。done.truncated 为 true 表示条目太多没给全，缩短时间范围再读。",
+});
+
+export const TOOL_RESULT_DEVICE_ACTION_USAGE_CALENDAR_CHANGE = fixedPrompt({
+  id: "tools.result.device-action.usage.calendar-change",
+  purpose: "device_action describe 结果里 calendar.update、calendar.delete 的用法说明",
+  usedBy: [REGISTRY_FILE],
+  layer: "tool-result",
+  output: "free-text",
+  text: "eventId 用 calendar.read 结果里那个日程的 eventId；手里没有就先用 calendar.read 读出来，不要找主人要编号。",
+});
+
+export const TOOL_RESULT_DEVICE_ACTION_USAGE_CONTACT_SEARCH = fixedPrompt({
+  id: "tools.result.device-action.usage.contact-search",
+  purpose: "device_action describe 结果里 contact.search 的用法说明",
+  usedBy: [REGISTRY_FILE],
+  layer: "tool-result",
+  output: "free-text",
+  text: "在设备的通讯录里按名字、电话或邮箱查联系人，只返回对得上的人，不会读出整个通讯录。结果 done.contacts 里每项的 contactId 就是 contact.update 要的编号，照抄，不要猜。done.truncated 为 true 表示对得上的人太多没给全，换更具体的查法再查。",
+});
+
+export const TOOL_RESULT_DEVICE_ACTION_USAGE_CONTACT_UPDATE = fixedPrompt({
+  id: "tools.result.device-action.usage.contact-update",
+  purpose: "device_action describe 结果里 contact.update 的用法说明",
+  usedBy: [REGISTRY_FILE],
+  layer: "tool-result",
+  output: "free-text",
+  text: "contactId 用 contact.search 结果里那个人的 contactId；手里没有就先用 contact.search 查出来，不要找主人要编号。",
 });
 
 export const TOOL_RESULT_DEVICE_ACTION_USAGE_DEVICE_REMINDER = fixedPrompt({
