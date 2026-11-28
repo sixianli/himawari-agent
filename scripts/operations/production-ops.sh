@@ -1,0 +1,115 @@
+#!/bin/bash
+set -uo pipefail
+umask 077
+
+action="${1:-}"
+unit="${HIMAWARI_OPS_UNIT:-himawari-prod.service}"
+side_units="${HIMAWARI_OPS_SIDE_UNITS:-magpie.service}"
+node_bin="${HIMAWARI_OPS_NODE:-/opt/himawari/node/bin/node}"
+database="${HIMAWARI_OPS_DATABASE:-/var/lib/himawari/state/data/product.sqlite}"
+public_key="${HIMAWARI_OPS_PUBLIC_KEY:-}"
+lock_file="${HIMAWARI_OPS_LOCK:-}"
+systemctl_bin="${HIMAWARI_OPS_SYSTEMCTL:-systemctl}"
+journalctl_bin="${HIMAWARI_OPS_JOURNALCTL:-journalctl}"
+window="${HIMAWARI_OPS_WINDOW:-3 hours ago}"
+start_wait="${HIMAWARI_OPS_START_WAIT:-120}"
+
+refuse() {
+  echo "OPS_REFUSED $1: $2" >&2
+  exit "${3:-64}"
+}
+
+[[ "$action" == diagnose || "$action" == restart ]] || refuse ACTION_INVALID "only diagnose or restart"
+[[ -n "$public_key" && -s "$public_key" ]] || refuse KEY_MISSING "HIMAWARI_OPS_PUBLIC_KEY must name the public key that seals the full diagnostics" 70
+
+service_line() {
+  echo "OPS_SERVICE $1 $("$systemctl_bin" show "$1" --no-pager -p ActiveState -p SubState -p ActiveEnterTimestamp -p NRestarts -p MainPID -p MemoryCurrent -p TasksCurrent 2>&1 | tr '\n' ' ')"
+}
+
+summary() {
+  service_line "$unit"
+  for side in $side_units; do service_line "$side"; done
+  echo "OPS_HOST load=$(cut -d' ' -f1-3 /proc/loadavg) memory_available_mb=$(awk '/MemAvailable/{print int($2/1024)}' /proc/meminfo) root_free=$(df -h --output=avail / | tail -1 | tr -d ' ')"
+  local errors warnings
+  errors="$("$journalctl_bin" -u "$unit" --since "$window" --no-pager -q -p err 2>/dev/null | wc -l)"
+  warnings="$("$journalctl_bin" -u "$unit" --since "$window" --no-pager -q -p warning 2>/dev/null | wc -l)"
+  echo "OPS_JOURNAL_COUNTS since=\"$window\" err=$errors warning_or_worse=$warnings"
+  local events
+  events="$("$journalctl_bin" -u "$unit" --since "$window" --no-pager -q -o cat 2>/dev/null | grep -oE '"event":"[a-z_.]+"|"code":"[A-Z0-9_]+"|"reasonCode":"[A-Z0-9_]+"|"lastDrop":"[A-Za-z]+"' | sort | uniq -c | sort -rn | head -40 | awk '{print $2 "=" $1}' | tr '\n' ' ')"
+  echo "OPS_JOURNAL_NAMES ${events:-none}"
+  if [[ -x "$node_bin" && -f "$database" ]]; then
+    (cd /tmp && "$node_bin" --no-warnings - "$database" <<'JS'
+const { DatabaseSync } = require("node:sqlite");
+const database = new DatabaseSync(process.argv[2], { readOnly: true });
+const all = (sql, ...values) => {
+  try {
+    return database.prepare(sql).all(...values);
+  } catch (error) {
+    return `ERROR ${error.message}`;
+  }
+};
+const since = new Date(Date.now() - 6 * 3600 * 1000).toISOString();
+const terminal = ["completed", "failed", "cancelled"];
+console.log(`OPS_RUNS_BY_STATUS ${JSON.stringify(all("SELECT status, count(*) AS n FROM runs GROUP BY status ORDER BY status"))}`);
+console.log(`OPS_RUNS_OPEN ${JSON.stringify(all("SELECT id, thread_id, status, created_at, updated_at FROM runs WHERE status NOT IN (?, ?, ?) ORDER BY created_at", ...terminal))}`);
+console.log(`OPS_RUNS_RECENT ${JSON.stringify(all("SELECT id, thread_id, status, created_at, updated_at FROM runs WHERE created_at > ? ORDER BY created_at", since))}`);
+JS
+    ) 2>&1 | cut -c1-6000
+  else
+    echo "OPS_RUNS unavailable node=$node_bin database=$database"
+  fi
+}
+
+sealed() {
+  local work
+  work="$(mktemp -d)"
+  {
+    echo "== $unit since $window"
+    "$journalctl_bin" -u "$unit" --since "$window" --no-pager -q 2>&1 | tail -4000
+    for side in $side_units; do
+      echo "== $side since $window"
+      "$journalctl_bin" -u "$side" --since "$window" --no-pager -q 2>&1 | tail -400
+    done
+    echo "== processes"
+    ps -eo pid,ppid,etimes,pcpu,pmem,stat,comm --sort=-pcpu 2>&1 | head -40
+    echo "== established connections by process"
+    ss -tnpH state established 2>&1 | grep -oE 'users:\(\("[^"]+"' | sort | uniq -c | sort -rn | head -20
+  } > "$work/plain" 2>&1
+  head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' > "$work/key"
+  if openssl enc -aes-256-cbc -pbkdf2 -salt -pass "file:$work/key" -in "$work/plain" -out "$work/body" \
+    && openssl pkeyutl -encrypt -pubin -inkey "$public_key" -pkeyopt rsa_padding_mode:oaep -in "$work/key" -out "$work/key.sealed"; then
+    echo "OPS_SEALED_KEY $(base64 -w0 "$work/key.sealed")"
+    echo "OPS_SEALED_BEGIN"
+    gzip -c "$work/body" | base64 -w 76
+    echo "OPS_SEALED_END bytes=$(wc -c < "$work/plain")"
+  else
+    echo "OPS_SEALED_FAILED openssl could not seal the diagnostics"
+  fi
+  rm -rf "$work"
+}
+
+if [[ "$action" == restart ]]; then
+  if [[ -n "$lock_file" ]]; then
+    exec 9> "$lock_file"
+    flock -n 9 || refuse BUSY "a deploy holds $lock_file; not restarting in the middle of it" 75
+  fi
+  echo "OPS_BEFORE_RESTART"
+  summary
+  sealed
+  "$systemctl_bin" restart "$unit" || refuse RESTART_FAILED "systemctl restart $unit failed" 70
+  deadline=$(( SECONDS + start_wait ))
+  state=""
+  while (( SECONDS < deadline )); do
+    state="$("$systemctl_bin" is-active "$unit" 2>/dev/null || true)"
+    [[ "$state" == active ]] && break
+    sleep 2
+  done
+  [[ "$state" == active ]] || { service_line "$unit"; refuse NOT_ACTIVE "$unit is $state after restart" 70; }
+  echo "OPS_RESTARTED $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  service_line "$unit"
+  exit 0
+fi
+
+summary
+sealed
+echo "OPS_DONE $(date -u +%Y-%m-%dT%H:%M:%SZ)"
