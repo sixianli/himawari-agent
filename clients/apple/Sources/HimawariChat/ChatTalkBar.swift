@@ -117,6 +117,5 @@ public final class DemoVoice: ChatVoiceInput {
     public init() {}
     public func start(onText: @escaping @MainActor (String) -> Void) async throws {}
     public func finish() async -> String { "" }
-    public func cancel() async {}
 }
 #endif

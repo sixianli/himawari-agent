@@ -32,8 +32,6 @@ public struct ChatView: View {
     @State private var attachProblem: String?
     @State private var uploadFailed = false
     @State private var sendRequestId = OutgoingMessage.newId()
-    @State private var hold: HoldPhase?
-    @State private var heard = ""
     @State private var dictating = false
     @State private var dictation = DictationDraft()
     @State private var selecting: SelectableMessage?
@@ -163,14 +161,12 @@ public struct ChatView: View {
                 sending: uploading,
                 hasAttachments: !attachments.isEmpty,
                 voice: voice != nil,
-                hold: hold,
                 dictating: dictating,
                 offline: store.offlineShown,
                 openAttach: attachAction,
                 stop: stopAction,
                 startTalk: talkStarter,
                 toggleDictation: toggleDictation,
-                holdChanged: holdChanged,
                 send: submit
             )
         }
@@ -670,43 +666,6 @@ public struct ChatView: View {
         }
     }
     #endif
-
-    private func holdChanged(_ event: HoldEvent) {
-        guard let voice else { return }
-        switch event {
-        case .began:
-            guard hold == nil else { return }
-            Haptics.shared.report(.holdToTalkStarted)
-            heard = ""
-            hold = .listening("")
-            Task {
-                do {
-                    try await voice.start { text in
-                        heard = text
-                        if case .listening = hold { hold = .listening(text) }
-                    }
-                } catch {
-                    hold = nil
-                }
-            }
-        case let .moved(outside):
-            guard hold != nil else { return }
-            hold = outside ? .cancelling : .listening(heard)
-        case .ended:
-            guard let phase = hold else { return }
-            hold = nil
-            Haptics.shared.report(.holdToTalkReleased)
-            Task {
-                if phase == .cancelling {
-                    await voice.cancel()
-                    return
-                }
-                let said = await voice.finish().trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !said.isEmpty else { return }
-                deliver(said, clearDraft: false)
-            }
-        }
-    }
 
     private func toggleDictation() {
         guard let voice else { return }

@@ -73,16 +73,6 @@ public final class ChatDictation: ChatVoiceInput {
         return said
     }
 
-    public func cancel() async {
-        let pipeline = pipeline
-        stopCapture()
-        onText = nil
-        generation += 1
-        settled = ""
-        pending = ""
-        await pipeline?.cancel()
-    }
-
     private func stopCapture() {
         capture?.stop(deactivate: true)
         capture = nil

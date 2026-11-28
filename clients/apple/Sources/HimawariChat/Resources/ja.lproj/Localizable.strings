@@ -1,5 +1,5 @@
 "chat.back" = "戻る";
-"chat.input.placeholder" = "入力するか、長押しで話す";
+"chat.input.placeholder" = "入力するか、マイクをタップして話す";
 "chat.send" = "送信";
 "chat.queued.sending" = "送信中";
 "chat.queued.failed" = "送信できませんでした";
@@ -40,9 +40,8 @@
 "attach.problem.unreadable" = "このファイルはまだ読めません";
 "attach.problem.location" = "位置を取得できませんでした。位置情報がオンか確認してください";
 "chat.dictate" = "音声入力";
+"chat.dictate.stop" = "音声入力を止める";
 "chat.talk" = "話しかける";
-"chat.hold.hint" = "離すと送信 · 上にスライドで取り消し";
-"chat.hold.cancel" = "離すと取り消し、送りません";
 "chat.stop" = "止める";
 "chat.stop.failed" = "止められませんでした。もう一度お試しください";
 "chat.talk.mute" = "ミュート";

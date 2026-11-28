@@ -1,5 +1,5 @@
 "chat.back" = "返回";
-"chat.input.placeholder" = "打字，或按住说话";
+"chat.input.placeholder" = "打字，或点麦克风说话";
 "chat.send" = "发送";
 "chat.queued.sending" = "发送中";
 "chat.queued.failed" = "没发出去";
@@ -40,9 +40,8 @@
 "attach.problem.unreadable" = "这个文件 Himawari 还看不了";
 "attach.problem.location" = "没拿到位置，看看定位是否打开";
 "chat.dictate" = "听写";
+"chat.dictate.stop" = "停止听写";
 "chat.talk" = "和 Himawari 说话";
-"chat.hold.hint" = "松手发出 · 往上滑取消";
-"chat.hold.cancel" = "松手取消，不发";
 "chat.stop" = "停下";
 "chat.stop.failed" = "没停下来，再试一次";
 "chat.talk.mute" = "静音";

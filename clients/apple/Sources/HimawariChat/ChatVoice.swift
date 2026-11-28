@@ -5,7 +5,6 @@ import SwiftUI
 public protocol ChatVoiceInput: AnyObject, Sendable {
     func start(onText: @escaping @MainActor (String) -> Void) async throws
     func finish() async -> String
-    func cancel() async
 }
 
 public enum TalkPhase: Equatable, Sendable {
@@ -42,15 +41,4 @@ extension EnvironmentValues {
     @Entry public var chatOwnerAwaited = false
     @Entry public var chatStopRun: (@MainActor @Sendable (_ threadId: String, _ run: ThreadRunSummary) async throws -> Void)? = nil
     @Entry public var chatChooseOption: (@MainActor @Sendable (_ threadId: String, _ message: ThreadMessage, _ item: MessageOptions.Item) async throws -> Void)? = nil
-}
-
-enum HoldPhase: Equatable {
-    case listening(String)
-    case cancelling
-}
-
-enum HoldEvent {
-    case began
-    case moved(outside: Bool)
-    case ended
 }
