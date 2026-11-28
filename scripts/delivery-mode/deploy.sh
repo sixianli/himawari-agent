@@ -150,7 +150,7 @@ for action in "${actions[@]}"; do
       echo "DEPLOY_AUTO_RECOVERY_PASSED: the old release is running again"
       result recovered "$action" "$code"
     fi
-    echo "DEPLOY_AUTO_RECOVERY_FAILED: production may be down" >&2
+    echo "DEPLOY_AUTO_RECOVERY_FAILED: the rollback did not finish; see the ROLLBACK_FALLBACK_ lines for whether the old release is running" >&2
     result recovery-failed "$action" "$code"
   fi
   echo "DEPLOY_STEP_PASSED $action"

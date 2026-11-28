@@ -287,10 +287,21 @@ async function main(action) {
     report.failureCode = "__PKT_LABEL_UPPER___DEPLOY_MAINTENANCE_STOPPED";
     const firstLine = error instanceof Error ? error.message.split("\n")[0] : "";
     report.failedCondition = /^[A-Z0-9_]+(:[A-Za-z0-9._-]+)?$/.test(firstLine) ? firstLine : "__PKT_LABEL_UPPER___DEPLOY_MAINTENANCE_UNEXPECTED_FAILURE";
+    report.failureDetail = unexpectedFailureDetail(error);
     const retained = retain(`${action.toLowerCase()}-failure.json`, report);
     process.stdout.write(JSON.stringify({ passed: false, action, failureCode: report.failureCode, evidence: retained }) + "\n");
     process.exitCode = 1;
   }
+}
+
+export function unexpectedFailureDetail(error) {
+  const detail = { code: precheckFailureCode(error) };
+  if (error instanceof Error) {
+    detail.message = error.message.split("\n")[0].replace(/[^A-Za-z0-9 ._:/'"()\[\]{},=<>-]/g, "?").slice(0, 240);
+    const frame = (error.stack ?? "").split("\n").find((line) => /^\s+at .*\.mjs:\d+:\d+\)?$/.test(line));
+    if (frame) detail.frame = frame.trim().replace(/^at /, "").slice(0, 240);
+  }
+  return detail;
 }
 
 export function precheckFailureCode(error) {
