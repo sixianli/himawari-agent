@@ -46,4 +46,19 @@ import Testing
         #expect(entries == [.message(question), .process(runId: "r1")])
         #expect(TranscriptLayout.line(records: nil, runStatus: "accepted") == .thinking)
     }
+
+    @Test func aMessageTheServerAcceptedShowsThinkingBeforeItsRunArrives() {
+        #expect(TranscriptLayout.awaitsReply(runs: [], acceptedNotShown: true))
+        #expect(TranscriptLayout.awaitsReply(runs: [run("r0", "completed")], acceptedNotShown: true))
+    }
+
+    @Test func thinkingIsNotShownTwiceOnceTheRunIsListed() {
+        #expect(!TranscriptLayout.awaitsReply(runs: [run("r1", "accepted")], acceptedNotShown: true))
+        #expect(!TranscriptLayout.awaitsReply(runs: [run("r1", "waiting_for_owner")], acceptedNotShown: true))
+    }
+
+    @Test func nothingSentMeansNoThinkingRow() {
+        #expect(!TranscriptLayout.awaitsReply(runs: [], acceptedNotShown: false))
+        #expect(!TranscriptLayout.awaitsReply(runs: [run("r0", "failed")], acceptedNotShown: false))
+    }
 }

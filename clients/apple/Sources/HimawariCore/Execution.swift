@@ -258,6 +258,10 @@ public enum TranscriptLayout {
         return entries
     }
 
+    public static func awaitsReply(runs: [ThreadRunSummary], acceptedNotShown: Bool) -> Bool {
+        acceptedNotShown && !runs.contains { !ProcessLine.terminalRunStatuses.contains($0.status) }
+    }
+
     public static func line(records: [ExecutionRecord]?, runStatus: String) -> ProcessLine? {
         if ProcessLine.terminalRunStatuses.contains(runStatus), records == nil, !unansweredEndings.contains(runStatus) { return nil }
         let line = ProcessLine.make(records: records ?? [], runStatus: runStatus)
