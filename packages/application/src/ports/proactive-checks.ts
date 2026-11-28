@@ -401,6 +401,8 @@ export interface ProactiveSealPort {
   release(input: ProactiveScope & { readonly refs: readonly string[] }): Promise<void>;
 }
 
+export class ProactiveSourceUnauthorizedError extends Error {}
+
 export type ProactiveFetchResult<Extra = Readonly<Record<string, unknown>>> =
   | {
       readonly kind: "items";
@@ -428,6 +430,14 @@ export interface ProactiveMailReader extends ProactiveSourceReader<ProactiveMail
         readonly threadId: string;
         readonly signal: AbortSignal;
       }) => Promise<readonly ProactiveMailItem[] | undefined>)
+    | undefined;
+  search?:
+    | ((input: {
+        readonly token: string;
+        readonly query: string;
+        readonly limit: number;
+        readonly signal: AbortSignal;
+      }) => Promise<readonly ProactiveMailItem[]>)
     | undefined;
 }
 

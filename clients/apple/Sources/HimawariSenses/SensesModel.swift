@@ -81,6 +81,7 @@ public final class SensesModel {
             if let count = await service.mirrorCount(item) { mirrorCounts[item] = count }
         }
         await resume()
+        await service.retryWaiting()
     }
 
     public func resume() async {

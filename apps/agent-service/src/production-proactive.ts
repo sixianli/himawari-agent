@@ -23,6 +23,7 @@ import {
   type ProactiveDecision,
   ProactiveMailCheckService,
   type ProactiveMailReader,
+  type ProactiveMailReadFailure,
   type ProactiveModelInvoker,
   type ProactiveOverview,
   type ProactiveProgramEntry,
@@ -195,6 +196,7 @@ export interface ProductionProactiveOptions {
   readonly ids: IdGeneratorPort;
   readonly onDecision?: (decision: ProactiveDecision) => void;
   readonly onFailure: (error: unknown) => void;
+  readonly onReadFailed?: (failure: ProactiveMailReadFailure) => void;
 }
 
 export type ProactiveAuthorizationOutcome = "connected" | "denied" | "failed";
@@ -250,6 +252,7 @@ export class ProductionProactive {
       ...(options.ownerRules ? { ownerRuleStore: options.ownerRules } : {}),
       clock: options.clock,
       ids: options.ids,
+      ...(options.onReadFailed ? { onReadFailed: options.onReadFailed } : {}),
     });
     this.#mail = mail;
     const bound = new Map<string, ProactiveSourceRunner>(
@@ -286,6 +289,10 @@ export class ProductionProactive {
 
   readMailThread(threadId: string, signal: AbortSignal) {
     return this.#mail.readThread(threadId, signal);
+  }
+
+  searchMail(query: string, limit: number, signal: AbortSignal) {
+    return this.#mail.searchMail(query, limit, signal);
   }
 
   async #reviewSources() {

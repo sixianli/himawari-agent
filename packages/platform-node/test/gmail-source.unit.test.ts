@@ -1,4 +1,4 @@
-import { flatMailReader } from "@himawari-agent/application";
+import { flatMailReader, ProactiveSourceUnauthorizedError } from "@himawari-agent/application";
 import { describe, expect, it } from "vitest";
 import {
   CALENDAR_READONLY_SCOPE,
@@ -230,6 +230,67 @@ describe("[PG-11] Gmail read-only source", () => {
       "?format=full",
     ]);
     for (const call of gmailCalls) expect(call.method).toBe("GET");
+  });
+
+  it("searches the mailbox with the owner's Gmail query using read-only calls", async () => {
+    const fake = fakeGoogle((url, call) => {
+      if (url.href === "https://oauth2.googleapis.com/token")
+        return json({ access_token: "access-1", expires_in: 3600 });
+      if (call.authorization !== "Bearer access-1") return json({}, 401);
+      if (url.pathname.endsWith("/messages") && url.searchParams.get("q") === "from:tanaka")
+        return json({ messages: [{ id: "m1" }, { id: "m2" }] });
+      if (url.pathname.endsWith("/messages")) return json({});
+      if (url.pathname.endsWith("/messages/m1")) return json(message("m1", ["INBOX"]));
+      if (url.pathname.endsWith("/messages/m2")) return json(message("m2", ["SENT"]));
+      return undefined;
+    });
+    const reader = flatMailReader(
+      createGmailReader({ oauth: oauth(fake.fetch), fetch: fake.fetch }),
+    );
+    const signal = new AbortController().signal;
+    if (!reader.search) throw new Error("expected a search reader");
+    const found = await reader.search({
+      token: "refresh-1",
+      query: "from:tanaka",
+      limit: 5,
+      signal,
+    });
+    expect(found.map(({ messageId, sentByOwner }) => [messageId, sentByOwner])).toEqual([
+      ["m1", false],
+      ["m2", true],
+    ]);
+    expect(await reader.search({ token: "refresh-1", query: "nothing", limit: 5, signal })).toEqual(
+      [],
+    );
+    const gmailCalls = fake.calls.filter(({ url }) =>
+      url.startsWith("https://gmail.googleapis.com/"),
+    );
+    expect(new URL(gmailCalls[0]?.url ?? "").searchParams.get("maxResults")).toBe("5");
+    expect(new URL(gmailCalls[1]?.url ?? "").searchParams.get("format")).toBe("metadata");
+    for (const call of gmailCalls) expect(call.method).toBe("GET");
+  });
+
+  it("[I-129] a search or thread read Gmail refuses with 401 is told apart from other failures, so only an expired sign-in asks the owner to reconnect", async () => {
+    let status = 401;
+    const fake = fakeGoogle((url) => {
+      if (url.href === "https://oauth2.googleapis.com/token")
+        return json({ access_token: "access-1", expires_in: 3600 });
+      return json({}, status);
+    });
+    const reader = flatMailReader(
+      createGmailReader({ oauth: oauth(fake.fetch), fetch: fake.fetch }),
+    );
+    const signal = new AbortController().signal;
+    if (!reader.search || !reader.thread) throw new Error("expected search and thread readers");
+    const input = { token: "refresh-1", query: "from:tanaka", limit: 5, signal };
+    await expect(reader.search(input)).rejects.toBeInstanceOf(ProactiveSourceUnauthorizedError);
+    await expect(
+      reader.thread({ token: "refresh-1", threadId: "t1", signal }),
+    ).rejects.toBeInstanceOf(ProactiveSourceUnauthorizedError);
+    status = 503;
+    const failed = await reader.search(input).catch((error: unknown) => error);
+    expect(failed).not.toBeInstanceOf(ProactiveSourceUnauthorizedError);
+    expect(String(failed)).toContain("GOOGLE_SEARCH_503");
   });
 
   it("[PG-11] reads the connected account address from the Gmail profile", async () => {

@@ -2293,6 +2293,61 @@ describe("[I-129] every device read goes through to the device and back, and wha
     },
   );
 
+  it.each(reads.map((read) => [read.name, read] as const))(
+    "%s that the device could not do is written to the service log for developers",
+    async (_name, read) => {
+      const h = await harness();
+      const client = await pairAndConfirm(h);
+      await supports(h, client, [read.name]);
+      const device = await connectDevice(h, client, () => ({
+        outcome: "failed",
+        readBack: false,
+        reason: "读失败",
+      }));
+      const { act } = setup(h);
+      await addRun(h, "run-1");
+      await act("run-1", { action: read.name, arguments: sampleArguments(read) }).catch(
+        () => undefined,
+      );
+      expect(h.actionReadFailures).toEqual([
+        {
+          event: "device_action.read_failed",
+          action: read.name,
+          deviceId: expect.any(String),
+          outcome: "failed",
+        },
+      ]);
+      await device.close();
+      await h.repository.close();
+    },
+  );
+
+  it("[reverse] a read that succeeded, or a change the device could not make, is not logged as a failed read", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    const read = reads[0];
+    if (!read) throw new Error("no read");
+    await supports(h, client, [read.name, "calendar.create"]);
+    const device = await connectDevice(h, client, (delivery) =>
+      delivery["action"] === read.name
+        ? { outcome: "succeeded", readBack: false, evidence: { done: { items: [] } } }
+        : { outcome: "failed", readBack: false, reason: "没建成" },
+    );
+    const { act } = setup(h);
+    await addRun(h, "run-1");
+    await act("run-1", { action: read.name, arguments: sampleArguments(read) });
+    h.actions.authorization.current = ownerAllows(true);
+    await act("run-1", {
+      action: "calendar.create",
+      arguments: sampleArguments(
+        DEVICE_ACTION_REGISTRY.get("calendar.create") as DeviceActionRegistration,
+      ),
+    }).catch(() => undefined);
+    expect(h.actionReadFailures).toEqual([]);
+    await device.close();
+    await h.repository.close();
+  });
+
   it.each(listed.map((registration) => [registration.name, registration] as const))(
     "%s accepts the id its read listed and refuses one it did not",
     async (_name, registration) => {

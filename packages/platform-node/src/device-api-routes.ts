@@ -71,6 +71,7 @@ import type { DeviceSignInService } from "./device-sign-in.js";
 import {
   type AuthenticatedDeviceRequest,
   type DeviceStreamDiagnostic,
+  deviceReadProblem,
   PAIRED_DEVICE_ERROR_CODES,
   PairedDeviceError,
   type PairedDeviceService,
@@ -138,6 +139,7 @@ export const DEVICE_API_ROUTES = Object.freeze([
   { method: "GET", path: "data-export/archive", signed: true },
   { method: "GET", path: "files/content/{fileId}", signed: true },
   { method: "POST", path: "usage/report", signed: true },
+  { method: "POST", path: "read-problems", signed: true },
   { method: "GET", path: "actions", signed: true },
   { method: "POST", path: "actions/claim", signed: true },
   { method: "POST", path: "actions/result", signed: true },
@@ -1244,6 +1246,14 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
           deviceId: authenticated.device.id,
           body: json(request),
         });
+        return options.sendJson(reply, 200, { accepted: true });
+      });
+
+      device.post("/read-problems", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        const problem = deviceReadProblem(authenticated.device.id, json(request));
+        if (!problem) options.rejectBody(400);
+        options.devices.reportReadProblem(problem, Date.now());
         return options.sendJson(reply, 200, { accepted: true });
       });
 
