@@ -200,6 +200,7 @@ verified_at: "1be7af47faac63474bd1f56d065005155b814a52"
 
 86. **全 App 只有一种强调色：向日葵金。** 开关、选中、“开着”“连着”这类状态字和对勾，iPhone、Mac 和分享面板一律用向日葵金（token `color.sun`，浅色 #9a6200 在白底上 5.1:1、深色 #f2bb4f 在卡片底 #2a2a2a 上 8.2:1，都可以当字用），不用系统默认的绿或蓝。做法是在每个界面的最外层设一次 `.tint(Color.hmSun)`，系统开关和按钮自己跟着变，页面代码里不再单独给开关上色。Andy 2026-11-26 试 build 145 的原话是开关和“连着”都是绿色，要求全 App 统一主题色。【官方】[Color](https://developer.apple.com/design/human-interface-guidelines/color)。门槛：`HimawariDesign` 里删掉了绿色的状态色（[删之前的 `Palette.swift`](https://github.com/sixianli/himawari-agent/blob/e6cf891642639c205adb5c23adec91eca8f98486/clients/apple/Sources/HimawariDesign/Palette.swift)），页面代码写不出绿色状态色。
 87. **规则不放在记忆页里。** 规则是 Andy 给 Himawari 定的硬设定，每次都照做（[产品愿景](product-vision.md) v2.2 起），不是记忆：记忆页只列记住的事，搜索也只搜记忆；规则在 Himawari 页里单独一页“规则”（Mac 侧栏同样一项，`RulesPage`）。本来就是设置的规则（例如勿扰时段）只在对应的设置页里显示，规则页按服务端在那个设置里返回的规则编号把它们拿掉，不在客户端按类型写死。规则详情里“你的原话”和规则本身一字不差时不再重复一遍。做法对照 ChatGPT 和 Claude：两家都把“你自己写给助手的指示”和“助手从对话里记下的东西”分成设置里并排的两项，指示不放进记忆列表（ChatGPT 在 Settings → Personalization 下分 Custom instructions 和 Memory，见 [Custom instructions](https://help.openai.com/en/articles/8096356-chat-preferences-for-chatgpt)、[Memory FAQ](https://help.openai.com/en/articles/8590148-memory-faq)；Claude 在 Settings → Your Claude 下分 preferences 和 memory，见 [chat search and memory](https://support.claude.com/en/articles/11817273-use-claude-s-chat-search-and-memory-to-build-on-previous-context)）。起因是 Andy 2026-11-26 试 build 145 时说记忆页里放“规则”不对（反馈第 26、30 条）。
+88. **Himawari 页只放 Himawari 自己的东西，设置单独一页。** iPhone 上的 Himawari 页分两组：“Himawari 知道的”（记忆、规则、文件、评测）和“Himawari 能替你做的”（定时、连接、别的 agent、允许的事、保险箱）；称呼、模型、通知、隐私、设备、导出、关于收进最下面一行“设置”，点进去是系统导航的下一页（`HerPage` 的 `settingsPage`）。Andy 2026-11-28 在 build 145 设计稿里选的方案 B（见[优秀设计](#good)表）。记忆那一行只写记忆条数，规则数写在规则那一行。
 
 <a id="apple-acceptance"></a>
 
@@ -253,6 +254,9 @@ Andy 批准并明确表示喜欢的设计。每行的原型链接是当时批注
 | 2026-11-12 | “今天”页：左上角一朵细画的向日葵加衬线斜体的 himawari 字样，没有问好和日期；最要紧的一件最大（一句话、来源、两个等宽按钮），其余的事收在一张分组卡片里，再往下是“接下来”和一行感知状态；右下角圆钮是麦克风 | Andy：“可以，我看了，就先这样吧。这一版原型先这样”（在线原型第 32 版）；基线 `docs/assets/apple-clients/2026-11-12-v3/`（2026-11-24 起“今天”页拿掉，见下一行） | 打开就知道哪件事要他定；一个装点的字都没有，品牌只靠左上角那一处 |
 | 2026-11-25 | iPhone 打开就是一个主对话：灵动岛下方一个毛玻璃小圆里是她的向日葵（2026-11-26 取代原来的深色圆底、himawari 字样和暖光），点小圆进她的页面；她忙时标志从中间伸出小点；输入条右下角声波是和她说话；她的话下面竖排可点的选项，要同意的事是主对话里的同意卡片；没有页签栏、“今天”页、对话列表和“新对话” | Andy 2026-11-24 22:29：“按推荐”（去掉今天页等三项）；23:44 嫌箭头入口“没有设计感”后改成头像；2026-11-25 00:06 在六种头像样式里“我选这一个”；原型 <https://claude.ai/artifact/LXSrxAKtr41z2Yz6eJ1Dme>，基线 `docs/assets/apple-clients/2026-11-25-v4/`，[ADR 0258](adr/0258-each-apple-device-plays-to-its-strength.md)、ADR 0285 | 主人只看一个地方；入口就是她本人，不占一条底栏；忙不忙看头像就知道 |
 | 2026-11-25 | 列表行（她的页面和它下面各页）的图标放进浅金圆角方块，对话里的图标仍不加底 | 原型从第 53 版起列表行就是方块底，Andy 2026-11-24 看过说“按推荐”；和 11-12 的“不加底”对不上，由设计线程按原型定 | 像 iPhone 设置 App，一眼分出每一行是什么；对话里不加，免得抢她说的话 |
+| 2026-11-28 | 浅色主题下标志最新长出来的几粒种子用主题深金 `#9a6200`（对白底 4.96:1），其余种子和深色主题不变；标志放在深色圆底上时（Himawari 页头像、聊天头像）仍按深色取色 | Andy 在 build 145 设计稿<https://claude.ai/artifact/9fNkQNTLzZMYBostVkA3HN>里选推荐方案 A | 原来的浅黄 `#ffecaa` 对白底只有 1.15:1，“慢慢长出来”的那几粒看不见；用主题色不另造新颜色 |
+| 2026-11-28 | iPhone 和 Mac 的桌面图标一律深底金花：深色底上一朵向日葵花盘，不加字、不加渐变，浅色和深色外观同一张 | Andy 在同一份设计稿里选推荐方案 A | 和 App 深色主题、灵动岛一致，在什么壁纸上都显眼 |
+| 2026-11-28 | Himawari 页方案 B：只放 Himawari 自己的东西，分“Himawari 知道的”（记忆、规则、文件、评测）和“Himawari 能替你做的”（定时、连接、允许的事、保险箱）两组，通知、隐私、设备、称呼、模型等收进最下面一行“设置” | Andy 在同一份设计稿里选方案 B | 一页一个主题，设置不和 Himawari 的东西混在一起 |
 
 [↑ 返回目录](#contents)
 

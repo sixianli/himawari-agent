@@ -56,21 +56,21 @@ public struct ManageDemoView: View {
         case .ruleDetail:
             NavigationStack { RulesPage(store: ManageDemo.memoryStore(), quietHours: nil, opening: "r1") }
         case .deviceAbilities:
-            her([.devices, .device(ManageDemo.phoneId)])
+            her([.settings, .devices, .device(ManageDemo.phoneId)])
         case .her:
             her([])
         case .herApprovals:
             her([.approvals])
         case .herPrivacy:
-            her([.privacy])
+            her([.settings, .privacy])
         case .herDevices:
-            her([.devices])
+            her([.settings, .devices])
         case .herNotifications:
-            her([.notifications])
+            her([.settings, .notifications])
         case .herAllowances:
             her([.allowances])
         case .herAbout:
-            her([.about])
+            her([.settings, .about])
         case .herAllowancesEmpty:
             her([.allowances], allowances: false)
         case .memoryVersions:
@@ -94,15 +94,15 @@ public struct ManageDemoView: View {
         case .herNoTimers:
             her([], timers: TimersStore(timers: nil))
         case .herName:
-            her([.name], personal: true)
+            her([.settings, .name], personal: true)
         case .herModel:
-            her([.model], personal: true)
+            her([.settings, .model], personal: true)
         case .herTransfer:
-            her([.transfer])
+            her([.settings, .transfer])
         case .herImportPreview:
-            her([.transfer, .importPreview], memoryImport: ManageDemo.previewedImport())
+            her([.settings, .transfer, .importPreview], memoryImport: ManageDemo.previewedImport())
         case .herServerStatus:
-            her([.about, .serverStatus])
+            her([.settings, .about, .serverStatus])
         case .herAllowanceDays:
             AllowanceDaysSheet(days: 7) { _ in }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
