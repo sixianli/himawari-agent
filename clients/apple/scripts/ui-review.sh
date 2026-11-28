@@ -10,12 +10,13 @@ device_name="Himawari 390pt"
 device_type="com.apple.CoreSimulator.SimDeviceType.iPhone-16e"
 expected_width=1170
 only=""
+text_size=""
 calm_below=40
 calm_patience=600
 prompt_wait=5
 
 usage() {
-  echo "usage: clients/apple/scripts/ui-review.sh [--check | --approve] [--out DIR] [--only SCENE,SCENE]" >&2
+  echo "usage: clients/apple/scripts/ui-review.sh [--check | --approve] [--out DIR] [--only SCENE,SCENE] [--text-size UICTContentSizeCategory...]" >&2
   exit 2
 }
 
@@ -25,6 +26,7 @@ while [ $# -gt 0 ]; do
     --approve) mode="approve"; shift ;;
     --out) [ $# -ge 2 ] || usage; out="$2"; shift 2 ;;
     --only) [ $# -ge 2 ] || usage; only=",$2,"; shift 2 ;;
+    --text-size) [ $# -ge 2 ] || usage; text_size="$2"; shift 2 ;;
     *) usage ;;
   esac
 done
@@ -37,6 +39,9 @@ for scene in "${scenes[@]}"; do
   case "$scene" in motion-*) ;; *) warm_up="$scene"; break ;; esac
 done
 [ -n "$warm_up" ] || { echo "UI_REVIEW_FAILED no still demo scene to warm up with" >&2; exit 1; }
+if [ -n "$text_size" ] && [ "$mode" != "record" ]; then
+  echo "UI_REVIEW_FAILED --text-size works only when recording; --check and --approve compare against the default size" >&2; exit 1
+fi
 if [ -n "$only" ]; then
   [ "$mode" = "record" ] || { echo "UI_REVIEW_FAILED --only works only when recording; --check and --approve need every scene" >&2; exit 1; }
   chosen=()
@@ -176,7 +181,8 @@ marker=""
 launch() {
   [ -z "$marker" ] || rm -f "$marker"
   xcrun simctl launch --terminate-running-process "$udid" "$bundle" \
-    -HimawariDemoScene "$1" -AppleLanguages "(zh-Hans)" -AppleLocale zh_CN >/dev/null
+    -HimawariDemoScene "$1" -AppleLanguages "(zh-Hans)" -AppleLocale zh_CN \
+    ${text_size:+-UIPreferredContentSizeCategoryName "$text_size"} >/dev/null
 }
 
 shown() {
