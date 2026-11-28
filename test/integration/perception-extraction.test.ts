@@ -357,20 +357,18 @@ describe("[iOS-5] perception extraction turns a finished episode into memories a
     );
   });
 
-  it("never sends a card number to the model and refuses a candidate built on the masked part", async () => {
+  it("[I-129] never sends a password to the model and refuses a candidate built on the masked part", async () => {
     const s = await setup();
-    const said = owner(s.h, "我的银行卡号是 4111 1111 1111 1111 你记一下");
+    const said = owner(s.h, "我的网银密码：Qz7mWx42Lp 你记一下");
     await ingest(s.h, s.client, [said]);
     s.closeEpisode();
     s.scripted.replies.push(
       reply({
-        candidates: [
-          candidate("主人的银行卡号是 4111 1111 1111 1111", "4111 1111 1111 1111", [said.id]),
-        ],
+        candidates: [candidate("主人的网银密码是 Qz7mWx42Lp", "Qz7mWx42Lp", [said.id])],
       }),
     );
     const report = await s.service.runOnce();
-    expect(s.scripted.prompts[0]).not.toContain("4111 1111 1111 1111");
+    expect(s.scripted.prompts[0]).not.toContain("Qz7mWx42Lp");
     expect(report).toMatchObject({ memories: 0, tentative: 0, discarded: 1 });
     expect(await s.memories()).toEqual([]);
   });

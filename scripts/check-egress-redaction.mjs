@@ -167,13 +167,6 @@ export const SENSITIVE_GATE_CALLS = Object.freeze([
       "不是发给模型的出口：其他 agent 经 MCP 提议的记忆正文里有令牌、私钥这类机器密钥时拒收，密钥不该当成记忆存下（ADR 0228 决定 3）",
   },
   {
-    file: "apps/agent-service/src/production-memory-control.ts",
-    calls: { containsRestrictedIdentifier: 1 },
-    decision: KEEP,
-    reason:
-      "不是发给模型的出口：导入预览里像密码、证件号的条目只标成“默认不导入”、按机密级别存引用、不交给分类模型；用户仍可以手动勾选导入，不整段拒收",
-  },
-  {
     file: "packages/platform-node/src/files/pi-output-export.ts",
     calls: { containsToolOutputSecret: 1 },
     decision: MASK,

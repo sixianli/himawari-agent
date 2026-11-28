@@ -22,9 +22,8 @@ import {
   TOOL_REMINDER_SET,
   TOOL_RESULT_REMINDER_SET,
 } from "@himawari-agent/prompt-catalog";
-import { classificationWithIdentifiers } from "@himawari-agent/sensitive-capture";
-import { reminderSchedule } from "./production-memory-capture.js";
 import { externalContentSourceRefs } from "./context-external-content.js";
+import { reminderSchedule } from "./production-memory-capture.js";
 
 export const REMINDER_SET_CAPABILITY_REF = "reminder.set";
 export const REMINDER_LIST_CAPABILITY_REF = "reminder.list";
@@ -231,7 +230,7 @@ export class ProductionReminderWriter {
           ...this.#scope(),
           ref: contentRef,
           contentType: "text/plain",
-          dataClassification: classificationWithIdentifiers(text, "private"),
+          dataClassification: "private",
           plaintext: new TextEncoder().encode(text),
           createdAt: now,
         }),

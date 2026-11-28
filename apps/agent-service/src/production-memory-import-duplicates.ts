@@ -10,7 +10,7 @@ import {
   type HostProviderSecretSource,
   MemoryImportDuplicateDecision,
 } from "@himawari-agent/platform-node";
-import { deterministicallySensitive } from "./production-memory-classification.js";
+import { looksLikeCredential } from "./production-memory-classification.js";
 import { resolveConfiguredSecretRequirement } from "./production-model-composition.js";
 
 export interface ImportDuplicateExisting {
@@ -119,9 +119,9 @@ export class ProductionImportDuplicateChecker {
     const results: ImportDuplicateResult[] = candidates.map(() => SKIPPED);
     const asked: number[] = [];
     for (const [index, text] of candidates.entries())
-      if (!deterministicallySensitive(text)) asked.push(index);
+      if (!looksLikeCredential(text)) asked.push(index);
     const known = existing
-      .filter(({ text }) => !deterministicallySensitive(text))
+      .filter(({ text }) => !looksLikeCredential(text))
       .slice(0, this.#settings.maximumExistingMemories)
       .map(({ memoryId, text }, position) => ({ key: `m${position}`, memoryId, text }));
     if (known.length === 0) {

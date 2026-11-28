@@ -20,8 +20,8 @@ import type {
   ThreadRepositoryPort,
 } from "@himawari-agent/application";
 import {
-  type DurableSchedule,
   classificationRank,
+  type DurableSchedule,
   evaluateDurableSchedule,
   highestClassification,
 } from "@himawari-agent/application";
@@ -59,7 +59,6 @@ import {
   TOOL_VIEW_SUBTHREAD,
   TOOL_WAIT_RESULT,
 } from "@himawari-agent/prompt-catalog";
-import { classificationWithIdentifiers } from "@himawari-agent/sensitive-capture";
 import type { ContextExternalContent } from "./context-external-content.js";
 import type { InboxSourceRegistry, ProductionInbox } from "./production-inbox.js";
 import type { ProductionMainThread } from "./production-main-thread.js";
@@ -1028,9 +1027,7 @@ export class ProductionSubthreads {
   }
 
   async #put(ref: string, text: string, floor: DataClassification = "private") {
-    const dataClassification = highestClassification(floor, [
-      classificationWithIdentifiers(text, "private"),
-    ]);
+    const dataClassification = highestClassification(floor, ["private"]);
     if (!(await this.#options.payloads.get(ref as never)))
       await this.#options.payloads.put(
         await this.#options.protector.protect({

@@ -427,8 +427,8 @@ describe.each(["worker", "direct"] as const)(
         ]);
         expect(output?.candidates[2]).toMatchObject({
           kind: "commitment",
-          contentRef: null,
-          status: "awaiting_sensitive_approval",
+          contentRef: expect.any(String),
+          status: "candidate",
         });
         expect(await durableState.readOutput(requested.generationId)).toEqual(output);
         expect(await durableState.latestSummary(THREAD_ID)).toEqual(output?.summary);

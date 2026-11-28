@@ -290,7 +290,7 @@ describe.each(["worker", "direct"] as const)("thread prompt bundles through %s",
        FROM thread_prompt_bundles WHERE generation = ${generation}`,
     );
 
-  it("[ADR-0188] gives a new conversation the current masking ruleset and an existing one the old ruleset", async () => {
+  it("[ADR-0188][I-129] gives a new conversation and an existing one the current masking ruleset", async () => {
     const fresh = await fixture();
     try {
       const first = await fresh.service.resolve(input("first"));
@@ -302,8 +302,8 @@ describe.each(["worker", "direct"] as const)("thread prompt bundles through %s",
     const existing = await fixture();
     try {
       const first = await existing.service.resolve(input("first", { hasHistory: true }));
-      expect(first?.redactionRuleset).toBe(1);
-      expect(rulesetOf(existing, 1)).toBe(1);
+      expect(first?.redactionRuleset).toBe(EGRESS_RULESET_CURRENT);
+      expect(rulesetOf(existing, 1)).toBe(EGRESS_RULESET_CURRENT);
       const renewed = await existing.service.resolve(
         input("second", { toolNames: ["read", "memory_recall", "web_search"] }),
       );
@@ -321,8 +321,8 @@ describe.each(["worker", "direct"] as const)("thread prompt bundles through %s",
       const lowered = await resource.service.resolve(
         input("second", { request: { dataClassification: "public" } }),
       );
-      expect(lowered).toMatchObject({ generation: 2, redactionRuleset: 1 });
-      expect(rulesetOf(resource, 2)).toBe(1);
+      expect(lowered).toMatchObject({ generation: 2, redactionRuleset: EGRESS_RULESET_CURRENT });
+      expect(rulesetOf(resource, 2)).toBe(EGRESS_RULESET_CURRENT);
       expect(resource.rows().map(({ origin }) => origin)).toEqual([
         "rollout",
         "classification_lower",
@@ -349,22 +349,52 @@ describe.each(["worker", "direct"] as const)("thread prompt bundles through %s",
     }
   });
 
-  it("[ADR-0188] reads a bundle saved before the field existed as the old ruleset and does not renew it", async () => {
+  const storeRuleset = (databasePath: string, sql: string) => {
+    const writer = openQualifiedDatabase(databasePath);
+    try {
+      writer.exec(sql);
+    } finally {
+      writer.close();
+    }
+  };
+
+  it("[ADR-0188][I-129] reads a bundle saved before the field existed as the old ruleset and moves it to the current one once", async () => {
     const resource = await fixture();
     try {
       await resource.service.resolve(input("first"));
-      const writer = openQualifiedDatabase(resource.databasePath);
-      try {
-        writer.exec(
-          "UPDATE thread_prompt_bundles SET identity_json = json_remove(identity_json, '$.redactionRuleset')",
-        );
-      } finally {
-        writer.close();
-      }
+      storeRuleset(
+        resource.databasePath,
+        "UPDATE thread_prompt_bundles SET identity_json = json_remove(identity_json, '$.redactionRuleset')",
+      );
       const again = await resource.service.resolve(input("second"));
-      expect(again).toMatchObject({ generation: 1, redactionRuleset: 1 });
-      expect(resource.rows()).toHaveLength(1);
-      expect(resource.traces).toEqual([]);
+      expect(again).toMatchObject({ generation: 2, redactionRuleset: EGRESS_RULESET_CURRENT });
+      const third = await resource.service.resolve(input("third"));
+      expect(third).toMatchObject({ generation: 2, redactionRuleset: EGRESS_RULESET_CURRENT });
+      expect(resource.rows().map(({ origin }) => origin)).toEqual([
+        "new_thread",
+        "rebuild_requested",
+      ]);
+    } finally {
+      await resource.repository.close();
+    }
+  });
+
+  it("[I-129] moves a conversation still masking card and identity numbers to the current ruleset on its next turn, once", async () => {
+    const resource = await fixture();
+    try {
+      await resource.service.resolve(input("first"));
+      storeRuleset(
+        resource.databasePath,
+        "UPDATE thread_prompt_bundles SET identity_json = json_set(identity_json, '$.redactionRuleset', 2)",
+      );
+      const pinned = await resource.service.resolve(input("first"));
+      expect(pinned).toMatchObject({ generation: 1, redactionRuleset: 2 });
+      const next = await resource.service.resolve(input("second"));
+      expect(next).toMatchObject({ generation: 2, redactionRuleset: EGRESS_RULESET_CURRENT });
+      const after = await resource.service.resolve(input("third"));
+      expect(after?.generation).toBe(2);
+      expect(rulesetOf(resource, 2)).toBe(EGRESS_RULESET_CURRENT);
+      expect(resource.traces).toHaveLength(1);
     } finally {
       await resource.repository.close();
     }

@@ -3025,7 +3025,9 @@ export async function startTenantRuntime(
             ({ ref, purpose }) => ref === webPushConfiguration.secretRef && purpose === "web-push",
           )
         : undefined;
-      if (webPushConfiguration && webPushSecret && episodeProtector) {
+      const notificationsConfigured =
+        (webPushConfiguration && webPushSecret) || configuration.runPolicy?.applePush;
+      if (notificationsConfigured && episodeProtector) {
         const pushRepository = repository;
         const messageUrgency = async (messageId: string) =>
           (
@@ -3116,10 +3118,17 @@ export async function startTenantRuntime(
           agentId: configuration.agentId,
           messageUrgency,
           store: pushRepository.webPush(),
-          sender: createWebPushSender({
-            privateKey: await pushSources.keys.resolve(webPushSecret.ref, webPushSecret.version),
-            subject: webPushConfiguration.subject,
-          }),
+          ...(webPushConfiguration && webPushSecret
+            ? {
+                sender: createWebPushSender({
+                  privateKey: await pushSources.keys.resolve(
+                    webPushSecret.ref,
+                    webPushSecret.version,
+                  ),
+                  subject: webPushConfiguration.subject,
+                }),
+              }
+            : {}),
           presence: webPushPresence,
           readLocale: async () =>
             (

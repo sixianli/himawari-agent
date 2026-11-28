@@ -2,15 +2,15 @@ import { createHash, randomUUID } from "node:crypto";
 import {
   ApplicationPortError,
   type ClockPort,
-  MEMORY_CATEGORIES,
   type McpConnectionEntry,
+  type McpMemorySyncStorePort,
   type McpSyncDeleteStatus,
   type McpSyncItemStatus,
   type McpSyncLimits,
   type McpSyncPushDelete,
   type McpSyncPushItem,
-  type McpMemorySyncStorePort,
   type McpUsageCounter,
+  MEMORY_CATEGORIES,
   type PayloadProtectorPort,
   type PayloadStorePort,
   PORT_ERROR_CODES,
@@ -23,7 +23,6 @@ import { mcpUsageDay } from "./production-mcp-connections.js";
 import {
   EXTERNAL_PROPOSAL_PENDING_CONTENT_PREFIX,
   type ExternalProposalCategory,
-  proposalClassification,
 } from "./production-mcp-memory-writer.js";
 
 export const MCP_SYNC_CONTENT_PREFIX = "memory-content:mcp-sync:";
@@ -401,7 +400,7 @@ export class ProductionMcpSync {
       stableId: id.value,
       kind,
       category,
-      classification: proposalClassification(text, category as ExternalProposalCategory),
+      classification: "private",
       text,
       digest: sha256(text),
     };

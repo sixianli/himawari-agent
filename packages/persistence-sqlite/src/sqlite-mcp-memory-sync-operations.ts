@@ -707,11 +707,9 @@ export class SqliteMcpMemorySyncOperations {
     const state =
       approval === "declined"
         ? STATE_REFUSED
-        : item.classification === "sensitive"
-          ? STATE_AWAITING_CONFIRMATION
-          : approval === "approved"
-            ? STATE_ACTIVE
-            : STATE_AWAITING_APPROVAL;
+        : approval === "approved"
+          ? STATE_ACTIVE
+          : STATE_AWAITING_APPROVAL;
     const itemStatus = (changed: boolean): McpSyncItemStatus =>
       state === STATE_ACTIVE
         ? changed
@@ -719,11 +717,9 @@ export class SqliteMcpMemorySyncOperations {
             ? "saved"
             : "updated"
           : "unchanged"
-        : state === STATE_AWAITING_CONFIRMATION
-          ? "pending"
-          : state === STATE_REFUSED
-            ? "declined_before"
-            : "awaiting_project_approval";
+        : state === STATE_REFUSED
+          ? "declined_before"
+          : "awaiting_project_approval";
     if (existing !== undefined && existing.textSha256 === item.textSha256) {
       const keep =
         existing.state === STATE_DELETED || existing.state === STATE_REFUSED
@@ -931,12 +927,7 @@ export class SqliteMcpMemorySyncOperations {
     );
     let changed = 0;
     for (const row of rows) {
-      const state =
-        input.decision === "decline"
-          ? STATE_REFUSED
-          : row.classification === "sensitive"
-            ? STATE_AWAITING_CONFIRMATION
-            : STATE_ACTIVE;
+      const state = input.decision === "decline" ? STATE_REFUSED : STATE_ACTIVE;
       changed += move.run(
         state,
         row.entryId,
