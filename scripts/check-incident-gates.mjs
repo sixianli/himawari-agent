@@ -16,7 +16,10 @@ export const REPEAT_LIMIT = 2;
 export const RULE_FILE = "scripts/check-incident-gates.mjs";
 export const RULE_MARK = "INCIDENT_TRAILER_MISSING";
 export const PREMISE_MARK = "INCIDENT_PREMISE_MISSING";
-const INCIDENT_ID = /^I-\d{2,}$/;
+export const HAND_PICKED_MARK = "INCIDENT_ID_HAND_PICKED";
+export const INCIDENT_ID_SOURCE = "I-(?:\\d{6}-[a-z0-9]{4}|\\d{2,})";
+export const INCIDENT_ID = new RegExp(`^${INCIDENT_ID_SOURCE}$`);
+export const GENERATED_INCIDENT_ID = /^I-\d{6}-[a-z0-9]{4}$/;
 const INCIDENT_LINE = /^Incident:[ \t]*(.*?)[ \t]*$/gm;
 const FOLLOW_UP_LINE = /^Incident-follow-up:[ \t]*(.*?)[ \t]*$/gm;
 const PREMISE_LINE = /^Premise:[ \t]*\S/m;
@@ -67,7 +70,7 @@ export function checkIncidentGates({ root = repositoryRoot } = {}) {
   const seen = new Set();
   for (const incident of incidents) {
     const where = incident.id || "(no id)";
-    if (!/^I-\d{2,}$/.test(incident.id)) errors.push(`INCIDENT_ID_INVALID ${where}`);
+    if (!INCIDENT_ID.test(incident.id ?? "")) errors.push(`INCIDENT_ID_INVALID ${where}`);
     if (seen.has(incident.id)) errors.push(`INCIDENT_ID_REPEATED ${where}`);
     seen.add(incident.id);
     if (!/^\d{4}-\d{2}-\d{2}/.test(incident.date ?? ""))
@@ -198,6 +201,47 @@ function countsAt(root, sha) {
   return new Map(readIncidents(text).incidents.map((incident) => [incident.id, incident.count]));
 }
 
+function introducedBy(root, id) {
+  const found = git(root, [
+    "log",
+    "--reverse",
+    "--format=%H",
+    "-S",
+    `| ${id} |`,
+    "HEAD",
+    "--",
+    INCIDENT_LIST,
+  ])
+    .split("\n")
+    .filter(Boolean);
+  return found[0] ?? "";
+}
+
+function isAncestor(root, ancestor, descendant) {
+  try {
+    git(root, ["merge-base", "--is-ancestor", ancestor, descendant]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function handPickedIds({ root = repositoryRoot, incidents } = {}) {
+  const activation = ruleActivation(root, HAND_PICKED_MARK);
+  if (!activation) return [];
+  const legacy = countsAt(root, activation);
+  const errors = [];
+  for (const { id } of incidents) {
+    if (!id || GENERATED_INCIDENT_ID.test(id) || legacy.has(id)) continue;
+    const introduced = introducedBy(root, id);
+    if (introduced && !isAncestor(root, activation, introduced)) continue;
+    errors.push(
+      `${HAND_PICKED_MARK} ${id} new incidents take an id from npm run incident:new -- <现象>, so two threads never pick the same number`,
+    );
+  }
+  return errors;
+}
+
 export function checkIncidentHistory({ root = repositoryRoot, incidents } = {}) {
   const errors = [];
   try {
@@ -211,6 +255,7 @@ export function checkIncidentHistory({ root = repositoryRoot, incidents } = {}) 
   const table = new Map(
     incidents.map((incident) => [incident.id, Number.parseInt(incident.count ?? "", 10)]),
   );
+  errors.push(...handPickedIds({ root, incidents }));
   const required = requiredCommits(root, ruleActivation(root, RULE_MARK));
   const premiseRequired = requiredCommits(root, ruleActivation(root, PREMISE_MARK));
   const log = git(root, ["log", "--no-merges", "--format=%H%x00%ce%x00%B%x1e", "HEAD"]);
@@ -273,8 +318,13 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     if (!merging) {
       const { incidents, errors: listErrors } = checkIncidentGates();
       const counts = new Map(incidents.map((incident) => [incident.id, incident.count]));
+      let picked = [];
+      try {
+        picked = handPickedIds({ incidents });
+      } catch {}
       const errors = [
         ...listErrors,
+        ...picked,
         ...checkCommitMessage(readFileSync(argumentsGiven[1], "utf8"), counts),
       ];
       for (const error of errors) process.stderr.write(`${error}\n`);
