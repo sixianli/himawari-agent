@@ -180,7 +180,7 @@ jobs:
   scroll:
     name: apple/scroll
     needs: [changes, iphone-accessibility]
-    if: ${{ !cancelled() && github.event_name != 'pull_request' && github.event_name != 'schedule' && needs.changes.outputs.client == 'true' }}
+    if: ${{ !cancelled() && github.event_name != 'pull_request' && github.event_name != 'push' && needs.changes.outputs.client == 'true' }}
     runs-on: macos-26
     timeout-minutes: 60
     steps:
@@ -236,7 +236,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           if [ "$GITHUB_EVENT_NAME" = schedule ]; then
-            node scripts/ci/main-claim.mjs apple.yml apple apple/iphone-accessibility-build apple/iphone-accessibility
+            node scripts/ci/main-claim.mjs apple.yml apple apple/iphone-accessibility-build apple/iphone-accessibility apple/scroll
           else
-            node scripts/ci/main-claim.mjs apple.yml apple apple/iphone apple/scroll
+            node scripts/ci/main-claim.mjs apple.yml apple apple/iphone
           fi
