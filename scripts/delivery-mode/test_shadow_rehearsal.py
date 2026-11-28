@@ -295,6 +295,23 @@ class ShadowRehearsalTest(unittest.TestCase):
         self.assertEqual(Path(journal[0]).name, 'journal')
         self.assertTrue(Path(journal[0]).parent.name.startswith('himawari-shadow.'))
 
+    def test_I120_the_granted_workspace_is_bound_read_only_so_the_shadow_sees_its_real_device_and_inode(self):
+        self.live_database()
+        workspace = self.directory / 'workspace'
+        workspace.mkdir()
+        result = self.run_rehearsal('--boot-only', HIMAWARI_SHADOW_WORKSPACE=str(workspace))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        arguments = (self.log / 'nspawn.args').read_text().splitlines()
+        self.assertIn(f'--bind-ro={workspace}', arguments)
+        self.assertFalse(any(argument.startswith('--bind=') and argument[len('--bind='):].split(':')[0] == str(workspace) for argument in arguments))
+        self.assertIn(f'SHADOW_WORKSPACE_READ_ONLY {workspace}', result.stdout)
+
+    def test_I120_a_host_without_the_granted_workspace_boots_without_binding_it(self):
+        self.live_database()
+        result = self.run_rehearsal('--boot-only', HIMAWARI_SHADOW_WORKSPACE=str(self.directory / 'absent-workspace'))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse(any(argument.startswith('--bind-ro=') for argument in (self.log / 'nspawn.args').read_text().splitlines()))
+
     def test_I120_the_shadow_reaches_only_the_identity_key_address_the_service_fetches_before_it_listens(self):
         self.live_database()
         config = self.directory / 'config.json'
