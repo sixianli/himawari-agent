@@ -44,6 +44,7 @@ public struct HerPage: View {
         case files
         case evaluation
         case talkTiming
+        case settings
     }
 
     @State private var settings: SettingsStore
@@ -191,9 +192,13 @@ public struct HerPage: View {
                             .buttonStyle(.pressable)
                         }
                     }
-                    SettingsGroup(label: nil) {
+                    SettingsGroup(label: M.herKnows) {
                         Button { path.append(.memory) } label: {
-                            HerRow(icon: .brain, title: M.herMemory, subtitle: memory.summary(categoryLabel: M.category).map(M.memorySummary), last: files.phase == .unsupported && stats.phase == .unsupported)
+                            HerRow(icon: .brain, title: M.herMemory, subtitle: memory.summary(categoryLabel: M.category).map(M.memorySummary))
+                        }
+                        .buttonStyle(.pressable)
+                        Button { path.append(.rules) } label: {
+                            HerRow(icon: .clipboardList, title: M.rules, subtitle: memory.phase == .loaded ? M.rulesSummary(RulesPage.ownPageRules(memory.rules, quietHours: quietHours.hours).count) : nil, last: files.phase == .unsupported && stats.phase == .unsupported)
                         }
                         .buttonStyle(.pressable)
                         if files.phase != .unsupported {
@@ -209,10 +214,16 @@ public struct HerPage: View {
                             .buttonStyle(.pressable)
                         }
                     }
-                    SettingsGroup(label: nil) {
+                    SettingsGroup(label: M.herDoes) {
                         if timers.phase != .unsupported {
                             Button { path.append(.timers) } label: {
                                 HerRow(icon: .alarm, title: M.timersTitle, subtitle: timersSummary)
+                            }
+                            .buttonStyle(.pressable)
+                        }
+                        if connections.available || actions != nil {
+                            Button { path.append(.connections) } label: {
+                                HerRow(icon: .puzzle, title: M.connectionsTitle, subtitle: connectionsSummary)
                             }
                             .buttonStyle(.pressable)
                         }
@@ -222,10 +233,6 @@ public struct HerPage: View {
                             }
                             .buttonStyle(.pressable)
                         }
-                        Button { path.append(.rules) } label: {
-                            HerRow(icon: .clipboardList, title: M.rules, subtitle: memory.phase == .loaded ? M.rulesSummary(RulesPage.ownPageRules(memory.rules, quietHours: quietHours.hours).count) : nil)
-                        }
-                        .buttonStyle(.pressable)
                         Button { path.append(.allowances) } label: {
                             HerRow(icon: .shieldCheck, title: M.allowancesTitle, subtitle: M.allowancesSummary(memory.allowances.count), last: vaultCount == .unsupported)
                         }
@@ -238,46 +245,8 @@ public struct HerPage: View {
                         }
                     }
                     SettingsGroup(label: nil) {
-                        if personal.phase == .loaded {
-                            Button { path.append(.name) } label: {
-                                HerRow(icon: .user, title: M.nameTitle, value: personal.name ?? M.nameUnset)
-                            }
-                            .buttonStyle(.pressable)
-                        }
-                        if personal.canChooseModel, let model = personal.chosenModel {
-                            Button { path.append(.model) } label: {
-                                HerRow(icon: .bulb, title: M.modelTitle, value: M.modelName(model))
-                            }
-                            .buttonStyle(.pressable)
-                        }
-                        if connections.available || actions != nil {
-                            Button { path.append(.connections) } label: {
-                                HerRow(icon: .puzzle, title: M.connectionsTitle, subtitle: connectionsSummary)
-                            }
-                            .buttonStyle(.pressable)
-                        }
-                        if let hours = quietHours.hours {
-                            Button { path.append(.notifications) } label: {
-                                HerRow(icon: .bell, title: M.notificationsTitle, subtitle: M.quietSummary(hours))
-                            }
-                            .buttonStyle(.pressable)
-                        }
-                        Button { path.append(.privacy) } label: {
-                            HerRow(icon: .handStop, title: M.privacy)
-                        }
-                        .buttonStyle(.pressable)
-                        Button { path.append(.devices) } label: {
-                            HerRow(icon: .deviceMobilePlain, title: M.devicesTitle, subtitle: devicesSummary, last: true)
-                        }
-                        .buttonStyle(.pressable)
-                    }
-                    SettingsGroup(label: nil) {
-                        Button { path.append(.transfer) } label: {
-                            HerRow(icon: .download, title: M.transferTitle)
-                        }
-                        .buttonStyle(.pressable)
-                        Button { path.append(.about) } label: {
-                            HerRow(icon: .infoCircle, title: M.aboutTitle, subtitle: AboutPage.versionLine, last: true)
+                        Button { path.append(.settings) } label: {
+                            HerRow(icon: .settings, title: M.settingsTitle, last: true)
                         }
                         .buttonStyle(.pressable)
                     }
@@ -310,6 +279,8 @@ public struct HerPage: View {
             }
             .navigationDestination(for: Page.self) { page in
                 switch page {
+                case .settings:
+                    settingsPage
                 case .memory:
                     MemoryRootView(store: memory, talk: talk)
                 case .rules:
@@ -398,6 +369,57 @@ public struct HerPage: View {
         }
     }
 
+    private var settingsPage: some View {
+        ScrollView {
+            VStack(spacing: DesignTokens.Her.pageGap) {
+                SettingsGroup(label: nil) {
+                    if personal.phase == .loaded {
+                        Button { path.append(.name) } label: {
+                            HerRow(icon: .user, title: M.nameTitle, value: personal.name ?? M.nameUnset)
+                        }
+                        .buttonStyle(.pressable)
+                    }
+                    if personal.canChooseModel, let model = personal.chosenModel {
+                        Button { path.append(.model) } label: {
+                            HerRow(icon: .bulb, title: M.modelTitle, value: M.modelName(model))
+                        }
+                        .buttonStyle(.pressable)
+                    }
+                    if let hours = quietHours.hours {
+                        Button { path.append(.notifications) } label: {
+                            HerRow(icon: .bell, title: M.notificationsTitle, subtitle: M.quietSummary(hours))
+                        }
+                        .buttonStyle(.pressable)
+                    }
+                    Button { path.append(.privacy) } label: {
+                        HerRow(icon: .handStop, title: M.privacy)
+                    }
+                    .buttonStyle(.pressable)
+                    Button { path.append(.devices) } label: {
+                        HerRow(icon: .deviceMobilePlain, title: M.devicesTitle, subtitle: devicesSummary, last: true)
+                    }
+                    .buttonStyle(.pressable)
+                }
+                SettingsGroup(label: nil) {
+                    Button { path.append(.transfer) } label: {
+                        HerRow(icon: .download, title: M.transferTitle)
+                    }
+                    .buttonStyle(.pressable)
+                    Button { path.append(.about) } label: {
+                        HerRow(icon: .infoCircle, title: M.aboutTitle, subtitle: AboutPage.versionLine, last: true)
+                    }
+                    .buttonStyle(.pressable)
+                }
+            }
+            .padding(.top, 8)
+            .padding(.horizontal, DesignTokens.Size.pagePaddingX)
+            .padding(.bottom, DesignTokens.Size.sheetPaddingBottom)
+        }
+        .scrollIndicators(.hidden)
+        .himawariScreenBackground()
+        .navigationTitle(M.settingsTitle)
+    }
+
     private func finishImport() {
         memoryImport.reset()
         path.removeAll { $0 == .importPreview || $0 == .importPaste }
@@ -446,6 +468,7 @@ struct HerHero: View {
                     .frame(width: DesignTokens.Her.heroAvatar, height: DesignTokens.Her.heroAvatar)
                 SunflowerMark()
                     .frame(width: DesignTokens.Her.heroMark, height: DesignTokens.Her.heroMark)
+                    .environment(\.colorScheme, .dark)
             }
             Wordmark(size: DesignTokens.Her.heroWordmarkSize)
         }
