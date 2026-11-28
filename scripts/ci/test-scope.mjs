@@ -26,6 +26,24 @@ export function changedFiles(root, base, tested) {
   return result.stdout.split("\0").filter(Boolean);
 }
 
+const readerPathspecs = ["apps", "packages", "test", "scripts"].flatMap((directory) =>
+  ["ts", "tsx", "mts", "cts", "js", "mjs", "cjs", "py", "sh", "swift"].map(
+    (extension) => `:(glob)${directory}/**/*.${extension}`,
+  ),
+);
+
+export function findPathReaders(root, files) {
+  if (files.length === 0) return [];
+  const result = spawnSync(
+    "git",
+    ["grep", "-l", "-F", ...files.flatMap((file) => ["-e", file]), "--", ...readerPathspecs],
+    { cwd: root, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
+  );
+  if (result.status === 1) return [];
+  if (result.status !== 0) throw new Error("CI_TEST_SCOPE_READERS_FAILED");
+  return result.stdout.split("\n").filter(Boolean).sort();
+}
+
 export function listRelatedFiles({ root, project, baseSha, run = spawnSync }) {
   const directory = mkdtempSync(path.join(tmpdir(), "ci-related-"));
   try {
@@ -65,12 +83,17 @@ export function planTestScope({
   projects,
   diff = changedFiles,
   list = listRelatedFiles,
+  readers = findPathReaders,
 }) {
   const related = new Map();
   if (context.event !== "pull_request") return { related, reason: "full-event" };
-  const changes = classifyChanges(diff(root, context.baseSha, context.testedSha));
+  const files = diff(root, context.baseSha, context.testedSha);
+  const changes = classifyChanges(files);
   if (changes.full)
     return { related, reason: `full-files ${changes.fullFiles.slice(0, 5).join(" ")}` };
+  const readFiles = readers(root, files.filter(ignorable));
+  if (readFiles.length)
+    return { related, reason: `full-readers ${readFiles.slice(0, 5).join(" ")}` };
   const fallback = [];
   for (const project of projects.filter((id) => relatedEligibleProjects.includes(id))) {
     const files = list({ root, project, baseSha: context.baseSha });

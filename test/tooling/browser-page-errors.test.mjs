@@ -162,11 +162,7 @@ it("[webkit-teardown] 扫描能找出放进目录里的直接监听，允许名�
   }
 });
 
-const screenshotOnlyLaunches = new Set([
-  "browser-page-errors.mjs",
-  "render-brand-assets.mjs",
-  "test-control-center-visual-v4.mjs",
-]);
+const screenshotOnlyLaunches = new Set(["browser-page-errors.mjs", "render-brand-assets.mjs"]);
 
 it("[webkit-teardown] 浏览器测试脚本一律经 browser-page-errors.mjs 收页面报错", async () => {
   const scripts = path.resolve(import.meta.dirname, "../../scripts");

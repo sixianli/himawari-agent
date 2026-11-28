@@ -27,7 +27,7 @@
     },
     {
       "path": "docs/assets/apple-clients/",
-      "reason": "Andy 批准的 Apple 客户端设计基线（ADR 0247、ADR 0258），和 docs/assets/control-center/ 的网页设计基线一样按版本另存、不覆盖；不是编译生成的截图"
+      "reason": "Andy 批准的 Apple 客户端设计基线（ADR 0247、ADR 0258），按版本另存、不覆盖；不是编译生成的截图"
     },
     {
       "path": "clients/apple/Sources/HimawariChat/Resources/Fonts/",

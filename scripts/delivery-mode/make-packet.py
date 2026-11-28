@@ -487,14 +487,52 @@ def app_connections_target(target):
     return connections, secrets
 
 
-def secret_references_target(app_connections):
-    return json.dumps(app_connections_target(app_connections)[1], separators=(',', ':'), ensure_ascii=False)
+APPLE_PUSH_TARGET_KEYS = {'teamId', 'keyId', 'topics', 'environments', 'secret'}
+APPLE_PUSH_SECRET_PURPOSE = 'apple-push'
+APPLE_PUSH_SECRET_SCOPE = 'agent'
 
 
-def run_policy_target(target, app_connections=None):
-    connections = app_connections_target(app_connections)[0]
+def apple_push_target(target):
     if target is None:
-        return '{}' if connections is None else json.dumps({'appConnections': connections}, separators=(',', ':'), ensure_ascii=False)
+        return None, []
+    reference = re.compile(r'[A-Za-z0-9][A-Za-z0-9._-]{0,127}')
+    topic = re.compile(r'[A-Za-z0-9][A-Za-z0-9.-]{0,231}')
+
+    def distinct(values, accept):
+        return isinstance(values, list) and 0 < len(values) <= 16 and len(set(values)) == len(values) and all(isinstance(value, str) and accept(value) for value in values)
+
+    valid = (
+        isinstance(target, dict) and set(target) == APPLE_PUSH_TARGET_KEYS
+        and all(isinstance(target[key], str) and re.fullmatch(r'[A-Z0-9]{10}', target[key]) for key in ('teamId', 'keyId'))
+        and distinct(target['topics'], topic.fullmatch)
+        and distinct(target['environments'], lambda value: value in ('development', 'production'))
+        and isinstance(target['secret'], dict) and set(target['secret']) == {'ref', 'version'}
+        and all(isinstance(target['secret'][key], str) and reference.fullmatch(target['secret'][key]) for key in ('ref', 'version'))
+    )
+    if not valid:
+        refuse('PACKET_APPLE_PUSH_TARGET_INVALID', target)
+    secret = target['secret']
+    policy = {'secretRef': secret['ref'], 'teamId': target['teamId'], 'keyId': target['keyId'], 'topics': list(target['topics']), 'environments': list(target['environments'])}
+    return policy, [{'ref': secret['ref'], 'version': secret['version'], 'purpose': APPLE_PUSH_SECRET_PURPOSE, 'scope': APPLE_PUSH_SECRET_SCOPE}]
+
+
+def secret_references_target(app_connections, apple_push=None):
+    secrets = app_connections_target(app_connections)[1] + apple_push_target(apple_push)[1]
+    if len({secret['ref'] for secret in secrets}) != len(secrets):
+        refuse('PACKET_SECRET_REFERENCE_DUPLICATE', secrets)
+    return json.dumps(secrets, separators=(',', ':'), ensure_ascii=False)
+
+
+def run_policy_target(target, app_connections=None, apple_push=None):
+    connections = app_connections_target(app_connections)[0]
+    push = apple_push_target(apple_push)[0]
+    if target is None:
+        additions = {}
+        if connections is not None:
+            additions['appConnections'] = connections
+        if push is not None:
+            additions['applePush'] = push
+        return json.dumps(additions, separators=(',', ':'), ensure_ascii=False) if additions else '{}'
     if not isinstance(target, dict) or set(target) != {'browser'}:
         refuse('PACKET_COMPUTERS_TARGET_INVALID', target)
     browser = target['browser']
@@ -506,6 +544,8 @@ def run_policy_target(target, app_connections=None):
     additions = {'userComputers': {'socketPath': socket_path}, 'browser': {key: browser[key] for key in ('maxOutputBytes', 'maxTextChars', 'responseReserveMs')}}
     if connections is not None:
         additions['appConnections'] = connections
+    if push is not None:
+        additions['applePush'] = push
     return json.dumps(additions, separators=(',', ':'), ensure_ascii=False)
 
 
@@ -586,8 +626,8 @@ def base_parameters(instance, commit, date, discovered):
         'TARGET_PUBLIC_FETCH_BYTES': targets['publicFetchMaximumBytes'],
         'TARGET_EMBEDDING_JSON': embedding_target(targets.get('embedding')),
         'TARGET_SPEECH_JSON': speech_target(targets.get('speech')),
-        'TARGET_RUN_POLICY_JSON': run_policy_target(targets.get('computers'), targets.get('appConnections')),
-        'TARGET_SECRET_REFERENCES_JSON': secret_references_target(targets.get('appConnections')),
+        'TARGET_RUN_POLICY_JSON': run_policy_target(targets.get('computers'), targets.get('appConnections'), targets.get('applePush')),
+        'TARGET_SECRET_REFERENCES_JSON': secret_references_target(targets.get('appConnections'), targets.get('applePush')),
         'STARTUP_READY_BUDGET_MS': startup_ready_budget(instance, git('show', commit + ':' + WORKER_SERVICE_MAIN)),
         'STARTUP_PHASE_BASELINE_MS': startup_phase_baseline(instance),
     }
