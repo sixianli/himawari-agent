@@ -103,6 +103,9 @@ fi
 echo "CI_DEPLOY_DB_PERMISSIONS"
 remote "cd /var/lib/himawari/state/data && for f in product.sqlite product.sqlite-wal product.sqlite-shm; do [ -e \"\$f\" ] && chmod 600 \"\$f\"; done; true" || refuse DB_PERMISSIONS_FAILED "cannot tighten the product database file modes on $host" 3
 
+echo "CI_DEPLOY_CONFIG_DIRECTORY_OWNERSHIP"
+remote 'config="$(dirname /etc/himawari/config.json)"; owner="$(stat -c %U /etc/himawari/config.json)"; [ "$owner" != root ] && chown "$owner:$owner" "$config"' || refuse CONFIG_DIRECTORY_OWNERSHIP_FAILED "cannot give the service account the configuration directory /etc/himawari on $host, so S7_CONFIG_APPLY could not write config.json.next there" 3
+
 echo "CI_DEPLOY_BUILDER_HOME_OWNERSHIP"
 remote 'tools="$(getent passwd himawari-build | cut -d: -f6)/packet-builder/tools"; for d in "$tools/home" "$tools/tmp"; do [ -d "$d" ] && chown -R himawari-build:himawari-build "$d"; done; true' || refuse BUILDER_HOME_OWNERSHIP_FAILED "cannot give the packet builder its own tool home back on $host" 3
 
