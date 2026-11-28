@@ -165,14 +165,12 @@ public struct MemoryRootView: View {
             EmptyStateView(Text(M.loadFailed)).frame(minHeight: DesignTokens.Size.emptyMinHeight)
         case .loaded:
             if let overview = store.overview {
-                SettingsGroup(label: nil) {
-                    SettingsRow(
-                        icon: nil,
-                        title: M.rememberNew,
-                        switchState: Binding(get: { !overview.capturePaused }, set: { setRemembering($0) }),
-                        last: true
-                    )
+                Toggle(isOn: Binding(get: { !overview.capturePaused }, set: { setRemembering($0) })) {
+                    Text(M.rememberNew).foregroundStyle(Color.hmText)
                 }
+                .tint(Color.hmSun)
+                .frame(minHeight: SL.rowMinHeight)
+                .himawariCard()
             }
             RememberedList(store: store, openTrash: { trashOpen = true }) { selected = $0 }
         }

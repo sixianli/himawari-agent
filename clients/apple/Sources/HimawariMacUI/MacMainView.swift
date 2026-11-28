@@ -39,12 +39,14 @@ struct MacMainView: View {
     private var sidebar: some View {
         List(selection: $main.selection) {
             row(.chat)
-            let her = main.herDestinations
-            if !her.isEmpty {
-                Section(L.text("sidebar.her")) {
-                    ForEach(her, id: \.self) { section in
+            let groups = main.herGroups
+            ForEach(groups.indices, id: \.self) { index in
+                Section {
+                    ForEach(groups[index], id: \.self) { section in
                         row(.her(section))
                     }
+                } header: {
+                    if index == 0 { Text(L.text("sidebar.her")) }
                 }
             }
         }

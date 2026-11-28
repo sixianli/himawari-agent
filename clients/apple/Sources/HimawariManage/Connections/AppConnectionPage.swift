@@ -14,7 +14,7 @@ struct AppConnectionPage: View {
     var body: some View {
         let connection = store.connection(named: name)
         let title = connection?.title ?? name
-        SettingsPage(gap: SL.pageGap) {
+        SettingsPage {
             SheetHeader(title: title, leading: .back, action: back)
             switch connection?.status {
             case "connected":
@@ -22,15 +22,13 @@ struct AppConnectionPage: View {
                     SettingsRow(
                         icon: nil,
                         title: connection?.account ?? M.connectionConnected,
-                        detail: connection?.connectedAt.flatMap(Timestamp.parse).map(M.gmailConnectedOn),
-                        last: true
-                    )
+                        detail: connection?.connectedAt.flatMap(Timestamp.parse).map(M.gmailConnectedOn))
                 }
                 disconnectButton(title)
                 removeButton(connection, title: title)
             case "needs_reconnect":
                 SettingsGroup(label: nil) {
-                    SettingsRow(icon: nil, title: M.connectionExpired, last: true)
+                    SettingsRow(icon: nil, title: M.connectionExpired)
                 }
                 connectButton(M.gmailReconnect, title: title)
                 disconnectButton(title)
@@ -40,9 +38,7 @@ struct AppConnectionPage: View {
                     SettingsRow(
                         icon: nil,
                         title: M.connectionConnect(title),
-                        detail: connection?.added == true ? M.connectionAddedAbout(title) : M.connectionAbout(title),
-                        last: true
-                    )
+                        detail: connection?.added == true ? M.connectionAddedAbout(title) : M.connectionAbout(title))
                 }
                 connectButton(M.connectionConnect(title), title: title)
                 removeButton(connection, title: title)
@@ -86,11 +82,8 @@ struct AppConnectionPage: View {
     @ViewBuilder
     private func removeButton(_ connection: AppConnection?, title: String) -> some View {
         if connection?.added == true {
-            Button(role: .destructive) { removing = true } label: {
-                Text(M.connectionRemove(title)).frame(maxWidth: .infinity, minHeight: DesignTokens.Size.pill)
-            }
-            .buttonStyle(.bordered)
-            .disabled(store.connecting != nil)
+            DestructiveRow(title: M.connectionRemove(title)) { removing = true }
+                .disabled(store.connecting != nil)
         }
     }
 
@@ -104,14 +97,12 @@ struct AppConnectionPage: View {
         }
         .buttonStyle(.borderedProminent)
         .disabled(store.connecting != nil)
+        .outsideRowCard()
     }
 
     private func disconnectButton(_ title: String) -> some View {
-        Button(role: .destructive) { disconnecting = true } label: {
-            Text(M.connectionDisconnect(title)).frame(maxWidth: .infinity, minHeight: DesignTokens.Size.pill)
-        }
-        .buttonStyle(.bordered)
-        .disabled(store.connecting != nil)
+        DestructiveRow(title: M.connectionDisconnect(title)) { disconnecting = true }
+            .disabled(store.connecting != nil)
     }
 
     private func connect() {

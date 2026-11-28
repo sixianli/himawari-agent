@@ -9,7 +9,7 @@ public enum MacDestination: Hashable, Sendable {
     case chat
     case her(HerSection)
 
-    static let sidebarSections: [HerSection] = [.memory, .rules, .approvals, .timers, .allowances, .vault]
+    static let sidebarSections: [HerSection] = [.approvals, .personalization, .notifications, .passwords, .noMoreAsking]
 }
 
 struct ChatDraft: Equatable {
@@ -37,13 +37,25 @@ public final class MacMainModel {
         return MacDestination.sidebarSections.filter { workspace.isAvailable($0, actions: app.actions) }
     }
 
+    var herGroups: [[HerSection]] {
+        var groups: [[HerSection]] = []
+        for section in herDestinations {
+            if let last = groups.last?.last, last.group == section.group {
+                groups[groups.count - 1].append(section)
+            } else {
+                groups.append([section])
+            }
+        }
+        return groups
+    }
+
     var destinations: [MacDestination] {
         isSignedIn ? [.chat] + herDestinations.map(MacDestination.her) : []
     }
 
     var settingsSections: [HerSection] {
         guard let workspace else { return [] }
-        return [HerSection.notifications, .privacy].filter { workspace.isAvailable($0, actions: app.actions) }
+        return [HerSection.about].filter { workspace.isAvailable($0, actions: app.actions) }
     }
 
     func badge(for destination: MacDestination) -> Int {

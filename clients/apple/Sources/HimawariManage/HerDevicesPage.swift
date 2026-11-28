@@ -13,17 +13,16 @@ struct HerDevicesPage: View {
     private var thisPhone: PairedDevice? { store.devices.first(where: store.isThisDevice) }
 
     var body: some View {
-        SettingsPage(gap: SL.pageGap) {
+        SettingsPage {
             SheetHeader(title: M.devicesTitle, leading: .back, action: back)
             if let phone = thisPhone {
                 SettingsGroup(label: nil) {
                     Button { open(phone) } label: {
-                        HerRow(
+                        SettingsRow(
                             icon: .deviceMobilePlain,
                             title: M.thisIPhone,
-                            subtitle: M.phoneLine(phone.name, M.presence(store.presence(phone))),
-                            last: true
-                        )
+                            detail: M.phoneLine(phone.name, M.presence(store.presence(phone))),
+                            chevron: true)
                     }
                     .buttonStyle(.pressable)
                 }
@@ -33,22 +32,11 @@ struct HerDevicesPage: View {
                     SettingsRow(
                         icon: nil,
                         title: origin.host() ?? origin.absoluteString,
-                        detail: thisPhone.flatMap { Timestamp.parse($0.pairedAt) }.map(M.pairedSince),
-                        last: true
-                    )
+                        detail: thisPhone.flatMap { Timestamp.parse($0.pairedAt) }.map(M.pairedSince))
                 }
             }
             if thisPhone != nil {
-                Button { disconnecting = true } label: {
-                    Text(M.disconnectThisIPhone)
-                        .hmType(SL.rowValue)
-                        .foregroundStyle(Color.hmDanger)
-                        .padding(.horizontal, DesignTokens.Her.pillPaddingX)
-                        .frame(minHeight: DesignTokens.Size.pill)
-                        .background(Color.hmFill, in: Capsule())
-                }
-                .buttonStyle(.pressable)
-                .frame(maxWidth: .infinity)
+                DestructiveRow(title: M.disconnectThisIPhone) { disconnecting = true }
             }
         }
         .confirmationDialog(M.disconnectThisIPhone, isPresented: $disconnecting, titleVisibility: .visible) {

@@ -10,7 +10,7 @@ struct GmailPage: View {
     @State private var problem: ConnectionOutcome?
 
     var body: some View {
-        SettingsPage(gap: SL.pageGap) {
+        SettingsPage {
             SheetHeader(title: M.gmailTitle, leading: .back, action: back)
             if let overview = store.overview, overview.dailyLimitReached, store.status != .disconnected {
                 note(M.gmailDailyLimit)
@@ -18,21 +18,21 @@ struct GmailPage: View {
             switch store.status {
             case .disconnected:
                 SettingsGroup(label: nil) {
-                    SettingsRow(icon: nil, title: M.gmailConnectTitle, detail: M.gmailConnectBody, last: true)
+                    SettingsRow(icon: nil, title: M.gmailConnectTitle, detail: M.gmailConnectBody)
                 }
                 connectButton(M.gmailConnect)
             case .connected(let account, let since, let lastRead):
                 SettingsGroup(label: nil) {
-                    SettingsRow(icon: nil, title: account ?? M.gmailTitle, detail: since.map(M.gmailConnectedOn), last: lastRead == nil)
+                    SettingsRow(icon: nil, title: account ?? M.gmailTitle, detail: since.map(M.gmailConnectedOn))
                     if let lastRead {
-                        SettingsRow(icon: nil, title: M.gmailLastRead, value: M.relative(lastRead), last: true)
+                        SettingsRow(icon: nil, title: M.gmailLastRead, value: M.relative(lastRead))
                     }
                 }
                 watchGroup
                 disconnectButton
             case .needsReconnect(let unreadSince):
                 SettingsGroup(label: nil) {
-                    SettingsRow(icon: nil, title: M.gmailExpired, warning: unreadSince.map(M.gmailUnreadSince), last: true)
+                    SettingsRow(icon: nil, title: M.gmailExpired, warning: unreadSince.map(M.gmailUnreadSince))
                 }
                 connectButton(M.gmailReconnect)
                 disconnectButton
@@ -67,6 +67,7 @@ struct GmailPage: View {
         }
         .buttonStyle(.borderedProminent)
         .disabled(store.connecting)
+        .outsideRowCard()
     }
 
     @ViewBuilder private var watchGroup: some View {
@@ -76,9 +77,7 @@ struct GmailPage: View {
                     icon: nil,
                     title: M.gmailWatch,
                     detail: watching.on ? M.gmailWatchOn : M.gmailWatchOff,
-                    switchState: Binding(get: { watching.on }, set: { on in setWatching(on) }),
-                    last: true
-                )
+                    switchState: Binding(get: { watching.on }, set: { on in setWatching(on) }))
             }
         }
     }
@@ -94,11 +93,8 @@ struct GmailPage: View {
     }
 
     private var disconnectButton: some View {
-        Button(role: .destructive) { disconnecting = true } label: {
-            Text(M.gmailDisconnect).frame(maxWidth: .infinity, minHeight: DesignTokens.Size.pill)
-        }
-        .buttonStyle(.bordered)
-        .disabled(store.connecting)
+        DestructiveRow(title: M.gmailDisconnect) { disconnecting = true }
+            .disabled(store.connecting)
     }
 
     private func note(_ text: String) -> some View {
@@ -106,6 +102,7 @@ struct GmailPage: View {
             .hmType(DesignTokens.TypeScale.caption)
             .foregroundStyle(Color.hmMuted)
             .padding(.horizontal, SL.groupLabelPadding)
+            .outsideRowCard()
     }
 
     private func connect() {

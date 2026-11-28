@@ -15,11 +15,12 @@ struct TimerDetailPage: View {
     @State private var fullResult = false
 
     var body: some View {
-        SettingsPage(gap: SL.pageGap) {
+        SettingsPage {
             if let timer = store.timer(timerId), timer.isShown {
                 SheetHeader(title: timer.name, leading: .back, action: back)
                 TimersNote(text: M.timerDetailLead(canPause: timer.canPause))
                     .padding(.horizontal, SL.groupLabelPadding)
+                    .outsideRowCard()
                 facts(timer)
                 buttons(timer)
             } else {
@@ -43,14 +44,14 @@ struct TimerDetailPage: View {
             TimerFact(label: M.timerWhenLabel) { factText(TimerText.whenDetail(timer, now: now())) }
             TimerFact(label: M.timerTaskLabel) { factText(timer.task) }
             TimerFact(label: M.timerByLabel) { byFact(timer) }
-            TimerFact(label: M.timerRanLabel, last: budget == nil && last == nil) {
+            TimerFact(label: M.timerRanLabel) {
                 factText(M.timerRanDetail(timer.runCount, timer.spentMicros))
             }
             if let budget {
-                TimerFact(label: M.timerBudgetLabel, last: last == nil) { factText(M.money(budget)) }
+                TimerFact(label: M.timerBudgetLabel) { factText(M.money(budget)) }
             }
             if let last {
-                TimerFact(label: M.timerLastLabel, last: true) {
+                TimerFact(label: M.timerLastLabel) {
                     Button { fullResult.toggle() } label: {
                         factText(last).lineLimit(fullResult ? nil : Self.shownResultLines)
                     }
@@ -95,19 +96,17 @@ struct TimerDetailPage: View {
     @ViewBuilder
     private func buttons(_ timer: OwnerTimer) -> some View {
         let busy = store.working.contains(timer.timerId)
-        HStack(spacing: ManageLayout.VaultSheet.buttonGap) {
-            if timer.canPause {
+        if timer.canPause {
+            Section {
                 Button(timer.status == .paused ? M.timerResume : M.timerPause) {
                     change(timer, timer.status == .paused ? .resume : .pause)
                 }
-                .buttonStyle(CapsuleButtonStyle(.secondary, height: ManageLayout.VaultSheet.buttonHeight))
+                .frame(maxWidth: .infinity)
             }
-            Button { cancelling = true } label: {
-                Text(M.timerCancel).foregroundStyle(Color.hmDanger)
-            }
-            .buttonStyle(CapsuleButtonStyle(.secondary, height: ManageLayout.VaultSheet.buttonHeight))
+            .disabled(busy)
         }
-        .disabled(busy)
+        DestructiveRow(title: M.timerCancel) { cancelling = true }
+            .disabled(busy)
     }
 
     private func change(_ timer: OwnerTimer, _ action: OwnerTimer.Action) {
@@ -120,20 +119,15 @@ struct TimerDetailPage: View {
 
 struct TimerFact<Value: View>: View {
     let label: String
-    var last = false
     @ViewBuilder let value: Value
 
     var body: some View {
-        VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: SL.rowTextGap) {
-                Text(label)
-                    .hmType(DesignTokens.TypeScale.caption)
-                    .foregroundStyle(Color.hmMuted)
-                value
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, SL.rowPaddingVertical)
-            if !last { RowSeparator() }
+        VStack(alignment: .leading, spacing: SL.rowTextGap) {
+            Text(label)
+                .hmType(DesignTokens.TypeScale.caption)
+                .foregroundStyle(Color.hmMuted)
+            value
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

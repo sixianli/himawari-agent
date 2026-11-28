@@ -9,7 +9,7 @@ struct HerAllowancesPage: View {
     @State private var choosingDays = false
 
     var body: some View {
-        SettingsPage(gap: DesignTokens.Allowance.pageGap) {
+        SettingsPage {
             SheetHeader(title: M.allowancesTitle, leading: .back, action: back)
             if memory.allowances.isEmpty {
                 Text(M.allowancesEmpty)
@@ -18,17 +18,18 @@ struct HerAllowancesPage: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, DesignTokens.Allowance.footInset)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .outsideRowCard()
             } else {
                 SettingsGroup(label: nil) {
                     ForEach(memory.allowances) { allowance in
-                        AllowanceRow(allowance: allowance, last: allowance == memory.allowances.last) { revoke(allowance) }
+                        AllowanceRow(allowance: allowance) { revoke(allowance) }
                     }
                 }
             }
             if let days = memory.allowanceDays {
                 SettingsGroup(label: nil) {
                     Button { choosingDays = true } label: {
-                        SettingsRow(icon: nil, title: M.allowanceDaysTitle, value: M.allowanceDaysValue(days), chevron: true, last: true)
+                        SettingsRow(icon: nil, title: M.allowanceDaysTitle, value: M.allowanceDaysValue(days), chevron: true)
                     }
                     .buttonStyle(.pressable)
                 }
@@ -39,6 +40,7 @@ struct HerAllowancesPage: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, DesignTokens.Allowance.footInset)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .outsideRowCard()
         }
         .alert(M.revokeFailed, isPresented: $failed) {}
         .sheet(isPresented: $choosingDays) {
@@ -65,12 +67,10 @@ struct HerAllowancesPage: View {
 
 struct AllowanceRow: View {
     let allowance: OwnerAllowance
-    let last: Bool
     let revoke: () -> Void
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: SL.rowGap) {
+        HStack(spacing: SL.rowGap) {
                 VStack(alignment: .leading, spacing: DesignTokens.Her.rowSubtitleGap) {
                     Text(allowance.title).hmType(SL.rowValue).foregroundStyle(Color.hmText)
                     Text(M.allowanceScope(allowance)).hmType(DesignTokens.TypeScale.caption).foregroundStyle(Color.hmMuted)
@@ -84,11 +84,8 @@ struct AllowanceRow: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.pressable)
-            }
-            .padding(.vertical, SL.rowPaddingVertical)
-            .frame(minHeight: SL.rowMinHeight)
-            if !last { RowSeparator() }
         }
+        .frame(minHeight: SL.rowMinHeight)
     }
 }
 

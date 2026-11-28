@@ -12,11 +12,12 @@ struct DevicePage: View {
     @State private var renaming = false
     @State private var draftName = ""
     @State private var failed = false
+    @State private var removing = false
 
     private var device: PairedDevice? { store.devices.first { $0.id == deviceId } }
 
     var body: some View {
-        SettingsPage(gap: DL.detailGap) {
+        SettingsPage {
             if let device {
                 SheetHeader(title: device.name, leading: .back, action: back)
                 SettingsGroup(label: nil) {
@@ -29,30 +30,18 @@ struct DevicePage: View {
                     .buttonStyle(.pressable)
                     presenceRow(device)
                     let channel = M.channel(device.releaseChannel)
-                    SettingsRow(icon: nil, title: M.pairedOn, value: Timestamp.parse(device.pairedAt).map(M.pairedDay), last: channel == nil)
+                    SettingsRow(icon: nil, title: M.pairedOn, value: Timestamp.parse(device.pairedAt).map(M.pairedDay))
                     if let channel {
-                        SettingsRow(icon: nil, title: M.deviceVersion, value: channel, last: true)
+                        SettingsRow(icon: nil, title: M.deviceVersion, value: channel)
                     }
                 }
                 if let actions, store.isThisDevice(device) {
                     DeviceAbilitiesSection(model: actions)
                 }
-                Button {
-                    Task {
-                        do {
-                            let wasThisDevice = store.isThisDevice(device)
-                            try await store.revoke(device, reason: M.confirmRemove(device.name))
-                            if wasThisDevice { removedThisDevice() } else { back() }
-                        } catch {
-                            failed = true
-                        }
+                DestructiveRow(title: M.removeDevice) { removing = true }
+                    .confirmationDialog(M.removeDevice, isPresented: $removing, titleVisibility: .visible) {
+                        Button(M.removeDevice, role: .destructive) { remove(device) }
                     }
-                } label: {
-                    Text(M.removeDevice).hmType(SL.rowValue).foregroundStyle(Color.hmDanger)
-                        .frame(minHeight: DL.linkMinHeight)
-                }
-                .buttonStyle(.pressable)
-                .padding(.horizontal, DL.addLinkPadding)
             } else {
                 SheetHeader(title: "", leading: .back, action: back)
             }
@@ -67,16 +56,23 @@ struct DevicePage: View {
 
     private func presenceRow(_ device: PairedDevice) -> some View {
         let presence = store.presence(device)
-        return VStack(spacing: 0) {
-            HStack {
-                Text(presence == .connected ? M.deviceNow : M.lastConnected).hmType(SL.rowValue).foregroundStyle(Color.hmText)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Text(M.presence(presence)).hmType(SL.rowValue)
-                    .foregroundStyle(presence == .connected ? Color.hmSun : Color.hmMuted)
+        return SettingsRow(
+            icon: nil,
+            title: presence == .connected ? M.deviceNow : M.lastConnected,
+            value: M.presence(presence),
+            tone: presence == .connected ? .good : .muted
+        )
+    }
+
+    private func remove(_ device: PairedDevice) {
+        Task {
+            do {
+                let wasThisDevice = store.isThisDevice(device)
+                try await store.revoke(device, reason: M.confirmRemove(device.name))
+                if wasThisDevice { removedThisDevice() } else { back() }
+            } catch {
+                failed = true
             }
-            .padding(.vertical, SL.rowPaddingVertical)
-            .frame(minHeight: SL.rowMinHeight)
-            RowSeparator()
         }
     }
 

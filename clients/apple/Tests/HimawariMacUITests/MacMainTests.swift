@@ -12,7 +12,7 @@ import Testing
         let main = MacMainModel(app: AppModel.demo(.active, host: "himawari.example.com", kind: .mac))
         #expect(!main.isSignedIn)
         #expect(main.destinations.isEmpty)
-        main.go(to: .her(.memory))
+        main.go(to: .her(.personalization))
         #expect(main.selection == .chat)
         await main.syncWithSignIn()
         #expect(main.workspace == nil)
@@ -21,7 +21,7 @@ import Testing
 
     @Test func talkingFromAPagePutsTheTextIntoANewChatDraft() {
         let main = MacMainModel(app: AppModel.demo(.active, host: "himawari.example.com", kind: .mac))
-        main.selection = .her(.memory)
+        main.selection = .her(.personalization)
         let before = main.draft.id
         main.talk("把这条记忆改一下")
         #expect(main.selection == .chat)
@@ -32,7 +32,7 @@ import Testing
     @Test func onlyApprovalsCarryABadge() {
         let main = MacMainModel(app: AppModel.demo(.active, host: "himawari.example.com", kind: .mac))
         #expect(main.badge(for: .chat) == 0)
-        #expect(main.badge(for: .her(.memory)) == 0)
+        #expect(main.badge(for: .her(.personalization)) == 0)
         #expect(main.badge(for: .her(.approvals)) == 0)
     }
 

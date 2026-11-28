@@ -9,7 +9,7 @@ struct AddAppConnectionPage: View {
     @State private var failure: String?
 
     var body: some View {
-        SettingsPage(gap: VL.formGap) {
+        SettingsPage {
             SheetHeader(title: M.connectionAdd, leading: .back, action: back)
             SettingsGroup(label: nil) {
                 VaultFieldRow(label: M.connectionAddAddress) {
@@ -19,18 +19,17 @@ struct AddAppConnectionPage: View {
                         .textContentType(.URL)
                         #endif
                 }
-                VaultFieldRow(label: M.connectionAddName, note: M.connectionAddNameNote, last: true) {
+                VaultFieldRow(label: M.connectionAddName, note: M.connectionAddNameNote) {
                     TextField("", text: $app.title)
                 }
             }
             VaultNote(M.connectionAddWarning)
             SettingsGroup(label: M.connectionAddAdvanced) {
                 VaultFieldRow(label: M.connectionAddClientId) { TextField("", text: $app.clientId) }
-                VaultSecretField(label: M.connectionAddClientSecret, value: $app.clientSecret, last: true)
+                VaultSecretField(label: M.connectionAddClientSecret, value: $app.clientSecret)
             }
             VaultNote(M.connectionAddAdvancedNote)
             if let failure { VaultNote(failure, tone: .danger) }
-            Spacer(minLength: VL.formGap)
             Button(action: add) {
                 HStack(spacing: VL.buttonGap) {
                     if store.adding { ProgressView() }
@@ -39,6 +38,7 @@ struct AddAppConnectionPage: View {
             }
             .buttonStyle(CapsuleButtonStyle(.primary, height: VL.buttonHeight, fontSize: DesignTokens.TypeScale.body.size))
             .disabled(!app.ready || store.adding)
+            .outsideRowCard()
         }
     }
 
