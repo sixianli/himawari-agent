@@ -179,7 +179,7 @@ public final class MemoryStore {
     public func summary(categoryLabel: (String) -> String) -> MemorySummary? {
         guard phase == .loaded else { return nil }
         let shown = groups(categoryLabel: categoryLabel)
-        return MemorySummary(memories: shown.reduce(0) { $0 + $1.items.count }, rules: rules.count)
+        return MemorySummary(memories: shown.reduce(0) { $0 + $1.items.count })
     }
 
     public func setCapturePaused(_ paused: Bool, reason: String) async throws {
