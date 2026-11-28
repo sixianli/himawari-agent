@@ -357,6 +357,91 @@ db.prepare("INSERT INTO perception_records VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run
     expect(existsSync(path.join(root, "etc/himawari-heartbeat/healthcheck-url"))).toBe(false);
   });
 
+  it("reports the per-user computers in the clear without container names", () => {
+    const directory = temporary();
+    const bin = path.join(directory, "computer-bin");
+    mkdirSync(bin, { recursive: true });
+    writeFileSync(
+      path.join(bin, "docker"),
+      `#!/bin/bash\ncase "$1" in\n  info) echo '{"io.containerd.runc.v2":{"path":"runc"},"runsc":{"path":"/usr/local/bin/runsc"}}' ;;\n  ps) echo running; echo exited; echo running ;;\nesac\n`,
+    );
+    writeFileSync(
+      path.join(bin, "runsc"),
+      "#!/bin/bash\necho 'runsc version release-20261123.1'\n",
+    );
+    chmodSync(path.join(bin, "docker"), 0o755);
+    chmodSync(path.join(bin, "runsc"), 0o755);
+    const config = path.join(directory, "config.json");
+    writeFileSync(
+      config,
+      JSON.stringify({
+        capabilityDeployment: { secret: "deployment-secret" },
+        runPolicy: {
+          coding: { grant: "/var/lib/himawari/workspace" },
+          userComputers: { socketPath: "/run/himawari-computers/computers.sock" },
+          browser: { maxOutputBytes: 8388608, maxTextChars: 20000, responseReserveMs: 5000 },
+        },
+      }),
+    );
+    const computersConfig = path.join(directory, "computers.json");
+    writeFileSync(
+      computersConfig,
+      JSON.stringify({
+        schemaVersion: "user-computers.v1",
+        runtime: "runsc",
+        image: { reference: null, digest: `sha256:${"a".repeat(64)}` },
+        disk: { kind: "loop", bytes: 10737418240 },
+        idle: { stopAfterMs: 900000 },
+      }),
+    );
+    const { child } = run("computers", directory, {
+      HIMAWARI_OPS_NODE: process.execPath,
+      HIMAWARI_OPS_CONFIG: config,
+      HIMAWARI_OPS_COMPUTERS_CONFIG: computersConfig,
+      HIMAWARI_OPS_COMPUTERS_SOCKET: path.join(directory, "no-socket"),
+      HIMAWARI_OPS_DOCKER: path.join(bin, "docker"),
+      HIMAWARI_OPS_RUNSC: path.join(bin, "runsc"),
+    });
+    expect(child.status, child.stderr).toBe(0);
+    expect(child.stdout).toContain("OPS_SERVICE himawari-computers.service ActiveState=active");
+    expect(child.stdout).toContain("OPS_COMPUTERS_SOCKET missing");
+    expect(child.stdout).toContain("OPS_COMPUTERS_RUNSC runsc version release-20261123.1");
+    expect(child.stdout).toMatch(/OPS_COMPUTERS_DOCKER_RUNTIMES .*runsc/);
+    expect(child.stdout).toContain("OPS_COMPUTERS_CONTAINERS exited=1 running=2");
+    expect(child.stdout).toContain('"capabilityDeployment":true');
+    expect(child.stdout).toContain(
+      '"userComputers":{"socketPath":"/run/himawari-computers/computers.sock"}',
+    );
+    expect(child.stdout).toContain('"maxTextChars":20000');
+    expect(child.stdout).toContain(`"digest":"sha256:${"a".repeat(64)}"`);
+    expect(child.stdout).not.toContain("deployment-secret");
+    expect(child.stdout).not.toContain("OPS_SEALED_BEGIN");
+    expect(child.stdout).toContain("OPS_DONE");
+  });
+
+  it("says plainly when the computers were never installed", () => {
+    const directory = temporary();
+    const config = path.join(directory, "config.json");
+    writeFileSync(config, JSON.stringify({ runPolicy: { coding: {} } }));
+    const { child } = run("computers", directory, {
+      HIMAWARI_OPS_NODE: process.execPath,
+      HIMAWARI_OPS_CONFIG: config,
+      HIMAWARI_OPS_COMPUTERS_CONFIG: path.join(directory, "absent.json"),
+      HIMAWARI_OPS_COMPUTERS_SOCKET: path.join(directory, "no-socket"),
+      HIMAWARI_OPS_DOCKER: path.join(directory, "no-docker"),
+      HIMAWARI_OPS_RUNSC: path.join(directory, "no-runsc"),
+    });
+    expect(child.status, child.stderr).toBe(0);
+    expect(child.stdout).toContain("OPS_COMPUTERS_SOCKET missing");
+    expect(child.stdout).toContain('"capabilityDeployment":false');
+    expect(child.stdout).toContain('"userComputers":null');
+    expect(child.stdout).toContain('"browser":null');
+    expect(child.stdout).toContain('OPS_COMPUTERS_CONFIG {"error":"ENOENT"}');
+    expect(child.stdout).toContain("OPS_COMPUTERS_RUNSC unavailable");
+    expect(child.stdout).toContain("OPS_COMPUTERS_DOCKER_RUNTIMES unavailable");
+    expect(child.stdout).toContain("OPS_COMPUTERS_CONTAINERS unavailable");
+  });
+
   it("refuses anything but its own actions", () => {
     const directory = temporary();
     const { child } = run("stop", directory);

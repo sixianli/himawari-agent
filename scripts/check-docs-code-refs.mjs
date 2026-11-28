@@ -246,14 +246,43 @@ export function resolves(reference, index) {
 
 function commitExists(root, commit) {
   try {
-    if (
-      execFileSync("git", ["rev-parse", "--is-shallow-repository"], {
-        cwd: root,
-        encoding: "utf8",
-      }).trim() === "true"
-    )
-      return true;
+    if (isShallow(root)) return true;
     execFileSync("git", ["cat-file", "-e", `${commit}^{commit}`], { cwd: root, stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isShallow(root) {
+  return (
+    execFileSync("git", ["rev-parse", "--is-shallow-repository"], {
+      cwd: root,
+      encoding: "utf8",
+    }).trim() === "true"
+  );
+}
+
+export function mainlineRef(root, env = process.env) {
+  const ref = `origin/${env.GITHUB_BASE_REF || "main"}`;
+  try {
+    if (isShallow(root)) return "";
+    execFileSync("git", ["rev-parse", "--verify", "-q", `${ref}^{commit}`], {
+      cwd: root,
+      stdio: "ignore",
+    });
+    return ref;
+  } catch {
+    return "";
+  }
+}
+
+function onMainline(root, commit, mainline) {
+  try {
+    execFileSync("git", ["merge-base", "--is-ancestor", commit, mainline], {
+      cwd: root,
+      stdio: "ignore",
+    });
     return true;
   } catch {
     return false;
@@ -292,7 +321,11 @@ export function requiresVerification(file) {
   return VERIFIED_REQUIRED.some((prefix) => file.startsWith(prefix));
 }
 
-export function checkDocsCodeRefs({ root = repositoryRoot, index = buildCodeIndex(root) } = {}) {
+export function checkDocsCodeRefs({
+  root = repositoryRoot,
+  index = buildCodeIndex(root),
+  mainline = "",
+} = {}) {
   const errors = [];
   let checked = 0;
   const excluded = linesOf(root, EXCLUDE_FILE).map((entry) => entry.replace(/\/$/, ""));
@@ -320,6 +353,8 @@ export function checkDocsCodeRefs({ root = repositoryRoot, index = buildCodeInde
       errors.push(`DOCS_VERIFIED_AT_INVALID ${file} -> ${verifiedAt}`);
     else if (verifiedAt && !commitExists(root, verifiedAt))
       errors.push(`DOCS_VERIFIED_AT_UNKNOWN ${file} -> ${verifiedAt}`);
+    else if (verifiedAt && mainline && !onMainline(root, verifiedAt, mainline))
+      errors.push(`DOCS_VERIFIED_AT_OFF_MAINLINE ${file} -> ${verifiedAt} not on ${mainline}`);
     if (inProgress) continue;
     for (const covered of listOf(fields.covers)) {
       checked += 1;
@@ -341,11 +376,11 @@ export function checkDocsCodeRefs({ root = repositoryRoot, index = buildCodeInde
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const { checked, errors } = checkDocsCodeRefs();
+  const { checked, errors } = checkDocsCodeRefs({ mainline: mainlineRef(repositoryRoot) });
   for (const error of errors) process.stderr.write(`${error}\n`);
   if (errors.length)
     process.stderr.write(
-      "DOCS_CODE_REFS_HINT 文档里写的路径、命令、名字必须在当前代码或已声明的依赖里找得到：改成现在的写法，删掉，或者给历史名字配上固定提交链接（见 .agents/instructions/document-governance.md）\n",
+      "DOCS_CODE_REFS_HINT 文档里写的路径、命令、名字必须在当前代码或已声明的依赖里找得到：改成现在的写法，删掉，或者给历史名字配上固定提交链接；verified_at 要写已经在 main 上的提交，分支上的提交在压缩合并或变基合并后就不存在了（见 .agents/instructions/document-governance.md）\n",
     );
   process.stdout.write(
     `DOCS_CODE_REFS ${errors.length === 0 ? "passed" : "failed"} checked=${checked} errors=${errors.length}\n`,
