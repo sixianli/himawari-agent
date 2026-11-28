@@ -17,23 +17,6 @@ export function containsCredential(text: string): boolean {
   return redactForEgress(text).findings.some(({ kind }) => CREDENTIAL_KINDS.has(kind));
 }
 
-export function classificationWithIdentifiers<T extends string>(
-  text: string,
-  classification: T,
-): T | "sensitive" {
-  return (classification === "private" || classification === "public") &&
-    (containsRestrictedIdentifier(text) || containsCredential(text))
-    ? "sensitive"
-    : classification;
-}
-
-const SENSITIVE_MENTION =
-  /密码|口令|password|passwd|token|secret|api[ _-]?key|身份证|银行卡|卡号|ghp_|sk-|\d{15,19}/i;
-
-export function mentionsSensitiveMaterial(text: string): boolean {
-  return SENSITIVE_MENTION.test(text);
-}
-
 const SENSITIVE_QUERY_PARAMETER = /token|key|secret|password|signature|credential/i;
 const SENSITIVE_FIELD_NAME = /authorization|cookie|token|api.?key|secret|password|credential/i;
 

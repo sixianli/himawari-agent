@@ -1,4 +1,7 @@
-import { MEMORY_CATEGORY_NAMES, MEMORY_SENSITIVE_TOPICS } from "@himawari-agent/gateway-contracts";
+import {
+  MEMORY_CATEGORY_NAMES,
+  type MEMORY_SENSITIVE_TOPICS,
+} from "@himawari-agent/gateway-contracts";
 
 export type MemoryCategory = (typeof MEMORY_CATEGORY_NAMES)[number];
 export type MemoryTopic = (typeof MEMORY_SENSITIVE_TOPICS)[number];
@@ -8,7 +11,6 @@ export interface ImportCandidate {
   readonly category: MemoryCategory;
   readonly subCategory: string | null;
   readonly topic: MemoryTopic | null;
-  readonly sensitive: boolean;
   readonly duplicate: boolean;
   readonly duplicateCheck: "pending" | "clear" | "similar" | "unchecked";
   readonly coding: boolean;
@@ -60,7 +62,6 @@ export function parseMemoryText(name: string, text: string): ImportParse {
       category: coding ? "project" : "other",
       subCategory: coding ? (project || "Codex").slice(0, 32) : null,
       topic: null,
-      sensitive: false,
       duplicate: false,
       duplicateCheck: "pending",
       coding,
@@ -115,18 +116,12 @@ export function parseMemoryExport(name: string, text: string): ImportParse {
     const category = MEMORY_CATEGORY_NAMES.includes(entry["category"] as MemoryCategory)
       ? (entry["category"] as MemoryCategory)
       : "other";
-    const sensitive = entry["sensitive"] === true;
-    const topic = entry["sensitiveTopic"];
     const sub = entry["subCategory"];
     items.push({
       text: memoryText,
       category,
       subCategory: typeof sub === "string" && sub ? sub.slice(0, 32) : null,
-      topic:
-        sensitive && MEMORY_SENSITIVE_TOPICS.includes(topic as MemoryTopic)
-          ? (topic as MemoryTopic)
-          : null,
-      sensitive,
+      topic: null,
       duplicate: false,
       duplicateCheck: "pending",
       coding: false,
@@ -152,12 +147,7 @@ export function applyImportDuplicates(
       ...item,
       duplicate,
       duplicateCheck,
-      checked:
-        item.status === "ready" &&
-        !duplicate &&
-        duplicateCheck === "clear" &&
-        !item.sensitive &&
-        !item.coding,
+      checked: item.status === "ready" && !duplicate && duplicateCheck === "clear" && !item.coding,
     };
   });
 }
@@ -171,15 +161,11 @@ export function applyImportClassifications(
     if (item.status !== "classifying") return item;
     const result = results[next];
     next += 1;
-    if (!result || result.failed)
-      return { ...item, sensitive: true, topic: "other", checked: false, status: "unclassified" };
-    const sensitive = result.classification === "sensitive";
+    if (!result || result.failed) return { ...item, checked: false, status: "unclassified" };
     return {
       ...item,
       category: item.coding ? item.category : result.category,
-      sensitive,
-      topic: sensitive ? (result.topic ?? "other") : null,
-      checked: !item.duplicate && item.duplicateCheck === "clear" && !sensitive && !item.coding,
+      checked: !item.duplicate && item.duplicateCheck === "clear" && !item.coding,
       status: "ready",
     };
   });

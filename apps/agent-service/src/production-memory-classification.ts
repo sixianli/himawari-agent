@@ -1,14 +1,7 @@
-import {
-  SENSITIVE_MEMORY_TOPICS,
-  type DataClassification,
-  type SensitiveMemoryTopic,
-} from "@himawari-agent/application";
+import type { DataClassification, SensitiveMemoryTopic } from "@himawari-agent/application";
 import { MEMORY_CATEGORY_NAMES } from "@himawari-agent/gateway-contracts";
 import { MEMORY_CLASSIFICATION } from "@himawari-agent/prompt-catalog";
-import {
-  classificationWithIdentifiers,
-  mentionsSensitiveMaterial,
-} from "@himawari-agent/sensitive-capture";
+import { containsCredential } from "@himawari-agent/sensitive-capture";
 import { judgeWithModel } from "./auxiliary-judgment.js";
 
 export type MemoryClassificationCategory = (typeof MEMORY_CATEGORY_NAMES)[number];
@@ -42,8 +35,6 @@ export interface MemoryClassifierOptions {
 }
 
 const CATEGORIES: ReadonlySet<string> = new Set(MEMORY_CATEGORY_NAMES);
-const TOPICS: ReadonlySet<string> = new Set(SENSITIVE_MEMORY_TOPICS);
-const SENSITIVE_CATEGORIES: ReadonlySet<string> = new Set(["health", "finance"]);
 const OUTPUT_TOKENS_BASE = 200;
 export const MEMORY_CLASSIFICATION_BATCH_CHARACTERS = 6000;
 export const MEMORY_CLASSIFICATION_OUTPUT_TOKENS_PER_ITEM = 60;
@@ -55,22 +46,20 @@ export function memoryClassificationFailureCode(error: unknown): string {
 
 export const UNCLASSIFIED: MemoryClassification = Object.freeze({
   category: "other",
-  classification: "sensitive",
-  topic: "other",
+  classification: "private",
+  topic: null,
   failed: true,
 });
 
-export const DETERMINISTIC_SENSITIVE: MemoryClassification = Object.freeze({
+export const CREDENTIAL_TEXT: MemoryClassification = Object.freeze({
   category: "other",
-  classification: "sensitive",
-  topic: "other",
+  classification: "private",
+  topic: null,
   failed: false,
 });
 
-export function deterministicallySensitive(text: string): boolean {
-  return (
-    mentionsSensitiveMaterial(text) || classificationWithIdentifiers(text, "private") !== "private"
-  );
+export function looksLikeCredential(text: string): boolean {
+  return containsCredential(text);
 }
 
 export function memoryClassificationPrompt(
@@ -107,27 +96,12 @@ export function parseMemoryClassifications(
     const value = entry as Record<string, unknown>;
     const id = value["id"];
     if (typeof id !== "string" || !wanted.has(id) || results.has(id)) continue;
-    const requested = value["classification"];
-    if (requested !== "private" && requested !== "sensitive") continue;
     const category = (
       typeof value["category"] === "string" && CATEGORIES.has(value["category"])
         ? value["category"]
         : "other"
     ) as MemoryClassificationCategory;
-    const sensitive = requested === "sensitive" || SENSITIVE_CATEGORIES.has(category);
-    const topic = value["topic"];
-    results.set(id, {
-      category,
-      classification: sensitive ? "sensitive" : "private",
-      topic: sensitive
-        ? typeof topic === "string" && TOPICS.has(topic)
-          ? (topic as SensitiveMemoryTopic)
-          : SENSITIVE_CATEGORIES.has(category)
-            ? (category as SensitiveMemoryTopic)
-            : "other"
-        : null,
-      failed: false,
-    });
+    results.set(id, { category, classification: "private", topic: null, failed: false });
   }
   return results;
 }
@@ -214,7 +188,7 @@ export class ProductionMemoryClassifier {
     const results: MemoryClassification[] = texts.map(() => UNCLASSIFIED);
     const pending: { readonly id: string; readonly text: string }[] = [];
     for (const [index, text] of texts.entries()) {
-      if (deterministicallySensitive(text)) results[index] = DETERMINISTIC_SENSITIVE;
+      if (looksLikeCredential(text)) results[index] = CREDENTIAL_TEXT;
       else pending.push({ id: String(index), text });
     }
     const invocation = this.#options.newId();

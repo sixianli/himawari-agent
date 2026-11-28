@@ -12,7 +12,7 @@ import { isModelVisible } from "@himawari-agent/application";
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 import { type HostProviderSecretSource, OwnerIntentDecision } from "@himawari-agent/platform-node";
 import { OwnerIntentGate } from "./owner-intent-gate.js";
-import { deterministicallySensitive } from "./production-memory-classification.js";
+import { looksLikeCredential } from "./production-memory-classification.js";
 import { resolveConfiguredSecretRequirement } from "./production-model-composition.js";
 
 const RECENT_OWNER_MESSAGES = 6;
@@ -114,7 +114,7 @@ export async function collectOwnerWords(
   for (const message of messages.toReversed()) {
     if (remainingBytes <= 0) break;
     const text = (await readText(message.contentRef).catch(() => undefined))?.trim();
-    if (!text || deterministicallySensitive(text)) continue;
+    if (!text || looksLikeCredential(text)) continue;
     const kept = withinBytes(text.slice(0, MAXIMUM_WORDS_CHARACTERS), remainingBytes);
     remainingBytes -= wireBytes(kept);
     words.unshift(kept);

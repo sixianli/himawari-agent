@@ -779,11 +779,9 @@ export class PerceptionExtractionService {
     const reasonCode =
       !ownerSpoken || candidate.about === "unknown"
         ? PERCEPTION_REASON_CODES.keptTentative
-        : dataClassification !== "private"
-          ? PERCEPTION_REASON_CODES.sensitiveTentative
-          : passes
-            ? PERCEPTION_REASON_CODES.committed
-            : PERCEPTION_REASON_CODES.belowThreshold;
+        : passes
+          ? PERCEPTION_REASON_CODES.committed
+          : PERCEPTION_REASON_CODES.belowThreshold;
     const formal = reasonCode === PERCEPTION_REASON_CODES.committed;
     const contact =
       formal && candidate.about === "contact" ? await this.#contactName(quoted) : null;

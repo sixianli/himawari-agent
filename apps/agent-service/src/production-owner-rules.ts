@@ -41,7 +41,6 @@ import {
   TOOL_RULE_SET,
   TOOL_RULE_UNDO,
 } from "@himawari-agent/prompt-catalog";
-import { classificationWithIdentifiers } from "@himawari-agent/sensitive-capture";
 import { externalContentSourceRefs } from "./context-external-content.js";
 
 export const RULE_SET_CAPABILITY_REF = "rule.set";
@@ -689,7 +688,7 @@ export class ProductionOwnerRuleWriter {
           ...this.#scope(),
           ref,
           contentType: "text/plain",
-          dataClassification: classificationWithIdentifiers(text, "private"),
+          dataClassification: "private",
           plaintext: new TextEncoder().encode(text),
           createdAt: now,
         }),
