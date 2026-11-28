@@ -1,11 +1,10 @@
-import type {
-  PayloadProtectorPort,
-  PayloadStorePort,
-  ProductConfiguration,
-  ThreadRepositoryPort,
+import {
+  isModelVisible,
+  type PayloadProtectorPort,
+  type PayloadStorePort,
+  type ProductConfiguration,
+  type ThreadRepositoryPort,
 } from "@himawari-agent/application";
-
-const SHOWN_CLASSIFICATIONS: readonly string[] = ["public", "private"];
 
 export function classifiedThreadTitleReader(options: {
   readonly configuration: Pick<ProductConfiguration, "ownerId" | "agentId">;
@@ -25,7 +24,7 @@ export function classifiedThreadTitleReader(options: {
     if (
       !payload ||
       payload.contentType !== "text/plain" ||
-      !SHOWN_CLASSIFICATIONS.includes(payload.dataClassification)
+      !isModelVisible(payload.dataClassification)
     )
       return null;
     const title = new TextDecoder("utf-8", { fatal: true }).decode(

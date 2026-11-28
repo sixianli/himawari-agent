@@ -6,6 +6,7 @@ import type {
   ProductMemoryStatePort,
   SearchAskConfiguration,
 } from "@himawari-agent/application";
+import { isModelVisible, modelVisibleClassifications } from "@himawari-agent/application";
 import type {
   GatewayV2Query,
   GatewayV2Snapshot,
@@ -131,18 +132,12 @@ interface Candidate {
   readonly basis: Omit<Basis, "label">;
 }
 
-const SEARCH_VISIBLE: readonly DataClassification[] = Object.freeze(["public", "private"]);
-
-function searchVisible(classification: string): boolean {
-  return (SEARCH_VISIBLE as readonly string[]).includes(classification);
-}
-
 function currentlyShown(memory: ProductMemoryRecord, now: string): boolean {
   const attributes = memory.attributes;
   if ((attributes?.supersededBy ?? null) !== null || attributes?.tentative === true) return false;
   const validTo = attributes?.validTo ?? null;
   if (validTo !== null && validTo <= now) return false;
-  return searchVisible(memory.dataClassification);
+  return isModelVisible(memory.dataClassification);
 }
 
 function singleLine(text: string): string {
@@ -296,7 +291,7 @@ export class ProductionSearchControl {
               agentId,
               query: asked,
               scope: null,
-              allowedClassifications: SEARCH_VISIBLE,
+              allowedClassifications: modelVisibleClassifications(),
               limit: settings.candidateLimit,
               lexicalOnly: true,
             })
@@ -305,7 +300,7 @@ export class ProductionSearchControl {
       for (const { episode, text } of episodes) {
         const line = singleLine(text);
         const matched = coverage(terms, line);
-        if (line.length === 0 || matched < minimum || !searchVisible(episode.dataClassification))
+        if (line.length === 0 || matched < minimum || !isModelVisible(episode.dataClassification))
           continue;
         candidates.push({
           answer: line,
@@ -329,7 +324,7 @@ export class ProductionSearchControl {
       for (const found of heard) {
         const line = singleLine(found.text);
         const matched = coverage(terms, line);
-        if (line.length === 0 || matched < minimum || !searchVisible(found.dataClassification))
+        if (line.length === 0 || matched < minimum || !isModelVisible(found.dataClassification))
           continue;
         const owner = found.origin === "owner_spoken";
         candidates.push({

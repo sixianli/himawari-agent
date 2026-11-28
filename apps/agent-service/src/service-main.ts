@@ -3691,11 +3691,7 @@ export async function startTenantRuntime(
         },
         modelCatalog: await Promise.all(
           modelComposition.descriptors.generation
-            .filter(
-              (descriptor) =>
-                descriptor.api === "openai-completions" &&
-                descriptor.allowedDataClassifications.includes("private"),
-            )
+            .filter((descriptor) => descriptor.api === "openai-completions")
             .map(async (descriptor) => ({
               ...getPiModelPresentation(await configuredPiModels.resolve(descriptor.ref)),
               ...modelCatalogTags(descriptor.ref),

@@ -8,6 +8,7 @@ import type {
   RunExecutionSource,
   ThreadRepositoryPort,
 } from "@himawari-agent/application";
+import { isModelVisible } from "@himawari-agent/application";
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 import { type HostProviderSecretSource, OwnerIntentDecision } from "@himawari-agent/platform-node";
 import { OwnerIntentGate } from "./owner-intent-gate.js";
@@ -42,8 +43,7 @@ export interface OwnerWordsDependencies {
   readonly readText: (ref: string) => Promise<string | undefined>;
 }
 
-const sendable = (classification: string) =>
-  classification === "public" || classification === "private";
+const sendable = (classification: string) => isModelVisible(classification);
 
 function wireBytes(text: string): number {
   return Buffer.byteLength(JSON.stringify(text), "utf8") - 2;

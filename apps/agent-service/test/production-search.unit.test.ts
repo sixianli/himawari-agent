@@ -188,10 +188,20 @@ async function only(service: ProductionSearchControl, query: string | null) {
   return snapshot.payload;
 }
 
-it("answers not found when the only match is sensitive, and never suggests it", async () => {
+it("answers from a health memory once marked sensitive, like any other memory", async () => {
+  const health = record(
+    "health",
+    { dataClassification: "sensitive" },
+    { entities: ["青霉素"], category: "identity" },
+  );
+  const service = single([health], "我对青霉素过敏");
+  expect((await only(service, "青霉素过敏")).state).not.toBe("not_found");
+});
+
+it("answers not found when the only match is a password or key, and never suggests it", async () => {
   const secret = record(
     "secret",
-    { dataClassification: "sensitive" },
+    { dataClassification: "restricted" },
     { entities: ["青霉素"], category: "identity" },
   );
   const service = single([secret], "我对青霉素过敏");

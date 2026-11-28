@@ -7,6 +7,7 @@ import type {
 } from "../ports/authorization.js";
 import { ApplicationPortError, PORT_ERROR_CODES } from "../ports/common.js";
 import type { ClockPort, IdGeneratorPort } from "../ports/system.js";
+import { isModelVisible } from "./model-visibility.js";
 import { actionIntentFingerprint } from "./permission-service.js";
 
 function bounded(values: readonly string[], name: string): void {
@@ -75,8 +76,7 @@ export class GrantService {
         input.scope.sideEffects.some((effect) => effect !== "none") ||
         input.scope.disclosure !== "none" ||
         input.scope.recipients.length > 0 ||
-        input.scope.maxDataClassification === "sensitive" ||
-        input.scope.maxDataClassification === "restricted"
+        !isModelVisible(input.scope.maxDataClassification)
       )
         this.invalid("Long-term Grants are limited to bounded safe READ actions");
       if (
