@@ -7,7 +7,6 @@ import {
 } from "../apps/control-center/src/components/brand-seeds.ts";
 
 const BACKGROUND = "#1e1d1d";
-const LIGHT_BACKGROUND = "#fbf8f1";
 const LIGHT_NEW_SEED = "#b8741a";
 const APP_ICON_DIR = "clients/apple/App/Brand.xcassets";
 const MAC_SIZES = [16, 32, 128, 256, 512];
@@ -150,11 +149,7 @@ if (process.argv[1] === new URL(import.meta.url).pathname) {
   const icons = `${APP_ICON_DIR}/AppIcon.appiconset`;
   await shoot(
     page,
-    appIconSvg({
-      background: LIGHT_BACKGROUND,
-      newSeed: LIGHT_NEW_SEED,
-      scale: 0.78,
-    }),
+    appIconSvg({ background: BACKGROUND, scale: 0.78 }),
     1024,
     `${icons}/ios-light.png`,
   );
@@ -170,12 +165,7 @@ if (process.argv[1] === new URL(import.meta.url).pathname) {
     1024,
     `${icons}/ios-tinted.png`,
   );
-  const macIcon = appIconSvg({
-    background: LIGHT_BACKGROUND,
-    newSeed: LIGHT_NEW_SEED,
-    scale: 0.62,
-    mac: true,
-  });
+  const macIcon = appIconSvg({ background: BACKGROUND, scale: 0.62, mac: true });
   for (const size of MAC_SIZES)
     for (const factor of [1, 2])
       await shoot(page, macIcon, size * factor, `${icons}/mac-${size * factor}.png`, true);
