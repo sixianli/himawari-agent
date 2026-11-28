@@ -16,16 +16,27 @@ function temporary() {
 }
 
 afterEach(() => {
-  for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true });
+  for (const directory of directories.splice(0))
+    rmSync(directory, { recursive: true, force: true });
 });
 
 function keys(directory) {
   const privateKey = path.join(directory, "private.pem");
   const publicKey = path.join(directory, "public.pem");
   expect(
-    spawnSync("openssl", ["genpkey", "-algorithm", "RSA", "-pkeyopt", "rsa_keygen_bits:2048", "-out", privateKey]).status,
+    spawnSync("openssl", [
+      "genpkey",
+      "-algorithm",
+      "RSA",
+      "-pkeyopt",
+      "rsa_keygen_bits:2048",
+      "-out",
+      privateKey,
+    ]).status,
   ).toBe(0);
-  expect(spawnSync("openssl", ["pkey", "-in", privateKey, "-pubout", "-out", publicKey]).status).toBe(0);
+  expect(
+    spawnSync("openssl", ["pkey", "-in", privateKey, "-pubout", "-out", publicKey]).status,
+  ).toBe(0);
   return { privateKey, publicKey };
 }
 
@@ -83,21 +94,33 @@ describe("production-ops", () => {
 
   it("collects before it restarts and confirms the service came back", () => {
     const directory = temporary();
-    const { child } = run("restart", directory, { HIMAWARI_OPS_LOCK: path.join(directory, "deploy.lock") });
+    const { child } = run("restart", directory, {
+      HIMAWARI_OPS_LOCK: path.join(directory, "deploy.lock"),
+    });
     expect(child.status).toBe(0);
     const calls = readFileSync(path.join(directory, "calls"), "utf8");
     expect(calls).toContain("systemctl restart himawari-prod.service");
-    expect(child.stdout.indexOf("OPS_SEALED_BEGIN")).toBeLessThan(child.stdout.indexOf("OPS_RESTARTED"));
+    expect(child.stdout.indexOf("OPS_SEALED_BEGIN")).toBeLessThan(
+      child.stdout.indexOf("OPS_RESTARTED"),
+    );
   });
 
   it("does not restart while a deploy holds the lock", async () => {
     const directory = temporary();
     const lock = path.join(directory, "deploy.lock");
     const ready = path.join(directory, "ready");
-    const holder = spawn("bash", ["-c", `exec 9> ${JSON.stringify(lock)}; flock -n 9; touch ${JSON.stringify(ready)}; exec sleep 30`], { stdio: "ignore" });
+    const holder = spawn(
+      "bash",
+      [
+        "-c",
+        `exec 9> ${JSON.stringify(lock)}; flock -n 9; touch ${JSON.stringify(ready)}; exec sleep 30`,
+      ],
+      { stdio: "ignore" },
+    );
     try {
       const until = Date.now() + 5000;
-      while (Date.now() < until && spawnSync("test", ["-e", ready]).status !== 0) spawnSync("sleep", ["0.1"]);
+      while (Date.now() < until && spawnSync("test", ["-e", ready]).status !== 0)
+        spawnSync("sleep", ["0.1"]);
       const { child } = run("restart", directory, { HIMAWARI_OPS_LOCK: lock });
       expect(child.status).toBe(75);
       expect(child.stderr).toContain("OPS_REFUSED BUSY");
