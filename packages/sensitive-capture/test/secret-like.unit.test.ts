@@ -38,9 +38,7 @@ describe("words kept out of the search index", () => {
     expect(masked).not.toMatch(/hunter22|abcd|uvwx/u);
     expect(masked).toContain("2026-11-09");
     expect(masked).toContain("去医院");
-    const card = maskForIndex("卡号 4111 1111 1111 1111");
-    expect(card).not.toContain("4111");
-    expect(card).toContain("尾号1111");
+    expect(maskForIndex("卡号 4111 1111 1111 1111")).toBe("卡号 4111 1111 1111 1111");
     expect(maskForIndex("Wi-Fi 密码：sunflower，客人来了就告诉他 sunflower")).not.toContain(
       "sunflower",
     );
@@ -60,8 +58,9 @@ describe("words kept out of the search index", () => {
 
   it("removes repeats only as whole words and never inside a masked placeholder", () => {
     const placeholder = maskForIndex("验证码是1111，卡号 4111 1111 1111 1111");
-    expect(placeholder).toContain("尾号1111");
-    expect(placeholder).not.toContain("4111");
+    expect(placeholder).toContain("[验证码]");
+    expect(placeholder).toContain("卡号 4111");
+    expect(placeholder).not.toMatch(/(?<!\d)1111(?!\d)/u);
     const contest = maskForIndex("密码是test，周末的 contest 别忘了");
     expect(contest).toContain("contest");
     expect(maskForIndex("备注 [x9Kq2mVb7Lp4Wz]")).not.toContain("x9Kq2mVb7Lp4Wz");

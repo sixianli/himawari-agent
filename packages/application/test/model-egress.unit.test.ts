@@ -58,7 +58,7 @@ async function send(
   };
 }
 
-const CARD = "4111 1111 1111 1111";
+const PASSWORD = "Qz7mWx42Lp";
 const PLACEHOLDER = /\[[^\]]+#[a-z]{8}\]/u;
 
 describe("chat completions", () => {
@@ -68,7 +68,7 @@ describe("chat completions", () => {
     tools: [{ type: "function", function: { name: "bash", description: "password: tool-doc" } }],
     messages: [
       { role: "system", content: "你是 Himawari" },
-      { role: "user", content: `我的卡号 ${CARD}` },
+      { role: "user", content: `我的密码：${PASSWORD}` },
       {
         role: "assistant",
         content: null,
@@ -102,7 +102,7 @@ describe("chat completions", () => {
 
   it("masks message text, tool results and every string inside tool-call arguments", async () => {
     const { sent, raw } = await send("/chat/completions", body());
-    expect(raw).not.toContain(CARD);
+    expect(raw).not.toContain(PASSWORD);
     expect(raw).not.toContain("482910");
     expect(raw).not.toContain("hunter22abc");
     const messages = sent["messages"] as Record<string, unknown>[];
@@ -149,12 +149,12 @@ describe("chat completions", () => {
     const { raw } = await send("/chat/completions", {
       model: "m",
       messages: [
-        { role: "user", content: `卡号 ${CARD}` },
+        { role: "user", content: `密码：${PASSWORD}` },
         { role: "assistant", content: "好的" },
         { role: "user", content: "继续" },
       ],
     });
-    expect(raw).not.toContain(CARD);
+    expect(raw).not.toContain(PASSWORD);
   });
 
   it("sends the original bytes and keeps content-length when nothing needs masking", async () => {
@@ -217,6 +217,32 @@ describe("chat completions", () => {
     expect(fresh.raw).not.toContain("abc12345");
   });
 
+  it("[I-129] masks card and identity numbers only for a conversation still on ruleset 2, and sends them as they are from ruleset 3", async () => {
+    const messages = [
+      { role: "user", content: "卡号 4111 1111 1111 1111，身份证 11010519491231002X" },
+    ];
+    const onRuleset = (redactionRuleset: number) =>
+      send(
+        "/chat/completions",
+        { model: "m", messages },
+        {
+          exchange: egress().exchange({
+            ownerId: "owner-1",
+            agentId: "agent-1",
+            threadId: "thread-1",
+            source: "chat",
+            purpose: "chat",
+            redactionRuleset,
+          } as unknown as ModelEgressContext),
+        },
+      );
+    const older = await onRuleset(2);
+    expect(older.raw).not.toContain("4111 1111 1111 1111");
+    expect(older.raw).not.toContain("11010519491231002X");
+    const current = await send("/chat/completions", { model: "m", messages });
+    expect(JSON.stringify(current.sent["messages"])).toBe(JSON.stringify(messages));
+  });
+
   it("gives the same placeholder to the same value across calls and keys", async () => {
     const a = await send("/chat/completions", body());
     const b = await send("/chat/completions", body());
@@ -240,13 +266,13 @@ describe("chat completions", () => {
   it("masks sensitive values in positions nobody listed, such as new fields and unknown part types", async () => {
     const { raw } = await send("/chat/completions", {
       model: "m",
-      metadata: { note: `卡 ${CARD}` },
+      metadata: { note: `密码：${PASSWORD}` },
       messages: [
         { role: "oracle", content: "验证码 482910", extra: { deep: [`密码：hunter22abc`] } },
-        { role: "user", content: [{ type: "hologram", text: `卡 ${CARD}` }] },
+        { role: "user", content: [{ type: "hologram", text: `密码：${PASSWORD}` }] },
       ],
     });
-    expect(raw).not.toContain(CARD);
+    expect(raw).not.toContain(PASSWORD);
     expect(raw).not.toContain("482910");
     expect(raw).not.toContain("hunter22abc");
   });
@@ -285,7 +311,7 @@ describe("chat completions", () => {
               function: {
                 name: "n",
                 arguments: JSON.stringify({
-                  id: `卡 ${CARD}`,
+                  id: `密码：${PASSWORD}`,
                   name: "密码：hunter22abc",
                   type: "验证码 482910",
                 }),
@@ -295,7 +321,7 @@ describe("chat completions", () => {
         },
       ],
     });
-    expect(raw).not.toContain(CARD);
+    expect(raw).not.toContain(PASSWORD);
     expect(raw).not.toContain("hunter22abc");
     expect(raw).not.toContain("482910");
   });
@@ -308,8 +334,8 @@ describe("chat completions", () => {
 
   it("counts findings by kind without keeping values", async () => {
     const { exchange } = await send("/chat/completions", body());
-    expect(exchange.findings().map(({ kind }) => kind)).toContain("bank-card");
-    expect(JSON.stringify(exchange.findings())).not.toContain("4111");
+    expect(exchange.findings().map(({ kind }) => kind)).toContain("password");
+    expect(JSON.stringify(exchange.findings())).not.toContain(PASSWORD);
   });
 });
 
@@ -319,13 +345,17 @@ describe("responses", () => {
       model: "m",
       instructions: "密码：sys-secret-1",
       input: [
-        { type: "message", role: "user", content: [{ type: "input_text", text: `卡 ${CARD}` }] },
+        {
+          type: "message",
+          role: "user",
+          content: [{ type: "input_text", text: `密码：${PASSWORD}` }],
+        },
         { type: "reasoning", id: "rs_1", encrypted_content: `密码：keep-this-1` },
         { type: "function_call", call_id: "c1", name: "x", arguments: '{"a":"验证码 482910"}' },
         { type: "function_call_output", call_id: "c1", output: "验证码 482910" },
       ],
     });
-    expect(raw).not.toContain(CARD);
+    expect(raw).not.toContain(PASSWORD);
     expect(raw).not.toContain("sys-secret-1");
     expect(raw).not.toContain("482910");
     const input = sent["input"] as Record<string, unknown>[];
@@ -345,7 +375,7 @@ describe("anthropic messages", () => {
       model: "m",
       system: [{ type: "text", text: "密码：sys-secret-1" }],
       messages: [
-        { role: "user", content: `卡 ${CARD}` },
+        { role: "user", content: `密码：${PASSWORD}` },
         {
           role: "assistant",
           content: [
@@ -365,7 +395,7 @@ describe("anthropic messages", () => {
         },
       ],
     });
-    expect(raw).not.toContain(CARD);
+    expect(raw).not.toContain(PASSWORD);
     expect(raw).not.toContain("sys-secret-1");
     expect(raw).not.toContain("482910");
     const messages = sent["messages"] as { content: Record<string, unknown>[] }[];
@@ -380,10 +410,10 @@ describe("anthropic messages", () => {
 
 describe("embeddings", () => {
   it("masks a string input and a list of strings", async () => {
-    const one = await send("/embeddings", { model: "m", input: `卡 ${CARD}` });
-    expect(one.raw).not.toContain(CARD);
-    const many = await send("/embeddings", { model: "m", input: [`卡 ${CARD}`, "你好"] });
-    expect(many.raw).not.toContain(CARD);
+    const one = await send("/embeddings", { model: "m", input: `密码：${PASSWORD}` });
+    expect(one.raw).not.toContain(PASSWORD);
+    const many = await send("/embeddings", { model: "m", input: [`密码：${PASSWORD}`, "你好"] });
+    expect(many.raw).not.toContain(PASSWORD);
     expect((many.sent["input"] as string[])[1]).toBe("你好");
   });
 
@@ -399,7 +429,7 @@ describe("embeddings", () => {
 
 describe("what is not sent", () => {
   it("refuses a body sent to an unknown path", async () => {
-    await expect(send("/audio/speech", { input: `卡 ${CARD}` })).rejects.toBeInstanceOf(
+    await expect(send("/audio/speech", { input: `密码：${PASSWORD}` })).rejects.toBeInstanceOf(
       ModelEgressRefusedError,
     );
   });
@@ -438,7 +468,7 @@ describe("putting values back", () => {
   it("restores placeholders from this request and leaves unknown ones alone", async () => {
     const { exchange, raw } = await send("/chat/completions", {
       model: "m",
-      messages: [{ role: "user", content: `卡 ${CARD}，密码：hunter22abc` }],
+      messages: [{ role: "user", content: `密码：${PASSWORD}，密码：hunter22abc` }],
     });
     const placeholders = [
       ...raw.matchAll(/\[(?:密码|验证码|证件号|银行卡 尾号\d{4})#[a-z]{8}\]/gu),
@@ -446,7 +476,7 @@ describe("putting values back", () => {
     expect(placeholders).toHaveLength(2);
     const reply = `你的卡是 ${placeholders[0]}，另一个 [密码#zzzzzzzz] 不认识`;
     const restored = exchange.restore(reply);
-    expect(restored).toContain(CARD);
+    expect(restored).toContain(PASSWORD);
     expect(restored).toContain("[密码#zzzzzzzz]");
   });
 
@@ -511,7 +541,7 @@ describe("reporting what was masked", () => {
     model: "m",
     messages: [
       { role: "system", content: "密码：sys9pass99" },
-      { role: "user", content: `卡号 ${CARD}，再说一次卡号 ${CARD}` },
+      { role: "user", content: `密码：${PASSWORD}，再说一次密码：${PASSWORD}` },
       {
         role: "assistant",
         content: "好的",
@@ -536,12 +566,12 @@ describe("reporting what was masked", () => {
       reports[0]?.sightings.map(({ part, category, ruleId }) => `${part}/${category}/${ruleId}`),
     ).toEqual([
       "system/password/password-keyword",
-      "owner_message/bank-card/bank-card",
+      "owner_message/password/password-keyword",
       "tool_call/verification-code/verification-code-keyword",
-      "tool_result/identity-number/cn-identity-number",
     ]);
+    expect(raw).toContain("身份证 11010519491231002X");
     const serialized = JSON.stringify(reports);
-    for (const value of ["sys9pass99", "4111", "482910", "11010519491231002X"]) {
+    for (const value of ["sys9pass99", PASSWORD, "482910"]) {
       expect(serialized).not.toContain(value);
       expect(raw).not.toContain(value);
     }
@@ -563,7 +593,7 @@ describe("reporting what was masked", () => {
         "/chat/completions",
         {
           model: "m",
-          messages: [{ role: "user", content: `卡号 ${CARD}\n${leaked}` }],
+          messages: [{ role: "user", content: `密码：${PASSWORD}\n${leaked}` }],
         },
         { exchange: instance.exchange(context) },
       ),
@@ -574,7 +604,7 @@ describe("reporting what was masked", () => {
         [part, category, ruleId, outcome].join("/"),
       ),
     ).toEqual([
-      "owner_message/bank-card/bank-card/withheld",
+      "owner_message/password/password-keyword/withheld",
       "owner_message/machine-secret/openai-api-key/withheld",
     ]);
     expect(JSON.stringify(reports)).not.toContain("a".repeat(24));
@@ -596,7 +626,7 @@ describe("reporting what was masked", () => {
         method: "POST",
         body: JSON.stringify({
           model: "m",
-          messages: [{ role: "user", content: `卡号 ${CARD}\n${leaked}` }],
+          messages: [{ role: "user", content: `密码：${PASSWORD}\n${leaked}` }],
         }),
       });
     const first = await call().catch((error: unknown) => error);
@@ -746,7 +776,7 @@ describe("reporting what was masked", () => {
           },
           {
             role: "user",
-            content: [{ type: "tool_result", tool_use_id: "t", content: `卡号 ${CARD}` }],
+            content: [{ type: "tool_result", tool_use_id: "t", content: `密码：${PASSWORD}` }],
           },
         ],
       },
@@ -764,7 +794,7 @@ describe("reporting what was masked", () => {
             content: [{ type: "input_text", text: "验证码 482910" }],
           },
           { type: "function_call", call_id: "x", name: "f", arguments: '{"p":"密码：call9pass9"}' },
-          { type: "function_call_output", call_id: "x", output: `卡号 ${CARD}` },
+          { type: "function_call_output", call_id: "x", output: `密码：${PASSWORD}` },
         ],
       },
       { exchange: instance.exchange(context) },
