@@ -120,6 +120,7 @@ verified_at: ""
   91. [对外开了 MCP 入口，别的 agent 却未必来读来存：补上触发和身份，把 Himawari 做成记忆中心](#case-memory-hub)
   92. [改了一条记忆，依据它推出来的记忆和由它立的规则还按旧的走：沿依据链标待重审，规则由模型重读后对不上就暂停](#case-correction-propagation)
   93. [用公开基准给记忆打分：LoCoMo 记忆作答 77.6%，原文全塞是 92.5%，差距在“找回来”而不在“记下来”](#case-public-memory-benchmarks)
+  94. [新用户第一句话就设不了勿扰：直接写入的记忆借用“对话整理”的编号，改表又差点连带删掉子表](#case-direct-memory-generation)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -141,7 +142,7 @@ verified_at: ""
 
 | 岗位常见要求 | 可以讲的案例 |
 | --- | --- |
-| Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[真模型跑 Jarvis Test](#case-jarvis-test-evals)、[找记忆的向量化绕路](#case-memory-embedding-route)、[新消息被当成档案的一行](#case-owner-material-position)、[记忆搜索没有相关度门槛](#case-memory-relevance-threshold)、[检索合并后怎么划“相关”的线](#case-relevance-cutoff)、[记忆变化历史完整保留](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories)、[用真实记忆每周评测](#case-real-memory-eval)、[其他 agent 写记忆先待确认](#case-external-memory-proposals)、[别的 agent 共用一个记忆中心](#case-memory-hub)、[改记忆后沿依据链标待重审](#case-correction-propagation)、[用公开基准给记忆打分](#case-public-memory-benchmarks) |
+| Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[真模型跑 Jarvis Test](#case-jarvis-test-evals)、[找记忆的向量化绕路](#case-memory-embedding-route)、[新消息被当成档案的一行](#case-owner-material-position)、[记忆搜索没有相关度门槛](#case-memory-relevance-threshold)、[检索合并后怎么划“相关”的线](#case-relevance-cutoff)、[记忆变化历史完整保留](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories)、[用真实记忆每周评测](#case-real-memory-eval)、[其他 agent 写记忆先待确认](#case-external-memory-proposals)、[别的 agent 共用一个记忆中心](#case-memory-hub)、[改记忆后沿依据链标待重审](#case-correction-propagation)、[用公开基准给记忆打分](#case-public-memory-benchmarks)、[新用户第一句话就设不了勿扰](#case-direct-memory-generation) |
 | 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[文档技能：提示里一行索引](#case-document-tools)、[工具隔离架构](#case-tool-isolation)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[并行搜索各要一次审批](#case-approval-stall)、[命令和主服务断联](#case-command-disconnect)、[执行进程卡住没人发现](#case-command-hang-heartbeat)、[对话并发](#case-concurrent-dispatch) |
 | Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user)、[命令可写工作目录并留档](#case-bash-workspace-write)、[生产机防火墙](#case-prod-firewall)、[最低 TLS 改 1.2](#case-min-tls)、[不放宽安全策略显示 Word](#case-file-preview)、[发给模型的敏感信息统一遮盖](#case-model-egress-redaction)、[自己写的指令不该被当成外来内容检查](#case-trusted-prompt-text)、[沙箱保护不能静默失效](#case-srt-locked-seccomp-helper) |
 | 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[做 Word 要 50 秒：服务器没装文档库](#case-document-tools)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send)、[找记忆的向量化绕路](#case-memory-embedding-route)、[启动时逐个查权限](#case-startup-permission-audit)、[工具前后空等](#case-tool-gap-host-check)、[简单问题也要 10 秒](#case-conversation-speed)、[回答写完才整块出现](#case-streaming-answers)、[提前收尾抢掉迟到结果恢复](#case-unknown-settle-vs-late-recovery) |
@@ -5966,6 +5967,56 @@ Himawari 整理记忆时会从几条记忆推出一条新结论（`reflect`）�
 **面试 30 秒版**
 
 我们用业界常用的 LoCoMo 和 LongMemEval，让每段对话逐轮走生产的整理记忆代码，再拿“原文全塞”当对照。LoCoMo 上记忆作答 77.6%，全塞 92.5%，但上下文只有全塞的三分之一。证据 100% 记下来了、91% 找得回来，所以下一步该优化检索和作答，而不是整理。LongMemEval 上两者打平（73.3%），上下文却只有全塞的 4%。评测还顺带抓出一个违背产品规则的问题：健康、财务内容被挂起等批准，已经修掉。
+
+[返回目录](#contents)
+
+<a id="case-direct-memory-generation"></a>
+
+## 案例 94：新用户第一句话就设不了勿扰：直接写入的记忆借用“对话整理”的编号，改表又差点连带删掉子表
+
+**背景与现象**
+
+2026-11-28 做“在聊天里改设置”（PR 829）时发现：全新安装、Himawari 还没记下任何事的时候，在聊天里说“打开勿扰”会失败，报“规则要写的记忆还没准备好”。同样失败的还有设提醒（`REMINDER_MEMORY_NOT_READY`）、记忆页手动添加（按钮灰着）、别的 agent 经 MCP（让外部 agent 调用 Himawari 工具的协议）推来的记忆（只能一直待确认）。自 v2.4 起 Himawari 是每人一个（[ADR 0310](adr/0310-adopt-product-vision-v2-4.md)），每个新用户第一次用都会碰到。
+
+**根因**
+
+记忆的每次写入都要挂在一个“整理编号”（`memory_generations` 表的一行）下，后台的索引任务（`memory_projection_jobs`）再按这个编号建索引。表里 `checkpoint_job_id`、`thread_id` 都是 `NOT NULL`，也就是说每个整理编号都必须属于某段对话的某次整理。规则、勿扰、提醒、手动添加、MCP 推送这些“不经过对话整理、直接写入”的路径，于是都去借“最近一次对话整理”的编号；新用户还没有任何一次整理，就借不到，直接报错。用新加的端到端测试 `[FIRST-1]` 在修复前复现：全新安装时 `manualAddReady` 是 `false`、设提醒报错。
+
+**我们的方案**
+
+- 让整理编号可以不属于任何对话：`checkpoint_job_id`、`thread_id` 改成可空，并加 `CHECK`，要求两者同时为空或同时不空。两者都空的就是“直接写入”的编号。
+- 每个主人一个直接写入编号（`memory-direct:<主人>:<agent>`），第一次用到时创建（`INSERT ... ON CONFLICT DO NOTHING`）。借用最近整理编号的地方全部改用它，“还没准备好”的分支和提示随之删掉。
+- 改列约束在 SQLite 里只能重建表。原来的迁移程序把每个迁移放在一个开着外键的事务里跑；这样重建 `memory_generations` 时，删旧表会连带删掉所有子表里指向它的行。所以先让迁移程序支持官方的重建步骤：迁移的 meta 文件写 `"rebuilds"` 时，在事务外关外键、事务里重建、提交前跑 `foreign_key_check`、最后再开外键。
+
+**方案讨论与备选**
+
+- A：新用户第一次用时，伪造一次“对话整理”。改动最小，但会在对话列表和整理记录里留下假数据，删掉那段假对话又会连带删掉规则的索引任务。放弃。
+- B（采用，Andy 2026-11-28 在决策卡片上同意）：单独的直接写入编号。要改表结构。
+- 最初的 B 只写了“迁移让两列可空”。动手前核对时发现，照原来的迁移程序做会连带删掉子表数据，于是又请 Andy 选：先改迁移程序支持官方步骤（采用），还是绕开重建表、另建一张新表。另建新表要把所有读编号的地方都改成读两张表，改动更散。
+- 方案文档写了一个 `origin` 列来区分来源；实现时发现“对话和整理任务都为空”本身就能区分，`CHECK` 又保证不会只空一半，就没有加这一列。
+
+**业界主流做法**
+
+- ✅ SQLite 官方 ALTER TABLE 文档（<https://www.sqlite.org/lang_altertable.html#otheralter>）的 12 步：“If foreign key constraints are enabled, disable them using PRAGMA foreign_keys=OFF.”“If foreign key constraints were originally enabled then run PRAGMA foreign_key_check to verify that the schema change did not break any foreign key constraints.”新表先用一个新名字建好，“Drop the old table X”，再“Change the name of new_X to X”。
+- ✅ SQLite 外键文档（<https://www.sqlite.org/foreignkeys.html>）：“If foreign key constraints are enabled when it is prepared, the DROP TABLE command performs an implicit DELETE to remove all rows from the table before dropping it. The implicit DELETE does not cause any SQL triggers to fire, but may invoke foreign key actions or constraint violations.”以及“It is not possible to enable or disable foreign key constraints in the middle of a multi-statement transaction ... Attempting to do so does not return an error; it simply has no effect.”
+
+**对比与取舍**
+
+和官方步骤一致：事务外关外键、事务里建新表、复制、删旧表、改名、`foreign_key_check`、提交后再开。不同点是检查只看和被重建的表有关的外键问题（被重建的表自己，或者父表是它的），别处早已存在的问题不拦这次迁移；如果整库检查，任何一处历史遗留问题都会卡住上线。迁移程序还拒绝在外层事务里跑重建迁移，因为那时关外键不会生效、也不报错，只会悄悄照旧连带删除；为此把 5 处测试里“外面包一层事务再跑全部迁移”的写法去掉了。
+
+**结果数据**
+
+- 迁移合约测试 `packages/persistence-sqlite/test/direct-memory-generations-migration.contract.test.ts`：重建前放 1 条整理编号和 1 条挂在它下面的索引任务，按新迁移跑完，索引任务还是 1 条；同一迁移去掉 `"rebuilds"` 声明再跑，索引任务变成 0 条，复现了“连带删除”；重建后故意留下断掉的引用，迁移报 `INTEGRITY_CHECK_FAILED` 并整体回滚，外键重新打开。
+- 端到端测试 `[FIRST-1]`（真构建产物、真 HTTP）：全新安装第一句话就能设提醒、打开勿扰，记忆页 `manualAddReady` 为 `true`；修复前失败。
+- 生产上的效果：未测量（等上线后补）。
+
+**相关 ADR/PR**
+
+[ADR 0310](adr/0310-adopt-product-vision-v2-4.md)（每人一个 Himawari）；PR 829（在聊天里改设置，发现问题的地方）；本案例所在的 PR（修复）；迁移写法见 [.agents/instructions/migrations.md](../.agents/instructions/migrations.md)。
+
+**面试 30 秒版**
+
+新用户第一句话说“打开勿扰”就失败，因为所有直接写入的记忆都要借“最近一次对话整理”的编号，新用户一次都还没有。我们给每个用户单独一个不属于任何对话的直接写入编号，这需要改表约束；SQLite 只能重建表，而外键开着时删旧表会连带删掉子表，所以先让迁移程序照官方 12 步关外键、重建、`foreign_key_check`。一个反向测试证明：不照这个步骤，子表的数据会被删光。
 
 [返回目录](#contents)
 

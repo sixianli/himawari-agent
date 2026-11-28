@@ -436,7 +436,7 @@ export interface PerceptionExtractionOptions {
     ): Promise<ProductMemoryRecord>;
   };
   readonly memories: { read(id: MemoryId): Promise<ProductMemoryRecord | undefined> };
-  readonly generation: () => Promise<MemoryGenerationId | undefined>;
+  readonly generation: () => Promise<MemoryGenerationId>;
   readonly storeText: (input: {
     readonly key: string;
     readonly text: string;
@@ -772,7 +772,6 @@ export class PerceptionExtractionService {
     if (!isModelVisible(dataClassification)) return discard(PERCEPTION_REASON_CODES.restricted);
     if (await this.#options.memories.read(memoryId)) return;
     const generation = await this.#options.generation();
-    if (!generation) throw new Error("PERCEPTION_MEMORY_NOT_READY");
     const ownerSpoken = quoted.record.origin === "owner_spoken";
     const passes =
       candidate.confidence >= thresholdFor(MEMORY_PERCEPTION_COMMIT_GATE, candidate.category);

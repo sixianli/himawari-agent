@@ -76,6 +76,8 @@ export class SqliteMemoryBookOperations {
         return this.listProfilePins(payload as Scope);
       case "memoryBook.latestGeneration":
         return this.latestGeneration(payload as Scope);
+      case "memoryBook.directGeneration":
+        return this.directGeneration(payload as Scope);
       case "memoryBook.listExpiredTrash":
         return this.listExpiredTrash(payload as Scope & { trashedBefore: string; limit: number });
       case "memoryBook.listSubCategories":
@@ -218,6 +220,20 @@ export class SqliteMemoryBookOperations {
           occurredAt: input.updatedAt,
         });
     })();
+  }
+
+  private directGeneration(scope: Scope): MemoryGenerationId {
+    const id = `memory-direct:${scope.ownerId}:${scope.agentId}`;
+    this.database
+      .prepare(
+        `INSERT INTO memory_generations (
+          id, checkpoint_job_id, owner_id, agent_id, thread_id, status, model_descriptor_ref,
+          policy_version, output_ref
+        ) VALUES (?, NULL, ?, ?, NULL, 'completed', 'owner-direct', 'memory-direct.v1', NULL)
+        ON CONFLICT (id) DO NOTHING`,
+      )
+      .run(id, scope.ownerId, scope.agentId);
+    return id as MemoryGenerationId;
   }
 
   private latestGeneration(scope: Scope): MemoryGenerationId | undefined {

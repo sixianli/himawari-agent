@@ -260,7 +260,6 @@ export type OwnerRuleErrorCode =
   | "RULE_TYPE_UNTESTED"
   | "RULE_PARAMETERS_INVALID"
   | "RULE_NOT_FOUND"
-  | "RULE_MEMORY_NOT_READY"
   | "RULE_LIMIT_REACHED"
   | "RULE_NOT_EXPLICIT"
   | "RULE_UNAVAILABLE"
@@ -423,7 +422,7 @@ export interface ProductionOwnerRuleWriterOptions {
   readonly reviews: Pick<RuleReviewOwnerStorePort, "act">;
   readonly memory: Pick<DurableMemoryService, "applyProposal" | "archive" | "recover">;
   readonly memories: Pick<ProductMemoryStatePort, "read">;
-  readonly book: Pick<MemoryBookStorePort, "latestGeneration">;
+  readonly book: Pick<MemoryBookStorePort, "directGeneration">;
   readonly threads: Pick<ThreadRepositoryPort, "read" | "listMessages">;
   readonly payloads: PayloadStorePort;
   readonly protector: PayloadProtectorPort;
@@ -705,10 +704,7 @@ export class ProductionOwnerRuleWriter {
     readonly threadId: string | null;
     readonly externalOrigins?: readonly string[];
   }): Promise<MemoryId> {
-    const generation: GenerationId | undefined = await this.#options.book.latestGeneration(
-      this.#scope(),
-    );
-    if (!generation) throw new OwnerRuleError("RULE_MEMORY_NOT_READY");
+    const generation: GenerationId = await this.#options.book.directGeneration(this.#scope());
     const memoryId = `memory:rule:${input.key}` as MemoryId;
     const contentRef = `memory-content:rule:${input.key}`;
     if (await this.#options.memories.read(memoryId)) {
@@ -1066,15 +1062,13 @@ export class ProductionOwnerRuleWriter {
     if (record?.status === "active") return false;
     if (record?.status !== "archived" && record?.status !== "trashed")
       throw new OwnerRuleError("RULE_UNAVAILABLE", "这条规则的出处记忆已删除，请重新说一遍");
-    const generation = await this.#options.book.latestGeneration(this.#scope());
-    if (!generation) throw new OwnerRuleError("RULE_MEMORY_NOT_READY");
+    const generation = await this.#options.book.directGeneration(this.#scope());
     await this.#options.memory.recover(memoryId, generation);
     return true;
   }
 
   async #archiveMemory(memoryId: MemoryId): Promise<void> {
-    const generation = await this.#options.book.latestGeneration(this.#scope());
-    if (!generation) throw new OwnerRuleError("RULE_MEMORY_NOT_READY");
+    const generation = await this.#options.book.directGeneration(this.#scope());
     try {
       await this.#options.memory.archive(memoryId, generation);
     } catch (error) {

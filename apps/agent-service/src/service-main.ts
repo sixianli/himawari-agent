@@ -2492,11 +2492,10 @@ export async function startTenantRuntime(
               state: proactiveMemoryState,
               memory: durableMemory,
               generationFor: async (memoryId) => {
-                const generation =
+                return (
                   (await checkupJobs.listByMemory(memoryId)).at(-1)?.generationId ??
-                  (await checkupBook.latestGeneration(checkupScope));
-                if (!generation) throw new Error("MEMORY_GENERATION_MISSING");
-                return generation;
+                  (await checkupBook.directGeneration(checkupScope))
+                );
               },
               sourceMessageIds: (records) =>
                 findSourceMessageIds(checkupBook, checkupScope, records),

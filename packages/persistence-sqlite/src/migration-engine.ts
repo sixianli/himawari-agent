@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { readFile as readFileAsync } from "node:fs/promises";
 import { hostname } from "node:os";
 import path from "node:path";
@@ -53,6 +53,7 @@ export interface MigrationDefinition {
   readonly phase: MigrationPhase;
   readonly sql: string;
   readonly digest: string;
+  readonly rebuilds?: readonly string[];
 }
 
 export interface MigrationLedgerRecord {
@@ -1119,9 +1120,11 @@ export function applyMigrations(
     digest,
   }));
   for (const migration of pending) {
+    const rebuilding = (migration.rebuilds ?? []).length > 0;
     const applyOne = database.transaction(() => {
       ensureLedgerIdColumn(database);
       database.exec(migration.sql);
+      if (rebuilding) assertRebuildKeptForeignKeys(database, migration);
       const appliedAt = new Date().toISOString();
       const sequence = applied.length + 1;
       database
@@ -1140,11 +1143,53 @@ export function applyMigrations(
       writeSchemaMetadata(database, sequence, appliedAt);
       return sequence;
     });
-    appliedSequences.push(applyOne.immediate());
+    if (!rebuilding) {
+      appliedSequences.push(applyOne.immediate());
+      continue;
+    }
+    if (database.inTransaction)
+      throw new SqliteMigrationError(
+        SQLITE_MIGRATION_ERROR_CODES.DEFINITION_INVALID,
+        "A table rebuild must start outside a transaction",
+        { id: migration.id },
+      );
+    database.pragma("foreign_keys = OFF");
+    try {
+      appliedSequences.push(applyOne.immediate());
+    } finally {
+      database.pragma("foreign_keys = ON");
+    }
   }
 
   assertWritableSchema(database, migrations.length, expectedFingerprint);
   return { appliedSequences, currentSequence: migrations.length };
+}
+
+function assertRebuildKeptForeignKeys(
+  database: SqliteDatabase,
+  migration: MigrationDefinition,
+): void {
+  for (const table of migration.rebuilds ?? []) {
+    const exists = database
+      .prepare("SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = ?")
+      .get(table);
+    if (!exists)
+      throw new SqliteMigrationError(
+        SQLITE_MIGRATION_ERROR_CODES.DEFINITION_INVALID,
+        "A rebuilt table is missing after its migration",
+        { id: migration.id, table },
+      );
+  }
+  const rebuilt = new Set(migration.rebuilds ?? []);
+  const broken = (
+    database.pragma("foreign_key_check") as readonly { table: string; parent: string }[]
+  ).filter(({ table, parent }) => rebuilt.has(table) || rebuilt.has(parent));
+  if (broken.length > 0)
+    throw new SqliteMigrationError(
+      SQLITE_MIGRATION_ERROR_CODES.INTEGRITY_CHECK_FAILED,
+      "A table rebuild left rows that break a foreign key",
+      { id: migration.id, violations: String(broken.length) },
+    );
 }
 
 export function assertWritableSchema(
@@ -1335,6 +1380,26 @@ export async function createVerifiedMigrationSnapshot(
   });
 }
 
+async function migrationRebuilds(
+  directory: URL,
+  entry: { readonly id: string; readonly name: string },
+): Promise<readonly string[]> {
+  const file = new URL(`${entry.id}_${entry.name}.meta.json`, directory);
+  if (!existsSync(file)) return [];
+  const meta = JSON.parse(await readFileAsync(file, "utf8")) as { readonly rebuilds?: unknown };
+  if (meta.rebuilds === undefined) return [];
+  if (
+    !Array.isArray(meta.rebuilds) ||
+    !meta.rebuilds.every((table) => typeof table === "string" && /^[a-z][a-z0-9_]*$/u.test(table))
+  )
+    throw new SqliteMigrationError(
+      SQLITE_MIGRATION_ERROR_CODES.DEFINITION_INVALID,
+      "A migration's rebuilds must list table names",
+      { id: entry.id },
+    );
+  return Object.freeze([...meta.rebuilds]);
+}
+
 export async function loadBundledMigrations(): Promise<readonly MigrationDefinition[]> {
   const migrationDirectory = new URL("./migrations/", import.meta.url);
   const legacy = await Promise.all(
@@ -1366,6 +1431,7 @@ export async function loadBundledMigrations(): Promise<readonly MigrationDefinit
   const fresh = await Promise.all(
     timestamped.map(async (entry, index) => {
       const sql = await readFileAsync(new URL(entry.file, migrationDirectory), "utf8");
+      const rebuilds = await migrationRebuilds(migrationDirectory, entry);
       return Object.freeze({
         id: entry.id,
         sequence: legacy.length + index + 1,
@@ -1375,6 +1441,7 @@ export async function loadBundledMigrations(): Promise<readonly MigrationDefinit
         file: entry.file,
         sql,
         digest: sha256(sql),
+        ...(rebuilds.length > 0 ? { rebuilds } : {}),
       });
     }),
   );

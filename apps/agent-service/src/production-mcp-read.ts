@@ -44,7 +44,6 @@ import {
   MCP_PROPOSE_RULE_INVALID,
   MCP_PROPOSE_RULE_KIND_NOTIFY,
   MCP_PROPOSE_RULE_KIND_WHOLE_THREAD,
-  MCP_PROPOSE_RULE_NOT_READY,
   MCP_PROPOSE_RULE_REPLAY,
   MCP_PROPOSE_RULE_REPLAY_UNAVAILABLE,
   MCP_PROPOSE_RULE_SAVED,
@@ -302,7 +301,6 @@ export interface McpProposalReceipt {
 }
 
 export interface McpMemoryProposals {
-  readonly ready: () => Promise<boolean>;
   readonly submit: (input: ExternalProposalSubmission) => Promise<{
     readonly proposal: McpProposalReceipt;
     readonly created: boolean;
@@ -1027,8 +1025,6 @@ export class ProductionMcpRead {
       if (state === undefined) {
         if (!elicitationSupported(context.mcpReq.envelope))
           return proposalReply(MCP_PROPOSE_MEMORY_UNSUPPORTED.text, true);
-        if (!(await this.#options.write?.proposals.ready()))
-          return proposalReply(MCP_PROPOSE_RULE_NOT_READY.text, true);
         return await this.#askRuleConfirmation(
           rules,
           { tool: "propose_rule", proposalId: randomUUID(), argsHash, client },
@@ -1252,7 +1248,7 @@ export class ProductionMcpRead {
           replaced.has(result["proposalId"])
         )
           result["status"] = "replaced";
-      if (direct && (await proposals.ready())) {
+      if (direct) {
         const batchId = externalDirectBatchId(randomUUID());
         const digestCache: ExternalProposalDigestCache = {};
         for (const result of results) {
@@ -1321,7 +1317,7 @@ export class ProductionMcpRead {
           return proposalReply(MCP_PROPOSE_MEMORY_ALREADY_SAVED.text, false);
         if (proposal.status === "rejected")
           return proposalReply(MCP_PROPOSE_MEMORY_DECLINED.text, false);
-        if (direct && (await proposals.ready())) {
+        if (direct) {
           const kept = await this.#keepDirect(proposals, proposal.id, started);
           if (kept === "saved") return proposalReply(MCP_PROPOSE_MEMORY_SAVED_DIRECT.text, false);
           if (kept === "existing")
@@ -1329,8 +1325,7 @@ export class ProductionMcpRead {
           if (kept === "settled") return this.#settledReply(proposal.id);
           return this.#pendingReply(proposal);
         }
-        if (!elicitationSupported(context.mcpReq.envelope) || !(await proposals.ready()))
-          return this.#pendingReply(proposal);
+        if (!elicitationSupported(context.mcpReq.envelope)) return this.#pendingReply(proposal);
         return await this.#askConfirmation(
           { tool: "propose_memory", proposalId: proposal.id, argsHash, client },
           { text, category, client },

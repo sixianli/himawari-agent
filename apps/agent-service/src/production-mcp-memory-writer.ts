@@ -28,7 +28,7 @@ export { EXTERNAL_PROPOSAL_TEXT_MAXIMUM };
 import { scanMachineSecrets } from "@himawari-agent/sensitive-capture";
 
 type MemoryId = Parameters<ProductMemoryStatePort["read"]>[0];
-type GenerationId = NonNullable<Awaited<ReturnType<MemoryBookStorePort["latestGeneration"]>>>;
+type GenerationId = Awaited<ReturnType<MemoryBookStorePort["directGeneration"]>>;
 
 export const EXTERNAL_PROPOSAL_MEMORY_PREFIX = "memory:mcp:";
 export const EXTERNAL_PROPOSAL_CONTENT_PREFIX = "memory-content:mcp:";
@@ -125,7 +125,7 @@ export interface ProductionMcpMemoryWriterOptions {
   readonly configuration: Pick<ProductConfiguration, "ownerId" | "agentId">;
   readonly memory: Pick<DurableMemoryService, "applyProposal">;
   readonly state: Pick<ProductMemoryStatePort, "read" | "listActive">;
-  readonly book: Pick<MemoryBookStorePort, "latestGeneration">;
+  readonly book: Pick<MemoryBookStorePort, "directGeneration">;
   readonly ledger: Pick<DecisionLedgerPort, "append" | "read">;
   readonly proposals: ExternalMemoryProposalStorePort;
   readonly replaced?: (proposalId: string) => Promise<string | null>;
@@ -146,10 +146,6 @@ export class ProductionMcpMemoryWriter {
   #scope() {
     const { ownerId, agentId } = this.#options.configuration;
     return { ownerId, agentId };
-  }
-
-  async ready(): Promise<boolean> {
-    return (await this.#options.book.latestGeneration(this.#scope())) !== undefined;
   }
 
   async submit(input: ExternalProposalSubmission): Promise<{
@@ -327,14 +323,7 @@ export class ProductionMcpMemoryWriter {
         const contentRef = `${EXTERNAL_PROPOSAL_CONTENT_PREFIX}${proposal.id}${
           input.batchId === null ? "" : `:${input.batchId}`
         }`;
-        const generation: GenerationId | undefined = await this.#options.book.latestGeneration(
-          this.#scope(),
-        );
-        if (!generation)
-          throw new ApplicationPortError(
-            PORT_ERROR_CODES.INVALID_OPERATION,
-            "MEMORY_GENERATION_MISSING",
-          );
+        const generation: GenerationId = await this.#options.book.directGeneration(this.#scope());
         const dataClassification =
           proposal.dataClassification === "sensitive" ? "sensitive" : "private";
         await this.#storeText(contentRef, text, dataClassification);

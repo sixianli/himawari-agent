@@ -641,16 +641,6 @@ export const MCP_PROPOSE_MEMORIES_RESULT = fixedPrompt({
   text: "results 按提交顺序逐条列出结果。saved 的条目已经存进 Himawari，主人可以在 Himawari 里整批撤销。pending 的条目要等主人在 Himawari 里确认后才会保存，不要告诉主人已经存好了。",
 });
 
-export const MCP_PROPOSE_RULE_NOT_READY = fixedPrompt({
-  id: "mcp.propose-rule-not-ready",
-  purpose:
-    "规则提议时 Himawari 的记忆册还没准备好（规则生效要写规则类记忆），返回给外部 agent 的文字",
-  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
-  layer: "tool-result",
-  output: "free-text",
-  text: "Himawari 的记忆功能还没准备好，规则要连同出处一起记下，所以这次没有生效。",
-});
-
 export const MCP_PROPOSE_NOT_SHOWN = fixedPrompt({
   id: "mcp.propose-not-shown",
   purpose:

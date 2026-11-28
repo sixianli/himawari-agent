@@ -514,11 +514,6 @@
     "changedIn": "ADR 0226",
     "reason": "新增：外部 agent 经 MCP 提议邮件长期规则，主人在客户端确认后按规则提议流程生效"
   },
-  "mcp.propose-rule-not-ready": {
-    "sha256": "d00bf3f264dc49b62dd7399c0372e380d1be50348156430f25254b24a5bea56a",
-    "changedIn": "ADR 0226",
-    "reason": "P5-2: propose_rule says rules did not take effect when the memory book is not ready"
-  },
   "mcp.propose-rule-replay": {
     "sha256": "9faa6a9c14254b11618039f1509eed8e9c06cf743c1a6cb7b5000766ca21254c",
     "changedIn": "ADR 0226",
