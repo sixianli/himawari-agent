@@ -135,7 +135,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     : driftSinceVerified(repositoryRoot);
   const heading = base
     ? "这个 PR 改了下面这些文档覆盖的代码，文档没有跟着改（只是提醒，不拦合并）"
-    : "下面这些文档覆盖的代码在它们写的 verified_at 之后改过，要对着代码核一遍，核完把 verified_at 改成当前提交";
+    : "下面这些文档覆盖的代码在它们写的 verified_at 之后改过，要对着代码核一遍，核完把 verified_at 改成这个分支最近一次合进来的 main 提交";
   process.stdout.write(renderMarkdown(drift, heading));
   if (!base) process.stderr.write(`DOCS_DRIFT documents=${drift.length}\n`);
 }
