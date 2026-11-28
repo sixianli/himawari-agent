@@ -28,6 +28,7 @@ boot_wait="${HIMAWARI_SHADOW_BOOT_WAIT:-300}"
 service_wait="${HIMAWARI_SHADOW_SERVICE_WAIT:-120}"
 service_settle="${HIMAWARI_SHADOW_SERVICE_SETTLE:-30}"
 probe_timeout="${HIMAWARI_SHADOW_PROBE_TIMEOUT:-15}"
+lease_wait_max="${HIMAWARI_SHADOW_LEASE_WAIT_MAX:-180}"
 masked_units="${HIMAWARI_SHADOW_MASKED_UNITS:-oracle-keepalive.service cloudflared.service}"
 shadow=""
 booted=0
@@ -96,10 +97,25 @@ available=$(df --output=avail -B1 "$shadow_parent" | tail -1 | tr -d ' ')
 shadow="$(mktemp -d "$shadow_parent/himawari-shadow.XXXXXX")"
 mkdir "$shadow/state"
 echo "SHADOW_COPY_START $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-/usr/bin/python3 -I "$here/shadow-copy.py" "$state_root" "$shadow/state" || fail COPY_FAILED "could not copy $state_root"
+/usr/bin/python3 -I "$here/shadow-copy.py" "$state_root" "$shadow/state" > "$shadow/copy.log" || fail COPY_FAILED "could not copy $state_root"
+cat "$shadow/copy.log"
 echo "SHADOW_COPY_DONE $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-mkdir "$shadow/layer" "$shadow/root"
+lease_expiry="$(sed -n 's/^SHADOW_COPY_LEASE_EXPIRES //p' "$shadow/copy.log" | tail -1)"
+if [[ -n "$lease_expiry" ]]; then
+  lease_wait=$(( $(date -d "$lease_expiry" +%s) - $(date +%s) + 2 ))
+  (( lease_wait <= lease_wait_max )) || fail LEASE_TOO_LONG "the copied database holds a live service lease until $lease_expiry, more than $lease_wait_max seconds away"
+  if (( lease_wait > 0 )); then
+    echo "SHADOW_LEASE_WAIT ${lease_wait}s: the copied database still holds the running service's lease until $lease_expiry; the old release in the shadow would be refused with PORT_CONFLICT until it lapses"
+    sleep "$lease_wait"
+  fi
+fi
+
+mkdir "$shadow/layer" "$shadow/root" "$shadow/journal"
+if [[ -d /var/log/journal ]]; then
+  [[ "$(id -u)" -ne 0 ]] || chown --reference=/var/log/journal "$shadow/journal"
+  chmod --reference=/var/log/journal "$shadow/journal"
+fi
 truncate -s "$upper_size" "$shadow/upper.img"
 "$mkfs" -q -F -m 0 "$shadow/upper.img" > /dev/null || fail UPPER_LAYER_FAILED "could not make the throwaway layer file $shadow/upper.img"
 
@@ -125,7 +141,7 @@ for masked in $3; do
 done
 shift 3
 exec "$@"
-' shadow-root "$mount" "$shadow" "$masked_units" "$nspawn" --quiet --directory="$shadow/root" --private-network --link-journal=no --machine="$machine" --hostname="$(hostname)" --console=passive --bind="$shadow/state:$state_root" --property="MemoryMax=$memory_max" --boot > "$shadow/boot.log" 2>&1 9>&- &
+' shadow-root "$mount" "$shadow" "$masked_units" "$nspawn" --quiet --directory="$shadow/root" --private-network --link-journal=no --machine="$machine" --hostname="$(hostname)" --console=passive --bind="$shadow/state:$state_root" --bind="$shadow/journal:/var/log/journal" --property="MemoryMax=$memory_max" --boot > "$shadow/boot.log" 2>&1 9>&- &
 launcher=$!
 booted=1
 leader=""
@@ -147,7 +163,7 @@ stuck_units() {
   echo "leader: ${leader:-unknown}"
   echo "jobs: $(probe list-jobs --no-pager --no-legend 2>&1 | head -20 | tr -s ' \n' ' ')"
   echo "failed: $(probe --failed --no-pager --no-legend 2>&1 | head -20 | tr -s ' \n' ' ')"
-  echo "processes: $(look /bin/ps -eo pid,stat,etimes,args --no-headers 2>&1 | head -40 | cut -c1-160 | tr -s ' \n' ' ')"
+  echo "processes: $(look /bin/ps -eo pid,stat,wchan:24,etimes,args --no-headers 2>&1 | head -40 | cut -c1-160 | tr -s ' \n' ' ')"
   echo "journal: $(look /usr/bin/journalctl -b --no-pager -q -o short-monotonic -n 60 2>&1 | cut -c1-240 | tr '\n' '|')"
   echo "console: $(console_tail)"
 }

@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 import shutil
 import sqlite3
+from datetime import datetime, timedelta, timezone
 import subprocess
 import sys
 import tempfile
@@ -242,6 +243,48 @@ class ShadowRehearsalTest(unittest.TestCase):
         bind = next(argument for argument in (self.log / 'nspawn.args').read_text().splitlines() if argument.startswith('--bind='))
         self.assertEqual(bind.split(':')[-1], str(self.data))
         self.assertEqual(list(self.parent.iterdir()), [])
+
+    def lease_database(self, seconds_left, released=False):
+        database = self.live_database()
+        database.execute('CREATE TABLE authority_leases (id TEXT, agent_id TEXT, expires_at TEXT, released_at TEXT)')
+        expires = (datetime.now(timezone.utc) + timedelta(seconds=seconds_left)).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
+        database.execute('INSERT INTO authority_leases VALUES (?, ?, ?, ?)', ('authority:a:old', 'a', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:01.000Z'))
+        database.execute('INSERT INTO authority_leases VALUES (?, ?, ?, ?)', ('authority:a:live', 'a', expires, expires if released else None))
+        database.commit()
+        return datetime.fromisoformat(expires.replace('Z', '+00:00'))
+
+    def test_I120_the_old_release_boots_only_after_the_running_services_lease_in_the_copy_has_lapsed(self):
+        expires = self.lease_database(3)
+        result = self.run_rehearsal('--boot-only')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('SHADOW_COPY_LEASE_EXPIRES ', result.stdout)
+        self.assertRegex(result.stdout, r'SHADOW_LEASE_WAIT [1-9][0-9]*s: ')
+        booted = datetime.fromtimestamp((self.log / 'nspawn.args').stat().st_mtime, timezone.utc)
+        self.assertGreater(booted, expires)
+
+    def test_a_released_lease_in_the_copy_needs_no_wait(self):
+        self.lease_database(600, released=True)
+        result = self.run_rehearsal('--boot-only')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn('SHADOW_LEASE_WAIT', result.stdout)
+
+    def test_a_copied_lease_that_runs_far_into_the_future_is_refused_before_booting(self):
+        self.lease_database(3600)
+        result = self.run_rehearsal('--boot-only')
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('SHADOW_REHEARSAL_FAILED LEASE_TOO_LONG', result.stderr)
+        self.assertFalse((self.log / 'nspawn.args').exists())
+        self.assertEqual(list(self.parent.iterdir()), [])
+
+    def test_I120_the_shadow_writes_its_own_empty_journal_instead_of_copying_up_the_live_host_journal(self):
+        self.live_database()
+        result = self.run_rehearsal('--boot-only')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        binds = [argument[len('--bind='):].split(':') for argument in (self.log / 'nspawn.args').read_text().splitlines() if argument.startswith('--bind=')]
+        journal = [source for source, target in binds if target == '/var/log/journal']
+        self.assertEqual(len(journal), 1)
+        self.assertEqual(Path(journal[0]).name, 'journal')
+        self.assertTrue(Path(journal[0]).parent.name.startswith('himawari-shadow.'))
 
     def test_I120_the_host_root_itself_is_never_handed_to_nspawn_and_a_refusing_nspawn_fails_at_once(self):
         self.live_database()
