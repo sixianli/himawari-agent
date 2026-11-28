@@ -20,8 +20,13 @@ export const HAND_PICKED_MARK = "INCIDENT_ID_HAND_PICKED";
 export const INCIDENT_ID_SOURCE = "I-(?:\\d{6}-[a-z0-9]{4}|\\d{2,})";
 export const INCIDENT_ID = new RegExp(`^${INCIDENT_ID_SOURCE}$`);
 export const GENERATED_INCIDENT_ID = /^I-\d{6}-[a-z0-9]{4}$/;
+const RENUMBER_VALUE = new RegExp(
+  `^([0-9a-f]{7,40}) (${INCIDENT_ID_SOURCE}) (${INCIDENT_ID_SOURCE})$`,
+);
 const INCIDENT_LINE = /^Incident:[ \t]*(.*?)[ \t]*$/gm;
 const FOLLOW_UP_LINE = /^Incident-follow-up:[ \t]*(.*?)[ \t]*$/gm;
+const RENUMBER_LINE = /^Incident-renumbered:[ \t]*(.*?)[ \t]*$/gm;
+
 const PREMISE_LINE = /^Premise:[ \t]*\S/m;
 const AMEND_LINE = /^Incident-amend:[ \t]*(.*?)[ \t]*$/gm;
 const AMEND_VALUE = /^([0-9a-f]{7,40})[ \t]+((?:Incident|Incident-follow-up|Premise):.*)$/;
@@ -138,9 +143,15 @@ export function readCommitIncidents(message) {
     .join("\n");
   const values = [...text.matchAll(INCIDENT_LINE)].map((match) => match[1]);
   const followUps = [...text.matchAll(FOLLOW_UP_LINE)].map((match) => match[1]);
+  const renumberLines = [...text.matchAll(RENUMBER_LINE)].map((match) => match[1]);
+  const renumbered = renumberLines
+    .map((value) => RENUMBER_VALUE.exec(value))
+    .filter(Boolean)
+    .map(([, commit, from, to]) => ({ commit, from, to }));
   const invalid = [
     ...values.filter((value) => value !== "none" && !INCIDENT_ID.test(value)),
     ...followUps.filter((value) => !INCIDENT_ID.test(value)),
+    ...renumberLines.filter((value) => !RENUMBER_VALUE.test(value)),
     ...readAmendments(text).invalid,
   ];
   return {
@@ -148,6 +159,7 @@ export function readCommitIncidents(message) {
     declared: values.length + followUps.length > 0,
     occurrences: [...new Set(values.filter((value) => INCIDENT_ID.test(value)))],
     followUps: [...new Set(followUps.filter((value) => INCIDENT_ID.test(value)))],
+    renumbered,
     invalid,
   };
 }
@@ -181,11 +193,12 @@ function repeatsWithoutPremise(occurrences, premise, counts) {
 }
 
 export function checkCommitMessage(message, counts) {
-  const { declared, occurrences, followUps, invalid, premise } = readCommitIncidents(message);
+  const { declared, occurrences, followUps, renumbered, invalid, premise } =
+    readCommitIncidents(message);
   const errors = [];
   if (!declared) errors.push(`${RULE_MARK} commit-msg`);
   for (const value of invalid) errors.push(`INCIDENT_TRAILER_INVALID commit-msg ${value}`);
-  for (const id of [...occurrences, ...followUps])
+  for (const id of [...occurrences, ...followUps, ...renumbered.map(({ to }) => to)])
     if (!counts.has(id)) errors.push(`INCIDENT_TRAILER_UNKNOWN commit-msg ${id}`);
   for (const id of repeatsWithoutPremise(occurrences, premise, counts))
     errors.push(`${PREMISE_MARK} commit-msg ${id}`);
@@ -303,11 +316,13 @@ export function checkIncidentHistory({ root = repositoryRoot, incidents } = {}) 
       const full = matches[0][0];
       amended.set(full, [...(amended.get(full) ?? []), line]);
     }
-  const seen = new Map();
+  const counted = [];
+  const renumberings = [];
   for (const [sha, committer, original] of records) {
     const message = amendedMessage(original, amended.get(sha) ?? []);
     const short = sha.slice(0, 12);
-    const { declared, occurrences, followUps, invalid, premise } = readCommitIncidents(message);
+    const { declared, occurrences, followUps, renumbered, invalid, premise } =
+      readCommitIncidents(message);
     if (required.has(sha) && committer !== GITHUB_COMMITTER) {
       if (!declared) errors.push(`${RULE_MARK} ${short}`);
       for (const value of invalid) errors.push(`INCIDENT_TRAILER_INVALID ${short} ${value}`);
@@ -320,10 +335,18 @@ export function checkIncidentHistory({ root = repositoryRoot, incidents } = {}) 
     )
       for (const id of repeatsWithoutPremise(occurrences, premise, countsAt(root, sha)))
         errors.push(`${PREMISE_MARK} ${short} ${id}`);
-    for (const id of [...occurrences, ...followUps])
+    for (const id of [...occurrences, ...followUps, ...renumbered.map(({ to }) => to)])
       if (!table.has(id)) errors.push(`INCIDENT_TRAILER_UNKNOWN ${short} ${id}`);
-    for (const id of occurrences) seen.set(id, [...(seen.get(id) ?? []), short]);
+    for (const id of occurrences) counted.push({ sha, short, id });
+    for (const renumbering of renumbered) renumberings.push({ ...renumbering, by: short });
   }
+  for (const { commit, from, to, by } of renumberings) {
+    const target = counted.find((entry) => entry.sha.startsWith(commit) && entry.id === from);
+    if (target) target.id = to;
+    else errors.push(`INCIDENT_RENUMBER_UNMATCHED ${by} ${commit} ${from}`);
+  }
+  const seen = new Map();
+  for (const { short, id } of counted) seen.set(id, [...(seen.get(id) ?? []), short]);
   for (const [id, commits] of [...seen].sort(([a], [b]) => a.localeCompare(b))) {
     const count = table.get(id);
     if (Number.isSafeInteger(count) && count < commits.length)

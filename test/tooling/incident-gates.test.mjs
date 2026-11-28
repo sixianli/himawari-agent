@@ -391,6 +391,34 @@ describe("repeat counts come from the commit history", () => {
     expect(result.stderr).toContain("INCIDENT_REPEAT_WITHOUT_HARD_GATE I-01 count=2");
   });
 
+  it("moves a pushed commit's count to the new number when a later commit renumbers it after two branches took the same number", () => {
+    const root = historyFixture([row({}), row({ id: "I-02" })]);
+    const theirs = commit(root, "fix: theirs\n\nIncident: I-01");
+    const mine = commit(root, "fix: mine\n\nIncident: I-01");
+    expect(history(root)).toEqual([
+      `INCIDENT_COUNT_BELOW_HISTORY I-01 table=1 commits=2 ${mine.slice(0, 12)},${theirs.slice(0, 12)}`,
+    ]);
+    commit(
+      root,
+      `docs: renumber\n\nIncident-follow-up: I-02\nIncident-renumbered: ${mine.slice(0, 12)} I-01 I-02`,
+    );
+    expect(history(root)).toEqual([]);
+  });
+
+  it("refuses a renumbering that names no commit counted under the old number", () => {
+    const root = historyFixture([row({}), row({ id: "I-02" })]);
+    const other = commit(root, "fix: other\n\nIncident: none");
+    const sha = commit(
+      root,
+      `docs: renumber\n\nIncident: none\nIncident-renumbered: ${other.slice(0, 12)} I-01 I-02`,
+    );
+    commit(root, "docs: bad\n\nIncident: none\nIncident-renumbered: abc I-01");
+    expect(history(root)).toEqual([
+      expect.stringMatching(/^INCIDENT_TRAILER_INVALID [0-9a-f]{12} abc I-01$/),
+      `INCIDENT_RENUMBER_UNMATCHED ${sha.slice(0, 12)} ${other.slice(0, 12)} I-01`,
+    ]);
+  });
+
   it("refuses a recorded second occurrence whose commit names no wrong assumption", () => {
     const root = historyFixture();
     commit(root, "fix: one\n\nIncident: I-01");
