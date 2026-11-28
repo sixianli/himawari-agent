@@ -81,15 +81,34 @@ struct ClockRow: View {
     let time: ClockTime
     var last = false
     let change: (ClockTime) -> Void
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         VStack(spacing: 0) {
-            DatePicker(selection: Binding(get: { date(time) }, set: { change(clock($0)) }), displayedComponents: .hourAndMinute) {
-                Text(title).hmType(SL.rowValue).foregroundStyle(Color.hmText)
+            Group {
+                if typeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: SL.rowTextGap) {
+                        label
+                        picker.labelsHidden()
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    picker
+                }
             }
             .padding(.vertical, SL.rowPaddingVertical)
             .frame(minHeight: SL.rowMinHeight)
             if !last { RowSeparator() }
+        }
+    }
+
+    private var label: some View {
+        Text(title).hmType(SL.rowValue).foregroundStyle(Color.hmText)
+    }
+
+    private var picker: some View {
+        DatePicker(selection: Binding(get: { date(time) }, set: { change(clock($0)) }), displayedComponents: .hourAndMinute) {
+            label
         }
     }
 
