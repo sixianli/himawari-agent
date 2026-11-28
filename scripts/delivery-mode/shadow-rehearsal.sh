@@ -32,6 +32,7 @@ lease_wait_max="${HIMAWARI_SHADOW_LEASE_WAIT_MAX:-180}"
 masked_units="${HIMAWARI_SHADOW_MASKED_UNITS:-oracle-keepalive.service cloudflared.service}"
 config="${HIMAWARI_SHADOW_CONFIG:-/etc/himawari/config.json}"
 workspace="${HIMAWARI_SHADOW_WORKSPACE:-/var/lib/himawari/workspace}"
+system_tree="${HIMAWARI_SHADOW_SYSTEM_TREE:-/usr}"
 socat="$tools/socat"
 egress_pids=()
 shadow=""
@@ -130,9 +131,10 @@ if [[ -n "$lease_expiry" ]]; then
 fi
 
 mkdir "$shadow/layer" "$shadow/root" "$shadow/journal" "$shadow/egress"
-workspace_bind=()
+workspace_bind=("--bind-ro=$system_tree")
+echo "SHADOW_SYSTEM_TREE_READ_ONLY $system_tree (its programs keep the real device and inode that the tool bindings recorded on the host; the overlay would show another device)"
 if [[ -d "$workspace" ]]; then
-  workspace_bind=("--bind-ro=$workspace")
+  workspace_bind+=("--bind-ro=$workspace")
   echo "SHADOW_WORKSPACE_READ_ONLY $workspace (seen with its real device and inode, which the directory grant names; the overlay would show another device)"
 fi
 egress_spec=""
