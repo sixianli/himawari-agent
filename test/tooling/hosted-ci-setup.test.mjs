@@ -2,9 +2,20 @@ import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { parse } from "yaml";
-import { validateHostedRunners } from "../../scripts/ci/check-policy.mjs";
-import { linuxRunnerLabel, macRunnerLabel, repositoryRoot } from "../../scripts/ci/contracts.mjs";
+import { parse, stringify } from "yaml";
+import {
+  validateAppleAuditSchedule,
+  validateAppleMacSlots,
+  validateHostedRunners,
+  validateMacReleaseNightly,
+  validateManualMacRunsSupersede,
+} from "../../scripts/ci/check-policy.mjs";
+import {
+  githubExpression,
+  linuxRunnerLabel,
+  macRunnerLabel,
+  repositoryRoot,
+} from "../../scripts/ci/contracts.mjs";
 
 const script = path.join(repositoryRoot, "scripts/ci/prepare-hosted.sh");
 const run = (args, env = {}) =>
@@ -64,15 +75,16 @@ describe("Mac 安装包发布工作流", () => {
     "utf8",
   );
   it("只在 main 上、免费的标准机器上跑；查公证状态用 Linux 机器，只有出包和收尾用 Mac 机器", () => {
-    expect(Object.keys(workflow.jobs)).toEqual(["publish", "check", "finish"]);
-    expect(workflow.on.push.branches).toEqual(["main"]);
+    expect(Object.keys(workflow.jobs)).toEqual(["changes", "publish", "check", "finish"]);
+    expect(workflow.jobs.changes["runs-on"]).toBe(linuxRunnerLabel);
+    expect(workflow.on.push).toBeUndefined();
     expect(workflow.on.pull_request).toBeUndefined();
     expect(publish["runs-on"]).toBe(macRunnerLabel);
     expect(finish["runs-on"]).toBe(macRunnerLabel);
     expect(check["runs-on"]).toBe(linuxRunnerLabel);
     expect(publish.if).toContain("github.ref == 'refs/heads/main'");
-    expect(publish.if).toContain("github.event_name != 'schedule'");
-    expect(check.if).toContain("github.event_name == 'schedule' || inputs.mode == 'check'");
+    expect(publish.if).toContain("github.event.schedule == '0 18 * * *'");
+    expect(check.if).toContain("inputs.mode == 'check'");
     expect(publish.if).toContain("inputs.mode != 'check'");
     expect(workflow.on.workflow_dispatch.inputs.mode.options).toEqual(["build", "check"]);
     expect(workflow.on.workflow_dispatch.inputs.mode.default).toBe("build");
@@ -111,7 +123,8 @@ describe("Mac 安装包发布工作流", () => {
     expect(park.with.name).toContain("env.HIMAWARI_PENDING_ARTIFACT");
     const status = check.steps.find((step) => step.id === "status");
     expect(status.run).toBe("node clients/apple/scripts/notary-status.mjs");
-    expect(workflow.on.schedule.length).toBe(1);
+    expect(workflow.on.schedule).toEqual([{ cron: "0 18 * * *" }, { cron: "7,37 * * * *" }]);
+    expect(check.if).toContain("github.event.schedule == '7,37 * * * *'");
   });
   it("直接发布和收尾发布用同一个脚本，App 读的更新清单地址就是它上传 appcast.xml 的那个 release", () => {
     expect(workflow.env.HIMAWARI_UPDATE_FEED).toContain(
@@ -148,8 +161,10 @@ describe("iPhone 工作流", () => {
     expect(group).toContain("github.event_name");
     expect(group).toContain("github.event.pull_request.number || github.ref");
     expect(group).not.toContain("github.sha");
-    expect(workflow.concurrency["cancel-in-progress"]).toMatch(
-      /^\$\{\{ github\.event_name == 'pull_request' \}\}$/u,
+    expect(workflow.concurrency["cancel-in-progress"]).toBe(
+      githubExpression(
+        "github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main'",
+      ),
     );
     const scope = workflow.jobs.changes.steps.at(-1);
     expect(scope.env.BASE).toContain("github.event_name == 'push' && '--since-green'");
@@ -217,15 +232,18 @@ describe("iPhone 工作流", () => {
     ]);
     expect(claim.if).toContain("failure()");
     expect(claim.if).toContain("github.event_name == 'push'");
+    expect(claim.if).toContain("github.event_name == 'schedule'");
     expect(claim.if).toContain("refs/heads/main");
     expect(claim.permissions).toEqual({
       contents: "read",
       actions: "read",
       "pull-requests": "write",
     });
-    expect(claim.steps.at(-1).run).toBe(
-      "node scripts/ci/main-claim.mjs apple.yml apple apple/iphone apple/scroll",
+    const claimRun = claim.steps.at(-1).run;
+    expect(claimRun).toContain(
+      "node scripts/ci/main-claim.mjs apple.yml apple apple/iphone-accessibility-build apple/iphone-accessibility apple/scroll\n",
     );
+    expect(claimRun).toContain("node scripts/ci/main-claim.mjs apple.yml apple apple/iphone\n");
   });
   it("滚动测速作业用开了优化的调试版跑长对话滚动脚本，并上传结果", () => {
     const steps = workflow.jobs.scroll.steps;
@@ -258,9 +276,112 @@ describe("iPhone 工作流", () => {
       ).length,
     ).toBeGreaterThan(0);
   });
+  it("main 上的苹果检查排成一条队，同时只占一台 Mac，其余留给 PR 的 apple/iphone", () => {
+    const text = readFileSync(path.join(repositoryRoot, ".github/workflows/apple.yml"), "utf8");
+    expect(() => validateAppleMacSlots(text)).not.toThrow();
+    const chain = ["iphone", "iphone-accessibility-build", "iphone-accessibility", "scroll"];
+    for (const [index, id] of chain.entries()) {
+      if (index === 0) continue;
+      expect([workflow.jobs[id].needs].flat()).toContain(chain[index - 1]);
+      expect(workflow.jobs[id].if).toContain("!cancelled()");
+    }
+    expect(workflow.jobs["iphone-accessibility"].strategy["max-parallel"]).toBe(1);
+    expect(workflow.jobs["iphone-accessibility"].if).toContain(
+      "needs.iphone-accessibility-build.result == 'success'",
+    );
+  });
+  it.each([
+    [
+      "合并前的写法：编译、测速和 apple/iphone 同时开跑",
+      (jobs) => {
+        jobs["iphone-accessibility-build"].needs = "changes";
+        jobs.scroll.needs = "changes";
+      },
+      "main starts 3 Mac jobs at once",
+    ],
+    [
+      "三份审计同时跑",
+      (jobs) => {
+        delete jobs["iphone-accessibility"].strategy["max-parallel"];
+      },
+      "set max-parallel: 1",
+    ],
+    [
+      "前一个 Mac 作业失败就把后面的检查跳过",
+      (jobs) => {
+        jobs.scroll.if = jobs.scroll.if.replace("!cancelled() && ", "");
+      },
+      "add !cancelled()",
+    ],
+    [
+      "PR 上开第二台 Mac",
+      (jobs) => {
+        jobs.scroll.if = jobs.scroll.if.replace("github.event_name != 'pull_request' && ", "");
+      },
+      "a pull request starts 2 Mac jobs",
+    ],
+  ])("拒绝%s", (_label, change, message) => {
+    const changed = structuredClone(workflow);
+    change(changed.jobs);
+    expect(() => validateAppleMacSlots(stringify(changed))).toThrow(message);
+  });
+  it("无障碍审计每天凌晨 3 点（JST）跑一次，上次审计以后没有新提交就跳过，推送和 PR 都不跑", () => {
+    const text = readFileSync(path.join(repositoryRoot, ".github/workflows/apple.yml"), "utf8");
+    expect(() => validateAppleAuditSchedule(text)).not.toThrow();
+    expect(workflow.on.schedule).toEqual([{ cron: "0 18 * * *" }]);
+    expect(workflow.jobs.iphone.if).toContain("github.event_name != 'schedule'");
+    expect(workflow.jobs.scroll.if).toContain("github.event_name != 'push'");
+    expect(workflow.jobs.changes.steps.at(-1).env.BASE).toContain(
+      "github.event_name == 'schedule' && '--since-audit'",
+    );
+  });
+  it.each([
+    [
+      "没有定时触发",
+      (changed) => {
+        delete changed.on.schedule;
+      },
+      "runs nightly",
+    ],
+    [
+      "推送到 main 时又跑审计",
+      (changed) => {
+        changed.jobs["iphone-accessibility"].if = changed.jobs["iphone-accessibility"].if.replace(
+          "github.event_name != 'push' && ",
+          "",
+        );
+      },
+      "iphone-accessibility must not run on push",
+    ],
+    [
+      "没有新提交也照跑",
+      (changed) => {
+        const step = changed.jobs.changes.steps.at(-1);
+        step.env.BASE = step.env.BASE.replace(
+          " || github.event_name == 'schedule' && '--since-audit'",
+          "",
+        );
+      },
+      "--since-audit",
+    ],
+    [
+      "凌晨审计失败没人认领",
+      (changed) => {
+        changed.jobs.claim.if = changed.jobs.claim.if.replace(
+          " || github.event_name == 'schedule'",
+          "",
+        );
+      },
+      "must be claimed",
+    ],
+  ])("凌晨审计的规则拒绝%s", (_label, change, message) => {
+    const changed = structuredClone(workflow);
+    change(changed);
+    expect(() => validateAppleAuditSchedule(stringify(changed))).toThrow(message);
+  });
   it("三份审计共用同一次运行里编译一次的 App，只重跑审计时也找得到那次编译", () => {
     const build = workflow.jobs["iphone-accessibility-build"];
-    expect(build.needs).toBe("changes");
+    expect(build.needs).toEqual(["changes", "iphone"]);
     expect(build.if).toContain("github.event_name != 'pull_request'");
     const compile = build.steps.find((step) => step.run?.startsWith("xcodebuild"))?.run ?? "";
     expect(compile).toContain("xcodebuild build-for-testing");
@@ -370,6 +491,102 @@ describe("TestFlight 工作流", () => {
   });
 });
 
+describe("Mac 安装包每天凌晨出一次，客户端没改就不出", () => {
+  const text = readFileSync(path.join(repositoryRoot, ".github/workflows/mac-release.yml"), "utf8");
+  const workflow = parse(text);
+  it("凌晨 3 点（JST）出包，从上次凌晨成功出包以后改了苹果客户端才出；手动触发随时出", () => {
+    expect(() => validateMacReleaseNightly(text)).not.toThrow();
+    const scope = workflow.jobs.changes.steps.at(-1);
+    expect(scope.run).toContain("scripts/ci/apple-scope.mjs --since-release");
+    expect(workflow.jobs.changes.if).toContain("github.event.schedule == '0 18 * * *'");
+    expect(workflow.jobs.publish.needs).toBe("changes");
+    expect(workflow.jobs.publish.if).toContain("!cancelled()");
+  });
+  it.each([
+    [
+      "每次推送到 main 都出包",
+      (changed) => {
+        changed.on.push = { branches: ["main"] };
+      },
+      "not on every push",
+    ],
+    [
+      "没有凌晨定时",
+      (changed) => {
+        changed.on.schedule = [{ cron: "7,37 * * * *" }];
+      },
+      "builds nightly",
+    ],
+    [
+      "客户端没改也照出",
+      (changed) => {
+        changed.jobs.publish.if = changed.jobs.publish.if.replace(
+          " && needs.changes.outputs.client == 'true'",
+          "",
+        );
+      },
+      "only when the client changed",
+    ],
+    [
+      "不从上次出包算改动",
+      (changed) => {
+        const step = changed.jobs.changes.steps.at(-1);
+        step.run = step.run.replace("--since-release", "--since-green");
+      },
+      "--since-release",
+    ],
+  ])("拒绝%s", (_label, change, message) => {
+    const changed = structuredClone(workflow);
+    change(changed);
+    expect(() => validateMacReleaseNightly(stringify(changed))).toThrow(message);
+  });
+});
+
+describe("手动触发的 Mac 运行，同一分支新的一次取消旧的", () => {
+  const read = (name) => readFileSync(path.join(repositoryRoot, ".github/workflows", name), "utf8");
+  const all = Object.fromEntries(
+    ["apple.yml", "apple-screens.yml", "mac-release.yml", "testflight.yml"].map((name) => [
+      name,
+      read(name),
+    ]),
+  );
+  it("现有的苹果工作流都满足；只在 main 上出包的 Mac 安装包发布不要求取消", () => {
+    expect(() => validateManualMacRunsSupersede(all)).not.toThrow();
+    expect(parse(all["mac-release.yml"]).concurrency).toBeUndefined();
+  });
+  it.each([
+    [
+      "截图不取消旧的",
+      "apple-screens.yml",
+      (workflow) => {
+        workflow.concurrency["cancel-in-progress"] = false;
+      },
+    ],
+    [
+      "苹果全套只取消 PR 上的旧运行",
+      "apple.yml",
+      (workflow) => {
+        workflow.concurrency["cancel-in-progress"] = githubExpression(
+          "github.event_name == 'pull_request'",
+        );
+      },
+    ],
+    [
+      "并发组不按分支分",
+      "apple-screens.yml",
+      (workflow) => {
+        workflow.concurrency.group = "apple-screens";
+      },
+    ],
+  ])("拒绝%s", (_label, name, change) => {
+    const workflow = parse(all[name]);
+    change(workflow);
+    expect(() => validateManualMacRunsSupersede({ [name]: stringify(workflow) })).toThrow(
+      "MANUAL_MAC_RUN_SUPERSEDE",
+    );
+  });
+});
+
 describe("示例场景截图工作流", () => {
   const workflow = parse(
     readFileSync(path.join(repositoryRoot, ".github/workflows/apple-screens.yml"), "utf8"),
@@ -384,6 +601,8 @@ describe("示例场景截图工作流", () => {
     );
     expect(shoot.run).toContain('--only "$SCENES"');
     expect(shoot.env.SCENES).toContain("inputs.scenes");
+    expect(shoot.env.TEXT_SIZE).toContain("inputs.text_size");
+    expect(shoot.run).toContain('--text-size "$TEXT_SIZE"');
     const upload = job.steps.find((step) => step.with?.name === "apple-screens");
     expect(upload.if).toContain("always()");
   });

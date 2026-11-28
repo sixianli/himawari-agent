@@ -57,7 +57,7 @@ public final class CalendarCollector: SenseCollector {
         if let location = event.location, !location.isEmpty { data["location"] = .string(location) }
         if let notes = event.notes, !notes.isEmpty { data["notes"] = .string(notes) }
         if let attendees = event.attendees { data["attendeeCount"] = .number(Double(attendees.count)) }
-        let id = (event.calendarItemExternalIdentifier ?? event.calendarItemIdentifier) + "@" + String(Int64(event.startDate.timeIntervalSince1970))
+        let id = CalendarOccurrenceId.of(eventIdentifier: event.eventIdentifier ?? event.calendarItemIdentifier, start: event.startDate, recurring: event.hasRecurrenceRules)
         return MirrorEntry(externalId: String(id.prefix(256)), data: data)
     }
 

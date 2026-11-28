@@ -4,9 +4,12 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  auditCheckPrefixes,
   changedFiles,
   mainCheckPrefixes,
+  sinceAuditBase,
   sinceGreenBase,
+  sinceReleaseBase,
   touchesAppleClient,
 } from "../../scripts/ci/apple-scope.mjs";
 import { repositoryRoot } from "../../scripts/ci/contracts.mjs";
@@ -38,6 +41,49 @@ describe("Apple 工作流按改动决定要不要占 Mac 机器", () => {
       }),
     ).toBeNull();
     expect(touchesAppleClient(changedFiles(null, "HEAD"))).toBe(true);
+  });
+  it("凌晨审计从上次审计过的定时运行算起；查询出错时返回空，照跑", async () => {
+    const seen = [];
+    const find = async (input) => {
+      seen.push(input);
+      return "b".repeat(40);
+    };
+    expect(await sinceAuditBase({ repo: "o/r", runId: "9", find })).toBe("b".repeat(40));
+    expect(seen[0]).toMatchObject({
+      repo: "o/r",
+      workflow: "apple.yml",
+      job: auditCheckPrefixes[0],
+      event: "schedule",
+      runId: "9",
+    });
+    expect(
+      await sinceAuditBase({
+        repo: "o/r",
+        runId: "9",
+        find: async () => {
+          throw new Error("HTTP 502");
+        },
+      }),
+    ).toBeNull();
+  });
+  it("Mac 安装包从上次凌晨成功出包算起，失败的那次不算", async () => {
+    const seen = [];
+    const base = await sinceReleaseBase({
+      repo: "o/r",
+      runId: "9",
+      find: async (input) => {
+        seen.push(input);
+        return "c".repeat(40);
+      },
+    });
+    expect(base).toBe("c".repeat(40));
+    expect(seen[0]).toMatchObject({
+      workflow: "mac-release.yml",
+      job: "mac-release/publish",
+      event: "schedule",
+    });
+    expect(seen[0].accept("success")).toBe(true);
+    expect(seen[0].accept("failure")).toBe(false);
   });
   it("只改服务端、网页、文档或别的工作流时不跑", () => {
     expect(touchesAppleClient(["src/server.ts", "docs/a.md", ".github/workflows/ci.yml"])).toBe(
@@ -89,6 +135,15 @@ describe("Apple 工作流按改动决定要不要占 Mac 机器", () => {
         file,
       ]);
     };
+    const head = execFileSync("git", ["-C", clone, "rev-parse", "HEAD"], {
+      encoding: "utf8",
+    }).trim();
+    const unchanged = spawnSync(
+      "node",
+      [path.join(repositoryRoot, "scripts/ci/apple-scope.mjs"), head, "HEAD"],
+      { cwd: clone, encoding: "utf8" },
+    );
+    expect(unchanged.stdout).toBe(`client=false\nbase=${head}\n`);
     commit("server.ts");
     expect(run().stdout).toBe(`client=false\nbase=${base}\n`);
     commit("clients/apple/Sources/App.swift");

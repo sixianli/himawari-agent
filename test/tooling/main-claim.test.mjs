@@ -6,7 +6,12 @@ import {
   marker,
   scopes,
 } from "../../scripts/ci/main-claim.mjs";
-import { findGreenBase, greenBase, isGreen } from "../../scripts/ci/main-green.mjs";
+import {
+  findGreenBase,
+  findLastRanBase,
+  greenBase,
+  isGreen,
+} from "../../scripts/ci/main-green.mjs";
 
 const job = (name, conclusion) => ({ name, conclusion });
 const prefixes = ["apple/iphone", "apple/scroll"];
@@ -32,12 +37,17 @@ describe("main 上检查失败时找人认领", () => {
       ),
     ).toBe(false);
     expect(isGreen([job("apple/changes", "success")], prefixes)).toBe(false);
+    const audits = ["apple/iphone-accessibility-build", "apple/iphone-accessibility"];
     expect(
       isGreen(
         all.map((item) => (item.name.endsWith("1/3") ? job(item.name, "cancelled") : item)),
-        prefixes,
+        audits,
       ),
     ).toBe(false);
+    expect(isGreen(all, audits)).toBe(false);
+    expect(isGreen([...all, job("apple/iphone-accessibility-build", "success")], audits)).toBe(
+      true,
+    );
   });
 
   it("从最近往前找上一次通过的提交，跳过本次运行和没跑 Mac 作业的运行", () => {
@@ -57,6 +67,52 @@ describe("main 上检查失败时找人认领", () => {
     expect(greenBase(runs.slice(0, 2), jobs, prefixes, 9)).toBeNull();
   });
 
+  it("推送上的苹果检查不把凌晨审计算进去：审计被跳过也算通过", () => {
+    expect(
+      isGreen(
+        [
+          job("apple/iphone", "success"),
+          job("apple/iphone-accessibility-build", "skipped"),
+          job("apple/iphone-accessibility", "skipped"),
+          job("apple/scroll", "success"),
+        ],
+        prefixes,
+      ),
+    ).toBe(true);
+  });
+
+  it("凌晨审计从上次真的跑过审计的定时运行算起，跳过和取消的不算", async () => {
+    const runs = [
+      { id: 9, head_sha: "c".repeat(40), created_at: "2026-11-29T18:00:00Z" },
+      { id: 8, head_sha: "b".repeat(40), created_at: "2026-11-28T18:00:00Z" },
+      { id: 7, head_sha: "a".repeat(40), created_at: "2026-11-27T18:00:00Z" },
+    ];
+    const jobs = {
+      9: [job("apple/iphone-accessibility-build", "skipped")],
+      8: [job("apple/iphone-accessibility-build", "failure")],
+      7: [job("apple/iphone-accessibility-build", "success")],
+    };
+    const lookup = (runId) =>
+      findLastRanBase({
+        repo: "o/r",
+        workflow: "apple.yml",
+        job: "apple/iphone-accessibility-build",
+        event: "schedule",
+        runId,
+        getJson: async (endpoint) => {
+          expect(endpoint).toContain("branch=main&event=schedule&status=completed");
+          return { workflow_runs: runs };
+        },
+        getPages: async (endpoint, pick) =>
+          pick({ jobs: jobs[Number(endpoint.match(/runs\/(\d+)\/jobs/u)[1])] }),
+      });
+    expect(await lookup("10")).toBe("b".repeat(40));
+    jobs[8] = [job("apple/iphone-accessibility-build", "cancelled")];
+    expect(await lookup("10")).toBe("a".repeat(40));
+    jobs[7] = [];
+    expect(await lookup("10")).toBeNull();
+  });
+
   it("只把失败或超时的被看作业列为失败，取消和其他工作流的作业不算", () => {
     expect(
       failedJobs(
@@ -68,9 +124,10 @@ describe("main 上检查失败时找人认领", () => {
           job("apple/claim", "failure"),
           job("apple/iphone-accessibility 2/3", "cancelled"),
         ],
-        prefixes,
+        [...prefixes, "apple/iphone-accessibility"],
       ),
     ).toEqual(["apple/iphone-accessibility 0/3", "apple/scroll"]);
+    expect(failedJobs([job("apple/iphone-accessibility 0/3", "failure")], prefixes)).toEqual([]);
   });
 
   it("留言带本次运行的标记，同一次运行不在同一个 PR 上留两次", () => {

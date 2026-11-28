@@ -9,6 +9,7 @@ import {
   checkIncidentHistory,
   INCIDENT_LIST,
   openIncidentLines,
+  PREMISE_MARK,
   RULE_FILE,
 } from "../../scripts/check-incident-gates.mjs";
 
@@ -246,7 +247,10 @@ describe("a repeat needs a gate that runs by itself", () => {
 });
 
 describe("commit messages say which incident they are about", () => {
-  const known = new Set(["I-01"]);
+  const known = new Map([
+    ["I-01", "1"],
+    ["I-02", "2"],
+  ]);
 
   it("refuses a message without an Incident line, a malformed value or an unknown incident", () => {
     expect(checkCommitMessage("fix: something\n", known)).toEqual([
@@ -267,6 +271,19 @@ describe("commit messages say which incident they are about", () => {
     expect(checkCommitMessage("feat: x\n\nIncident: none\n", known)).toEqual([]);
     expect(checkCommitMessage("fix: x\n\nIncident: I-01\n", known)).toEqual([]);
     expect(checkCommitMessage("fix: x\n\nIncident-follow-up: I-01\n", known)).toEqual([]);
+  });
+
+  it("asks a fix for the second occurrence of an incident to name the assumption that was wrong", () => {
+    expect(checkCommitMessage("fix: x\n\nIncident: I-02\n", known)).toEqual([
+      "INCIDENT_PREMISE_MISSING commit-msg I-02",
+    ]);
+    expect(checkCommitMessage("fix: x\n\nIncident: I-02\nPremise:\n", known)).toEqual([
+      "INCIDENT_PREMISE_MISSING commit-msg I-02",
+    ]);
+    expect(
+      checkCommitMessage("fix: x\n\nIncident: I-02\nPremise: 以为重试会读到新配置\n", known),
+    ).toEqual([]);
+    expect(checkCommitMessage("fix: x\n\nIncident-follow-up: I-02\n", known)).toEqual([]);
   });
 
   it("the repository's commit-msg hook runs this check", () => {
@@ -372,6 +389,64 @@ describe("repeat counts come from the commit history", () => {
     const result = spawnSync("node", [join(root, RULE_FILE)], { cwd: root, encoding: "utf8" });
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("INCIDENT_REPEAT_WITHOUT_HARD_GATE I-01 count=2");
+  });
+
+  it("moves a pushed commit's count to the new number when a later commit renumbers it after two branches took the same number", () => {
+    const root = historyFixture([row({}), row({ id: "I-02" })]);
+    const theirs = commit(root, "fix: theirs\n\nIncident: I-01");
+    const mine = commit(root, "fix: mine\n\nIncident: I-01");
+    expect(history(root)).toEqual([
+      `INCIDENT_COUNT_BELOW_HISTORY I-01 table=1 commits=2 ${mine.slice(0, 12)},${theirs.slice(0, 12)}`,
+    ]);
+    commit(
+      root,
+      `docs: renumber\n\nIncident-follow-up: I-02\nIncident-renumbered: ${mine.slice(0, 12)} I-01 I-02`,
+    );
+    expect(history(root)).toEqual([]);
+  });
+
+  it("refuses a renumbering that names no commit counted under the old number", () => {
+    const root = historyFixture([row({}), row({ id: "I-02" })]);
+    const other = commit(root, "fix: other\n\nIncident: none");
+    const sha = commit(
+      root,
+      `docs: renumber\n\nIncident: none\nIncident-renumbered: ${other.slice(0, 12)} I-01 I-02`,
+    );
+    commit(root, "docs: bad\n\nIncident: none\nIncident-renumbered: abc I-01");
+    expect(history(root)).toEqual([
+      expect.stringMatching(/^INCIDENT_TRAILER_INVALID [0-9a-f]{12} abc I-01$/),
+      `INCIDENT_RENUMBER_UNMATCHED ${sha.slice(0, 12)} ${other.slice(0, 12)} I-01`,
+    ]);
+  });
+
+  it("refuses a recorded second occurrence whose commit names no wrong assumption", () => {
+    const root = historyFixture();
+    commit(root, "fix: one\n\nIncident: I-01");
+    setList(root, [row({ count: "2" })]);
+    const missing = commit(root, "fix: two\n\nIncident: I-01");
+    expect(history(root)).toEqual([`INCIDENT_PREMISE_MISSING ${missing.slice(0, 12)} I-01`]);
+    setList(root, [row({ count: "3" })]);
+    commit(root, "fix: three\n\nIncident: I-01\nPremise: 以为缓存每次都清空");
+    expect(history(root)).toEqual([`INCIDENT_PREMISE_MISSING ${missing.slice(0, 12)} I-01`]);
+  });
+
+  it("does not ask commits from before the premise rule for a Premise line", () => {
+    const root = mkdtempSync(join(tmpdir(), "incident-premise-"));
+    roots.push(root);
+    mkdirSync(join(root, "docs"), { recursive: true });
+    mkdirSync(join(root, "scripts"), { recursive: true });
+    writeFileSync(join(root, "scripts/gate.mjs"), "");
+    setList(root, [row({ count: "2" })]);
+    git(root, ["init", "-q", "-b", "main"]);
+    writeFileSync(
+      join(root, RULE_FILE),
+      readFileSync(RULE_FILE, "utf8").replaceAll(PREMISE_MARK, "PREMISE_RULE_NOT_YET"),
+    );
+    commit(root, "add the trailer rule only\n\nIncident: none");
+    commit(root, "fix: two before the premise rule\n\nIncident: I-01");
+    copyFileSync(RULE_FILE, join(root, RULE_FILE));
+    commit(root, "add the premise rule\n\nIncident: none");
+    expect(history(root)).toEqual([]);
   });
 
   it("refuses an Incident line naming an incident the list does not have", () => {

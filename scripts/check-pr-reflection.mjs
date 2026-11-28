@@ -55,18 +55,28 @@ export async function redRuns({ api, token, repository, branch, since, aggregate
   return red.sort((a, b) => a.id.localeCompare(b.id, "en", { numeric: true }));
 }
 
+export const REFLECTION_LINES = Object.freeze([
+  ["PR_REFLECTION_PREMISE_MISSING", /^[ \t]*(?:[-*][ \t]*)?共同前提[:：][ \t]*\S/m],
+  ["PR_REFLECTION_VERIFICATION_MISSING", /^[ \t]*(?:[-*][ \t]*)?验证[:：][ \t]*\S/m],
+]);
+
 export function judgeReflection({ runs, body }) {
   if (runs.length < REPEAT_LIMIT) return [];
   const ids = runs.map((run) => run.id).join(",");
   const section = reflectionSection(body);
   if (section === undefined || section.length === 0)
     return [`PR_REFLECTION_MISSING red=${runs.length} runs=${ids}`];
-  return runs
-    .filter((run) => !new RegExp(`(?<!\\d)${run.id}(?!\\d)`).test(section))
-    .map(
-      (run) =>
-        `PR_REFLECTION_RUN_MISSING run=${run.id} workflow="${run.workflow}" jobs=${run.jobs.join(",")}`,
-    );
+  const missingLines = REFLECTION_LINES.filter(([, line]) => !line.test(section)).map(
+    ([code]) => `${code} red=${runs.length}`,
+  );
+  return missingLines.concat(
+    runs
+      .filter((run) => !new RegExp(`(?<!\\d)${run.id}(?!\\d)`).test(section))
+      .map(
+        (run) =>
+          `PR_REFLECTION_RUN_MISSING run=${run.id} workflow="${run.workflow}" jobs=${run.jobs.join(",")}`,
+      ),
+  );
 }
 
 export async function checkPrReflection({
@@ -135,11 +145,13 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   if (
     errors.some(
       (error) =>
-        error.startsWith("PR_REFLECTION_MISSING") || error.startsWith("PR_REFLECTION_RUN_MISSING"),
+        error.startsWith("PR_REFLECTION_MISSING") ||
+        error.startsWith("PR_REFLECTION_RUN_MISSING") ||
+        REFLECTION_LINES.some(([code]) => error.startsWith(code)),
     )
   )
     process.stderr.write(
-      `PR_REFLECTION_HELP this PR's CI went red ${REPEAT_LIMIT} or more times: add a "## 复盘" section to the PR description that names every red run id above, says why each one failed and what now stops it, then re-run the failed ci/required job; see .claude/rules/incident-gates.md\n`,
+      `PR_REFLECTION_HELP this PR's CI went red ${REPEAT_LIMIT} or more times: add a "## 复盘" section to the PR description that names every red run id above, says why each one failed and what now stops it, has a line "共同前提：" naming the assumption the failures shared and a line "验证：" saying how the fix was checked, then re-run the failed ci/required job; see .claude/rules/incident-gates.md\n`,
     );
   process.stdout.write(
     `PR_REFLECTION ${errors.length === 0 ? "passed" : "failed"} errors=${errors.length}\n`,
