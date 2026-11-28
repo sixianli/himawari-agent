@@ -9,6 +9,7 @@ import {
   mainCheckPrefixes,
   sinceAuditBase,
   sinceGreenBase,
+  sinceReleaseBase,
   touchesAppleClient,
 } from "../../scripts/ci/apple-scope.mjs";
 import { repositoryRoot } from "../../scripts/ci/contracts.mjs";
@@ -64,6 +65,25 @@ describe("Apple 工作流按改动决定要不要占 Mac 机器", () => {
         },
       }),
     ).toBeNull();
+  });
+  it("Mac 安装包从上次凌晨成功出包算起，失败的那次不算", async () => {
+    const seen = [];
+    const base = await sinceReleaseBase({
+      repo: "o/r",
+      runId: "9",
+      find: async (input) => {
+        seen.push(input);
+        return "c".repeat(40);
+      },
+    });
+    expect(base).toBe("c".repeat(40));
+    expect(seen[0]).toMatchObject({
+      workflow: "mac-release.yml",
+      job: "mac-release/publish",
+      event: "schedule",
+    });
+    expect(seen[0].accept("success")).toBe(true);
+    expect(seen[0].accept("failure")).toBe(false);
   });
   it("只改服务端、网页、文档或别的工作流时不跑", () => {
     expect(touchesAppleClient(["src/server.ts", "docs/a.md", ".github/workflows/ci.yml"])).toBe(

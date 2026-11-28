@@ -1,10 +1,5 @@
 name: Mac release
 on:
-  push:
-    branches: [main]
-    paths:
-      - clients/apple/**
-      - .github/workflows/mac-release.yml
   workflow_dispatch:
     inputs:
       mode:
@@ -13,6 +8,7 @@ on:
         options: [build, check]
         default: build
   schedule:
+    - cron: "0 18 * * *"
     - cron: "7,37 * * * *"
 permissions:
   contents: read
@@ -25,9 +21,29 @@ env:
   HIMAWARI_RELEASE_BASE: https://github.com/${{ github.repository }}/releases/download
   HIMAWARI_PENDING_ARTIFACT: mac-pending-notarization
 jobs:
+  changes:
+    name: mac-release/changes
+    if: ${{ github.event.schedule == '0 18 * * *' && github.ref == 'refs/heads/main' && github.repository == 'sixianli/himawari-agent' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      client: ${{ steps.scope.outputs.client }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: 看上次凌晨出包以后有没有改苹果客户端，没改就不出包
+        id: scope
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ci/apple-scope.mjs --since-release "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
   publish:
     name: mac-release/publish
-    if: ${{ github.event_name != 'schedule' && inputs.mode != 'check' && github.ref == 'refs/heads/main' && github.repository == 'sixianli/himawari-agent' }}
+    needs: changes
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' && github.repository == 'sixianli/himawari-agent' && (github.event_name == 'workflow_dispatch' && inputs.mode != 'check' || github.event.schedule == '0 18 * * *' && needs.changes.outputs.client == 'true') }}
     runs-on: macos-26
     timeout-minutes: 90
     environment: testflight
@@ -95,7 +111,7 @@ jobs:
         run: clients/apple/scripts/mac-publish.sh
   check:
     name: mac-release/check-notarization
-    if: ${{ (github.event_name == 'schedule' || inputs.mode == 'check') && github.ref == 'refs/heads/main' && github.repository == 'sixianli/himawari-agent' }}
+    if: ${{ (github.event.schedule == '7,37 * * * *' || inputs.mode == 'check') && github.ref == 'refs/heads/main' && github.repository == 'sixianli/himawari-agent' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     environment: testflight
