@@ -490,7 +490,6 @@ it.each(["approve", "deny", "cancelled", "cancelled-with-usage"] as const)(
       priority: 1,
       disclosure: "trusted_remote",
       capabilities: ["text"],
-      allowedDataClassifications: ["private"],
       secretRequirement: null,
     };
     const pricing = { input: 1, output: 2, cacheRead: 0.5, cacheWrite: 0.25 };

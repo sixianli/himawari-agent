@@ -35,7 +35,6 @@ export interface ProactiveModelAuthority {
 export interface ProactiveModelInvoker {
   readonly model: ModelPort;
   readonly modelRef: string;
-  readonly allowedDataClassifications: readonly DataClassification[];
   prepare(input: {
     readonly invocationId: string;
     readonly prompt: string;

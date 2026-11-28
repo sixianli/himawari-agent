@@ -70,7 +70,6 @@ function descriptor(baseUrl: string): ConfiguredPiModelDescriptor {
     maxTokens: 4096,
     capabilities: ["text"],
     disclosure: "external_remote",
-    allowedDataClassifications: ["public", "private"],
     secretRequirement: { secretRef: "k", secretVersion: "v1", purpose: "model-provider-auth" },
   };
 }

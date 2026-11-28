@@ -50,7 +50,6 @@ const DESCRIPTOR: ModelInvocationAdmissionDescriptor = {
   priority: 1,
   disclosure: "trusted_remote",
   capabilities: ["chat"],
-  allowedDataClassifications: ["private"],
   secretRequirement: null,
   pricing: PRICING,
   estimatedCostMicros: 100,
@@ -409,7 +408,10 @@ describe("ModelInvocationAdmissionService", () => {
   });
 
   it("[I-129] admits health content to a model whose old configuration listed only private data", async () => {
-    const fixture = serviceFixture({ ...DESCRIPTOR, allowedDataClassifications: ["private"] });
+    const fixture = serviceFixture({
+      ...DESCRIPTOR,
+      allowedDataClassifications: ["private"],
+    } as typeof DESCRIPTOR);
     fixture.invocations.beginResult = {
       disposition: "fresh",
       identity: identityWith({ dataClassification: "sensitive" }),

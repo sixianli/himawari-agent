@@ -166,7 +166,6 @@ function freezeDescriptor(descriptor: ConfiguredPiModelDescriptor): ConfiguredPi
     input: Object.freeze([...descriptor.input]),
     cost: Object.freeze({ ...descriptor.cost }),
     capabilities: Object.freeze([...descriptor.capabilities]),
-    allowedDataClassifications: Object.freeze([...descriptor.allowedDataClassifications]),
     secretRequirement: Object.freeze({ ...descriptor.secretRequirement }),
   };
   if (descriptor.provider === "magpie") {
@@ -218,13 +217,6 @@ function validateDescriptor(descriptor: ConfiguredPiModelDescriptor, index: numb
   }
   if (descriptor.capabilities.length === 0 || !descriptor.capabilities.includes("text")) {
     throw new TypeError(`${field}.capabilities must include text`);
-  }
-  if (
-    descriptor.allowedDataClassifications.length === 0 ||
-    new Set(descriptor.allowedDataClassifications).size !==
-      descriptor.allowedDataClassifications.length
-  ) {
-    throw new TypeError(`${field}.allowedDataClassifications must be non-empty and unique`);
   }
   assertPositiveInteger(descriptor.priority, `${field}.priority`);
   assertPositiveInteger(descriptor.contextWindow, `${field}.contextWindow`);

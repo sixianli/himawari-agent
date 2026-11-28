@@ -71,7 +71,6 @@ function harness(
   };
   const model: ProactiveModelInvoker = {
     modelRef: "deepseek-flash",
-    allowedDataClassifications: ["public", "private", "sensitive", "restricted"],
     model: {
       listAvailable: async () => [],
       async *invoke(request: ModelInvocationRequest): AsyncIterable<ModelInvocationEvent> {

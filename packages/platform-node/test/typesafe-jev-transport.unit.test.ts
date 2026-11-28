@@ -25,7 +25,6 @@ function descriptor(overrides: Partial<ModelDescriptor> = {}): ModelDescriptor {
     priority: 2,
     disclosure: "external_remote",
     capabilities: ["text"],
-    allowedDataClassifications: ["private"],
     secretRequirement: null,
     ...overrides,
   } as ModelDescriptor;

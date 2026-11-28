@@ -66,7 +66,6 @@ function config(stateRoot: string): Record<string, unknown> {
         contextWindow: 8192,
         maxTokens: 1024,
         providerRouting: { order: ["runware", "deepinfra", "morph"], sort: "cost" },
-        allowedDataClassifications: ["public", "private"],
         disclosure: "trusted_remote",
         secretRef: "provider-primary",
       },
@@ -79,7 +78,6 @@ function config(stateRoot: string): Record<string, unknown> {
         capabilities: ["embedding"],
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
         dimensions: 4096,
-        allowedDataClassifications: ["public", "private", "sensitive", "restricted"],
         disclosure: "trusted_remote",
         secretRef: "provider-embedding",
       },
@@ -204,7 +202,6 @@ describe("strict product configuration", () => {
       capabilities: ["embedding"],
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
       dimensions: 1024,
-      allowedDataClassifications: ["public", "private", "sensitive", "restricted"],
       disclosure: "local_only",
       secretRef: null,
       artifactSha256,
@@ -1449,7 +1446,6 @@ it("accepts a TypeSafe decision model as the configured reviewer and rejects its
     api: "typesafe-systemone",
     capabilities: ["text"],
     cost: { input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0 },
-    allowedDataClassifications: ["private"],
     disclosure: "external_remote",
     secretRef: "provider-reviewer",
   };
@@ -1949,7 +1945,6 @@ it("[PG-12][reverse] rejects a proactive model that the mail check cannot call, 
     api: "typesafe-systemone",
     capabilities: ["text"],
     cost: { input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0 },
-    allowedDataClassifications: ["private"],
     disclosure: "external_remote",
     secretRef: "provider-specialist",
   });
@@ -2155,7 +2150,7 @@ it("[A4] accepts a duplicate-judgement route that names a model-auth secret, fil
   ).toBeUndefined();
 });
 
-it("[P4-5] accepts a real memory eval with a model that may see private and sensitive data and a weekly cap of at most 0.5 USD", () => {
+it("[P4-5][I-129] accepts a real memory eval on any generation model with a weekly cap of at most 0.5 USD, and ignores an old allowedDataClassifications list", () => {
   const raw = config("/tmp/himawari-real-eval-config");
   const descriptors = raw["modelDescriptors"] as Record<string, unknown>[];
   const primary = descriptors.find(({ ref }) => ref === "model-primary");
@@ -2191,20 +2186,6 @@ it("[P4-5] accepts a real memory eval with a model that may see private and sens
     raw["runPolicy"] = { ...policy, realEval: invalid };
     expect(() => parseProductConfiguration(raw, "2026-11-11T00:00:00.000Z")).toThrow();
   }
-  const embedding = descriptors.find(({ ref }) => ref === "model-embedding");
-  if (!embedding) throw new Error("fixture embedding missing");
-  embedding["allowedDataClassifications"] = ["public", "private"];
-  raw["runPolicy"] = { ...policy, realEval };
-  expect(() => parseProductConfiguration(raw, "2026-11-11T00:00:00.000Z")).toThrow(
-    expect.objectContaining({
-      details: expect.objectContaining({ field: "configuration.runPolicy.realEval.mode" }),
-    }),
-  );
-  raw["runPolicy"] = { ...policy, realEval: { ...realEval, mode: "off" } };
-  expect(parseProductConfiguration(raw, "2026-11-11T00:00:00.000Z").runPolicy?.realEval?.mode).toBe(
-    "off",
-  );
-  embedding["allowedDataClassifications"] = ["public", "private", "sensitive", "restricted"];
   descriptors.push({
     ref: "model-specialist",
     role: "specialist",
@@ -2217,7 +2198,6 @@ it("[P4-5] accepts a real memory eval with a model that may see private and sens
     api: "typesafe-systemone",
     capabilities: ["text"],
     cost: { input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0 },
-    allowedDataClassifications: ["private", "sensitive"],
     disclosure: "external_remote",
     secretRef: "provider-specialist",
   });
@@ -2235,10 +2215,8 @@ it("[P4-5] accepts a real memory eval with a model that may see private and sens
   );
   primary["allowedDataClassifications"] = ["public", "private"];
   raw["runPolicy"] = { ...policy, realEval };
-  expect(() => parseProductConfiguration(raw, "2026-11-11T00:00:00.000Z")).toThrow(
-    expect.objectContaining({
-      details: expect.objectContaining({ field: "configuration.runPolicy.realEval.modelRef" }),
-    }),
+  expect(parseProductConfiguration(raw, "2026-11-11T00:00:00.000Z").runPolicy?.realEval).toEqual(
+    realEval,
   );
 });
 

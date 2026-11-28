@@ -81,7 +81,6 @@ export async function createFauxModelFixture(
     priority: 1,
     disclosure: "local_only",
     capabilities: ["text", "tool_calling"],
-    allowedDataClassifications: ["private"],
     secretRequirement: null,
     pricing: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     estimatedCostMicros: 1,

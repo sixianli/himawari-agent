@@ -207,7 +207,6 @@ export async function harness(
     readonly chatModels?: {
       readonly primaryRef: string;
       readonly catalog: readonly DeviceChatCatalogEntry[];
-      readonly privateRefs: readonly string[];
     };
   } = {},
 ): Promise<Harness> {
@@ -662,9 +661,6 @@ export async function harness(
             modelDescriptors: models.catalog.map((entry) => ({
               ref: entry.ref,
               role: entry.ref === models.primaryRef ? "primary" : "specialist",
-              allowedDataClassifications: models.privateRefs.includes(entry.ref)
-                ? ["public", "private"]
-                : ["public"],
             })) as unknown as Parameters<
               typeof deviceChatModels
             >[0]["configuration"]["modelDescriptors"],

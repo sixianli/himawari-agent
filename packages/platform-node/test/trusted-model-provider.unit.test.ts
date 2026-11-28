@@ -39,7 +39,6 @@ const DESCRIPTOR: ModelDescriptor = Object.freeze({
   priority: 1,
   disclosure: "trusted_remote",
   capabilities: ["text"] as const,
-  allowedDataClassifications: ["private"] as const,
   secretRequirement: {
     secretRef: "provider-secret",
     secretVersion: "v1",
