@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   changedFiles,
   classifyChanges,
+  findPathReaders,
   listRelatedFiles,
   planTestScope,
   relatedEligibleProjects,
@@ -117,6 +118,69 @@ describe("PR 上测试范围的选择 [ADR-0268]", () => {
     });
     expect(plan.related.size).toBe(0);
     expect(plan.reason).toBe("full-files package.json");
+  });
+
+  it("改的文档或 .agents 文件被测试或脚本按路径读着时跑全量，删掉的也算", () => {
+    const asked = [];
+    const plan = planTestScope({
+      root: "/r",
+      context: context(),
+      projects: ["tooling"],
+      diff: () => [".agents/instructions/delivery-mode.md", "docs/adr/0001-gone.md"],
+      readers: (_root, files) => {
+        asked.push(files);
+        return ["test/tooling/merge-queue.test.mjs"];
+      },
+      list: () => {
+        throw new Error("不该调用");
+      },
+    });
+    expect(asked).toEqual([[".agents/instructions/delivery-mode.md", "docs/adr/0001-gone.md"]]);
+    expect(plan.related.size).toBe(0);
+    expect(plan.reason).toBe("full-readers test/tooling/merge-queue.test.mjs");
+  });
+
+  it("改的文档没有代码按路径读时仍只跑相关测试", () => {
+    const plan = planTestScope({
+      root: "/r",
+      context: context(),
+      projects: ["tooling"],
+      diff: () => ["docs/backlog/x.md", "packages/a/src/x.ts"],
+      readers: (_root, files) => {
+        expect(files).toEqual(["docs/backlog/x.md"]);
+        return [];
+      },
+      list: () => [],
+    });
+    expect(plan.reason).toBe("related");
+  });
+
+  it("在仓库里按路径找读这些文件的代码，只看 apps、packages、test、scripts 下的代码文件", () => {
+    const root = mkdtempSync(path.join(tmpdir(), "readers-"));
+    directories.push(root);
+    const git = (...args) => execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
+    git("init", "--quiet");
+    git("config", "user.email", "t@example.com");
+    git("config", "user.name", "t");
+    mkdirSync(path.join(root, "test/tooling"), { recursive: true });
+    mkdirSync(path.join(root, "scripts"), { recursive: true });
+    mkdirSync(path.join(root, "docs"), { recursive: true });
+    writeFileSync(
+      path.join(root, "test/tooling/a.test.mjs"),
+      'readFileSync(".agents/instructions/delivery-mode.md");\n',
+    );
+    writeFileSync(path.join(root, "scripts/b.py"), "print('see docs/runbooks/gone.md')\n");
+    writeFileSync(path.join(root, "docs/index.md"), "[x](runbooks/other.md) docs/adr/0001-x.md\n");
+    git("add", "-A");
+    git("commit", "--quiet", "-m", "base");
+    expect(
+      findPathReaders(root, [
+        ".agents/instructions/delivery-mode.md",
+        "docs/runbooks/gone.md",
+        "docs/adr/0001-x.md",
+      ]),
+    ).toEqual(["scripts/b.py", "test/tooling/a.test.mjs"]);
+    expect(findPathReaders(root, [])).toEqual([]);
   });
 
   it("用 vitest list --changed 以 PR 基线找相关测试，输出改成仓库相对路径并去重排序；vitest 失败时返回 null", () => {
