@@ -39,7 +39,7 @@ struct DataTransferPage: View {
     @State private var pickerShown = false
 
     var body: some View {
-        SettingsPage(gap: SL.pageGap) {
+        SettingsPage {
             SheetHeader(title: title, leading: .back, action: back)
             if part != .importing {
                 SettingsGroup(label: part == nil ? M.exportGroup : nil) {
@@ -49,15 +49,13 @@ struct DataTransferPage: View {
             }
             if part != .export {
                 SettingsGroup(label: part == nil ? M.importGroup : nil) {
-                    ForEach(Array(MemoryImportSource.allCases.enumerated()), id: \.element) { index, source in
+                    ForEach(MemoryImportSource.allCases, id: \.self) { source in
                         Button { choose(source) } label: {
                             SettingsRow(
                                 icon: nil,
                                 title: M.importSource(source),
                                 detail: M.importSourceHelp(source),
-                                chevron: true,
-                                last: index == MemoryImportSource.allCases.count - 1
-                            )
+                                chevron: true)
                         }
                         .buttonStyle(.pressable)
                         .disabled(export.running)
@@ -128,7 +126,7 @@ struct DataTransferPage: View {
         switch export.phase {
         case .idle:
             Button { Task { await export.start(reason: M.confirmExport) } } label: {
-                SettingsRow(icon: nil, title: M.exportAction, chevron: true, last: true)
+                SettingsRow(icon: nil, title: M.exportAction, chevron: true)
             }
             .buttonStyle(.pressable)
         case .running(let read, let total):
@@ -137,9 +135,7 @@ struct DataTransferPage: View {
                 SettingsRow(
                     icon: nil,
                     title: M.exportWorking,
-                    detail: read.flatMap { read in total.map { M.exportProgress(read: read, total: $0) } },
-                    last: true
-                )
+                    detail: read.flatMap { read in total.map { M.exportProgress(read: read, total: $0) } })
             }
             .accessibilityElement(children: .combine)
         case .ready(let archive):
@@ -148,12 +144,12 @@ struct DataTransferPage: View {
                 title: M.exportDone(memories: archive.memories, rules: archive.rules, withheld: archive.withheld)
             )
             Button { saving = true } label: {
-                SettingsRow(icon: nil, title: M.exportSave, value: saved ? M.exportSaved : nil, chevron: !saved, last: true)
+                SettingsRow(icon: nil, title: M.exportSave, value: saved ? M.exportSaved : nil, chevron: !saved)
             }
             .buttonStyle(.pressable)
         case .failed:
             Button { Task { await export.start(reason: M.confirmExport) } } label: {
-                SettingsRow(icon: nil, title: M.exportAction, warning: M.exportFailed, chevron: true, last: true)
+                SettingsRow(icon: nil, title: M.exportAction, warning: M.exportFailed, chevron: true)
             }
             .buttonStyle(.pressable)
         }
@@ -164,5 +160,6 @@ struct DataTransferPage: View {
             .hmType(DesignTokens.TypeScale.caption)
             .foregroundStyle(Color.hmMuted)
             .padding(.horizontal, SL.groupLabelPadding)
+            .outsideRowCard()
     }
 }

@@ -9,7 +9,7 @@ struct NotificationsPage: View {
     @State private var edits = 0
 
     var body: some View {
-        SettingsPage(gap: SL.pageGap) {
+        SettingsPage {
             SheetHeader(title: M.quietTitle, leading: .back, action: back)
             if let hours = store.hours, let shown = store.shown {
                 let start = shown.start
@@ -19,12 +19,10 @@ struct NotificationsPage: View {
                         SettingsRow(
                             icon: nil,
                             title: M.quietAtNight,
-                            switchState: Binding(get: { shown.enabled }, set: { value in change { $0.enabled = value } }),
-                            last: !shown.enabled
-                        )
+                            switchState: Binding(get: { shown.enabled }, set: { value in change { $0.enabled = value } }))
                         if shown.enabled {
                             ClockRow(title: M.quietFrom, time: start) { value in change { $0.start = value } }
-                            ClockRow(title: M.quietTo, time: end, last: true) { value in change { $0.end = value } }
+                            ClockRow(title: M.quietTo, time: end) { value in change { $0.end = value } }
                         }
                     }
                     if shown.enabled {
@@ -32,8 +30,8 @@ struct NotificationsPage: View {
                     }
                 } else {
                     SettingsGroup(label: M.quietWhen) {
-                        ForEach(Array(hours.rules.enumerated()), id: \.element.ruleId) { index, rule in
-                            SettingsRow(icon: nil, title: rule.summary, last: index == hours.rules.count - 1)
+                        ForEach(hours.rules, id: \.ruleId) { rule in
+                            SettingsRow(icon: nil, title: rule.summary)
                         }
                     }
                     note(M.quietReadOnly)
@@ -55,6 +53,7 @@ struct NotificationsPage: View {
             .hmType(DesignTokens.TypeScale.caption)
             .foregroundStyle(Color.hmMuted)
             .padding(.horizontal, SL.groupLabelPadding)
+            .outsideRowCard()
     }
 
     private func change(_ edit: (inout QuietHoursStore.Choice) -> Void) {
@@ -79,7 +78,6 @@ struct NotificationsPage: View {
 struct ClockRow: View {
     let title: String
     let time: ClockTime
-    var last = false
     let change: (ClockTime) -> Void
     @Environment(\.dynamicTypeSize) private var typeSize
 
@@ -98,7 +96,6 @@ struct ClockRow: View {
             }
             .padding(.vertical, SL.rowPaddingVertical)
             .frame(minHeight: SL.rowMinHeight)
-            if !last { RowSeparator() }
         }
     }
 

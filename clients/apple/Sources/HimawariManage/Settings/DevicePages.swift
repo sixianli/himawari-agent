@@ -37,11 +37,7 @@ struct DevicePage: View {
                     }
                 }
                 if let actions, store.isThisDevice(device) {
-                    Section {
-                        DeviceAbilitiesSection(model: actions)
-                            .listRowInsets(EdgeInsets())
-                            .listRowBackground(Color.clear)
-                    }
+                    DeviceAbilitiesSection(model: actions)
                 }
                 Section {
                     if store.isThisDevice(device) {

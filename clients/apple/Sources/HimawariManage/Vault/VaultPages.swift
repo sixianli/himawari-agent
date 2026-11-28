@@ -94,7 +94,7 @@ struct VaultListPage: View {
     let close: () -> Void
 
     var body: some View {
-        SettingsPage(gap: VL.gap, systemBar: false) {
+        SettingsPage(systemBar: false) {
             SheetHeader(title: M.vaultTitle, leading: .close, action: close)
             VaultNote(M.vaultIntro)
             switch model.phase {
@@ -117,9 +117,7 @@ struct VaultListPage: View {
                                     icon: item.kind == .apiKey ? .key : .lock,
                                     title: item.name,
                                     detail: M.vaultUsedLine(item.origins.map(VaultAssembly.host).joined(separator: " · "), lastUse(item.id)),
-                                    chevron: true,
-                                    last: index == model.items.count - 1
-                                )
+                                    chevron: true)
                             }
                             .buttonStyle(.pressable)
                         }
@@ -132,11 +130,12 @@ struct VaultListPage: View {
                     }
                 }
                 .buttonStyle(CapsuleButtonStyle(.secondary, height: VL.buttonHeight, fontSize: DesignTokens.TypeScale.body.size))
+                .outsideRowCard()
             }
             if model.phase != .loading && model.phase != .failed {
                 SettingsGroup(label: nil) {
                     Button(action: security) {
-                        SettingsRow(icon: .shieldLock, title: M.vaultSecurityTitle, detail: M.vaultSecuritySubtitle, chevron: true, last: true)
+                        SettingsRow(icon: .shieldLock, title: M.vaultSecurityTitle, detail: M.vaultSecuritySubtitle, chevron: true)
                     }
                     .buttonStyle(.pressable)
                 }
@@ -170,6 +169,7 @@ struct VaultNote: View {
             .foregroundStyle(tone == .danger ? Color.hmDanger : Color.hmMuted)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, SL.groupLabelPadding)
+            .outsideRowCard()
     }
 }
 
@@ -178,11 +178,11 @@ struct VaultAddPage: View {
     let back: () -> Void
 
     var body: some View {
-        SettingsPage(gap: VL.gap) {
+        SettingsPage {
             SheetHeader(title: M.vaultAdd, leading: .back, action: back)
             SettingsGroup(label: nil) {
                 Button(action: manual) {
-                    SettingsRow(icon: .pencil, title: M.vaultManual, detail: M.vaultManualSubtitle, chevron: true, last: true)
+                    SettingsRow(icon: .pencil, title: M.vaultManual, detail: M.vaultManualSubtitle, chevron: true)
                 }
                 .buttonStyle(.pressable)
             }
@@ -196,7 +196,6 @@ struct VaultFieldRow<Field: View>: View {
     let label: String
     var note: String? = nil
     var noteIsWarning = false
-    var last = false
     @ViewBuilder let field: Field
 
     var body: some View {
@@ -215,7 +214,6 @@ struct VaultFieldRow<Field: View>: View {
         }
         .padding(.vertical, SL.rowPaddingVertical)
         .frame(minHeight: VL.fieldMinHeight, alignment: .leading)
-        .overlay(alignment: .bottom) { if !last { RowSeparator() } }
     }
 }
 
@@ -223,14 +221,13 @@ struct VaultSecretField: View {
     let label: String
     @Binding var value: String
     var scannable = false
-    var last = false
     @State private var scanning = false
     @State private var choosingPhoto = false
     @State private var photo: PhotosPickerItem?
     @State private var photoNote: String?
 
     var body: some View {
-        VaultFieldRow(label: label, note: photoNote, noteIsWarning: photoNote != nil, last: last) {
+        VaultFieldRow(label: label, note: photoNote, noteIsWarning: photoNote != nil) {
             HStack(spacing: VL.buttonGap) {
                 SecureField("", text: $value)
                     #if os(iOS)
@@ -360,13 +357,14 @@ struct VaultFormPage: View {
     private var valid: Bool { VaultContract.name(name) != nil && origin != nil && !secret.isEmpty && totpValid }
 
     var body: some View {
-        SettingsPage(gap: VL.formGap) {
+        SettingsPage {
             SheetHeader(title: M.vaultManual, leading: .back, action: back)
             if let note { VaultNote(note) }
             Picker("", selection: $kind) {
                 Text(M.vaultKindLogin).tag(VaultItemKind.login)
                 Text(M.vaultKindKey).tag(VaultItemKind.apiKey)
             }
+            .outsideRowCard()
             .pickerStyle(.segmented)
             .labelsHidden()
             SettingsGroup(label: nil) {
@@ -385,17 +383,17 @@ struct VaultFormPage: View {
                             #endif
                     }
                     VaultSecretField(label: M.vaultPassword, value: $secret)
-                    VaultSecretField(label: M.vaultTOTP, value: $totp, scannable: true, last: true)
+                    VaultSecretField(label: M.vaultTOTP, value: $totp, scannable: true)
                 } else {
-                    VaultSecretField(label: M.vaultKey, value: $secret, last: true)
+                    VaultSecretField(label: M.vaultKey, value: $secret)
                 }
             }
             if !totpValid { VaultNote(M.vaultTOTPInvalid, tone: .danger) }
             if let failure { VaultNote(failure, tone: .danger) }
-            Spacer(minLength: VL.formGap)
             Button(action: save) { Text(M.vaultSave) }
                 .buttonStyle(CapsuleButtonStyle(.primary, height: VL.buttonHeight, fontSize: DesignTokens.TypeScale.body.size))
                 .disabled(!valid || busy)
+                .outsideRowCard()
         }
     }
 
@@ -441,7 +439,7 @@ struct VaultItemPage: View {
     @State private var failure: String?
 
     var body: some View {
-        SettingsPage(gap: VL.gap) {
+        SettingsPage {
             if let item = model.item(itemId) {
                 SheetHeader(title: item.name, leading: .back, action: back)
                 SettingsGroup(label: nil) {
@@ -449,26 +447,23 @@ struct VaultItemPage: View {
                     if let username = model.usernames[item.id] {
                         SettingsRow(icon: nil, title: M.vaultUsername, detail: username)
                     }
-                    hiddenRow(item.kind == .apiKey ? M.vaultKey : M.vaultPassword, field: .secret, last: !item.fields.contains("totp"))
+                    hiddenRow(item.kind == .apiKey ? M.vaultKey : M.vaultPassword, field: .secret)
                     if item.fields.contains("totp") {
-                        hiddenRow(M.vaultTOTPShort, field: .totp, last: true)
+                        hiddenRow(M.vaultTOTPShort, field: .totp)
                     }
                 }
                 SettingsGroup(label: M.vaultUsageTitle) {
                     let entries = model.usage[item.id] ?? []
                     if entries.isEmpty {
-                        SettingsRow(icon: nil, title: M.vaultUsageEmpty, last: true)
+                        SettingsRow(icon: nil, title: M.vaultUsageEmpty)
                     } else {
-                        ForEach(Array(entries.enumerated()), id: \.offset) { index, entry in
-                            SettingsRow(icon: nil, title: entry.purpose ?? VaultAssembly.host(entry.origin), detail: usageLine(entry), last: index == entries.count - 1)
+                        ForEach(Array(entries.enumerated()), id: \.offset) { _, entry in
+                            SettingsRow(icon: nil, title: entry.purpose ?? VaultAssembly.host(entry.origin), detail: usageLine(entry))
                         }
                     }
                 }
                 if let failure { VaultNote(failure, tone: .danger) }
-                Button(role: .destructive) { confirmingDelete = true } label: {
-                    Text(M.vaultDelete).foregroundStyle(Color.hmDanger)
-                }
-                .buttonStyle(CapsuleButtonStyle(.secondary, height: VL.buttonHeight, fontSize: DesignTokens.TypeScale.body.size))
+                DestructiveRow(title: M.vaultDelete) { confirmingDelete = true }
                 .confirmationDialog(M.vaultDelete, isPresented: $confirmingDelete, titleVisibility: .visible) {
                     Button(M.vaultDelete, role: .destructive) { delete() }
                 }
@@ -480,7 +475,7 @@ struct VaultItemPage: View {
         .task { await model.loadUsage(itemId) }
     }
 
-    private func hiddenRow(_ title: String, field: VaultItemField, last: Bool) -> some View {
+    private func hiddenRow(_ title: String, field: VaultItemField) -> some View {
         VStack(spacing: 0) {
             HStack(spacing: SL.rowGap) {
                 VStack(alignment: .leading, spacing: SL.rowTextGap) {
@@ -495,7 +490,6 @@ struct VaultItemPage: View {
             }
             .padding(.vertical, SL.rowPaddingVertical)
             .frame(minHeight: SL.rowMinHeight)
-            if !last { RowSeparator() }
         }
     }
 
@@ -540,16 +534,16 @@ struct VaultReplacePage: View {
     }
 
     var body: some View {
-        SettingsPage(gap: VL.formGap) {
+        SettingsPage {
             SheetHeader(title: M.vaultReplace, leading: .back, action: back)
             SettingsGroup(label: nil) {
-                VaultSecretField(label: label, value: $value, scannable: field == .totp, last: true)
+                VaultSecretField(label: label, value: $value, scannable: field == .totp)
             }
             if let failure { VaultNote(failure, tone: .danger) }
-            Spacer(minLength: VL.formGap)
             Button(action: save) { Text(M.vaultReplaceWith) }
                 .buttonStyle(CapsuleButtonStyle(.primary, height: VL.buttonHeight, fontSize: DesignTokens.TypeScale.body.size))
                 .disabled(!valid || busy)
+                .outsideRowCard()
         }
     }
 
@@ -582,17 +576,15 @@ struct VaultSecurityPage: View {
     private var phones: [PairedDevice] { settings.devices.filter { $0.kind == "iphone" } }
 
     var body: some View {
-        SettingsPage(gap: VL.gap) {
+        SettingsPage {
             SheetHeader(title: M.vaultSecurityTitle, leading: .back, action: back)
             SettingsGroup(label: M.vaultPhonesGroup) {
-                ForEach(Array(phones.enumerated()), id: \.element.id) { index, device in
+                ForEach(phones) { device in
                     HStack(spacing: SL.rowGap) {
                         SettingsRow(
                             icon: .deviceMobile,
                             title: device.name,
-                            detail: settings.isThisDevice(device) ? M.vaultThisPhone : M.presence(settings.presence(device)),
-                            last: true
-                        )
+                            detail: settings.isThisDevice(device) ? M.vaultThisPhone : M.presence(settings.presence(device)))
                         if !settings.isThisDevice(device) {
                             Button { revoking = device } label: {
                                 Text(M.vaultRevoke).hmType(DesignTokens.TypeScale.rowAction).foregroundStyle(Color.hmDanger)
@@ -600,13 +592,12 @@ struct VaultSecurityPage: View {
                             .buttonStyle(.pressable)
                         }
                     }
-                    .overlay(alignment: .bottom) { if index < phones.count - 1 { RowSeparator() } }
                 }
             }
             VaultNote(M.vaultRevokeNote)
             SettingsGroup(label: nil) {
                 Button { confirmingRotate = true } label: {
-                    SettingsRow(icon: .refresh, title: M.vaultRotate, detail: M.vaultRotateSubtitle, chevron: true, last: true)
+                    SettingsRow(icon: .refresh, title: M.vaultRotate, detail: M.vaultRotateSubtitle, chevron: true)
                 }
                 .buttonStyle(.pressable)
                 .disabled(busy || model.phase != .ready)
@@ -667,7 +658,7 @@ public struct VaultApprovalView: View {
     }
 
     public var body: some View {
-        SettingsPage(gap: VL.gap, systemBar: false) {
+        SettingsPage(systemBar: false) {
             SheetHeader(title: M.vaultApproveTitle, leading: .close, action: close)
             switch model.phase {
             case .loading:
@@ -710,16 +701,14 @@ public struct VaultApprovalView: View {
                 Icon(.check, size: DesignTokens.IconSize.chevron).foregroundStyle(Color.hmSun)
                 Text(M.vaultMatches).hmType(DesignTokens.TypeScale.caption).foregroundStyle(Color.hmMuted)
             }
-            RowSeparator()
+            Divider()
             VStack(alignment: .leading, spacing: SL.rowTextGap) {
                 Text(M.vaultPurposeLabel).hmType(DesignTokens.TypeScale.caption).foregroundStyle(Color.hmMuted)
                 Text(request.purpose).hmType(SL.rowValue).foregroundStyle(Color.hmText)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .himawariCard()
         VaultNote(M.vaultApproveFooter)
-        Spacer(minLength: VL.gap)
         HStack(spacing: VL.buttonGap) {
             Button { deny(request) } label: { Text(M.vaultDeny) }
                 .buttonStyle(CapsuleButtonStyle(.secondary, height: VL.buttonHeight, fontSize: DesignTokens.TypeScale.body.size))
@@ -732,6 +721,7 @@ public struct VaultApprovalView: View {
             .buttonStyle(CapsuleButtonStyle(.primary, height: VL.buttonHeight, fontSize: DesignTokens.TypeScale.body.size))
         }
         .disabled(busy)
+        .outsideRowCard()
     }
 
     private func approve(_ names: [String]) {

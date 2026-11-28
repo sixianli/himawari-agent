@@ -48,7 +48,6 @@ enum M {
     static var chooseOption: String { text("选这一项", ja: "これを選ぶ", en: "Choose this") }
     static var done: String { text("完成", ja: "完了", en: "Done") }
     static var herPage: String { text("Himawari", ja: "Himawari", en: "Himawari") }
-    static var herMemory: String { text("Himawari 记得的", ja: "覚えていること", en: "What Himawari remembers") }
     static var personalizationTitle: String { text("个性化", ja: "パーソナライズ", en: "Personalization") }
     static var voiceTitle: String { text("语音", ja: "音声", en: "Voice") }
     static var dataAndAppsTitle: String { text("数据和应用", ja: "データとアプリ", en: "Data and Apps") }
@@ -61,7 +60,6 @@ enum M {
     static var onThisIPhone: String { text("这台 iPhone 上的", ja: "この iPhone", en: "On This iPhone") }
     static var accountsAndApps: String { text("账号和应用", ja: "アカウントとアプリ", en: "Accounts and Apps") }
     static var otherAgents: String { text("其他 agent", ja: "ほかの agent", en: "Other Agents") }
-    static var privacy: String { text("隐私", ja: "プライバシー", en: "Privacy") }
     static var devicesTitle: String { text("设备", ja: "デバイス", en: "Devices") }
     static var nameTitle: String { text("你的称呼", ja: "呼び名", en: "What Himawari calls you") }
     static var namePlaceholder: String { text("比如 Andy", ja: "例：Andy", en: "For example, Andy") }
@@ -277,22 +275,10 @@ enum M {
             en: "Quiet \(start.shortText)–\(end.shortText)"
         )
     }
-    static var deletePerception: String { text("删掉感知记录", ja: "感知の記録を削除", en: "Delete perception records") }
-    static var letHerSense: String { text("让 Himawari 感知", ja: "Himawari に感じ取らせる", en: "Let Himawari Sense") }
-    static func sensesOn(_ count: Int) -> String { text("\(count) 项开着", ja: "\(count) 項目オン", en: "\(count) on") }
     static var pauseMemory: String { text("暂停记忆", ja: "記憶を一時停止", en: "Pause memory") }
     static var resumeMemory: String { text("恢复记忆", ja: "記憶を再開", en: "Resume memory") }
-    static var pauseMemoryDetail: String {
-        text("Himawari 照常回答，但不记新的", ja: "返事はいつもどおり。新しいことは覚えません", en: "Himawari still answers, but won't remember anything new")
-    }
     static var listenAlways: String { text("一直听着", ja: "ずっと聞く", en: "Keep listening") }
-    static var listenAlwaysDetail: String {
-        text("开着时 Himawari 听周围的话，叫名字就应。锁屏和灵动岛一直有标记", ja: "オンの間、Himawari は周りの声を聞き、名前を呼ぶと応えます。ロック画面と Dynamic Island に常に表示されます", en: "While on, Himawari listens around you and answers when you say its name. It always shows on the Lock Screen and Dynamic Island")
-    }
     static var voiceprint: String { text("我的声纹", ja: "自分の声紋", en: "My voiceprint") }
-    static var voiceprintDetail: String {
-        text("只用来认出是你在说话", ja: "あなたの声だと聞き分けるためだけに使います", en: "Only used to tell that it's you speaking")
-    }
     static var voiceprintKept: String { text("已录", ja: "登録済み", en: "Recorded") }
     static var voiceprintNone: String { text("没录", ja: "未登録", en: "Not recorded") }
     static var forgetVoiceprint: String { text("删掉我的声纹？", ja: "声紋を削除しますか？", en: "Delete your voiceprint?") }

@@ -199,6 +199,59 @@ class RouteTest(unittest.TestCase):
         self.assertTrue(remote.untouched(self.plan))
 
 
+class FallbackTest(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        unit = Path(self.directory.name) / 'unit'
+        unit.write_bytes(b'old-unit')
+        self.unit = unit
+        self.plan = {'unit': 'himawari.service', 'unitPath': str(unit), 'oldUnitSha256': hashlib.sha256(b'old-unit').hexdigest(), 'oldPrefix': '/opt/himawari/releases/old'}
+        self.calls = []
+        self.saved = remote.service, remote.subprocess.run
+        remote.subprocess.run = lambda command, **_: self.calls.append(command[1:])
+
+    def tearDown(self):
+        remote.service, remote.subprocess.run = self.saved
+        self.directory.cleanup()
+
+    def started(self, plan):
+        self.calls.append(['start'])
+        return {'serviceAfter': {'SubState': 'running'}}
+
+    def test_I261128_a_stopped_old_release_is_started_after_a_failed_rollback(self):
+        remote.service = lambda unit: {'ActiveState': 'failed', 'SubState': 'failed', 'MainPID': '0'}
+        result = remote.fallback(self.plan, self.started)
+        self.assertEqual((result['started'], self.calls), (True, [['reset-failed', 'himawari.service'], ['start']]))
+
+    def test_a_running_service_is_left_alone(self):
+        remote.service = lambda unit: {'ActiveState': 'active', 'SubState': 'running', 'MainPID': '42'}
+        self.assertEqual((remote.fallback(self.plan, self.started)['started'], self.calls), (False, []))
+
+    def test_a_unit_that_is_not_the_old_release_is_not_started(self):
+        self.unit.write_bytes(b'new-unit')
+        remote.service = lambda unit: {'ActiveState': 'inactive', 'SubState': 'dead', 'MainPID': '0'}
+        with self.assertRaisesRegex(RuntimeError, 'ROLLBACK_FALLBACK_UNIT_NOT_OLD'):
+            remote.fallback(self.plan, self.started)
+        self.assertEqual(self.calls, [])
+
+    def test_I261128_every_rollback_failure_ends_with_the_fallback_and_still_reports_failure(self):
+        source = (HERE / 'rollback.py').read_text()
+        self.assertIn("    try:\n        route = recover(packet, plan)\n    except SystemExit as stopped:\n        keep_old_release_running(plan, stopped)", source)
+        asked = []
+        with self.assertRaises(SystemExit) as raised:
+            orchestrator.keep_old_release_running(self.plan, SystemExit('ROLLBACK_STOPPED STEP_FAILED:S9_RAW_CONTROL51 exit=1'), lambda plan, mode: asked.append(mode) or {'started': True})
+        self.assertEqual(asked, ['fallback'])
+        self.assertIn('STEP_FAILED:S9_RAW_CONTROL51', str(raised.exception.code))
+        self.assertIn('the old release is running', str(raised.exception.code))
+
+    def test_a_failed_fallback_reports_both_failures(self):
+        def refuse(plan, mode):
+            raise SystemExit('ROLLBACK_STOPPED REMOTE_FALLBACK_FAILED')
+        with self.assertRaises(SystemExit) as raised:
+            orchestrator.keep_old_release_running(self.plan, SystemExit('ROLLBACK_STOPPED STEP_FAILED:S9_RAW_CONTROL51 exit=1'), refuse)
+        self.assertEqual(str(raised.exception.code), 'ROLLBACK_STOPPED STEP_FAILED:S9_RAW_CONTROL51 exit=1 and ROLLBACK_STOPPED REMOTE_FALLBACK_FAILED')
+
+
 class HomepageTest(unittest.TestCase):
     def serve(self, statuses):
         replies = list(statuses)

@@ -19,18 +19,24 @@ struct RuleDetailSheet: View {
                 .padding(.horizontal, R.summaryPadding)
             let rows = RuleFacts.rows(rule)
             if !rows.isEmpty {
-                SettingsGroup(label: nil) {
+                VStack(spacing: 0) {
                     ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
-                        if let memoryId = row.opensMemory {
-                            Button { openMemory(memoryId) } label: {
-                                SettingsRow(icon: nil, title: row.title, detail: row.detail, note: row.note, chevron: true, last: index == rows.count - 1)
+                        if index > 0 { RowSeparator() }
+                        Group {
+                            if let memoryId = row.opensMemory {
+                                Button { openMemory(memoryId) } label: {
+                                    SettingsRow(icon: nil, title: row.title, detail: row.detail, note: row.note, chevron: true)
+                                }
+                                .buttonStyle(.pressable)
+                            } else {
+                                SettingsRow(icon: nil, title: row.title, detail: row.detail, note: row.note)
                             }
-                            .buttonStyle(.pressable)
-                        } else {
-                            SettingsRow(icon: nil, title: row.title, detail: row.detail, note: row.note, last: index == rows.count - 1)
                         }
+                        .padding(.vertical, SL.rowPaddingVertical)
                     }
                 }
+                .padding(.horizontal, SL.rowsPaddingHorizontal)
+                .himawariCard(padding: EdgeInsets())
             }
             Spacer(minLength: 0)
             HStack(spacing: R.actionGap) {
