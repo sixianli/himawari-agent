@@ -549,6 +549,8 @@ describe("示例场景截图工作流", () => {
     );
     expect(shoot.run).toContain('--only "$SCENES"');
     expect(shoot.env.SCENES).toContain("inputs.scenes");
+    expect(shoot.env.TEXT_SIZE).toContain("inputs.text_size");
+    expect(shoot.run).toContain('--text-size "$TEXT_SIZE"');
     const upload = job.steps.find((step) => step.with?.name === "apple-screens");
     expect(upload.if).toContain("always()");
   });
