@@ -9,7 +9,6 @@ import {
 import { extractGmailBody, type GmailPart } from "./gmail-body.js";
 
 export const GMAIL_READONLY_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
-export const CALENDAR_READONLY_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
 export const GOOGLE_AUTHORIZATION_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth";
 export const GOOGLE_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 export const GOOGLE_REVOKE_ENDPOINT = "https://oauth2.googleapis.com/revoke";
@@ -98,7 +97,7 @@ export function createGoogleOAuth(options: GoogleOAuthOptions): GoogleOAuth {
         client_id: options.clientId,
         redirect_uri: options.redirectUri,
         response_type: "code",
-        scope: `${GMAIL_READONLY_SCOPE} ${CALENDAR_READONLY_SCOPE}`,
+        scope: GMAIL_READONLY_SCOPE,
         access_type: "offline",
         prompt: "consent",
         include_granted_scopes: "false",

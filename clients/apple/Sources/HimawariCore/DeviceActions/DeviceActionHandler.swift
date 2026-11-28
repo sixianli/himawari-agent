@@ -12,8 +12,13 @@ public protocol DevicePermission: Sendable {
     var name: LocalizedLine { get }
     var settingsPath: LocalizedLine { get }
     var purpose: LocalizedLine { get }
+    var shownToOwner: Bool { get }
     func status() async -> DevicePermissionStatus
     func request() async -> DevicePermissionStatus
+}
+
+public extension DevicePermission {
+    var shownToOwner: Bool { true }
 }
 
 public enum DeviceActionReading: Sendable, Equatable {

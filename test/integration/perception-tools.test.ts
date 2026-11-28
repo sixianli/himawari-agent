@@ -313,6 +313,13 @@ describe("[iOS-5] perception_read reads what the devices recorded", () => {
     const unknown = await read("run-owner", { ...DAY, kinds: ["smell"] });
     expect(unknown.value.records).toEqual([]);
     expect(unknown.value.availableKinds).toContain("speech.utterance");
+    expect(unknown.value.availableKinds).not.toContain("context.power");
+    expect(unknown.value.availableKinds).not.toContain("surroundings");
+    for (const kinds of [["context.power"], ["surroundings"], ["screen.text", "location.visit"]]) {
+      const unproduced = await read("run-owner", { ...DAY, kinds });
+      expect(unproduced.value.records).toEqual([]);
+      expect(unproduced.value.availableKinds).toContain("location.visit");
+    }
   });
 });
 

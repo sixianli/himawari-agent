@@ -3,8 +3,9 @@ import {
   highestClassification,
   isModelVisible,
   type PairedDevice,
+  PERCEPTION_PRODUCED_SENSES,
+  PERCEPTION_PRODUCED_TYPE_NAMES,
   PERCEPTION_RECORD_TYPE_NAMES,
-  PERCEPTION_SENSES,
   type PerceptionConfiguration,
   type PerceptionRecord,
   type PerceptionRecordType,
@@ -258,11 +259,12 @@ export class ProductionPerceptionTools {
     if (!Array.isArray(raw) || raw.length === 0) return undefined;
     const types = new Set<PerceptionRecordType>();
     for (const kind of raw) {
-      if ((PERCEPTION_RECORD_TYPE_NAMES as readonly unknown[]).includes(kind))
+      if ((PERCEPTION_PRODUCED_TYPE_NAMES as readonly unknown[]).includes(kind))
         types.add(kind as PerceptionRecordType);
-      else if ((PERCEPTION_SENSES as readonly unknown[]).includes(kind))
-        for (const type of perceptionTypesOfSense(kind as PerceptionSense)) types.add(type);
-      else return undefined;
+      else if ((PERCEPTION_PRODUCED_SENSES as readonly unknown[]).includes(kind)) {
+        for (const type of perceptionTypesOfSense(kind as PerceptionSense))
+          if (PERCEPTION_PRODUCED_TYPE_NAMES.includes(type)) types.add(type);
+      } else return undefined;
     }
     return PERCEPTION_RECORD_TYPE_NAMES.filter((type) => types.has(type));
   }
@@ -304,7 +306,7 @@ export class ProductionPerceptionTools {
       return {
         value: {
           records: [],
-          availableKinds: [...PERCEPTION_SENSES, ...PERCEPTION_RECORD_TYPE_NAMES],
+          availableKinds: [...PERCEPTION_PRODUCED_SENSES, ...PERCEPTION_PRODUCED_TYPE_NAMES],
           note: TOOL_RESULT_PERCEPTION_READ_UNKNOWN_KINDS.text,
         },
       };

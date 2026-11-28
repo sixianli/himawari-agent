@@ -133,7 +133,7 @@ export const TOOL_RESULT_PERCEPTION_READ_UNKNOWN_KINDS = fixedPrompt({
   usedBy: [TOOLS_FILE],
   layer: "tool-result",
   output: "free-text",
-  text: "kinds 里有不认识的种类，这次没有读。可用的种类见 availableKinds，照抄其中的名字再读一次。",
+  text: "kinds 里有不认识的种类，或者是还没有任何设备会记下的种类，这次没有读。可用的种类见 availableKinds，照抄其中的名字再读一次。要知道设备此刻的电量、联网或位置，用 device_action 的 device.status 或 location.current 现读。",
 });
 
 export const TOOL_RESULT_PERCEPTION_READ_INVALID = templatePrompt({
@@ -453,6 +453,24 @@ export const TOOL_RESULT_DEVICE_ACTION_USAGE_ALARM_LIST = fixedPrompt({
   layer: "tool-result",
   output: "free-text",
   text: "读出 Himawari 在这台设备上设过、还没响完的闹钟（只看得到 Himawari 自己设的，看不到主人在“时钟”App 里设的）。结果 done.alarms 里每项有 alarmId、time（设备当地时间）和 state。",
+});
+
+export const TOOL_RESULT_DEVICE_ACTION_USAGE_LOCATION_CURRENT = fixedPrompt({
+  id: "tools.result.device-action.usage.location-current",
+  purpose: "device_action describe 结果里 location.current 的用法说明",
+  usedBy: [REGISTRY_FILE],
+  layer: "tool-result",
+  output: "free-text",
+  text: "让这台设备现在定一次位，拿到主人此刻在哪。主人问“我现在在哪”“附近有什么”“离某地多远”这类要用到此刻位置的事，而感知记录里最近的去过的地方不够新时使用；不用先问主人。结果 done 里有 latitude、longitude、accuracyMeters（误差半径，米）、precise（false 表示主人只给了大概位置，误差可能有几公里）、at（定位时间）和 address（能查到时的地址）。按 precise 和 accuracyMeters 说话，不要把大概位置说成精确位置。",
+});
+
+export const TOOL_RESULT_DEVICE_ACTION_USAGE_DEVICE_STATUS = fixedPrompt({
+  id: "tools.result.device-action.usage.device-status",
+  purpose: "device_action describe 结果里 device.status 的用法说明",
+  usedBy: [REGISTRY_FILE],
+  layer: "tool-result",
+  output: "free-text",
+  text: "读这台设备此刻的状态：电量、是否在充电、是否开着低电量模式、联网方式，以及声音从哪里出（扬声器、耳机、蓝牙设备、CarPlay）。主人问“手机还有多少电”“我连着什么网”“耳机连上没有”这类事时使用；不用先问主人。结果 done 里有 batteryPercent、charging、lowPowerMode、network（wifi、cellular、wired、other 或 none）和 audioOutputs（每项有 kind 和 name）。读不到的项不会出现，不要猜。",
 });
 
 export const TOOL_RESULT_DEVICE_ACTION_USAGE_HOME_READ = fixedPrompt({
