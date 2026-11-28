@@ -80,7 +80,8 @@ public struct HerSectionPane: View {
             actions: model.actions,
             talk: talk,
             openChat: openChat,
-            removedThisDevice: { model.removedThisDevice() }
+            removedThisDevice: { model.removedThisDevice() },
+            unsentMessages: { model.unsentMessages }
         )
         .id(section)
     }

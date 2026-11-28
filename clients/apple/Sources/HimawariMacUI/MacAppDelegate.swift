@@ -57,12 +57,6 @@ public final class MacAppDelegate: NSObject, NSApplicationDelegate {
         openSettingsAction?()
     }
 
-    public func application(_ application: NSApplication, open urls: [URL]) {
-        for url in urls where url.scheme == PairingInvitation.scheme {
-            controller?.receivePairingLink(url)
-        }
-    }
-
     public func applicationDidBecomeActive(_ notification: Notification) {
         menu.app.becameActive()
         menu.settings.refreshPermissions()
@@ -74,7 +68,7 @@ public final class MacAppDelegate: NSObject, NSApplicationDelegate {
 
     public func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if !flag {
-            if main.isSignedIn { showMainWindow() } else { controller?.showPairing() }
+            if main.isSignedIn { showMainWindow() } else { controller?.showSignIn() }
         }
         return true
     }

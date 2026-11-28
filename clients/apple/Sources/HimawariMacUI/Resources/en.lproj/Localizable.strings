@@ -55,16 +55,7 @@
 "settings.shortcut.record" = "Press the new shortcut";
 "settings.shortcut.needsModifier" = "Include ⌥, ⌘ or ⌃";
 "key.space" = "Space";
-"pairing.title" = "Connect this Mac to Himawari";
-"pairing.step1" = "In Himawari on iPhone, open Settings → Devices → Add device, tap “Mac can’t scan: send a pairing link”, and send the link to this Mac";
-"pairing.step2" = "No iPhone? You can also add it in Settings on the web";
-"pairing.paste" = "Paste the pairing link";
-"pairing.connect" = "Connect";
-"pairing.server" = "Server in the link";
-"pairing.waiting" = "If the number matches the one on iPhone (or the web),\nconfirm it there";
 "pairing.cancel" = "Cancel";
-"pairing.retry" = "Try again";
-"pairing.problem" = "Couldn’t connect. Add the device again on iPhone and send the new pairing link";
 "sidebar.chat" = "Chat";
 "sidebar.her" = "Himawari";
 "menu.go" = "Go";

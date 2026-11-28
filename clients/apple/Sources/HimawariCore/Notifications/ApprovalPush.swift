@@ -4,6 +4,7 @@ public struct HimawariPush: Sendable, Equatable {
     public static let actionsCategory = "himawari.actions"
     public static let plainCategory = "himawari.plain"
     public static let approvalKind = "approval"
+    public static let deviceSignedInKind = "device_signed_in"
     public static let agentGrantKind = "mcp_grant"
     public static let vaultApprovalKind = "vault_approval"
     public static let vaultCodeKind = "vault_code"
@@ -24,6 +25,7 @@ public struct HimawariPush: Sendable, Equatable {
     }
 
     public let kind: String
+    public let deviceId: String?
     public let actions: [Action]
     public let vaultRequestId: String?
     public let vaultCodeRequestId: String?
@@ -34,6 +36,7 @@ public struct HimawariPush: Sendable, Equatable {
               let kind = body["kind"] as? String
         else { return nil }
         self.kind = kind
+        deviceId = body["deviceId"] as? String
         vaultRequestId = body["vaultRequestId"] as? String
         vaultCodeRequestId = body["vaultCodeRequestId"] as? String
         actions = (body["actions"] as? [[String: Any]] ?? []).compactMap { entry in

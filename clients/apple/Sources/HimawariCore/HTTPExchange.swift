@@ -6,10 +6,16 @@ import FoundationNetworking
 public struct HTTPExchangeResponse: Sendable {
     public let status: Int
     public let body: Data
+    public let headers: [String: String]
 
-    public init(status: Int, body: Data) {
+    public init(status: Int, body: Data, headers: [String: String] = [:]) {
         self.status = status
         self.body = body
+        self.headers = Dictionary(headers.map { ($0.key.lowercased(), $0.value) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    public func header(_ name: String) -> String? {
+        headers[name.lowercased()]
     }
 }
 
@@ -56,7 +62,11 @@ public struct URLSessionExchange: HTTPExchange {
     public func send(_ request: URLRequest) async throws -> HTTPExchangeResponse {
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw HTTPExchangeError.notHTTP }
-        return HTTPExchangeResponse(status: http.statusCode, body: data)
+        var headers: [String: String] = [:]
+        for (key, value) in http.allHeaderFields {
+            if let key = key as? String, let value = value as? String { headers[key] = value }
+        }
+        return HTTPExchangeResponse(status: http.statusCode, body: data, headers: headers)
     }
 
     public func stream(_ request: URLRequest) async throws -> (status: Int, chunks: AsyncThrowingStream<String, Error>) {

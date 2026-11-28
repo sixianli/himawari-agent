@@ -18,10 +18,8 @@ import os
 #endif
 
 public enum AppPhase: Equatable {
-    case unpaired(PairingProblem?)
-    case confirmingServer(host: String)
-    case submitting
-    case waitingForConfirmation(number: String)
+    case signedOut(SignInProblem?)
+    case signingIn
     case active
 }
 
@@ -34,7 +32,10 @@ public final class AppModel {
     static let imageFitter: ImageFitting? = nil
     #endif
 
-    public private(set) var phase: AppPhase = .unpaired(nil)
+    public private(set) var phase: AppPhase = .signedOut(nil)
+    public private(set) var serverOrigin: URL?
+    public private(set) var signInInfo: SignInInfo?
+    public private(set) var setupProblem: SignInProblem?
     public private(set) var chat: ChatStore?
     public private(set) var actions: DeviceActionsModel?
     public private(set) var configuration: DeviceConfiguration?
@@ -50,24 +51,20 @@ public final class AppModel {
     @ObservationIgnored private var store: FileLocalStore? {
         didSet { if store !== oldValue { onDeviceStoreChange?(store) } }
     }
-    @ObservationIgnored private var waiting: Task<Void, Never>?
+    @ObservationIgnored private let passkeys: PasskeyCeremony?
+    @ObservationIgnored private let bundledOrigin: URL?
+    @ObservationIgnored private let settings: UserDefaults
+    @ObservationIgnored private var triedQuietly = false
     @ObservationIgnored private let heartbeat = HeartbeatSetting()
     @ObservationIgnored private let pushSync: PushTokenSync
-    @ObservationIgnored private var lastScanned: String?
-    @ObservationIgnored private var keysMadeFor: String?
     @ObservationIgnored private var configurationRetry: Task<Void, Never>?
-    #if os(iOS)
-    @ObservationIgnored private let watchRelay = PhoneWatchRelay()
-    #endif
-    public private(set) var watchOffer: String?
-
     private static let recordAccount = SharedVault.recordAccount
 
     public static let launched = AppModel()
 
-    public convenience init(bundle: Bundle = .main, kind: DeviceKind = .iphone) {
+    public convenience init(bundle: Bundle = .main, kind: DeviceKind = .iphone, passkeys: PasskeyCeremony? = nil) {
         Self.logUnknownServerValues(subsystem: bundle.bundleIdentifier ?? "himawari")
-        self.init(bundle: bundle, kind: kind, restoring: true)
+        self.init(bundle: bundle, kind: kind, passkeys: passkeys, restoring: true)
     }
 
     private static func logUnknownServerValues(subsystem: String) {
@@ -92,8 +89,16 @@ public final class AppModel {
         #endif
     }
 
-    init(bundle: Bundle = .main, kind: DeviceKind = .iphone, restoring: Bool) {
+    init(bundle: Bundle = .main, kind: DeviceKind = .iphone, passkeys: PasskeyCeremony? = nil, restoring: Bool) {
         self.kind = kind
+        #if canImport(AuthenticationServices)
+        self.passkeys = passkeys ?? SystemPasskeys()
+        #else
+        self.passkeys = passkeys
+        #endif
+        bundledOrigin = ServerOrigin.bundled(bundle)
+        settings = UserDefaults.standard
+        serverOrigin = settings.string(forKey: Self.serverOverrideKey).flatMap(ServerOrigin.parse) ?? bundledOrigin
         let vault = SharedVault(bundle: bundle)
         self.vault = vault
         keys = vault.keys
@@ -136,7 +141,7 @@ public final class AppModel {
         let record = record
         switch RestoreDecision.decide(presence: presence, recordDecodes: record != nil) {
         case .unreadable:
-            phase = .unpaired(.keysUnreadable)
+            phase = .signedOut(.keysUnreadable)
             return
         case .forget:
             forget(problem: nil)
@@ -145,15 +150,14 @@ public final class AppModel {
             break
         }
         guard let record else { return }
-        use(record)
         switch record.status {
-        case .pending, .unrecognized:
-            phase = .waitingForConfirmation(number: record.pairingNumber)
-            waitForConfirmation()
         case .active:
+            use(record)
             activate()
         case .revoked:
             forget(problem: .removed)
+        case .pending, .unrecognized:
+            forget(problem: nil)
         }
     }
 
@@ -161,55 +165,106 @@ public final class AppModel {
         api.http.use(DeviceCredentials(origin: record.origin, deviceId: record.deviceId, access: record.access, deviceKey: keys.signer(.device)))
     }
 
-    public func pair(scanned text: String) {
-        guard phase != .submitting else { return }
+    static let serverOverrideKey = "himawari.serverOrigin"
+
+    public var serverIsDefault: Bool { serverOrigin == bundledOrigin }
+
+    public var signedOutProblem: SignInProblem? {
+        if case let .signedOut(problem) = phase { return problem }
+        return nil
+    }
+
+    public func loadSignInInfo() async {
+        guard let origin = serverOrigin else { return }
+        if let info = try? await api.signInInfo(origin: origin), origin == serverOrigin {
+            signInInfo = info
+        }
+    }
+
+    public func signInQuietly() async {
+        guard !triedQuietly, phase == .signedOut(nil), serverOrigin != nil else { return }
+        triedQuietly = true
+        await signIn(quietly: true) { flow, origin, device in
+            try await flow.signIn(origin: origin, device: device, info: self.signInInfo, immediatelyAvailableOnly: true)
+        }
+    }
+
+    public func signInWithPasskey() async {
+        triedQuietly = true
+        await signIn(quietly: false) { flow, origin, device in
+            try await flow.signIn(origin: origin, device: device, info: self.signInInfo, immediatelyAvailableOnly: false)
+        }
+    }
+
+    public func setUp(code: String) async {
+        setupProblem = nil
+        if signInInfo == nil { await loadSignInInfo() }
+        await signIn(quietly: false, setup: true) { flow, origin, device in
+            try await flow.setUp(origin: origin, setupCode: code, device: device, info: self.signInInfo)
+        }
+    }
+
+    public func clearSetupProblem() {
+        setupProblem = nil
+    }
+
+    public func useServer(_ text: String) async -> Bool {
+        guard let origin = ServerOrigin.parse(text), let info = try? await api.signInInfo(origin: origin) else { return false }
+        serverOrigin = origin
+        signInInfo = info
+        if origin == bundledOrigin {
+            settings.removeObject(forKey: Self.serverOverrideKey)
+        } else {
+            settings.set(origin.absoluteString, forKey: Self.serverOverrideKey)
+        }
+        return true
+    }
+
+    public func useDefaultServer() {
+        settings.removeObject(forKey: Self.serverOverrideKey)
+        serverOrigin = bundledOrigin
+        signInInfo = nil
+        Task { await loadSignInInfo() }
+    }
+
+    private func signIn(
+        quietly: Bool,
+        setup: Bool = false,
+        _ attempt: @escaping @MainActor (SignInFlow, URL, SignInDevice) async throws -> PairedDeviceInfo
+    ) async {
+        guard phase != .signingIn, phase != .active, let origin = serverOrigin, let passkeys else { return }
+        let before = phase
+        phase = .signingIn
         do {
-            let invitation = try PairingInvitation.parse(text)
-            lastScanned = text
-            phase = .confirmingServer(host: Self.host(invitation.origin))
+            try keys.create(.device)
+            try keys.create(.confirm)
+            let device = SignInDevice(
+                kind: kind,
+                name: Self.deviceName,
+                releaseChannel: releaseChannel,
+                devicePublicKey: try keys.signer(.device).publicKeySPKI(),
+                confirmPublicKey: try keys.signer(.confirm).publicKeySPKI()
+            )
+            let signedIn = try await attempt(SignInFlow(api: api, ceremony: passkeys), origin, device)
+            guard signedIn.status == .active else { throw DeviceAPIError.invalidResponse }
+            let record = PairingRecord(origin: origin, deviceId: signedIn.id, access: nil, status: .active, pairingNumber: "")
+            try save(record)
+            use(record)
+            Haptics.shared.report(.pairingSucceeded)
+            activate()
         } catch {
-            lastScanned = nil
-            phase = .unpaired(PairingProblem.from(error))
-        }
-    }
-
-    public func handlePairingLink(_ text: String) {
-        if phase == .active {
-            #if os(iOS)
-            if WatchPairingRelay.offerable(text, pairedOrigin: record?.origin), watchRelay.canOffer {
-                watchOffer = text
+            try? keys.delete(.device)
+            try? keys.delete(.confirm)
+            let problem = SignInProblem.from(error)
+            if setup {
+                setupProblem = problem
+                phase = .signedOut(nil)
+            } else if quietly || error as? PasskeyCeremonyError == .canceled {
+                phase = before
+            } else {
+                phase = .signedOut(problem)
             }
-            #endif
-            return
         }
-        pair(scanned: text)
-    }
-
-    public var watchOfferHost: String? {
-        guard let watchOffer, let invitation = try? PairingInvitation.parse(watchOffer) else { return nil }
-        return Self.host(invitation.origin)
-    }
-
-    public func sendOfferToWatch() {
-        #if os(iOS)
-        if let watchOffer { watchRelay.send(watchOffer) }
-        #endif
-        watchOffer = nil
-    }
-
-    public func declineWatchOffer() {
-        watchOffer = nil
-    }
-
-    public func connectToScannedServer() {
-        guard case .confirmingServer = phase, let lastScanned else { return }
-        submit(lastScanned)
-    }
-
-    public func declineScannedServer() {
-        lastScanned = nil
-        keysMadeFor = nil
-        phase = .unpaired(nil)
     }
 
     @ObservationIgnored var demoHost: String?
@@ -227,15 +282,19 @@ public final class AppModel {
     }
 
     public var serverHost: String? {
-        if case let .confirmingServer(host) = phase { return host }
-        return record.map { Self.host($0.origin) } ?? demoHost
+        record.map { ServerOrigin.host($0.origin) } ?? demoHost ?? serverOrigin.map(ServerOrigin.host)
     }
 
     #if DEBUG
-    public static func demo(_ phase: AppPhase, host: String? = nil, kind: DeviceKind = .iphone) -> AppModel {
+    public static func demo(_ phase: AppPhase, host: String? = nil, kind: DeviceKind = .iphone, setupProblem: SignInProblem? = nil) -> AppModel {
         let model = AppModel(kind: kind, restoring: false)
         model.phase = phase
         model.demoHost = host
+        model.setupProblem = setupProblem
+        if let host {
+            model.serverOrigin = ServerOrigin.parse(host)
+            model.signInInfo = SignInInfo(rpId: host, setupCode: SetupCodeRule(length: 8, groupSize: 4, alphabet: "ABCDEFGHJKMNPQRSTUVWXYZ23456789"))
+        }
         model.configuration = demoConfiguration
         return model
     }
@@ -250,68 +309,6 @@ public final class AppModel {
     }
     #endif
 
-    static func host(_ origin: URL) -> String {
-        let host = origin.host ?? origin.absoluteString
-        if let port = origin.port { return "\(host):\(port)" }
-        return host
-    }
-
-    private func submit(_ text: String) {
-        guard phase != .submitting else { return }
-        phase = .submitting
-        Task {
-            do {
-                let invitation = try PairingInvitation.parse(text)
-                if keysMadeFor != text || !keys.exists(.device) || !keys.exists(.confirm) {
-                    keysMadeFor = nil
-                    try keys.create(.device)
-                    try keys.create(.confirm)
-                    keysMadeFor = text
-                }
-                let deviceKey = keys.signer(.device)
-                let confirmKey = keys.signer(.confirm)
-                let devicePublicKey = try deviceKey.publicKeySPKI()
-                let confirmPublicKey = try confirmKey.publicKeySPKI()
-                let device = try await api.pair(
-                    invitation: invitation,
-                    kind: kind,
-                    name: Self.deviceName,
-                    releaseChannel: releaseChannel,
-                    deviceKey: deviceKey,
-                    confirmKey: confirmKey
-                )
-                if let reported = device.pairingNumber,
-                   reported != PairingNumber.digits(devicePublicKey: devicePublicKey, confirmPublicKey: confirmPublicKey) {
-                    throw DeviceAPIError.invalidResponse
-                }
-                let number = PairingNumber.display(devicePublicKey: devicePublicKey, confirmPublicKey: confirmPublicKey)
-                let record = PairingRecord(origin: invitation.origin, deviceId: device.id, access: invitation.access, status: device.status, pairingNumber: number)
-                try save(record)
-                use(record)
-                if device.status == .active {
-                    Haptics.shared.report(.pairingSucceeded)
-                    activate()
-                } else {
-                    phase = .waitingForConfirmation(number: number)
-                    waitForConfirmation()
-                }
-            } catch {
-                if !PairingAttempt.mayHavePaired(error) {
-                    keysMadeFor = nil
-                    try? keys.delete(.device)
-                    try? keys.delete(.confirm)
-                }
-                phase = .unpaired(PairingProblem.from(error))
-            }
-        }
-    }
-
-    public func cancelPairing() {
-        lastScanned = nil
-        keysMadeFor = nil
-        forget(problem: nil)
-    }
-
     public var unsentMessages: Int? {
         guard let local = try? store ?? FileLocalStore.applicationSupport(named: "himawari-device") else { return nil }
         return Outbox.unsentCount(in: local)
@@ -319,10 +316,10 @@ public final class AppModel {
 
     public func startOver() {
         guard emptyStore() else {
-            phase = .unpaired(.storageUnavailable)
+            phase = .signedOut(.storageUnavailable)
             return
         }
-        cancelPairing()
+        forget(problem: nil)
     }
 
     private func emptyStore() -> Bool {
@@ -340,87 +337,12 @@ public final class AppModel {
     }
 
     public func retryReadingKeys() {
-        if phase == .unpaired(.stateUnknown) {
-            recheckUnknownState()
-        } else {
-            restore()
-        }
-    }
-
-    private func recheckUnknownState() {
-        waiting?.cancel()
-        waiting = Task { [weak self] in
-            guard let self else { return }
-            var failure: Error?
-            do {
-                configuration = try await api.configuration()
-            } catch {
-                failure = error
-            }
-            guard !Task.isCancelled, phase == .unpaired(.stateUnknown) else { return }
-            switch UnknownStateRecheck.outcome(of: failure) {
-            case .connected:
-                try? save(record.map { var updated = $0; updated.status = .active; return updated })
-                Haptics.shared.report(.pairingSucceeded)
-                activate()
-            case .removed:
-                forget(problem: .removed)
-            case .waiting:
-                if let record {
-                    phase = .waitingForConfirmation(number: record.pairingNumber)
-                    waitForConfirmation()
-                }
-            case .stillUnknown:
-                break
-            }
-        }
-    }
-
-    public func retryPairing() {
-        guard let lastScanned else {
-            phase = .unpaired(nil)
-            return
-        }
-        submit(lastScanned)
-    }
-
-    public func dismissProblem() {
-        lastScanned = nil
-        keysMadeFor = nil
-        phase = .unpaired(nil)
-    }
-
-    private func waitForConfirmation() {
-        waiting?.cancel()
-        waiting = Task { [weak self] in
-            var delay: UInt64 = 2
-            while !Task.isCancelled {
-                guard let self else { return }
-                do {
-                    configuration = try await api.configuration()
-                    try? save(record.map { var updated = $0; updated.status = .active; return updated })
-                    Haptics.shared.report(.pairingSucceeded)
-                    activate()
-                    return
-                } catch let error as DeviceAPIError where error.isRevoked {
-                    forget(problem: .removed)
-                    return
-                } catch {
-                    if let status = record?.status, ConfirmationWait.givesUp(waitingAs: status, after: error) {
-                        phase = .unpaired(.stateUnknown)
-                        return
-                    }
-                }
-                try? await Task.sleep(nanoseconds: delay * 1_000_000_000)
-                delay = min(delay * 2, 10)
-            }
-        }
+        restore()
     }
 
     private func activate() {
-        waiting?.cancel()
         guard let record else {
-            phase = .unpaired(.keysUnreadable)
+            phase = .signedOut(.keysUnreadable)
             return
         }
         do {
@@ -467,7 +389,7 @@ public final class AppModel {
             deliverWaitingHandovers()
             registerForPush()
         } catch {
-            phase = .unpaired(.storageUnavailable)
+            phase = .signedOut(.storageUnavailable)
         }
     }
 
@@ -528,11 +450,7 @@ public final class AppModel {
     }
 
     public func becameActive() {
-        if phase == .unpaired(.stateUnknown) {
-            recheckUnknownState()
-            return
-        }
-        if phase == .unpaired(.keysUnreadable) || phase == .unpaired(.storageUnavailable) {
+        if phase == .signedOut(.keysUnreadable) || phase == .signedOut(.storageUnavailable) {
             restore()
             return
         }
@@ -570,11 +488,10 @@ public final class AppModel {
         forget(problem: nil)
     }
 
-    private func forget(problem: PairingProblem?) {
-        waiting?.cancel()
+    private func forget(problem: SignInProblem?) {
         configurationRetry?.cancel()
         configurationRetry = nil
-        let emptied = emptyStore()
+        _ = emptyStore()
         configuration = nil
         store = nil
         try? keys.delete(.device)
@@ -582,7 +499,7 @@ public final class AppModel {
         try? save(nil)
         api.http.use(nil)
         Task { [pushSync] in await pushSync.deviceGone() }
-        phase = .unpaired(ForgetOutcome.problem(wanted: problem, storeEmptied: emptied))
+        phase = .signedOut(problem)
     }
 
     static var deviceName: String {

@@ -1,60 +1,67 @@
 import Foundation
 import HimawariCore
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 import XCTest
 @testable import HimawariManage
 
-private actor ScriptedTransport: DeviceTransport {
-    private(set) var sent: [[String: JSONValue]] = []
-    private let answer: @Sendable ([String: JSONValue]) -> String
+private final class DirectoryServer: HTTPExchange, @unchecked Sendable {
+    private let lock = NSLock()
+    private(set) var requests: [URLRequest] = []
 
-    init(answer: @escaping @Sendable ([String: JSONValue]) -> String) {
-        self.answer = answer
-    }
+    static let roster = #"""
+    {"thisDeviceId":"dev_phone","devices":[
+      {"id":"dev_phone","revision":1,"kind":"iphone","name":"Andy 的 iPhone","releaseChannel":"testflight","status":"active","pairedAt":"2026-11-26T00:00:00.000Z","lastSeenAt":"2026-11-26T00:00:00.000Z"},
+      {"id":"dev_watch","revision":2,"kind":"watch","name":"Apple Watch","releaseChannel":"direct","status":"active","pairedAt":"2026-11-02T00:00:00.000Z","lastSeenAt":null},
+      {"id":"dev_mac","revision":4,"kind":"mac","name":"MacBook Air","releaseChannel":"mac_direct","status":"active","pairedAt":"2026-11-25T00:00:00.000Z","lastSeenAt":"2026-11-26T01:00:00.000Z","online":true},
+      {"id":"dev_old","revision":5,"kind":"mac","name":"旧 Mac","releaseChannel":"mac_direct","status":"revoked","pairedAt":"2026-10-02T00:00:00.000Z","lastSeenAt":null}
+    ],"server":{"origin":"https://h.example","since":"2026-11-26T00:00:00.000Z"}}
+    """#
 
-    nonisolated func post(path: String, json: Data, nonce: String?, confirm: ConfirmPrompt?) async throws -> DeviceResponse {
-        let body = try JSONDecoder().decode([String: JSONValue].self, from: json)
-        let reply = await record(path == ManageGateway.challengePath ? [:] : body)
-        if path == ManageGateway.challengePath {
-            return DeviceResponse(status: 201, body: Data(#"{"challenge":"c","expiresAt":"2026-11-12T00:00:30.000Z"}"#.utf8))
+    func send(_ request: URLRequest) async throws -> HTTPExchangeResponse {
+        lock.withLock { requests.append(request) }
+        switch request.url?.path {
+        case "/api/device/v1/devices": return HTTPExchangeResponse(status: 200, body: Data(Self.roster.utf8))
+        case "/api/device/v1/approvals/challenge": return HTTPExchangeResponse(status: 201, body: Data(#"{"challenge":"nonce-1"}"#.utf8))
+        default: return HTTPExchangeResponse(status: 200, body: Data(#"{"device":{}}"#.utf8))
         }
-        return DeviceResponse(status: 200, body: Data(reply.utf8))
     }
 
-    private func record(_ body: [String: JSONValue]) -> String {
-        sent.append(body)
-        return answer(body)
+    func stream(_ request: URLRequest) async throws -> (status: Int, chunks: AsyncThrowingStream<String, Error>) {
+        throw HTTPExchangeError.streamingUnsupported
+    }
+
+    var paths: [String] { lock.withLock { requests.compactMap { $0.url?.path } } }
+
+    func body(at index: Int) throws -> [String: Any] {
+        let request = lock.withLock { requests[index] }
+        return try XCTUnwrap(try JSONSerialization.jsonObject(with: XCTUnwrap(request.httpBody)) as? [String: Any])
+    }
+
+    func signatureInput(at index: Int) -> String? {
+        lock.withLock { requests[index].value(forHTTPHeaderField: "Signature-Input") }
     }
 }
 
 @MainActor
 final class SettingsStoreTests: XCTestCase {
-    private func store(_ transport: ScriptedTransport) -> SettingsStore {
-        SettingsStore(
-            gateway: ManageGateway(transport: transport, makeIdentifier: { "0123456789abcdef0123" }),
-            identity: DeviceIdentity(deviceId: "dev_phone", origin: URL(string: "https://h.example")!, access: nil)
-        )
+    private func store(_ server: DirectoryServer) throws -> SettingsStore {
+        let http = DeviceHTTPClient(exchange: server)
+        http.use(DeviceCredentials(origin: URL(string: "https://h.example")!, deviceId: "dev_phone", access: nil, deviceKey: try SoftwareKeySigner()))
+        return SettingsStore(directory: SignedDeviceDirectory(http: http, confirmKey: try SoftwareKeySigner()))
     }
 
-    nonisolated private static let devices = #"""
-    {"payload":{"devices":[
-      {"id":"dev_phone","revision":1,"kind":"iphone","name":"Andy 的 iPhone","releaseChannel":"direct","status":"active","pairedAt":"2026-11-02T00:00:00Z","lastSeenAt":"2026-11-12T00:00:00Z","pairingNumber":null},
-      {"id":"dev_watch","revision":2,"kind":"watch","name":"Apple Watch","releaseChannel":"direct","status":"active","pairedAt":"2026-11-02T00:00:00Z","lastSeenAt":null,"pairingNumber":null},
-      {"id":"dev_old","revision":5,"kind":"mac","name":"旧 Mac","releaseChannel":"mac_direct","status":"revoked","pairedAt":"2026-10-02T00:00:00Z","lastSeenAt":null,"pairingNumber":null},
-      {"id":"dev_new","revision":0,"kind":"mac","name":"MacBook Pro","releaseChannel":"mac_direct","status":"pending","pairedAt":"2026-11-12T00:00:00Z","lastSeenAt":null,"pairingNumber":"482913"}
-    ],"limits":[],"pairing":null,"generatedAt":"2026-11-12T00:00:00Z"}}
-    """#
-
-    nonisolated private static func answer(_ body: [String: JSONValue]) -> String {
-        body["type"] == "device.list.read" ? devices : "{}"
-    }
-
-    func testRevokedDevicesAreLeftOutAndPresenceIsNeverGuessed() async {
-        let settings = store(ScriptedTransport(answer: Self.answer))
+    func testListShowsThisDeviceFirstThenOthersByLastSeenAndLeavesOutRemovedOnes() async throws {
+        let settings = try store(DirectoryServer())
         await settings.load()
-        XCTAssertEqual(settings.devices.map(\.id), ["dev_phone", "dev_watch", "dev_new"])
-        XCTAssertEqual(settings.presence(settings.devices[0]), .connected)
-        XCTAssertEqual(settings.presence(settings.devices[1]), .neverSeen)
-        XCTAssertEqual(settings.presence(settings.devices[2]), .waitingForConfirmation)
+        XCTAssertEqual(settings.phase, .loaded)
+        XCTAssertEqual(settings.thisDevice?.id, "dev_phone")
+        XCTAssertEqual(settings.otherDevices.map(\.id), ["dev_mac", "dev_watch"])
+        XCTAssertEqual(settings.server?.origin, "https://h.example")
+        XCTAssertEqual(settings.presence(try XCTUnwrap(settings.thisDevice)), .connected)
+        XCTAssertEqual(settings.presence(settings.otherDevices[0]), .connected)
+        XCTAssertEqual(settings.presence(settings.otherDevices[1]), .neverSeen)
     }
 
     func testOtherDevicesShowWhenTheyWereLastSeenNotConnected() {
@@ -67,7 +74,7 @@ final class SettingsStoreTests: XCTestCase {
     func testUnknownKindsAndChannelsNeverShowMachineCodes() {
         let unknown = PairedDevice(
             id: "dev_x", revision: 0, kind: "glasses", name: "眼镜", releaseChannel: "side_load", status: "active",
-            pairedAt: "2026-11-12T00:00:00Z", lastSeenAt: nil, pairingNumber: nil
+            pairedAt: "2026-11-12T00:00:00Z", lastSeenAt: nil, online: nil
         )
         XCTAssertNil(M.channel(unknown.releaseChannel))
         XCTAssertEqual(DevicePresence.of(unknown, isThisDevice: false), .neverSeen)
@@ -83,32 +90,39 @@ final class SettingsStoreTests: XCTestCase {
         }
     }
 
-    func testRenameAndRemoveBothAskForFaceID() async throws {
-        let transport = ScriptedTransport(answer: Self.answer)
-        let settings = store(transport)
+    func testRemovingAnotherDeviceIsSignedWithTheConfirmKeyOverTheServersChallenge() async throws {
+        let server = DirectoryServer()
+        let settings = try store(server)
         await settings.load()
-        let watch = settings.devices[1]
-        try await settings.rename(watch, to: "  手表  ", reason: "改名")
-        try await settings.revoke(watch, reason: "移除")
-        let sent = await transport.sent
-        let commands = sent.enumerated().filter { $0.element["type"] == "device.rename" || $0.element["type"] == "device.revoke" }
-        XCTAssertEqual(commands.count, 2)
-        for (index, _) in commands { XCTAssertEqual(sent[index - 1], [:]) }
-        guard case .object(let rename)? = commands[0].element["payload"] else { return XCTFail() }
-        XCTAssertEqual(rename["name"], "手表")
-        XCTAssertEqual(rename["expectedRevision"], .number(2))
+        let mac = try XCTUnwrap(settings.otherDevices.first)
+        try await settings.revoke(mac, reason: "移除 MacBook Air")
+        XCTAssertEqual(Array(server.paths.dropFirst()), ["/api/device/v1/approvals/challenge", "/api/device/v1/devices/revoke", "/api/device/v1/devices"])
+        let body = try server.body(at: 2)
+        XCTAssertEqual(body["deviceId"] as? String, "dev_mac")
+        XCTAssertEqual(body["expectedRevision"] as? Int, 4)
+        let input = try XCTUnwrap(server.signatureInput(at: 2))
+        XCTAssertTrue(input.contains("confirm=("))
+        XCTAssertTrue(input.contains("nonce=\"nonce-1\""))
     }
 
-    func testRemovingThisPhoneAsksForFaceIDAndDoesNotReadTheListAgain() async throws {
-        let transport = ScriptedTransport(answer: Self.answer)
-        let settings = store(transport)
+    func testSigningOutRemovesThisDeviceWithItsOwnKeyAndDoesNotAskForFaceID() async throws {
+        let server = DirectoryServer()
+        let settings = try store(server)
         await settings.load()
-        let phone = try XCTUnwrap(settings.devices.first { settings.isThisDevice($0) })
-        let before = await transport.sent.count
-        try await settings.revoke(phone, reason: "移除")
-        let after = Array(await transport.sent.dropFirst(before))
-        XCTAssertEqual(after.count, 2)
-        XCTAssertEqual(after[0], [:])
-        XCTAssertEqual(after[1]["type"], "device.revoke")
+        try await settings.revoke(try XCTUnwrap(settings.thisDevice), reason: "退出登录")
+        XCTAssertEqual(Array(server.paths.dropFirst()), ["/api/device/v1/devices/revoke"])
+        XCTAssertEqual(try server.body(at: 1)["deviceId"] as? String, "dev_phone")
+        XCTAssertFalse(try XCTUnwrap(server.signatureInput(at: 1)).contains("confirm=("))
+    }
+
+    func testRenameSendsTrimmedNameAndRevision() async throws {
+        let server = DirectoryServer()
+        let settings = try store(server)
+        await settings.load()
+        try await settings.rename(settings.otherDevices[1], to: "  手表  ")
+        XCTAssertEqual(server.paths[1], "/api/device/v1/devices/rename")
+        let body = try server.body(at: 1)
+        XCTAssertEqual(body["name"] as? String, "手表")
+        XCTAssertEqual(body["expectedRevision"] as? Int, 2)
     }
 }

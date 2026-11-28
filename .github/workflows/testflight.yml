@@ -17,6 +17,7 @@ defaults:
 env:
   APPLE_TEAM_ID: WS6PVS5YQP
   HIMAWARI_BUILD_NUMBER: ${{ github.run_number }}
+  HIMAWARI_SERVER_ORIGIN: ${{ vars.HIMAWARI_SERVER_ORIGIN }}
 jobs:
   upload:
     name: testflight/upload
@@ -36,7 +37,7 @@ jobs:
           ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
         run: |
           missing=""
-          for name in ASC_KEY_ID ASC_ISSUER_ID ASC_KEY_P8; do
+          for name in ASC_KEY_ID ASC_ISSUER_ID ASC_KEY_P8 HIMAWARI_SERVER_ORIGIN; do
             [ -n "${!name}" ] || missing="$missing $name"
           done
           if [ -z "$missing" ]; then

@@ -12,6 +12,8 @@ public final class NotificationRouter: NSObject, UNUserNotificationCenterDelegat
     @ObservationIgnored var transport: DeviceAPI?
     @ObservationIgnored var mainChatOnScreen = false
     var approvalsRequested = false
+    var devicesRequested = false
+    var signedInDeviceId: String?
     var agentGrantRequested = false
     var vaultRequested = false
 
@@ -97,6 +99,10 @@ public final class NotificationRouter: NSObject, UNUserNotificationCenterDelegat
         guard let kind = HimawariPush.ActionKind(rawValue: actionIdentifier) else {
             if push.kind == HimawariPush.vaultApprovalKind || push.kind == HimawariPush.vaultCodeKind { vaultRequested = true }
             if push.kind == HimawariPush.approvalKind { approvalsRequested = true }
+            if push.kind == HimawariPush.deviceSignedInKind {
+                signedInDeviceId = push.deviceId
+                devicesRequested = true
+            }
             if push.kind == HimawariPush.agentGrantKind { agentGrantRequested = true }
             return
         }

@@ -46,7 +46,7 @@ public struct HimawariRootView: View {
             if model.phase == .active, let chat = model.chat {
                 MainShell(model: model, chat: chat)
             } else {
-                PairingView(model: model)
+                SignInView(model: model)
             }
         }
         .onOpenURL { url in
@@ -57,22 +57,11 @@ public struct HimawariRootView: View {
                 HandoverEntryRoute(link.entry, safariURL: model.vault.pairingRecord()?.origin)
             }
         }
-        .onOpenURL { url in model.handlePairingLink(url.absoluteString) }
         .onOpenURL { url in
             if model.phase == .active, let link = VaultOTPAuthImport(url: url) { otpauthImport = link }
         }
         .sheet(item: $otpauthImport) { link in
             VaultOTPAuthImportView(api: model.api, confirmKey: model.confirmKey, link: link) { otpauthImport = nil }
-        }
-        .confirmationDialog(
-            L.text("watch.offer.title"),
-            isPresented: Binding(get: { model.watchOffer != nil }, set: { if !$0 { model.declineWatchOffer() } }),
-            titleVisibility: .visible
-        ) {
-            Button(L.text("watch.offer.watch")) { model.sendOfferToWatch() }
-            Button(L.text("watch.offer.cancel"), role: .cancel) { model.declineWatchOffer() }
-        } message: {
-            if let host = model.watchOfferHost { Text(host) }
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { model.becameActive() }
@@ -96,6 +85,8 @@ struct MainShell: View {
     @State private var listening: ListeningController?
     @State private var herOpen: Bool
     @State private var herListenOpen = false
+    @State private var herOpensDevices = false
+    @State private var herHighlightsDevice: String?
     @State private var herVoiceprintOpen = false
     #if os(iOS)
     @State private var dictation = ChatDictation()
@@ -169,6 +160,14 @@ struct MainShell: View {
         .onChange(of: NotificationRouter.shared.approvalsRequested, initial: true) { _, requested in
             guard requested else { return }
             NotificationRouter.shared.approvalsRequested = false
+            herOpen = true
+        }
+        .onChange(of: NotificationRouter.shared.devicesRequested, initial: true) { _, requested in
+            guard requested else { return }
+            NotificationRouter.shared.devicesRequested = false
+            herHighlightsDevice = NotificationRouter.shared.signedInDeviceId
+            NotificationRouter.shared.signedInDeviceId = nil
+            herOpensDevices = true
             herOpen = true
         }
         .agentGrantPrompt(
@@ -247,8 +246,15 @@ struct MainShell: View {
             removedThisDevice: {
                 herOpen = false
                 model.removedThisDevice()
-            }
+            },
+            unsentMessages: { model.unsentMessages },
+            opensDevices: herOpensDevices,
+            highlightsDevice: herHighlightsDevice
         )
+        .onDisappear {
+            herOpensDevices = false
+            herHighlightsDevice = nil
+        }
         .sheet(isPresented: $herListenOpen) {
             if let listening {
                 ListenEntrySheet(controller: listening) { herListenOpen = false }

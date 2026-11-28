@@ -50,11 +50,8 @@ public final class HerWorkspace {
         self.api = api
         self.confirmKey = confirmKey
         let gateway = ManageGateway(transport: SignedDeviceTransport(http: api.http, confirmKey: confirmKey))
-        let identity = api.http.currentCredentials.map {
-            DeviceIdentity(deviceId: $0.deviceId, origin: $0.origin, access: $0.access)
-        }
-        server = identity?.origin.absoluteString
-        settings = SettingsStore(gateway: gateway, identity: identity)
+        server = api.http.currentCredentials?.origin.absoluteString
+        settings = SettingsStore(directory: SignedDeviceDirectory(http: api.http, confirmKey: confirmKey))
         memory = MemoryStore(gateway: gateway)
         quietHours = QuietHoursStore(gateway: gateway)
         timers = TimersStore(gateway: gateway)
@@ -110,6 +107,7 @@ public struct HerSectionView: View {
     private let talk: (String) -> Void
     private let openChat: () -> Void
     private let removedThisDevice: () -> Void
+    private let unsentMessages: () -> Int?
     @State private var path: [HerPage.Page] = []
 
     public init(
@@ -118,7 +116,8 @@ public struct HerSectionView: View {
         actions: DeviceActionsModel?,
         talk: @escaping (String) -> Void,
         openChat: @escaping () -> Void,
-        removedThisDevice: @escaping () -> Void
+        removedThisDevice: @escaping () -> Void,
+        unsentMessages: @escaping () -> Int? = { nil }
     ) {
         self.section = section
         self.workspace = workspace
@@ -126,6 +125,7 @@ public struct HerSectionView: View {
         self.talk = talk
         self.openChat = openChat
         self.removedThisDevice = removedThisDevice
+        self.unsentMessages = unsentMessages
     }
 
     public var body: some View {
@@ -178,7 +178,7 @@ public struct HerSectionView: View {
         case .timer(let id):
             TimerDetailPage(store: workspace.timers, timerId: id) { path.removeLast() }
         case .device(let id):
-            DevicePage(store: workspace.settings, deviceId: id, actions: actions, removedThisDevice: removedThisDevice) { path.removeLast() }
+            DevicePage(store: workspace.settings, deviceId: id, actions: actions, unsentMessages: unsentMessages, removedThisDevice: removedThisDevice) { path.removeLast() }
         case .talkTiming:
             TalkTimingPage(load: { [api = workspace.api] in try await api.voiceTimings() })
         default:

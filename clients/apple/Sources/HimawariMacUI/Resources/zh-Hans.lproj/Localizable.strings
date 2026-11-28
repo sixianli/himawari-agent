@@ -55,16 +55,7 @@
 "settings.shortcut.record" = "按下新的快捷键";
 "settings.shortcut.needsModifier" = "要带 ⌥、⌘ 或 ⌃";
 "key.space" = "空格";
-"pairing.title" = "把这台 Mac 交给 Himawari";
-"pairing.step1" = "在 iPhone 的 Himawari 里打开 设置 → 设备 → 添加设备，点“Mac 不方便扫：发配对链接过去”，把链接发到这台 Mac 上";
-"pairing.step2" = "没有 iPhone 时，也可以在网页设置里添加";
-"pairing.paste" = "粘贴配对链接";
-"pairing.connect" = "连接";
-"pairing.server" = "链接里写的服务器";
-"pairing.waiting" = "和 iPhone（或网页）上的数字一样，\n就在那边点确认";
 "pairing.cancel" = "取消";
-"pairing.retry" = "再试一次";
-"pairing.problem" = "没连上。在 iPhone 上再添加一次设备，把新的配对链接发过来";
 "sidebar.chat" = "对话";
 "sidebar.her" = "Himawari";
 "menu.go" = "前往";

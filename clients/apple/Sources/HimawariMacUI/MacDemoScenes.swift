@@ -74,7 +74,7 @@ enum MacDemo {
     )
 
     static func view(for scene: MacDemoScene) -> AnyView {
-        let app = AppModel.demo(scene == .pairing ? .unpaired(nil) : .active, host: "himawari.example.com", kind: .mac)
+        let app = AppModel.demo(scene == .pairing ? .signedOut(nil) : .active, host: "himawari.example.com", kind: .mac)
         let messagesOn = scene == .settingsMessagesOn || scene == .settingsMessagesNoAccess
         let store = MacSettingsStore(demo: settings(seesMessages: messagesOn), messagesReadable: scene != .settingsMessagesNoAccess)
         let shortcut: GlobalShortcut.State = scene == .settingsShortcutTaken ? .taken(.optionSpace) : .active(.optionSpace)
@@ -106,7 +106,7 @@ enum MacDemo {
         case .settings, .settingsShortcutTaken, .settingsMessagesOn, .settingsMessagesNoAccess:
             return AnyView(MacSettingsView(store: store, shortcutState: shortcut, scrolls: false))
         case .pairing:
-            return AnyView(MacPairingView(model: app, inbox: PairingInbox()))
+            return AnyView(MacSignInWindow(model: app))
         }
     }
 
