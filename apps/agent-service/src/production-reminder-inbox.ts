@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type {
   ClockPort,
+  DataClassification,
   DecisionLedgerPort,
   MemoryReminder,
   MemoryReminderStorePort,
@@ -11,7 +12,6 @@ import type {
 } from "@himawari-agent/application";
 import { herWordsPushKey } from "@himawari-agent/application";
 import { REMINDER_DUE_EVENT, renderPrompt } from "@himawari-agent/prompt-catalog";
-import { classificationWithIdentifiers } from "@himawari-agent/sensitive-capture";
 import type { InboxSourceRegistry, ProductionInbox } from "./production-inbox.js";
 import { decisionDurationMs, spokenDecisionId } from "./production-inbox-delivery.js";
 
@@ -233,7 +233,7 @@ export class ProductionReminderInbox {
 
   async #write(ref: string, text: string) {
     const { payloads, protector, clock } = this.#options;
-    const dataClassification = classificationWithIdentifiers(text, "private");
+    const dataClassification: DataClassification = "private";
     if (!(await payloads.get(ref as never)))
       await payloads.put(
         await protector.protect({

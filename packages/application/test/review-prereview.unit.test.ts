@@ -32,9 +32,13 @@ describe("[P4-8] model prereview prompt", () => {
     expect(prompt.slice(REVIEW_PREREVIEW.text.length)).not.toContain('unneeded"}');
   });
 
-  it("masks a card number before it reaches the model", () => {
-    const prompt = prereviewPrompt({ ...subject, text: "卡号 4111 1111 1111 1111 的账单" });
-    expect(prompt).not.toContain("4111 1111 1111 1111");
+  it("[I-129] masks a password before it reaches the model and keeps a card number", () => {
+    const prompt = prereviewPrompt({
+      ...subject,
+      text: "密码：Qz7mWx42Lp，卡号 4111 1111 1111 1111 的账单",
+    });
+    expect(prompt).not.toContain("Qz7mWx42Lp");
+    expect(prompt).toContain("4111 1111 1111 1111");
   });
 });
 

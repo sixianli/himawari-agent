@@ -51,7 +51,6 @@ Andy 在 2026-11-12 定的原则（[ADR 0249](adr/0249-the-model-judges-meaning-
 | `packages/sensitive-capture/src/redaction.ts` | `LOCATED_PLACEHOLDER` | 格式解析 | 同上 | |
 | `packages/sensitive-capture/src/redaction.ts` | `VERIFICATION_CODE_KEYWORD` | 安全底线 | 发给模型之前遮盖验证码；必须每次得出同样字节（.claude/rules/prompt-prefix.md 第 11 条） | |
 | `packages/sensitive-capture/src/redaction.ts` | `JP_MY_NUMBER_KEYWORD` | 安全底线 | 同上，日本个人番号 | |
-| `packages/sensitive-capture/src/identifiers.ts` | `SENSITIVE_MENTION` | 安全底线 | 记忆分类时的“至少算敏感”底线，只升不降（[ADR 0300](adr/0300-how-memory-works-now.md) 第 40 行） | |
 | `packages/sensitive-capture/src/machine-secrets.ts` | `POTENTIAL_SECRET_MARKERS` | 安全底线 | 机器密钥的确定性筛查 | |
 | `packages/integration-web/src/untrusted-content.ts` | `INSTRUCTION_PATTERN` | 安全底线 | 网页内容里看到“忽略之前的指令”一类只打 `prompt_injection_observed` 标记，是防御纵深；是否照做仍由模型和授权出口决定 | |
 | `packages/memory-engine/src/segmentation.ts` | `STOPWORDS` | 检索分词 | 检索分词时丢掉“的、了、什么”，只影响召回，和向量检索并用 | |

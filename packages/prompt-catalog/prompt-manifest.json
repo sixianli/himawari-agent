@@ -390,9 +390,9 @@
     "reason": "P5-C: 新增 sync_memories 写工具、结果说明和项目笔记的固定标签；find_memories 加 project 参数"
   },
   "mcp.propose-memories": {
-    "sha256": "c904863eff0f0c0abc5e63e2422a8d7efcbaffd0ec16a837e4d8067033ab5a5f",
-    "changedIn": "MCP 直接存",
-    "reason": "按接入设置直接存记忆：工具说明、回执文字"
+    "sha256": "05b52c601661dbcac974a40bab55ba5ee257aef492efd00f392787ac2a18c610",
+    "changedIn": "I-129",
+    "reason": "只有密码、密钥不给模型：记忆不再判断敏感、健康财务不再先放待确认"
   },
   "mcp.propose-memories-result": {
     "sha256": "fec5a2d74221249b64a3b9da5c9d23eb17951fb9f43b2da52fadf6d0d5d0f598",
@@ -400,9 +400,9 @@
     "reason": "按接入设置直接存记忆：工具说明、回执文字"
   },
   "mcp.propose-memory": {
-    "sha256": "af115498b1311aa371c3ea86751c2af24af17ce099fd2db2d54365782768cb1d",
-    "changedIn": "MCP 直接存（PR 589 复核第 3 轮）",
-    "reason": "工具说明里敏感分类改成与代码一致，只写健康、财务和正文里的证件号、银行卡号"
+    "sha256": "706f86315e0be6761548752d171b899d3efaf61c87de19269cd6b75a38f3a963",
+    "changedIn": "I-129",
+    "reason": "只有密码、密钥不给模型：记忆不再判断敏感、健康财务不再先放待确认"
   },
   "mcp.propose-memory-already-saved": {
     "sha256": "f213567f4ace8b14f14d2f753e32498763ecc2f9008501e2c1a9ee51aaf37921",
@@ -415,9 +415,9 @@
     "reason": "P5-2: propose_memory tool and in-client confirmation text for external agents"
   },
   "mcp.propose-memory-confirm": {
-    "sha256": "ee51e4882c0877e49bf648ecbe7c3ebf90d24401230b3752e447cdfc71b411b9",
-    "changedIn": "ADR 0225",
-    "reason": "P5-2: outside values each on a labelled line; instant accepts count as not shown"
+    "sha256": "1e46c9267113871cb4ee302662035a61a65f0251a10edef5c4331c8bce36f666",
+    "changedIn": "I-129",
+    "reason": "只有密码、密钥不给模型：记忆不再判断敏感、健康财务不再先放待确认"
   },
   "mcp.propose-memory-declined": {
     "sha256": "09487ef998b0959cc71d2384cf31e80b3700b8607be4ebad0ba7b060e30b5440",
@@ -458,11 +458,6 @@
     "sha256": "cf2b819b8852f0eb55177378c407a603bc7498396178ed6971fd4e96789c3a14",
     "changedIn": "ADR 0228",
     "reason": "P5-3: external memory proposals wait as pending until the owner confirms in Himawari; batch propose_memories; key is scanned for secrets too"
-  },
-  "mcp.propose-memory-sensitive-note": {
-    "sha256": "24fdfe018d1226955839819b48347679a90e9d16cb6428a70ab5746c15854779",
-    "changedIn": "ADR 0225",
-    "reason": "P5-2: propose_memory tool and in-client confirmation text for external agents"
   },
   "mcp.propose-memory-unsupported": {
     "sha256": "a3d8fe861d4f444acab308f0055ce1e578653e3053aa118f2e7737e3a1086837",
@@ -570,9 +565,9 @@
     "reason": "外部 agent 读记忆：新增规则摘要截断提示，指向 rule_book"
   },
   "mcp.sync-memories": {
-    "sha256": "cacb5aa1b6b8f3acb77d849262e3d78b69e6287ef3231dbc90fb870778a0ed86",
-    "changedIn": "ADR 0242",
-    "reason": "P5-C: 新增 sync_memories 写工具、结果说明和项目笔记的固定标签；find_memories 加 project 参数"
+    "sha256": "4b088170743b1008635afce581d06e8c54015cf1b17fb3965dbc3ebae86a096e",
+    "changedIn": "I-129",
+    "reason": "只有密码、密钥不给模型：记忆不再判断敏感、健康财务不再先放待确认"
   },
   "mcp.sync-memories-failed": {
     "sha256": "ff394d7cd440a07139a4a3f9e55dc42b5fb588375b080634befa85b390cb0a6f",
@@ -620,9 +615,9 @@
     "reason": "Andy 2026-11-12 同意的“主动提议下一步”方案第 0 步：近期安排加入带日期的记忆；这 7 天的提醒全部读到且其中没有它时才写“这 7 天里没有提醒”"
   },
   "memory.capture": {
-    "sha256": "951c3556271b7e3e72b6aa91f48292aeb7505014e928f56036f5e3c849f8a445",
-    "changedIn": "ADR 0185",
-    "reason": "密码、密钥、证件号码、银行卡号改标 sensitive 而不是 restricted；一次性验证码不记录",
+    "sha256": "66f1be3db5ec30fd2f0ff7727486792fc0251e12e70dded7461af0c60af4c13a",
+    "changedIn": "I-129",
+    "reason": "只有密码、密钥不给模型：记忆不再判断敏感、健康财务不再先放待确认",
     "emphasis": {
       "kind": "hard-condition",
       "phrases": ["必须填 existingMemoryId", "每条都必须填"],
@@ -634,9 +629,9 @@
     }
   },
   "memory.classification": {
-    "sha256": "dd98a816e5e4d4603f7a4b95030c750073ffc940d23032216f679ba318144095",
-    "changedIn": "ADR 0260",
-    "reason": "新增：主人手动添加和导入的记忆由模型判断类别和是否敏感，代替网页上的词表猜测"
+    "sha256": "bcf2bbf04bff7e23b8be62f6c6de299a909f1ae71b77170241a4996d078cc05f",
+    "changedIn": "I-129",
+    "reason": "只有密码、密钥不给模型：记忆不再判断敏感、健康财务不再先放待确认"
   },
   "memory.confirmation-judge": {
     "sha256": "34cc58d299f3339aa04ce8615462b94478c0393c43191021d05ed7f592b65732",
@@ -674,9 +669,9 @@
     "reason": "初次登记：从源码原样搬入目录，文字不变"
   },
   "memory.conversation-review": {
-    "sha256": "9b9fc6c0068093938dd12a124c53306fdba877716daa200de1ea94075a5ed530",
-    "changedIn": "ADR 0231",
-    "reason": "初次登记：每天回看一段已经结束的对话，补记跨几条消息才完整的信息，找出被推翻的旧记忆；字段规则和每轮抽取共用同一份文字",
+    "sha256": "2e483b000afd6ced0a77d5e851092ae101209776f3b1eccc6d8b45e12b40cbc6",
+    "changedIn": "I-129",
+    "reason": "只有密码、密钥不给模型：记忆不再判断敏感、健康财务不再先放待确认",
     "emphasis": {
       "kind": "hard-condition",
       "phrases": ["supersede 和 unchanged 必须填 existingMemoryId", "每条都必须填"],

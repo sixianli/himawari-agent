@@ -51,7 +51,8 @@ export interface EgressRedactionSighting {
 }
 
 export const EGRESS_RULESET_FIRST_LOOSE_PASSWORDS = 2;
-export const EGRESS_RULESET_CURRENT = EGRESS_RULESET_FIRST_LOOSE_PASSWORDS;
+export const EGRESS_RULESET_FIRST_KEEPS_IDENTIFIERS = 3;
+export const EGRESS_RULESET_CURRENT = EGRESS_RULESET_FIRST_KEEPS_IDENTIFIERS;
 
 export interface EgressRedactionOptions {
   readonly ruleset?: number;
@@ -241,6 +242,33 @@ function trustedSpans(
   return spans;
 }
 
+function identifierSpans(text: string): readonly (readonly [number, number])[] {
+  const spans: [number, number][] = [];
+  const keep = (pattern: RegExp, valid: (match: string, offset: number) => boolean) => {
+    for (const found of text.matchAll(pattern))
+      if (valid(found[0], found.index)) spans.push([found.index, found.index + found[0].length]);
+  };
+  keep(CN_ID_NUMBER, (match) => cnIdChecksumValid(match));
+  keep(IBAN_CANDIDATE, (match) => ibanValid(match));
+  keep(CARD_CANDIDATE, (match) => {
+    const digits = match.replace(/[ -]/gu, "");
+    return (
+      digits.length >= 13 &&
+      digits.length <= 19 &&
+      plausibleCardNetwork(digits) &&
+      luhnValid(digits)
+    );
+  });
+  keep(
+    JP_MY_NUMBER,
+    (match, offset) =>
+      JP_MY_NUMBER_KEYWORD.test(
+        text.slice(Math.max(0, offset - CODE_WINDOW), offset + match.length + CODE_WINDOW),
+      ) && myNumberChecksumValid(match),
+  );
+  return spans;
+}
+
 export function redactForEgress(
   input: string,
   options: EgressRedactionOptions = {},
@@ -347,8 +375,9 @@ function redactUntrusted(input: string, options: EgressRedactionOptions): Egress
       ? `${lead}${value}`
       : maskPassword(lead, value),
   );
+  const ruleset = options.ruleset ?? EGRESS_RULESET_CURRENT;
   const looserForms =
-    (options.ruleset ?? EGRESS_RULESET_CURRENT) >= EGRESS_RULESET_FIRST_LOOSE_PASSWORDS
+    ruleset >= EGRESS_RULESET_FIRST_LOOSE_PASSWORDS
       ? ([
           [PASSWORD_WORDED_ASSIGNMENT, 4],
           [PASSWORD_BARE_VALUE, 6],
@@ -362,42 +391,47 @@ function redactUntrusted(input: string, options: EgressRedactionOptions): Egress
       return `${maskPassword(lead, value)}${raw.slice(value.length)}`;
     });
 
-  text = text.replace(CN_ID_NUMBER, (match) => {
-    if (!cnIdChecksumValid(match)) return match;
-    tally(counts, "identity-number");
-    see("identity-number", "cn-identity-number", match.toUpperCase());
-    return mask("identity-number", "证件号", match, match.toUpperCase(), false);
-  });
+  if (ruleset < EGRESS_RULESET_FIRST_KEEPS_IDENTIFIERS) {
+    text = text.replace(CN_ID_NUMBER, (match) => {
+      if (!cnIdChecksumValid(match)) return match;
+      tally(counts, "identity-number");
+      see("identity-number", "cn-identity-number", match.toUpperCase());
+      return mask("identity-number", "证件号", match, match.toUpperCase(), false);
+    });
 
-  text = text.replace(IBAN_CANDIDATE, (match) => {
-    if (!ibanValid(match)) return match;
-    tally(counts, "identity-number");
-    see("identity-number", "iban", match.replace(/ /gu, ""));
-    return mask("identity-number", "证件号", match, match.replace(/ /gu, ""), false);
-  });
+    text = text.replace(IBAN_CANDIDATE, (match) => {
+      if (!ibanValid(match)) return match;
+      tally(counts, "identity-number");
+      see("identity-number", "iban", match.replace(/ /gu, ""));
+      return mask("identity-number", "证件号", match, match.replace(/ /gu, ""), false);
+    });
 
-  text = text.replace(CARD_CANDIDATE, (match) => {
-    const digits = match.replace(/[ -]/gu, "");
-    if (digits.length < 13 || digits.length > 19) return match;
-    if (!plausibleCardNetwork(digits) || !luhnValid(digits)) return match;
-    tally(counts, "bank-card");
-    see("bank-card", "bank-card", digits);
-    return mask("bank-card", `银行卡 尾号${digits.slice(-4)}`, match, digits, false);
-  });
+    text = text.replace(CARD_CANDIDATE, (match) => {
+      const digits = match.replace(/[ -]/gu, "");
+      if (digits.length < 13 || digits.length > 19) return match;
+      if (!plausibleCardNetwork(digits) || !luhnValid(digits)) return match;
+      tally(counts, "bank-card");
+      see("bank-card", "bank-card", digits);
+      return mask("bank-card", `银行卡 尾号${digits.slice(-4)}`, match, digits, false);
+    });
 
-  text = text.replace(JP_MY_NUMBER, (match, offset: number, whole: string) => {
-    const window = whole.slice(
-      Math.max(0, offset - CODE_WINDOW),
-      offset + match.length + CODE_WINDOW,
-    );
-    if (!JP_MY_NUMBER_KEYWORD.test(window) || !myNumberChecksumValid(match)) return match;
-    tally(counts, "identity-number");
-    see("identity-number", "jp-my-number", match);
-    return mask("identity-number", "证件号", match, match, false);
-  });
+    text = text.replace(JP_MY_NUMBER, (match, offset: number, whole: string) => {
+      const window = whole.slice(
+        Math.max(0, offset - CODE_WINDOW),
+        offset + match.length + CODE_WINDOW,
+      );
+      if (!JP_MY_NUMBER_KEYWORD.test(window) || !myNumberChecksumValid(match)) return match;
+      tally(counts, "identity-number");
+      see("identity-number", "jp-my-number", match);
+      return mask("identity-number", "证件号", match, match, false);
+    });
+  }
 
+  const keptIdentifiers =
+    ruleset < EGRESS_RULESET_FIRST_KEEPS_IDENTIFIERS ? [] : identifierSpans(text);
   text = text.replace(DIGIT_RUN, (match, offset: number, whole: string) => {
     const end = offset + match.length;
+    if (keptIdentifiers.some(([start, stop]) => offset >= start && end <= stop)) return match;
     const window = whole.slice(Math.max(0, offset - CODE_WINDOW), end + CODE_WINDOW);
     if (!VERIFICATION_CODE_KEYWORD.test(window)) return match;
     if (whole.slice(Math.max(0, offset - 2), offset) === "尾号") return match;
@@ -431,9 +465,12 @@ function redactUntrusted(input: string, options: EgressRedactionOptions): Egress
   return Object.freeze({ text, findings: Object.freeze(findings) });
 }
 
-export function findSensitiveValues(input: string): readonly EgressRedactionSighting[] {
+export function findSensitiveValues(
+  input: string,
+  ruleset: number = EGRESS_RULESET_CURRENT,
+): readonly EgressRedactionSighting[] {
   const found: EgressRedactionSighting[] = [];
-  redactForEgress(input, { observe: (sighting) => found.push(sighting) });
+  redactForEgress(input, { ruleset, observe: (sighting) => found.push(sighting) });
   return Object.freeze(found);
 }
 

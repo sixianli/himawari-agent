@@ -325,13 +325,13 @@ describe("Gateway embedder", () => {
     });
     client.bindBoundary((_request, send) => send({ timeoutMs: 50 }), 1000);
     await client.embedDocument(
-      "验证码 482910，卡号 4111 1111 1111 1111，订单 20261101123456，山田太郎",
+      "验证码 482910，卡号 4111 1111 1111 1111，密码：Qz7mWx42Lp，订单 20261101123456，山田太郎",
     );
     const sent = JSON.parse(
       String((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].body),
     );
     expect(sent.input).toMatch(
-      /^验证码 \[验证码#[a-z]{8}\]，卡号 \[银行卡 尾号1111#[a-z]{8}\]，订单 20261101123456，山田太郎$/u,
+      /^验证码 \[验证码#[a-z]{8}\]，卡号 4111 1111 1111 1111，密码：\[密码#[a-z]{8}\]，订单 20261101123456，山田太郎$/u,
     );
   });
 

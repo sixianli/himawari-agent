@@ -41,16 +41,12 @@ import {
   type GatewayV2Command,
   type GatewayV2Query,
   type GatewayV2Snapshot,
-  MEMORY_SENSITIVE_CATEGORY_NAMES,
   MEMORY_SOURCE_REF_MAX_LENGTH,
   MEMORY_TRASH_RETENTION_DAYS,
   RULE_CONDITION_FIELDS,
 } from "@himawari-agent/gateway-contracts";
 import { isConsolidationUndoable } from "@himawari-agent/memory-engine";
-import {
-  containsCredential,
-  containsRestrictedIdentifier,
-} from "@himawari-agent/sensitive-capture";
+import { containsCredential } from "@himawari-agent/sensitive-capture";
 import type { BuiltInActionRuleSwitches } from "./action-rule-switches.js";
 import {
   capImportCandidates,
@@ -71,8 +67,7 @@ import {
   protectedMemoryCandidates,
 } from "./production-memory-capture.js";
 import {
-  DETERMINISTIC_SENSITIVE,
-  deterministicallySensitive,
+  CREDENTIAL_TEXT,
   type MemoryClassification,
   type ProductionMemoryClassifier,
   UNCLASSIFIED,
@@ -128,7 +123,6 @@ export const PRODUCTION_MEMORY_OPERATIONS = Object.freeze([
   "memory.mcpSync.noteDecide",
   "memory.mcpSync.attentionResolve",
 ] as const);
-const SENSITIVE_JUDGMENTS_KEPT = 5000;
 const PINNABLE_CATEGORIES: ReadonlySet<MemoryCategory> = new Set([
   "identity",
   "preference",
@@ -160,14 +154,6 @@ function unsupportedRuleAction(): never {
     PORT_ERROR_CODES.INVALID_OPERATION,
     "MEMORY_RULE_ACTION_UNSUPPORTED",
   );
-}
-
-function sensitiveTopicFor(category: MemoryCategory): SensitiveMemoryTopic {
-  return category === "health" || category === "finance" ? category : "other";
-}
-
-function sensitiveCategory(category: MemoryCategory): boolean {
-  return (MEMORY_SENSITIVE_CATEGORY_NAMES as readonly string[]).includes(category);
 }
 
 function nextYear(instant: string): string {
@@ -306,8 +292,6 @@ export class ProductionMemoryControl {
     readonly importDuplicates?: Pick<ProductionImportDuplicateChecker, "check" | "existingLimit">;
     readonly onAudit: (record: MemoryExtractionAuditRecord) => void;
   };
-
-  readonly #sensitiveJudgments = new Map<string, MemoryClassification>();
 
   constructor(options: ProductionMemoryControl["options"]) {
     this.options = options;
@@ -546,7 +530,7 @@ export class ProductionMemoryControl {
       record.status === "deletion_pending" ||
       record.status === "deleted_verified"
     )
-      return "sensitive";
+      return "private";
     return classificationRank(record.dataClassification) > classificationRank("private")
       ? record.dataClassification
       : "private";
@@ -1524,8 +1508,7 @@ export class ProductionMemoryControl {
     const pending: { index: number; text: string }[] = [];
     for (const [index, ref] of contentRefs.entries()) {
       const payload = await this.options.payloads.get(ref);
-      if (payload && classificationRank(payload.dataClassification) > classificationRank("private"))
-        results[index] = DETERMINISTIC_SENSITIVE;
+      if (payload && !isModelVisible(payload.dataClassification)) results[index] = CREDENTIAL_TEXT;
       else pending.push({ index, text: await this.readText(ref) });
     }
     const judged = this.options.classifier
@@ -1533,16 +1516,6 @@ export class ProductionMemoryControl {
       : pending.map(() => UNCLASSIFIED);
     for (const [position, { index }] of pending.entries())
       results[index] = judged[position] ?? UNCLASSIFIED;
-    for (const [index, ref] of contentRefs.entries()) {
-      const result = results[index] ?? UNCLASSIFIED;
-      if (result.classification !== "sensitive") continue;
-      this.#sensitiveJudgments.delete(ref);
-      this.#sensitiveJudgments.set(ref, result);
-      for (const oldest of this.#sensitiveJudgments.keys()) {
-        if (this.#sensitiveJudgments.size <= SENSITIVE_JUDGMENTS_KEPT) break;
-        this.#sensitiveJudgments.delete(oldest);
-      }
-    }
     return contentRefs.map((_, index) => results[index] ?? UNCLASSIFIED);
   }
 
@@ -1581,16 +1554,11 @@ export class ProductionMemoryControl {
       );
     }
     const candidates = capImportCandidates(parsed);
-    const secrets = candidates.map(
-      ({ text }) => containsCredential(text) || containsRestrictedIdentifier(text),
-    );
+    const secrets = candidates.map(({ text }) => containsCredential(text));
     const refs: string[] = [];
     for (const [index, candidate] of candidates.entries())
       refs.push(
-        await this.#importPayload(
-          candidate.text,
-          candidate.sensitive || secrets[index] ? "sensitive" : "private",
-        ),
+        await this.#importPayload(candidate.text, secrets[index] ? "restricted" : "private"),
       );
     const toClassify = candidates.flatMap((candidate, index) =>
       !candidate.classified && !secrets[index] ? [index] : [],
@@ -1599,19 +1567,7 @@ export class ProductionMemoryControl {
       ? await this.#classifyRefs(toClassify.map((index) => refs[index] ?? ""))
       : [];
     const classifications = new Map(toClassify.map((index, position) => [index, judged[position]]));
-    const sensitive = candidates.map((candidate, index) => {
-      const judgment = classifications.get(index);
-      return (
-        secrets[index] === true ||
-        candidate.sensitive ||
-        judgment?.classification === "sensitive" ||
-        judgment?.failed === true
-      );
-    });
-    for (const [index, candidate] of candidates.entries())
-      if (sensitive[index] && !candidate.sensitive && !secrets[index])
-        refs[index] = await this.#storedAtLeast(refs[index] ?? "", candidate.text, "sensitive");
-    const askable = candidates.flatMap((_, index) => (sensitive[index] ? [] : [index]));
+    const askable = candidates.flatMap((_, index) => (secrets[index] ? [] : [index]));
     const checker = this.options.importDuplicates;
     const verdicts = new Map<number, ImportDuplicateVerdict>();
     if (checker && askable.length) {
@@ -1640,9 +1596,6 @@ export class ProductionMemoryControl {
             : judgment && !judgment.failed
               ? judgment.category
               : candidate.category;
-          const topic = sensitive[index]
-            ? (candidate.topic ?? judgment?.topic ?? sensitiveTopicFor(category))
-            : null;
           const flag = importFlag({
             secret: secrets[index] === true,
             classificationFailed: judgment?.failed === true,
@@ -1655,7 +1608,7 @@ export class ProductionMemoryControl {
             from: candidate.from,
             category,
             subCategory: candidate.subCategory,
-            topic,
+            topic: null,
             flag,
             selectable: importFlagSelectable(flag),
             checked: flag === null,
@@ -1694,12 +1647,7 @@ export class ProductionMemoryControl {
     const sendable: number[] = [];
     for (const [index, ref] of refs.entries()) {
       const payload = await this.options.payloads.get(ref);
-      if (
-        (payload &&
-          classificationRank(payload.dataClassification) > classificationRank("private")) ||
-        this.#sensitiveJudgments.has(ref)
-      )
-        candidates.push("");
+      if (payload && !isModelVisible(payload.dataClassification)) candidates.push("");
       else {
         candidates.push(await this.readText(ref));
         sendable.push(index);
@@ -1716,8 +1664,7 @@ export class ProductionMemoryControl {
       b.updatedAt.localeCompare(a.updatedAt),
     );
     for (const record of active) {
-      if (record.dataClassification === "sensitive" || record.dataClassification === "restricted")
-        continue;
+      if (!isModelVisible(record.dataClassification)) continue;
       if (existing.length >= limit) {
         complete = false;
         break;
@@ -1745,30 +1692,6 @@ export class ProductionMemoryControl {
     return results;
   }
 
-  async #storedAtLeast(
-    contentRef: string,
-    text: string,
-    dataClassification: DataClassification,
-  ): Promise<string> {
-    const { ownerId, agentId } = this.options.configuration;
-    const copy = await this.options.protector.protect({
-      ownerId,
-      agentId,
-      ref: `memory-raised:${dataClassification}:${contentRef}`,
-      dataClassification,
-      contentType: "text/plain",
-      plaintext: new TextEncoder().encode(text),
-      createdAt: this.options.clock.now(),
-    });
-    try {
-      await this.options.payloads.put(copy);
-    } catch (error) {
-      if (!(error instanceof ApplicationPortError) || error.code !== PORT_ERROR_CODES.DUPLICATE)
-        throw error;
-    }
-    return copy.ref;
-  }
-
   async #createMemory(input: {
     readonly id: MemoryId;
     readonly contentRef: string;
@@ -1783,21 +1706,10 @@ export class ProductionMemoryControl {
       throw new ApplicationPortError(PORT_ERROR_CODES.NOT_FOUND, "MEMORY_PAYLOAD_MISSING");
     const text = await this.readText(input.contentRef);
     this.assertStorable(text);
-    if (payload.dataClassification === "restricted")
+    if (!isModelVisible(payload.dataClassification))
       throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, "MEMORY_TEXT_REFUSED");
-    const judged = this.#sensitiveJudgments.get(input.contentRef);
-    const raised =
-      classificationRank(payload.dataClassification) < classificationRank("sensitive") &&
-      (sensitiveCategory(input.category) ||
-        input.topic !== null ||
-        judged !== undefined ||
-        deterministicallySensitive(text));
-    const dataClassification: DataClassification = raised
-      ? "sensitive"
-      : payload.dataClassification;
-    const contentRef = raised
-      ? await this.#storedAtLeast(input.contentRef, text, "sensitive")
-      : input.contentRef;
+    const dataClassification = payload.dataClassification;
+    const contentRef = input.contentRef;
     const { ownerId, agentId } = this.options.configuration;
     const subCategory = input.subCategory?.trim() || null;
     return this.options.memory.applyProposal(
@@ -1823,11 +1735,6 @@ export class ProductionMemoryControl {
             validTo: null,
             supersededBy: null,
             evidenceVerified: false,
-            ...(dataClassification === "sensitive"
-              ? {
-                  sensitiveTopic: input.topic ?? judged?.topic ?? sensitiveTopicFor(input.category),
-                }
-              : {}),
             ...(subCategory ? { subCategory } : {}),
             ...(input.importBatchId ? { importBatchId: input.importBatchId } : {}),
           },
@@ -1868,12 +1775,6 @@ export class ProductionMemoryControl {
       throw new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, "MEMORY_REVISION_CHANGED");
     if ((current.attributes?.category ?? "other") === category)
       return { resultRef: current.id, replayed: false };
-    if (
-      current.dataClassification === "sensitive" ||
-      current.attributes?.sensitiveTopic ||
-      sensitiveCategory(category)
-    )
-      throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, "MEMORY_CATEGORY_LOCKED");
     const saved = await this.options.memory.revise({
       memoryId: current.id,
       expectedRevision,

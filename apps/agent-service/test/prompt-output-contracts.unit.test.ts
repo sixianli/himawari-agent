@@ -113,7 +113,7 @@ describe("[PROMPT-CONTRACT] background prompts and the parsers that read their a
 
   it("memory classification: accepts the items JSON the prompt asks for and rejects anything else", () => {
     const example = JSON.stringify({
-      items: [{ id: "0", category: "preference", classification: "private", topic: null }],
+      items: [{ id: "0", category: "preference" }],
     });
     expect(classification.parseMemoryClassifications(example, ["0"]).get("0")).toEqual({
       category: "preference",
@@ -124,12 +124,22 @@ describe("[PROMPT-CONTRACT] background prompts and the parsers that read their a
     expect(
       classification.parseMemoryClassifications(`\`\`\`json\n${example}\n\`\`\``, ["0"]).size,
     ).toBe(1);
+    expect(
+      classification
+        .parseMemoryClassifications(
+          JSON.stringify({
+            items: [{ id: "0", category: "health", classification: "sensitive", topic: "health" }],
+          }),
+          ["0"],
+        )
+        .get("0"),
+    ).toEqual({ category: "health", classification: "private", topic: null, failed: false });
     expect(() => classification.parseMemoryClassifications("好的", ["0"])).toThrow(
       "MEMORY_CLASSIFICATION_RESPONSE_INVALID",
     );
     expect(
       classification.parseMemoryClassifications(
-        JSON.stringify({ items: [{ id: "0", category: "preference", classification: "secret" }] }),
+        JSON.stringify({ items: [{ id: "9", category: "preference" }] }),
         ["0"],
       ).size,
     ).toBe(0);

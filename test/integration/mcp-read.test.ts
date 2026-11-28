@@ -281,7 +281,21 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       timeZone: TIME_ZONE,
     });
     await writer.create({ key: "dentist", text: DENTIST, due: "2026-11-12T10:00", repeat: "none" });
-    await writer.create({ key: "wifi", text: WIFI, due: "2026-11-12T20:00", repeat: "none" });
+    const sensitiveReminder = async (key: string, text: string, due: string) => {
+      const contentRef = `payload:reminder:${key}:saved-as-sensitive`;
+      await payloads.put(
+        await adapters.payloadProtector.protect({
+          ...scope,
+          ref: contentRef,
+          contentType: "text/plain",
+          dataClassification: "sensitive",
+          plaintext: new TextEncoder().encode(text),
+          createdAt: clock.now(),
+        }),
+      );
+      await writer.create({ key, contentRef, due, repeat: "none" });
+    };
+    await sensitiveReminder("wifi", WIFI, "2026-11-12T20:00");
     await writer.create({ key: "trip", text: TRIP, due: "2026-11-13T13:00", repeat: "none" });
     await memory.runProjectionBatch(10);
     const episodeStore = repository.memoryEpisodes();
@@ -571,6 +585,7 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       failures,
       summaryFailures,
       writer,
+      sensitiveReminder,
     };
   }
 
@@ -1195,15 +1210,14 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       expect(opened.text).toContain("慢性病");
     });
 
-    it("fills today with eligible reminders when sensitive ones come first", async () => {
+    it("fills today with eligible reminders when reminders saved as sensitive come first", async () => {
       const f = await setup();
       for (let index = 0; index < 22; index += 1)
-        await f.writer.create({
-          key: `secret-${index}`,
-          text: `家里 Wi-Fi 密码：Key-${index}-abc`,
-          due: `2026-11-12T08:${String(index).padStart(2, "0")}`,
-          repeat: "none",
-        });
+        await f.sensitiveReminder(
+          `secret-${index}`,
+          `家里 Wi-Fi 密码：Key-${index}-abc`,
+          `2026-11-12T08:${String(index).padStart(2, "0")}`,
+        );
       const client = await f.connect("modern");
       const output = JSON.parse((await f.call(client, "start_here")).text) as StartHere;
       const texts = (output.today as unknown as { reminders: { text: string }[] }).reminders.map(

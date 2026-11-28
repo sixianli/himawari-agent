@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import type { DataClassification } from "@himawari-agent/application";
 import {
   ApplicationPortError,
   type AuthorityFence,
@@ -22,7 +23,6 @@ import {
 } from "@himawari-agent/gateway-contracts";
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 import { OPTION_DISMISS_LABEL, TOOL_OFFER_OPTIONS } from "@himawari-agent/prompt-catalog";
-import { classificationWithIdentifiers } from "@himawari-agent/sensitive-capture";
 import { isConflict } from "./context-external-content.js";
 import { parameterFingerprint } from "./parameter-fingerprint.js";
 
@@ -564,7 +564,7 @@ export class ProductionMessageOptions {
 
   async #write(ref: string, text: string) {
     const { payloads, protector, clock } = this.#options;
-    const dataClassification = classificationWithIdentifiers(text, "private");
+    const dataClassification: DataClassification = "private";
     if (!(await payloads.get(ref as never)))
       await payloads.put(
         await protector.protect({

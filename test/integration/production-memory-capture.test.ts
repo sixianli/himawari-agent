@@ -1185,12 +1185,10 @@ describe("production memory capture", () => {
     },
   );
 
-  it("[mask-not-block] tells the model to mark passwords, keys, identity and card numbers sensitive and to skip one-time codes", () => {
+  it("[I-129] tells the model that only passwords, keys and one-time codes are restricted and everything else is private", () => {
     const prompt = memoryCapturePrompt("记住我的密码是 abc12345", [], null, null, null);
-    expect(prompt).toContain("证件号码、银行卡或账户号码、密码、密钥用 sensitive");
-    expect(prompt).toContain("一次性验证码");
-    expect(prompt).not.toContain("密码和验证码用 restricted");
-    expect(prompt).not.toContain("密码密钥等凭据");
+    expect(prompt).toContain("密码、密钥、一次性验证码填 restricted，其他都填 private");
+    expect(prompt).not.toContain("用 sensitive");
   });
 
   it.each([
@@ -1213,11 +1211,9 @@ describe("production memory capture", () => {
     expect(await overview(context.control)).toMatchObject({ memories: [], pending: [] });
   });
 
-  it("asks the model to keep who the Owner's family are and the Owner's rules private, and only their private matters sensitive", () => {
+  it("[I-129] asks the model to mark health, money, identity numbers and other people's matters private, not sensitive", () => {
     const prompt = memoryCapturePrompt("我老婆叫陈静，在医院当药剂师", [], null, null, null);
-    expect(prompt).toContain("主人身边的人是谁（名字、和主人的关系、职业、住在哪个城市）");
-    expect(prompt).toContain("主人给 Himawari 定的做事要求（即使提到钱");
-    expect(prompt).toContain("他人的私事（别人的健康、钱、感情、行踪等）");
+    expect(prompt).toContain("健康、财务、证件号码、别人的私事等也填 private");
     expect(prompt).not.toContain("他人隐私");
   });
 
@@ -1977,13 +1973,7 @@ describe("production memory capture", () => {
     await tool("cancel", { reminderId: other }, "call-after-dismiss");
     expect(await store.read(other)).toMatchObject({ status: "cancelled" });
     const stored = await context.repository.productMemoryState().listActive(OWNER_ID, AGENT_ID);
-    const cardMemory = stored.find(({ id }) => id.includes("call-card"));
-    expect(cardMemory?.dataClassification).toBe("sensitive");
-    expect(
-      stored
-        .filter(({ id }) => !id.includes("call-card"))
-        .every(({ dataClassification }) => dataClassification === "private"),
-    ).toBe(true);
+    expect(stored.every(({ dataClassification }) => dataClassification === "private")).toBe(true);
     expect(
       await tool(
         "set",
@@ -1995,11 +1985,11 @@ describe("production memory capture", () => {
       .productMemoryState()
       .listActive(OWNER_ID, AGENT_ID);
     expect(withPassword.find(({ id }) => id.includes("call-password"))?.dataClassification).toBe(
-      "sensitive",
+      "private",
     );
   });
 
-  it("[P2-3] keeps a standing sentence that carries a card number or a password as an enforced rule, its quote marked sensitive", async () => {
+  it("[P2-3] [I-129] keeps a standing sentence that carries a card number or a password as an enforced rule, its quote ordinary because passwords are masked on the way to any model", async () => {
     const sentence = "尾号 6222 0212 3456 7890 的扣款邮件以后必须通知我";
     const context = await setup(
       "请记住，我最喜欢的颜色是蓝色。",
@@ -2027,7 +2017,7 @@ describe("production memory capture", () => {
     const ruleMemory = await context.repository
       .productMemoryState()
       .read(created["memoryId"] as never);
-    expect(ruleMemory).toMatchObject({ status: "active", dataClassification: "sensitive" });
+    expect(ruleMemory).toMatchObject({ status: "active", dataClassification: "private" });
     expect(await context.plaintext(ruleMemory?.contentRef ?? null)).toContain(sentence);
     const password = "网银密码是 Abc12345 的那个账户的邮件以后必须通知我";
     await context.turn("owner", password, null);
@@ -2049,7 +2039,7 @@ describe("production memory capture", () => {
     expect(withPassword).toMatchObject({ status: "active", type: "mail_must_notify" });
     expect(
       await context.repository.productMemoryState().read(withPassword["memoryId"] as never),
-    ).toMatchObject({ status: "active", dataClassification: "sensitive" });
+    ).toMatchObject({ status: "active", dataClassification: "private" });
   });
 
   it('[HR-4] turns "夜里别提醒我" into an enforced push_quiet_hours rule through the rule tool, and refuses periods that are not times', async () => {
@@ -3810,24 +3800,14 @@ describe("production memory capture", () => {
         "recategorize-stale",
       ),
     ).rejects.toThrow("MEMORY_REVISION_CHANGED");
-    await expect(
-      command(
-        context.control,
-        "memory.category.set",
-        { memoryId: after.memoryId, expectedRevision: after.revision, category: "finance" },
-        "recategorize-finance",
-      ),
-    ).rejects.toThrow("MEMORY_CATEGORY_LOCKED");
     const mood = await find("抑郁");
-    await expect(
-      command(
-        context.control,
-        "memory.category.set",
-        { memoryId: mood.memoryId, expectedRevision: mood.revision, category: "other" },
-        "recategorize-mood",
-      ),
-    ).rejects.toThrow("MEMORY_CATEGORY_LOCKED");
-    expect((await find("抑郁")).category).toBe("health");
+    await command(
+      context.control,
+      "memory.category.set",
+      { memoryId: mood.memoryId, expectedRevision: mood.revision, category: "other" },
+      "recategorize-mood",
+    );
+    expect((await find("抑郁")).category).toBe("other");
     await context.memory.runProjectionBatch(10);
     expect(
       context.provider.upserts.filter(({ memory }) => memory.id === after.memoryId).at(-1),
@@ -4237,7 +4217,7 @@ describe("production memory capture", () => {
     ).rejects.toThrow("MEMORY_IMPORT_NOT_FOUND");
   });
 
-  it("[MP-7] keeps an imported password line as sensitive and keeps its original text", async () => {
+  it("[MP-7] keeps an imported password line with its original text", async () => {
     const context = await setup(
       "请记住，我最喜欢的颜色是蓝色。",
       '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
@@ -4257,12 +4237,12 @@ describe("production memory capture", () => {
       },
       "import-sensitive-1",
     );
-    const imported = await overview(context.control);
-    expect(
-      imported.memories
-        .filter(({ importBatchId }) => importBatchId === "memory-import-sensitive-1")
-        .map(({ dataClassification }) => dataClassification),
-    ).toEqual(["sensitive"]);
+    const imported = (await overview(context.control)).memories.filter(
+      ({ importBatchId }) => importBatchId === "memory-import-sensitive-1",
+    );
+    expect(imported.map(({ text, dataClassification }) => [text, dataClassification])).toEqual([
+      ["pwd: hunter2abc", "sensitive"],
+    ]);
   });
 
   it("[import-preview] splits a file into entries on the server, sorts and checks them, and the phone imports what it ticked", async () => {
@@ -4289,12 +4269,14 @@ describe("production memory capture", () => {
         items: [
           { id: "0", category: "preference", classification: "private", topic: null },
           { id: "1", category: "preference", classification: "private", topic: null },
-          { id: "2", category: "other", classification: "private", topic: null },
+          { id: "2", category: "other" },
+          { id: "3", category: "project" },
         ],
       }),
     );
     context.duplicateAnswers.push(
       { matchKey: "m0", probabilityPermille: 920 },
+      { matchKey: null, probabilityPermille: 0 },
       { matchKey: null, probabilityPermille: 0 },
       { matchKey: null, probabilityPermille: 0 },
     );
@@ -4339,10 +4321,10 @@ describe("production memory capture", () => {
       {
         text: "我的身份证号是 110101199003071234",
         category: "other",
-        flag: "secret",
+        flag: null,
         selectable: true,
-        checked: false,
-        topic: "other",
+        checked: true,
+        topic: null,
       },
       {
         text: "用 pnpm 而不是 npm",
@@ -4353,8 +4335,6 @@ describe("production memory capture", () => {
         topic: null,
       },
     ]);
-    expect(context.classifyPrompts.join("\n")).not.toContain("110101199003071234");
-    expect(JSON.stringify(context.duplicateRequests)).not.toContain("110101199003071234");
     const ticked = snapshot.payload.items.filter(({ checked }) => checked);
     await command(
       context.control,
@@ -4374,9 +4354,14 @@ describe("production memory capture", () => {
     const imported = (await overview(context.control)).memories.filter(
       ({ importBatchId }) => importBatchId === "memory-import-preview",
     );
-    expect(imported.map(({ text, dataClassification }) => [text, dataClassification])).toEqual([
-      ["我每天早上跑步", "private"],
-    ]);
+    expect(
+      imported.map(({ text, dataClassification }) => [text, dataClassification]).toSorted(),
+    ).toEqual(
+      [
+        ["我每天早上跑步", "private"],
+        ["我的身份证号是 110101199003071234", "private"],
+      ].toSorted(),
+    );
 
     const unreadable = await context.control.query({
       ...envelope,
@@ -4404,7 +4389,7 @@ describe("production memory capture", () => {
     await context.capture.stop();
     await context.protect("payload-d1", "喝不了牛奶");
     await context.protect("payload-d2", "对乳制品不耐受，每次喝都难受");
-    await context.protect("payload-d3", "我的身份证号是 110101199003071234");
+    await context.protect("payload-d3", "我的密码是 Tr0ub4dor&3xyz");
     await context.protect("payload-d4", "我得了抑郁症", "sensitive");
     const duplicates = async (contentRefs: readonly string[]) => {
       const snapshot = await context.control.query({
@@ -4423,12 +4408,13 @@ describe("production memory capture", () => {
     context.duplicateAnswers.push(
       { matchKey: "m0", probabilityPermille: 920 },
       { matchKey: null, probabilityPermille: 0 },
+      { matchKey: null, probabilityPermille: 0 },
     );
     expect(await duplicates(["payload-d1", "payload-d2", "payload-d3", "payload-d4"])).toEqual([
       ["payload-d1", "same", true],
       ["payload-d2", "different", null],
       ["payload-d3", "skipped", null],
-      ["payload-d4", "skipped", null],
+      ["payload-d4", "different", null],
     ]);
     expect(context.duplicateRequests).toHaveLength(1);
     const request = context.duplicateRequests[0];
@@ -4436,8 +4422,9 @@ describe("production memory capture", () => {
     expect(request?.candidates.map(({ text }) => text)).toEqual([
       "喝不了牛奶",
       "对乳制品不耐受，每次喝都难受",
+      "我得了抑郁症",
     ]);
-    expect(JSON.stringify(context.duplicateRequests)).not.toContain("抑郁症");
+    expect(JSON.stringify(context.duplicateRequests)).not.toContain("Tr0ub4dor");
     await context.protect("payload-d5", "我最近总睡不好");
     context.classifyOutputs.push(
       JSON.stringify({
@@ -4451,8 +4438,9 @@ describe("production memory capture", () => {
       payload: { contentRefs: ["payload-d5"] },
     } as never);
     const before = context.duplicateRequests.length;
-    expect(await duplicates(["payload-d5"])).toEqual([["payload-d5", "skipped", null]]);
-    expect(context.duplicateRequests).toHaveLength(before);
+    context.duplicateAnswers.push({ matchKey: null, probabilityPermille: 0 });
+    expect(await duplicates(["payload-d5"])).toEqual([["payload-d5", "different", null]]);
+    expect(context.duplicateRequests).toHaveLength(before + 1);
   });
 
   it("[A4] never calls an entry different when older memories were left out of the comparison", async () => {
@@ -4487,26 +4475,13 @@ describe("production memory capture", () => {
     expect(context.duplicateRequests[0]?.existing).toHaveLength(1);
   });
 
-  it("[A4] reports skipped when every existing memory is sensitive, and never counts them against the limit", async () => {
+  it("[A4][I-129] answers without asking the model when a password was the only thing said, and never counts it against the limit", async () => {
     const context = await setup(
       "我月薪三万。",
       '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人月薪三万","classification":"restricted","confidence":950,"quote":"我月薪三万"}]}',
     );
     await context.capture.start(context.request);
     await context.capture.stop();
-    await context.protect("payload-s1", "我每周日去教堂", "sensitive");
-    await command(
-      context.control,
-      "memory.import.commit",
-      {
-        batchId: "memory-import-sensitive-only",
-        source: "assistant",
-        items: [
-          { contentRef: "payload-s1", category: "other", subCategory: null, topic: "beliefs" },
-        ],
-      },
-      "import-sensitive-only",
-    );
     await context.protect("payload-s2", "喜欢蓝色");
     const snapshot = await context.control.query({
       ...envelope,
@@ -4515,7 +4490,7 @@ describe("production memory capture", () => {
       payload: { contentRefs: ["payload-s2"] },
     } as never);
     if (snapshot.type !== "memory.import.duplicates.snapshot") throw new Error("snapshot");
-    expect(snapshot.payload.items.map(({ verdict }) => verdict)).toEqual(["skipped"]);
+    expect(snapshot.payload.items.map(({ verdict }) => verdict)).toEqual(["different"]);
     expect(context.duplicateRequests).toHaveLength(0);
     await context.protect("payload-s3", "每周跑三次步");
     await command(
@@ -4541,7 +4516,7 @@ describe("production memory capture", () => {
     expect(context.duplicateRequests[0]?.existing).toHaveLength(1);
   });
 
-  it("[T5] sorts hand-added memories with the model, keeps identifiers away from it and treats a broken answer as sensitive", async () => {
+  it("[T5][I-129] sorts hand-added memories with the model, keeps passwords away from it and treats a broken answer as unsorted", async () => {
     const context = await setup(
       "请记住，我最喜欢的颜色是蓝色。",
       '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
@@ -4550,6 +4525,7 @@ describe("production memory capture", () => {
     await context.protect("payload-c2", "每天早上吃一片降压药");
     await context.protect("payload-c3", "我的身份证号是 110101199003071234");
     await context.protect("payload-c4", "回答不要用表情符号");
+    await context.protect("payload-c6", "我的密码是 Tr0ub4dor&3xyz");
     const classify = async (contentRefs: readonly string[]) => {
       const snapshot = await context.control.query({
         ...envelope,
@@ -4560,73 +4536,46 @@ describe("production memory capture", () => {
       if (snapshot.type !== "memory.classify.snapshot") throw new Error("snapshot");
       return snapshot.payload.items;
     };
+    const sorted = (contentRef: string, category: string, failed = false) => ({
+      contentRef,
+      category,
+      classification: "private",
+      topic: null,
+      failed,
+    });
     context.classifyOutputs.push(
       JSON.stringify({
         items: [
-          { id: "0", category: "preference", classification: "private", topic: null },
-          { id: "1", category: "health", classification: "private", topic: null },
-          { id: "3", category: "made-up", classification: "private", topic: null },
+          { id: "0", category: "preference" },
+          { id: "1", category: "health", classification: "sensitive", topic: "health" },
+          { id: "2", category: "identity" },
+          { id: "3", category: "made-up" },
         ],
       }),
     );
-    expect(await classify(["payload-c1", "payload-c2", "payload-c3", "payload-c4"])).toEqual([
-      {
-        contentRef: "payload-c1",
-        category: "preference",
-        classification: "private",
-        topic: null,
-        failed: false,
-      },
-      {
-        contentRef: "payload-c2",
-        category: "health",
-        classification: "sensitive",
-        topic: "health",
-        failed: false,
-      },
-      {
-        contentRef: "payload-c3",
-        category: "other",
-        classification: "sensitive",
-        topic: "other",
-        failed: false,
-      },
-      {
-        contentRef: "payload-c4",
-        category: "other",
-        classification: "private",
-        topic: null,
-        failed: false,
-      },
+    expect(
+      await classify(["payload-c1", "payload-c2", "payload-c3", "payload-c4", "payload-c6"]),
+    ).toEqual([
+      sorted("payload-c1", "preference"),
+      sorted("payload-c2", "health"),
+      sorted("payload-c3", "identity"),
+      sorted("payload-c4", "other"),
+      sorted("payload-c6", "other"),
     ]);
     expect(context.classifyPrompts).toHaveLength(1);
     expect(context.classifyPrompts[0]).toContain("我不吃药，身体一直很好");
-    expect(context.classifyPrompts[0]).not.toContain("110101199003071234");
+    expect(context.classifyPrompts[0]).toContain("110101199003071234");
+    expect(context.classifyPrompts[0]).not.toContain("Tr0ub4dor");
     await context.protect("payload-c5", "我最近心情很低落", "sensitive");
-    expect(await classify(["payload-c5"])).toEqual([
-      {
-        contentRef: "payload-c5",
-        category: "other",
-        classification: "sensitive",
-        topic: "other",
-        failed: false,
-      },
-    ]);
-    expect(context.classifyPrompts).toHaveLength(1);
+    context.classifyOutputs.push(JSON.stringify({ items: [{ id: "0", category: "health" }] }));
+    expect(await classify(["payload-c5"])).toEqual([sorted("payload-c5", "health")]);
+    expect(context.classifyPrompts).toHaveLength(2);
     context.classifyOutputs.push("not json", '{"items":"nope"}');
-    expect(await classify(["payload-c1"])).toEqual([
-      {
-        contentRef: "payload-c1",
-        category: "other",
-        classification: "sensitive",
-        topic: "other",
-        failed: true,
-      },
-    ]);
+    expect(await classify(["payload-c1"])).toEqual([sorted("payload-c1", "other", true)]);
     expect(context.classifyFailures).toHaveLength(1);
   });
 
-  it("[T5] stores a hand-added memory at least as sensitive as its text and category demand, whatever the page sent", async () => {
+  it("[T5][I-129] stores a hand-added memory as ordinary whatever its category or text", async () => {
     const context = await setup(
       "请记住，我最喜欢的颜色是蓝色。",
       '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
@@ -4637,6 +4586,7 @@ describe("production memory capture", () => {
     await context.protect("payload-bp", "每天早上吃一片降压药");
     await context.protect("payload-bp-topic", "我在吃抗抑郁的药");
     await context.protect("payload-plain", "我喜欢早上跑步");
+    await context.protect("payload-password", "我的网银密码是 Tr0ub4dor&3xyz");
     const add = (contentRef: string, category: string, topic: string | null, key: string) =>
       command(
         context.control,
@@ -4648,19 +4598,7 @@ describe("production memory capture", () => {
     await add("payload-bp", "health", null, "t5-bp");
     await add("payload-bp-topic", "preference", "health", "t5-topic");
     await add("payload-plain", "preference", null, "t5-plain");
-    await context.protect("payload-belief", "我每周日去教堂");
-    context.classifyOutputs.push(
-      JSON.stringify({
-        items: [{ id: "0", category: "other", classification: "sensitive", topic: "beliefs" }],
-      }),
-    );
-    await context.control.query({
-      ...envelope,
-      kind: "query",
-      type: "memory.classify.read",
-      payload: { contentRefs: ["payload-belief"] },
-    } as never);
-    await add("payload-belief", "other", null, "t5-judged");
+    await add("payload-password", "other", null, "t5-password");
     const stored = Object.fromEntries(
       (await overview(context.control)).memories
         .filter(({ memoryId }) => memoryId.startsWith("memory:owner:t5-"))
@@ -4673,12 +4611,13 @@ describe("production memory capture", () => {
           },
         ]),
     );
+    const ordinary = { dataClassification: "private", topic: null, raised: false };
     expect(stored).toEqual({
-      "t5-id": { dataClassification: "sensitive", topic: "other", raised: true },
-      "t5-bp": { dataClassification: "sensitive", topic: "health", raised: true },
-      "t5-topic": { dataClassification: "sensitive", topic: "health", raised: true },
-      "t5-plain": { dataClassification: "private", topic: null, raised: false },
-      "t5-judged": { dataClassification: "sensitive", topic: "beliefs", raised: true },
+      "t5-id": ordinary,
+      "t5-bp": ordinary,
+      "t5-topic": ordinary,
+      "t5-plain": ordinary,
+      "t5-password": ordinary,
     });
   });
 
