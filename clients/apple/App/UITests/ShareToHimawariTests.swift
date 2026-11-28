@@ -33,9 +33,9 @@ final class ShareToHimawariTests: XCTestCase {
         XCTAssertTrue(typing.buttons[send].firstMatch.isHittable, "the keyboard covers the \(send) button while typing")
         typing.terminate()
         let answered = DemoApp.launch("19-senses-6b-share-answered")
-        let done = answered.descendants(matching: .any)["handover.request"].firstMatch
-        XCTAssertTrue(done.waitForExistence(timeout: 10), "the answered share sheet has no request field")
-        XCTAssertFalse(done.isEnabled, "the request can still be edited after it was handed over")
+        let sent = answered.descendants(matching: .any)["handover.sent"].firstMatch
+        XCTAssertTrue(sent.waitForExistence(timeout: 10), "the answered share sheet does not show what was handed over")
+        XCTAssertFalse(answered.descendants(matching: .any)["handover.request"].exists, "the request can still be edited after it was handed over")
         XCTAssertFalse(answered.buttons[send].exists, "the \(send) button is still there after handing over")
     }
 
