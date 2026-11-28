@@ -543,4 +543,39 @@ describe("[RULE-memory-visible] what is stored as memory reaches the model", () 
     expect(JSON.stringify(projected.nativeHistory?.messages)).toContain(HEALTH);
     expect(projected.contentClassification).toBe("sensitive");
   });
+
+  it("leaves out the saved runtime history when a failed turn is retried from the thread messages", async () => {
+    const first = createRunId("run-fallback-turn-1");
+    const run = await formedRun(first, []);
+    const reference = await run.projection.captureHistory({
+      runId: first,
+      dataClassification: "sensitive",
+      messages: [
+        { role: "user", content: "我对什么过敏？", timestamp: 1 },
+        {
+          role: "toolResult",
+          toolCallId: "call-0",
+          toolName: "recall",
+          content: [{ type: "text", text: HEALTH }],
+          isError: false,
+          timestamp: 2,
+        },
+      ],
+    });
+    const second = createRunId("run-fallback-turn-2");
+    const next = await formedRun(second, [], run.adapters, {
+      reference,
+      runState: { runId: first, status: "completed" },
+    });
+    const normal = await next.projection.resolveProjection(next.request);
+    expect(normal.nativeHistory).toBeDefined();
+    const retried = await next.projection.resolveProjection({
+      ...next.request,
+      historyFallback: "thread_messages",
+    });
+    expect(retried.nativeHistory).toBeUndefined();
+    expect(JSON.stringify(retried)).not.toContain(HEALTH);
+    expect(retried.coveredRunIds).not.toContain(first);
+    expect(retried.prompt.content).toBe(normal.prompt.content);
+  });
 });

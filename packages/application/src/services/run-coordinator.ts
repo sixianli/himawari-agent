@@ -534,18 +534,39 @@ export class RunCoordinator {
         phase: "runtime_running",
       });
       this.assertExecutionActive(attempt);
-      const terminal = await this.runRuntime(
-        queuedToolBatch
-          ? {
-              ...input,
-              runtime: { ...input.runtime, continuationRef: queuedToolBatch.continuationRef },
-            }
-          : input,
-        storedCheckpoint,
-        attempt,
-      );
+      const runtimeInput = queuedToolBatch
+        ? {
+            ...input,
+            runtime: { ...input.runtime, continuationRef: queuedToolBatch.continuationRef },
+          }
+        : input;
+      const terminal = await this.runRuntime(runtimeInput, storedCheckpoint, attempt);
       this.assertExecutionActive(attempt);
       storedCheckpoint = terminal.checkpoint;
+      if (
+        terminal.retryable &&
+        !queuedToolBatch &&
+        !knownResultRecovery &&
+        !this.cancelledRuns.has(input.runId)
+      ) {
+        storedCheckpoint = await this.saveCheckpoint(input, storedCheckpoint, {
+          ...storedCheckpoint.checkpoint,
+          phase: "runtime_running",
+          terminalStatus: null,
+          output: null,
+        });
+        this.assertExecutionActive(attempt);
+        const retried = await this.runRuntime(
+          {
+            ...runtimeInput,
+            runtime: { ...runtimeInput.runtime, historyFallback: "thread_messages" },
+          },
+          storedCheckpoint,
+          attempt,
+        );
+        this.assertExecutionActive(attempt);
+        storedCheckpoint = retried.checkpoint;
+      }
     }
 
     if (
@@ -1014,9 +1035,10 @@ export class RunCoordinator {
     input: ExecuteCoordinatedRunInput,
     initialCheckpoint: StoredRunCheckpoint,
     attempt: ExecutionAttempt,
-  ): Promise<{ readonly checkpoint: StoredRunCheckpoint }> {
+  ): Promise<{ readonly checkpoint: StoredRunCheckpoint; readonly retryable: boolean }> {
     let storedCheckpoint = initialCheckpoint;
     let observed = initialCheckpoint.checkpoint.runtimeEventCount;
+    let toolsStarted = false;
     let lastTraceEventId = initialCheckpoint.checkpoint.lastTraceEventId;
     const runtimeRequest: RuntimeRequest = {
       ...input.runtime,
@@ -1046,6 +1068,7 @@ export class RunCoordinator {
           );
         }
         observed += 1;
+        if (event.type === "runtime.tool_intent") toolsStarted = true;
         const recorded = await this.dependencies.trace.record({
           ...this.traceScope(input),
           parentEventId: lastTraceEventId,
@@ -1123,7 +1146,16 @@ export class RunCoordinator {
     } finally {
       attempt.runtimeActive = false;
     }
-    return { checkpoint: storedCheckpoint };
+    return {
+      checkpoint: storedCheckpoint,
+      retryable:
+        storedCheckpoint.checkpoint.terminalStatus === "failed" &&
+        storedCheckpoint.checkpoint.diagnosticCode !== "RUNTIME_FINAL_ANSWER_INVALID" &&
+        !toolsStarted &&
+        runtimeRequest.historyFallback === undefined &&
+        runtimeRequest.continuationRef === undefined &&
+        runtimeRequest.knownToolResult === undefined,
+    };
   }
 
   private runtimeTerminalStatus(event: RuntimeEvent): RunCheckpoint["terminalStatus"] {

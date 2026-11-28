@@ -121,12 +121,32 @@ public struct ProcessStep: Sendable, Equatable, Identifiable {
     public let endedAt: Date
 }
 
+public struct RunFailure: Sendable, Equatable {
+    public let code: String
+    public let retried: Bool
+
+    public init(code: String, retried: Bool) {
+        self.code = code
+        self.retried = retried
+    }
+
+    public static let recordName = "runtime.failed"
+
+    public static func last(in records: [ExecutionRecord]) -> RunFailure? {
+        let failures = records
+            .filter { $0.kind == .status && $0.name == recordName && $0.phase == .failed }
+            .sorted { $0.sequence < $1.sequence }
+        guard let last = failures.last else { return nil }
+        return RunFailure(code: last.text, retried: failures.count > 1)
+    }
+}
+
 public enum ProcessLine: Sendable, Equatable {
     case thinking
     case working(current: ProcessStep, setback: ProcessStep?)
     case waiting(ProcessStep)
     case finished(steps: [ProcessStep], seconds: Int)
-    case failed(steps: [ProcessStep], seconds: Int)
+    case failed(steps: [ProcessStep], seconds: Int, failure: RunFailure?)
     case stopped(steps: [ProcessStep], seconds: Int)
 
     public static let terminalRunStatuses: Set<String> = ["completed", "failed", "cancelled"]
@@ -182,7 +202,7 @@ public enum ProcessLine: Sendable, Equatable {
         if terminalRunStatuses.contains(runStatus) {
             switch runStatus {
             case "cancelled": return .stopped(steps: steps, seconds: seconds)
-            case "failed": return .failed(steps: steps, seconds: seconds)
+            case "failed": return .failed(steps: steps, seconds: seconds, failure: RunFailure.last(in: records))
             default: return .finished(steps: steps, seconds: seconds)
             }
         }

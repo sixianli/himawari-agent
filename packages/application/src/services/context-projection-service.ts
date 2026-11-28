@@ -37,6 +37,11 @@ const REPLY_TAGS = /<reply to="[^"<>\n]*"\/>\n?/g;
 const REPLY_QUOTE_LIMIT = 1000;
 const CURRENT_TASK_POLICY = CHAT_TASK_BOUNDARY.text;
 
+function withoutRuntimeHistory(envelope: ProductContextEnvelopeV1): ProductContextEnvelopeV1 {
+  const { runtimeHistory, ...rest } = envelope;
+  return runtimeHistory ? rest : envelope;
+}
+
 export interface ContextProjectionServiceDependencies {
   readonly ownerId: OwnerId;
   readonly agentId: AgentId;
@@ -60,7 +65,9 @@ export class ContextProjectionService implements RuntimeProjectionPort {
 
   async resolveProjection(input: RuntimeProjectionRequest): Promise<RuntimeProjection> {
     this.assertScope(input);
-    const envelope = await this.readEnvelope(input);
+    const read = await this.readEnvelope(input);
+    const envelope =
+      input.historyFallback === "thread_messages" ? withoutRuntimeHistory(read) : read;
     const nativeHistory = envelope.runtimeHistory
       ? await this.#history.load(envelope.runtimeHistory.reference, modelVisibleCeiling())
       : undefined;
