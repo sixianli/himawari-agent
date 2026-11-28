@@ -32,8 +32,7 @@ enum DemoApp {
     }
 
     static func canTap(_ element: XCUIElement, in app: XCUIApplication) -> Bool {
-        guard element.exists else { return false }
-        let frame = element.frame
+        guard let frame = try? element.snapshot().frame else { return false }
         let window = app.windows.firstMatch.frame
         guard !frame.isEmpty, window.contains(CGPoint(x: frame.midX, y: frame.midY)) else { return false }
         return element.isHittable
