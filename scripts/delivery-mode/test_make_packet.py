@@ -872,6 +872,38 @@ class DerivedExpectationsTest(RenderedPacket):
             with self.subTest(candidate=candidate), self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_APP_CONNECTIONS_TARGET_INVALID'):
                 packet_maker.run_policy_target(None, candidate)
 
+    APPLE_PUSH_TARGET = {'teamId': 'TEAM123456', 'keyId': 'KEY1234567', 'topics': ['win.example.app'], 'environments': ['development', 'production'], 'secret': {'ref': 'apple-push', 'version': 'v1'}}
+    APPLE_PUSH_SECRET = {'ref': 'apple-push', 'version': 'v1', 'purpose': 'apple-push', 'scope': 'agent'}
+
+    def test_an_apple_push_target_adds_only_apple_push_and_its_secret_reference(self):
+        additions = json.loads(packet_maker.run_policy_target(None, None, self.APPLE_PUSH_TARGET))
+        self.assertEqual(additions, {'applePush': {'secretRef': 'apple-push', 'teamId': 'TEAM123456', 'keyId': 'KEY1234567', 'topics': ['win.example.app'], 'environments': ['development', 'production']}})
+        self.assertNotIn('webPush', json.loads(packet_maker.run_policy_target(self.COMPUTERS_TARGET, self.APP_CONNECTIONS_TARGET, self.APPLE_PUSH_TARGET)))
+        self.assertEqual(json.loads(packet_maker.secret_references_target(self.APP_CONNECTIONS_TARGET, self.APPLE_PUSH_TARGET)), [self.APP_CONNECTION_SECRET, self.APPLE_PUSH_SECRET])
+        packet = self.render(
+            TARGET_RUN_POLICY_JSON=packet_maker.run_policy_target(None, None, self.APPLE_PUSH_TARGET),
+            TARGET_SECRET_REFERENCES_JSON=packet_maker.secret_references_target(None, self.APPLE_PUSH_TARGET),
+        )
+        original = production_config(TWELFTH['OLD_PREFIX'], TWELFTH['ORIGINAL_PUBLIC_FETCH_BYTES'], TWELFTH['ORIGINAL_CONTEXT_WINDOW'], TWELFTH['ORIGINAL_MAX_TOKENS'])
+        switched = static_root_configuration(packet)(copy.deepcopy(original))
+        self.assertEqual(switched['runPolicy']['applePush'], additions['applePush'])
+        self.assertNotIn('webPush', switched['runPolicy'])
+        self.assertEqual(switched['secretReferences'], [*(original.get('secretReferences') or []), self.APPLE_PUSH_SECRET])
+        fixtures = subprocess.run([sys.executable, '-I', str(packet / 'systemd' / 'verify-switch-config-fixtures.py'), shutil.which('node')], capture_output=True, text=True, check=False)
+        self.assertEqual(fixtures.returncode, 0, fixtures.stdout + fixtures.stderr)
+
+    def test_an_apple_push_target_outside_the_supported_shape_is_refused(self):
+        valid = self.APPLE_PUSH_TARGET
+        for candidate in (
+            {}, 'apple', {**valid, 'teamId': 'team'}, {**valid, 'keyId': 'KEY12345678'}, {**valid, 'topics': []}, {**valid, 'topics': ['a.b', 'a.b']},
+            {**valid, 'topics': ['bad topic']}, {**valid, 'environments': ['staging']}, {**valid, 'secret': 'inline-key'}, {**valid, 'secret': {'ref': '../x', 'version': 'v1'}},
+            {**valid, 'signingKey': 'x'}, {key: value for key, value in valid.items() if key != 'keyId'},
+        ):
+            with self.subTest(candidate=candidate), self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_APPLE_PUSH_TARGET_INVALID'):
+                packet_maker.run_policy_target(None, None, candidate)
+        with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_SECRET_REFERENCE_DUPLICATE'):
+            packet_maker.secret_references_target(self.APP_CONNECTIONS_TARGET, {**valid, 'secret': {'ref': 'github-app-client', 'version': 'v1'}})
+
     def test_a_speech_target_outside_the_supported_shape_is_refused(self):
         self.assertEqual(packet_maker.speech_target(None), 'null')
         self.assertEqual(json.loads(packet_maker.speech_target(self.SPEECH_TARGET)), self.SPEECH_TARGET)
@@ -2470,12 +2502,12 @@ class FirstToolsMaintenanceTest(RenderedPacket):
 
     def test_maintenance_fixtures_pass_with_every_config_target_andy_production_sets(self):
         targets = INSTANCE['configTargets']
-        self.assertTrue(targets.get('speech') and targets.get('computers') and targets.get('appConnections'))
+        self.assertTrue(targets.get('speech') and targets.get('computers') and targets.get('appConnections') and targets.get('applePush'))
         packet = self.render(**FIRST_TOOLS_PARAMETERS,
                              TARGET_SPEECH_JSON=packet_maker.speech_target(targets.get('speech')),
-                             TARGET_RUN_POLICY_JSON=packet_maker.run_policy_target(targets.get('computers'), targets.get('appConnections')),
-                             TARGET_SECRET_REFERENCES_JSON=packet_maker.secret_references_target(targets.get('appConnections')))
-        self.assertNotEqual(json.loads(packet_maker.secret_references_target(targets.get('appConnections'))), [])
+                             TARGET_RUN_POLICY_JSON=packet_maker.run_policy_target(targets.get('computers'), targets.get('appConnections'), targets.get('applePush')),
+                             TARGET_SECRET_REFERENCES_JSON=packet_maker.secret_references_target(targets.get('appConnections'), targets.get('applePush')))
+        self.assertEqual({secret['purpose'] for secret in json.loads(packet_maker.secret_references_target(targets.get('appConnections'), targets.get('applePush')))}, {'app-connection-client', 'apple-push'})
         scratch = self.root / 'fixture-temp-production-targets'
         scratch.mkdir()
         result = subprocess.run([shutil.which('node'), str(packet / 'maintenance' / 'verify-fixtures.mjs')], capture_output=True, text=True, cwd=HERE.parents[1], env={**os.environ, 'HIMAWARI_TEST_TEMP_ROOT': str(scratch)}, check=False)
