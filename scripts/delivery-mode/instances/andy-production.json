@@ -23,7 +23,6 @@
       "provider": "local-onnx",
       "model": "jina-embeddings-v5-text-small-retrieval-int8",
       "version": "onnx-int8-v1",
-      "allowedDataClassifications": ["public", "private", "sensitive"],
       "disclosure": "local_only",
       "secretRef": null,
       "capabilities": ["embedding"],

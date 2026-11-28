@@ -16,7 +16,6 @@ import {
   type ConfiguredEmbeddingModelDescriptor,
   type ConfiguredMemoryRetrieval,
   type ConfiguredModelDescriptor,
-  type DataClassification,
   DEFAULT_HOME_FEED,
   DEFAULT_REVIEW_PREREVIEW,
   DEFAULT_SEARCH_ASK,
@@ -293,20 +292,6 @@ function stringArray(value: unknown, field: string): readonly string[] {
   return Object.freeze(result);
 }
 
-const CLASSIFICATIONS = Object.freeze(["public", "private", "sensitive", "restricted"] as const);
-
-function classifications(value: unknown, field: string): readonly DataClassification[] {
-  if (!Array.isArray(value) || value.length === 0) throw invalid(field, "must be non-empty");
-  const result = value.map((entry, index) => {
-    if (!CLASSIFICATIONS.includes(entry as DataClassification)) {
-      throw invalid(`${field}[${index}]`, "is not a supported classification");
-    }
-    return entry as DataClassification;
-  });
-  if (new Set(result).size !== result.length) throw invalid(field, "must not contain duplicates");
-  return Object.freeze(result);
-}
-
 function providerRouting(value: unknown, field: string): ModelProviderRouting {
   const input = record(value, field);
   rejectUnknown(input, ["order", "sort"], field);
@@ -406,10 +391,6 @@ function parseModel(value: unknown, index: number): ConfiguredModelDescriptor {
     provider: safeReference(input["provider"], `${field}.provider`),
     model: safeReference(input["model"], `${field}.model`),
     version: safeReference(input["version"], `${field}.version`),
-    allowedDataClassifications: classifications(
-      input["allowedDataClassifications"],
-      `${field}.allowedDataClassifications`,
-    ),
     disclosure: disclosure as ConfiguredModelDescriptor["disclosure"],
     secretRef:
       input["secretRef"] === null ? null : safeReference(input["secretRef"], `${field}.secretRef`),
@@ -2165,41 +2146,19 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       "configuration.runPolicy.proactive.gmail.clientSecretRef",
     );
     const descriptor = modelDescriptors.find(({ ref }) => ref === proactive.modelRef);
-    if (
-      !descriptor ||
-      descriptor.role === "embedding" ||
-      descriptor.api !== "openai-completions" ||
-      !descriptor.allowedDataClassifications.includes("private")
-    )
+    if (!descriptor || descriptor.role === "embedding" || descriptor.api !== "openai-completions")
       throw invalid(
         "configuration.runPolicy.proactive.modelRef",
-        "must name a configured openai-completions generation model that accepts private data",
+        "must name a configured openai-completions generation model",
       );
   }
   const realEval = runPolicy?.realEval;
   if (realEval) {
     const descriptor = modelDescriptors.find(({ ref }) => ref === realEval.modelRef);
-    if (
-      !descriptor ||
-      descriptor.role === "embedding" ||
-      descriptor.api !== "openai-completions" ||
-      !descriptor.allowedDataClassifications.includes("private") ||
-      !descriptor.allowedDataClassifications.includes("sensitive")
-    )
+    if (!descriptor || descriptor.role === "embedding" || descriptor.api !== "openai-completions")
       throw invalid(
         "configuration.runPolicy.realEval.modelRef",
-        "must name a configured openai-completions generation model that accepts private and sensitive data",
-      );
-    if (
-      realEval.mode !== "off" &&
-      modelDescriptors.some(
-        ({ role, allowedDataClassifications }) =>
-          role === "embedding" && !allowedDataClassifications.includes("sensitive"),
-      )
-    )
-      throw invalid(
-        "configuration.runPolicy.realEval.mode",
-        "needs an embedding model that accepts sensitive data",
+        "must name a configured openai-completions generation model",
       );
   }
   if (speech) {

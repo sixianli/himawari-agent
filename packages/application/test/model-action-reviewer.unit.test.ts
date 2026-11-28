@@ -29,7 +29,6 @@ const descriptor: ModelDescriptor = {
   priority: 1,
   disclosure: "trusted_remote",
   capabilities: ["text"],
-  allowedDataClassifications: ["private"],
   secretRequirement: null,
 };
 const decision = {

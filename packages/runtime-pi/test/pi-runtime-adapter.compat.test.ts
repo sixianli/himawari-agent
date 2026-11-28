@@ -180,7 +180,6 @@ const ADMISSION_DESCRIPTOR: ModelDescriptor = {
   priority: 1,
   disclosure: "local_only",
   capabilities: ["text"],
-  allowedDataClassifications: ["private"],
   secretRequirement: null,
 };
 
@@ -2401,7 +2400,6 @@ describe("Pi Agent Runtime adapter compatibility", () => {
       priority: 1,
       disclosure: "local_only",
       capabilities: ["text", "tool_calling"],
-      allowedDataClassifications: ["private"],
       secretRequirement: null,
     };
     const projection = new RecordingProjection({
@@ -2561,7 +2559,6 @@ describe("Pi Agent Runtime adapter compatibility", () => {
               priority: 1,
               disclosure: "local_only",
               capabilities: ["text", "tool_calling"],
-              allowedDataClassifications: ["private"],
               secretRequirement: null,
             },
             admissionCost: {
@@ -2700,7 +2697,6 @@ describe("Pi Agent Runtime adapter compatibility", () => {
               priority: 1,
               disclosure: "local_only",
               capabilities: ["text", "tool_calling"],
-              allowedDataClassifications: ["private"],
               secretRequirement: null,
             },
             admissionCost: {
@@ -2798,7 +2794,6 @@ describe("Pi Agent Runtime adapter compatibility", () => {
               priority: 1,
               disclosure: "local_only",
               capabilities: ["text", "tool_calling"],
-              allowedDataClassifications: ["private"],
               secretRequirement: null,
             },
             admissionCost: {
@@ -2936,7 +2931,6 @@ describe("Pi Agent Runtime adapter compatibility", () => {
               priority: 1,
               disclosure: "local_only",
               capabilities: ["text", "tool_calling"],
-              allowedDataClassifications: ["private"],
               secretRequirement: null,
             },
             admissionCost: {
@@ -3075,7 +3069,6 @@ describe("Pi Agent Runtime adapter compatibility", () => {
               priority: 1,
               disclosure: "local_only",
               capabilities: ["text", "tool_calling"],
-              allowedDataClassifications: ["private"],
               secretRequirement: null,
             },
             admissionCost: {
@@ -3440,7 +3433,6 @@ it("[R2-L5] runs configured Gateway sessions without storing credentials in the 
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
         capabilities: ["text"],
         disclosure: "trusted_remote",
-        allowedDataClassifications: ["private"],
         secretRequirement: {
           secretRef: "fixture-key",
           secretVersion: "v1",
@@ -3574,7 +3566,6 @@ async function captureConfiguredModelRequest(options: {
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
         capabilities: ["text", "structured_outputs"],
         disclosure: "trusted_remote",
-        allowedDataClassifications: ["private"],
         secretRequirement: {
           secretRef: "fixture-key",
           secretVersion: "v1",

@@ -25,7 +25,6 @@ const configuration = {
       priority: 1,
       disclosure: "trusted_remote",
       capabilities: ["text", "tool_calling"],
-      allowedDataClassifications: ["public", "private"],
       secretRef: "magpie-gateway",
       name: "Main",
       api: "openai-completions",

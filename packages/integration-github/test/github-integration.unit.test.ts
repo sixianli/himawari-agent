@@ -579,7 +579,6 @@ describe("GitHub token, mirror, coverage and attention boundaries", () => {
           priority: 1,
           disclosure: "trusted_remote",
           capabilities: ["text"],
-          allowedDataClassifications: ["private"],
           secretRequirement: {
             secretRef: "secret:provider",
             secretVersion: "v1",
@@ -609,7 +608,6 @@ describe("GitHub monitor lifecycle commands", () => {
       scheduler: scheduled.scheduler,
       primaryModelRef: PRIMARY_MODEL_REF,
       allowedRepositoryRefs: [REPOSITORY_REF],
-      allowedDataClassifications: ["private"],
       now: () => T1,
     });
 
@@ -635,7 +633,6 @@ describe("GitHub monitor lifecycle commands", () => {
       scheduler: scheduled.scheduler,
       primaryModelRef: PRIMARY_MODEL_REF,
       allowedRepositoryRefs: [],
-      allowedDataClassifications: ["private"],
       now: () => T1,
     });
     await expect(
@@ -679,7 +676,6 @@ describe("GitHub monitor lifecycle commands", () => {
         scheduler: scheduled.scheduler,
         primaryModelRef: PRIMARY_MODEL_REF,
         allowedRepositoryRefs: [REPOSITORY_REF],
-        allowedDataClassifications: ["private"],
         now: () => T1,
       });
 
@@ -712,7 +708,6 @@ describe("GitHub monitor lifecycle commands", () => {
       history: { apply: async () => undefined },
       primaryModelRef: PRIMARY_MODEL_REF,
       allowedRepositoryRefs: [REPOSITORY_REF],
-      allowedDataClassifications: ["private"],
       now: () => T1,
     });
     const delegated: string[] = [];

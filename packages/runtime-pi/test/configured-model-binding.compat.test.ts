@@ -34,7 +34,6 @@ function modelDescriptor(
     maxTokens: 32768,
     capabilities: ["text", "tool_calling", "structured_outputs"],
     disclosure: "external_remote",
-    allowedDataClassifications: ["public", "private"],
     secretRequirement: {
       secretRef: "ai-gateway-api-key",
       secretVersion: "v1",

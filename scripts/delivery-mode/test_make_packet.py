@@ -72,7 +72,6 @@ def production_facts(running='eleventh', date='2026-10-26', public_fetch=102400,
         'execStart': ['ExecStart=/opt/himawari/node/bin/node --no-global-search-paths /opt/himawari/operations/' + running + '-' + compact + '/pair-supervisor.mjs --prefix ' + prefix + ' --config /etc/himawari/config.json --worker-token-file /var/lib/himawari/state/secrets/worker-token.json'],
         'staticRoot': prefix + '/share/control-center',
         'modelCount': 1,
-        'primaryClassifications': [['public', 'private', 'sensitive']],
         'model': {'contextWindow': context_window, 'maxTokens': max_tokens},
         'publicFetchMaximumBytes': public_fetch,
         'budgetsPresent': False,
@@ -424,8 +423,6 @@ class TemplateTest(RenderedPacket):
             ({'staticRoot': '/opt/himawari/releases/2026-10-20-tenth/share/control-center'}, 'PACKET_STATIC_ROOT_NOT_RUNNING_RELEASE'),
             ({'budgetsPresent': True}, 'PACKET_CONFIG_BUDGETS_PRESENT'),
             ({'model': None, 'modelCount': 0}, 'PACKET_CONFIG_MODEL_LIMITS_NOT_READABLE'),
-            ({'primaryClassifications': [['public', 'private']]}, 'PACKET_PRIMARY_MODEL_CANNOT_SEE_SENSITIVE'),
-            ({'primaryClassifications': []}, 'PACKET_PRIMARY_MODEL_CANNOT_SEE_SENSITIVE'),
             ({'newPathsExist': ['/opt/himawari/releases/2026-10-26-twelfth']}, 'PACKET_TARGET_PATHS_EXIST'),
             ({'execStart': ['ExecStart=/usr/bin/node /srv/other.mjs']}, 'PACKET_RUNNING_UNIT_NOT_RECOGNIZED'),
         ]
@@ -771,7 +768,7 @@ class DerivedExpectationsTest(RenderedPacket):
                 self.assertEqual(fixtures.returncode, 0, fixtures.stdout + fixtures.stderr)
 
     def test_p3_1_an_approved_embedding_switch_replaces_only_the_embedding_and_its_dimensions(self):
-        target = {'ref': 'local-embedding', 'role': 'embedding', 'provider': 'local-onnx', 'model': 'jina-embeddings-v5-text-small-retrieval-int8', 'version': 'onnx-int8-v1', 'allowedDataClassifications': ['public', 'private', 'sensitive'], 'disclosure': 'local_only', 'secretRef': None, 'capabilities': ['embedding'], 'cost': {'input': 0, 'output': 0, 'cacheRead': 0, 'cacheWrite': 0}, 'dimensions': 1024, 'artifactSha256': 'd' * 64}
+        target = {'ref': 'local-embedding', 'role': 'embedding', 'provider': 'local-onnx', 'model': 'jina-embeddings-v5-text-small-retrieval-int8', 'version': 'onnx-int8-v1', 'disclosure': 'local_only', 'secretRef': None, 'capabilities': ['embedding'], 'cost': {'input': 0, 'output': 0, 'cacheRead': 0, 'cacheWrite': 0}, 'dimensions': 1024, 'artifactSha256': 'd' * 64}
         packet = self.render(TARGET_EMBEDDING_JSON=packet_maker.embedding_target(target))
         original = production_config(TWELFTH['OLD_PREFIX'], TWELFTH['ORIGINAL_PUBLIC_FETCH_BYTES'], TWELFTH['ORIGINAL_CONTEXT_WINDOW'], TWELFTH['ORIGINAL_MAX_TOKENS'])
         original['modelDescriptors'].append({'ref': 'qwen-embedding', 'role': 'embedding', 'provider': 'vercel-ai-gateway', 'model': 'alibaba/qwen3-embedding-8b', 'dimensions': 4096, 'secretRef': 'vercel-gateway'})
@@ -919,7 +916,7 @@ class DerivedExpectationsTest(RenderedPacket):
                 packet_maker.speech_target(candidate)
 
     def test_p3_1_an_embedding_target_outside_the_local_policy_is_refused(self):
-        valid = {'ref': 'local-embedding', 'role': 'embedding', 'provider': 'local-onnx', 'model': 'jina-embeddings-v5-text-small-retrieval-int8', 'version': 'v', 'allowedDataClassifications': ['public', 'private'], 'disclosure': 'local_only', 'secretRef': None, 'capabilities': ['embedding'], 'cost': {'input': 0, 'output': 0, 'cacheRead': 0, 'cacheWrite': 0}, 'dimensions': 1024, 'artifactSha256': 'a' * 64}
+        valid = {'ref': 'local-embedding', 'role': 'embedding', 'provider': 'local-onnx', 'model': 'jina-embeddings-v5-text-small-retrieval-int8', 'version': 'v', 'disclosure': 'local_only', 'secretRef': None, 'capabilities': ['embedding'], 'cost': {'input': 0, 'output': 0, 'cacheRead': 0, 'cacheWrite': 0}, 'dimensions': 1024, 'artifactSha256': 'a' * 64}
         gateway = {**{key: value for key, value in valid.items() if key != 'artifactSha256'}, 'provider': 'vercel-ai-gateway', 'model': 'alibaba/qwen3-embedding-8b', 'disclosure': 'external_remote', 'secretRef': 'vercel-gateway', 'dimensions': 4096}
         self.assertEqual(packet_maker.embedding_target(None), 'null')
         self.assertEqual(json.loads(packet_maker.embedding_target(valid)), valid)
@@ -931,7 +928,7 @@ class DerivedExpectationsTest(RenderedPacket):
             {**valid, 'unknown': 1}, {**valid, 'model': "it's"}, {**valid, 'model': 'unknown-model'}, missing_cost,
             {**valid, 'cost': {**valid['cost'], 'input': 1}}, {**valid, 'capabilities': ['text']},
             {**gateway, 'artifactSha256': 'a' * 64}, {**gateway, 'secretRef': None}, {**gateway, 'dimensions': 768},
-            {**valid, 'artifactSha256': int('1' * 64)}, {**valid, 'version': 'has space'}, {**valid, 'allowedDataClassifications': ['secret']},
+            {**valid, 'artifactSha256': int('1' * 64)}, {**valid, 'version': 'has space'},
             {**valid, 'capabilities': ['embedding', 3]}, {**gateway, 'cost': {**gateway['cost'], 'input': -1}}, {**gateway, 'cost': {**gateway['cost'], 'input': True}},
             {**gateway, 'disclosure': 'public'}, {**gateway, 'secretRef': 'bad ref'},
             {**valid, 'allowedDataClassifications': ['private', 'private']}, {**valid, 'capabilities': ['embedding', 'embedding']},

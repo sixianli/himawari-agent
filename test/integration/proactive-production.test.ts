@@ -73,7 +73,6 @@ const descriptor: ModelDescriptor = {
   priority: 10,
   disclosure: "trusted_remote",
   capabilities: ["text"],
-  allowedDataClassifications: ["public", "private"],
   secretRequirement: null,
 };
 
@@ -279,7 +278,6 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
           return scripted;
         },
         modelRef: MODEL_REF,
-        allowedDataClassifications: ["public", "private", "sensitive", "restricted"],
         async prepare({ invocationId, prompt }) {
           prompts.push(prompt);
           const inputRef = `input-${invocationId}`;
