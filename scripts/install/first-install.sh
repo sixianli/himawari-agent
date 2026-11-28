@@ -114,7 +114,8 @@ mkdir -p "$operations"
 install -m 0644 "$source_dir/scripts/delivery-mode/packet-template/systemd/pair-supervisor.mjs" "$operations/pair-supervisor.mjs"
 
 step config
-mkdir -p "$state_parent" "$config_dir"
+mkdir -p "$state_parent"
+install -d -m 0755 -o "$service_user" -g "$service_user" "$config_dir"
 chown "$service_user:$service_user" "$state_parent"
 chmod 0755 "$state_parent"
 config=$config_dir/config.json

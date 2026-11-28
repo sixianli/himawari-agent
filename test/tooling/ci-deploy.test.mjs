@@ -384,6 +384,28 @@ describe("ci-deploy.sh", () => {
     expect(readFileSync(log, "utf8")).toContain("chown -R himawari-build:himawari-build");
   });
 
+  it("[I-120] gives the service account the configuration directory so S7 can write config.json.next beside config.json", () => {
+    const { repo, first } = workspace();
+    const second = commitFile(repo, "src/app.ts", "changed");
+    const log = `${repo}-ssh-calls.log`;
+    directories.push(log);
+    const recorder = `${repo}-fake-ssh.sh`;
+    writeFileSync(
+      recorder,
+      `#!/bin/bash\necho "$@" >> ${log}\ncat > /dev/null\necho /opt/himawari/releases/2026-11-25-${first.slice(0, 8)}\n`,
+    );
+    const child = run(repo, {
+      HIMAWARI_PACKET_HOST: "198.51.100.9",
+      HIMAWARI_PACKET_SSH: recorder,
+      HIMAWARI_DEPLOY_COMMIT: second,
+    });
+    expect(child.stdout.indexOf("CI_DEPLOY_CONFIG_DIRECTORY_OWNERSHIP")).toBeGreaterThan(-1);
+    expect(child.stdout.indexOf("CI_DEPLOY_CONFIG_DIRECTORY_OWNERSHIP")).toBeLessThan(
+      child.stdout.indexOf("CI_DEPLOY_PREPARE"),
+    );
+    expect(readFileSync(log, "utf8")).toContain('chown "$owner:$owner" "$config"');
+  });
+
   it("installs the document tools and pins the next boot before building the packet", () => {
     const { repo, fakeSsh } = workspace();
     const second = commitFile(repo, "src/app.ts", "changed");
