@@ -43,6 +43,10 @@ function source() {
     path.join(repo, "scripts/delivery-mode/ci-deploy.sh"),
     '#!/bin/bash\necho "STUB commit=$HIMAWARI_DEPLOY_COMMIT since=$HIMAWARI_DEPLOY_SINCE force=$HIMAWARI_DEPLOY_FORCE host=$HIMAWARI_PACKET_HOST path=$PATH"\n',
   );
+  writeFileSync(
+    path.join(repo, "scripts/delivery-mode/shadow-rehearsal.sh"),
+    '#!/bin/bash\necho "SHADOW_STUB args=$*"\n',
+  );
   mkdirSync(path.join(repo, "scripts/delivery-mode/hermes"), { recursive: true });
   writeFileSync(
     path.join(repo, "scripts/delivery-mode/hermes/install-dependencies-if-changed.sh"),
@@ -136,6 +140,9 @@ describe("himawari-deploy-entry", () => {
       `deploy ${main}; id - 0`,
       `deploy ${main} - 2`,
       `deploy ${main.toUpperCase()} - 0`,
+      `rehearse ${main}`,
+      `rehearse ${main} full`,
+      `rehearse ${main} boot; id`,
     ]) {
       const child = runEntry(request, repo);
       expect(child.status).toBe(64);
@@ -164,6 +171,18 @@ describe("himawari-deploy-entry", () => {
       expect(refused.status).toBe(64);
       expect(refused.stderr).toContain("REQUEST_INVALID");
     }
+  });
+
+  it("[I-120] a boot rehearsal checks out the main commit and only starts the old release in the shadow machine", () => {
+    const { repo, main, side } = source();
+    const child = runEntry(`rehearse ${main} boot`, repo, path.join(temporary(), "none"));
+    expect(child.status).toBe(0);
+    expect(child.stdout).toContain("SHADOW_STUB args=--boot-only");
+    expect(child.stdout).not.toContain("STUB commit=");
+    expect(child.stdout).not.toContain("dependencies=");
+    const refused = runEntry(`rehearse ${side} boot`, repo);
+    expect(refused.status).toBe(65);
+    expect(refused.stderr).toContain("COMMIT_NOT_ON_MAIN");
   });
 
   it("refuses a commit that exists in the repository but is not on main", () => {

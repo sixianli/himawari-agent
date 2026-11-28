@@ -27,12 +27,19 @@ if [[ "$request" =~ ^ops\ (diagnose|restart)$ ]]; then
   HIMAWARI_OPS_PUBLIC_KEY="$ops/production-ops.pub.pem" HIMAWARI_OPS_LOCK="$(realpath -m "$base/deploy.lock")" bash "$ops/production-ops.sh" "$action"
   exit $?
 fi
-if [[ ! "$request" =~ ^deploy\ ([0-9a-f]{40})\ (-|[0-9a-f]{40})\ ([01])$ ]]; then
-  refuse REQUEST_INVALID "only 'deploy <40-hex commit> <40-hex since or -> <0|1 force>' or 'ops <diagnose|restart>' is accepted"
+verb=deploy
+if [[ "$request" =~ ^deploy\ ([0-9a-f]{40})\ (-|[0-9a-f]{40})\ ([01])$ ]]; then
+  commit="${BASH_REMATCH[1]}"
+  since="${BASH_REMATCH[2]}"
+  force="${BASH_REMATCH[3]}"
+elif [[ "$request" =~ ^rehearse\ ([0-9a-f]{40})\ boot$ ]]; then
+  verb=rehearse
+  commit="${BASH_REMATCH[1]}"
+  since=-
+  force=0
+else
+  refuse REQUEST_INVALID "only 'deploy <40-hex commit> <40-hex since or -> <0|1 force>' or 'rehearse <40-hex commit> boot' or 'ops <diagnose|restart>' is accepted"
 fi
-commit="${BASH_REMATCH[1]}"
-since="${BASH_REMATCH[2]}"
-force="${BASH_REMATCH[3]}"
 [[ "$since" != - ]] || since=""
 
 session_command="${HIMAWARI_DEPLOY_SESSION_COMMAND:-sshd}"
@@ -83,6 +90,11 @@ git -C "$checkout" merge-base --is-ancestor "$commit" origin/main || refuse COMM
 [[ -z "$since" ]] || git -C "$checkout" cat-file -e "$since^{commit}" 2>/dev/null || refuse SINCE_UNKNOWN "$since" 65
 git -C "$checkout" checkout --quiet --force --detach "$commit" || refuse CHECKOUT_FAILED "$commit" 70
 git -C "$checkout" clean -qfdx -e production/ -e node_modules/ -e .ci-output/
+
+if [[ "$verb" == rehearse ]]; then
+  cd "$checkout" || exit 70
+  exec bash scripts/delivery-mode/shadow-rehearsal.sh --boot-only
+fi
 
 build_account="${HIMAWARI_DEPLOY_BUILD_ACCOUNT:-himawari-build}"
 tools="${HIMAWARI_DEPLOY_TOOLS:-$(getent passwd "$build_account" | cut -d: -f6)/packet-builder/tools}"
