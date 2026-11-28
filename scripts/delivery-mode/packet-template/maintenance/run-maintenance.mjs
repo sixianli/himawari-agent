@@ -293,6 +293,13 @@ async function main(action) {
   }
 }
 
+export function precheckFailureCode(error) {
+  const firstLine = error instanceof Error ? error.message.split("\n")[0] : "";
+  if (/^[A-Z0-9_]+(:[A-Za-z0-9._-]+)?$/.test(firstLine)) return firstLine;
+  if (typeof error?.code === "string" && /^[A-Z0-9_]+$/.test(error.code)) return `${error.code}${typeof error.path === "string" ? ":" + error.path : ""}`;
+  return error instanceof Error ? error.name : typeof error;
+}
+
 if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
   if (process.argv.length !== 3 || !actions.has(process.argv[2])) {
     process.stderr.write("__PKT_LABEL_UPPER___MAINTENANCE_ARGUMENT_INVALID\n");
@@ -300,8 +307,8 @@ if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) 
   } else {
     try {
       await main(process.argv[2]);
-    } catch {
-      process.stderr.write("__PKT_LABEL_UPPER___MAINTENANCE_PRECHECK_FAILED\n");
+    } catch (error) {
+      process.stderr.write(`__PKT_LABEL_UPPER___MAINTENANCE_PRECHECK_FAILED ${precheckFailureCode(error)}\n`);
       process.exitCode = 1;
     }
   }
