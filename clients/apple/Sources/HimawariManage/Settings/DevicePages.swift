@@ -72,7 +72,7 @@ struct DevicePage: View {
                 Text(presence == .connected ? M.deviceNow : M.lastConnected).hmType(SL.rowValue).foregroundStyle(Color.hmText)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Text(M.presence(presence)).hmType(SL.rowValue)
-                    .foregroundStyle(presence == .connected ? Color.hmSuccess : Color.hmMuted)
+                    .foregroundStyle(presence == .connected ? Color.hmSun : Color.hmMuted)
             }
             .padding(.vertical, SL.rowPaddingVertical)
             .frame(minHeight: SL.rowMinHeight)

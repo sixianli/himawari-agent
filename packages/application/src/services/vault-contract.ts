@@ -9,6 +9,8 @@ import {
 export const VAULT_PATTERNS = Object.freeze({
   itemId: /^vi_[A-Za-z0-9_-]{22}$/u,
   requestId: /^vr_[A-Za-z0-9_-]{22}$/u,
+  codeRequestId: /^vc_[A-Za-z0-9_-]{22}$/u,
+  code: /^[A-Za-z0-9]{4,12}$/u,
   nonce: /^[A-Za-z0-9_-]{43}$/u,
   fieldId: /^[a-z][a-z0-9_]{0,31}$/u,
   pageVersion: /^[A-Za-z0-9._:-]{1,128}$/u,

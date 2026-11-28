@@ -10,8 +10,7 @@ public struct CardBackground: ViewModifier {
     public func body(content: Content) -> some View {
         content
             .padding(padding)
-            .background(Color.hmSurface, in: RoundedRectangle(cornerRadius: DesignTokens.Radius.card, style: .continuous))
-            .hmShadow(DesignTokens.Shadows.lift)
+            .hmRaised(RoundedRectangle(cornerRadius: DesignTokens.Radius.card, style: .continuous), fill: Color.hmSurface, shadow: DesignTokens.Shadows.lift)
     }
 }
 
@@ -42,13 +41,38 @@ public struct CapsuleButtonStyle: ButtonStyle {
     }
 
     public func makeBody(configuration: Configuration) -> some View {
-        configuration.label
+        CapsuleButtonBody(kind: kind, height: height, fontSize: fontSize, pressed: configuration.isPressed) {
+            configuration.label
+        }
+    }
+}
+
+private struct CapsuleButtonBody<Label: View>: View {
+    let kind: CapsuleKind
+    let height: CGFloat
+    let pressed: Bool
+    let label: Label
+    @ScaledMetric private var fontSize: CGFloat
+    @Environment(\.isEnabled) private var enabled
+
+    init(kind: CapsuleKind, height: CGFloat, fontSize: CGFloat, pressed: Bool, @ViewBuilder label: () -> Label) {
+        self.kind = kind
+        self.height = height
+        self.pressed = pressed
+        self.label = label()
+        _fontSize = ScaledMetric(wrappedValue: fontSize, relativeTo: .body)
+    }
+
+    var body: some View {
+        label
             .font(.system(size: fontSize, weight: kind == .primary ? .semibold : .regular))
             .foregroundStyle(kind == .primary ? Color.hmOnText : Color.hmText)
+            .multilineTextAlignment(.center)
+            .padding(.vertical, 8)
             .frame(maxWidth: .infinity, minHeight: height)
             .padding(.horizontal, 16)
             .background(kind == .primary ? Color.hmText : Color.hmFill, in: Capsule())
-            .opacity(configuration.isPressed ? 0.75 : 1)
+            .opacity(pressed ? 0.75 : enabled ? 1 : 0.5)
             .contentShape(Capsule())
     }
 }
@@ -297,15 +321,16 @@ public struct ToggleRow<Leading: View>: View {
                     title
                         .hmType(DesignTokens.TypeScale.body)
                         .foregroundStyle(Color.hmText)
+                        .fixedSize(horizontal: false, vertical: true)
                     if let detail {
                         detail
                             .hmType(DesignTokens.TypeScale.caption)
                             .foregroundStyle(Color.hmMuted)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
             }
         }
-        .tint(Color.hmSuccess)
         .frame(minHeight: DesignTokens.Size.rowMinHeight)
     }
 }

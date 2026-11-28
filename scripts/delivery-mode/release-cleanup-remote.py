@@ -82,11 +82,14 @@ def serving(plan):
     if not match:
         fail('CLEANUP_SERVING_RELEASE_UNKNOWN')
     operations, prefix = match.group(1), match.group(2)
-    binding = json.loads((Path(operations) / 'inputs' / 'bindings.json').read_text())
+    recorded = Path(operations) / 'inputs' / 'bindings.json'
+    if not recorded.exists():
+        return {'prefix': prefix, 'operations': operations, 'rollbackPrefix': None, 'stage': None, 'evidence': None, 'qualification': None, 'recorded': False}
+    binding = json.loads(recorded.read_text())
     paths = binding['paths']
     if paths['newPrefix'] != prefix or paths['newOperations'] != operations:
         fail('CLEANUP_SERVING_BINDING_MISMATCH')
-    return {'prefix': prefix, 'operations': operations, 'rollbackPrefix': paths['oldPrefix'], 'stage': str(Path(paths['transportRoot']).parent), 'evidence': paths['evidenceRoot'], 'qualification': binding['service'].get('newQualificationEvidenceRoot')}
+    return {'prefix': prefix, 'operations': operations, 'rollbackPrefix': paths['oldPrefix'], 'stage': str(Path(paths['transportRoot']).parent), 'evidence': paths['evidenceRoot'], 'qualification': binding['service'].get('newQualificationEvidenceRoot'), 'recorded': True}
 
 
 def configuration_text(plan):
@@ -212,6 +215,8 @@ def cleanup(plan, apply, references, stamp):
             keep(path, 'symbolic-link')
         elif in_use(path):
             keep(path, in_use(path))
+        elif not current['recorded'] and path not in plan.get('targetPaths', []):
+            keep(path, 'serving-release-has-no-recorded-rollback-target')
         else:
             if path in plan.get('targetPaths', []):
                 result['archived'] += archive_small_files(path, failed_attempt_destination(plan, path, stamp), plan['smallFileBytes'], apply)

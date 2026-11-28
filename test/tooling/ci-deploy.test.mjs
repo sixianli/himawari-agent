@@ -6,6 +6,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import os from "node:os";
@@ -138,6 +139,33 @@ describe("ci-deploy.sh", () => {
     expect(child.stdout).toContain("CI_DEPLOY_SKIPPED already-running");
   });
 
+  it("[I-120] installs the deploy entry of the commit it runs so entry fixes reach the server", () => {
+    const { repo, first, fakeSsh } = workspace();
+    const entrySource = path.resolve(import.meta.dirname, "../../scripts/install/deploy-entry");
+    cpSync(entrySource, path.join(repo, "scripts/install/deploy-entry"), { recursive: true });
+    const library = mkdtempSync(path.join(os.tmpdir(), "entry-library-"));
+    directories.push(library, `${library}.old`);
+    writeFileSync(path.join(library, "himawari-deploy-entry"), "old entry\n");
+    const child = run(repo, {
+      HIMAWARI_PACKET_HOST: "198.51.100.9",
+      HIMAWARI_PACKET_SSH: fakeSsh,
+      HIMAWARI_DEPLOY_COMMIT: first,
+      HIMAWARI_DEPLOY_ENTRY_LIBRARY: library,
+    });
+    expect(child.stdout).toContain(`CI_DEPLOY_ENTRY_UPDATED ${library} from ${first}`);
+    expect(readFileSync(path.join(library, "himawari-deploy-entry"), "utf8")).toBe(
+      readFileSync(path.join(entrySource, "himawari-deploy-entry"), "utf8"),
+    );
+    expect(statSync(path.join(library, "shim/ssh")).mode & 0o777).toBe(0o755);
+    const again = run(repo, {
+      HIMAWARI_PACKET_HOST: "198.51.100.9",
+      HIMAWARI_PACKET_SSH: fakeSsh,
+      HIMAWARI_DEPLOY_COMMIT: first,
+      HIMAWARI_DEPLOY_ENTRY_LIBRARY: library,
+    });
+    expect(again.stdout).not.toContain("CI_DEPLOY_ENTRY_UPDATED");
+  });
+
   it("skips when only documents changed since the running release", () => {
     const { repo, first, fakeSsh } = workspace();
     const second = commitFile(repo, "docs/notes.md", "notes");
@@ -162,6 +190,34 @@ describe("ci-deploy.sh", () => {
     expect(child.stdout).toContain("CI_DEPLOY_PREPARE");
     expect(child.stderr).toContain("PREPARE_FAILED");
     expect(child.status).toBe(3);
+  });
+
+  it("[I-120] asks deploy.sh to rehearse the steps after the stop in the shadow machine before it stops production", () => {
+    const { repo, fakeSsh } = workspace();
+    const scripts = path.join(repo, "scripts/delivery-mode");
+    const packet = path.join(repo, "built-packet");
+    const seen = `${repo}-deploy-environment`;
+    directories.push(seen);
+    writeFileSync(
+      path.join(scripts, "make-packet.py"),
+      `import json\nprint("PACKET_READY " + json.dumps({"packet": ${JSON.stringify(packet)}}))\n`,
+    );
+    writeFileSync(
+      path.join(scripts, "deploy.sh"),
+      `echo "shadow=$HIMAWARI_DEPLOY_SHADOW_REHEARSAL packet=$1" > ${JSON.stringify(seen)}\necho "DEPLOY_STOPPED_AT SHADOW_REHEARSAL" >&2\nexit 10\n`,
+    );
+    mkdirSync(packet, { recursive: true });
+    writeFileSync(path.join(packet, "keep"), "");
+    const second = commitFile(repo, "src/app.ts", "changed");
+    const child = run(repo, {
+      HIMAWARI_PACKET_HOST: "198.51.100.9",
+      HIMAWARI_PACKET_SSH: fakeSsh,
+      HIMAWARI_DEPLOY_COMMIT: second,
+    });
+    expect(readFileSync(seen, "utf8")).toBe(`shadow=1 packet=${packet}\n`);
+    expect(child.stderr).toContain("CI_DEPLOY_FAILED exit=10");
+    expect(child.stdout).not.toContain("CI_DEPLOY_READBACK");
+    expect(child.status).toBe(4);
   });
 
   it("warns and goes on when the backup is not installed yet", () => {
@@ -300,6 +356,50 @@ describe("ci-deploy.sh", () => {
     const program = readFileSync(`${repo}-host-system.py`, "utf8");
     expect(program).toContain("HOST_SYSTEM_OK");
     expect(program).toContain("weasyprint==70.0");
+  });
+
+  it("[I-120] clears what the last failed attempt left on the host before building the next packet", () => {
+    const { repo, fakeSsh } = workspace();
+    const second = commitFile(repo, "src/app.ts", "changed");
+    const outputRoot = path.join(repo, ".ci-output/production");
+    for (const name of ["2026-11-27-first-change-packet-06", "2026-11-27-first-change-packet-07"]) {
+      mkdirSync(path.join(outputRoot, name, "inputs"), { recursive: true });
+      writeFileSync(path.join(outputRoot, name, "inputs/bindings.json"), "{}");
+      writeFileSync(path.join(outputRoot, name, "freeze-manifest.json"), "{}");
+    }
+    directories.push(`${repo}-cleanup.log`);
+    writeFileSync(
+      path.join(repo, "scripts/delivery-mode/release-cleanup.py"),
+      `import sys\nopen(${JSON.stringify(`${repo}-cleanup.log`)}, "a").write(" ".join(sys.argv[1:]) + "\\n")\n`,
+    );
+    const child = run(repo, {
+      HIMAWARI_PACKET_HOST: "198.51.100.9",
+      HIMAWARI_PACKET_SSH: fakeSsh,
+      HIMAWARI_DEPLOY_COMMIT: second,
+    });
+    const cleanup = child.stdout.indexOf("CI_DEPLOY_PREVIOUS_CLEANUP ");
+    expect(cleanup).toBeGreaterThan(-1);
+    const report = child.stdout.indexOf(
+      `CI_DEPLOY_LAST_FAILURE_REPORT ${path.join(outputRoot, "2026-11-27-first-change-packet-07")}`,
+    );
+    expect(report).toBeGreaterThan(-1);
+    expect(report).toBeLessThan(cleanup);
+    expect(cleanup).toBeLessThan(child.stdout.indexOf("CI_DEPLOY_PREPARE"));
+    expect(readFileSync(`${repo}-cleanup.log`, "utf8")).toBe(
+      `${path.join(outputRoot, "2026-11-27-first-change-packet-07")} apply\n`,
+    );
+  });
+
+  it("skips the previous-attempt cleanup when no packet was built before", () => {
+    const { repo, fakeSsh } = workspace();
+    const second = commitFile(repo, "src/app.ts", "changed");
+    const child = run(repo, {
+      HIMAWARI_PACKET_HOST: "198.51.100.9",
+      HIMAWARI_PACKET_SSH: fakeSsh,
+      HIMAWARI_DEPLOY_COMMIT: second,
+    });
+    expect(child.stdout).not.toContain("CI_DEPLOY_PREVIOUS_CLEANUP");
+    expect(child.stdout).toContain("CI_DEPLOY_PREPARE");
   });
 
   it("deploys nothing when the host system step fails", () => {

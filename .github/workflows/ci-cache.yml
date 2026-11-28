@@ -1,0 +1,80 @@
+name: CI cache
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ci-cache-${{ github.ref }}
+  cancel-in-progress: false
+defaults:
+  run:
+    shell: bash
+jobs:
+  warm:
+    name: ci-cache/${{ matrix.runner }}
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+          - runner: ubuntu-24.04-arm
+    env:
+      CI_NODE: 22.22.3
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.ci-output/browsers
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.22.3
+      - name: 算出本周的缓存周号
+        id: week
+        run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
+      - name: 查本周的工具缓存是否已经存在
+        id: tools
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          lookup-only: true
+          path: ~/.cache/himawari-ci/downloads
+          key: ci-tools-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('ci/toolchain-lock.json') }}-${{ steps.week.outputs.week }}
+      - name: 查本周的依赖缓存是否已经存在
+        id: deps
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          lookup-only: true
+          path: |
+            ~/.cache/himawari-ci/npm
+            ~/.cache/himawari-ci/native
+            .ci-output/browsers
+          key: ci-deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json', 'ci/toolchain-lock.json', 'scripts/ci/install-dependencies.mjs') }}-${{ steps.week.outputs.week }}
+      - name: 下载并核验固定工具
+        if: ${{ steps.tools.outputs.cache-hit != 'true' || steps.deps.outputs.cache-hit != 'true' }}
+        run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
+      - name: 按锁文件下载并核验依赖
+        if: ${{ steps.deps.outputs.cache-hit != 'true' }}
+        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache runner
+      - name: 下载测试用的 Chromium
+        if: ${{ steps.deps.outputs.cache-hit != 'true' }}
+        run: .ci-output/tools/bin/node node_modules/playwright/cli.js install --only-shell chromium
+      - name: 存工具缓存
+        if: ${{ steps.tools.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ~/.cache/himawari-ci/downloads
+          key: ci-tools-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('ci/toolchain-lock.json') }}-${{ steps.week.outputs.week }}
+      - name: 存依赖缓存
+        if: ${{ steps.deps.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            ~/.cache/himawari-ci/npm
+            ~/.cache/himawari-ci/native
+            .ci-output/browsers
+          key: ci-deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json', 'ci/toolchain-lock.json', 'scripts/ci/install-dependencies.mjs') }}-${{ steps.week.outputs.week }}

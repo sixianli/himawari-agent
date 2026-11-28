@@ -196,3 +196,55 @@ export function prefetchingEmbedder(inner: Embedder, prefetch: QueryPrefetch): E
     embedDocument: (text) => inner.embedDocument(text),
   };
 }
+
+export interface SharedQueryLimits {
+  readonly ttlMs: number;
+  readonly entries: number;
+}
+
+export interface SharedQueryEmbedders {
+  readonly leader: Embedder;
+  readonly follower: Embedder;
+}
+
+interface SharedQuery {
+  readonly vector: Promise<Float32Array>;
+  readonly at: number;
+  failed: boolean;
+}
+
+export function sharedQueryEmbedders(
+  inner: Embedder,
+  options: { readonly limits: () => SharedQueryLimits; readonly now: () => number },
+): SharedQueryEmbedders {
+  const recent = new Map<string, SharedQuery>();
+  const forget = () => {
+    const { ttlMs, entries } = options.limits();
+    const oldest = options.now() - ttlMs;
+    for (const [text, entry] of recent)
+      if (entry.at < oldest || recent.size > Math.max(0, entries)) recent.delete(text);
+  };
+  const embed = (text: string, reuseFailure: boolean) => {
+    forget();
+    const known = recent.get(text);
+    if (known && (reuseFailure || !known.failed)) return known.vector;
+    const entry: SharedQuery = { vector: inner.embedQuery(text), at: options.now(), failed: false };
+    recent.set(text, entry);
+    entry.vector.catch(() => {
+      entry.failed = true;
+    });
+    forget();
+    return entry.vector;
+  };
+  const view = (reuseFailure: boolean): Embedder => ({
+    get model() {
+      return inner.model;
+    },
+    get dimensions() {
+      return inner.dimensions;
+    },
+    embedQuery: (text) => embed(text, reuseFailure),
+    embedDocument: (text) => inner.embedDocument(text),
+  });
+  return Object.freeze({ leader: view(false), follower: view(true) });
+}

@@ -10,6 +10,7 @@ import {
   type HostWorkspaceSnapshotPort,
   hostDirectoryGrantStateKey,
   type IdGeneratorPort,
+  isModelVisible,
   type ProductConfiguration,
   type RunPolicyConfiguration,
   type WebProviderId,
@@ -208,8 +209,7 @@ export function createProductionFileReadServices(options: {
       const model = configuration.modelDescriptors.find(
         ({ ref, role }) => ref === context.modelRef && role !== "embedding",
       );
-      if (!model || !model.allowedDataClassifications.includes(call.dataClassification))
-        return undefined;
+      if (!model || !isModelVisible(call.dataClassification)) return undefined;
       const common = {
         hostId: route.hostId,
         workerInstanceId: route.workerInstanceId,

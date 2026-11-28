@@ -29,12 +29,13 @@
 "entry.share.title" = "Himawari に共有";
 "entry.share.detail" = "ほかのアプリで共有をタップ";
 "entry.safari.title" = "Safari のこのページ";
-"entry.safari.detail" = "タップしたときだけ読みます";
+"entry.safari.detail" = "見ているページを Himawari に渡す";
 "status.anytime" = "いつでも使えます";
 "status.on" = "オン";
 "status.off" = "オフ";
 "status.setUp" = "設定する";
 "safari.hero" = "Safari で見ているページを渡す";
+"safari.purpose" = "ページを要約してほしいとき、内容について聞きたいとき、覚えておいてほしいときは、Safari で Himawari をタップするとそのページを読みます。";
 "safari.step1.key" = "ステップ 1";
 "safari.step1" = "Safari でアドレスバーの横のメニューボタンをタップ";
 "safari.step2.key" = "ステップ 2";

@@ -29,6 +29,8 @@ public enum ManageDemoScreen: String, CaseIterable, Sendable {
     case herTimerReminder = "next-9-timer-reminder"
     case herTimerPaused = "next-9-timer-paused"
     case herNoTimers = "next-9-her-no-timers"
+    case herName = "next-10-her-name"
+    case herModel = "next-10-her-model"
     case herTransfer = "next-10-her-transfer"
     case herImportPreview = "next-10-her-import-preview"
     case herServerStatus = "next-10-her-server-status"
@@ -50,25 +52,25 @@ public struct ManageDemoView: View {
         case .memoryEdit:
             NavigationStack { MemoryRootView(store: ManageDemo.memoryStore(), opening: .edit("m5")) }
         case .rules:
-            NavigationStack { MemoryRootView(store: ManageDemo.memoryStore(), tab: .rules) }
+            NavigationStack { RulesPage(store: ManageDemo.memoryStore(), quietHours: nil) }
         case .ruleDetail:
-            NavigationStack { MemoryRootView(store: ManageDemo.memoryStore(), tab: .rules, opening: .rule("r1")) }
+            NavigationStack { RulesPage(store: ManageDemo.memoryStore(), quietHours: nil, opening: "r1") }
         case .deviceAbilities:
-            her([.devices, .device(ManageDemo.phoneId)])
+            her([.settings, .devices, .device(ManageDemo.phoneId)])
         case .her:
             her([])
         case .herApprovals:
             her([.approvals])
         case .herPrivacy:
-            her([.privacy])
+            her([.settings, .privacy])
         case .herDevices:
-            her([.devices])
+            her([.settings, .devices])
         case .herNotifications:
-            her([.notifications])
+            her([.settings, .notifications])
         case .herAllowances:
             her([.allowances])
         case .herAbout:
-            her([.about])
+            her([.settings, .about])
         case .herAllowancesEmpty:
             her([.allowances], allowances: false)
         case .memoryVersions:
@@ -91,12 +93,16 @@ public struct ManageDemoView: View {
             her([.timers, .timer(TimersStore.demoTanakaId)])
         case .herNoTimers:
             her([], timers: TimersStore(timers: nil))
+        case .herName:
+            her([.settings, .name], personal: true)
+        case .herModel:
+            her([.settings, .model], personal: true)
         case .herTransfer:
-            her([.transfer])
+            her([.settings, .transfer])
         case .herImportPreview:
-            her([.transfer, .importPreview], memoryImport: ManageDemo.previewedImport())
+            her([.settings, .transfer, .importPreview], memoryImport: ManageDemo.previewedImport())
         case .herServerStatus:
-            her([.about, .serverStatus])
+            her([.settings, .about, .serverStatus])
         case .herAllowanceDays:
             AllowanceDaysSheet(days: 7) { _ in }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -104,12 +110,13 @@ public struct ManageDemoView: View {
         }
     }
 
-    private func her(_ path: [HerPage.Page], allowances: Bool = true, timers: TimersStore = .demo(), memoryImport: MemoryImportStore? = nil) -> some View {
+    private func her(_ path: [HerPage.Page], allowances: Bool = true, timers: TimersStore = .demo(), memoryImport: MemoryImportStore? = nil, personal: Bool = false) -> some View {
         HerPage(
             settings: ManageDemo.settingsStore(),
             memory: ManageDemo.memoryStore(allowances: allowances),
             quietHours: QuietHoursStore(gateway: ManageDemo.gateway()),
             timers: timers,
+            personal: personal ? ManageDemo.personalStore() : nil,
             gateway: ManageDemo.gateway(),
             memoryImport: memoryImport,
             listening: DemoListening(),
@@ -123,7 +130,9 @@ public struct ManageDemoView: View {
 @MainActor
 final class DemoListening: HerListening {
     let hasVoiceprint = true
+    let isListening = false
     func deleteVoiceprint() {}
+    func stop() {}
 }
 
 extension TimersStore {
@@ -174,6 +183,19 @@ enum ManageDemo {
         SettingsStore(
             gateway: gateway(),
             identity: DeviceIdentity(deviceId: phoneId, origin: URL(string: "https://himawari.example.com")!, access: nil)
+        )
+    }
+
+    @MainActor static func personalStore() -> PersonalStore {
+        PersonalStore(
+            gateway: gateway(),
+            preferences: OwnerPreferences(name: "Andy", modelRef: "deepseek-flash", thinkingLevel: "high", revision: 3),
+            models: ChatModels(defaultRef: "magpie-main", options: [
+                ChatModel(ref: "magpie-main", name: "himawari-main", provider: "magpie", thinkingLevels: ["off", "low", "medium", "high"], automatic: true),
+                ChatModel(ref: "deepseek-flash", name: "DeepSeek V4.1 Flash", provider: "magpie", thinkingLevels: ["off", "high"], price: .init(input: 0.1, output: 0.4), priceTier: .low),
+                ChatModel(ref: "glm-flash", name: "GLM 5.3 Flash", provider: "magpie", thinkingLevels: ["off", "high"], price: .init(input: 0.2, output: 0.8), priceTier: .mid),
+                ChatModel(ref: "minimax", name: "MiniMax M3", provider: "magpie", thinkingLevels: ["off"], price: .init(input: 0.4, output: 1.6), priceTier: .high),
+            ])
         )
     }
 

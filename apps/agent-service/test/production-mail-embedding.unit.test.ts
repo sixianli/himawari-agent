@@ -74,12 +74,12 @@ describe("embedding for the Gmail check", () => {
     expect(context.costMicros).toBeGreaterThan(0);
   });
 
-  it("[P4-5] uses the classification the caller names and refuses one the model may not see", async () => {
+  it("[P4-5][I-129] uses the classification the caller names and refuses passwords and keys", async () => {
     const { memory, embed } = build();
     const context = {
       deadlineAt: LATER,
       signal: new AbortController().signal,
-      dataClassification: "sensitive" as const,
+      dataClassification: "restricted" as const,
       costMicros: 0,
     };
     await expect(memory.embedForMailCheck(context, async () => embed())).rejects.toThrow(
@@ -93,7 +93,7 @@ describe("embedding for the Gmail check", () => {
     await expect(embed()).rejects.toThrow();
   });
 
-  it("[P3-6] embeds a conversation summary at its own classification, so a private-only model refuses a sensitive one", async () => {
+  it("[P3-6] embeds a conversation summary at its own classification, so health content is embedded and only passwords and keys are refused", async () => {
     const { memory, embed } = build();
     const signal = new AbortController().signal;
     const privateContext = {
@@ -110,8 +110,18 @@ describe("embedding for the Gmail check", () => {
       dataClassification: "sensitive" as const,
       costMicros: 0,
     };
-    await expect(memory.embedForMailCheck(sensitiveContext, async () => embed())).rejects.toThrow();
-    expect(sensitiveContext.costMicros).toBe(0);
+    await memory.embedForMailCheck(sensitiveContext, async () => embed());
+    expect(sensitiveContext.costMicros).toBeGreaterThan(0);
+    const restrictedContext = {
+      deadlineAt: LATER,
+      signal,
+      dataClassification: "restricted" as const,
+      costMicros: 0,
+    };
+    await expect(
+      memory.embedForMailCheck(restrictedContext, async () => embed()),
+    ).rejects.toThrow();
+    expect(restrictedContext.costMicros).toBe(0);
   });
 
   it("refuses once the check has been aborted", async () => {

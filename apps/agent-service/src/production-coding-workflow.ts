@@ -6,6 +6,7 @@ import {
   type GovernedActionIntent,
   type GovernedCapabilityExecutionHandle,
   type HostDirectoryGrant,
+  isModelVisible,
   type RuntimeToolExecutionResult,
   type RuntimeToolInvocation,
   type RuntimeToolSettledResult,
@@ -155,7 +156,7 @@ export async function executeProductionCodingRequest(
   )
     return failed("COPY_SAVE_OPERATION_UNAVAILABLE");
   const grant = binding.grant;
-  if (call.dataClassification !== "private" || (grant === null && !webTool(tool)))
+  if (!isModelVisible(call.dataClassification) || (grant === null && !webTool(tool)))
     return failed("CODING_DIRECTORY_UNAVAILABLE");
   const write = ["write", "edit", "bash", "move_directory", "save_copy"].includes(tool);
   const required =
@@ -179,7 +180,7 @@ export async function executeProductionCodingRequest(
       grant.revision < 1 ||
       !Number.isFinite(Date.parse(grant.expiresAt)) ||
       !["model", "external_approved"].includes(grant.disclosure) ||
-      grant.dataClassification !== "private")
+      !isModelVisible(grant.dataClassification))
   )
     return failed("CODING_DIRECTORY_UNAVAILABLE");
   if (Buffer.byteLength(JSON.stringify(call.arguments)) > 49152)

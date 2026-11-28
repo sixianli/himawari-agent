@@ -1,22 +1,23 @@
 import type { RunId } from "@himawari-agent/domain";
+import type { DataClassification } from "../ports/common.js";
 import type { ModelPort } from "../ports/intelligence.js";
-import type {
-  ProactiveCounts,
-  ProactiveDecision,
-  ProactiveMailReader,
-  ProactiveProcessedMessage,
-  ProactiveScope,
-  ProactiveSealPort,
-  ProactiveStorePort,
-  ProactiveVerdict,
+import type { OwnerRuleStorePort } from "../ports/owner-rules.js";
+import {
+  type ProactiveCounts,
+  type ProactiveDecision,
+  type ProactiveMailReader,
+  type ProactiveProcessedMessage,
+  type ProactiveScope,
+  type ProactiveSealPort,
+  ProactiveSourceUnauthorizedError,
+  type ProactiveStorePort,
+  type ProactiveVerdict,
 } from "../ports/proactive-checks.js";
 import { mailItem, mailOf, type ProactiveMail } from "../ports/proactive-sources.js";
 import type { ClockPort, IdGeneratorPort } from "../ports/system.js";
-import type { DataClassification } from "../ports/common.js";
-import type { OwnerRuleStorePort } from "../ports/owner-rules.js";
-import { enforceableOwnerRule, parseOwnerRuleParameters } from "../rules/rule-types.js";
 import type { RuleRecord } from "../rules/rule-book.js";
 import { ruleRef } from "../rules/rule-ref.js";
+import { enforceableOwnerRule, parseOwnerRuleParameters } from "../rules/rule-types.js";
 import { mustNotifyHitIds, wholeThreadHitIds } from "./proactive-rules.js";
 
 const LOOKBACK_MS = 3 * 24 * 3_600_000;
@@ -66,7 +67,19 @@ export interface ProactiveMailCheckOptions {
   readonly ids: IdGeneratorPort;
   readonly ownerRules?: readonly RuleRecord[];
   readonly ownerRuleStore?: Pick<OwnerRuleStorePort, "list">;
+  readonly onReadFailed?: (failure: ProactiveMailReadFailure) => void;
 }
+
+export interface ProactiveMailReadFailure {
+  readonly source: string;
+  readonly operation: "thread" | "search";
+  readonly attempts: number;
+  readonly error: unknown;
+}
+
+const ON_DEMAND_ATTEMPTS = 2;
+const UNAUTHORIZED = Symbol("unauthorized");
+const FAILED = Symbol("failed");
 
 const EMPTY_COUNTS: ProactiveCounts = Object.freeze({
   fetched: 0,
@@ -122,6 +135,11 @@ export interface FlatMailReader {
         input: Parameters<NonNullable<ProactiveMailReader["thread"]>>[0],
       ) => Promise<readonly ProactiveMail[] | undefined>)
     | undefined;
+  readonly search?:
+    | ((
+        input: Parameters<NonNullable<ProactiveMailReader["search"]>>[0],
+      ) => Promise<readonly ProactiveMail[]>)
+    | undefined;
   fetch(input: Parameters<ProactiveMailReader["fetch"]>[0]): Promise<FlatMailFetchResult>;
 }
 
@@ -133,6 +151,12 @@ export function flatMailReader(reader: ProactiveMailReader): FlatMailReader {
       if (thread === undefined) return undefined;
       return async (input: Parameters<NonNullable<FlatMailReader["thread"]>>[0]) =>
         (await thread(input))?.map(mailOf);
+    },
+    get search() {
+      const search = reader.search;
+      if (search === undefined) return undefined;
+      return async (input: Parameters<NonNullable<FlatMailReader["search"]>>[0]) =>
+        (await search(input)).map(mailOf);
     },
     async fetch(input) {
       const fetched = await reader.fetch(input);
@@ -149,6 +173,12 @@ export function mailReader(flat: FlatMailReader): ProactiveMailReader {
       if (thread === undefined) return undefined;
       return async (input: Parameters<NonNullable<ProactiveMailReader["thread"]>>[0]) =>
         (await thread(input))?.map(mailItem);
+    },
+    get search() {
+      const search = flat.search;
+      if (search === undefined) return undefined;
+      return async (input: Parameters<NonNullable<ProactiveMailReader["search"]>>[0]) =>
+        (await search(input)).map(mailItem);
     },
     async fetch(input) {
       const fetched = await flat.fetch(input);
@@ -196,10 +226,66 @@ export class ProactiveMailCheckService {
     if (!connection || connection.status !== "connected") return { kind: "not_connected" };
     const token = await seal.open({ ...scope, ref: connection.tokenRef });
     if (!token) return { kind: "not_connected" };
-    const items = await thread({ token, threadId, signal }).catch(() => null);
-    if (items === null) return { kind: "failed" };
+    const items = await this.#onDemand("thread", signal, () => thread({ token, threadId, signal }));
+    if (items === UNAUTHORIZED) return { kind: "not_connected" };
+    if (items === FAILED) return { kind: "failed" };
     if (items === undefined || items.length === 0) return { kind: "not_found" };
     return { kind: "thread", mails: items.map(mailOf) };
+  }
+
+  async searchMail(
+    query: string,
+    limit: number,
+    signal: AbortSignal,
+  ): Promise<
+    | { readonly kind: "found"; readonly mails: readonly ProactiveMail[] }
+    | { readonly kind: "not_connected" | "unsupported" | "failed" }
+  > {
+    const { store, scope, reader, seal } = this.#options;
+    const search = reader.search;
+    if (!search) return { kind: "unsupported" };
+    const connection = await store.readConnection({ ...scope, source: reader.source });
+    if (!connection || connection.status !== "connected") return { kind: "not_connected" };
+    const token = await seal.open({ ...scope, ref: connection.tokenRef });
+    if (!token) return { kind: "not_connected" };
+    const items = await this.#onDemand("search", signal, () =>
+      search({ token, query, limit, signal }),
+    );
+    if (items === UNAUTHORIZED) return { kind: "not_connected" };
+    if (items === FAILED) return { kind: "failed" };
+    return { kind: "found", mails: items.map(mailOf) };
+  }
+
+  async #onDemand<T>(
+    operation: ProactiveMailReadFailure["operation"],
+    signal: AbortSignal,
+    work: () => Promise<T>,
+  ): Promise<T | typeof UNAUTHORIZED | typeof FAILED> {
+    for (let attempts = 1; ; attempts += 1) {
+      try {
+        return await work();
+      } catch (error) {
+        if (error instanceof ProactiveSourceUnauthorizedError) {
+          await this.#options.store.markConnection({
+            ...this.#options.scope,
+            source: this.#options.reader.source,
+            status: "needs_reconnect",
+            cursor: null,
+            now: this.#options.clock.now(),
+          });
+          return UNAUTHORIZED;
+        }
+        if (attempts >= ON_DEMAND_ATTEMPTS || signal.aborted) {
+          this.#options.onReadFailed?.({
+            source: this.#options.reader.source,
+            operation,
+            attempts,
+            error,
+          });
+          return FAILED;
+        }
+      }
+    }
   }
 
   async #ownerRules(): Promise<readonly OwnerMailRule[]> {

@@ -55,6 +55,8 @@ public enum SenseAuthorization: String, Codable, Sendable, Equatable {
     case denied
     case restricted
     case unavailable
+
+    public var permitsReading: Bool { self == .allowed || self == .limited }
 }
 
 public enum SenseState: Sendable, Equatable {
@@ -191,5 +193,13 @@ public final class SenseSwitches: @unchecked Sendable {
             if let item = SenseItem(rawValue: key) { result[item] = value }
         }
         return result
+    }
+}
+
+public enum HealthReadWindow {
+    public static let reread: TimeInterval = 48 * 3600
+
+    public static func start(anchor: Date, lastFullHour: Date) -> Date {
+        min(anchor, lastFullHour.addingTimeInterval(-reread))
     }
 }

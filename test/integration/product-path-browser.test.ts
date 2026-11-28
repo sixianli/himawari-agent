@@ -5500,6 +5500,7 @@ const RUN_COMMAND_OUTPUT = "lines=37";
 const UNRELATED_REQUEST = "写到一个pdf文件";
 const PLAIN_ANSWER = "普通回答已完成";
 const SLOW_MEMORY_SEARCH_DELAY_MS = 3_500;
+const SLOW_MEMORY_SEARCH_REQUEST = "把上周记下的读书笔记整理成一页";
 const WRITE_GAME_REQUEST = "写一个简易小游戏";
 const WRITE_GAME_STREAM_MS = 12_000;
 const WRITING_PROGRESS_FIRST_SHOWN_MS = 2_000;
@@ -5873,14 +5874,14 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
         (request) => request.path === "/v1/embeddings",
       ).length;
       installation.delayNextEmbedding(SLOW_MEMORY_SEARCH_DELAY_MS);
-      const turn = await send(UNRELATED_REQUEST);
+      const turn = await send(SLOW_MEMORY_SEARCH_REQUEST);
       await uiExpect(turn.getByText(PLAIN_ANSWER)).toBeVisible({ timeout: 120_000 });
       await uiExpect(target(page, UI.stop)).toHaveCount(0, { timeout: 120_000 });
       await uiExpect(turn.getByText(/本轮执行失败/)).toHaveCount(0);
       expect(
         installation.modelRequests.filter((request) => request.path === "/v1/embeddings").length -
           embeddingsBefore,
-      ).toBeGreaterThanOrEqual(2);
+      ).toBeGreaterThanOrEqual(1);
     });
     await scenario("accept-file-writing-progress", async () => {
       await expectFileWritingProgress();

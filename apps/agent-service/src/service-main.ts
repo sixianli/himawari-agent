@@ -117,12 +117,15 @@ import { createLocalVectorCatchUp } from "./local-vector-catch-up.js";
 import { MAC_PRESENCE_WINDOW_SECONDS, MacPlacement } from "./mac-placement.js";
 import { OwnerAllowances } from "./owner-allowances.js";
 import { OwnerScopeAuthorization } from "./owner-scope-authorization.js";
+import { configuredAppCode, ProductionAppTools } from "./production-app-tools.js";
 import { ProductionApplePush } from "./production-apple-push.js";
 import { createProductionAuthorityLifecycle } from "./production-authority-lifecycle.js";
 import { createProductionAutomaticReview } from "./production-automatic-review.js";
 import { backgroundCommandLimits } from "./production-background-commands.js";
+import { createConfiguredBrowserTools } from "./production-browser-tools.js";
 import { createProductionCapabilityReactivationVerifier } from "./production-capability-reactivation.js";
 import { createConfiguredComputerTools } from "./production-computer-tools.js";
+import { ProductionConversationRecall } from "./production-conversation-recall.js";
 import {
   DEFAULT_TOOL_RESULT_SHARE,
   MEMORY_SNAPSHOT_WINDOW_SHARE,
@@ -144,10 +147,7 @@ import {
 } from "./production-http-composition.js";
 import { InboxRunRegistry } from "./production-inbox-delivery.js";
 import { expandConfigurationWithMagpieModels, priceTiers } from "./production-magpie-models.js";
-import { ProductionAppTools } from "./production-app-tools.js";
 import { ProductionMailRead } from "./production-mail-read.js";
-import { ProductionMcpMemoryWriter } from "./production-mcp-memory-writer.js";
-import { MCP_READ_PATH, ProductionMcpRead } from "./production-mcp-read.js";
 import {
   acceptableRedirectUri,
   ProductionMcpAuthorization,
@@ -156,6 +156,8 @@ import {
   McpClientMetadataCache,
   nodeClientMetadataFetch,
 } from "./production-mcp-client-metadata.js";
+import { ProductionMcpMemoryWriter } from "./production-mcp-memory-writer.js";
+import { MCP_READ_PATH, ProductionMcpRead } from "./production-mcp-read.js";
 import { ProductionMcpRuleWriter } from "./production-mcp-rule-writer.js";
 import { ProductionMcpSync } from "./production-mcp-sync.js";
 import {
@@ -223,7 +225,6 @@ import {
 } from "./production-run-memory.js";
 import { configuredWorkspaceRoot, createProductionRunPolicy } from "./production-run-policy.js";
 import { recordInCurrentRun } from "./production-run-timing.js";
-import { createConfiguredBrowserTools } from "./production-browser-tools.js";
 import { ProductionRuntimeTools } from "./production-runtime-tools.js";
 import {
   createProductionSandboxServices,
@@ -1170,6 +1171,8 @@ export async function startTenantRuntime(
     const hostWeb = createConfiguredHostWeb({
       runPolicy: configuration.runPolicy,
       secrets: sources.provider,
+      onReadFailed: (failure) =>
+        writeServiceDiagnostic(errorOutput, { component: "agent-service", ...failure }),
     });
     const hostReadOnlyPort = new DescriptorRelativeReadOnly();
     const computer = await createConfiguredComputerTools(configuration, clock);
@@ -1565,7 +1568,7 @@ export async function startTenantRuntime(
                 await turnProtector.unprotect({ ownerId, agentId, payload }),
               );
             },
-            embedder: memoryComposition.projection.embedder,
+            embedder: memoryComposition.conversationEmbedder,
             embeddableClassifications: memoryComposition.projection.embeddableClassifications,
             minimumSimilarity: memoryComposition.projection.minimumSimilarity,
             onEmbeddingFailure: conversationTurnFailure,
@@ -1781,6 +1784,10 @@ export async function startTenantRuntime(
           approvalNeeded: async (input) => {
             await applePush?.requestVaultApproval(input);
           },
+          codeNeeded: async (input) => {
+            if (!applePush) throw new Error("VAULT_CODE_NO_PUSH");
+            await applePush.requestVaultCode(input);
+          },
         },
         now: () => new Date(clock.now()),
       });
@@ -1804,6 +1811,8 @@ export async function startTenantRuntime(
             await applePush?.requestOpen(input);
           },
         },
+        onReadFailed: (failure) =>
+          writeServiceDiagnostic(errorOutput, { component: "agent-service", ...failure }),
       });
       const perceptionTools = new ProductionPerceptionTools({
         scope: perceptionScope,
@@ -1973,7 +1982,9 @@ export async function startTenantRuntime(
             code: stableErrorCode(error),
           }),
       });
+      const appCode = configuredAppCode(configuration);
       const browser = createConfiguredBrowserTools(configuration, {
+        ...(vault ? { vault: { scope: perceptionScope, service: vault } } : {}),
         now: () => Date.parse(clock.now()),
         acceptsImages: async (modelRef) => {
           const models = modelComposition?.composition.piModels;
@@ -2007,10 +2018,11 @@ export async function startTenantRuntime(
         apps: new ProductionAppTools({
           connections: {
             list: async () => (await appConnections?.list()) ?? [],
-            definition: (name) => appConnections?.definition(name),
+            definition: async (name) => appConnections?.definition(name),
             tools: async (name) => appConnections?.tools(name),
             call: async (name, tool, input) => appConnections?.call(name, tool, input),
           },
+          ...(appCode === undefined ? {} : { code: appCode }),
         }),
         vault: new ProductionVaultTools({
           scope: perceptionScope,
@@ -2336,23 +2348,31 @@ export async function startTenantRuntime(
             })
           : undefined;
       const appConnectionConfigurations = configuration.runPolicy?.appConnections ?? [];
-      if (appConnectionConfigurations.length > 0 && protector) {
+      if (protector) {
         const definitions = [];
         for (const entry of appConnectionConfigurations) {
-          const secret = configuration.secretReferences.find(
-            ({ ref, purpose }) =>
-              ref === entry.clientSecretRef && purpose === APP_CONNECTION_CLIENT_SECRET_PURPOSE,
-          );
-          if (!secret) continue;
+          const secret =
+            entry.clientSecretRef === undefined
+              ? undefined
+              : configuration.secretReferences.find(
+                  ({ ref, purpose }) =>
+                    ref === entry.clientSecretRef &&
+                    purpose === APP_CONNECTION_CLIENT_SECRET_PURPOSE,
+                );
+          if (entry.clientSecretRef !== undefined && !secret) continue;
           definitions.push({
             name: entry.name,
             title: entry.title,
             serverUrl: entry.serverUrl,
-            clientId: entry.clientId,
-            clientSecret: await hostModelSources(configuration).provider.resolve(
-              secret.ref,
-              secret.version,
-            ),
+            ...(entry.clientId === undefined ? {} : { clientId: entry.clientId }),
+            ...(secret === undefined
+              ? {}
+              : {
+                  clientSecret: await hostModelSources(configuration).provider.resolve(
+                    secret.ref,
+                    secret.version,
+                  ),
+                }),
             trustsReadOnlyLabels: entry.trustsReadOnlyLabels,
           });
         }
@@ -2614,6 +2634,15 @@ export async function startTenantRuntime(
             writeServiceDiagnostic(errorOutput, {
               component: "agent-service",
               event: "proactive.failed",
+              code: stableErrorCode(error),
+            }),
+          onReadFailed: ({ source, operation, attempts, error }) =>
+            writeServiceDiagnostic(errorOutput, {
+              component: "agent-service",
+              event: "proactive.read_failed",
+              source,
+              operation,
+              attempts,
               code: stableErrorCode(error),
             }),
         });
@@ -3496,6 +3525,29 @@ export async function startTenantRuntime(
         ],
         protector,
         memory,
+        ...(conversationTurns
+          ? {
+              conversationRecall: new ProductionConversationRecall({
+                turns: conversationTurns,
+                payloads,
+                protector,
+                embedWithin: (context, operation) => memory.embedWithin(context, operation),
+                maximumCharacters: toolPageCharacters,
+                providerRequestMs: configuration.deadlines.providerRequestMs,
+                relevance: memoryComposition.projection.relevance,
+                ...(configuration.runPolicy?.timeZone
+                  ? { timeZone: configuration.runPolicy.timeZone }
+                  : {}),
+                now: () => clock.now(),
+                onFailure: (error) =>
+                  writeServiceDiagnostic(errorOutput, {
+                    component: "agent-service",
+                    event: "conversation-recall.failed",
+                    code: stableErrorCode(error),
+                  }),
+              }),
+            }
+          : {}),
         tools,
         policy: createProductionRunPolicy({
           configuration,
@@ -3648,11 +3700,7 @@ export async function startTenantRuntime(
         },
         modelCatalog: await Promise.all(
           modelComposition.descriptors.generation
-            .filter(
-              (descriptor) =>
-                descriptor.api === "openai-completions" &&
-                descriptor.allowedDataClassifications.includes("private"),
-            )
+            .filter((descriptor) => descriptor.api === "openai-completions")
             .map(async (descriptor) => ({
               ...getPiModelPresentation(await configuredPiModels.resolve(descriptor.ref)),
               ...modelCatalogTags(descriptor.ref),

@@ -11,33 +11,61 @@ public struct ListenActivityWidget: Widget {
 
     public var body: some WidgetConfiguration {
         ActivityConfiguration(for: ListenActivityAttributes.self) { context in
-            ListenActivityLockView(state: context.state)
-                .activityBackgroundTint(Color.hmGlass)
+            Group {
+                if context.isStale {
+                    ListenStoppedView()
+                } else {
+                    ListenActivityLockView(state: context.state)
+                }
+            }
+                .activityBackgroundTint(Color.hmSurface)
                 .activitySystemActionForegroundColor(Color.hmText)
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.bottom) {
-                    ListenActivityLockView(state: context.state)
-                        .environment(\.colorScheme, .dark)
+                    Group {
+                        if context.isStale {
+                            ListenStoppedView()
+                        } else {
+                            ListenActivityLockView(state: context.state)
+                        }
+                    }
+                    .environment(\.colorScheme, .dark)
                 }
             } compactLeading: {
                 HStack(spacing: 6) {
                     SunflowerMark()
                         .frame(width: 18, height: 18)
-                    Text(ListenActivityLockView.title(context.state))
+                    Text(context.isStale ? L.text("live.stopped") : ListenActivityLockView.title(context.state))
                         .font(.system(size: 13, weight: .semibold))
                 }
             } compactTrailing: {
-                ListenElapsedText(startedAt: context.state.startedAt)
-                    .font(.rounded(13, weight: .regular))
-                    .foregroundStyle(.white.opacity(0.8))
-                    .monospacedDigit()
-                    .frame(maxWidth: 52)
+                if !context.isStale {
+                    ListenElapsedText(startedAt: context.state.startedAt)
+                        .font(.rounded(13, weight: .regular))
+                        .foregroundStyle(.white.opacity(0.8))
+                        .monospacedDigit()
+                        .frame(maxWidth: 52)
+                }
             } minimal: {
                 SunflowerMark()
                     .frame(width: 18, height: 18)
             }
         }
+    }
+}
+
+struct ListenStoppedView: View {
+    var body: some View {
+        HStack(spacing: 12) {
+            SunflowerMark()
+                .frame(width: DesignTokens.IconSize.listRow, height: DesignTokens.IconSize.listRow)
+            Text(L.text("live.stopped"))
+                .font(.headline)
+                .foregroundStyle(Color.hmText)
+            Spacer(minLength: 0)
+        }
+        .padding(16)
     }
 }
 
@@ -77,14 +105,12 @@ struct ListenActivityLockView: View {
             }
         case .calling:
             ListenCallPanel(state: state, levels: VoiceLevels.resting)
-                .environment(\.colorScheme, .dark)
         case .asking:
             ListenAskPanel(state: state) { label in
                 Button(intent: NotMeIntent()) { label }.buttonStyle(.pressable)
             } itsMe: { label in
                 Button(intent: ItsMeIntent()) { label }.buttonStyle(.pressable)
             }
-            .environment(\.colorScheme, .dark)
         }
     }
 }

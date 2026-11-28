@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import {
   chmodSync,
   mkdirSync,
@@ -43,6 +43,10 @@ function source() {
     path.join(repo, "scripts/delivery-mode/ci-deploy.sh"),
     '#!/bin/bash\necho "STUB commit=$HIMAWARI_DEPLOY_COMMIT since=$HIMAWARI_DEPLOY_SINCE force=$HIMAWARI_DEPLOY_FORCE host=$HIMAWARI_PACKET_HOST path=$PATH"\n',
   );
+  writeFileSync(
+    path.join(repo, "scripts/delivery-mode/shadow-rehearsal.sh"),
+    '#!/bin/bash\necho "SHADOW_STUB args=$*"\n',
+  );
   mkdirSync(path.join(repo, "scripts/delivery-mode/hermes"), { recursive: true });
   writeFileSync(
     path.join(repo, "scripts/delivery-mode/hermes/install-dependencies-if-changed.sh"),
@@ -67,7 +71,7 @@ function fakeTools() {
   return tools;
 }
 
-function runEntry(request, repo, tools = fakeTools(), base = temporary()) {
+function runEntry(request, repo, tools = fakeTools(), base = temporary(), extra = {}) {
   return spawnSync("bash", [entry], {
     encoding: "utf8",
     env: {
@@ -77,13 +81,54 @@ function runEntry(request, repo, tools = fakeTools(), base = temporary()) {
       HIMAWARI_DEPLOY_BASE: base,
       HIMAWARI_DEPLOY_REPO_URL: repo,
       HIMAWARI_DEPLOY_TOOLS: tools,
+      ...extra,
     },
   });
 }
 
+function holdLock(base, { detached }) {
+  const lock = path.join(base, "deploy.lock");
+  const ready = path.join(base, "holder.ready");
+  const pidFile = path.join(base, "holder.pid");
+  const script = `exec 9> ${JSON.stringify(lock)}; flock -n 9 || exit 3; echo $$ > ${JSON.stringify(pidFile)}; touch ${JSON.stringify(ready)}; exec sleep 60`;
+  const child = detached
+    ? spawn("setsid", ["-f", "bash", "-c", script], { stdio: "ignore" })
+    : spawn("bash", ["-c", script], { stdio: "ignore" });
+  const until = Date.now() + 10000;
+  while (Date.now() < until) {
+    try {
+      readFileSync(ready);
+      break;
+    } catch {
+      spawnSync("sleep", ["0.1"]);
+    }
+  }
+  const pid = Number(readFileSync(pidFile, "utf8").trim());
+  directories.push({
+    kill: () => {
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {}
+    },
+  });
+  return { child, pid };
+}
+
+function alive(pid) {
+  try {
+    process.kill(pid, 0);
+    const state = readFileSync(`/proc/${pid}/stat`, "utf8").split(") ")[1]?.[0];
+    return state !== "Z";
+  } catch {
+    return false;
+  }
+}
+
 afterEach(() => {
-  for (const directory of directories.splice(0))
-    rmSync(directory, { recursive: true, force: true });
+  for (const directory of directories.splice(0)) {
+    if (typeof directory === "string") rmSync(directory, { recursive: true, force: true });
+    else directory.kill();
+  }
 });
 
 describe("himawari-deploy-entry", () => {
@@ -95,11 +140,51 @@ describe("himawari-deploy-entry", () => {
       `deploy ${main}; id - 0`,
       `deploy ${main} - 2`,
       `deploy ${main.toUpperCase()} - 0`,
+      `rehearse ${main}`,
+      `rehearse ${main} full`,
+      `rehearse ${main} boot; id`,
     ]) {
       const child = runEntry(request, repo);
       expect(child.status).toBe(64);
       expect(child.stderr).toContain("REQUEST_INVALID");
     }
+  });
+
+  it("runs the production ops script from main without touching the deploy checkout", () => {
+    const { repo } = source();
+    mkdirSync(path.join(repo, "scripts/operations"), { recursive: true });
+    writeFileSync(
+      path.join(repo, "scripts/operations/production-ops.sh"),
+      '#!/bin/bash\necho "OPS_STUB action=$1 key=$(head -c 4 "$HIMAWARI_OPS_PUBLIC_KEY") lock=$HIMAWARI_OPS_LOCK"\n',
+    );
+    writeFileSync(path.join(repo, "scripts/operations/production-ops.pub.pem"), "KEY!");
+    git(repo, "add", "-A");
+    git(repo, "commit", "-q", "-m", "ops");
+    const base = temporary();
+    const child = runEntry("ops diagnose", repo, fakeTools(), base);
+    expect(child.status).toBe(0);
+    expect(child.stdout).toContain("OPS_STUB action=diagnose key=KEY!");
+    expect(child.stdout).toContain(`lock=${path.join(base, "deploy.lock")}`);
+    expect(spawnSync("test", ["-e", path.join(base, "checkout")]).status).not.toBe(0);
+    const passed = runEntry("ops allow-sensitive", repo, fakeTools(), base);
+    expect(passed.stdout).toContain("OPS_STUB action=allow-sensitive");
+    for (const request of ["ops", "ops Stop", "ops diagnose; id", "ops restart now", "ops ../x"]) {
+      const refused = runEntry(request, repo);
+      expect(refused.status).toBe(64);
+      expect(refused.stderr).toContain("REQUEST_INVALID");
+    }
+  });
+
+  it("[I-120] a boot rehearsal checks out the main commit and only starts the old release in the shadow machine", () => {
+    const { repo, main, side } = source();
+    const child = runEntry(`rehearse ${main} boot`, repo, path.join(temporary(), "none"));
+    expect(child.status).toBe(0);
+    expect(child.stdout).toContain("SHADOW_STUB args=--boot-only");
+    expect(child.stdout).not.toContain("STUB commit=");
+    expect(child.stdout).not.toContain("dependencies=");
+    const refused = runEntry(`rehearse ${side} boot`, repo);
+    expect(refused.status).toBe(65);
+    expect(refused.stderr).toContain("COMMIT_NOT_ON_MAIN");
   });
 
   it("refuses a commit that exists in the repository but is not on main", () => {
@@ -128,6 +213,32 @@ describe("himawari-deploy-entry", () => {
     const child = runEntry(`deploy ${main} - 0`, repo, path.join(temporary(), "none"));
     expect(child.status).toBe(70);
     expect(child.stderr).toContain("TOOLS_MISSING");
+  });
+
+  it("[I-120] refuses while the deploy holding the lock is still in a connected session", () => {
+    const { repo, main } = source();
+    const base = temporary();
+    const { pid } = holdLock(base, { detached: false });
+    const child = runEntry(`deploy ${main} - 1`, repo, fakeTools(), base, {
+      HIMAWARI_DEPLOY_SESSION_COMMAND: "node",
+    });
+    expect(child.status).toBe(75);
+    expect(child.stderr).toContain(`ALREADY_RUNNING`);
+    expect(child.stderr).toContain(`pid ${pid} is still in a connected session`);
+    expect(alive(pid)).toBe(true);
+  });
+
+  it("[I-120] stops what a cut-off deploy left holding the lock and goes on", () => {
+    const { repo, main } = source();
+    const base = temporary();
+    const { pid } = holdLock(base, { detached: true });
+    const child = runEntry(`deploy ${main} - 1`, repo, fakeTools(), base, {
+      HIMAWARI_DEPLOY_SESSION_COMMAND: "node",
+    });
+    expect(child.stdout).toContain(`DEPLOY_ENTRY_ORPHAN_CLEARED pids=${pid}`);
+    expect(child.status).toBe(0);
+    expect(child.stdout).toContain(`STUB commit=${main}`);
+    expect(alive(pid)).toBe(false);
   });
 
   it("checks out a main commit and runs its own ci-deploy.sh against the local machine", () => {

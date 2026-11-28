@@ -21,7 +21,8 @@ public enum SunflowerSeeds {
     static let smallestSeed = 0.8
     static let seedGrowth = 1.33
     static let frameShare = 0.94
-    static let newSeed = (255.0, 236.0, 170.0)
+    static let newSeedOnDark = (255.0, 236.0, 170.0)
+    static let newSeedOnLight = (154.0, 98.0, 0.0)
     static let brown = (92.0, 52.0, 16.0)
     static let amber = (214.0, 128.0, 20.0)
     static let gold = (245.0, 178.0, 48.0)
@@ -29,6 +30,7 @@ public enum SunflowerSeeds {
     static let tiers: [(diameter: Double, seeds: Int)] = [(28, 21), (46, 34), (56, 55), (72, 89)]
     static let largestTier = 144
     public static let fullGrowthSeconds = 16.0
+    public static let idleShareOfGrowth = 0.1
 
     public static func seedCount(forDiameter diameter: Double) -> Int {
         tiers.first { diameter <= $0.diameter }?.seeds ?? largestTier
@@ -50,6 +52,10 @@ public enum SunflowerSeeds {
         Double(seeds) / fullGrowthSeconds
     }
 
+    public static func idling(seconds: Double, seeds: Int) -> Double {
+        resting(seeds: seeds) + max(0, seconds) * growthPerSecond(seeds: seeds) * idleShareOfGrowth
+    }
+
     public static func breathing(seconds: Double, seeds: Int, low: Double) -> Double {
         let count = Double(seeds)
         let rate = growthPerSecond(seeds: seeds)
@@ -67,7 +73,7 @@ public enum SunflowerSeeds {
     public static var reach: Double { reach() }
     public static var resting: Double { resting() }
 
-    public static func at(growth: Double, seeds: Int = seedCount, startsEmpty: Bool = false) -> [SunflowerSeed] {
+    public static func at(growth: Double, seeds: Int = seedCount, startsEmpty: Bool = false, onLight: Bool = false) -> [SunflowerSeed] {
         let count = Double(seeds)
         let spacing = discRadius / count.squareRoot()
         let seedScale = seedScale(seeds)
@@ -82,7 +88,7 @@ public enum SunflowerSeeds {
             let born = clamp(age / birthSeconds)
             let color: (Double, Double, Double)
             if share < newestShare {
-                color = newSeed
+                color = onLight ? newSeedOnLight : newSeedOnDark
             } else if share < 0.5 {
                 color = blend(brown, amber, share / 0.5)
             } else {

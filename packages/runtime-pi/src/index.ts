@@ -54,3 +54,4 @@ export { preparePiFileMutation } from "./prepare-file-mutation.js";
 export { createPiFilePreparationPool } from "./pi-file-preparation-pool.js";
 
 export { inspectPiToolBatch } from "./pi-tool-batch-continuation.js";
+export { historyKeptSince } from "./history-kept-since.js";

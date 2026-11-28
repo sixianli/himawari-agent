@@ -47,6 +47,7 @@ vi.mock("node:child_process", async (original) => {
 import {
   installArguments,
   installDependencies,
+  nativeBuildKey,
   runnerNpmCache,
 } from "../../scripts/ci/install-dependencies.mjs";
 import {
@@ -199,6 +200,10 @@ function fixture({ nodeVersion = "22.22.3" } = {}) {
         expect(args[3]).toContain("--nodedir=");
         expect(args[4]).toContain("--python=");
         fail("native-build");
+        write(
+          join(options.cwd, "build/Release/better_sqlite3.node"),
+          state.nativeOutput ?? "synthetic native module",
+        );
         return "synthetic native build\n";
       }
       if (args[0] === "--input-type=module") {
@@ -471,6 +476,108 @@ describe("合成npm/native/SQLite子进程边界", () => {
     expect(installArguments(["--cache", ".ci-output/npm-cache"]).cacheDirectory).toBe(
       resolve(".ci-output/npm-cache"),
     );
+  });
+  it("runner 模式下 better-sqlite3 只在第一次编译，之后从缓存取回同一份并照样跑 SQLite 探针", async () => {
+    const f = fixture();
+    await installTools({ root: f.root, directory: f.toolsDirectory, includeScanners: false });
+    const home = join(f.directory, "home");
+    mkdirSync(home);
+    const env = { ...process.env, GITHUB_ACTIONS: "true", HOME: home };
+    f.warmCache = true;
+    const seen = [];
+    const original = boundary.run;
+    boundary.run = (command, args, options) => {
+      seen.push(args[0] ?? "");
+      return original(command, args, options);
+    };
+    const builds = () => seen.filter((arg) => arg.endsWith("node-gyp.js")).length;
+    const probes = () => seen.filter((arg) => arg === "--input-type=module").length;
+    const install = (name) =>
+      installDependencies({
+        root: f.root,
+        toolsDirectory: f.toolsDirectory,
+        evidenceDirectory: join(f.directory, name),
+        cacheDirectory: "runner",
+        env,
+      });
+    const first = await install("native-first");
+    expect(first.native.map(({ name, source }) => ({ name, source }))).toEqual([
+      { name: "better-sqlite3", source: "build" },
+    ]);
+    expect(builds()).toBe(1);
+    const binary = join(f.root, "node_modules/better-sqlite3/build/Release/better_sqlite3.node");
+    rmSync(join(f.root, "node_modules/better-sqlite3/build"), { recursive: true, force: true });
+    const second = await install("native-second");
+    expect(second.native.map(({ source }) => source)).toEqual(["cache"]);
+    expect(second.native[0].key).toBe(first.native[0].key);
+    expect(builds()).toBe(1);
+    expect(probes()).toBe(2);
+    expect(readFileSync(binary, "utf8")).toBe("synthetic native module");
+    expect(readFileSync(join(f.directory, "native-second/native-build.log"), "utf8")).toContain(
+      `restored ${first.native[0].key}`,
+    );
+  });
+  it("缓存里的原生模块和记录的摘要对不上时丢掉重新编译，不装进去", async () => {
+    const f = fixture();
+    await installTools({ root: f.root, directory: f.toolsDirectory, includeScanners: false });
+    const home = join(f.directory, "home");
+    mkdirSync(home);
+    const env = { ...process.env, GITHUB_ACTIONS: "true", HOME: home };
+    f.warmCache = true;
+    const install = (name) =>
+      installDependencies({
+        root: f.root,
+        toolsDirectory: f.toolsDirectory,
+        evidenceDirectory: join(f.directory, name),
+        cacheDirectory: "runner",
+        env,
+      });
+    const first = await install("tamper-first");
+    const cached = join(home, ".cache/himawari-ci/native", first.native[0].key);
+    write(join(cached, "better_sqlite3.node"), "tampered module");
+    f.nativeOutput = "rebuilt native module";
+    const second = await install("tamper-second");
+    expect(second.native.map(({ source }) => source)).toEqual(["build"]);
+    expect(
+      readFileSync(
+        join(f.root, "node_modules/better-sqlite3/build/Release/better_sqlite3.node"),
+        "utf8",
+      ),
+    ).toBe("rebuilt native module");
+    expect(readFileSync(join(cached, "better_sqlite3.node"), "utf8")).toBe("rebuilt native module");
+  });
+  it("不是 runner 模式时每次都编译，也不留原生模块缓存", async () => {
+    const f = fixture();
+    await installTools({ root: f.root, directory: f.toolsDirectory, includeScanners: false });
+    const result = await installDependencies({
+      root: f.root,
+      toolsDirectory: f.toolsDirectory,
+      evidenceDirectory: join(f.directory, "local-native"),
+    });
+    expect(result.native.map(({ source }) => source)).toEqual(["build"]);
+  });
+  it("原生模块缓存的键随 Node ABI、平台、包完整性和工具锁变化", () => {
+    const entry = { name: "better-sqlite3", version: "12.8.0" };
+    const installation = {
+      platform: "platform-a",
+      node: "22.22.3",
+      nodeAbi: "127",
+      toolchainSha256: "a".repeat(64),
+    };
+    const base = nativeBuildKey({ entry, integrity: "sha512-x", installation });
+    expect(nativeBuildKey({ entry, integrity: "sha512-x", installation })).toBe(base);
+    for (const changed of [
+      { entry, integrity: "sha512-y", installation },
+      { entry, integrity: "sha512-x", installation: { ...installation, nodeAbi: "131" } },
+      { entry, integrity: "sha512-x", installation: { ...installation, platform: "platform-b" } },
+      {
+        entry,
+        integrity: "sha512-x",
+        installation: { ...installation, toolchainSha256: "b".repeat(64) },
+      },
+      { entry: { ...entry, version: "12.9.0" }, integrity: "sha512-x", installation },
+    ])
+      expect(nativeBuildKey(changed)).not.toBe(base);
   });
   it("runner 缓存满 7 天整个清空重建", () => {
     const home = mkdtempSync(join(tmpdir(), "runner-cache-"));

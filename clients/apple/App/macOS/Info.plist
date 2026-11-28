@@ -39,7 +39,11 @@
 			</array>
 		</dict>
 	</array>
-	<key>LSUIElement</key>
+	<key>SUFeedURL</key>
+	<string>$(HIMAWARI_UPDATE_FEED)</string>
+	<key>SUPublicEDKey</key>
+	<string>$(HIMAWARI_UPDATE_KEY)</string>
+	<key>SUEnableAutomaticChecks</key>
 	<true/>
 	<key>LSMinimumSystemVersion</key>
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>

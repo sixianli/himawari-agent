@@ -23,6 +23,7 @@ import {
   type ProactiveDecision,
   ProactiveMailCheckService,
   type ProactiveMailReader,
+  type ProactiveMailReadFailure,
   type ProactiveModelInvoker,
   type ProactiveOverview,
   type ProactiveProgramEntry,
@@ -195,6 +196,7 @@ export interface ProductionProactiveOptions {
   readonly ids: IdGeneratorPort;
   readonly onDecision?: (decision: ProactiveDecision) => void;
   readonly onFailure: (error: unknown) => void;
+  readonly onReadFailed?: (failure: ProactiveMailReadFailure) => void;
 }
 
 export type ProactiveAuthorizationOutcome = "connected" | "denied" | "failed";
@@ -250,6 +252,7 @@ export class ProductionProactive {
       ...(options.ownerRules ? { ownerRuleStore: options.ownerRules } : {}),
       clock: options.clock,
       ids: options.ids,
+      ...(options.onReadFailed ? { onReadFailed: options.onReadFailed } : {}),
     });
     this.#mail = mail;
     const bound = new Map<string, ProactiveSourceRunner>(
@@ -286,6 +289,10 @@ export class ProductionProactive {
 
   readMailThread(threadId: string, signal: AbortSignal) {
     return this.#mail.readThread(threadId, signal);
+  }
+
+  searchMail(query: string, limit: number, signal: AbortSignal) {
+    return this.#mail.searchMail(query, limit, signal);
   }
 
   async #reviewSources() {
@@ -536,6 +543,7 @@ export class ProductionProactive {
     readonly status: "disconnected" | "connected" | "needs_reconnect";
     readonly account: string | null;
     readonly connectedAt: string | null;
+    readonly added: false;
   }> {
     const { scope, store, seal } = this.#options;
     const connection = await store.readConnection({ ...scope, source: GMAIL_SOURCE.name });
@@ -548,6 +556,7 @@ export class ProductionProactive {
       status: connection?.status ?? "disconnected",
       account,
       connectedAt: connection?.connectedAt ?? null,
+      added: false,
     };
   }
 

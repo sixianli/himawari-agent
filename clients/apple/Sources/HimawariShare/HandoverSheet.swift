@@ -210,6 +210,7 @@ public struct HandoverSheet: View {
                     .hmType(DesignTokens.TypeScale.caption)
                     .foregroundStyle(Color.hmMuted)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, DesignTokens.Handover.noteInset)
             }
             footer
@@ -286,12 +287,13 @@ public struct HandoverSheet: View {
             VStack(spacing: DesignTokens.Handover.outcomeGap) {
                 HStack(spacing: DesignTokens.Size.composerGap + 2) {
                     if model.isDone {
-                        Icon(.check, size: DesignTokens.Handover.doneIcon).foregroundStyle(Color.hmSuccess)
+                        Icon(.check, size: DesignTokens.Handover.doneIcon).foregroundStyle(Color.hmSun)
                     }
                     Text(model.outcomeLine ?? "")
                         .hmType(DesignTokens.TypeScale.body)
                         .foregroundStyle(Color.hmText)
                         .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, minHeight: DesignTokens.Size.pillBig)
                 if let title = model.followUpTitle {

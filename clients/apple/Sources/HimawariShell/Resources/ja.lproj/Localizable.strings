@@ -46,3 +46,6 @@
 "main.retry" = "つながりません。タップしてもう一度";
 "push.approve" = "承認";
 "push.deny" = "承認しない";
+"push.vaultCode.enter" = "コードを入力";
+"push.vaultCode.fill" = "入力する";
+"push.vaultCode.placeholder" = "確認コード";

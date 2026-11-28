@@ -1,4 +1,6 @@
 import argparse
+import ast
+import base64
 from collections import Counter
 import concurrent.futures
 from datetime import datetime, timezone
@@ -305,6 +307,7 @@ def discovery_script():
         "    'execStart': [line for line in unit.decode().splitlines() if line.startswith('ExecStart=')],",
         "    'staticRoot': config.get('http', {}).get('staticRoot'),",
         "    'modelCount': len(models),",
+        "    'primaryClassifications': [entry.get('allowedDataClassifications') for entry in config.get('modelDescriptors', []) if isinstance(entry, dict) and entry.get('role') == 'primary'],",
         "    'model': {key: models[0].get(key) for key in ('contextWindow', 'maxTokens')} if len(models) == 1 else None,",
         "    'publicFetchMaximumBytes': fetch.get('maximumBytes') if isinstance(fetch, dict) else None,",
         "    'budgetsPresent': 'budgets' in config,",
@@ -375,6 +378,9 @@ def interpret_discovery(facts, instance, label=None):
     model = facts.get('model') or {}
     if facts.get('modelCount') != 1 or not all(type(model.get(key)) is int and model[key] > 0 for key in ('contextWindow', 'maxTokens')):
         refuse('PACKET_CONFIG_MODEL_LIMITS_NOT_READABLE', instance['configTargets']['modelRef'])
+    primaries = facts.get('primaryClassifications')
+    if not isinstance(primaries, list) or len(primaries) != 1 or not isinstance(primaries[0], list) or not all(level in primaries[0] for level in MODEL_VISIBLE_CLASSIFICATIONS):
+        refuse('PACKET_PRIMARY_MODEL_CANNOT_SEE_SENSITIVE', primaries)
     fetch_bytes = facts.get('publicFetchMaximumBytes')
     if type(fetch_bytes) is not int or fetch_bytes <= 0:
         refuse('PACKET_CONFIG_PUBLIC_FETCH_NOT_READABLE', fetch_bytes)
@@ -409,6 +415,7 @@ def interpret_discovery(facts, instance, label=None):
 
 SPEECH_TARGET_KEYS = {'adapter', 'magpieModelRef', 'provider', 'model', 'voice', 'languageType', 'firstAudioTimeoutMs', 'maximumCharacters'}
 SPEECH_ADAPTERS = ('dashscope-qwen-tts',)
+MODEL_VISIBLE_CLASSIFICATIONS = ('public', 'private', 'sensitive')
 EMBEDDING_TARGET_KEYS = {'ref', 'role', 'provider', 'model', 'version', 'allowedDataClassifications', 'disclosure', 'secretRef', 'capabilities', 'cost', 'dimensions'}
 EMBEDDING_PROFILES = {
     ('vercel-ai-gateway', 'alibaba/qwen3-embedding-8b'): (4096, 1024),
@@ -1062,7 +1069,7 @@ class Hermes:
                 break
             time.sleep(self.poll_seconds)
         if state != '0':
-            tail = self.ssh('tail -n 20 ' + shlex.quote(log_root + '/' + name + '.log')).decode(errors='replace')
+            tail = self.ssh('tail -n 60 ' + shlex.quote(log_root + '/' + name + '.log')).decode(errors='replace')
             refuse('PACKET_HERMES_STEP_FAILED', name + ' exit=' + state + '\n' + tail)
 
     def has_commit(self, commit):
@@ -1234,6 +1241,86 @@ def finalize(packet, *arguments):
         refuse('PACKET_FINALIZE_FAILED', ' '.join(arguments) + ' ' + (child.stdout + child.stderr).strip()[-800:])
 
 
+REHEARSAL_DRIVER = """import base64, hashlib, json, pwd, subprocess, sys, types
+payload = json.loads(base64.b64decode(sys.stdin.buffer.read()))
+module = types.ModuleType('workspace_grant_binding')
+exec(compile(payload['module'], 'workspace-grant-binding.py', 'exec'), module.__dict__)
+account = pwd.getpwnam(payload['serviceAccount'])
+try:
+    checked, problems = module.check_production_authorization(payload['frozen'], payload['s0'], new_capability_refs=payload['newCapabilityRefs'], configuration_path=payload['configuration'], service_uid=account.pw_uid, service_gid=account.pw_gid)
+except Exception as error:
+    problems = [module.problem_code(error)]
+expected = payload['serviceProperties']
+try:
+    shown = subprocess.run(['/usr/bin/systemctl', 'show', payload['unit'], '--property=' + ','.join(expected)], capture_output=True, text=True, check=False).stdout
+except OSError:
+    shown = ''
+actual = dict(line.split('=', 1) for line in shown.splitlines() if '=' in line)
+problems += ['STOPPED_ORIGINAL_SERVICE_PROPERTIES_CHANGED:' + key + '=' + actual.get(key, '<missing>') for key, value in expected.items() if actual.get(key) != value]
+with open(payload['unitPath'], 'rb') as source:
+    if hashlib.sha256(source.read()).hexdigest() != payload['frozen']['service']['oldUnitSha256']:
+        problems.append('ORIGINAL_UNIT_CHANGED_BEFORE_SWITCH')
+print(json.dumps({'passed': not problems, 'problems': problems}))
+"""
+
+MAINTENANCE_REHEARSAL_DRIVER = """import { readFileSync } from 'node:fs';
+const payload = JSON.parse(Buffer.from(readFileSync(0, 'utf8'), 'base64').toString());
+const problems = [];
+const original = JSON.parse(readFileSync(payload.configuration, 'utf8'));
+const common = await import(payload.module);
+const steps = [['staticRootConfiguration', () => common.staticRootConfiguration(original)]];
+if (payload.firstTools) steps.push(['routeIdentity', () => common.routeIdentity(original, payload.plan)]);
+for (const [name, run] of steps) {
+  try { run(); } catch (error) { problems.push(name + ':' + String(error.code === 'ERR_ASSERTION' ? error.message : error).split('\\n')[0]); }
+}
+console.log(JSON.stringify({ passed: problems.length === 0, problems }));
+"""
+
+
+def service_properties(packet):
+    source = (packet / 'measurement/S6-service-read.py').read_text()
+    for node in ast.parse(source).body:
+        if isinstance(node, ast.Assign) and [getattr(target, 'id', None) for target in node.targets] == ['expected_properties']:
+            return ast.literal_eval(node.value)
+    refuse('PACKET_REHEARSAL_SERVICE_PROPERTIES_NOT_FOUND')
+
+
+def remote_json(instance, remote, payload, code):
+    output = run_remote(instance, remote, base64.b64encode(json.dumps(payload).encode()))
+    try:
+        return json.loads(output)
+    except ValueError:
+        refuse(code, output.decode(errors='replace')[-400:])
+
+
+def rehearse_production_data(packet, instance, parameters):
+    fixed = instance['fixedByTemplate']
+    frozen = json.loads((packet / 'inputs/bindings.json').read_text())
+    new_refs = json.loads(parameters['NEW_CAPABILITY_REFS_JSON'])
+    host = 'test "$(hostname)" = ' + shlex.quote(parameters['HOSTNAME']) + ' && '
+    signing = remote_json(instance, host + '/usr/bin/python3 -I -c ' + shlex.quote(REHEARSAL_DRIVER), {
+        'module': (packet / 'signing/workspace-grant-binding.py').read_text(),
+        'frozen': frozen,
+        's0': json.loads((packet / 'inputs/s0-db-readback.json').read_text()),
+        'newCapabilityRefs': new_refs,
+        'serviceAccount': fixed['serviceAccount'],
+        'configuration': fixed['config'],
+        'unit': fixed['unit'],
+        'unitPath': fixed['unitPath'],
+        'serviceProperties': service_properties(packet),
+    }, 'PACKET_PRODUCTION_REHEARSAL_OUTPUT_INVALID')
+    maintenance = remote_json(instance, host + shlex.quote(fixed['nodePath']) + ' --no-global-search-paths --input-type=module -e ' + shlex.quote(MAINTENANCE_REHEARSAL_DRIVER), {
+        'module': (packet / 'maintenance/maintenance-common.mjs').resolve().as_uri(),
+        'configuration': fixed['config'],
+        'firstTools': bool(new_refs),
+        'plan': frozen['workspace'],
+    }, 'PACKET_PRODUCTION_REHEARSAL_OUTPUT_INVALID')
+    problems = (signing.get('problems') or []) + (maintenance.get('problems') or [])
+    if problems or signing.get('passed') is not True or maintenance.get('passed') is not True:
+        refuse('PACKET_PRODUCTION_REHEARSAL_FAILED', ' '.join(problems or ['unknown']))
+    return {'signing': signing, 'maintenance': maintenance}
+
+
 def freeze(packet, instance):
     parameters = json.loads((packet / PARAMETERS).read_text())
     discovered = interpret_discovery(discover(instance, parameters['LABEL'], parameters['DATE']), instance, parameters['LABEL'])
@@ -1255,6 +1342,7 @@ def freeze(packet, instance):
     regenerate_hashes(packet)
     finalize(packet, '--candidate-from-s0')
     finalize(packet, '--freeze-reviewed-packet', 'round2/R2-L13/' + parameters['LABEL'] + '-' + parameters['DATE_COMPACT'] + '/reviewed')
+    rehearse_production_data(packet, instance, parameters)
     for command in ([sys.executable, '-I', str(packet / 'inputs/check-packet-consistency.py'), str(packet)], [sys.executable, '-I', str(HERE / 'browser-acceptance-gate.py'), str(packet)]):
         child = subprocess.run(command, capture_output=True, text=True, check=False)
         if child.returncode != 0:

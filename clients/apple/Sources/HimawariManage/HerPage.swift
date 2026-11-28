@@ -5,7 +5,9 @@ import SwiftUI
 @MainActor
 public protocol HerListening: AnyObject, Sendable {
     var hasVoiceprint: Bool { get }
+    var isListening: Bool { get }
     func deleteVoiceprint()
+    func stop()
 }
 
 public enum HerVaultCount: Equatable, Sendable {
@@ -17,6 +19,7 @@ public enum HerVaultCount: Equatable, Sendable {
 public struct HerPage: View {
     enum Page: Hashable {
         case memory
+        case rules
         case notifications
         case privacy
         case connections
@@ -24,6 +27,7 @@ public struct HerPage: View {
         case agent(String)
         case gmail
         case app(String)
+        case addApp
         case devices
         case device(String)
         case approvals
@@ -31,6 +35,8 @@ public struct HerPage: View {
         case timers
         case timer(String)
         case about
+        case name
+        case model
         case serverStatus
         case transfer
         case importPaste
@@ -38,12 +44,16 @@ public struct HerPage: View {
         case files
         case evaluation
         case talkTiming
+        case settings
     }
 
     @State private var settings: SettingsStore
+    @State private var heroScrolledAway = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var memory: MemoryStore
     @State private var quietHours: QuietHoursStore
     @State private var timers: TimersStore
+    @State private var personal: PersonalStore
     @State private var stats: DecisionStatsStore
     @State private var files: OwnerFilesStore
     @State private var connections: ConnectionsStore
@@ -60,6 +70,7 @@ public struct HerPage: View {
     private let listening: (any HerListening)?
     private let actions: DeviceActionsModel?
     private let openListening: () -> Void
+    private let openVoiceprint: () -> Void
     private let senses: AnyView?
     private let perceptionDeletion: ((@escaping () -> Void) -> AnyView)?
     private let sensesOn: () -> Int?
@@ -77,6 +88,7 @@ public struct HerPage: View {
         listening: (any HerListening)? = nil,
         actions: DeviceActionsModel? = nil,
         openListening: @escaping () -> Void = {},
+        openVoiceprint: @escaping () -> Void = {},
         senses: AnyView? = nil,
         perceptionDeletion: ((@escaping () -> Void) -> AnyView)? = nil,
         sensesOn: @escaping () -> Int? = { nil },
@@ -93,6 +105,7 @@ public struct HerPage: View {
         _memory = State(initialValue: MemoryStore(gateway: gateway))
         _quietHours = State(initialValue: QuietHoursStore(gateway: gateway))
         _timers = State(initialValue: TimersStore(gateway: gateway))
+        _personal = State(initialValue: PersonalStore(gateway: gateway, loadModels: { try? await api.configuration().chatModels }))
         _stats = State(initialValue: DecisionStatsStore(gateway: gateway))
         _files = State(initialValue: OwnerFilesStore(gateway: gateway, api: api))
         _connections = State(initialValue: ConnectionsStore(gateway: gateway))
@@ -104,6 +117,7 @@ public struct HerPage: View {
         self.listening = listening
         self.actions = actions
         self.openListening = openListening
+        self.openVoiceprint = openVoiceprint
         self.senses = senses
         self.perceptionDeletion = perceptionDeletion
         self.sensesOn = sensesOn
@@ -127,11 +141,12 @@ public struct HerPage: View {
         #endif
     }
 
-    init(settings: SettingsStore, memory: MemoryStore, quietHours: QuietHoursStore, timers: TimersStore? = nil, connections: ConnectionsStore? = nil, agents: AgentsStore? = nil, gmail: GmailStore? = nil, gateway: ManageGateway? = nil, memoryImport: MemoryImportStore? = nil, listening: (any HerListening)? = nil, actions: DeviceActionsModel? = nil, senses: AnyView? = nil, vaultItems: HerVaultCount = .items(3), path: [Page] = []) {
+    init(settings: SettingsStore, memory: MemoryStore, quietHours: QuietHoursStore, timers: TimersStore? = nil, connections: ConnectionsStore? = nil, agents: AgentsStore? = nil, gmail: GmailStore? = nil, personal: PersonalStore? = nil, gateway: ManageGateway? = nil, memoryImport: MemoryImportStore? = nil, listening: (any HerListening)? = nil, actions: DeviceActionsModel? = nil, senses: AnyView? = nil, vaultItems: HerVaultCount = .items(3), path: [Page] = []) {
         _settings = State(initialValue: settings)
         _memory = State(initialValue: memory)
         _quietHours = State(initialValue: quietHours)
         _timers = State(initialValue: timers ?? TimersStore(timers: nil))
+        _personal = State(initialValue: personal ?? PersonalStore(gateway: settings.gateway, loadModels: { nil }))
         _stats = State(initialValue: DecisionStatsStore(stats: nil))
         _files = State(initialValue: OwnerFilesStore(files: nil))
         _connections = State(initialValue: connections ?? ConnectionsStore(connections: nil))
@@ -145,6 +160,7 @@ public struct HerPage: View {
         self.listening = listening
         self.actions = actions
         openListening = {}
+        openVoiceprint = {}
         self.senses = senses
         perceptionDeletion = senses.map { shown in { _ in shown } }
         sensesOn = { 4 }
@@ -163,6 +179,11 @@ public struct HerPage: View {
             ScrollView {
                 VStack(spacing: DesignTokens.Her.pageGap) {
                     HerHero()
+                        .scrollTransition(.interactive, axis: .vertical) { hero, phase in
+                            hero
+                                .scaleEffect(phase.value < 0 ? 1 + phase.value / 2 : 1, anchor: .top)
+                                .opacity(phase.value < 0 ? 1 + phase.value : 1)
+                        }
                     if let actions, actions.waitingCount > 0 {
                         SettingsGroup(label: nil) {
                             Button { path.append(.approvals) } label: {
@@ -171,9 +192,13 @@ public struct HerPage: View {
                             .buttonStyle(.pressable)
                         }
                     }
-                    SettingsGroup(label: nil) {
+                    SettingsGroup(label: M.herKnows) {
                         Button { path.append(.memory) } label: {
-                            HerRow(icon: .brain, title: M.herMemory, subtitle: memory.summary(categoryLabel: M.category).map(M.memorySummary), last: files.phase == .unsupported && stats.phase == .unsupported)
+                            HerRow(icon: .brain, title: M.herMemory, subtitle: memory.summary(categoryLabel: M.category).map(M.memorySummary))
+                        }
+                        .buttonStyle(.pressable)
+                        Button { path.append(.rules) } label: {
+                            HerRow(icon: .clipboardList, title: M.rules, subtitle: memory.phase == .loaded ? M.rulesSummary(RulesPage.ownPageRules(memory.rules, quietHours: quietHours.hours).count) : nil, last: files.phase == .unsupported && stats.phase == .unsupported)
                         }
                         .buttonStyle(.pressable)
                         if files.phase != .unsupported {
@@ -189,10 +214,16 @@ public struct HerPage: View {
                             .buttonStyle(.pressable)
                         }
                     }
-                    SettingsGroup(label: nil) {
+                    SettingsGroup(label: M.herDoes) {
                         if timers.phase != .unsupported {
                             Button { path.append(.timers) } label: {
                                 HerRow(icon: .alarm, title: M.timersTitle, subtitle: timersSummary)
+                            }
+                            .buttonStyle(.pressable)
+                        }
+                        if connections.available || actions != nil {
+                            Button { path.append(.connections) } label: {
+                                HerRow(icon: .puzzle, title: M.connectionsTitle, subtitle: connectionsSummary)
                             }
                             .buttonStyle(.pressable)
                         }
@@ -214,34 +245,8 @@ public struct HerPage: View {
                         }
                     }
                     SettingsGroup(label: nil) {
-                        if connections.available || actions != nil {
-                            Button { path.append(.connections) } label: {
-                                HerRow(icon: .puzzle, title: M.connectionsTitle, subtitle: connectionsSummary)
-                            }
-                            .buttonStyle(.pressable)
-                        }
-                        if let hours = quietHours.hours {
-                            Button { path.append(.notifications) } label: {
-                                HerRow(icon: .bell, title: M.notificationsTitle, subtitle: M.quietSummary(hours))
-                            }
-                            .buttonStyle(.pressable)
-                        }
-                        Button { path.append(.privacy) } label: {
-                            HerRow(icon: .handStop, title: M.privacy)
-                        }
-                        .buttonStyle(.pressable)
-                        Button { path.append(.devices) } label: {
-                            HerRow(icon: .deviceMobilePlain, title: M.devicesTitle, subtitle: devicesSummary, last: true)
-                        }
-                        .buttonStyle(.pressable)
-                    }
-                    SettingsGroup(label: nil) {
-                        Button { path.append(.transfer) } label: {
-                            HerRow(icon: .download, title: M.transferTitle)
-                        }
-                        .buttonStyle(.pressable)
-                        Button { path.append(.about) } label: {
-                            HerRow(icon: .infoCircle, title: M.aboutTitle, subtitle: AboutPage.versionLine, last: true)
+                        Button { path.append(.settings) } label: {
+                            HerRow(icon: .settings, title: M.settingsTitle, last: true)
                         }
                         .buttonStyle(.pressable)
                     }
@@ -251,6 +256,11 @@ public struct HerPage: View {
                 .padding(.bottom, DesignTokens.Size.sheetPaddingBottom)
             }
             .scrollIndicators(.hidden)
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+                geometry.contentOffset.y + geometry.contentInsets.top > DesignTokens.Her.heroPaddingTop + DesignTokens.Her.heroAvatar
+            } action: { _, away in
+                withAnimation(reduceMotion ? nil : .easeInOut) { heroScrolledAway = away }
+            }
             .refreshable { await load() }
             .himawariScreenBackground()
             .navigationTitle(M.herPage)
@@ -258,14 +268,23 @@ public struct HerPage: View {
             .navigationBarTitleDisplayMode(.inline)
             #endif
             .toolbar {
+                ToolbarItem(placement: .principal) {
+                    HerTitle()
+                        .opacity(heroScrolledAway ? 1 : 0)
+                        .accessibilityHidden(!heroScrolledAway)
+                }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(M.done, action: close)
                 }
             }
             .navigationDestination(for: Page.self) { page in
                 switch page {
+                case .settings:
+                    settingsPage
                 case .memory:
                     MemoryRootView(store: memory, talk: talk)
+                case .rules:
+                    RulesPage(store: memory, quietHours: quietHours.hours, talk: talk)
                 case .notifications:
                     NotificationsPage(store: quietHours) { path.removeLast() }
                 case .privacy:
@@ -273,6 +292,7 @@ public struct HerPage: View {
                         memory: memory,
                         listening: listening,
                         openListening: openListening,
+                        openVoiceprint: openVoiceprint,
                         openSenses: senses == nil ? nil : { sensesOpen = true },
                         openDeletion: perceptionDeletion == nil ? nil : { deletionOpen = true },
                         sensesSummary: sensesOn().map(M.sensesOn)
@@ -280,7 +300,7 @@ public struct HerPage: View {
                 case .connections:
                     ConnectionsPage(store: connections, actions: actions, openSenses: senses == nil ? nil : { sensesOpen = true }, open: { connection in
                         path.append(connection.name == GmailStore.source ? .gmail : .app(connection.name))
-                    }) { path.removeLast() }
+                    }, add: { path.append(.addApp) }) { path.removeLast() }
                 case .agents:
                     AgentsPage(store: agents, open: { path.append(.agent($0)) }) { path.removeLast() }
                 case .agent(let id):
@@ -290,6 +310,11 @@ public struct HerPage: View {
                         .onDisappear { Task { await connections.load() } }
                 case .app(let name):
                     AppConnectionPage(store: connections, name: name) { path.removeLast() }
+                case .addApp:
+                    AddAppConnectionPage(store: connections, added: { connection in
+                        path.removeLast()
+                        path.append(.app(connection.name))
+                    }) { path.removeLast() }
                 case .devices:
                     HerDevicesPage(store: settings, open: { path.append(.device($0.id)) }, removedThisDevice: removedThisDevice) { path.removeLast() }
                 case .device(let id):
@@ -321,6 +346,10 @@ public struct HerPage: View {
                     EvaluationPage(store: stats)
                 case .talkTiming:
                     TalkTimingPage(load: voiceTimings)
+                case .name:
+                    NamePage(store: personal) { path.removeLast() }
+                case .model:
+                    ModelPage(store: personal) { path.removeLast() }
                 case .approvals:
                     if let actions {
                         ApprovalsView(model: actions, openThread: { _ in close() }) { path.removeLast() }
@@ -338,6 +367,57 @@ public struct HerPage: View {
         .sheet(isPresented: $vaultOpen, onDismiss: { Task { vaultCount = await countVault() } }) {
             vault?({ vaultOpen = false })
         }
+    }
+
+    private var settingsPage: some View {
+        ScrollView {
+            VStack(spacing: DesignTokens.Her.pageGap) {
+                SettingsGroup(label: nil) {
+                    if personal.phase == .loaded {
+                        Button { path.append(.name) } label: {
+                            HerRow(icon: .user, title: M.nameTitle, value: personal.name ?? M.nameUnset)
+                        }
+                        .buttonStyle(.pressable)
+                    }
+                    if personal.canChooseModel, let model = personal.chosenModel {
+                        Button { path.append(.model) } label: {
+                            HerRow(icon: .bulb, title: M.modelTitle, value: M.modelName(model))
+                        }
+                        .buttonStyle(.pressable)
+                    }
+                    if let hours = quietHours.hours {
+                        Button { path.append(.notifications) } label: {
+                            HerRow(icon: .bell, title: M.notificationsTitle, subtitle: M.quietSummary(hours))
+                        }
+                        .buttonStyle(.pressable)
+                    }
+                    Button { path.append(.privacy) } label: {
+                        HerRow(icon: .handStop, title: M.privacy)
+                    }
+                    .buttonStyle(.pressable)
+                    Button { path.append(.devices) } label: {
+                        HerRow(icon: .deviceMobilePlain, title: M.devicesTitle, subtitle: devicesSummary, last: true)
+                    }
+                    .buttonStyle(.pressable)
+                }
+                SettingsGroup(label: nil) {
+                    Button { path.append(.transfer) } label: {
+                        HerRow(icon: .download, title: M.transferTitle)
+                    }
+                    .buttonStyle(.pressable)
+                    Button { path.append(.about) } label: {
+                        HerRow(icon: .infoCircle, title: M.aboutTitle, subtitle: AboutPage.versionLine, last: true)
+                    }
+                    .buttonStyle(.pressable)
+                }
+            }
+            .padding(.top, 8)
+            .padding(.horizontal, DesignTokens.Size.pagePaddingX)
+            .padding(.bottom, DesignTokens.Size.sheetPaddingBottom)
+        }
+        .scrollIndicators(.hidden)
+        .himawariScreenBackground()
+        .navigationTitle(M.settingsTitle)
     }
 
     private func finishImport() {
@@ -370,10 +450,12 @@ public struct HerPage: View {
         async let timersLoaded: Void = timers.load()
         async let statsLoaded: Void = stats.load(.week)
         async let filesLoaded: Void = files.load()
+        async let personalLoaded: Void = personal.load()
         async let connectionsLoaded: Void = connections.load()
         async let agentsLoaded: Void = agents.load()
+        await actions?.refreshPermissions()
         vaultCount = await countVault()
-        _ = await (settingsLoaded, memoryLoaded, quietLoaded, timersLoaded, statsLoaded, filesLoaded, connectionsLoaded, agentsLoaded)
+        _ = await (settingsLoaded, memoryLoaded, quietLoaded, timersLoaded, personalLoaded, statsLoaded, filesLoaded, connectionsLoaded, agentsLoaded)
     }
 }
 
@@ -386,12 +468,26 @@ struct HerHero: View {
                     .frame(width: DesignTokens.Her.heroAvatar, height: DesignTokens.Her.heroAvatar)
                 SunflowerMark()
                     .frame(width: DesignTokens.Her.heroMark, height: DesignTokens.Her.heroMark)
+                    .environment(\.colorScheme, .dark)
             }
             Wordmark(size: DesignTokens.Her.heroWordmarkSize)
         }
         .frame(maxWidth: .infinity)
         .padding(.top, DesignTokens.Her.heroPaddingTop)
         .padding(.bottom, DesignTokens.Her.heroPaddingBottom)
+    }
+}
+
+struct HerTitle: View {
+    var body: some View {
+        HStack(spacing: DesignTokens.Her.heroGap) {
+            SunflowerMark()
+                .frame(width: DesignTokens.IconSize.listRow, height: DesignTokens.IconSize.listRow)
+            Wordmark(size: DesignTokens.TypeScale.navTitle.size)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(M.herPage))
+        .accessibilityAddTraits(.isHeader)
     }
 }
 
@@ -436,6 +532,7 @@ struct PrivacyPage: View {
     let memory: MemoryStore
     let listening: (any HerListening)?
     let openListening: () -> Void
+    let openVoiceprint: () -> Void
     let openSenses: (() -> Void)?
     var openDeletion: (() -> Void)? = nil
     var sensesSummary: String? = nil
@@ -475,8 +572,16 @@ struct PrivacyPage: View {
             }
             if let listening {
                 SettingsGroup(label: nil) {
+                    SettingsRow(
+                        icon: nil,
+                        title: M.listenAlways,
+                        detail: M.listenAlwaysDetail,
+                        switchState: Binding(get: { listening.isListening }, set: { on in
+                            if on { openListening() } else { listening.stop() }
+                        })
+                    )
                     Button {
-                        if listening.hasVoiceprint { forgetVoiceprint = true } else { openListening() }
+                        if listening.hasVoiceprint { forgetVoiceprint = true } else { openVoiceprint() }
                     } label: {
                         SettingsRow(
                             icon: nil,

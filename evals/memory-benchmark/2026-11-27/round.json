@@ -1,0 +1,1597 @@
+{
+  "schema": "himawari-memory-benchmark-round.v1",
+  "recordedAt": "2026-11-27T12:42:14.705Z",
+  "commit": "8ca2e69e9",
+  "model": "deepseek-v4.1-flash",
+  "embedding": "local-onnx/jina-embeddings-v5-text-small-retrieval-int8",
+  "minimumSimilarity": 0.3,
+  "stopped": null,
+  "wallMinutes": 103.68,
+  "spentUsd": 6.4815,
+  "resumedSamples": [
+    "conv-26",
+    "conv-30",
+    "conv-41",
+    "conv-42",
+    "conv-43",
+    "conv-44",
+    "conv-47",
+    "conv-48",
+    "conv-49",
+    "conv-50",
+    "6a1eabeb",
+    "0f05491a",
+    "18bc8abd",
+    "eace081b",
+    "10e09553",
+    "0a995998",
+    "gpt4_2ba83207",
+    "gpt4_372c3eed",
+    "681a1674",
+    "ef9cf60a",
+    "7161e7e2",
+    "fea54f57"
+  ],
+  "usage": {
+    "longmemeval:capture": {
+      "calls": 4521,
+      "failures": 0,
+      "rateLimited": 186,
+      "promptTokens": 13374241,
+      "cachedTokens": 7770240,
+      "completionTokens": 543708,
+      "usd": 1.1901356700000032
+    },
+    "longmemeval:answer": {
+      "calls": 18,
+      "failures": 0,
+      "rateLimited": 0,
+      "promptTokens": 77924,
+      "cachedTokens": 0,
+      "completionTokens": 1120,
+      "usd": 0.012360599999999998
+    },
+    "longmemeval:judge": {
+      "calls": 36,
+      "failures": 0,
+      "rateLimited": 1,
+      "promptTokens": 7685,
+      "cachedTokens": 0,
+      "completionTokens": 72,
+      "usd": 0.0011959499999999999
+    },
+    "longmemeval:full-context": {
+      "calls": 18,
+      "failures": 0,
+      "rateLimited": 1,
+      "promptTokens": 1896561,
+      "cachedTokens": 0,
+      "completionTokens": 741,
+      "usd": 0.28492875
+    }
+  },
+  "samples": [
+    {
+      "id": "conv-26",
+      "benchmark": "locomo",
+      "questions": 152
+    },
+    {
+      "id": "conv-30",
+      "benchmark": "locomo",
+      "questions": 81
+    },
+    {
+      "id": "conv-41",
+      "benchmark": "locomo",
+      "questions": 152
+    },
+    {
+      "id": "conv-42",
+      "benchmark": "locomo",
+      "questions": 199
+    },
+    {
+      "id": "conv-43",
+      "benchmark": "locomo",
+      "questions": 178
+    },
+    {
+      "id": "conv-44",
+      "benchmark": "locomo",
+      "questions": 123
+    },
+    {
+      "id": "conv-47",
+      "benchmark": "locomo",
+      "questions": 150
+    },
+    {
+      "id": "conv-48",
+      "benchmark": "locomo",
+      "questions": 191
+    },
+    {
+      "id": "conv-49",
+      "benchmark": "locomo",
+      "questions": 156
+    },
+    {
+      "id": "conv-50",
+      "benchmark": "locomo",
+      "questions": 158
+    },
+    {
+      "id": "6a1eabeb",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "0f05491a",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "18bc8abd",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "eace081b",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "10e09553",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "0a995998",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "gpt4_2ba83207",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "gpt4_372c3eed",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "681a1674",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "ef9cf60a",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "7161e7e2",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "fea54f57",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "2bf43736",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "3e321797",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "561fabcd",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "8a2466db",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "195a1a1b",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "1a1907b4",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "505af2f5",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "a89d7624",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "e47becba",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "726462e0",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "a06e4cfe",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "bc8a6e93",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "29f2956b",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "gpt4_59149c77",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "gpt4_61e13b3c",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "2ebe6c92",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "2c63a862",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "gpt4_7de946e7",
+      "benchmark": "longmemeval",
+      "questions": 1
+    }
+  ],
+  "stores": [
+    {
+      "id": "6a1eabeb",
+      "benchmark": "longmemeval",
+      "turns": 413,
+      "ownerTurns": 205,
+      "captureFailures": 0,
+      "audits": {
+        "auto_committed": 178,
+        "nothing_to_remember": 77,
+        "tentative_kept": 11,
+        "explicitly_approved": 2,
+        "confidence_below_threshold": 1,
+        "candidate_invalid": 4
+      },
+      "activeMemories": 163,
+      "ingestMs": 6234829,
+      "phaseMs": {
+        "search": 59730,
+        "capture": 6127430,
+        "model": 6086394,
+        "projection": 23676
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "conv-30:Jon",
+      "benchmark": "locomo",
+      "turns": 369,
+      "ownerTurns": 185,
+      "captureFailures": 0,
+      "audits": {
+        "candidate_invalid": 2,
+        "auto_committed": 199,
+        "nothing_to_remember": 34,
+        "tentative_kept": 4,
+        "confidence_below_threshold": 4,
+        "evidence_unverified": 1
+      },
+      "activeMemories": 147,
+      "ingestMs": 6338327,
+      "phaseMs": {
+        "search": 24758,
+        "capture": 6259867,
+        "model": 6200367,
+        "projection": 29975
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "conv-30:Gina",
+      "benchmark": "locomo",
+      "turns": 369,
+      "ownerTurns": 184,
+      "captureFailures": 0,
+      "audits": {
+        "nothing_to_remember": 53,
+        "auto_committed": 144,
+        "confidence_below_threshold": 4,
+        "tentative_kept": 4,
+        "evidence_unverified": 1,
+        "explicitly_approved": 3
+      },
+      "activeMemories": 100,
+      "ingestMs": 5712004,
+      "phaseMs": {
+        "search": 25265,
+        "capture": 5640114,
+        "model": 5552353,
+        "projection": 21245
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "conv-26:Caroline",
+      "benchmark": "locomo",
+      "turns": 419,
+      "ownerTurns": 211,
+      "captureFailures": 0,
+      "audits": {
+        "nothing_to_remember": 68,
+        "auto_committed": 171,
+        "confidence_below_threshold": 3,
+        "tentative_kept": 6,
+        "candidate_invalid": 1,
+        "evidence_unverified": 1
+      },
+      "activeMemories": 146,
+      "ingestMs": 7039185,
+      "phaseMs": {
+        "search": 32265,
+        "capture": 6952026,
+        "model": 6887714,
+        "projection": 27457
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "conv-26:Melanie",
+      "benchmark": "locomo",
+      "turns": 419,
+      "ownerTurns": 208,
+      "captureFailures": 0,
+      "audits": {
+        "auto_committed": 155,
+        "nothing_to_remember": 60,
+        "tentative_kept": 7,
+        "confidence_below_threshold": 2,
+        "evidence_unverified": 2
+      },
+      "activeMemories": 130,
+      "ingestMs": 6266198,
+      "phaseMs": {
+        "search": 31647,
+        "capture": 6181376,
+        "model": 6118785,
+        "projection": 27366
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "10e09553",
+      "benchmark": "longmemeval",
+      "turns": 472,
+      "ownerTurns": 234,
+      "captureFailures": 0,
+      "audits": {
+        "nothing_to_remember": 80,
+        "auto_committed": 201,
+        "tentative_kept": 6,
+        "candidate_invalid": 5,
+        "confidence_below_threshold": 2,
+        "explicitly_approved": 2
+      },
+      "activeMemories": 188,
+      "ingestMs": 7456106,
+      "phaseMs": {
+        "search": 66072,
+        "capture": 7335849,
+        "model": 7269932,
+        "projection": 28746
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "18bc8abd",
+      "benchmark": "longmemeval",
+      "turns": 436,
+      "ownerTurns": 217,
+      "captureFailures": 0,
+      "audits": {
+        "nothing_to_remember": 87,
+        "auto_committed": 184,
+        "tentative_kept": 14,
+        "confidence_below_threshold": 1,
+        "evidence_unverified": 1
+      },
+      "activeMemories": 174,
+      "ingestMs": 7458431,
+      "phaseMs": {
+        "search": 88160,
+        "capture": 7312952,
+        "model": 7251710,
+        "projection": 30401
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "eace081b",
+      "benchmark": "longmemeval",
+      "turns": 489,
+      "ownerTurns": 242,
+      "captureFailures": 1,
+      "audits": {
+        "auto_committed": 165,
+        "nothing_to_remember": 121,
+        "tentative_kept": 11,
+        "candidate_invalid": 3,
+        "explicitly_approved": 5,
+        "confidence_below_threshold": 4,
+        "extraction_failed": 1
+      },
+      "activeMemories": 150,
+      "ingestMs": 7458722,
+      "phaseMs": {
+        "search": 43622,
+        "capture": 7361831,
+        "model": 7301747,
+        "projection": 24341
+      },
+      "failureSamples": [
+        "Expected ',' or ']' after array element in JSON at position 3280 (line 1 column 3281)"
+      ]
+    },
+    {
+      "id": "0f05491a",
+      "benchmark": "longmemeval",
+      "turns": 489,
+      "ownerTurns": 242,
+      "captureFailures": 0,
+      "audits": {
+        "auto_committed": 187,
+        "nothing_to_remember": 87,
+        "tentative_kept": 18,
+        "explicitly_approved": 2,
+        "evidence_unverified": 1,
+        "candidate_invalid": 3,
+        "confidence_below_threshold": 1
+      },
+      "activeMemories": 168,
+      "ingestMs": 7944191,
+      "phaseMs": {
+        "search": 43138,
+        "capture": 7842648,
+        "model": 7745820,
+        "projection": 32589
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "conv-49:Evan",
+      "benchmark": "locomo",
+      "turns": 509,
+      "ownerTurns": 256,
+      "captureFailures": 0,
+      "audits": {
+        "auto_committed": 196,
+        "nothing_to_remember": 74,
+        "tentative_kept": 18,
+        "confidence_below_threshold": 5,
+        "evidence_unverified": 1
+      },
+      "activeMemories": 167,
+      "ingestMs": 8437434,
+      "phaseMs": {
+        "search": 38545,
+        "capture": 8341595,
+        "model": 8275096,
+        "projection": 30552
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "conv-49:Sam",
+      "benchmark": "locomo",
+      "turns": 509,
+      "ownerTurns": 253,
+      "captureFailures": 0,
+      "audits": {
+        "nothing_to_remember": 94,
+        "auto_committed": 161,
+        "tentative_kept": 19,
+        "confidence_below_threshold": 8,
+        "evidence_unverified": 2
+      },
+      "activeMemories": 136,
+      "ingestMs": 8503285,
+      "phaseMs": {
+        "search": 33310,
+        "capture": 8417494,
+        "model": 8338881,
+        "projection": 26162
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "conv-50:Calvin",
+      "benchmark": "locomo",
+      "turns": 568,
+      "ownerTurns": 285,
+      "captureFailures": 0,
+      "audits": {
+        "nothing_to_remember": 46,
+        "tentative_kept": 16,
+        "auto_committed": 266,
+        "confidence_below_threshold": 9,
+        "candidate_invalid": 2,
+        "evidence_unverified": 2
+      },
+      "activeMemories": 245,
+      "ingestMs": 10424023,
+      "phaseMs": {
+        "search": 41505,
+        "capture": 10310645,
+        "model": 10229142,
+        "projection": 44717
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "conv-50:Dave",
+      "benchmark": "locomo",
+      "turns": 568,
+      "ownerTurns": 283,
+      "captureFailures": 0,
+      "audits": {
+        "tentative_kept": 14,
+        "nothing_to_remember": 140,
+        "auto_committed": 147,
+        "candidate_invalid": 2,
+        "confidence_below_threshold": 6,
+        "evidence_unverified": 1
+      },
+      "activeMemories": 119,
+      "ingestMs": 9463371,
+      "phaseMs": {
+        "search": 41260,
+        "capture": 9368453,
+        "model": 9303219,
+        "projection": 25378
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "conv-42:Joanna",
+      "benchmark": "locomo",
+      "turns": 629,
+      "ownerTurns": 313,
+      "captureFailures": 0,
+      "audits": {
+        "nothing_to_remember": 95,
+        "auto_committed": 232,
+        "tentative_kept": 7,
+        "confidence_below_threshold": 9,
+        "evidence_unverified": 2,
+        "explicitly_approved": 1
+      },
+      "activeMemories": 197,
+      "ingestMs": 11479395,
+      "phaseMs": {
+        "search": 42769,
+        "capture": 11372228,
+        "model": 11299009,
+        "projection": 37453
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "conv-42:Nate",
+      "benchmark": "locomo",
+      "turns": 629,
+      "ownerTurns": 316,
+      "captureFailures": 0,
+      "audits": {
+        "nothing_to_remember": 122,
+        "auto_committed": 200,
+        "tentative_kept": 15,
+        "confidence_below_threshold": 10,
+        "candidate_invalid": 2
+      },
+      "activeMemories": 160,
+      "ingestMs": 10507724,
+      "phaseMs": {
+        "search": 40518,
+        "capture": 10411669,
+        "model": 10337321,
+        "projection": 27404
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "conv-48:Deborah",
+      "benchmark": "locomo",
+      "turns": 681,
+      "ownerTurns": 341,
+      "captureFailures": 0,
+      "audits": {
+        "nothing_to_remember": 178,
+        "auto_committed": 160,
+        "tentative_kept": 28,
+        "confidence_below_threshold": 4,
+        "evidence_unverified": 1
+      },
+      "activeMemories": 164,
+      "ingestMs": 11129778,
+      "phaseMs": {
+        "search": 44941,
+        "capture": 11023795,
+        "model": 10939422,
+        "projection": 31777
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "conv-48:Jolene",
+      "benchmark": "locomo",
+      "turns": 681,
+      "ownerTurns": 340,
+      "captureFailures": 0,
+      "audits": {
+        "tentative_kept": 14,
+        "nothing_to_remember": 125,
+        "auto_committed": 232,
+        "confidence_below_threshold": 4
+      },
+      "activeMemories": 208,
+      "ingestMs": 11543109,
+      "phaseMs": {
+        "search": 46742,
+        "capture": 11429209,
+        "model": 11343095,
+        "projection": 37863
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "conv-47:James",
+      "benchmark": "locomo",
+      "turns": 689,
+      "ownerTurns": 343,
+      "captureFailures": 0,
+      "audits": {
+        "auto_committed": 230,
+        "tentative_kept": 12,
+        "candidate_invalid": 1,
+        "confidence_below_threshold": 8,
+        "nothing_to_remember": 127
+      },
+      "activeMemories": 209,
+      "ingestMs": 11756358,
+      "phaseMs": {
+        "search": 45265,
+        "capture": 11641506,
+        "model": 11559229,
+        "projection": 40404
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "conv-47:John",
+      "benchmark": "locomo",
+      "turns": 689,
+      "ownerTurns": 346,
+      "captureFailures": 0,
+      "audits": {
+        "nothing_to_remember": 163,
+        "auto_committed": 173,
+        "tentative_kept": 17,
+        "confidence_below_threshold": 8,
+        "candidate_invalid": 1
+      },
+      "activeMemories": 141,
+      "ingestMs": 12023348,
+      "phaseMs": {
+        "search": 62229,
+        "capture": 11897075,
+        "model": 11828848,
+        "projection": 31853
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "conv-43:Tim",
+      "benchmark": "locomo",
+      "turns": 680,
+      "ownerTurns": 344,
+      "captureFailures": 0,
+      "audits": {
+        "auto_committed": 169,
+        "nothing_to_remember": 179,
+        "candidate_invalid": 1,
+        "tentative_kept": 20,
+        "confidence_below_threshold": 1
+      },
+      "activeMemories": 144,
+      "ingestMs": 10997417,
+      "phaseMs": {
+        "search": 48412,
+        "capture": 10891440,
+        "model": 10819439,
+        "projection": 26841
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "conv-43:John",
+      "benchmark": "locomo",
+      "turns": 680,
+      "ownerTurns": 336,
+      "captureFailures": 0,
+      "audits": {
+        "nothing_to_remember": 102,
+        "auto_committed": 260,
+        "tentative_kept": 11,
+        "candidate_invalid": 3,
+        "confidence_below_threshold": 2,
+        "evidence_unverified": 1,
+        "explicitly_approved": 1
+      },
+      "activeMemories": 209,
+      "ingestMs": 12294407,
+      "phaseMs": {
+        "search": 44060,
+        "capture": 12187640,
+        "model": 12109633,
+        "projection": 34788
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "conv-44:Audrey",
+      "benchmark": "locomo",
+      "turns": 675,
+      "ownerTurns": 338,
+      "captureFailures": 0,
+      "audits": {
+        "nothing_to_remember": 88,
+        "auto_committed": 254,
+        "tentative_kept": 16,
+        "evidence_unverified": 1,
+        "confidence_below_threshold": 12,
+        "explicitly_approved": 1
+      },
+      "activeMemories": 207,
+      "ingestMs": 12765692,
+      "phaseMs": {
+        "search": 49528,
+        "capture": 12636091,
+        "model": 12554811,
+        "projection": 52079
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "conv-44:Andrew",
+      "benchmark": "locomo",
+      "turns": 675,
+      "ownerTurns": 337,
+      "captureFailures": 0,
+      "audits": {
+        "auto_committed": 201,
+        "nothing_to_remember": 136,
+        "confidence_below_threshold": 8,
+        "tentative_kept": 15,
+        "evidence_unverified": 1
+      },
+      "activeMemories": 169,
+      "ingestMs": 12091456,
+      "phaseMs": {
+        "search": 41532,
+        "capture": 11991159,
+        "model": 11919229,
+        "projection": 30729
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "conv-41:John",
+      "benchmark": "locomo",
+      "turns": 663,
+      "ownerTurns": 335,
+      "captureFailures": 0,
+      "audits": {
+        "auto_committed": 281,
+        "nothing_to_remember": 72,
+        "tentative_kept": 11,
+        "evidence_unverified": 1,
+        "confidence_below_threshold": 4
+      },
+      "activeMemories": 229,
+      "ingestMs": 13231595,
+      "phaseMs": {
+        "search": 47009,
+        "capture": 13103026,
+        "model": 13017867,
+        "projection": 52646
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "conv-41:Maria",
+      "benchmark": "locomo",
+      "turns": 663,
+      "ownerTurns": 328,
+      "captureFailures": 0,
+      "audits": {
+        "nothing_to_remember": 128,
+        "auto_committed": 219,
+        "tentative_kept": 9,
+        "confidence_below_threshold": 8,
+        "evidence_unverified": 2
+      },
+      "activeMemories": 198,
+      "ingestMs": 11887363,
+      "phaseMs": {
+        "search": 43763,
+        "capture": 11785267,
+        "model": 11715684,
+        "projection": 29289
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "gpt4_372c3eed",
+      "benchmark": "longmemeval",
+      "turns": 465,
+      "ownerTurns": 229,
+      "captureFailures": 1,
+      "audits": {
+        "nothing_to_remember": 83,
+        "auto_committed": 189,
+        "tentative_kept": 18,
+        "explicitly_approved": 4,
+        "candidate_invalid": 3,
+        "confidence_below_threshold": 1
+      },
+      "activeMemories": 179,
+      "ingestMs": 11581759,
+      "phaseMs": {
+        "search": 57422,
+        "capture": 11493013,
+        "model": 11448466,
+        "projection": 24384
+      },
+      "failureSamples": ["The transaction scope exceeded 2000 ms"]
+    },
+    {
+      "id": "681a1674",
+      "benchmark": "longmemeval",
+      "turns": 476,
+      "ownerTurns": 233,
+      "captureFailures": 0,
+      "audits": {
+        "nothing_to_remember": 122,
+        "auto_committed": 138,
+        "tentative_kept": 9,
+        "confidence_below_threshold": 1,
+        "candidate_invalid": 2
+      },
+      "activeMemories": 129,
+      "ingestMs": 11163828,
+      "phaseMs": {
+        "search": 68551,
+        "capture": 11070887,
+        "model": 11032302,
+        "projection": 18979
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "gpt4_2ba83207",
+      "benchmark": "longmemeval",
+      "turns": 502,
+      "ownerTurns": 247,
+      "captureFailures": 0,
+      "audits": {
+        "auto_committed": 200,
+        "confidence_below_threshold": 3,
+        "nothing_to_remember": 98,
+        "candidate_invalid": 5,
+        "tentative_kept": 9,
+        "explicitly_approved": 3
+      },
+      "activeMemories": 188,
+      "ingestMs": 11719244,
+      "phaseMs": {
+        "search": 37724,
+        "capture": 11645988,
+        "model": 11603850,
+        "projection": 28542
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "0a995998",
+      "benchmark": "longmemeval",
+      "turns": 484,
+      "ownerTurns": 242,
+      "captureFailures": 0,
+      "audits": {
+        "nothing_to_remember": 99,
+        "auto_committed": 188,
+        "tentative_kept": 12,
+        "candidate_invalid": 1,
+        "explicitly_approved": 3
+      },
+      "activeMemories": 161,
+      "ingestMs": 11795256,
+      "phaseMs": {
+        "search": 121399,
+        "capture": 11644611,
+        "model": 11596065,
+        "projection": 23080
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "ef9cf60a",
+      "benchmark": "longmemeval",
+      "turns": 522,
+      "ownerTurns": 258,
+      "captureFailures": 1,
+      "audits": {
+        "nothing_to_remember": 127,
+        "extraction_failed": 1,
+        "tentative_kept": 11,
+        "auto_committed": 140,
+        "evidence_unverified": 1,
+        "explicitly_approved": 8,
+        "candidate_invalid": 4
+      },
+      "activeMemories": 127,
+      "ingestMs": 11735837,
+      "phaseMs": {
+        "search": 99071,
+        "capture": 11607844,
+        "model": 11561419,
+        "projection": 23031
+      },
+      "failureSamples": [
+        "Expected ',' or ']' after array element in JSON at position 3626 (line 1 column 3627)"
+      ]
+    },
+    {
+      "id": "7161e7e2",
+      "benchmark": "longmemeval",
+      "turns": 550,
+      "ownerTurns": 273,
+      "captureFailures": 0,
+      "audits": {
+        "nothing_to_remember": 154,
+        "auto_committed": 149,
+        "explicitly_approved": 4,
+        "tentative_kept": 12,
+        "candidate_invalid": 1,
+        "confidence_below_threshold": 1
+      },
+      "activeMemories": 140,
+      "ingestMs": 10553549,
+      "phaseMs": {
+        "search": 77988,
+        "capture": 10447549,
+        "model": 10394680,
+        "projection": 20861
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "fea54f57",
+      "benchmark": "longmemeval",
+      "turns": 527,
+      "ownerTurns": 261,
+      "captureFailures": 1,
+      "audits": {
+        "nothing_to_remember": 119,
+        "tentative_kept": 14,
+        "explicitly_approved": 2,
+        "auto_committed": 176,
+        "candidate_invalid": 2
+      },
+      "activeMemories": 165,
+      "ingestMs": 9955567,
+      "phaseMs": {
+        "search": 67343,
+        "capture": 9843297,
+        "model": 9771515,
+        "projection": 36648
+      },
+      "failureSamples": ["The transaction scope exceeded 2000 ms"]
+    },
+    {
+      "id": "gpt4_61e13b3c",
+      "benchmark": "longmemeval",
+      "turns": 467,
+      "ownerTurns": 231,
+      "captureFailures": 0,
+      "audits": {
+        "nothing_to_remember": 86,
+        "auto_committed": 183,
+        "tentative_kept": 16,
+        "candidate_invalid": 3,
+        "confidence_below_threshold": 1
+      },
+      "activeMemories": 171,
+      "ingestMs": 5401289,
+      "phaseMs": {
+        "search": 77146,
+        "capture": 5262954,
+        "model": 5183533,
+        "projection": 35328
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "gpt4_59149c77",
+      "benchmark": "longmemeval",
+      "turns": 484,
+      "ownerTurns": 240,
+      "captureFailures": 0,
+      "audits": {
+        "nothing_to_remember": 108,
+        "tentative_kept": 13,
+        "auto_committed": 165,
+        "confidence_below_threshold": 1,
+        "candidate_invalid": 3
+      },
+      "activeMemories": 152,
+      "ingestMs": 5464571,
+      "phaseMs": {
+        "search": 94112,
+        "capture": 5312177,
+        "model": 5225535,
+        "projection": 32753
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "505af2f5",
+      "benchmark": "longmemeval",
+      "turns": 501,
+      "ownerTurns": 248,
+      "captureFailures": 1,
+      "audits": {
+        "auto_committed": 148,
+        "explicitly_approved": 9,
+        "nothing_to_remember": 126,
+        "extraction_failed": 1,
+        "tentative_kept": 9,
+        "candidate_invalid": 2
+      },
+      "activeMemories": 147,
+      "ingestMs": 5606674,
+      "phaseMs": {
+        "search": 91522,
+        "capture": 5456176,
+        "model": 5345644,
+        "projection": 31801
+      },
+      "failureSamples": [
+        "Expected ',' or ']' after array element in JSON at position 3339 (line 1 column 3340)"
+      ]
+    },
+    {
+      "id": "8a2466db",
+      "benchmark": "longmemeval",
+      "turns": 508,
+      "ownerTurns": 250,
+      "captureFailures": 2,
+      "audits": {
+        "nothing_to_remember": 112,
+        "auto_committed": 178,
+        "confidence_below_threshold": 3,
+        "tentative_kept": 3,
+        "extraction_failed": 1,
+        "candidate_invalid": 1
+      },
+      "activeMemories": 158,
+      "ingestMs": 5612492,
+      "phaseMs": {
+        "search": 45108,
+        "capture": 5508927,
+        "model": 5358640,
+        "projection": 35624
+      },
+      "failureSamples": [
+        "Expected ',' or ']' after array element in JSON at position 3313 (line 1 column 3314)",
+        "The transaction scope exceeded 2000 ms"
+      ]
+    },
+    {
+      "id": "1a1907b4",
+      "benchmark": "longmemeval",
+      "turns": 532,
+      "ownerTurns": 264,
+      "captureFailures": 0,
+      "audits": {
+        "auto_committed": 186,
+        "tentative_kept": 5,
+        "nothing_to_remember": 126,
+        "candidate_invalid": 3,
+        "explicitly_approved": 3,
+        "confidence_below_threshold": 1
+      },
+      "activeMemories": 170,
+      "ingestMs": 5824943,
+      "phaseMs": {
+        "search": 48258,
+        "capture": 5708982,
+        "model": 5628029,
+        "projection": 41034
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "a06e4cfe",
+      "benchmark": "longmemeval",
+      "turns": 534,
+      "ownerTurns": 265,
+      "captureFailures": 0,
+      "audits": {
+        "nothing_to_remember": 131,
+        "auto_committed": 186,
+        "tentative_kept": 12,
+        "evidence_unverified": 3,
+        "candidate_invalid": 1
+      },
+      "activeMemories": 173,
+      "ingestMs": 5905773,
+      "phaseMs": {
+        "search": 65804,
+        "capture": 5776743,
+        "model": 5690985,
+        "projection": 36738
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "726462e0",
+      "benchmark": "longmemeval",
+      "turns": 501,
+      "ownerTurns": 249,
+      "captureFailures": 0,
+      "audits": {
+        "nothing_to_remember": 108,
+        "auto_committed": 182,
+        "tentative_kept": 10,
+        "explicitly_approved": 2,
+        "candidate_invalid": 2,
+        "confidence_below_threshold": 2
+      },
+      "activeMemories": 164,
+      "ingestMs": 5910085,
+      "phaseMs": {
+        "search": 50893,
+        "capture": 5793705,
+        "model": 5665183,
+        "projection": 38965
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "a89d7624",
+      "benchmark": "longmemeval",
+      "turns": 496,
+      "ownerTurns": 245,
+      "captureFailures": 1,
+      "audits": {
+        "auto_committed": 182,
+        "nothing_to_remember": 101,
+        "tentative_kept": 10,
+        "candidate_invalid": 2,
+        "explicitly_approved": 3
+      },
+      "activeMemories": 171,
+      "ingestMs": 5910795,
+      "phaseMs": {
+        "search": 44025,
+        "capture": 5796393,
+        "model": 5678008,
+        "projection": 43996
+      },
+      "failureSamples": ["The transaction scope exceeded 2000 ms"]
+    },
+    {
+      "id": "561fabcd",
+      "benchmark": "longmemeval",
+      "turns": 495,
+      "ownerTurns": 246,
+      "captureFailures": 1,
+      "audits": {
+        "auto_committed": 157,
+        "nothing_to_remember": 112,
+        "tentative_kept": 8,
+        "explicitly_approved": 1,
+        "candidate_invalid": 7,
+        "confidence_below_threshold": 1
+      },
+      "activeMemories": 142,
+      "ingestMs": 5911886,
+      "phaseMs": {
+        "search": 65000,
+        "capture": 5778863,
+        "model": 5665131,
+        "projection": 40286
+      },
+      "failureSamples": ["The transaction scope exceeded 2000 ms"]
+    },
+    {
+      "id": "29f2956b",
+      "benchmark": "longmemeval",
+      "turns": 496,
+      "ownerTurns": 247,
+      "captureFailures": 0,
+      "audits": {
+        "nothing_to_remember": 121,
+        "tentative_kept": 14,
+        "auto_committed": 181,
+        "candidate_invalid": 1
+      },
+      "activeMemories": 170,
+      "ingestMs": 5980547,
+      "phaseMs": {
+        "search": 76018,
+        "capture": 5840742,
+        "model": 5757901,
+        "projection": 37428
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "2ebe6c92",
+      "benchmark": "longmemeval",
+      "turns": 487,
+      "ownerTurns": 242,
+      "captureFailures": 0,
+      "audits": {
+        "auto_committed": 201,
+        "tentative_kept": 3,
+        "nothing_to_remember": 84,
+        "explicitly_approved": 2,
+        "confidence_below_threshold": 1
+      },
+      "activeMemories": 166,
+      "ingestMs": 5987332,
+      "phaseMs": {
+        "search": 46660,
+        "capture": 5837734,
+        "model": 5722879,
+        "projection": 77115
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "2bf43736",
+      "benchmark": "longmemeval",
+      "turns": 478,
+      "ownerTurns": 237,
+      "captureFailures": 0,
+      "audits": {
+        "nothing_to_remember": 104,
+        "auto_committed": 180,
+        "tentative_kept": 13,
+        "candidate_invalid": 1,
+        "evidence_unverified": 1,
+        "explicitly_approved": 2
+      },
+      "activeMemories": 182,
+      "ingestMs": 5988845,
+      "phaseMs": {
+        "search": 58527,
+        "capture": 5863090,
+        "model": 5745197,
+        "projection": 38563
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "3e321797",
+      "benchmark": "longmemeval",
+      "turns": 490,
+      "ownerTurns": 244,
+      "captureFailures": 0,
+      "audits": {
+        "nothing_to_remember": 93,
+        "auto_committed": 178,
+        "explicitly_approved": 1,
+        "tentative_kept": 18,
+        "candidate_invalid": 6
+      },
+      "activeMemories": 175,
+      "ingestMs": 5989973,
+      "phaseMs": {
+        "search": 46184,
+        "capture": 5884843,
+        "model": 5795440,
+        "projection": 33683
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "195a1a1b",
+      "benchmark": "longmemeval",
+      "turns": 515,
+      "ownerTurns": 257,
+      "captureFailures": 0,
+      "audits": {
+        "nothing_to_remember": 131,
+        "auto_committed": 172,
+        "tentative_kept": 12,
+        "explicitly_approved": 2,
+        "confidence_below_threshold": 1,
+        "candidate_invalid": 1
+      },
+      "activeMemories": 156,
+      "ingestMs": 5990458,
+      "phaseMs": {
+        "search": 179333,
+        "capture": 5750093,
+        "model": 5669056,
+        "projection": 31105
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "2c63a862",
+      "benchmark": "longmemeval",
+      "turns": 529,
+      "ownerTurns": 262,
+      "captureFailures": 0,
+      "audits": {
+        "nothing_to_remember": 134,
+        "auto_committed": 161,
+        "confidence_below_threshold": 1,
+        "tentative_kept": 4,
+        "candidate_invalid": 1,
+        "explicitly_approved": 1
+      },
+      "activeMemories": 140,
+      "ingestMs": 5992827,
+      "phaseMs": {
+        "search": 67098,
+        "capture": 5865525,
+        "model": 5752368,
+        "projection": 31915
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "bc8a6e93",
+      "benchmark": "longmemeval",
+      "turns": 537,
+      "ownerTurns": 267,
+      "captureFailures": 0,
+      "audits": {
+        "nothing_to_remember": 133,
+        "auto_committed": 171,
+        "explicitly_approved": 3,
+        "tentative_kept": 3,
+        "candidate_invalid": 3
+      },
+      "activeMemories": 152,
+      "ingestMs": 6070003,
+      "phaseMs": {
+        "search": 70050,
+        "capture": 5946909,
+        "model": 5876041,
+        "projection": 28141
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "gpt4_7de946e7",
+      "benchmark": "longmemeval",
+      "turns": 533,
+      "ownerTurns": 264,
+      "captureFailures": 2,
+      "audits": {
+        "auto_committed": 161,
+        "evidence_unverified": 3,
+        "candidate_invalid": 3,
+        "nothing_to_remember": 131,
+        "tentative_kept": 10,
+        "extraction_failed": 1,
+        "explicitly_approved": 5
+      },
+      "activeMemories": 150,
+      "ingestMs": 6149318,
+      "phaseMs": {
+        "search": 78839,
+        "capture": 5997251,
+        "model": 5908450,
+        "projection": 41032
+      },
+      "failureSamples": [
+        "The transaction scope exceeded 2000 ms",
+        "Expected ',' or ']' after array element in JSON at position 2789 (line 1 column 2790)"
+      ]
+    },
+    {
+      "id": "e47becba",
+      "benchmark": "longmemeval",
+      "turns": 550,
+      "ownerTurns": 273,
+      "captureFailures": 0,
+      "audits": {
+        "nothing_to_remember": 117,
+        "auto_committed": 215,
+        "candidate_invalid": 8,
+        "tentative_kept": 7,
+        "confidence_below_threshold": 2
+      },
+      "activeMemories": 198,
+      "ingestMs": 6200319,
+      "phaseMs": {
+        "search": 60795,
+        "capture": 6076485,
+        "model": 5930014,
+        "projection": 36241
+      },
+      "failureSamples": []
+    }
+  ],
+  "results": {
+    "locomo": {
+      "memory": {
+        "questions": 1540,
+        "judged": 1540,
+        "accuracy": 0.775974025974026,
+        "byCategory": {
+          "multi-hop": {
+            "questions": 282,
+            "accuracy": 0.851063829787234
+          },
+          "open-domain": {
+            "questions": 96,
+            "accuracy": 0.4583333333333333
+          },
+          "single-hop": {
+            "questions": 841,
+            "accuracy": 0.8061831153388823
+          },
+          "temporal": {
+            "questions": 321,
+            "accuracy": 0.7258566978193146
+          }
+        },
+        "evidenceRecall": 0.9127604166666666,
+        "evidenceStored": 1,
+        "meanContextTokens": 8939.868831168831,
+        "medianAnswerMs": 1599
+      },
+      "fullContext": {
+        "questions": 1540,
+        "judged": 1540,
+        "accuracy": 0.9246753246753247,
+        "byCategory": {
+          "multi-hop": {
+            "questions": 282,
+            "accuracy": 0.9539007092198581
+          },
+          "open-domain": {
+            "questions": 96,
+            "accuracy": 0.6041666666666666
+          },
+          "single-hop": {
+            "questions": 841,
+            "accuracy": 0.9619500594530321
+          },
+          "temporal": {
+            "questions": 321,
+            "accuracy": 0.897196261682243
+          }
+        },
+        "evidenceRecall": null,
+        "evidenceStored": null,
+        "meanContextTokens": 28993.533116883118,
+        "medianAnswerMs": 1719
+      }
+    },
+    "longmemeval": {
+      "memory": {
+        "questions": 30,
+        "judged": 30,
+        "accuracy": 0.7333333333333333,
+        "byCategory": {
+          "knowledge-update": {
+            "questions": 5,
+            "accuracy": 1
+          },
+          "multi-session": {
+            "questions": 5,
+            "accuracy": 0.6
+          },
+          "single-session-assistant": {
+            "questions": 5,
+            "accuracy": 0.2
+          },
+          "single-session-preference": {
+            "questions": 5,
+            "accuracy": 1
+          },
+          "single-session-user": {
+            "questions": 5,
+            "accuracy": 1
+          },
+          "temporal-reasoning": {
+            "questions": 5,
+            "accuracy": 0.6
+          }
+        },
+        "evidenceRecall": 0.9333333333333333,
+        "evidenceStored": 0.9666666666666667,
+        "meanContextTokens": 4331.766666666666,
+        "medianAnswerMs": 2679
+      },
+      "fullContext": {
+        "questions": 30,
+        "judged": 30,
+        "accuracy": 0.7333333333333333,
+        "byCategory": {
+          "knowledge-update": {
+            "questions": 5,
+            "accuracy": 1
+          },
+          "multi-session": {
+            "questions": 5,
+            "accuracy": 0.4
+          },
+          "single-session-assistant": {
+            "questions": 5,
+            "accuracy": 1
+          },
+          "single-session-preference": {
+            "questions": 5,
+            "accuracy": 0.6
+          },
+          "single-session-user": {
+            "questions": 5,
+            "accuracy": 1
+          },
+          "temporal-reasoning": {
+            "questions": 5,
+            "accuracy": 0.4
+          }
+        },
+        "evidenceRecall": null,
+        "evidenceStored": null,
+        "meanContextTokens": 105347.7,
+        "medianAnswerMs": 8507
+      }
+    }
+  }
+}

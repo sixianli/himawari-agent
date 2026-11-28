@@ -28,8 +28,7 @@
 "result.waiting" = "同意待ち";
 "result.other" = "このバージョンのアプリではこの結果を表示できません";
 "result.other.update" = "アプリを更新すると見られます";
-"abilities.title" = "代わりにできること";
-"abilities.system" = "システムで許可されているもの";
+"abilities.title" = "Himawari が代わりにできること";
 "permission.status.authorized" = "許可済み";
 "permission.status.notDetermined" = "まだ確認していません";
 "permission.status.denied" = "許可されていません";
@@ -50,8 +49,11 @@
 "allowance.thisTask" = "この件の間";
 "allowance.days" = "%d日間";
 "allowance.always" = "今後ずっと";
+"allowance.title" = "この承認の有効範囲";
 "allowance.locked.spending" = "お金を使うことは「今回だけ」です";
 "allowance.locked.credential" = "鍵や権限の変更は「今回だけ」です";
 "allowance.locked.ownerPresence" = "あなた本人が必要なことは「今回だけ」です";
 "allowance.locked.asksEveryTime" = "この種類は毎回確認するので「今回だけ」です";
 "allowance.notSaved" = "今回は承認しましたが、承認の範囲を記録できませんでした。次に同じことがあればまた確認します";
+"abilities.systemAccess" = "システムの許可";
+"abilities.allowedBySystem" = "システムで許可したこと";

@@ -1,5 +1,9 @@
 import type { DecisionLedgerWrite, ThreadDistillationStatePort } from "@himawari-agent/application";
-import { ContextFormationService, SessionTraceRecorder } from "@himawari-agent/application";
+import {
+  ContextFormationService,
+  RuntimeHistoryService,
+  SessionTraceRecorder,
+} from "@himawari-agent/application";
 import {
   createAgentId,
   createMemoryGenerationId,
@@ -8,6 +12,7 @@ import {
   createSessionId,
   createThreadId,
 } from "@himawari-agent/domain";
+import { historyKeptSince } from "@himawari-agent/runtime-pi";
 import { createReferenceAdapterSet, DeterministicFailureScheduler } from "@himawari-agent/testing";
 import { describe, expect, it, vi } from "vitest";
 
@@ -450,6 +455,177 @@ describe("Task 9 Memory and context formation", () => {
       trigger: { sourceType: "user_message" },
       injectedContentRefs: formed.injectedContentRefs,
     });
+  });
+
+  it("[自动原话] brings the recalled old conversations after the memories, records which ones in the trace, and answers without them when recall fails", async () => {
+    const recalled = {
+      payloadRef: "payload-conversation-recall-01",
+      dataClassification: "private" as const,
+      turns: [
+        {
+          conversationId: "thread-books",
+          sequence: 3,
+          day: "2026-08-20",
+          startedAt: "2026-08-20T01:00:00.000Z",
+          preview: "推荐一本科幻小说",
+        },
+      ],
+    };
+    const requests: unknown[] = [];
+    const adapters = createReferenceAdapterSet({ scope: { ownerId: OWNER_ID, agentId: AGENT_ID } });
+    const trace = new SessionTraceRecorder({
+      trace: adapters.trace,
+      artifacts: adapters.runPayloadArtifacts,
+      protector: adapters.payloadProtector,
+      audit: adapters.audit,
+      clock: adapters.clock,
+      ids: adapters.ids,
+    });
+    await seedMemory(adapters.memory, {
+      id: "memory-beef",
+      contentRef: "payload-memory-beef",
+      sourceRef: "trace-user-preference-beef",
+      searchTerms: ["beef"],
+      dataClassification: "private",
+    });
+    const dependencies = {
+      memory: adapters.memory,
+      trace,
+      artifacts: adapters.runPayloadArtifacts,
+      payloads: adapters.payload,
+      protector: adapters.payloadProtector,
+      clock: adapters.clock,
+      ids: adapters.ids,
+    };
+    const formed = await new ContextFormationService({
+      ...dependencies,
+      conversations: {
+        recall: async (input) => {
+          requests.push(input);
+          return recalled;
+        },
+      },
+    }).form(request("user_message"));
+    expect(requests).toEqual([
+      expect.objectContaining({
+        threadId: THREAD_ID,
+        threadInContextSince: null,
+        queryRef: "payload-memory-query-01",
+        runId: RUN_ID,
+      }),
+    ]);
+    expect(formed.envelope.contextBlocks.map(({ kind }) => kind)).toEqual([
+      "memory",
+      "conversation-recall",
+      "capability-summary",
+    ]);
+    expect(formed.envelope.contextBlocks[1]).toEqual({
+      kind: "conversation-recall",
+      ref: "conversation-recall",
+      payloadRef: "payload-conversation-recall-01",
+      dataClassification: "private",
+    });
+    expect(formed.injectedContentRefs).toContain("payload-conversation-recall-01");
+    const events = await adapters.trace.readRun(RUN_ID, 0, 10);
+    const final = await adapters.payload.get(events.at(-1)?.payloadRef ?? "missing");
+    if (!final) throw new Error("Expected the context.formed payload");
+    await expect(adapters.payloadProtector.revealForTest(final)).resolves.toMatchObject({
+      conversationRecall: { payloadRef: recalled.payloadRef, turns: recalled.turns },
+    });
+
+    const failed = await new ContextFormationService({
+      ...dependencies,
+      conversations: {
+        recall: async () => {
+          throw new Error("conversation index unavailable");
+        },
+      },
+    }).form({ ...request("user_message"), runId: createRunId("run-context-recall-failed") });
+    expect(failed.envelope.contextBlocks.map(({ kind }) => kind)).toEqual([
+      "memory",
+      "capability-summary",
+    ]);
+
+    const restricted = await new ContextFormationService({
+      ...dependencies,
+      conversations: { recall: async () => ({ ...recalled, dataClassification: "restricted" }) },
+    }).form({ ...request("user_message"), runId: createRunId("run-context-recall-restricted") });
+    expect(
+      restricted.envelope.contextBlocks.some(({ kind }) => kind === "conversation-recall"),
+    ).toBe(false);
+  });
+
+  it("[自动原话] in the one main conversation, lets recall reach this conversation's words that compaction left out, and REVERSE keeps the whole conversation out before any compaction", async () => {
+    const adapters = createReferenceAdapterSet({ scope: { ownerId: OWNER_ID, agentId: AGENT_ID } });
+    const trace = new SessionTraceRecorder({
+      trace: adapters.trace,
+      artifacts: adapters.runPayloadArtifacts,
+      protector: adapters.payloadProtector,
+      audit: adapters.audit,
+      clock: adapters.clock,
+      ids: adapters.ids,
+    });
+    const history = new RuntimeHistoryService({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      clock: adapters.clock,
+      ids: adapters.ids,
+      artifacts: adapters.runPayloadArtifacts,
+      payloads: adapters.payload,
+      protector: adapters.payloadProtector,
+    });
+    const kept = Date.parse("2026-11-20T03:00:00.000Z");
+    const compacted = await history.save({
+      runId: RUN_ID,
+      dataClassification: "private",
+      messages: [
+        {
+          role: "compactionSummary",
+          summary: "earlier talk",
+          tokensBefore: 90_000,
+          timestamp: kept - 1000,
+        },
+        { role: "user", content: "kept words", timestamp: kept },
+      ],
+    });
+    const whole = await history.save({
+      runId: RUN_ID,
+      dataClassification: "private",
+      messages: [{ role: "user", content: "all words", timestamp: kept }],
+    });
+    const formWith = async (reference: typeof compacted, runId: string) => {
+      const requests: { threadInContextSince: string | null }[] = [];
+      await new ContextFormationService({
+        memory: adapters.memory,
+        trace,
+        artifacts: adapters.runPayloadArtifacts,
+        payloads: adapters.payload,
+        protector: adapters.payloadProtector,
+        clock: adapters.clock,
+        ids: adapters.ids,
+        runtimeHistoryKeptSince: historyKeptSince,
+        threads: {
+          readContextSnapshot: async () => ({
+            thread: {} as never,
+            messages: [],
+            runStates: [],
+            runtimeHistory: { reference, runState: { runId: RUN_ID, status: "running" } },
+            sourceWatermark: null,
+          }),
+        },
+        conversations: {
+          recall: async (input) => {
+            requests.push(input);
+            return undefined;
+          },
+        },
+      }).form({ ...request("user_message"), runId: createRunId(runId) });
+      return requests.map(({ threadInContextSince }) => threadInContextSince);
+    };
+    expect(await formWith(compacted, "run-context-compacted")).toEqual([
+      "2026-11-20T03:00:00.000Z",
+    ]);
+    expect(await formWith(whole, "run-context-whole")).toEqual([null]);
   });
 
   it("[ADR-0286] brings every memory that clears the relevance threshold, with no count cap, and leaves out unrelated ones", async () => {

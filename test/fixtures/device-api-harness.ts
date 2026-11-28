@@ -10,6 +10,7 @@ import {
   DEVICE_CONFIGURATION_DEFAULTS,
   type DeviceActionAuthorizationPort,
   type DeviceActionOpenRequestPort,
+  type DeviceActionReadFailure,
   type DeviceActionRecord,
   type DeviceActionRegistry,
   type DeviceConfiguration,
@@ -59,13 +60,12 @@ import {
   type DeviceConnectionsPort,
   DeviceNotificationHub,
   DevicePresence,
+  DevicePushService,
   DeviceSignInService,
   displaySetupCode,
+  EnvelopePayloadProtector,
   FileSetupCodeSource,
   generateSetupCode,
-  writeSetupCode,
-  DevicePushService,
-  EnvelopePayloadProtector,
   NodeVaultCrypto,
   PairedDeviceService,
   type PairedDeviceWarning,
@@ -73,6 +73,7 @@ import {
   PerceptionService,
   ScopedThreadSearchTokenizer,
   SessionBoundCsrfService,
+  writeSetupCode,
 } from "@himawari-agent/platform-node";
 import {
   buildDeviceTestRequest,
@@ -87,15 +88,19 @@ import { expect } from "vitest";
 import { ContextExternalContent } from "../../apps/agent-service/src/context-external-content.ts";
 import { createProductionApprovalGateway } from "../../apps/agent-service/src/production-approval-gateway.ts";
 import { createProductionDeviceActions } from "../../apps/agent-service/src/production-device-actions.ts";
+import {
+  type DeviceChatCatalogEntry,
+  deviceChatModels,
+} from "../../apps/agent-service/src/production-device-chat-models.ts";
 import { ProductionHomeControl } from "../../apps/agent-service/src/production-home.ts";
-import { ProductionSensitiveInterceptionsControl } from "../../apps/agent-service/src/production-sensitive-interceptions-control.ts";
-import { WebPushPresence } from "../../apps/agent-service/src/production-web-push.ts";
-import { ProductionWebPushControl } from "../../apps/agent-service/src/production-web-push-control.ts";
 import {
   ProductionHttpPayloadAdmission,
   ProductionThreadGatewayAccessPolicy,
   utterancePrefetch,
 } from "../../apps/agent-service/src/production-http-composition.ts";
+import { ProductionSensitiveInterceptionsControl } from "../../apps/agent-service/src/production-sensitive-interceptions-control.ts";
+import { WebPushPresence } from "../../apps/agent-service/src/production-web-push.ts";
+import { ProductionWebPushControl } from "../../apps/agent-service/src/production-web-push-control.ts";
 
 export const ownerId = createOwnerId("owner-device-api");
 export const agentId = createAgentId("agent-device-api");
@@ -135,6 +140,7 @@ export interface Harness {
   readonly ownerActive: { current: boolean };
   readonly webAuthentication: GatewayAuthenticationContext;
   readonly warnings: PairedDeviceWarning[];
+  readonly actionReadFailures: DeviceActionReadFailure[];
   readonly stateRoot: string;
   readonly passkey: SoftwarePasskey;
   readonly signedIn: string[];
@@ -198,6 +204,11 @@ export async function harness(
       Parameters<typeof buildHttpGatewayServer>[0]["devices"]
     >["speech"];
     readonly chatAttachments?: { readonly images: boolean };
+    readonly chatModels?: {
+      readonly primaryRef: string;
+      readonly catalog: readonly DeviceChatCatalogEntry[];
+      readonly privateRefs: readonly string[];
+    };
   } = {},
 ): Promise<Harness> {
   const publicOrigin = options.origin ?? origin;
@@ -248,6 +259,9 @@ export async function harness(
     crypto: new NodeVaultCrypto(),
     notifier: {
       approvalNeeded: async (input) => {
+        vaultNotified.push(input.requestId);
+      },
+      codeNeeded: async (input) => {
         vaultNotified.push(input.requestId);
       },
     },
@@ -336,6 +350,14 @@ export async function harness(
           protector,
         }),
         clock,
+        ...(options.chatModels
+          ? {
+              validateModelSelection: (selection: { readonly modelRef: string }) => {
+                if (!options.chatModels?.catalog.some((entry) => entry.ref === selection.modelRef))
+                  throw new Error("MODEL_SELECTION_NOT_ALLOWED");
+              },
+            }
+          : {}),
         waitForEvents: async () => new Promise((resolve) => setTimeout(resolve, 20)),
       });
       return { controlPlane: adapter, reads: adapter };
@@ -465,6 +487,7 @@ export async function harness(
     authority: () => authorityLease,
     clock,
   });
+  const actionReadFailures: DeviceActionReadFailure[] = [];
   const actions = createProductionDeviceActions({
     scope: { ownerId, agentId },
     store: repository.deviceActions(),
@@ -485,6 +508,7 @@ export async function harness(
         authorization.current?.resolve?.(approvalId) ?? { decision: "pending" },
     },
     ...(options.actionRegistry ? { registry: options.actionRegistry } : {}),
+    onReadFailed: (failure) => actionReadFailures.push(failure),
   });
   approvalResolved.current = () => actions.service.reconcile();
   const prefetchLimits = { current: QUERY_PREFETCH_LIMIT_DEFAULTS };
@@ -627,6 +651,28 @@ export async function harness(
       ...(options.chatAttachments
         ? { chatAttachments: () => options.chatAttachments as { readonly images: boolean } }
         : {}),
+      ...(() => {
+        if (!options.chatModels) return {};
+        const models = options.chatModels;
+        const port = deviceChatModels({
+          catalog: models.catalog,
+          configuration: {
+            ownerId,
+            agentId,
+            modelDescriptors: models.catalog.map((entry) => ({
+              ref: entry.ref,
+              role: entry.ref === models.primaryRef ? "primary" : "specialist",
+              allowedDataClassifications: models.privateRefs.includes(entry.ref)
+                ? ["public", "private"]
+                : ["public"],
+            })) as unknown as Parameters<
+              typeof deviceChatModels
+            >[0]["configuration"]["modelDescriptors"],
+          },
+          preferences: repository.ownerPreferences(),
+        });
+        return port ? { chatModels: port } : {};
+      })(),
       listVoiceTiming: deviceVoiceTimingLister({
         ownerId,
         agentId,
@@ -654,6 +700,7 @@ export async function harness(
     ownerActive,
     webAuthentication,
     warnings,
+    actionReadFailures,
     stateRoot,
     passkey: new SoftwarePasskey(publicOrigin),
     signedIn,

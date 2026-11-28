@@ -98,7 +98,9 @@ async function setup() {
       connection: name,
       callbackScheme: "win.example.himawari",
     });
-    const answer = await fetch(started?.authorizationUrl ?? "", { redirect: "manual" });
+    const answer = await fetch(started?.kind === "browser" ? started.authorizationUrl : "", {
+      redirect: "manual",
+    });
     const back = new URL(answer.headers.get("location") ?? "");
     connections.callback({
       state: back.searchParams.get("state"),

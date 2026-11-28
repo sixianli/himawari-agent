@@ -148,6 +148,11 @@ function setup(
         records: Record<string, unknown>[];
         note?: string;
         notice?: string;
+        known?: {
+          devices: { kind: string; lastSeen: string | null }[];
+          lastRecordBefore: string | null;
+          lookedBackDays: number;
+        };
         availableKinds?: string[];
       };
       contentClassification?: string;
@@ -220,6 +225,26 @@ describe("[iOS-5] perception_read reads what the devices recorded", () => {
     expect(unmatched.value.note).toContain("没有");
     const matched = await read("run-owner", { ...DAY, query: "天气" });
     expect(matched.value.records).toHaveLength(1);
+  });
+
+  it("[I-133] when nothing is found it gives the facts it knows and tells the model not to guess or send the owner to check", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    await ingest(h, client, [utterance(h, "今天天气不错")]);
+    await addRun(h, "run-owner", "user_message");
+    const { read } = setup(h);
+    const after = await read("run-owner", { from: "2026-11-13", to: "2026-11-13" });
+    expect(after.value.records).toEqual([]);
+    expect(after.value.known?.lastRecordBefore).toBe("2026-11-12 09:00");
+    expect(after.value.known?.lookedBackDays).toBe(7);
+    expect(after.value.known?.devices).toHaveLength(1);
+    expect(after.value.known?.devices[0]?.lastSeen).toMatch(/^2026-11-12 \d{2}:\d{2}$/u);
+    expect(after.value.note).toContain("不要猜原因");
+    expect(after.value.note).not.toContain("设备可能没在收集");
+    const before = await read("run-owner", { from: "2026-11-10", to: "2026-11-10" });
+    expect(before.value.known?.lastRecordBefore).toBeNull();
+    const found = await read("run-owner", DAY);
+    expect(found.value.known).toBeUndefined();
   });
 
   it("reports how many records were left out by the limit and never shows restricted ones", async () => {

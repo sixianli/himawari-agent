@@ -249,7 +249,26 @@ vi.mock("../../scripts/ci/check-security.mjs", () => ({
       reportPath,
       checks: state.failSecurity
         ? [
-            { id: "gitleaks", status: "passed" },
+            {
+              id: "gitleaks",
+              status: "failed",
+              blocking: [
+                {
+                  id: "generic-api-key",
+                  path: "test/fixtures/sample.ts",
+                  line: 12,
+                  scope: "history",
+                  commit: "0123456789abcdef0123456789abcdef01234567",
+                },
+                {
+                  id: "private-key",
+                  path: "docs/example.md",
+                  line: 3,
+                  scope: "current",
+                  commit: null,
+                },
+              ],
+            },
             { id: "semgrep", status: "infrastructure_failed", error: "SECURITY_SCANNER_FAILED" },
             {
               id: "security-exceptions",
@@ -385,11 +404,12 @@ describe("共享runner的调度、来源和失败传播", () => {
       }
     },
   );
-  it("[ADR-0267] tooling 只跑 tooling 测试，不跑 policy 检查", async () => {
+  it("[ADR-0267] tooling 先核对测试登记再跑 tooling 测试，不跑工作流的 policy 检查", async () => {
     const result = await run("tooling");
     expect(result.status).toBe("passed");
     expect(result.projects.map((entry) => entry.id)).toEqual(["tooling"]);
-    expect(state.calls.map((entry) => entry.name)).toEqual(["vitest-tooling"]);
+    expect(state.calls.map((entry) => entry.name)).toEqual(["policy-tests", "vitest-tooling"]);
+    expect(state.calls[0].args).toContain("tests");
   });
   it("[ADR-0267] tests 不带 --coverage measure 时只跑测试，不量覆盖率", async () => {
     const result = await run("tests", { coverage: undefined });
@@ -412,7 +432,7 @@ describe("共享runner的调度、来源和失败传播", () => {
       JSON.parse(readFileSync(path.join(state.root, ".ci-output/tooling/details.json"), "utf8")),
     ).toMatchObject({ failures: [] });
     expect(result.status).toBe("passed");
-    expect(state.calls).toEqual([]);
+    expect(state.calls.map(({ name }) => name)).toEqual(["policy-tests"]);
     expect(result.relatedProjects).toEqual(["tooling"]);
     expect(result.projects).toEqual([
       { id: "tooling", counts: { files: 0, executed: 0, passed: 0, failed: 0, skipped: 0 } },
@@ -425,13 +445,14 @@ describe("共享runner的调度、来源和失败传播", () => {
         reason: "related",
       }),
     });
-    expect(state.calls[0].args.at(-1)).toBe("test/tooling/example.test.mjs");
+    const vitestArgs = () => state.calls.find(({ name }) => name === "vitest-tooling").args;
+    expect(vitestArgs().at(-1)).toBe("test/tooling/example.test.mjs");
     state.calls.length = 0;
     const full = await run("tooling", {
       output: ".ci-output/tooling-full",
       planScope: () => ({ related: new Map(), reason: "full-event" }),
     });
-    expect(state.calls[0].args.at(-1)).toMatch(/^--outputFile\.junit=/);
+    expect(vitestArgs().at(-1)).toMatch(/^--outputFile\.junit=/);
     expect(full.relatedProjects).toBeUndefined();
   });
   it("[ADR-0268] tests 不量覆盖率时把相关范围交给 runTests，量覆盖率时不选范围", async () => {
@@ -497,9 +518,9 @@ describe("共享runner的调度、来源和失败传播", () => {
     expect(state.calls).toEqual([]);
     expect(existsSync(path.join(state.root, ".ci-output/policy"))).toBe(false);
   });
-  it("rejects hosted build, browser and tests on linux-arm64 before creating output or executing anything", async () => {
+  it("rejects hosted build and tests on linux-arm64 before creating output or executing anything", async () => {
     await withHost("linux", "arm64", async () => {
-      for (const checkId of ["build", "browser", "tests"]) {
+      for (const checkId of ["build", "tests"]) {
         await expect(run(checkId, { hosted: true, matrixKey: "linux-arm64" })).rejects.toThrow(
           "CI_MATRIX_UNSUPPORTED",
         );
@@ -679,15 +700,15 @@ describe("共享runner的调度、来源和失败传播", () => {
       outcome: "passed",
     });
   });
-  it("同一归档的build、browser分别记录produced/consumed身份", async () => {
+  it("同一归档的build、tests分别记录produced/consumed身份", async () => {
     const platform = process.platform === "darwin" ? "macos-arm64" : "linux-x64";
     const build = await run("build", { matrixKey: platform });
     const artifact = path.join(state.root, ".ci-output/build", build.artifacts[0].path);
-    const browser = await run("browser", { matrixKey: "chromium", artifact });
-    expect([build, browser].map((result) => result.status)).toEqual(["passed", "passed"]);
-    expect(browser.artifacts[0].sha256).toBe(build.artifacts[0].sha256);
+    const consumer = await run("tests", { matrixKey: "others", artifact });
+    expect([build, consumer].map((result) => result.status)).toEqual(["passed", "passed"]);
+    expect(consumer.artifacts[0].sha256).toBe(build.artifacts[0].sha256);
     expect(build.artifacts[0].role).toBe("produced");
-    expect(browser.artifacts[0].role).toBe("consumed");
+    expect(consumer.artifacts[0].role).toBe("consumed");
   });
   it("coverage先绑定源码快照，四个project合并后再判定覆盖率", async () => {
     const result = await run("tests");
@@ -869,6 +890,9 @@ describe("共享runner的调度、来源和失败传播", () => {
         retryCount: 0,
       });
       expect(written.mock.calls.map(([text]) => text)).toEqual([
+        "security scan gitleaks: failed\n",
+        "security finding gitleaks generic-api-key test/fixtures/sample.ts:12 history 0123456789ab\n",
+        "security finding gitleaks private-key docs/example.md:3 current\n",
         "security scan semgrep: infrastructure_failed SECURITY_SCANNER_FAILED\n",
         "security scan security-exceptions: infrastructure_failed\n",
       ]);

@@ -111,7 +111,7 @@ export const TOOL_RESULT_PERCEPTION_READ_EMPTY = fixedPrompt({
   usedBy: [TOOLS_FILE],
   layer: "tool-result",
   output: "free-text",
-  text: "这段时间里没有符合条件的感知记录。没有记录不等于什么都没发生：设备可能没在收集、被暂停了，或者这种感官没开。照实告诉主人没有查到。",
+  text: "这段时间里没有符合条件的感知记录。known 里是服务器知道的事实：devices 是每台设备最后一次联系服务器的时间，lastRecordBefore 是这段时间之前 lookedBackDays 天里最后一条这种记录的时间（null 表示这几天里也没有）。只照这些事实告诉主人查到了什么、没查到什么。不要猜原因（例如手表没戴、权限被关、设备没开），也不要让主人去检查设置、设备或别的 App：主人已经授权的数据读不到，是 Himawari 这边要查的问题，不是主人的事。",
 });
 
 export const TOOL_RESULT_PERCEPTION_READ_TRUNCATED = templatePrompt({
@@ -384,11 +384,93 @@ export const TOOL_RESULT_DEVICE_ACTION_REASON_NOT_DELIVERED = fixedPrompt({
 
 export const TOOL_RESULT_DEVICE_ACTION_REASON_TARGET_UNKNOWN = fixedPrompt({
   id: "tools.result.device-action.reason.target-unknown",
-  purpose: "device_action 结果里的原因：动作指向的东西在设备同步来的数据里找不到时的说明",
+  purpose:
+    "device_action 结果里的原因：动作指向的东西在设备同步来的数据和最近读出的结果里都找不到时的说明",
   usedBy: [ACTIONS_FILE],
   layer: "tool-result",
   output: "free-text",
-  text: "参数里的编号在这台设备同步来的数据里找不到，什么都没有做。先读出这件东西现在的编号再试，不要猜编号。",
+  text: "参数里的编号在这台设备同步来的数据和最近读出的结果里都找不到，什么都没有做。先读出这件东西现在的编号再试，不要猜编号。",
+});
+
+export const TOOL_RESULT_DEVICE_ACTION_USAGE_CALENDAR_READ = fixedPrompt({
+  id: "tools.result.device-action.usage.calendar-read",
+  purpose: "device_action describe 结果里 calendar.read 的用法说明",
+  usedBy: [REGISTRY_FILE],
+  layer: "tool-result",
+  output: "free-text",
+  text: "在设备的日历里读出 from 到 to 之间的日程，时间都是设备当地时间。主人问起安排、要改或删某个日程时先用它：结果 done.events 里每项的 eventId 就是 calendar.update、calendar.delete 要的编号，照抄，不要猜。done.truncated 为 true 表示条目太多没给全，缩短时间范围再读。",
+});
+
+export const TOOL_RESULT_DEVICE_ACTION_USAGE_CALENDAR_CHANGE = fixedPrompt({
+  id: "tools.result.device-action.usage.calendar-change",
+  purpose: "device_action describe 结果里 calendar.update、calendar.delete 的用法说明",
+  usedBy: [REGISTRY_FILE],
+  layer: "tool-result",
+  output: "free-text",
+  text: "eventId 用 calendar.read 结果里那个日程的 eventId；手里没有就先用 calendar.read 读出来，不要找主人要编号。",
+});
+
+export const TOOL_RESULT_DEVICE_ACTION_USAGE_CONTACT_SEARCH = fixedPrompt({
+  id: "tools.result.device-action.usage.contact-search",
+  purpose: "device_action describe 结果里 contact.search 的用法说明",
+  usedBy: [REGISTRY_FILE],
+  layer: "tool-result",
+  output: "free-text",
+  text: "在设备的通讯录里按名字、电话或邮箱查联系人，只返回对得上的人，不会读出整个通讯录。结果 done.contacts 里每项的 contactId 就是 contact.update 要的编号，照抄，不要猜。done.truncated 为 true 表示对得上的人太多没给全，换更具体的查法再查。",
+});
+
+export const TOOL_RESULT_DEVICE_ACTION_USAGE_CONTACT_UPDATE = fixedPrompt({
+  id: "tools.result.device-action.usage.contact-update",
+  purpose: "device_action describe 结果里 contact.update 的用法说明",
+  usedBy: [REGISTRY_FILE],
+  layer: "tool-result",
+  output: "free-text",
+  text: "contactId 用 contact.search 结果里那个人的 contactId；手里没有就先用 contact.search 查出来，不要找主人要编号。",
+});
+
+export const TOOL_RESULT_DEVICE_ACTION_USAGE_DEVICE_REMINDER_READ = fixedPrompt({
+  id: "tools.result.device-action.usage.device-reminder-read",
+  purpose: "device_action describe 结果里 device_reminder.read 的用法说明",
+  usedBy: [REGISTRY_FILE],
+  layer: "tool-result",
+  output: "free-text",
+  text: "读设备上苹果“提醒事项”App 里的提醒。默认只读没完成的；includeCompleted 为 true 时连已完成的一起读；list 填清单名只读这个清单；query 填字只读标题或备注里有这些字的。主人问“提醒事项”App 里有什么、或要把其中一条标成完成时先用它：结果 done.reminders 里每项的 reminderId 就是 device_reminder.complete 要的编号，照抄，不要猜。done.truncated 为 true 表示条目太多没给全，加 list 或 query 再读。",
+});
+
+export const TOOL_RESULT_DEVICE_ACTION_USAGE_DEVICE_REMINDER_COMPLETE = fixedPrompt({
+  id: "tools.result.device-action.usage.device-reminder-complete",
+  purpose: "device_action describe 结果里 device_reminder.complete 的用法说明",
+  usedBy: [REGISTRY_FILE],
+  layer: "tool-result",
+  output: "free-text",
+  text: "reminderId 用 device_reminder.read 结果里那条提醒的 reminderId；手里没有就先用 device_reminder.read 读出来，不要找主人要编号。",
+});
+
+export const TOOL_RESULT_DEVICE_ACTION_USAGE_ALARM_LIST = fixedPrompt({
+  id: "tools.result.device-action.usage.alarm-list",
+  purpose: "device_action describe 结果里 alarm.list 的用法说明",
+  usedBy: [REGISTRY_FILE],
+  layer: "tool-result",
+  output: "free-text",
+  text: "读出 Himawari 在这台设备上设过、还没响完的闹钟（只看得到 Himawari 自己设的，看不到主人在“时钟”App 里设的）。结果 done.alarms 里每项有 alarmId、time（设备当地时间）和 state。",
+});
+
+export const TOOL_RESULT_DEVICE_ACTION_USAGE_HOME_READ = fixedPrompt({
+  id: "tools.result.device-action.usage.home-read",
+  purpose: "device_action describe 结果里 home.read 的用法说明",
+  usedBy: [REGISTRY_FILE],
+  layer: "tool-result",
+  output: "free-text",
+  text: "读设备“家庭”App 里的配件和它们现在的状态；room 填房间名只读这个房间，accessoryId 填编号只读这一个。结果 done.accessories 里每项的 accessoryId 就是 home.control 要的编号，照抄，不要猜。",
+});
+
+export const TOOL_RESULT_DEVICE_ACTION_USAGE_HOME_CONTROL = fixedPrompt({
+  id: "tools.result.device-action.usage.home-control",
+  purpose: "device_action describe 结果里 home.control 的用法说明",
+  usedBy: [REGISTRY_FILE],
+  layer: "tool-result",
+  output: "free-text",
+  text: "accessoryId 用 home.read 结果里那个配件的 accessoryId；手里没有就先用 home.read 读出来，不要找主人要编号。",
 });
 
 export const TOOL_RESULT_DEVICE_ACTION_USAGE_DEVICE_REMINDER = fixedPrompt({

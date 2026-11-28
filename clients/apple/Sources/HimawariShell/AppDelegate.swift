@@ -1,5 +1,7 @@
 #if canImport(UIKit)
 import HimawariCore
+import HimawariListenUI
+import HimawariSenses
 import UIKit
 
 @MainActor
@@ -10,7 +12,17 @@ public enum PushBridge {
 public final class HimawariAppDelegate: NSObject, UIApplicationDelegate {
     public func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         NotificationRouter.shared.install()
+        #if os(iOS)
+        HealthWake.install()
+        #endif
+        _ = AppModel.launched
         return true
+    }
+
+    public func applicationWillTerminate(_ application: UIApplication) {
+        #if canImport(ActivityKit) && os(iOS)
+        ListenActivities.endAllBeforeExit()
+        #endif
     }
 
     public func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {

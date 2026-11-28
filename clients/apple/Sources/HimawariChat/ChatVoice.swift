@@ -43,14 +43,3 @@ extension EnvironmentValues {
     @Entry public var chatStopRun: (@MainActor @Sendable (_ threadId: String, _ run: ThreadRunSummary) async throws -> Void)? = nil
     @Entry public var chatChooseOption: (@MainActor @Sendable (_ threadId: String, _ message: ThreadMessage, _ item: MessageOptions.Item) async throws -> Void)? = nil
 }
-
-enum HoldPhase: Equatable {
-    case listening(String)
-    case cancelling
-}
-
-enum HoldEvent {
-    case began
-    case moved(outside: Bool)
-    case ended
-}

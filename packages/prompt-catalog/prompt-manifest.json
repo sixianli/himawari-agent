@@ -1003,14 +1003,14 @@
     "reason": "新增：工具参数 activity、activityIcon 的说明和系统提示里的过程图标表"
   },
   "tools.app-action": {
-    "sha256": "de76eb8f6f7f35473135d7afa0dd58eb7ba20155a6dce6215f1655602dc603a0",
-    "changedIn": "ADR 0311",
-    "reason": "新增：通用连接的 app_action 工具，Himawari 用主人连接的应用时看到的说明"
+    "sha256": "8f4cce4ab414205a3a1439c2bf8a7cd50e2fe48ca1783737b5e421e442b7e486",
+    "changedIn": "ADR 0313",
+    "reason": "改：app_action 加 run（Code Mode），没有应用时改为请主人在“连接”里添加"
   },
   "tools.app-action.action": {
-    "sha256": "2ad4e5f37ff3b3f1a5ff3119c1a25b6cd14adefca8923175f62be459d12ad20b",
-    "changedIn": "ADR 0311",
-    "reason": "新增：通用连接的 app_action 工具，Himawari 用主人连接的应用时看到的说明"
+    "sha256": "772e77550275331a8716cc8db078c441d23f772171e6f07fbf4da9ccbbfb0eaf",
+    "changedIn": "ADR 0313",
+    "reason": "改：app_action 加 run（Code Mode），没有应用时改为请主人在“连接”里添加"
   },
   "tools.app-action.app": {
     "sha256": "d3c71c135425516d20134c5834fec81029536d3ed2af4f36156162d7bae87904",
@@ -1133,9 +1133,9 @@
     "reason": "W-16：新增参数说明，任务编号从哪里抄；它不在冻结记录里，每次请求现拼，改它会让所有用到它的对话整段重算一次，所以随 PR-A/PR-B 同一次上线（不在后台命令模式时它是句柄工具）"
   },
   "tools.mail-read": {
-    "sha256": "f37cafa4f9d449f27e95095f747bce12c0a4892dd1417827b99ddc6b50327949",
-    "changedIn": "ADR 0285",
-    "reason": "Always On 第 1 步：新邮件进收件箱由她判断，要看前面往来时用 mail_read 读整个邮件串"
+    "sha256": "58972a91136b8110d6b249de6433364bba7808afacaa07a377b8839c1bce7ca3",
+    "changedIn": "I-130",
+    "reason": "mail_read 加 query：按 Gmail 搜索写法搜主人的邮箱；说明读失败已自动重试并交给开发，授权失效才要主人重连"
   },
   "tools.memory-open": {
     "sha256": "06f505a9fdabbf8065acd951f9657a3d4f644add9e637365cdc41906bd602140",
@@ -1246,9 +1246,9 @@
     "reason": "W-09、W-13：写明有钟点的最多提前 1 小时、只有日期的当天 9 点（Andy 2026-11-05 定 D8）；失败时怎么说只留在身份说明里；复核第 2 轮：写明 yearly 的过去日期会顺延到下一次，不会被拒绝（reminderSchedule）"
   },
   "tools.result.app-action.describe": {
-    "sha256": "82aebe0fb75668124441d4bcf8d6f00c9a7dedc6dc212197e3a5a26cf53881bc",
-    "changedIn": "ADR 0311",
-    "reason": "新增：通用连接的 app_action 工具，Himawari 用主人连接的应用时看到的说明"
+    "sha256": "cc8cbccb2f22682bce1f0b2285414af8cded511c910b26dc7536290ad5a81d2c",
+    "changedIn": "ADR 0313",
+    "reason": "改：app_action 加 run（Code Mode），没有应用时改为请主人在“连接”里添加"
   },
   "tools.result.app-action.failed": {
     "sha256": "db7b6ea1a08857f5aa57c6458a89e63337a51483a1f365a37c5f2eee084b85ec",
@@ -1256,14 +1256,14 @@
     "reason": "新增：通用连接的 app_action 工具，Himawari 用主人连接的应用时看到的说明"
   },
   "tools.result.app-action.invalid": {
-    "sha256": "e19f7d08a7148793a7470716b6a2728ccf6741dfb8800b666454108ba0ff90c4",
-    "changedIn": "ADR 0311",
-    "reason": "新增：通用连接的 app_action 工具，Himawari 用主人连接的应用时看到的说明"
+    "sha256": "5a17ce244b3c4d9c56d90a97010fe92748710a322123f77d1e46dfe520df55e6",
+    "changedIn": "ADR 0313",
+    "reason": "改：app_action 加 run（Code Mode），没有应用时改为请主人在“连接”里添加"
   },
   "tools.result.app-action.no-app": {
-    "sha256": "bbee560f66ed816b5e54cd014f1cf69995f7191b00d249ba4581cfbaf6b6ec11",
-    "changedIn": "ADR 0311",
-    "reason": "新增：通用连接的 app_action 工具，Himawari 用主人连接的应用时看到的说明"
+    "sha256": "6ca56fa4ec43776e52e0c72715ad56b94450bc0bfe3a61db9376c268ebb1294f",
+    "changedIn": "ADR 0313",
+    "reason": "改：app_action 加 run（Code Mode），没有应用时改为请主人在“连接”里添加"
   },
   "tools.result.app-action.not-connected": {
     "sha256": "8923b1a0773f966ab56589aa2dac6f4aee0c9c3af84236ac77387e2c6fd93de2",
@@ -1361,8 +1361,8 @@
     "reason": "设备动作没做成时告诉模型的原因（审批未接上、设备策略、本人未确认、结果未知等）"
   },
   "tools.result.device-action.reason.target-unknown": {
-    "sha256": "039ee7fa8b84541251b00d354bac5e8dd6765dc29e87ea8d43d8a8f324124566",
-    "changedIn": "iOS 第 9A 批",
+    "sha256": "6352c78c685352ba93966bf624dacf9cad4beb61f2f9c3d379b886b086f47ad6",
+    "changedIn": "日历和通讯录读取",
     "reason": "设备动作没做成时告诉模型的原因（审批未接上、设备策略、本人未确认、结果未知等）"
   },
   "tools.result.device-action.rejected": {
@@ -1400,6 +1400,31 @@
     "changedIn": "iOS 第 9A 批",
     "reason": "device_reminder 两个动作的用法说明：默认用 Himawari 自己的提醒，主人明说才写进苹果“提醒事项”"
   },
+  "tools.result.device-action.usage.alarm-list": {
+    "sha256": "1a33805b40dcab6f6ff54e1933df8bed601d16b0f6eb3eb8468bd51804c5c4f0",
+    "changedIn": "I-130",
+    "reason": "新增：提醒事项、闹钟、家庭的读动作用法，以及标成完成、控制家居时编号从哪来"
+  },
+  "tools.result.device-action.usage.device-reminder-complete": {
+    "sha256": "b3dd2a5e72258484af7cca10b27a7e80ebdd02692a2ce37d8f89b98850a075e3",
+    "changedIn": "I-130",
+    "reason": "新增：提醒事项、闹钟、家庭的读动作用法，以及标成完成、控制家居时编号从哪来"
+  },
+  "tools.result.device-action.usage.device-reminder-read": {
+    "sha256": "ba656789d609f3c70ba43c3db5ec63159e00d8bd10e4372584451f9b147cb122",
+    "changedIn": "I-130",
+    "reason": "新增：提醒事项、闹钟、家庭的读动作用法，以及标成完成、控制家居时编号从哪来"
+  },
+  "tools.result.device-action.usage.home-control": {
+    "sha256": "cac0c8c813993cc13db0389c01a869ce1f4ffa554bd2c4cfb31cee1cb8b852d1",
+    "changedIn": "I-130",
+    "reason": "新增：提醒事项、闹钟、家庭的读动作用法，以及标成完成、控制家居时编号从哪来"
+  },
+  "tools.result.device-action.usage.home-read": {
+    "sha256": "dd4af208557d44f3ce429d0bb60c0ba30a05c19a2842d0e2d4ed6071cfb05f6d",
+    "changedIn": "I-130",
+    "reason": "新增：提醒事项、闹钟、家庭的读动作用法，以及标成完成、控制家居时编号从哪来"
+  },
   "tools.result.device-action.waiting-owner": {
     "sha256": "cd84a6d23e03457c0fc116fa235ca008d2ec33f5495d30a90b363479dc06caec",
     "changedIn": "ADR 0230",
@@ -1421,9 +1446,9 @@
     "reason": "提议箱删除：推断的规则要主人点头时，告诉她用消息下的选项问"
   },
   "tools.result.perception-read.empty": {
-    "sha256": "417a658e6eb2cf55730417f26aa581d053d9653635643a9f6659c7af6261b7cd",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
+    "sha256": "85095c0b10c1ca779cf3187a7dcc15f7713034ec0bbfc537452fceb587972cbf",
+    "changedIn": "I-133",
+    "reason": "读不到感知记录时给出服务器知道的事实，不许猜原因、不许叫主人去查"
   },
   "tools.result.perception-read.hidden": {
     "sha256": "88dabd0971cc71994b5d4e76b92286044172b4f0bbacc1c21353979c7fed8243",
@@ -1730,15 +1755,25 @@
     "changedIn": "浏览器工具",
     "reason": "新增浏览器工具的定义和结果文字"
   },
+  "tool-result.browser-vault-declined": {
+    "sha256": "e9f5b7039dd235f66be435908af5d7d9acbd79aa191f7d8947888fc00bb0af67",
+    "changedIn": "ADR 0288",
+    "reason": "保险箱第三步：浏览器用保险箱登录（刷一次脸，密码和两步验证码一起填），以及推送到 iPhone 请主人输入验证码"
+  },
+  "tool-result.browser-vault-refused": {
+    "sha256": "0598e133f4c3526059abf7175f0a3eba481f8166fd590d563525140ad8b596c2",
+    "changedIn": "ADR 0288",
+    "reason": "保险箱第三步：浏览器用保险箱登录（刷一次脸，密码和两步验证码一起填），以及推送到 iPhone 请主人输入验证码"
+  },
   "tools.browser": {
-    "sha256": "d67b9041524390f82b662b72161b2a4e7f3c6c80a50a3d562f370213ebd667f2",
-    "changedIn": "浏览器工具",
-    "reason": "新增浏览器工具的定义和结果文字"
+    "sha256": "419f6a9384605fa2d54d7fc2e2cb57eaea4a16960cb38b6e53fa89fb05b053ac",
+    "changedIn": "ADR 0288",
+    "reason": "保险箱第三步：浏览器用保险箱登录（刷一次脸，密码和两步验证码一起填），以及推送到 iPhone 请主人输入验证码"
   },
   "tools.browser.action": {
-    "sha256": "592cdbbc600e6dde06ec3298853dbb961c3e546dee51ae9f08172ae072b3681c",
-    "changedIn": "浏览器工具",
-    "reason": "新增浏览器工具的定义和结果文字"
+    "sha256": "13f6fd3a69961992fb32d4934317aabc4e3927031a430332fee4e89e92911cb9",
+    "changedIn": "ADR 0288",
+    "reason": "保险箱第三步：浏览器用保险箱登录（刷一次脸，密码和两步验证码一起填），以及推送到 iPhone 请主人输入验证码"
   },
   "tools.browser.hosts": {
     "sha256": "4290e52ae1c4c9cf8f874603c8b9899a0519d96ee43adb9a384be168bfb6b85d",
@@ -1756,9 +1791,9 @@
     "reason": "新增浏览器工具的定义和结果文字"
   },
   "tools.browser.submit": {
-    "sha256": "9bdfe217889f6c5b512333d2cce498de2d6893d807fc652ffd77ad3f6c6be601",
-    "changedIn": "浏览器工具",
-    "reason": "新增浏览器工具的定义和结果文字"
+    "sha256": "4483fe952475bec8f97854e774f79f2afba4cd3bf54b5401527291a059f1040b",
+    "changedIn": "ADR 0288",
+    "reason": "保险箱第三步：浏览器用保险箱登录（刷一次脸，密码和两步验证码一起填），以及推送到 iPhone 请主人输入验证码"
   },
   "tools.browser.text": {
     "sha256": "f0e2ec1e37f66d4338c76132a69451e9da2dc1539c5124378055f8e9eb687dd8",
@@ -1769,5 +1804,80 @@
     "sha256": "b38deaf33509804d822ba74e561e96b773b08ce38e3c75a178c6e49eb2e5bd4e",
     "changedIn": "浏览器工具",
     "reason": "新增浏览器工具的定义和结果文字"
+  },
+  "tools.app-action.code": {
+    "sha256": "6d9655ee59c4196a4ea6edf1e2ffc40e46980cdd114a30a8810e1c8b00743556",
+    "changedIn": "ADR 0313",
+    "reason": "新增：app_action 的 run（Code Mode）用到的说明"
+  },
+  "tools.browser.fields": {
+    "sha256": "c7ec424f7c6ae725ccfb87d445778656f71c1ddaf878118241f279810a6defad",
+    "changedIn": "ADR 0288",
+    "reason": "保险箱第三步：浏览器用保险箱登录（刷一次脸，密码和两步验证码一起填），以及推送到 iPhone 请主人输入验证码"
+  },
+  "tools.browser.item": {
+    "sha256": "0a9fa9b9242b059e46d705f9b844c4535b78a3f235748e6f69d43a60c4bf8d8a",
+    "changedIn": "ADR 0288",
+    "reason": "保险箱第三步：浏览器用保险箱登录（刷一次脸，密码和两步验证码一起填），以及推送到 iPhone 请主人输入验证码"
+  },
+  "tools.browser.purpose": {
+    "sha256": "2d387f8ecdfe09387f26f51b2339efa0b70b5775d55ef9a616312e497e1c5ef0",
+    "changedIn": "ADR 0288",
+    "reason": "保险箱第三步：浏览器用保险箱登录（刷一次脸，密码和两步验证码一起填），以及推送到 iPhone 请主人输入验证码"
+  },
+  "tools.result.app-code.error": {
+    "sha256": "95f930b257010da2183ed34a1463fbb51aac123664011e6c76d9fa6fc545656a",
+    "changedIn": "ADR 0313",
+    "reason": "新增：app_action 的 run（Code Mode）用到的说明"
+  },
+  "tools.result.app-code.not-repeatable": {
+    "sha256": "c17c1ace193fb4e8bfdd2d54e39fee7f8d88ba50abb598a059b19e4af43de4b8",
+    "changedIn": "ADR 0313",
+    "reason": "新增：app_action 的 run（Code Mode）用到的说明"
+  },
+  "tools.result.app-code.result": {
+    "sha256": "8ab7ef795e16557ae5e0d36021b14a7fc9e9fbc11ffa3ab4b1dfcbd195941a31",
+    "changedIn": "ADR 0313",
+    "reason": "新增：app_action 的 run（Code Mode）用到的说明"
+  },
+  "tools.result.app-code.timeout": {
+    "sha256": "e43d1d9e04105600f5647495b32c4b1091a02ad06a9930c3f1fa956f9ec31fbb",
+    "changedIn": "ADR 0313",
+    "reason": "新增：app_action 的 run（Code Mode）用到的说明"
+  },
+  "tools.result.app-code.unavailable": {
+    "sha256": "33373bc654f29839bcfbc37d7c4b48c301f36760a2c4eb5495ca35ef8f79a1e0",
+    "changedIn": "ADR 0313",
+    "reason": "新增：app_action 的 run（Code Mode）用到的说明"
+  },
+  "memory.conversation-recall.header": {
+    "sha256": "3760c8e35a53640ed199bc0ec566ae64a37bf075c42d4d9df1d3b57cc2459e27",
+    "changedIn": "自动带上原话",
+    "reason": "新增：每轮自动带上的旧对话原话，第一行说明和每段的抬头"
+  },
+  "memory.conversation-recall.turn": {
+    "sha256": "ec8c4c5d27063f5b40176f4f8ee36d227ffe3fffffa373a0c044a23028b55613",
+    "changedIn": "自动带上原话",
+    "reason": "新增：每轮自动带上的旧对话原话，第一行说明和每段的抬头"
+  },
+  "tools.result.device-action.usage.calendar-change": {
+    "sha256": "796eee0c424f9e1ef6d6999ed4c8ed56d33131f9c94c5e8a1ea31ffd39649a9a",
+    "changedIn": "日历和通讯录读取",
+    "reason": "calendar.update、calendar.delete 的编号从 calendar.read 结果里拿，不找主人要"
+  },
+  "tools.result.device-action.usage.calendar-read": {
+    "sha256": "9d7e8dc34d575b7f77b20ac2a656c4b3e654e74ae99b5df755d836a2e748bfcc",
+    "changedIn": "日历和通讯录读取",
+    "reason": "calendar.read 的用法：读出日程，eventId 照抄给改删用"
+  },
+  "tools.result.device-action.usage.contact-search": {
+    "sha256": "f63e60ab2e1b36ea02617a15527d1140d9f98776f0ba0a08d039c08774881784",
+    "changedIn": "日历和通讯录读取",
+    "reason": "contact.search 的用法：按名字、电话或邮箱查人，contactId 照抄给 contact.update"
+  },
+  "tools.result.device-action.usage.contact-update": {
+    "sha256": "c84a292199fd605ebeca4bb3f824753fee61bad7cb1a4edab84781187a7f56ea",
+    "changedIn": "日历和通讯录读取",
+    "reason": "contact.update 的编号从 contact.search 结果里拿，不找主人要"
   }
 }

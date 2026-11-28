@@ -6,6 +6,7 @@ import {
   type DeviceActionContentPort,
   type DeviceActionDeliveryPort,
   type DeviceActionOpenRequestPort,
+  type DeviceActionReadFailure,
   type DeviceActionRegistry,
   DeviceActionService,
   type DeviceActionStorePort,
@@ -40,6 +41,7 @@ export interface ProductionDeviceActionsOptions {
   readonly registry?: DeviceActionRegistry;
   readonly authorization?: DeviceActionAuthorizationPort;
   readonly openRequests?: DeviceActionOpenRequestPort;
+  readonly onReadFailed?: (failure: DeviceActionReadFailure) => void;
 }
 
 export function deviceActionContent(
@@ -105,6 +107,7 @@ export function createProductionDeviceActions(options: ProductionDeviceActionsOp
     timeZone: options.timeZone,
     now: options.now,
     newId: () => `dact_${randomBytes(16).toString("hex")}`,
+    ...(options.onReadFailed ? { onReadFailed: options.onReadFailed } : {}),
   });
   return {
     service,

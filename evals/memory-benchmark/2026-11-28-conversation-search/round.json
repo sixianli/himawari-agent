@@ -1,0 +1,1237 @@
+{
+  "schema": "himawari-memory-benchmark-round.v1",
+  "recordedAt": "2026-11-27T21:17:06.781Z",
+  "commit": "b1b815b49",
+  "model": "deepseek-v4.1-flash",
+  "embedding": "local-onnx/jina-embeddings-v5-text-small-retrieval-int8",
+  "minimumSimilarity": 0.3,
+  "stopped": null,
+  "wallMinutes": 47.58,
+  "spentUsd": 2.7262,
+  "resumedSamples": [
+    "6a1eabeb",
+    "0f05491a",
+    "18bc8abd",
+    "eace081b",
+    "10e09553",
+    "0a995998",
+    "gpt4_2ba83207",
+    "gpt4_372c3eed",
+    "681a1674",
+    "ef9cf60a",
+    "7161e7e2",
+    "fea54f57",
+    "2bf43736",
+    "3e321797",
+    "561fabcd",
+    "8a2466db",
+    "195a1a1b",
+    "1a1907b4",
+    "505af2f5",
+    "a89d7624",
+    "e47becba",
+    "726462e0",
+    "a06e4cfe",
+    "bc8a6e93"
+  ],
+  "usage": {
+    "longmemeval:capture": {
+      "calls": 1482,
+      "failures": 0,
+      "rateLimited": 35,
+      "promptTokens": 4403105,
+      "cachedTokens": 2543360,
+      "completionTokens": 185320,
+      "usd": 0.39778382999999995
+    },
+    "longmemeval:answer": {
+      "calls": 6,
+      "failures": 0,
+      "rateLimited": 0,
+      "promptTokens": 25743,
+      "cachedTokens": 0,
+      "completionTokens": 258,
+      "usd": 0.00401625
+    },
+    "longmemeval:judge": {
+      "calls": 12,
+      "failures": 0,
+      "rateLimited": 0,
+      "promptTokens": 2903,
+      "cachedTokens": 0,
+      "completionTokens": 24,
+      "usd": 0.00044985
+    },
+    "longmemeval:answer-conversation": {
+      "calls": 6,
+      "failures": 0,
+      "rateLimited": 0,
+      "promptTokens": 30519,
+      "cachedTokens": 768,
+      "completionTokens": 387,
+      "usd": 0.004697153999999999
+    }
+  },
+  "samples": [
+    {
+      "id": "6a1eabeb",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "0f05491a",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "18bc8abd",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "eace081b",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "10e09553",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "0a995998",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "gpt4_2ba83207",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "gpt4_372c3eed",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "681a1674",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "ef9cf60a",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "7161e7e2",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "fea54f57",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "2bf43736",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "3e321797",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "561fabcd",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "8a2466db",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "195a1a1b",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "1a1907b4",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "505af2f5",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "a89d7624",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "e47becba",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "726462e0",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "a06e4cfe",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "bc8a6e93",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "29f2956b",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "gpt4_59149c77",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "gpt4_61e13b3c",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "2ebe6c92",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "2c63a862",
+      "benchmark": "longmemeval",
+      "questions": 1
+    },
+    {
+      "id": "gpt4_7de946e7",
+      "benchmark": "longmemeval",
+      "questions": 1
+    }
+  ],
+  "stores": [
+    {
+      "id": "6a1eabeb",
+      "benchmark": "longmemeval",
+      "turns": 413,
+      "ownerTurns": 205,
+      "captureFailures": 1,
+      "audits": {
+        "tentative_kept": 12,
+        "nothing_to_remember": 74,
+        "auto_committed": 176,
+        "candidate_invalid": 4,
+        "explicitly_approved": 1
+      },
+      "activeMemories": 158,
+      "indexedTurns": 207,
+      "ingestMs": 1866924,
+      "indexMs": 166796,
+      "phaseMs": {
+        "search": 51631,
+        "capture": 1626858,
+        "model": 1612818,
+        "projection": 14535
+      },
+      "failureSamples": ["The transaction scope exceeded 2000 ms"]
+    },
+    {
+      "id": "eace081b",
+      "benchmark": "longmemeval",
+      "turns": 489,
+      "ownerTurns": 242,
+      "captureFailures": 4,
+      "audits": {
+        "auto_committed": 165,
+        "nothing_to_remember": 108,
+        "tentative_kept": 12,
+        "explicitly_approved": 5,
+        "extraction_failed": 1,
+        "confidence_below_threshold": 1,
+        "candidate_invalid": 2
+      },
+      "activeMemories": 147,
+      "indexedTurns": 244,
+      "ingestMs": 2517082,
+      "indexMs": 475719,
+      "phaseMs": {
+        "search": 47149,
+        "capture": 1947353,
+        "model": 1866917,
+        "projection": 29239
+      },
+      "failureSamples": [
+        "Expected ',' or ']' after array element in JSON at position 3282 (line 1 column 3283)",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms"
+      ]
+    },
+    {
+      "id": "0f05491a",
+      "benchmark": "longmemeval",
+      "turns": 489,
+      "ownerTurns": 242,
+      "captureFailures": 4,
+      "audits": {
+        "auto_committed": 175,
+        "nothing_to_remember": 93,
+        "tentative_kept": 13,
+        "explicitly_approved": 3,
+        "confidence_below_threshold": 4,
+        "candidate_invalid": 1
+      },
+      "activeMemories": 154,
+      "indexedTurns": 244,
+      "ingestMs": 2569437,
+      "indexMs": 500412,
+      "phaseMs": {
+        "search": 44747,
+        "capture": 1980194,
+        "model": 1867898,
+        "projection": 24503
+      },
+      "failureSamples": [
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms"
+      ]
+    },
+    {
+      "id": "10e09553",
+      "benchmark": "longmemeval",
+      "turns": 472,
+      "ownerTurns": 234,
+      "captureFailures": 4,
+      "audits": {
+        "nothing_to_remember": 79,
+        "auto_committed": 187,
+        "tentative_kept": 13,
+        "candidate_invalid": 5,
+        "confidence_below_threshold": 1,
+        "explicitly_approved": 1
+      },
+      "activeMemories": 178,
+      "indexedTurns": 236,
+      "ingestMs": 2572098,
+      "indexMs": 493566,
+      "phaseMs": {
+        "search": 66792,
+        "capture": 1963156,
+        "model": 1850320,
+        "projection": 31386
+      },
+      "failureSamples": [
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms"
+      ]
+    },
+    {
+      "id": "18bc8abd",
+      "benchmark": "longmemeval",
+      "turns": 436,
+      "ownerTurns": 217,
+      "captureFailures": 12,
+      "audits": {
+        "nothing_to_remember": 81,
+        "auto_committed": 168,
+        "tentative_kept": 11,
+        "candidate_invalid": 1
+      },
+      "activeMemories": 152,
+      "indexedTurns": 219,
+      "ingestMs": 2729596,
+      "indexMs": 186227,
+      "phaseMs": {
+        "search": 132686,
+        "capture": 2340863,
+        "model": 1890542,
+        "projection": 34145
+      },
+      "failureSamples": [
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms"
+      ]
+    },
+    {
+      "id": "0a995998",
+      "benchmark": "longmemeval",
+      "turns": 484,
+      "ownerTurns": 242,
+      "captureFailures": 13,
+      "audits": {
+        "nothing_to_remember": 94,
+        "auto_committed": 183,
+        "tentative_kept": 11,
+        "explicitly_approved": 2,
+        "confidence_below_threshold": 1
+      },
+      "activeMemories": 156,
+      "indexedTurns": 244,
+      "ingestMs": 2997152,
+      "indexMs": 179330,
+      "phaseMs": {
+        "search": 191065,
+        "capture": 2529373,
+        "model": 2018588,
+        "projection": 47166
+      },
+      "failureSamples": [
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms"
+      ]
+    },
+    {
+      "id": "gpt4_2ba83207",
+      "benchmark": "longmemeval",
+      "turns": 502,
+      "ownerTurns": 247,
+      "captureFailures": 20,
+      "audits": {
+        "confidence_below_threshold": 3,
+        "auto_committed": 174,
+        "tentative_kept": 9,
+        "nothing_to_remember": 98,
+        "candidate_invalid": 2,
+        "explicitly_approved": 3
+      },
+      "activeMemories": 168,
+      "indexedTurns": 249,
+      "ingestMs": 2788251,
+      "indexMs": 232826,
+      "phaseMs": {
+        "search": 122578,
+        "capture": 2320779,
+        "model": 1871471,
+        "projection": 55728
+      },
+      "failureSamples": [
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms"
+      ]
+    },
+    {
+      "id": "681a1674",
+      "benchmark": "longmemeval",
+      "turns": 476,
+      "ownerTurns": 233,
+      "captureFailures": 9,
+      "audits": {
+        "nothing_to_remember": 123,
+        "auto_committed": 120,
+        "candidate_invalid": 5,
+        "tentative_kept": 8
+      },
+      "activeMemories": 110,
+      "indexedTurns": 235,
+      "ingestMs": 2258516,
+      "indexMs": 179154,
+      "phaseMs": {
+        "search": 131907,
+        "capture": 1856118,
+        "model": 1663154,
+        "projection": 38895
+      },
+      "failureSamples": [
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms"
+      ]
+    },
+    {
+      "id": "gpt4_372c3eed",
+      "benchmark": "longmemeval",
+      "turns": 465,
+      "ownerTurns": 229,
+      "captureFailures": 18,
+      "audits": {
+        "nothing_to_remember": 82,
+        "auto_committed": 160,
+        "tentative_kept": 16,
+        "candidate_invalid": 3,
+        "explicitly_approved": 3,
+        "confidence_below_threshold": 1
+      },
+      "activeMemories": 153,
+      "indexedTurns": 232,
+      "ingestMs": 2667280,
+      "indexMs": 288805,
+      "phaseMs": {
+        "search": 103479,
+        "capture": 2127238,
+        "model": 1827585,
+        "projection": 93409
+      },
+      "failureSamples": [
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms"
+      ]
+    },
+    {
+      "id": "ef9cf60a",
+      "benchmark": "longmemeval",
+      "turns": 522,
+      "ownerTurns": 258,
+      "captureFailures": 13,
+      "audits": {
+        "nothing_to_remember": 125,
+        "extraction_failed": 1,
+        "tentative_kept": 5,
+        "evidence_unverified": 1,
+        "auto_committed": 131,
+        "explicitly_approved": 7,
+        "candidate_invalid": 2
+      },
+      "activeMemories": 116,
+      "indexedTurns": 260,
+      "ingestMs": 2698384,
+      "indexMs": 301645,
+      "phaseMs": {
+        "search": 180272,
+        "capture": 2092607,
+        "model": 1784844,
+        "projection": 53033
+      },
+      "failureSamples": [
+        "Expected ',' or ']' after array element in JSON at position 3655 (line 1 column 3656)",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms"
+      ]
+    },
+    {
+      "id": "7161e7e2",
+      "benchmark": "longmemeval",
+      "turns": 550,
+      "ownerTurns": 273,
+      "captureFailures": 6,
+      "audits": {
+        "nothing_to_remember": 141,
+        "tentative_kept": 13,
+        "auto_committed": 157,
+        "explicitly_approved": 2,
+        "candidate_invalid": 2,
+        "confidence_below_threshold": 2
+      },
+      "activeMemories": 145,
+      "indexedTurns": 275,
+      "ingestMs": 2927968,
+      "indexMs": 188391,
+      "phaseMs": {
+        "search": 141211,
+        "capture": 2467724,
+        "model": 2023236,
+        "projection": 74801
+      },
+      "failureSamples": [
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms"
+      ]
+    },
+    {
+      "id": "fea54f57",
+      "benchmark": "longmemeval",
+      "turns": 527,
+      "ownerTurns": 261,
+      "captureFailures": 21,
+      "audits": {
+        "nothing_to_remember": 112,
+        "tentative_kept": 16,
+        "explicitly_approved": 2,
+        "auto_committed": 158,
+        "candidate_invalid": 2
+      },
+      "activeMemories": 153,
+      "indexedTurns": 263,
+      "ingestMs": 2915707,
+      "indexMs": 177075,
+      "phaseMs": {
+        "search": 126936,
+        "capture": 2491332,
+        "model": 1945741,
+        "projection": 65386
+      },
+      "failureSamples": [
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms"
+      ]
+    },
+    {
+      "id": "8a2466db",
+      "benchmark": "longmemeval",
+      "turns": 508,
+      "ownerTurns": 250,
+      "captureFailures": 0,
+      "audits": {
+        "nothing_to_remember": 112,
+        "auto_committed": 181,
+        "confidence_below_threshold": 3,
+        "tentative_kept": 7,
+        "candidate_invalid": 2
+      },
+      "activeMemories": 158,
+      "indexedTurns": 252,
+      "ingestMs": 1552334,
+      "indexMs": 159862,
+      "phaseMs": {
+        "search": 26254,
+        "capture": 1349525,
+        "model": 1341273,
+        "projection": 12500
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "561fabcd",
+      "benchmark": "longmemeval",
+      "turns": 495,
+      "ownerTurns": 246,
+      "captureFailures": 0,
+      "audits": {
+        "auto_committed": 177,
+        "nothing_to_remember": 108,
+        "explicitly_approved": 2,
+        "tentative_kept": 8,
+        "candidate_invalid": 5
+      },
+      "activeMemories": 158,
+      "indexedTurns": 248,
+      "ingestMs": 1735614,
+      "indexMs": 165342,
+      "phaseMs": {
+        "search": 57984,
+        "capture": 1475037,
+        "model": 1405469,
+        "projection": 25966
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "2bf43736",
+      "benchmark": "longmemeval",
+      "turns": 478,
+      "ownerTurns": 237,
+      "captureFailures": 8,
+      "audits": {
+        "nothing_to_remember": 104,
+        "auto_committed": 174,
+        "tentative_kept": 10,
+        "candidate_invalid": 2,
+        "extraction_failed": 1,
+        "explicitly_approved": 2
+      },
+      "activeMemories": 169,
+      "indexedTurns": 239,
+      "ingestMs": 2031098,
+      "indexMs": 289559,
+      "phaseMs": {
+        "search": 57645,
+        "capture": 1635174,
+        "model": 1503242,
+        "projection": 30830
+      },
+      "failureSamples": [
+        "Unterminated string in JSON at position 544 (line 1 column 545)",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms"
+      ]
+    },
+    {
+      "id": "3e321797",
+      "benchmark": "longmemeval",
+      "turns": 490,
+      "ownerTurns": 244,
+      "captureFailures": 4,
+      "audits": {
+        "nothing_to_remember": 95,
+        "auto_committed": 166,
+        "tentative_kept": 21,
+        "explicitly_approved": 1,
+        "candidate_invalid": 4
+      },
+      "activeMemories": 161,
+      "indexedTurns": 246,
+      "ingestMs": 2036219,
+      "indexMs": 292252,
+      "phaseMs": {
+        "search": 46344,
+        "capture": 1642548,
+        "model": 1508886,
+        "projection": 35321
+      },
+      "failureSamples": [
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms"
+      ]
+    },
+    {
+      "id": "1a1907b4",
+      "benchmark": "longmemeval",
+      "turns": 532,
+      "ownerTurns": 264,
+      "captureFailures": 7,
+      "audits": {
+        "auto_committed": 169,
+        "nothing_to_remember": 131,
+        "candidate_invalid": 2,
+        "explicitly_approved": 2,
+        "tentative_kept": 6,
+        "confidence_below_threshold": 1
+      },
+      "activeMemories": 155,
+      "indexedTurns": 266,
+      "ingestMs": 2064674,
+      "indexMs": 393407,
+      "phaseMs": {
+        "search": 66996,
+        "capture": 1541040,
+        "model": 1433030,
+        "projection": 26883
+      },
+      "failureSamples": [
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms"
+      ]
+    },
+    {
+      "id": "505af2f5",
+      "benchmark": "longmemeval",
+      "turns": 501,
+      "ownerTurns": 248,
+      "captureFailures": 1,
+      "audits": {
+        "auto_committed": 152,
+        "explicitly_approved": 9,
+        "nothing_to_remember": 121,
+        "tentative_kept": 14,
+        "confidence_below_threshold": 1,
+        "candidate_invalid": 1
+      },
+      "activeMemories": 150,
+      "indexedTurns": 250,
+      "ingestMs": 1794191,
+      "indexMs": 389581,
+      "phaseMs": {
+        "search": 36387,
+        "capture": 1344963,
+        "model": 1326185,
+        "projection": 17380
+      },
+      "failureSamples": ["The transaction scope exceeded 2000 ms"]
+    },
+    {
+      "id": "195a1a1b",
+      "benchmark": "longmemeval",
+      "turns": 515,
+      "ownerTurns": 257,
+      "captureFailures": 11,
+      "audits": {
+        "nothing_to_remember": 131,
+        "auto_committed": 158,
+        "tentative_kept": 8,
+        "explicitly_approved": 2,
+        "candidate_invalid": 1
+      },
+      "activeMemories": 146,
+      "indexedTurns": 259,
+      "ingestMs": 2326358,
+      "indexMs": 373979,
+      "phaseMs": {
+        "search": 188608,
+        "capture": 1687753,
+        "model": 1480629,
+        "projection": 37944
+      },
+      "failureSamples": [
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms"
+      ]
+    },
+    {
+      "id": "a89d7624",
+      "benchmark": "longmemeval",
+      "turns": 496,
+      "ownerTurns": 245,
+      "captureFailures": 8,
+      "audits": {
+        "auto_committed": 168,
+        "nothing_to_remember": 108,
+        "tentative_kept": 10,
+        "explicitly_approved": 3,
+        "candidate_invalid": 2
+      },
+      "activeMemories": 148,
+      "indexedTurns": 247,
+      "ingestMs": 2128110,
+      "indexMs": 165713,
+      "phaseMs": {
+        "search": 58518,
+        "capture": 1839286,
+        "model": 1532970,
+        "projection": 39972
+      },
+      "failureSamples": [
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms"
+      ]
+    },
+    {
+      "id": "a06e4cfe",
+      "benchmark": "longmemeval",
+      "turns": 534,
+      "ownerTurns": 265,
+      "captureFailures": 2,
+      "audits": {
+        "tentative_kept": 19,
+        "nothing_to_remember": 126,
+        "auto_committed": 175,
+        "evidence_unverified": 2,
+        "confidence_below_threshold": 1,
+        "candidate_invalid": 2
+      },
+      "activeMemories": 165,
+      "indexedTurns": 268,
+      "ingestMs": 1636602,
+      "indexMs": 162794,
+      "phaseMs": {
+        "search": 59075,
+        "capture": 1366870,
+        "model": 1296489,
+        "projection": 29773
+      },
+      "failureSamples": [
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms"
+      ]
+    },
+    {
+      "id": "726462e0",
+      "benchmark": "longmemeval",
+      "turns": 501,
+      "ownerTurns": 249,
+      "captureFailures": 10,
+      "audits": {
+        "nothing_to_remember": 92,
+        "auto_committed": 181,
+        "tentative_kept": 10,
+        "candidate_invalid": 4,
+        "explicitly_approved": 2,
+        "confidence_below_threshold": 1,
+        "extraction_failed": 1
+      },
+      "activeMemories": 161,
+      "indexedTurns": 251,
+      "ingestMs": 1900917,
+      "indexMs": 151506,
+      "phaseMs": {
+        "search": 61906,
+        "capture": 1621265,
+        "model": 1467834,
+        "projection": 34420
+      },
+      "failureSamples": [
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms"
+      ]
+    },
+    {
+      "id": "e47becba",
+      "benchmark": "longmemeval",
+      "turns": 550,
+      "ownerTurns": 273,
+      "captureFailures": 9,
+      "audits": {
+        "nothing_to_remember": 113,
+        "auto_committed": 202,
+        "confidence_below_threshold": 2,
+        "tentative_kept": 12,
+        "candidate_invalid": 3
+      },
+      "activeMemories": 191,
+      "indexedTurns": 275,
+      "ingestMs": 2164992,
+      "indexMs": 155251,
+      "phaseMs": {
+        "search": 62393,
+        "capture": 1848260,
+        "model": 1633620,
+        "projection": 60105
+      },
+      "failureSamples": [
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms"
+      ]
+    },
+    {
+      "id": "bc8a6e93",
+      "benchmark": "longmemeval",
+      "turns": 537,
+      "ownerTurns": 267,
+      "captureFailures": 8,
+      "audits": {
+        "nothing_to_remember": 133,
+        "auto_committed": 151,
+        "tentative_kept": 8,
+        "explicitly_approved": 2,
+        "candidate_invalid": 2
+      },
+      "activeMemories": 138,
+      "indexedTurns": 269,
+      "ingestMs": 2011391,
+      "indexMs": 157899,
+      "phaseMs": {
+        "search": 86576,
+        "capture": 1683020,
+        "model": 1477625,
+        "projection": 53387
+      },
+      "failureSamples": [
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms"
+      ]
+    },
+    {
+      "id": "gpt4_59149c77",
+      "benchmark": "longmemeval",
+      "turns": 484,
+      "ownerTurns": 240,
+      "captureFailures": 0,
+      "audits": {
+        "nothing_to_remember": 105,
+        "tentative_kept": 10,
+        "auto_committed": 177,
+        "candidate_invalid": 3,
+        "explicitly_approved": 1
+      },
+      "activeMemories": 159,
+      "indexedTurns": 242,
+      "ingestMs": 2113106,
+      "indexMs": 258729,
+      "phaseMs": {
+        "search": 47841,
+        "capture": 1778258,
+        "model": 1763326,
+        "projection": 17341
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "gpt4_61e13b3c",
+      "benchmark": "longmemeval",
+      "turns": 467,
+      "ownerTurns": 231,
+      "captureFailures": 0,
+      "audits": {
+        "nothing_to_remember": 82,
+        "tentative_kept": 15,
+        "auto_committed": 194,
+        "evidence_unverified": 1,
+        "candidate_invalid": 4
+      },
+      "activeMemories": 185,
+      "indexedTurns": 233,
+      "ingestMs": 2136252,
+      "indexMs": 253088,
+      "phaseMs": {
+        "search": 55636,
+        "capture": 1794572,
+        "model": 1742730,
+        "projection": 19360
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "2c63a862",
+      "benchmark": "longmemeval",
+      "turns": 529,
+      "ownerTurns": 262,
+      "captureFailures": 5,
+      "audits": {
+        "nothing_to_remember": 130,
+        "tentative_kept": 3,
+        "auto_committed": 163,
+        "confidence_below_threshold": 1,
+        "candidate_invalid": 3,
+        "explicitly_approved": 1
+      },
+      "activeMemories": 139,
+      "indexedTurns": 264,
+      "ingestMs": 2769660,
+      "indexMs": 536874,
+      "phaseMs": {
+        "search": 44100,
+        "capture": 2142115,
+        "model": 1943597,
+        "projection": 20504
+      },
+      "failureSamples": [
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms"
+      ]
+    },
+    {
+      "id": "29f2956b",
+      "benchmark": "longmemeval",
+      "turns": 496,
+      "ownerTurns": 247,
+      "captureFailures": 7,
+      "audits": {
+        "nothing_to_remember": 115,
+        "tentative_kept": 14,
+        "auto_committed": 167,
+        "confidence_below_threshold": 2,
+        "candidate_invalid": 2
+      },
+      "activeMemories": 158,
+      "indexedTurns": 249,
+      "ingestMs": 2789057,
+      "indexMs": 539395,
+      "phaseMs": {
+        "search": 71024,
+        "capture": 2127603,
+        "model": 1924416,
+        "projection": 25204
+      },
+      "failureSamples": [
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms"
+      ]
+    },
+    {
+      "id": "2ebe6c92",
+      "benchmark": "longmemeval",
+      "turns": 487,
+      "ownerTurns": 242,
+      "captureFailures": 8,
+      "audits": {
+        "auto_committed": 187,
+        "nothing_to_remember": 91,
+        "explicitly_approved": 2,
+        "confidence_below_threshold": 1,
+        "tentative_kept": 6
+      },
+      "activeMemories": 161,
+      "indexedTurns": 244,
+      "ingestMs": 2789057,
+      "indexMs": 535072,
+      "phaseMs": {
+        "search": 52792,
+        "capture": 2150222,
+        "model": 1953462,
+        "projection": 25659
+      },
+      "failureSamples": [
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms"
+      ]
+    },
+    {
+      "id": "gpt4_7de946e7",
+      "benchmark": "longmemeval",
+      "turns": 533,
+      "ownerTurns": 264,
+      "captureFailures": 9,
+      "audits": {
+        "auto_committed": 152,
+        "candidate_invalid": 5,
+        "nothing_to_remember": 134,
+        "tentative_kept": 18,
+        "extraction_failed": 2,
+        "explicitly_approved": 3
+      },
+      "activeMemories": 148,
+      "indexedTurns": 266,
+      "ingestMs": 2847820,
+      "indexMs": 412469,
+      "phaseMs": {
+        "search": 76868,
+        "capture": 2296975,
+        "model": 1983353,
+        "projection": 23833
+      },
+      "failureSamples": [
+        "Expected ',' or ']' after array element in JSON at position 3621 (line 1 column 3622)",
+        "Expected ',' or ']' after array element in JSON at position 3274 (line 1 column 3275)",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms",
+        "The transaction scope exceeded 2000 ms"
+      ]
+    }
+  ],
+  "results": {
+    "locomo": {
+      "memory": {
+        "questions": 0,
+        "judged": 0,
+        "accuracy": null,
+        "byCategory": {},
+        "evidenceRecall": null,
+        "evidenceStored": null,
+        "meanContextTokens": null,
+        "medianAnswerMs": null
+      },
+      "fullContext": {
+        "questions": 0,
+        "judged": 0,
+        "accuracy": null,
+        "byCategory": {},
+        "evidenceRecall": null,
+        "evidenceStored": null,
+        "meanContextTokens": null,
+        "medianAnswerMs": null
+      }
+    },
+    "longmemeval": {
+      "memory": {
+        "questions": 30,
+        "judged": 30,
+        "accuracy": 0.8,
+        "byCategory": {
+          "knowledge-update": {
+            "questions": 5,
+            "accuracy": 0.8
+          },
+          "multi-session": {
+            "questions": 5,
+            "accuracy": 0.8
+          },
+          "single-session-assistant": {
+            "questions": 5,
+            "accuracy": 0.2
+          },
+          "single-session-preference": {
+            "questions": 5,
+            "accuracy": 1
+          },
+          "single-session-user": {
+            "questions": 5,
+            "accuracy": 1
+          },
+          "temporal-reasoning": {
+            "questions": 5,
+            "accuracy": 1
+          }
+        },
+        "evidenceRecall": 0.9333333333333333,
+        "evidenceStored": 0.9666666666666667,
+        "meanContextTokens": 4185.466666666666,
+        "medianAnswerMs": 2611
+      },
+      "memoryConversation": {
+        "questions": 30,
+        "judged": 30,
+        "accuracy": 0.8333333333333334,
+        "byCategory": {
+          "knowledge-update": {
+            "questions": 5,
+            "accuracy": 0.8
+          },
+          "multi-session": {
+            "questions": 5,
+            "accuracy": 0.6
+          },
+          "single-session-assistant": {
+            "questions": 5,
+            "accuracy": 0.6
+          },
+          "single-session-preference": {
+            "questions": 5,
+            "accuracy": 1
+          },
+          "single-session-user": {
+            "questions": 5,
+            "accuracy": 1
+          },
+          "temporal-reasoning": {
+            "questions": 5,
+            "accuracy": 1
+          }
+        },
+        "evidenceRecall": 0.9666666666666667,
+        "evidenceStored": 0.9666666666666667,
+        "meanContextTokens": 7183.833333333333,
+        "medianAnswerMs": 2656
+      },
+      "fullContext": {
+        "questions": 0,
+        "judged": 0,
+        "accuracy": null,
+        "byCategory": {},
+        "evidenceRecall": null,
+        "evidenceStored": null,
+        "meanContextTokens": null,
+        "medianAnswerMs": null
+      }
+    }
+  }
+}

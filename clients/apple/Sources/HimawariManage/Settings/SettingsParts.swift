@@ -12,9 +12,10 @@ struct SheetHeader: View {
     let title: String
     let leading: Leading
     let action: () -> Void
+    @Environment(\.herInSidebar) private var inSidebar
 
     var body: some View {
-        if leading == .back {
+        if leading == .back || inSidebar {
             SystemNavigationTitle(Text(title))
         } else {
             closeHeader
@@ -103,7 +104,7 @@ struct SettingsRow: View {
                     valueText(value)
                 }
                 if let switchState {
-                    Toggle("", isOn: switchState).labelsHidden().tint(Color.hmSuccess)
+                    Toggle("", isOn: switchState).labelsHidden()
                 }
                 if chevron {
                     Icon(.chevronRight, size: DesignTokens.IconSize.chevron).foregroundStyle(Color.hmMuted)
@@ -119,7 +120,7 @@ struct SettingsRow: View {
     private func valueText(_ value: String) -> some View {
         Text(value)
             .hmType(SL.rowValue)
-            .foregroundStyle(tone == .attention ? Color.hmDanger : tone == .good ? Color.hmSuccess : Color.hmMuted)
+            .foregroundStyle(tone == .attention ? Color.hmDanger : tone == .good ? Color.hmSun : Color.hmMuted)
     }
 }
 
@@ -134,7 +135,7 @@ struct SettingsPage<Content: View>: View {
                 .padding(.top, systemBar ? SL.groupGap : DesignTokens.Size.sheetPaddingTop)
                 .padding(.horizontal, DesignTokens.Size.sheetPaddingHorizontal)
                 .padding(.bottom, DesignTokens.Size.sheetPaddingBottom)
-                .containerRelativeFrame(.vertical, alignment: .top)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
         }
         .scrollIndicators(.hidden)
         .himawariScreenBackground()
@@ -158,6 +159,5 @@ struct SegmentPicker<Value: Hashable>: View {
         }
         .pickerStyle(.segmented)
         .labelsHidden()
-        .controlSize(.large)
     }
 }

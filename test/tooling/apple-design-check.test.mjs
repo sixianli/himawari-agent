@@ -8,6 +8,7 @@ import {
   contrastRatio,
   findContrastProblems,
   findFontViolations,
+  findPronounViolations,
   findViolations,
   findWebViolations,
 } from "../../clients/apple/scripts/check-design.mjs";
@@ -48,6 +49,19 @@ it("rejects scattered size numbers in page code", () => {
   }
 });
 
+it("rejects locking page content to one screen height, which stops long pages from scrolling", () => {
+  for (const line of [
+    ".containerRelativeFrame(.vertical, alignment: .top)",
+    ".containerRelativeFrame([.horizontal, .vertical])",
+  ]) {
+    expect(findViolations(line, "X.swift").map((v) => v.code)).toEqual(["screen-height-lock"]);
+  }
+  expect(findViolations(".containerRelativeFrame(.horizontal)", "X.swift")).toEqual([]);
+  expect(findViolations(".frame(maxWidth: .infinity, alignment: .topLeading)", "X.swift")).toEqual(
+    [],
+  );
+});
+
 it("rejects direct calls to the system haptics in page code", () => {
   for (const line of [
     "UIImpactFeedbackGenerator(style: .light).impactOccurred()",
@@ -60,6 +74,29 @@ it("rejects direct calls to the system haptics in page code", () => {
   expect(findViolations("Haptics.shared.report(.messageSent)", "X.swift")).toEqual([]);
 });
 
+it("rejects shadows on whole views, which also draw a halo around every word inside a card", () => {
+  for (const line of [
+    ".shadow(color: .black, radius: 4)",
+    "content.shadow(radius: 2)",
+    "Text(title).shadow(color: shade, radius: 1, x: 0, y: 1)",
+    "        shadow(color: token.color.color, radius: token.blur / 2, x: token.x, y: token.y)",
+  ]) {
+    expect(findViolations(line, "X.swift").map((v) => v.code)).toContain("content-shadow");
+  }
+  expect(
+    findViolations(
+      "shape.fill(fill).shadow(color: token.color.color, radius: token.blur / 2, x: token.x, y: token.y)",
+      "X.swift",
+    ),
+  ).toEqual([]);
+  expect(
+    findViolations(
+      ".hmRaised(Circle(), fill: Color.hmSurface, shadow: DesignTokens.Shadows.lift)",
+      "X.swift",
+    ),
+  ).toEqual([]);
+});
+
 it("rejects plain buttons whose empty space cannot be tapped", () => {
   for (const line of [
     ".buttonStyle(.plain)",
@@ -70,6 +107,23 @@ it("rejects plain buttons whose empty space cannot be tapped", () => {
     expect(findViolations(line, "X.swift").map((v) => v.code)).toEqual(["plain-button"]);
   }
   expect(findViolations(".buttonStyle(.pressable)", "X.swift")).toEqual([]);
+});
+
+it("lets only the answer body use the system serif, New York, and still rejects custom fonts there", () => {
+  const answer = "Sources/HimawariChat/AnswerFont.swift";
+  expect(findFontViolations(".hmType(Self.voice, design: .serif)", answer)).toEqual([]);
+  expect(
+    findFontViolations(
+      '.font(.custom("STSongti-SC-Regular", size: 18, relativeTo: .body))',
+      answer,
+    ).map((v) => v.code),
+  ).toEqual(["custom-font"]);
+  expect(
+    findFontViolations(
+      ".hmType(Self.voice, design: .serif)",
+      "Sources/HimawariChat/AnswerText.swift",
+    ).map((v) => v.code),
+  ).toEqual(["custom-font"]);
 });
 
 it("rejects custom and serif fonts so text stays on the system font", () => {
@@ -109,18 +163,9 @@ it("accepts token-based code", () => {
 
 const readable = (bg, fg) =>
   Object.fromEntries(
-    [
-      "surface",
-      "text",
-      "muted",
-      "sun",
-      "danger",
-      "success",
-      "glyph",
-      "onSpeak",
-      "onText",
-      "speak",
-    ].map((name) => [name, ["surface", "onSpeak", "onText"].includes(name) ? bg : fg]),
+    ["surface", "text", "muted", "sun", "danger", "success", "glyph", "onText", "speak"].map(
+      (name) => [name, ["surface", "onText"].includes(name) ? bg : fg],
+    ),
   );
 const tokens = {
   color: {
@@ -322,7 +367,6 @@ it("measures text contrast of the approved tokens in light and dark", () => {
     danger: "#000000",
     success: "#000000",
     glyph: "#000000",
-    onSpeak: "#ffffff",
     speak: "#000000",
     onText: "#ffffff",
   };
@@ -362,4 +406,26 @@ it("lets the baseline hold known debt but never more, and flags entries that wen
       (p) => p.code,
     ),
   ).toEqual(["baseline-without-reason"]);
+});
+
+it("rejects she, her and their Chinese and Japanese forms in Himawari's interface text", () => {
+  for (const line of [
+    '"chat.reply.toAgent" = "回复她";',
+    '"chat.reply.toAgent" = "彼女への返信";',
+    'text("你的称呼", ja: "呼び名", en: "What she calls you")',
+    '"permission.note" = "Her model answers from the server";',
+  ]) {
+    expect(findPronounViolations(line, "X.strings").map((v) => v.code)).toEqual([
+      "himawari-pronoun",
+    ]);
+  }
+  for (const line of [
+    'case herApprovals = "next-3-her-approvals"',
+    'case her = "self"',
+    '"chat.reply.toAgent" = "回复 Himawari";',
+    'text("Himawari 用的模型", ja: "Himawari が使うモデル", en: "Himawari\'s model")',
+    "if !her.isEmpty {",
+  ]) {
+    expect(findPronounViolations(line, "X.swift")).toEqual([]);
+  }
 });

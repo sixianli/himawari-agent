@@ -1,4 +1,5 @@
-import { existsSync, readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -11,6 +12,29 @@ const OPEN_STATES = new Set(INCIDENT_STATES.filter((state) => state !== "已落�
 const SHORT_SYMPTOM_LENGTH = 80;
 const COLUMNS = ["编号", "日期", "现象", "根因", "次数", "门槛（文件或命令）", "状态"];
 const REPOSITORY_PATH = /`((?:\.?[A-Za-z0-9_-][A-Za-z0-9_.-]*\/)+[A-Za-z0-9_.-]+)`/g;
+export const REPEAT_LIMIT = 2;
+export const RULE_FILE = "scripts/check-incident-gates.mjs";
+export const RULE_MARK = "INCIDENT_TRAILER_MISSING";
+export const PREMISE_MARK = "INCIDENT_PREMISE_MISSING";
+export const HAND_PICKED_MARK = "INCIDENT_ID_HAND_PICKED";
+export const INCIDENT_ID_SOURCE = "I-(?:\\d{6}-[a-z0-9]{4}|\\d{2,})";
+export const INCIDENT_ID = new RegExp(`^${INCIDENT_ID_SOURCE}$`);
+export const GENERATED_INCIDENT_ID = /^I-\d{6}-[a-z0-9]{4}$/;
+const RENUMBER_VALUE = new RegExp(
+  `^([0-9a-f]{7,40}) (${INCIDENT_ID_SOURCE}) (${INCIDENT_ID_SOURCE})$`,
+);
+const INCIDENT_LINE = /^Incident:[ \t]*(.*?)[ \t]*$/gm;
+const FOLLOW_UP_LINE = /^Incident-follow-up:[ \t]*(.*?)[ \t]*$/gm;
+const RENUMBER_LINE = /^Incident-renumbered:[ \t]*(.*?)[ \t]*$/gm;
+
+const PREMISE_LINE = /^Premise:[ \t]*\S/m;
+const AMEND_LINE = /^Incident-amend:[ \t]*(.*?)[ \t]*$/gm;
+const AMEND_VALUE = /^([0-9a-f]{7,40})[ \t]+((?:Incident|Incident-follow-up|Premise):.*)$/;
+const REPLACED_LINE = /^(?:Incident|Incident-follow-up):/;
+const GITHUB_COMMITTER = "noreply@github.com";
+const TEST_FILE = /(^|\/)test_[^/]+\.py$|\.test\.[cm]?[jt]sx?$|Tests\.swift$/;
+const RUNNER_FILES = ["package.json"];
+const RUNNER_DIRECTORIES = ["scripts/git-hooks", ".github/workflows"];
 
 function cells(line) {
   return line
@@ -50,10 +74,11 @@ export function checkIncidentGates({ root = repositoryRoot } = {}) {
     return { incidents: [], errors: [`INCIDENT_LIST_UNREADABLE ${INCIDENT_LIST}`] };
   }
   const { incidents, errors } = readIncidents(text);
+  const runners = runnerText(root);
   const seen = new Set();
   for (const incident of incidents) {
     const where = incident.id || "(no id)";
-    if (!/^I-\d{2,}$/.test(incident.id)) errors.push(`INCIDENT_ID_INVALID ${where}`);
+    if (!INCIDENT_ID.test(incident.id ?? "")) errors.push(`INCIDENT_ID_INVALID ${where}`);
     if (seen.has(incident.id)) errors.push(`INCIDENT_ID_REPEATED ${where}`);
     seen.add(incident.id);
     if (!/^\d{4}-\d{2}-\d{2}/.test(incident.date ?? ""))
@@ -68,17 +93,262 @@ export function checkIncidentGates({ root = repositoryRoot } = {}) {
     if (!Number.isSafeInteger(count) || count < 1) errors.push(`INCIDENT_COUNT_INVALID ${where}`);
     if (!INCIDENT_STATES.includes(incident.state))
       errors.push(`INCIDENT_STATE_INVALID ${where} ${incident.state}`);
-    if (count >= 3 && !HARD_GATE_STATES.has(incident.state))
-      errors.push(`INCIDENT_THIRD_REPEAT_WITHOUT_HARD_GATE ${where} count=${count}`);
+    if (count >= REPEAT_LIMIT && !HARD_GATE_STATES.has(incident.state))
+      errors.push(`INCIDENT_REPEAT_WITHOUT_HARD_GATE ${where} count=${count}`);
     const paths = [...(incident.gate ?? "").matchAll(REPOSITORY_PATH)].map((match) => match[1]);
     if (incident.state === "已落门槛" && paths.length === 0)
       errors.push(`INCIDENT_GATE_NOT_NAMED ${where}`);
     for (const relative of paths)
       if (!existsSync(path.join(root, relative)))
         errors.push(`INCIDENT_GATE_PATH_MISSING ${where} ${relative}`);
+    if (
+      count >= REPEAT_LIMIT &&
+      incident.state === "已落门槛" &&
+      paths.length > 0 &&
+      !paths.some((relative) => runsAutomatically(relative, runners))
+    )
+      errors.push(`INCIDENT_GATE_NOT_AUTOMATIC ${where}`);
   }
   if (incidents.length === 0) errors.push("INCIDENT_TABLE_EMPTY");
   return { incidents, errors };
+}
+
+function runnerText(root) {
+  const texts = [];
+  for (const file of RUNNER_FILES) {
+    const full = path.join(root, file);
+    if (existsSync(full)) texts.push(readFileSync(full, "utf8"));
+  }
+  for (const directory of RUNNER_DIRECTORIES) {
+    const full = path.join(root, directory);
+    if (!existsSync(full)) continue;
+    for (const entry of readdirSync(full, { withFileTypes: true }))
+      if (entry.isFile()) texts.push(readFileSync(path.join(full, entry.name), "utf8"));
+  }
+  return texts.join("\n");
+}
+
+function runsAutomatically(relative, runners) {
+  return TEST_FILE.test(relative) || runners.includes(relative);
+}
+
+export function runsAutomaticallyIn(root, relative) {
+  return existsSync(path.join(root, relative)) && runsAutomatically(relative, runnerText(root));
+}
+
+export function readCommitIncidents(message) {
+  const text = message
+    .split("\n")
+    .filter((line) => !line.startsWith("#"))
+    .join("\n");
+  const values = [...text.matchAll(INCIDENT_LINE)].map((match) => match[1]);
+  const followUps = [...text.matchAll(FOLLOW_UP_LINE)].map((match) => match[1]);
+  const renumberLines = [...text.matchAll(RENUMBER_LINE)].map((match) => match[1]);
+  const renumbered = renumberLines
+    .map((value) => RENUMBER_VALUE.exec(value))
+    .filter(Boolean)
+    .map(([, commit, from, to]) => ({ commit, from, to }));
+  const invalid = [
+    ...values.filter((value) => value !== "none" && !INCIDENT_ID.test(value)),
+    ...followUps.filter((value) => !INCIDENT_ID.test(value)),
+    ...renumberLines.filter((value) => !RENUMBER_VALUE.test(value)),
+    ...readAmendments(text).invalid,
+  ];
+  return {
+    premise: PREMISE_LINE.test(text),
+    declared: values.length + followUps.length > 0,
+    occurrences: [...new Set(values.filter((value) => INCIDENT_ID.test(value)))],
+    followUps: [...new Set(followUps.filter((value) => INCIDENT_ID.test(value)))],
+    renumbered,
+    invalid,
+  };
+}
+
+export function readAmendments(message) {
+  const amendments = [];
+  const invalid = [];
+  for (const match of message.matchAll(AMEND_LINE)) {
+    const found = AMEND_VALUE.exec(match[1]);
+    if (!found) invalid.push(`Incident-amend: ${match[1]}`);
+    else amendments.push({ target: found[1], line: found[2] });
+  }
+  return { amendments, invalid };
+}
+
+export function amendedMessage(message, lines) {
+  if (lines.length === 0) return message;
+  const replaces = lines.some((line) => REPLACED_LINE.test(line));
+  const kept = replaces
+    ? message
+        .split("\n")
+        .filter((line) => !REPLACED_LINE.test(line))
+        .join("\n")
+    : message;
+  return `${kept}\n${lines.join("\n")}\n`;
+}
+
+function repeatsWithoutPremise(occurrences, premise, counts) {
+  if (premise) return [];
+  return occurrences.filter((id) => Number.parseInt(counts.get(id) ?? "", 10) >= REPEAT_LIMIT);
+}
+
+export function checkCommitMessage(message, counts) {
+  const { declared, occurrences, followUps, renumbered, invalid, premise } =
+    readCommitIncidents(message);
+  const errors = [];
+  if (!declared) errors.push(`${RULE_MARK} commit-msg`);
+  for (const value of invalid) errors.push(`INCIDENT_TRAILER_INVALID commit-msg ${value}`);
+  for (const id of [...occurrences, ...followUps, ...renumbered.map(({ to }) => to)])
+    if (!counts.has(id)) errors.push(`INCIDENT_TRAILER_UNKNOWN commit-msg ${id}`);
+  for (const id of repeatsWithoutPremise(occurrences, premise, counts))
+    errors.push(`${PREMISE_MARK} commit-msg ${id}`);
+  return errors;
+}
+
+function git(root, args) {
+  return execFileSync("git", args, {
+    cwd: root,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    maxBuffer: 256 * 1024 * 1024,
+  });
+}
+
+function ruleActivation(root, mark) {
+  const found = git(root, ["log", "--reverse", "--format=%H", "-S", mark, "HEAD", "--", RULE_FILE])
+    .split("\n")
+    .filter(Boolean);
+  return found[0] ?? "";
+}
+
+function requiredCommits(root, activation) {
+  if (!activation) return new Set();
+  return new Set(
+    git(root, ["rev-list", "--no-merges", "--ancestry-path", `${activation}..HEAD`])
+      .split("\n")
+      .filter(Boolean)
+      .concat(activation),
+  );
+}
+
+function countsAt(root, sha) {
+  let text;
+  try {
+    text = git(root, ["show", `${sha}:${INCIDENT_LIST}`]);
+  } catch {
+    return new Map();
+  }
+  return new Map(readIncidents(text).incidents.map((incident) => [incident.id, incident.count]));
+}
+
+function commitsAddingRow(root, id) {
+  return [
+    ...new Set(
+      git(root, ["log", "-m", "--format=%H", "-S", `| ${id} |`, "HEAD", "--", INCIDENT_LIST])
+        .split("\n")
+        .filter(Boolean),
+    ),
+  ];
+}
+
+function isAncestor(root, ancestor, descendant) {
+  try {
+    git(root, ["merge-base", "--is-ancestor", ancestor, descendant]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function handPickedIds({ root = repositoryRoot, incidents } = {}) {
+  const activation = ruleActivation(root, HAND_PICKED_MARK);
+  if (!activation) return [];
+  const legacy = countsAt(root, activation);
+  const errors = [];
+  for (const { id } of incidents) {
+    if (!id || GENERATED_INCIDENT_ID.test(id) || legacy.has(id)) continue;
+    if (commitsAddingRow(root, id).some((commit) => !isAncestor(root, activation, commit)))
+      continue;
+    errors.push(
+      `${HAND_PICKED_MARK} ${id} new incidents take an id from npm run incident:new -- <现象>, so two threads never pick the same number`,
+    );
+  }
+  return errors;
+}
+
+export function checkIncidentHistory({ root = repositoryRoot, incidents } = {}) {
+  const errors = [];
+  try {
+    if (git(root, ["rev-parse", "--is-shallow-repository"]).trim() === "true")
+      return [
+        "INCIDENT_HISTORY_SHALLOW the clone is shallow, so repeat counts cannot be read; run git fetch --unshallow origin",
+      ];
+  } catch {
+    return ["INCIDENT_HISTORY_UNAVAILABLE not a git checkout, so repeat counts cannot be read"];
+  }
+  const table = new Map(
+    incidents.map((incident) => [incident.id, Number.parseInt(incident.count ?? "", 10)]),
+  );
+  errors.push(...handPickedIds({ root, incidents }));
+  const required = requiredCommits(root, ruleActivation(root, RULE_MARK));
+  const premiseRequired = requiredCommits(root, ruleActivation(root, PREMISE_MARK));
+  const log = git(root, ["log", "--no-merges", "--format=%H%x00%ce%x00%B%x1e", "HEAD"]);
+  const records = log
+    .split("\x1e")
+    .map((record) => record.replace(/^\n/, "").split("\0"))
+    .filter(([sha, , message]) => sha && message !== undefined);
+  const amended = new Map();
+  for (const [sha, , message] of records)
+    for (const { target, line } of readAmendments(message).amendments) {
+      const matches = records.filter(([candidate]) => candidate.startsWith(target));
+      if (matches.length !== 1) {
+        errors.push(
+          `INCIDENT_AMEND_TARGET_${matches.length === 0 ? "UNKNOWN" : "AMBIGUOUS"} ${sha.slice(0, 12)} ${target}`,
+        );
+        continue;
+      }
+      const full = matches[0][0];
+      amended.set(full, [...(amended.get(full) ?? []), line]);
+    }
+  const counted = [];
+  const renumberings = [];
+  for (const [sha, committer, original] of records) {
+    const message = amendedMessage(original, amended.get(sha) ?? []);
+    const short = sha.slice(0, 12);
+    const { declared, occurrences, followUps, renumbered, invalid, premise } =
+      readCommitIncidents(message);
+    if (required.has(sha) && committer !== GITHUB_COMMITTER) {
+      if (!declared) errors.push(`${RULE_MARK} ${short}`);
+      for (const value of invalid) errors.push(`INCIDENT_TRAILER_INVALID ${short} ${value}`);
+    }
+    if (
+      premiseRequired.has(sha) &&
+      committer !== GITHUB_COMMITTER &&
+      occurrences.length > 0 &&
+      !premise
+    )
+      for (const id of repeatsWithoutPremise(occurrences, premise, countsAt(root, sha)))
+        errors.push(`${PREMISE_MARK} ${short} ${id}`);
+    for (const id of [...occurrences, ...followUps, ...renumbered.map(({ to }) => to)])
+      if (!table.has(id)) errors.push(`INCIDENT_TRAILER_UNKNOWN ${short} ${id}`);
+    for (const id of occurrences) counted.push({ sha, short, id });
+    for (const renumbering of renumbered) renumberings.push({ ...renumbering, by: short });
+  }
+  for (const { commit, from, to, by } of renumberings.reverse()) {
+    const target = counted.find((entry) => entry.sha.startsWith(commit) && entry.id === from);
+    if (target) target.id = to;
+    else errors.push(`INCIDENT_RENUMBER_UNMATCHED ${by} ${commit} ${from}`);
+  }
+  const seen = new Map();
+  for (const { short, id } of counted) seen.set(id, [...(seen.get(id) ?? []), short]);
+  for (const [id, commits] of [...seen].sort(([a], [b]) => a.localeCompare(b))) {
+    const count = table.get(id);
+    if (Number.isSafeInteger(count) && count < commits.length)
+      errors.push(
+        `INCIDENT_COUNT_BELOW_HISTORY ${id} table=${count} commits=${commits.length} ${commits.join(",")}`,
+      );
+  }
+  return errors;
 }
 
 function firstSentence(text) {
@@ -99,12 +369,52 @@ export function openIncidentLines(incidents) {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const unknown = process.argv.slice(2).filter((argument) => argument !== "--open");
+  const argumentsGiven = process.argv.slice(2);
+  if (argumentsGiven[0] === "--commit-msg" && argumentsGiven.length === 2) {
+    let merging = false;
+    try {
+      merging = existsSync(git(repositoryRoot, ["rev-parse", "--git-path", "MERGE_HEAD"]).trim());
+    } catch {}
+    if (!merging) {
+      const { incidents, errors: listErrors } = checkIncidentGates();
+      const counts = new Map(incidents.map((incident) => [incident.id, incident.count]));
+      let picked = [];
+      try {
+        picked = handPickedIds({ incidents });
+      } catch {}
+      const message = readFileSync(argumentsGiven[1], "utf8");
+      const unresolved = readAmendments(message).amendments.filter(({ target }) => {
+        try {
+          git(repositoryRoot, ["rev-parse", "--verify", "--quiet", `${target}^{commit}`]);
+          return false;
+        } catch {
+          return true;
+        }
+      });
+      const errors = [
+        ...listErrors,
+        ...picked,
+        ...unresolved.map(({ target }) => `INCIDENT_AMEND_TARGET_UNKNOWN commit-msg ${target}`),
+        ...checkCommitMessage(message, counts),
+      ];
+      for (const error of errors) process.stderr.write(`${error}\n`);
+      if (errors.length > 0) {
+        process.stderr.write(
+          "INCIDENT_TRAILER_HELP every commit needs a line `Incident: I-<n>` (this commit fixes one more occurrence of that incident), `Incident-follow-up: I-<n>` (more work on an occurrence already counted) or `Incident: none`; a commit that fixes the second or a later occurrence of an incident also needs a line `Premise: <the assumption that turned out wrong>`; a line missed or wrong in a pushed commit is fixed by a later commit with `Incident-amend: <sha> <the line>`, not by rewriting history; see .claude/rules/incident-gates.md\n",
+        );
+        process.exit(1);
+      }
+    }
+    process.exit(0);
+  }
+  const unknown = argumentsGiven.filter((argument) => argument !== "--open");
   if (unknown.length > 0) {
     process.stderr.write(`INCIDENT_ARGUMENT_UNKNOWN ${unknown.join(" ")}\n`);
     process.exit(2);
   }
   const { incidents, errors } = checkIncidentGates();
+  if (!process.argv.includes("--open") && errors.length === 0)
+    errors.push(...checkIncidentHistory({ incidents }));
   for (const error of errors) process.stderr.write(`${error}\n`);
   if (process.argv.includes("--open") && errors.length > 0) {
     process.stdout.write(`INCIDENT_OPEN unavailable errors=${errors.length}\n`);

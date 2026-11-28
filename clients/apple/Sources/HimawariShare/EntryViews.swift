@@ -88,6 +88,7 @@ struct EntryFact: View {
 struct EntryHero: View {
     let icon: IconName
     let title: String
+    var purpose: String? = nil
 
     var body: some View {
         VStack(spacing: DesignTokens.Handover.heroGap) {
@@ -97,6 +98,13 @@ struct EntryHero: View {
                 .font(.system(.title, weight: .semibold))
                 .foregroundStyle(Color.hmText)
                 .multilineTextAlignment(.center)
+            if let purpose {
+                Text(purpose)
+                    .font(.subheadline)
+                    .foregroundStyle(Color.hmMuted)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .frame(maxWidth: .infinity)
         .padding(.top, DesignTokens.Handover.heroTop)
@@ -110,6 +118,7 @@ struct EntryNote: View {
         Text(text)
             .hmType(DesignTokens.TypeScale.caption)
             .foregroundStyle(Color.hmMuted)
+            .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, DesignTokens.Handover.noteInset)
     }
@@ -155,7 +164,7 @@ public struct SafariEntryView: View {
     public var body: some View {
         VStack(spacing: DesignTokens.Handover.pageGap) {
             if model.settings.state(.safari) == .notSetUp {
-                EntryHero(icon: .brandSafariLarge, title: L.text("safari.hero"))
+                EntryHero(icon: .brandSafariLarge, title: L.text("safari.hero"), purpose: L.text("safari.purpose"))
                 EntrySteps(steps: steps)
                 EntryNote(text: L.text("safari.note"))
                 Spacer(minLength: 0)
@@ -171,6 +180,7 @@ public struct SafariEntryView: View {
                         Icon(.brandSafari)
                     }
                 }
+                EntryNote(text: L.text("safari.purpose"))
                 EntrySteps(steps: steps)
                 EntryNote(text: L.text("entry.note"))
                 Spacer(minLength: 0)

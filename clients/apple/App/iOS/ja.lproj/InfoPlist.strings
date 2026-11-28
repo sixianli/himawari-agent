@@ -5,7 +5,7 @@
 "NSContactsUsageDescription" = "連絡先の電話番号やメールの変更を頼んだときに使います。「連絡先」の感知をオンにすると、名前、電話番号、メール、誕生日をあなた自身のサーバーにも同期し、知り合いを覚えられるようにします。";
 "NSHomeKitUsageDescription" = "家の照明のオン・オフやエアコンの調整を頼んだときに使います。";
 "NSRemindersFullAccessUsageDescription" = "リマインダーの追加や完了を頼んだときに使います。";
-"NSMicrophoneUsageDescription" = "「聞き始める」をタップすると、まわりの声を聞いてこの iPhone で文字にします。長押しで話すときや音声入力のときは、あなたの声を文字にして Himawari に送ります。録音は文字にしたら消します。";
+"NSMicrophoneUsageDescription" = "「聞き始める」をタップすると、まわりの声を聞いてこの iPhone で文字にします。音声入力のときは、あなたの声を文字にして Himawari に送ります。録音は文字にしたら消します。";
 "NSSpeechRecognitionUsageDescription" = "聞こえた言葉をこの iPhone で文字にします。";
 "NSMotionUsageDescription" = "AirPods が耳に入っているかを確かめ、呼んだのがあなたかを見分けます。「ヘルスと動き」の感知をオンにすると、歩いているか、走っているか、運転しているかもあなた自身のサーバーに記録します。";
 "NSLocationWhenInUseUsageDescription" = "どこに着いて、どのくらいいたかを記録し、あなた自身のサーバーに保存します。「いまいる場所」をタップしたときは、現在地を Himawari に送ります。";

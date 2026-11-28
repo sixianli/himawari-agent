@@ -63,6 +63,8 @@ public final class AppModel {
 
     private static let recordAccount = SharedVault.recordAccount
 
+    public static let launched = AppModel()
+
     public convenience init(bundle: Bundle = .main, kind: DeviceKind = .iphone) {
         Self.logUnknownServerValues(subsystem: bundle.bundleIdentifier ?? "himawari")
         self.init(bundle: bundle, kind: kind, restoring: true)

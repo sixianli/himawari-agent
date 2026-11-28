@@ -1,6 +1,9 @@
 import HimawariCore
 import HimawariDesign
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 struct SenseDetailView: View {
     let model: SensesModel
@@ -8,6 +11,8 @@ struct SenseDetailView: View {
     let back: () -> Void
     @State private var confirming = false
     @State private var stopping = false
+    @Environment(\.openURL) private var openURL
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         SenseSheet(title: item.name, back: back) {
@@ -23,6 +28,9 @@ struct SenseDetailView: View {
             .scrollIndicators(.hidden)
         }
         .task(id: collecting) { await model.loadDay(item) }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { model.reloadAlways() }
+        }
         .confirmationDialog(L.format("detail.stopTitle", item.name), isPresented: $stopping, titleVisibility: .visible) {
             Button(L.text("detail.stopKeep")) { Task { await model.turnOff(item) } }
             Button(L.text("detail.stopDelete"), role: .destructive) { Task { await model.turnOffAndClear(item) } }
@@ -75,7 +83,6 @@ struct SenseDetailView: View {
                 }
             }
         }
-        .tint(Color.hmSuccess)
         .disabled(model.working == item)
         .frame(minHeight: DesignTokens.Size.rowMinHeight)
         .himawariCard(padding: EdgeInsets(top: 0, leading: DesignTokens.Size.cardPaddingX, bottom: 0, trailing: DesignTokens.Size.cardPaddingX))
@@ -142,24 +149,28 @@ struct SenseDetailView: View {
             }
             if let always = model.always[item] {
                 RowSeparator()
-                Toggle(isOn: Binding(get: { always }, set: { on in
-                    guard on else { return }
-                    Task { await model.requestAlways(item) }
+                Toggle(isOn: Binding(get: { always }, set: { _ in
+                    if model.alwaysNeedsSettings(item) { openSystemSettings() } else { Task { await model.requestAlways(item) } }
                 })) {
                     VStack(alignment: .leading, spacing: DesignTokens.Senses.factLabelGap) {
                         Text(L.text("detail.always"))
                             .hmType(DesignTokens.TypeScale.body)
                             .foregroundStyle(Color.hmText)
-                        Text(L.text(always ? "detail.alwaysOn" : "detail.alwaysDetail"))
+                        Text(L.text(always ? "detail.alwaysOn" : model.alwaysNeedsSettings(item) ? "detail.alwaysSettings" : "detail.alwaysDetail"))
                             .hmType(DesignTokens.TypeScale.caption)
                             .foregroundStyle(Color.hmMuted)
                     }
                 }
-                .tint(Color.hmSuccess)
-                .disabled(always || !collecting)
+                .disabled(!collecting)
                 .frame(minHeight: DesignTokens.Size.rowMinHeight)
             }
         }
+    }
+
+    private func openSystemSettings() {
+        #if canImport(UIKit)
+        if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+        #endif
     }
 
     private var placesRow: some View {

@@ -11,17 +11,73 @@ refuse() {
 }
 
 request="${SSH_ORIGINAL_COMMAND:-}"
-if [[ ! "$request" =~ ^deploy\ ([0-9a-f]{40})\ (-|[0-9a-f]{40})\ ([01])$ ]]; then
-  refuse REQUEST_INVALID "only 'deploy <40-hex commit> <40-hex since or -> <0|1 force>' is accepted"
+if [[ "$request" =~ ^ops\ ([a-z][a-z-]{0,31})$ ]]; then
+  action="${BASH_REMATCH[1]}"
+  mkdir -p "$base"
+  mirror="$base/ops-mirror.git"
+  if [[ ! -d "$mirror" ]]; then
+    git init --quiet --bare "$mirror" || refuse CLONE_FAILED "$mirror" 70
+  fi
+  git -C "$mirror" fetch --quiet "$repo_url" +refs/heads/main:refs/heads/main || refuse FETCH_FAILED "$repo_url main" 70
+  ops="$(mktemp -d)"
+  trap 'rm -rf "$ops"' EXIT
+  git -C "$mirror" show main:scripts/operations/production-ops.sh > "$ops/production-ops.sh" || refuse OPS_MISSING "main has no scripts/operations/production-ops.sh" 70
+  git -C "$mirror" show main:scripts/operations/production-ops.pub.pem > "$ops/production-ops.pub.pem" || refuse OPS_MISSING "main has no scripts/operations/production-ops.pub.pem" 70
+  echo "OPS_FROM main $(git -C "$mirror" rev-parse main)"
+  HIMAWARI_OPS_PUBLIC_KEY="$ops/production-ops.pub.pem" HIMAWARI_OPS_LOCK="$(realpath -m "$base/deploy.lock")" bash "$ops/production-ops.sh" "$action"
+  exit $?
 fi
-commit="${BASH_REMATCH[1]}"
-since="${BASH_REMATCH[2]}"
-force="${BASH_REMATCH[3]}"
+verb=deploy
+if [[ "$request" =~ ^deploy\ ([0-9a-f]{40})\ (-|[0-9a-f]{40})\ ([01])$ ]]; then
+  commit="${BASH_REMATCH[1]}"
+  since="${BASH_REMATCH[2]}"
+  force="${BASH_REMATCH[3]}"
+elif [[ "$request" =~ ^rehearse\ ([0-9a-f]{40})\ boot$ ]]; then
+  verb=rehearse
+  commit="${BASH_REMATCH[1]}"
+  since=-
+  force=0
+else
+  refuse REQUEST_INVALID "only 'deploy <40-hex commit> <40-hex since or -> <0|1 force>' or 'rehearse <40-hex commit> boot' or 'ops <action>' is accepted"
+fi
 [[ "$since" != - ]] || since=""
 
+session_command="${HIMAWARI_DEPLOY_SESSION_COMMAND:-sshd}"
+shadow_machine="${HIMAWARI_DEPLOY_SHADOW_MACHINE:-himawari-shadow}"
+
+lock_holders() {
+  local link
+  for link in /proc/[0-9]*/fd/*; do
+    [[ "$(readlink "$link" 2> /dev/null)" == "$1" ]] && echo "${link#/proc/}" | cut -d/ -f1
+  done | sort -un | grep -vx "$$" || true
+}
+
+in_live_session() {
+  local pid="$1" name parent
+  while [[ "$pid" =~ ^[0-9]+$ && "$pid" -gt 1 ]]; do
+    name="$(cat "/proc/$pid/comm" 2> /dev/null)" || return 1
+    [[ "$name" == "$session_command"* ]] && return 0
+    parent="$(awk '/^PPid:/{print $2}' "/proc/$pid/status" 2> /dev/null)" || return 1
+    pid="$parent"
+  done
+  return 1
+}
+
 mkdir -p "$base"
-exec 9> "$base/deploy.lock"
-flock -n 9 || refuse ALREADY_RUNNING "another deploy holds $base/deploy.lock" 75
+lock_file="$(realpath -m "$base/deploy.lock")"
+exec 9> "$lock_file"
+if ! flock -n 9; then
+  holders="$(lock_holders "$lock_file" | tr '\n' ' ')"
+  for holder in $holders; do
+    in_live_session "$holder" && refuse ALREADY_RUNNING "another deploy holds $lock_file (pid $holder is still in a connected session)" 75
+  done
+  echo "DEPLOY_ENTRY_ORPHAN_CLEARED pids=${holders:-none}: the deploy that held $lock_file lost its session (a cut-off GitHub job); stopping what it left running"
+  if command -v machinectl > /dev/null 2>&1 && machinectl show "$shadow_machine" > /dev/null 2>&1; then
+    machinectl terminate "$shadow_machine" > /dev/null 2>&1 || true
+  fi
+  [[ -z "$holders" ]] || kill -TERM $holders 2> /dev/null || true
+  flock -w 30 9 || { [[ -z "$holders" ]] || kill -KILL $holders 2> /dev/null || true; flock -w 30 9; } || refuse ALREADY_RUNNING "processes left by a cut-off deploy still hold $lock_file: $holders" 75
+fi
 
 checkout="$base/checkout"
 if [[ ! -d "$checkout/.git" ]]; then
@@ -34,6 +90,11 @@ git -C "$checkout" merge-base --is-ancestor "$commit" origin/main || refuse COMM
 [[ -z "$since" ]] || git -C "$checkout" cat-file -e "$since^{commit}" 2>/dev/null || refuse SINCE_UNKNOWN "$since" 65
 git -C "$checkout" checkout --quiet --force --detach "$commit" || refuse CHECKOUT_FAILED "$commit" 70
 git -C "$checkout" clean -qfdx -e production/ -e node_modules/ -e .ci-output/
+
+if [[ "$verb" == rehearse ]]; then
+  cd "$checkout" || exit 70
+  exec bash scripts/delivery-mode/shadow-rehearsal.sh --boot-only
+fi
 
 build_account="${HIMAWARI_DEPLOY_BUILD_ACCOUNT:-himawari-build}"
 tools="${HIMAWARI_DEPLOY_TOOLS:-$(getent passwd "$build_account" | cut -d: -f6)/packet-builder/tools}"

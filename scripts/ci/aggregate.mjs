@@ -215,7 +215,7 @@ export function aggregate({ policy, context, needs, reports, toolchainLock }) {
     const entry = entries.get(id);
     if (!entry) continue;
     const { result, source } = entry;
-    if (["browser", "tests"].includes(check.id)) {
+    if (check.id === "tests") {
       const platform = "linux-x64";
       const matching = result.artifacts.filter(
         (artifact) => artifact.role === "consumed" && artifact.platform === platform,

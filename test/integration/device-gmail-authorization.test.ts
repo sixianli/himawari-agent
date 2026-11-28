@@ -18,6 +18,8 @@ function recordingGmail() {
   const begun: { deviceId: string; connection: string; callbackScheme: string }[] = [];
   const completed: { deviceId: string; state: string }[] = [];
   const disconnected: string[] = [];
+  const added: Record<string, unknown>[] = [];
+  const removed: string[] = [];
   const port: DeviceConnectionsPort = {
     list: async () => [
       {
@@ -26,6 +28,7 @@ function recordingGmail() {
         status: "connected",
         account: "andy@example.com",
         connectedAt: "2026-11-26T08:00:00.000Z",
+        added: false,
       },
     ],
     begin: async (input) => {
@@ -42,8 +45,51 @@ function recordingGmail() {
       disconnected.push(connection);
       return true;
     },
+    add: async (input) => {
+      added.push({ ...input });
+      return {
+        outcome: "added",
+        connection: {
+          name: "app_0a1b2c3d4e5f",
+          title: input.title ?? "Linear",
+          status: "disconnected",
+          account: null,
+          connectedAt: null,
+          added: true,
+        },
+      };
+    },
+    remove: async ({ connection }) => {
+      if (!connection.startsWith("app_")) return undefined;
+      removed.push(connection);
+      return true;
+    },
   };
-  return { port, begun, completed, disconnected };
+  return { port, begun, completed, disconnected, added, removed };
+}
+
+async function confirmedPost(h: Harness, client: PairedClient, path: string, body: unknown) {
+  const challenge = (
+    await send(
+      h,
+      signedRequest(h, client, {
+        method: "POST",
+        path: "/api/device/v1/approvals/challenge",
+        body: "{}",
+      }),
+    )
+  ).json() as { challenge: string };
+  const response = await send(
+    h,
+    signedRequest(h, client, {
+      method: "POST",
+      path: `/api/device/v1/${path}`,
+      body: JSON.stringify(body),
+      confirmKey: client.confirmKeys.privateKey,
+      nonce: challenge.challenge,
+    }),
+  );
+  return { status: response.statusCode, body: response.json() as Record<string, unknown> };
 }
 
 async function post(h: Harness, client: PairedClient, path: string, body: unknown) {
@@ -74,6 +120,7 @@ describe("[PG-12] the iPhone asks the server for the Gmail sign-in page", () => 
             status: "connected",
             account: "andy@example.com",
             connectedAt: "2026-11-26T08:00:00.000Z",
+            added: false,
           },
         ],
       },
@@ -185,5 +232,71 @@ describe("[PG-12] the iPhone asks the server for the Gmail sign-in page", () => 
     });
     expect(started.status).toBe(404);
     expect((await post(h, client, "connections/list", {})).status).toBe(404);
+  });
+});
+
+describe("[CONN-ADD-1] the iPhone adds any remote MCP app by its address", () => {
+  it("adds an app only with Face ID, passes the address and the optional client to the server, and removes it without Face ID", async () => {
+    const gmail = recordingGmail();
+    const h = await harness({ connections: gmail.port });
+    const client = await pairAndConfirm(h);
+
+    const added = await confirmedPost(h, client, "connections/add", {
+      serverUrl: " https://mcp.linear.app/mcp ",
+      title: "Linear",
+      clientId: "client-1",
+      clientSecret: "secret-1",
+    });
+    expect(added).toEqual({
+      status: 200,
+      body: {
+        outcome: "added",
+        connection: {
+          name: "app_0a1b2c3d4e5f",
+          title: "Linear",
+          status: "disconnected",
+          account: null,
+          connectedAt: null,
+          added: true,
+        },
+      },
+    });
+    expect(gmail.added).toEqual([
+      {
+        serverUrl: "https://mcp.linear.app/mcp",
+        title: "Linear",
+        clientId: "client-1",
+        clientSecret: "secret-1",
+      },
+    ]);
+    expect(await post(h, client, "connections/remove", { connection: "app_0a1b2c3d4e5f" })).toEqual(
+      { status: 200, body: { removed: true } },
+    );
+    expect(gmail.removed).toEqual(["app_0a1b2c3d4e5f"]);
+  });
+
+  it("[reverse] without Face ID, without an address, with a secret but no client ID or with extra fields nothing is added", async () => {
+    const gmail = recordingGmail();
+    const h = await harness({ connections: gmail.port });
+    const client = await pairAndConfirm(h);
+
+    expect(
+      await post(h, client, "connections/add", { serverUrl: "https://mcp.linear.app/mcp" }),
+    ).toEqual({ status: 403, body: { code: "DEVICE_OWNER_PRESENCE_REQUIRED" } });
+    for (const body of [
+      {},
+      { serverUrl: "   " },
+      { serverUrl: 7 },
+      { serverUrl: "https://mcp.linear.app/mcp", clientSecret: "secret-1" },
+      { serverUrl: "https://mcp.linear.app/mcp", headers: { authorization: "x" } },
+      { serverUrl: `https://mcp.linear.app/${"a".repeat(2050)}` },
+    ])
+      expect((await confirmedPost(h, client, "connections/add", body)).status).toBe(400);
+    expect(gmail.added).toEqual([]);
+    expect((await post(h, client, "connections/remove", { connection: "github" })).status).toBe(
+      404,
+    );
+    expect((await post(h, client, "connections/remove", { connection: "App 1" })).status).toBe(400);
+    expect(gmail.removed).toEqual([]);
   });
 });

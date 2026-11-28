@@ -61,6 +61,7 @@ export interface OwnerScopeDecisionContext {
 export interface OwnerScopeIntentExtras {
   readonly targets?: readonly { readonly type: string; readonly ref: string }[];
   readonly display?: () => Promise<ApprovalDisplayInput>;
+  readonly step?: string;
 }
 
 const ASKED_BECAUSE_SOURCES = 5;
@@ -171,6 +172,7 @@ export class OwnerScopeAuthorization {
       invocation.toolCallId,
       invocation.capabilityRef,
       inputDigest,
+      ...(extras.step === undefined ? [] : [extras.step]),
     ])}`;
     const externalSources = await this.#externalSources(invocation, source);
     const factCodes: PolicyFactCode[] = [RUN_SOURCE_FACT[source.sourceType]];

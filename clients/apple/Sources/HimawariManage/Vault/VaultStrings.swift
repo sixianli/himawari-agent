@@ -5,9 +5,9 @@ extension M {
     static var vaultTitle: String { text("保险箱", ja: "金庫", en: "Vault") }
     static var vaultIntro: String {
         text(
-            "她只知道每一项的名字和能用在哪个网站，看不到值。每次用都要你批准。",
-            ja: "彼女が知っているのは各項目の名前と使えるサイトだけで、値は見えません。使うたびにあなたの承認が必要です。",
-            en: "She only knows each item's name and the site it works on, never the value. Every use needs your approval."
+            "Himawari 只知道每一项的名字和能用在哪个网站，看不到值。每次用都要你批准。",
+            ja: "Himawari が知っているのは各項目の名前と使えるサイトだけで、値は見えません。使うたびにあなたの承認が必要です。",
+            en: "Himawari only knows each item's name and the site it works on, never the value. Every use needs your approval."
         )
     }
     static var vaultEmpty: String { text("还没有存东西", ja: "まだ何も入っていません", en: "Nothing stored yet") }
@@ -23,7 +23,7 @@ extension M {
     }
     static var vaultImport: String { text("从苹果“密码”导入", ja: "Apple の「パスワード」から読み込む", en: "Import from Apple Passwords") }
     static var vaultImportSubtitle: String {
-        text("一次选好要给她的那些，不用一项项抄", ja: "渡す項目をまとめて選べます", en: "Pick everything you want her to use at once")
+        text("一次选好要给 Himawari 的那些，不用一项项抄", ja: "渡す項目をまとめて選べます", en: "Pick everything you want Himawari to use at once")
     }
     static var vaultManual: String { text("手动加", ja: "手入力で追加", en: "Add by hand") }
     static var vaultManualSubtitle: String {
@@ -31,9 +31,9 @@ extension M {
     }
     static var vaultAddLater: String {
         text(
-            "不先加也行：她用到一个没存过的网站时会来问你，你当场从“密码”里选。",
-            ja: "先に追加しなくても大丈夫。まだないサイトを使うとき、彼女が聞きに来ます。",
-            en: "You can also skip this: when she needs a site you haven't stored, she'll ask you then."
+            "不先加也行：Himawari 用到一个没存过的网站时会来问你，你当场从“密码”里选。",
+            ja: "先に追加しなくても大丈夫。まだないサイトを使うとき、Himawari が聞きに来ます。",
+            en: "You can also skip this: when Himawari needs a site you haven't stored, Himawari will ask you then."
         )
     }
     static var vaultEncryptedHere: String {
@@ -62,7 +62,7 @@ extension M {
     static var vaultSiteRow: String { text("能用在哪个网站", ja: "使えるサイト", en: "Works on") }
     static var vaultBackgroundNote: String {
         text(
-            "打开后，定时任务用它不用问你；服务器被黑时这一项会泄露",
+            "打开后，定时任务用这一项不用问你；服务器被黑时这一项会泄露",
             ja: "オンにすると定期タスクは確認なしで使います。サーバーが侵入されるとこの項目は漏れます",
             en: "When on, scheduled tasks use it without asking. If the server is broken into, this item leaks"
         )
@@ -82,10 +82,10 @@ extension M {
     static var vaultApproveTitle: String { text("批准一次使用", ja: "1 回の使用を承認", en: "Approve one use") }
     static func vaultOnlyFor(_ origin: String) -> String { text("只填进 \(origin)", ja: "\(origin) にだけ入力", en: "Only for \(origin)") }
     static var vaultMatches: String { text("名字和网站和你存的一致", ja: "名前とサイトは保存した内容と一致", en: "Name and site match what you stored") }
-    static var vaultPurposeLabel: String { text("她要做什么（这是她说的，只作参考）", ja: "何をするか（彼女の説明・参考のみ）", en: "What she's doing (her words, for reference)") }
+    static var vaultPurposeLabel: String { text("Himawari 要做什么（这是 Himawari 说的，只作参考）", ja: "何をするか（Himawari の説明・参考のみ）", en: "What Himawari's doing (Himawari words, for reference)") }
     static var vaultApproveFooter: String {
         text(
-            "只管这次办事 · 2 分钟内不点就作废。登录以后要付款、转账，她会再单独问你。",
+            "只管这次办事 · 2 分钟内不点就作废。登录以后要付款、转账，Himawari 会再单独问你。",
             ja: "今回の用事だけ・2 分以内に押さないと無効。ログイン後の支払いや送金は別に確認します。",
             en: "Only for this task · expires if you don't tap within 2 minutes. Payments or transfers after login are asked separately."
         )
@@ -119,6 +119,33 @@ extension M {
     static var vaultSaveFailed: String { text("没存上，再试一次", ja: "保存できませんでした。もう一度お試しください", en: "Couldn't save. Try again") }
     static var vaultConflict: String { text("别的设备刚改过，已刷新，再试一次", ja: "別のデバイスが変更しました。更新したのでもう一度", en: "Another device just changed it. Refreshed; try again") }
     static var vaultScan: String { text("扫码", ja: "スキャン", en: "Scan") }
+    static var vaultScanMenu: String { text("从二维码读取", ja: "QR コードから読み取る", en: "Read from a QR code") }
+    static var vaultScanPhoto: String { text("从照片里找二维码", ja: "写真から QR コードを探す", en: "Find a QR code in a photo") }
+    static var vaultScanPhotoNone: String {
+        text("这张图里没找到两步验证二维码", ja: "この画像に 2 段階認証の QR コードが見つかりません", en: "No two-step QR code in that image")
+    }
+    static var vaultOTPAuthLinkNote: String {
+        text(
+            "网站给的两步验证密钥已经填好。补上网站地址和密码就能存。",
+            ja: "サイトの 2 段階認証の鍵を入力済みです。サイトのアドレスとパスワードを足せば保存できます。",
+            en: "The site's two-step key is filled in. Add the site address and password to save."
+        )
+    }
+    static var vaultCodeTitle: String { text("输入验证码", ja: "確認コードを入力", en: "Enter the code") }
+    static var vaultCodeField: String { text("验证码", ja: "確認コード", en: "Code") }
+    static var vaultCodeSend: String { text("填入", ja: "入力する", en: "Fill in") }
+    static var vaultCodeDecline: String { text("不填", ja: "入力しない", en: "Don't fill") }
+    static func vaultCodeSite(_ origin: String) -> String {
+        text("只填进 \(origin)", ja: "\(origin) にだけ入力します", en: "Filled only into \(origin)")
+    }
+    static var vaultCodeInvalid: String {
+        let low = VaultCode.allowedLength.lowerBound
+        let high = VaultCode.allowedLength.upperBound
+        return text("验证码是 \(low) 到 \(high) 位字母或数字", ja: "確認コードは \(low)〜\(high) 文字の英数字です", en: "Codes are \(low) to \(high) letters or digits")
+    }
+    static var vaultCodeGone: String {
+        text("这个验证码已经不用填了", ja: "このコードはもう不要です", en: "This code is no longer needed")
+    }
     static var vaultScanAim: String { text("对准网站给的两步验证二维码", ja: "サイトの 2 段階認証 QR コードに向けてください", en: "Point at the site's two-step QR code") }
     static var vaultTOTPInvalid: String {
         text("两步验证密钥只能是字母 A–Z 和数字 2–7", ja: "2 段階認証の鍵は A–Z と 2–7 だけです", en: "A two-step key only has letters A–Z and digits 2–7")
