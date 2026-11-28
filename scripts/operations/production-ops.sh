@@ -164,7 +164,7 @@ const configuration = JSON.parse(readFileSync(source, "utf8"));
 const changed = [];
 for (const descriptor of configuration.modelDescriptors ?? []) {
   const allowed = descriptor.allowedDataClassifications;
-  if (descriptor.role === "embedding" || !Array.isArray(allowed)) continue;
+  if (!Array.isArray(allowed)) continue;
   if (!allowed.includes("private") || allowed.includes("sensitive")) continue;
   descriptor.allowedDataClassifications = ["public", "private", "sensitive"].filter(
     (value) => value === "sensitive" || allowed.includes(value),
@@ -176,7 +176,7 @@ process.stdout.write(changed.join(" "));
 JS
   )" || refuse CONFIG_UNREADABLE "$config" 70
   if [[ -z "$changed" ]]; then
-    echo "OPS_CONFIG_UNCHANGED every generation model already allows sensitive"
+    echo "OPS_CONFIG_UNCHANGED every model already allows sensitive"
     return 1
   fi
   chown --reference="$config" "$next" && chmod --reference="$config" "$next" && mv -f "$next" "$config" || refuse CONFIG_WRITE_FAILED "$config" 70

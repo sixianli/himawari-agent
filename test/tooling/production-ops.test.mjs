@@ -216,7 +216,7 @@ db.prepare("INSERT INTO perception_records VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run
     }
   });
 
-  it("backs up the config, lets generation models see sensitive content, then restarts", () => {
+  it("backs up the config, lets every model, embedding included, see sensitive content, then restarts", () => {
     const directory = temporary();
     const config = path.join(directory, "config.json");
     const original = {
@@ -243,12 +243,12 @@ db.prepare("INSERT INTO perception_records VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run
     });
     expect(child.stderr).toBe("");
     expect(child.status).toBe(0);
-    expect(child.stdout).toContain("OPS_CONFIG_CHANGED allow sensitive for: magpie-primary");
+    expect(child.stdout).toContain("OPS_CONFIG_CHANGED allow sensitive for: magpie-primary local-embedding");
     const written = JSON.parse(readFileSync(config, "utf8"));
     expect(written.modelDescriptors.map((entry) => entry.allowedDataClassifications)).toEqual([
       ["public", "private", "sensitive"],
       ["public"],
-      ["public", "private"],
+      ["public", "private", "sensitive"],
     ]);
     const backup = child.stdout.match(/OPS_CONFIG_BACKUP (\S+)/)?.[1];
     expect(JSON.parse(readFileSync(backup, "utf8"))).toEqual(original);
