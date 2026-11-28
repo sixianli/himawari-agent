@@ -1,0 +1,59 @@
+name: Production ops
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: diagnose 只读收集生产状态；restart 先收集再重启 himawari-prod 服务
+        required: true
+        type: choice
+        options:
+          - diagnose
+          - restart
+permissions:
+  contents: read
+concurrency:
+  group: production-ops
+  cancel-in-progress: false
+defaults:
+  run:
+    shell: bash
+jobs:
+  ops:
+    name: ops/production
+    if: ${{ github.repository == 'sixianli/himawari-agent' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: production
+    steps:
+      - name: 装好 SSH 钥匙并固定服务器指纹
+        env:
+          PROD_SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
+          PROD_HOST: ${{ vars.PROD_HOST }}
+          PROD_HOST_KEY: ${{ vars.PROD_HOST_KEY }}
+        run: |
+          [ -n "$PROD_SSH_KEY" ] && [ -n "$PROD_HOST" ] && [ -n "$PROD_HOST_KEY" ] || { echo "::error::production 环境缺部署钥匙"; exit 1; }
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$PROD_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s %s\n' "$PROD_HOST" "$PROD_HOST_KEY" > ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<CONFIG
+          Host *
+            IdentityFile ~/.ssh/deploy_key
+            IdentitiesOnly yes
+            StrictHostKeyChecking yes
+            UserKnownHostsFile ~/.ssh/known_hosts
+          CONFIG
+          chmod 600 ~/.ssh/config
+      - name: 在生产机上运行
+        env:
+          PROD_HOST: ${{ vars.PROD_HOST }}
+          ACTION: ${{ inputs.action }}
+        run: |
+          case "$ACTION" in diagnose|restart) ;; *) echo "::error::action 只能是 diagnose 或 restart"; exit 1 ;; esac
+          ssh -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=10 "himawari-deploy@$PROD_HOST" "ops $ACTION" 2>&1 | tee ops.log
+          status="${PIPESTATUS[0]}"
+          { echo '```'; grep -E '^OPS_(FROM|SERVICE|HOST|JOURNAL|RUNS|RESTARTED|REFUSED|DONE|SEALED_END|SEALED_FAILED)' ops.log | cut -c1-600 || true; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+      - name: 清掉钥匙
+        if: ${{ always() }}
+        run: rm -rf ~/.ssh
