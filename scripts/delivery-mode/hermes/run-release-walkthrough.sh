@@ -46,7 +46,30 @@ TMPDIR=$scratch HIMAWARI_TEST_TEMP_ROOT=$scratch HIMAWARI_PRODUCT_PATH_E2E=1 HIM
   -t 'release acceptance in a real browser' --reporter=default --reporter=json --outputFile="$walk/vitest.json" > "$walk/vitest.log" 2>&1
 code=$?
 rm -rf "$scratch"
-[[ -f "$walk/product-path/browser-acceptance.json" ]] || fail "NO_ACCEPTANCE_RECORD vitest-exit=$code" 4
+report_failures() {
+  /usr/bin/python3 -I - "$walk/vitest.json" >&2 <<'PY' || echo "HERMES_WALKTHROUGH_NO_TEST_REPORT $walk/vitest.json" >&2
+import json, sys
+try:
+    report = json.load(open(sys.argv[1]))
+except (OSError, ValueError):
+    sys.exit(1)
+for result in report.get('testResults', []):
+    if result.get('status') == 'failed' and result.get('message'):
+        print('HERMES_WALKTHROUGH_FILE_FAILED', ' '.join(result['message'].split())[:1500])
+    for test in result.get('assertionResults', []):
+        if test.get('status') == 'failed':
+            print('HERMES_WALKTHROUGH_TEST_FAILED', test.get('fullName'), '::', ' '.join(' '.join(test.get('failureMessages', [])).split())[:1500])
+PY
+  echo "HERMES_WALKTHROUGH_LOG_TAIL $walk/vitest.log" >&2
+  sed 's/\x1b\[[0-9;?]*[A-Za-z]//g' "$walk/vitest.log" 2> /dev/null | grep -v '^[[:space:]]*$' | tail -n 15 | cut -c1-300 >&2
+}
+if [[ ! -f "$walk/product-path/browser-acceptance.json" ]]; then
+  report_failures
+  fail "NO_ACCEPTANCE_RECORD vitest-exit=$code" 4
+fi
 cp "$walk/product-path/browser-acceptance.json" "$walk/browser-acceptance.json"
-[[ "$code" -eq 0 ]] || fail "VITEST_EXIT $code" 4
+if [[ "$code" -ne 0 ]]; then
+  report_failures
+  fail "VITEST_EXIT $code" 4
+fi
 echo "HERMES_WALKTHROUGH_OK $walk/browser-acceptance.json"
