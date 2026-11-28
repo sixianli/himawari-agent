@@ -241,20 +241,14 @@ function countsAt(root, sha) {
   return new Map(readIncidents(text).incidents.map((incident) => [incident.id, incident.count]));
 }
 
-function introducedBy(root, id) {
-  const found = git(root, [
-    "log",
-    "--reverse",
-    "--format=%H",
-    "-S",
-    `| ${id} |`,
-    "HEAD",
-    "--",
-    INCIDENT_LIST,
-  ])
-    .split("\n")
-    .filter(Boolean);
-  return found[0] ?? "";
+function commitsAddingRow(root, id) {
+  return [
+    ...new Set(
+      git(root, ["log", "-m", "--format=%H", "-S", `| ${id} |`, "HEAD", "--", INCIDENT_LIST])
+        .split("\n")
+        .filter(Boolean),
+    ),
+  ];
 }
 
 function isAncestor(root, ancestor, descendant) {
@@ -273,8 +267,8 @@ export function handPickedIds({ root = repositoryRoot, incidents } = {}) {
   const errors = [];
   for (const { id } of incidents) {
     if (!id || GENERATED_INCIDENT_ID.test(id) || legacy.has(id)) continue;
-    const introduced = introducedBy(root, id);
-    if (introduced && !isAncestor(root, activation, introduced)) continue;
+    if (commitsAddingRow(root, id).some((commit) => !isAncestor(root, activation, commit)))
+      continue;
     errors.push(
       `${HAND_PICKED_MARK} ${id} new incidents take an id from npm run incident:new -- <现象>, so two threads never pick the same number`,
     );

@@ -147,6 +147,23 @@ describe("a number picked by hand cannot enter the list once the id rule is in",
     expect(picked(root)).toEqual([]);
   });
 
+  it("keeps a numbered row written while resolving a merge on a branch from before the rule", () => {
+    const root = repository(["I-01"]);
+    git(root, ["checkout", "-q", "-b", "side"]);
+    writeFileSync(join(root, "side.txt"), "side\n");
+    commit(root, "side work\n\nIncident: none");
+    git(root, ["checkout", "-q", "-b", "older", "main"]);
+    writeFileSync(join(root, "older.txt"), "older\n");
+    commit(root, "older work\n\nIncident: none");
+    git(root, ["merge", "-q", "--no-ff", "--no-commit", "side"]);
+    appendRow(root, "I-02");
+    commit(root, "Merge side, recording I-02 while resolving");
+    git(root, ["checkout", "-q", "main"]);
+    addRule(root);
+    git(root, ["merge", "-q", "--no-ff", "--no-edit", "older"]);
+    expect(picked(root)).toEqual([]);
+  });
+
   it("refuses a hand-picked row in the commit hook before it is committed", () => {
     const root = repository(["I-01"]);
     addRule(root);
