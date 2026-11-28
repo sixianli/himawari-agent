@@ -66,6 +66,7 @@ const ACTION_ARGUMENTS = ["action", "device", "arguments"];
 const LOCAL_TIME = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?$/u;
 const DAY_MS = 86_400_000;
 const SCAN_PAGE = 500;
+const LOOK_BACK_DAYS = 7;
 
 export const DEVICE_ACTION_STATES = [
   "queued",
@@ -386,8 +387,9 @@ export class ProductionPerceptionTools {
     }
     const unexamined = total - examined;
     const notes: string[] = [];
-    if (listed.length === 0 && matchedBeyond === 0 && unexamined === 0)
-      notes.push(TOOL_RESULT_PERCEPTION_READ_EMPTY.text);
+    const nothing = listed.length === 0 && matchedBeyond === 0 && unexamined === 0;
+    if (nothing) notes.push(TOOL_RESULT_PERCEPTION_READ_EMPTY.text);
+    const known = nothing ? await this.#known(fromMs, types) : undefined;
     if (needle === null && matchedBeyond + unexamined > 0)
       notes.push(
         renderPrompt(TOOL_RESULT_PERCEPTION_READ_TRUNCATED, {
@@ -410,6 +412,7 @@ export class ProductionPerceptionTools {
         ...(listed.length > 0 ? { notice: PERCEPTION_DATA_NOTICE.text } : {}),
         timeZone: this.#timeZone,
         records: listed,
+        ...(known ? { known } : {}),
         ...(notes.length > 0 ? { note: notes.join("\n") } : {}),
       },
       contentClassification: highestClassification(
@@ -417,6 +420,44 @@ export class ProductionPerceptionTools {
         shown.map((record) => record.dataClassification),
       ),
     };
+  }
+
+  async #known(
+    beforeMs: number,
+    types: readonly PerceptionRecordType[] | null,
+  ): Promise<Record<string, unknown>> {
+    const devices = (await this.#options.devices(this.#options.scope))
+      .filter(({ status }) => status === "active")
+      .sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0))
+      .map((device) => ({
+        kind: device.kind,
+        lastSeen:
+          device.lastSeenAt === null ? null : localTimeText(device.lastSeenAt, this.#timeZone),
+      }));
+    let lastRecordBefore: string | null = null;
+    for (let day = 1; day <= LOOK_BACK_DAYS && lastRecordBefore === null; day += 1) {
+      let after: { readonly atMs: number; readonly id: string } | null = null;
+      for (;;) {
+        const page = await this.#options.store.listRecordsBetween({
+          ...this.#options.scope,
+          fromMs: beforeMs - day * DAY_MS,
+          toMs: beforeMs - (day - 1) * DAY_MS - 1,
+          types,
+          after,
+          limit: SCAN_PAGE,
+        });
+        const last = page.records.at(-1);
+        if (last) {
+          lastRecordBefore = localTimeText(
+            new Date(last.occurredAtMs).toISOString(),
+            this.#timeZone,
+          );
+          after = { atMs: last.occurredAtMs, id: last.id };
+        }
+        if (!last || page.records.length < SCAN_PAGE) break;
+      }
+    }
+    return { devices, lastRecordBefore, lookedBackDays: LOOK_BACK_DAYS };
   }
 
   async #action(invocation: RuntimeToolInvocation): Promise<PerceptionToolResult> {

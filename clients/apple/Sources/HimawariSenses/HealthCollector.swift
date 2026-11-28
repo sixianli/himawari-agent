@@ -93,13 +93,14 @@ public final class HealthCollector: SenseCollector {
     }
 
     func collect() async {
-        guard let sink, let since = load(Self.anchorName) else { return }
+        guard let sink, let anchor = load(Self.anchorName) else { return }
         let calendar = Calendar.current
         let now = Date()
-        guard let lastFullHour = calendar.dateInterval(of: .hour, for: now)?.start, lastFullHour > since else {
+        guard let lastFullHour = calendar.dateInterval(of: .hour, for: now)?.start else {
             await collectMotion()
             return
         }
+        let since = HealthReadWindow.start(anchor: anchor, lastFullHour: lastFullHour)
         let start = calendar.dateInterval(of: .hour, for: since)?.start ?? since
         retry?.cancel()
         retry = nil
@@ -140,16 +141,16 @@ public final class HealthCollector: SenseCollector {
             failure = error
             return false
         }
-        collection.enumerateStatistics(from: start, to: end) { statistics, _ in
+        var found: [(SenseObservation, String)] = []
+        for statistics in collection.statistics() where statistics.startDate >= start && statistics.endDate <= end {
             let quantity = options.contains(.cumulativeSum) ? statistics.sumQuantity() : statistics.averageQuantity()
-            guard let quantity else { return }
+            guard let quantity else { continue }
             let value = quantity.doubleValue(for: unit)
-            guard value > 0 else { return }
+            guard value > 0 else { continue }
             let observation = SenseObservations.health(kind, value: value.rounded(), unit: unitName, start: statistics.startDate, end: statistics.endDate)
-            let id = SenseRecordBuilder.stableId(["health", kind.rawValue, String(statistics.startDate.timeIntervalSince1970)])
-            MainActor.assumeIsolated { self.sink?.record(observation, id: id, captureSource: SenseRecordBuilder.sensorSource) }
+            found.append((observation, SenseRecordBuilder.stableId(["health", kind.rawValue, String(statistics.startDate.timeIntervalSince1970)])))
         }
-        return true
+        return await keep(found)
     }
 
     private func samples(from start: Date, to end: Date) async -> Bool {
@@ -162,11 +163,12 @@ public final class HealthCollector: SenseCollector {
             failure = error
             return false
         }
+        var kept: [(SenseObservation, String)] = []
         for sample in sleeps {
             guard HKCategoryValueSleepAnalysis.allAsleepValues.map(\.rawValue).contains(sample.value) else { continue }
             let minutes = sample.endDate.timeIntervalSince(sample.startDate) / 60
             let observation = SenseObservations.health(.sleep, value: minutes.rounded(), unit: "min", start: sample.startDate, end: sample.endDate)
-            sink?.record(observation, id: SenseRecordBuilder.stableId(["health", "sleep", sample.uuid.uuidString]), captureSource: SenseRecordBuilder.sensorSource)
+            kept.append((observation, SenseRecordBuilder.stableId(["health", "sleep", sample.uuid.uuidString])))
         }
         let workouts = HKSampleQueryDescriptor(predicates: [.workout(window)], sortDescriptors: [SortDescriptor(\.startDate)])
         let found: [HKWorkout]
@@ -179,9 +181,19 @@ public final class HealthCollector: SenseCollector {
         for workout in found {
             let minutes = workout.duration / 60
             let observation = SenseObservations.health(.workout, value: minutes.rounded(), unit: "min", start: workout.startDate, end: workout.endDate, workoutType: Self.name(workout.workoutActivityType))
-            sink?.record(observation, id: SenseRecordBuilder.stableId(["health", "workout", workout.uuid.uuidString]), captureSource: SenseRecordBuilder.sensorSource)
+            kept.append((observation, SenseRecordBuilder.stableId(["health", "workout", workout.uuid.uuidString])))
         }
-        return true
+        return await keep(kept)
+    }
+
+    private func keep(_ found: [(SenseObservation, String)]) async -> Bool {
+        guard let sink else { return false }
+        var all = true
+        for (observation, id) in found {
+            let kept = await sink.keep(observation, id: id, captureSource: SenseRecordBuilder.sensorSource)
+            if !kept { all = false }
+        }
+        return all
     }
 
     private func collectMotion() async {
