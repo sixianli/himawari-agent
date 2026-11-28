@@ -43,7 +43,7 @@ final class SignInTests: XCTestCase {
             XCTAssertTrue(text.waitForExistence(timeout: 10), "\(scene): the page does not say \(message)")
             let field = app.textFields["输入设置码"].firstMatch
             field.tap()
-            field.typeText("A")
+            field.typeText(XCUIKeyboardKey.delete.rawValue)
             XCTAssertTrue(DemoApp.waitUntil(timeout: 5) { !text.exists }, "\(scene): the message stayed after typing again")
             app.terminate()
         }
