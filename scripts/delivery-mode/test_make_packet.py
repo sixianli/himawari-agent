@@ -481,7 +481,7 @@ class TemplateTest(RenderedPacket):
     SWITCH_FILES = ('systemd/S2-stop-and-inspect.py', 'systemd/S7-startup-readback.mjs', 'systemd/S7-switch-start-readback.py', 'install/S9-clean-transport.py')
     UPGRADE_SWITCH_SHA256 = {
     'systemd/S2-stop-and-inspect.py': 'c466dde3068064600fb817631b3fa282eac1cc47539a11635953f0518b5e4fee',
-    'systemd/S7-startup-readback.mjs': '0d258810e6a4809a742b2bca8a9734353cce0114fbee4de8f2a554c78bb022fc',
+    'systemd/S7-startup-readback.mjs': '80e880d599317d208c4300bbfbcb255cb8ecb098cfa0e4bfa5282149b990200c',
     'systemd/S7-switch-start-readback.py': 'b154d5b181215b884e3011797f7d3127c101a3c9db415d242ff46ee037c1fdc9',
     'install/S9-clean-transport.py': '235a7d2882edaa304097746315a4be7f5c5f467fea83cd1522a43a1e3b223533',    }
 

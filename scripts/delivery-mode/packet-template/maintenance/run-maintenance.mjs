@@ -18,6 +18,7 @@ import { fixed } from "../s0-db/read-s0-db.mjs";
 import { createRawRecoveryPoint, verifyRawRecoveryPoint, restoreRawRecoveryPoint, recoveryMethod } from "./raw-copy-recovery.mjs";
 
 const actions = new Set(["S3_COPY51", "S7_DB_STATUS", "S7_CONFIG_APPLY", "S7_CATALOG_UPGRADE", "S8_READBACK", "S9_SIDECAR_TIDY", "S9_RAW_RESTORE51"]);
+const afterStop = new Set(["S7_DB_STATUS", "S7_CONFIG_APPLY", "S7_CATALOG_UPGRADE", "S8_READBACK"]);
 
 function requireSchemaGate(state, schema) {
   assert.equal(state.schema.current, schema, "__PKT_LABEL_UPPER___MAINTENANCE_EXPECTED" + schema);
@@ -99,18 +100,19 @@ async function applyStaticRootConfiguration(binding) {
 }
 
 async function main(action) {
-  const binding = loadBinding(!action.startsWith("S9_") && action !== "S7_CATALOG_UPGRADE");
+  const frozen = loadBinding(!action.startsWith("S9_") && action !== "S7_CATALOG_UPGRADE");
+  const binding = afterStop.has(action) ? withAuthorityAtStop(frozen) : frozen;
   const report = { schemaVersion: "himawari.__PKT_LABEL__-change-maintenance.v1", action, startedAt: new Date().toISOString(), actor: { uid: process.getuid(), account: "himawari-prod", hostname: hostname() }, bindingSha256: sha(readFileSync("/opt/himawari/operations/__PKT_LABEL__-__PKT_DATE_COMPACT__/inputs/bindings.json")), passed: false };
   const retain = (name, value) => retainedJson(name, value, { supersede: action.startsWith("S9_") });
   retain(`${action.toLowerCase()}-started.json`, report);
   try {
     if (!["S8_READBACK", "S9_SIDECAR_TIDY"].includes(action)) await requireStateUnlocked(["S3_COPY51", "S9_RAW_RESTORE51"].includes(action) ? oldPrefix : newPrefix);
     if (action === "S3_COPY51") {
-      const before = await readMaintenanceState(binding, oldPrefix);
+      const before = await readMaintenanceState(binding, oldPrefix, "since-freeze");
       requireSchemaGate(before, currentSchema);
       report.before = retain("s3-copy-before__PKT_CURRENT_SCHEMA__.json", before);
       report.recovery = await copyRecovery(binding, oldPrefix, currentSchema, recoveryIdForSchema(binding, currentSchema), before);
-      const after = await readMaintenanceState(binding, oldPrefix);
+      const after = await readMaintenanceState(binding, oldPrefix, false, before.authority);
       verifyHistoryUnchanged(before, after);
       report.after = retain("s3-copy-after__PKT_CURRENT_SCHEMA__.json", after);
     } else if (action === "S7_DB_STATUS") {
