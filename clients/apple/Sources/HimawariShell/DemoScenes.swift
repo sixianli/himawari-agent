@@ -171,7 +171,9 @@ struct DemoSceneView: View {
         case .actionsDetailFace:
             approvalDetail(at: 1)
         case .actionsApprovals:
-            ApprovalsView(model: .demo(), openThread: { _ in }) {}
+            NavigationStack {
+                ApprovalsView(model: .demo(), openThread: { _ in }) {}
+            }
         case .actionsPrimer:
             PermissionPrimerView(permission: DeviceActionsModel.demoPermission, ask: {}, close: {})
                 .himawariScreenBackground()

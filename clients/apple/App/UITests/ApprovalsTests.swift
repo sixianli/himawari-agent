@@ -24,6 +24,11 @@ final class ApprovalsTests: XCTestCase {
         firstCard(in: app).tap()
         let why = app.staticTexts[SourceText.zh(module, "approval.why")].firstMatch
         XCTAssertTrue(why.waitForExistence(timeout: 5), "opening the request did not show why Himawari is asking")
+        let back = app.navigationBars.buttons.element(boundBy: 0)
+        XCTAssertTrue(back.waitForExistence(timeout: 5), "the request page has no back button")
+        back.tap()
+        XCTAssertTrue(waitingSegment(in: app).waitForExistence(timeout: 5), "going back from the request did not return to the waiting list")
+        XCTAssertTrue(firstCard(in: app).exists, "the alarm request is gone from the waiting list after going back")
     }
 
     private func firstCard(in app: XCUIApplication) -> XCUIElement {
