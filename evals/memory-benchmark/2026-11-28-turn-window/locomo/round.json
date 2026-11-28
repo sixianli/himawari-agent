@@ -1,0 +1,720 @@
+{
+  "schema": "himawari-memory-benchmark-round.v1",
+  "recordedAt": "2026-11-28T16:46:16.367Z",
+  "commit": "a08f8259",
+  "model": "deepseek-v4.1-flash",
+  "embedding": "local-onnx/jina-embeddings-v5-text-small-retrieval-int8",
+  "minimumSimilarity": 0.3,
+  "stopped": null,
+  "wallMinutes": 264.13,
+  "spentUsd": 3.5146,
+  "resumedSamples": [],
+  "usage": {
+    "locomo:capture": {
+      "calls": 5883,
+      "failures": 0,
+      "rateLimited": 215,
+      "promptTokens": 15945514,
+      "cachedTokens": 8264320,
+      "completionTokens": 713117,
+      "usd": 1.604842260000007
+    },
+    "locomo:answer": {
+      "calls": 1540,
+      "failures": 0,
+      "rateLimited": 78,
+      "promptTokens": 14383337,
+      "cachedTokens": 12146176,
+      "completionTokens": 46394,
+      "usd": 0.3998490780000002
+    },
+    "locomo:judge": {
+      "calls": 3080,
+      "failures": 0,
+      "rateLimited": 160,
+      "promptTokens": 2287671,
+      "cachedTokens": 1898880,
+      "completionTokens": 124893,
+      "usd": 0.1389510899999999
+    },
+    "locomo:answer-auto-turns": {
+      "calls": 1540,
+      "failures": 0,
+      "rateLimited": 129,
+      "promptTokens": 22441376,
+      "cachedTokens": 13847296,
+      "completionTokens": 67245,
+      "usd": 1.3710008879999995
+    }
+  },
+  "samples": [
+    {
+      "id": "conv-26",
+      "benchmark": "locomo",
+      "questions": 152
+    },
+    {
+      "id": "conv-30",
+      "benchmark": "locomo",
+      "questions": 81
+    },
+    {
+      "id": "conv-41",
+      "benchmark": "locomo",
+      "questions": 152
+    },
+    {
+      "id": "conv-42",
+      "benchmark": "locomo",
+      "questions": 199
+    },
+    {
+      "id": "conv-43",
+      "benchmark": "locomo",
+      "questions": 178
+    },
+    {
+      "id": "conv-44",
+      "benchmark": "locomo",
+      "questions": 123
+    },
+    {
+      "id": "conv-47",
+      "benchmark": "locomo",
+      "questions": 150
+    },
+    {
+      "id": "conv-48",
+      "benchmark": "locomo",
+      "questions": 191
+    },
+    {
+      "id": "conv-49",
+      "benchmark": "locomo",
+      "questions": 156
+    },
+    {
+      "id": "conv-50",
+      "benchmark": "locomo",
+      "questions": 158
+    }
+  ],
+  "stores": [
+    {
+      "id": "conv-30:Jon",
+      "benchmark": "locomo",
+      "turns": 369,
+      "ownerTurns": 185,
+      "captureFailures": 0,
+      "audits": {
+        "auto_committed": 178,
+        "nothing_to_remember": 44,
+        "evidence_unverified": 1,
+        "confidence_below_threshold": 1,
+        "candidate_invalid": 1,
+        "tentative_kept": 1
+      },
+      "activeMemories": 130,
+      "indexedTurns": 187,
+      "ingestMs": 2140880,
+      "indexMs": 28420,
+      "phaseMs": {
+        "search": 19696,
+        "capture": 2067485,
+        "model": 2030701,
+        "projection": 15629
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "conv-30:Gina",
+      "benchmark": "locomo",
+      "turns": 369,
+      "ownerTurns": 184,
+      "captureFailures": 0,
+      "audits": {
+        "nothing_to_remember": 53,
+        "auto_committed": 156,
+        "confidence_below_threshold": 3,
+        "evidence_unverified": 1,
+        "tentative_kept": 2,
+        "explicitly_approved": 3
+      },
+      "activeMemories": 96,
+      "indexedTurns": 185,
+      "ingestMs": 1994385,
+      "indexMs": 28884,
+      "phaseMs": {
+        "search": 16607,
+        "capture": 1931869,
+        "model": 1921139,
+        "projection": 8838
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "conv-26:Caroline",
+      "benchmark": "locomo",
+      "turns": 419,
+      "ownerTurns": 211,
+      "captureFailures": 0,
+      "audits": {
+        "nothing_to_remember": 68,
+        "auto_committed": 172,
+        "confidence_below_threshold": 4,
+        "tentative_kept": 3,
+        "evidence_unverified": 1
+      },
+      "activeMemories": 147,
+      "indexedTurns": 213,
+      "ingestMs": 2573393,
+      "indexMs": 27189,
+      "phaseMs": {
+        "search": 25808,
+        "capture": 2488004,
+        "model": 2447805,
+        "projection": 21440
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "conv-26:Melanie",
+      "benchmark": "locomo",
+      "turns": 419,
+      "ownerTurns": 208,
+      "captureFailures": 0,
+      "audits": {
+        "auto_committed": 158,
+        "nothing_to_remember": 65,
+        "tentative_kept": 7,
+        "confidence_below_threshold": 3,
+        "evidence_unverified": 2
+      },
+      "activeMemories": 137,
+      "indexedTurns": 211,
+      "ingestMs": 2100453,
+      "indexMs": 33224,
+      "phaseMs": {
+        "search": 21102,
+        "capture": 2021824,
+        "model": 1995093,
+        "projection": 15197
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "conv-42:Joanna",
+      "benchmark": "locomo",
+      "turns": 629,
+      "ownerTurns": 313,
+      "captureFailures": 0,
+      "audits": {
+        "nothing_to_remember": 90,
+        "auto_committed": 243,
+        "tentative_kept": 12,
+        "confidence_below_threshold": 8,
+        "explicitly_approved": 1
+      },
+      "activeMemories": 218,
+      "indexedTurns": 317,
+      "ingestMs": 4480463,
+      "indexMs": 67638,
+      "phaseMs": {
+        "search": 35780,
+        "capture": 4332136,
+        "model": 4272184,
+        "projection": 32275
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "conv-42:Nate",
+      "benchmark": "locomo",
+      "turns": 629,
+      "ownerTurns": 316,
+      "captureFailures": 0,
+      "audits": {
+        "nothing_to_remember": 111,
+        "auto_committed": 220,
+        "candidate_invalid": 1,
+        "tentative_kept": 7,
+        "confidence_below_threshold": 11
+      },
+      "activeMemories": 187,
+      "indexedTurns": 319,
+      "ingestMs": 3850342,
+      "indexMs": 39082,
+      "phaseMs": {
+        "search": 32846,
+        "capture": 3738356,
+        "model": 3684881,
+        "projection": 28008
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "conv-41:John",
+      "benchmark": "locomo",
+      "turns": 663,
+      "ownerTurns": 335,
+      "captureFailures": 0,
+      "audits": {
+        "auto_committed": 299,
+        "candidate_invalid": 1,
+        "nothing_to_remember": 71,
+        "confidence_below_threshold": 2,
+        "tentative_kept": 6
+      },
+      "activeMemories": 260,
+      "indexedTurns": 339,
+      "ingestMs": 5023837,
+      "indexMs": 45850,
+      "phaseMs": {
+        "search": 43229,
+        "capture": 4885065,
+        "model": 4814355,
+        "projection": 35771
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "conv-41:Maria",
+      "benchmark": "locomo",
+      "turns": 663,
+      "ownerTurns": 328,
+      "captureFailures": 0,
+      "audits": {
+        "nothing_to_remember": 112,
+        "auto_committed": 247,
+        "tentative_kept": 4,
+        "confidence_below_threshold": 5
+      },
+      "activeMemories": 225,
+      "indexedTurns": 331,
+      "ingestMs": 4498568,
+      "indexMs": 69063,
+      "phaseMs": {
+        "search": 37523,
+        "capture": 4346887,
+        "model": 4282013,
+        "projection": 32260
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "conv-43:Tim",
+      "benchmark": "locomo",
+      "turns": 680,
+      "ownerTurns": 344,
+      "captureFailures": 0,
+      "audits": {
+        "auto_committed": 181,
+        "nothing_to_remember": 177,
+        "candidate_invalid": 1,
+        "tentative_kept": 6,
+        "confidence_below_threshold": 2
+      },
+      "activeMemories": 154,
+      "indexedTurns": 348,
+      "ingestMs": 4918488,
+      "indexMs": 46390,
+      "phaseMs": {
+        "search": 40190,
+        "capture": 4801579,
+        "model": 4753999,
+        "projection": 20448
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "conv-43:John",
+      "benchmark": "locomo",
+      "turns": 680,
+      "ownerTurns": 336,
+      "captureFailures": 0,
+      "audits": {
+        "nothing_to_remember": 99,
+        "auto_committed": 259,
+        "tentative_kept": 7,
+        "candidate_invalid": 5,
+        "explicitly_approved": 1,
+        "evidence_unverified": 2
+      },
+      "activeMemories": 217,
+      "indexedTurns": 339,
+      "ingestMs": 5584952,
+      "indexMs": 51264,
+      "phaseMs": {
+        "search": 41010,
+        "capture": 5450000,
+        "model": 5388415,
+        "projection": 31615
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "conv-44:Audrey",
+      "benchmark": "locomo",
+      "turns": 675,
+      "ownerTurns": 338,
+      "captureFailures": 0,
+      "audits": {
+        "nothing_to_remember": 85,
+        "auto_committed": 280,
+        "tentative_kept": 12,
+        "evidence_unverified": 1,
+        "explicitly_approved": 1,
+        "confidence_below_threshold": 4
+      },
+      "activeMemories": 244,
+      "indexedTurns": 341,
+      "ingestMs": 5617422,
+      "indexMs": 49880,
+      "phaseMs": {
+        "search": 43945,
+        "capture": 5480613,
+        "model": 5410300,
+        "projection": 32936
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "conv-44:Andrew",
+      "benchmark": "locomo",
+      "turns": 675,
+      "ownerTurns": 337,
+      "captureFailures": 0,
+      "audits": {
+        "auto_committed": 227,
+        "nothing_to_remember": 130,
+        "tentative_kept": 7,
+        "confidence_below_threshold": 5,
+        "evidence_unverified": 1
+      },
+      "activeMemories": 190,
+      "indexedTurns": 341,
+      "ingestMs": 5076505,
+      "indexMs": 52061,
+      "phaseMs": {
+        "search": 40083,
+        "capture": 4943346,
+        "model": 4873822,
+        "projection": 30443
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "conv-48:Deborah",
+      "benchmark": "locomo",
+      "turns": 681,
+      "ownerTurns": 341,
+      "captureFailures": 0,
+      "audits": {
+        "nothing_to_remember": 177,
+        "auto_committed": 176,
+        "tentative_kept": 18
+      },
+      "activeMemories": 159,
+      "indexedTurns": 344,
+      "ingestMs": 4294715,
+      "indexMs": 76579,
+      "phaseMs": {
+        "search": 40384,
+        "capture": 4138848,
+        "model": 4077360,
+        "projection": 27612
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "conv-48:Jolene",
+      "benchmark": "locomo",
+      "turns": 681,
+      "ownerTurns": 340,
+      "captureFailures": 0,
+      "audits": {
+        "auto_committed": 218,
+        "nothing_to_remember": 144,
+        "tentative_kept": 11,
+        "confidence_below_threshold": 4
+      },
+      "activeMemories": 185,
+      "indexedTurns": 344,
+      "ingestMs": 4303451,
+      "indexMs": 73856,
+      "phaseMs": {
+        "search": 38885,
+        "capture": 4151910,
+        "model": 4086919,
+        "projection": 28083
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "conv-47:James",
+      "benchmark": "locomo",
+      "turns": 689,
+      "ownerTurns": 343,
+      "captureFailures": 0,
+      "audits": {
+        "auto_committed": 238,
+        "tentative_kept": 10,
+        "candidate_invalid": 4,
+        "confidence_below_threshold": 3,
+        "nothing_to_remember": 130
+      },
+      "activeMemories": 218,
+      "indexedTurns": 347,
+      "ingestMs": 4592944,
+      "indexMs": 41689,
+      "phaseMs": {
+        "search": 44386,
+        "capture": 4457856,
+        "model": 4358040,
+        "projection": 37268
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "conv-47:John",
+      "benchmark": "locomo",
+      "turns": 689,
+      "ownerTurns": 346,
+      "captureFailures": 0,
+      "audits": {
+        "nothing_to_remember": 164,
+        "auto_committed": 192,
+        "tentative_kept": 5,
+        "candidate_invalid": 2,
+        "confidence_below_threshold": 2,
+        "explicitly_approved": 1,
+        "evidence_unverified": 1
+      },
+      "activeMemories": 149,
+      "indexedTurns": 349,
+      "ingestMs": 5081671,
+      "indexMs": 49545,
+      "phaseMs": {
+        "search": 42998,
+        "capture": 4947078,
+        "model": 4847294,
+        "projection": 29127
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "conv-49:Evan",
+      "benchmark": "locomo",
+      "turns": 509,
+      "ownerTurns": 256,
+      "captureFailures": 0,
+      "audits": {
+        "auto_committed": 228,
+        "nothing_to_remember": 62,
+        "tentative_kept": 12,
+        "confidence_below_threshold": 3
+      },
+      "activeMemories": 183,
+      "indexedTurns": 259,
+      "ingestMs": 3869723,
+      "indexMs": 57659,
+      "phaseMs": {
+        "search": 32910,
+        "capture": 3746189,
+        "model": 3681984,
+        "projection": 24779
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "conv-49:Sam",
+      "benchmark": "locomo",
+      "turns": 509,
+      "ownerTurns": 253,
+      "captureFailures": 0,
+      "audits": {
+        "nothing_to_remember": 101,
+        "auto_committed": 168,
+        "confidence_below_threshold": 5,
+        "tentative_kept": 5
+      },
+      "activeMemories": 146,
+      "indexedTurns": 255,
+      "ingestMs": 3877672,
+      "indexMs": 57074,
+      "phaseMs": {
+        "search": 29761,
+        "capture": 3760057,
+        "model": 3699913,
+        "projection": 24263
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "conv-50:Calvin",
+      "benchmark": "locomo",
+      "turns": 568,
+      "ownerTurns": 285,
+      "captureFailures": 0,
+      "audits": {
+        "nothing_to_remember": 79,
+        "tentative_kept": 5,
+        "auto_committed": 229,
+        "confidence_below_threshold": 10
+      },
+      "activeMemories": 191,
+      "indexedTurns": 287,
+      "ingestMs": 4083074,
+      "indexMs": 42844,
+      "phaseMs": {
+        "search": 36332,
+        "capture": 3967705,
+        "model": 3911176,
+        "projection": 28073
+      },
+      "failureSamples": []
+    },
+    {
+      "id": "conv-50:Dave",
+      "benchmark": "locomo",
+      "turns": 568,
+      "ownerTurns": 283,
+      "captureFailures": 0,
+      "audits": {
+        "auto_committed": 203,
+        "nothing_to_remember": 103,
+        "tentative_kept": 12,
+        "candidate_invalid": 1,
+        "confidence_below_threshold": 3
+      },
+      "activeMemories": 185,
+      "indexedTurns": 286,
+      "ingestMs": 4254609,
+      "indexMs": 38981,
+      "phaseMs": {
+        "search": 38531,
+        "capture": 4137532,
+        "model": 4082654,
+        "projection": 29917
+      },
+      "failureSamples": []
+    }
+  ],
+  "results": {
+    "locomo": {
+      "memory": {
+        "questions": 1540,
+        "judged": 1540,
+        "accuracy": 0.772077922077922,
+        "byCategory": {
+          "multi-hop": {
+            "questions": 282,
+            "accuracy": 0.8687943262411347
+          },
+          "open-domain": {
+            "questions": 96,
+            "accuracy": 0.5
+          },
+          "single-hop": {
+            "questions": 841,
+            "accuracy": 0.7966706302021404
+          },
+          "temporal": {
+            "questions": 321,
+            "accuracy": 0.7040498442367601
+          }
+        },
+        "evidenceRecall": 0.9029947916666666,
+        "evidenceStored": 1,
+        "evidenceLineRecall": null,
+        "meanContextTokens": 9339.82922077922,
+        "medianAnswerMs": 1543
+      },
+      "memoryAutoTurns": {
+        "questions": 1540,
+        "judged": 1540,
+        "accuracy": 0.9142857142857143,
+        "byCategory": {
+          "multi-hop": {
+            "questions": 282,
+            "accuracy": 0.9148936170212766
+          },
+          "open-domain": {
+            "questions": 96,
+            "accuracy": 0.5625
+          },
+          "single-hop": {
+            "questions": 841,
+            "accuracy": 0.9560047562425684
+          },
+          "temporal": {
+            "questions": 321,
+            "accuracy": 0.9096573208722741
+          }
+        },
+        "evidenceRecall": 0.9934895833333334,
+        "evidenceStored": 1,
+        "evidenceLineRecall": 0.8249510124101894,
+        "meanContextTokens": 14572.322077922077,
+        "medianAnswerMs": 2043
+      },
+      "fullContext": {
+        "questions": 0,
+        "judged": 0,
+        "accuracy": null,
+        "byCategory": {},
+        "evidenceRecall": null,
+        "evidenceStored": null,
+        "evidenceLineRecall": null,
+        "meanContextTokens": null,
+        "medianAnswerMs": null
+      }
+    },
+    "longmemeval": {
+      "memory": {
+        "questions": 0,
+        "judged": 0,
+        "accuracy": null,
+        "byCategory": {},
+        "evidenceRecall": null,
+        "evidenceStored": null,
+        "evidenceLineRecall": null,
+        "meanContextTokens": null,
+        "medianAnswerMs": null
+      },
+      "memoryConversation": {
+        "questions": 0,
+        "judged": 0,
+        "accuracy": null,
+        "byCategory": {},
+        "evidenceRecall": null,
+        "evidenceStored": null,
+        "evidenceLineRecall": null,
+        "meanContextTokens": null,
+        "medianAnswerMs": null
+      },
+      "memoryAutoTurns": {
+        "questions": 0,
+        "judged": 0,
+        "accuracy": null,
+        "byCategory": {},
+        "evidenceRecall": null,
+        "evidenceStored": null,
+        "evidenceLineRecall": null,
+        "meanContextTokens": null,
+        "medianAnswerMs": null
+      },
+      "fullContext": {
+        "questions": 0,
+        "judged": 0,
+        "accuracy": null,
+        "byCategory": {},
+        "evidenceRecall": null,
+        "evidenceStored": null,
+        "evidenceLineRecall": null,
+        "meanContextTokens": null,
+        "medianAnswerMs": null
+      }
+    }
+  }
+}

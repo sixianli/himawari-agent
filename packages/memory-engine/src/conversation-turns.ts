@@ -17,6 +17,7 @@ const MESSAGES_PER_READ = 200;
 const MAXIMUM_EMBEDDED_CHARACTERS = 2000;
 const RRF_K = 60;
 const STORE_SEARCH_LIMIT = 500;
+const NEIGHBOUR_MESSAGES = 50;
 
 export interface ConversationLine {
   readonly sequence: number;
@@ -30,6 +31,8 @@ export interface ConversationTurnHit {
   readonly turn: ConversationTurn;
   readonly lines: readonly ConversationLine[];
   readonly score: number;
+  readonly before?: readonly ConversationLine[];
+  readonly after?: readonly ConversationLine[];
 }
 
 export interface ConversationWindow {
@@ -75,6 +78,10 @@ function groupTurns(messages: readonly ProductThreadMessage[]): Turn[] {
     else current.messages.push(message);
   }
   return turns;
+}
+
+function lineCharacters(lines: readonly ConversationLine[]): number {
+  return lines.reduce((sum, line) => sum + [...line.text].length, 0);
 }
 
 function joined(lines: readonly ConversationLine[]): string {
@@ -444,18 +451,68 @@ export class ConversationTurnService {
           current.score += 1 / (RRF_K + rank + 1);
           fused.set(turn.id, current);
         });
-    const hits: ConversationTurnHit[] = [];
+    const matched: { turn: ConversationTurn; own: ConversationLine[]; score: number }[] = [];
     let used = 0;
     for (const { turn, score } of [...fused.values()].sort(
       (left, right) => right.score - left.score || left.turn.id.localeCompare(right.turn.id),
     )) {
       if (used >= input.maximumCharacters) break;
-      const lines = await this.turnLines(turn);
-      if (lines.length === 0) continue;
-      hits.push(Object.freeze({ turn, lines: Object.freeze(lines), score }));
-      used += lines.reduce((sum, line) => sum + [...line.text].length, 0);
+      const own = await this.turnLines(turn);
+      if (own.length === 0) continue;
+      matched.push({ turn, own, score });
+      used += lineCharacters(own);
+    }
+    const allowed = new Set(input.allowedClassifications.filter(isModelVisible));
+    const hits: ConversationTurnHit[] = [];
+    for (const { turn, own, score } of matched) {
+      const around = (line: ConversationLine) =>
+        allowed.has(line.dataClassification) &&
+        (excludeWholeThread ||
+          turn.threadId !== input.excludeThreadId ||
+          Date.parse(line.committedAt) < keptSince);
+      const [before, after] = await this.#neighbours(turn);
+      hits.push(
+        Object.freeze({
+          turn,
+          lines: Object.freeze(own),
+          score,
+          before: Object.freeze(before.filter(around)),
+          after: Object.freeze(after.filter(around)),
+        }),
+      );
     }
     return hits;
+  }
+
+  async #neighbours(
+    turn: ConversationTurn,
+  ): Promise<readonly [readonly ConversationLine[], readonly ConversationLine[]]> {
+    const from = Math.max(0, turn.firstSequence - 1 - NEIGHBOUR_MESSAGES);
+    const earlier =
+      turn.firstSequence <= 1
+        ? []
+        : (
+            await this.#options.threads.listMessages(
+              turn.ownerId,
+              turn.agentId,
+              turn.threadId,
+              from,
+              turn.firstSequence - 1 - from,
+            )
+          ).filter((message) => message.sequence < turn.firstSequence);
+    const start = earlier.findLastIndex((message) => message.role === "owner");
+    const later = await this.#options.threads.listMessages(
+      turn.ownerId,
+      turn.agentId,
+      turn.threadId,
+      turn.lastSequence,
+      NEIGHBOUR_MESSAGES,
+    );
+    const next = later[0]?.role === "owner" ? (groupTurns(later)[0]?.messages ?? []) : [];
+    return [
+      await this.#lines(turn.ownerId, turn.agentId, earlier.slice(Math.max(0, start))),
+      await this.#lines(turn.ownerId, turn.agentId, next),
+    ];
   }
 
   async window(input: {
