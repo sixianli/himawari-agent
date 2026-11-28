@@ -31,6 +31,8 @@ export interface ConversationTurnHit {
   readonly turn: ConversationTurn;
   readonly lines: readonly ConversationLine[];
   readonly score: number;
+  readonly before?: readonly ConversationLine[];
+  readonly after?: readonly ConversationLine[];
 }
 
 export interface ConversationWindow {
@@ -76,6 +78,10 @@ function groupTurns(messages: readonly ProductThreadMessage[]): Turn[] {
     else current.messages.push(message);
   }
   return turns;
+}
+
+function lineCharacters(lines: readonly ConversationLine[]): number {
+  return lines.reduce((sum, line) => sum + [...line.text].length, 0);
 }
 
 function joined(lines: readonly ConversationLine[]): string {
@@ -445,7 +451,7 @@ export class ConversationTurnService {
           current.score += 1 / (RRF_K + rank + 1);
           fused.set(turn.id, current);
         });
-    const hits: ConversationTurnHit[] = [];
+    const matched: { turn: ConversationTurn; own: ConversationLine[]; score: number }[] = [];
     let used = 0;
     for (const { turn, score } of [...fused.values()].sort(
       (left, right) => right.score - left.score || left.turn.id.localeCompare(right.turn.id),
@@ -453,16 +459,27 @@ export class ConversationTurnService {
       if (used >= input.maximumCharacters) break;
       const own = await this.turnLines(turn);
       if (own.length === 0) continue;
-      const allowed = new Set(input.allowedClassifications.filter(isModelVisible));
+      matched.push({ turn, own, score });
+      used += lineCharacters(own);
+    }
+    const allowed = new Set(input.allowedClassifications.filter(isModelVisible));
+    const hits: ConversationTurnHit[] = [];
+    for (const { turn, own, score } of matched) {
       const around = (line: ConversationLine) =>
         allowed.has(line.dataClassification) &&
         (excludeWholeThread ||
           turn.threadId !== input.excludeThreadId ||
           Date.parse(line.committedAt) < keptSince);
       const [before, after] = await this.#neighbours(turn);
-      const lines = [...before.filter(around), ...own, ...after.filter(around)];
-      hits.push(Object.freeze({ turn, lines: Object.freeze(lines), score }));
-      used += lines.reduce((sum, line) => sum + [...line.text].length, 0);
+      hits.push(
+        Object.freeze({
+          turn,
+          lines: Object.freeze(own),
+          score,
+          before: Object.freeze(before.filter(around)),
+          after: Object.freeze(after.filter(around)),
+        }),
+      );
     }
     return hits;
   }

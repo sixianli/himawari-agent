@@ -1,0 +1,15 @@
+{
+  "what": "LoCoMo 1540 道题只重放自动召回、不调模型，数每道题的证据原话（前 50 个字）有没有出现在召回文字里",
+  "costUsd": 0,
+  "evidenceLineRecallByCategory": {
+    "round3MainCode": { "multi-hop": 69.6, "open-domain": 50.0, "single-hop": 92.1, "temporal": 88.8, "all": 79.5 },
+    "neighboursAfterMatches": { "multi-hop": 68.9, "open-domain": 50.5, "single-hop": 92.6, "temporal": 89.3, "all": 79.6 }
+  },
+  "questionsWithAllEvidenceByCategory": {
+    "round3MainCode": { "multi-hop": 43.6, "open-domain": 45.7, "single-hop": 92.2, "temporal": 87.5 },
+    "neighboursAfterMatches": { "multi-hop": 42.2, "open-domain": 47.8, "single-hop": 92.7, "temporal": 88.2 }
+  },
+  "evidenceLinesLost": 8,
+  "evidenceLinesGained": 10,
+  "whyLost": "说明行从 97 字加长到约 200 字、跨天的话多了日期标记，篇幅少了约 100 字，排在最后的命中偶尔放不下；前后文只用所有命中放完后剩下的篇幅，不再挤掉命中"
+}

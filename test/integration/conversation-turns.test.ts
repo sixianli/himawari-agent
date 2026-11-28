@@ -23,12 +23,12 @@ import {
 import { CONVERSATION_RECALL_HEADER } from "@himawari-agent/prompt-catalog";
 import { DeterministicPayloadProtector } from "@himawari-agent/testing";
 import { afterEach, describe, expect, it } from "vitest";
+import { ProductionConversationRecall } from "../../apps/agent-service/src/production-conversation-recall.ts";
 import {
   ConversationToolInputError,
   ProductionConversationTools,
   toolResultCharacters,
 } from "../../apps/agent-service/src/production-conversation-tools.ts";
-import { ProductionConversationRecall } from "../../apps/agent-service/src/production-conversation-recall.ts";
 import { ProductionMemoryEpisodes } from "../../apps/agent-service/src/production-memory-episodes.ts";
 import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
 
@@ -1122,6 +1122,35 @@ describe.each(["worker", "direct"] as const)("conversation turns through %s", (e
       expect(found?.text).not.toContain("狗脸杯子");
     } finally {
       await resource.repository.close();
+    }
+  });
+
+  it("[自动原话] REVERSE: a neighbouring turn never takes the room of another matched turn, and only fills room left over", async () => {
+    const question = "周末带孩子去陶艺工作室做陶艺，再推荐一本好看的科幻小说";
+    const both = await recallFixture(400, POTTERY_ROWS);
+    try {
+      const found = await both.ask(question);
+      expect(both.failures).toEqual([]);
+      expect([...(found?.text ?? "")].length).toBeLessThanOrEqual(400);
+      expect(
+        found?.turns.map(({ conversationId, sequence }) => [conversationId, sequence]),
+      ).toEqual([
+        [POTTERY, 1],
+        [BOOKS, 1],
+      ]);
+      expect(found?.text).toContain("《三体》");
+      expect(found?.text).not.toContain("狗脸杯子");
+    } finally {
+      await both.resource.repository.close();
+    }
+    const one = await recallFixture(360, POTTERY_ROWS);
+    try {
+      const found = await one.ask(question);
+      expect([...(found?.text ?? "")].length).toBeLessThanOrEqual(360);
+      expect(found?.turns.map(({ conversationId }) => conversationId)).toEqual([POTTERY]);
+      expect(found?.text).toContain("（2026-11-14）主人：想去，上次捏的狗脸杯子还在桌上");
+    } finally {
+      await one.resource.repository.close();
     }
   });
 

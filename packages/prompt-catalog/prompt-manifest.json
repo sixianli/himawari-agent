@@ -664,9 +664,9 @@
     "reason": "初次登记：从源码原样搬入目录，文字不变"
   },
   "memory.conversation-recall.header": {
-    "sha256": "ed10ff16b7e4dd10d6964c738c5034f0872ff6fa49739064237b9ec835e71652",
+    "sha256": "032ab0cb8cbc4b644689bc59c7efe19a552f7395fa6523b492a3791bad8d66be",
     "changedIn": "原话前后文和逐句日期",
-    "reason": "自动带上的原话每处连同前后各一轮，和段首不是同一天的话另标日期，并说明原话里写着就照原话答"
+    "reason": "自动带上的原话在篇幅够时每处连同前后各一轮，前后文只用所有命中放完后剩下的篇幅；和段首不是同一天的话另标日期，并说明原话里写着就照原话答"
   },
   "memory.conversation-recall.line-day": {
     "sha256": "6c7fef2e555cc9d33c33894cf2c8944f2b49f7f2bad40b5be90f92afb7a81cfb",
