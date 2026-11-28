@@ -44,9 +44,9 @@ enum DemoApp {
     }
 
     static func swipeBackFromTheLeftEdge(_ app: XCUIApplication) {
-        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.5))
-        let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5))
-        start.press(forDuration: 0.05, thenDragTo: end, withVelocity: .fast, thenHoldForDuration: 0.05)
+        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0.5))
+        let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.75, dy: 0.5))
+        start.press(forDuration: 0.1, thenDragTo: end, withVelocity: .default, thenHoldForDuration: 0.1)
     }
 
     static func nodes(of type: XCUIElement.ElementType, in element: XCUIElement) throws -> [(label: String, frame: CGRect)] {

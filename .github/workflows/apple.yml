@@ -52,6 +52,20 @@ jobs:
           persist-credentials: false
       - name: 显示 Xcode 版本
         run: xcodebuild -version && swift --version
+      - name: 选一台最新系统的 iPhone 模拟器，编译期间先让它开机
+        id: simulator
+        run: |
+          udid="$(xcrun simctl list devices available --json | python3 -c '
+          import json, re, sys
+          runtimes = json.load(sys.stdin)["devices"]
+          def version(key):
+              return [int(part) for part in re.findall(r"\d+", key.rsplit(".", 1)[-1])]
+          ios = sorted((key for key in runtimes if ".SimRuntime.iOS-" in key), key=version)
+          phones = [device for device in runtimes[ios[-1]] if device["name"].startswith("iPhone")]
+          print(phones[0]["udid"])
+          ')"
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+          xcrun simctl boot "$udid"
       - name: 跑 HimawariCore 单元测试
         working-directory: clients/apple
         run: swift test
@@ -65,20 +79,8 @@ jobs:
           -derivedDataPath "$RUNNER_TEMP/dd"
           CODE_SIGNING_ALLOWED=NO
           -quiet
-      - name: 选一台最新系统的 iPhone 模拟器，等它开机完成
-        id: simulator
-        run: |
-          udid="$(xcrun simctl list devices available --json | python3 -c '
-          import json, re, sys
-          runtimes = json.load(sys.stdin)["devices"]
-          def version(key):
-              return [int(part) for part in re.findall(r"\d+", key.rsplit(".", 1)[-1])]
-          ios = sorted((key for key in runtimes if ".SimRuntime.iOS-" in key), key=version)
-          phones = [device for device in runtimes[ios[-1]] if device["name"].startswith("iPhone")]
-          print(phones[0]["udid"])
-          ')"
-          echo "udid=$udid" >> "$GITHUB_OUTPUT"
-          xcrun simctl bootstatus "$udid" -b
+      - name: 等模拟器开机完成
+        run: xcrun simctl bootstatus "${{ steps.simulator.outputs.udid }}" -b
       - name: 在示例场景里真点、真滑、真打字的 UI 测试（聊天输入框、断连提示、Himawari 页和设置各页、位置一直允许开关）
         run: >-
           set -o pipefail;
