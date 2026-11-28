@@ -54,7 +54,7 @@ jobs:
           case "$ACTION" in diagnose|restart|allow-sensitive|senses) ;; *) echo "::error::action 只能是 diagnose、restart、allow-sensitive 或 senses"; exit 1 ;; esac
           ssh -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=10 "himawari-deploy@$PROD_HOST" "ops $ACTION" 2>&1 | tee ops.log
           status="${PIPESTATUS[0]}"
-          { echo '```'; grep -E '^OPS_(FROM|SERVICE|HOST|JOURNAL|RUNS|RESTARTED|REFUSED|DONE|CONFIG|OWNER|MODEL|SEALED_END|SEALED_FAILED)' ops.log | cut -c1-600 || true; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          { echo '```'; grep -E '^OPS_(FROM|SERVICE|HOST|JOURNAL|RUNS|RESTARTED|REFUSED|DONE|CONFIG|OWNER|MODEL|WEB|SEALED_END|SEALED_FAILED)' ops.log | cut -c1-600 || true; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           exit "$status"
       - name: 清掉钥匙
         if: ${{ always() }}

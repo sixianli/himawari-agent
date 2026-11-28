@@ -126,6 +126,12 @@ db.prepare("INSERT INTO model_invocation_identities VALUES (?, ?, ?, ?, ?)").run
             secretRef: "magpie-token-value-should-not-print",
           },
         ],
+        runPolicy: {
+          publicSearch: {
+            providers: ["exa-public"],
+            providerSecrets: { deepseek: "web-secret-should-not-print" },
+          },
+        },
       }),
     );
     const { child } = run("diagnose", directory, {
@@ -140,6 +146,10 @@ db.prepare("INSERT INTO model_invocation_identities VALUES (?, ?, ?, ?, ?)").run
       'OPS_MODEL_DESCRIPTORS [{"ref":"kimi-chat","role":"primary","provider":"magpie","model":"kimi","allowedDataClassifications":["public","private"]}]',
     );
     expect(child.stdout).not.toContain("magpie-token-value-should-not-print");
+    expect(child.stdout).toContain(
+      'OPS_WEB_ROUTES {"publicSearch":{"providers":["exa-public"]},"publicFetch":null}',
+    );
+    expect(child.stdout).not.toContain("web-secret-should-not-print");
   });
 
   it("counts each device's sense records by day and kind, sealed, without their content", () => {
@@ -216,7 +226,7 @@ db.prepare("INSERT INTO perception_records VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run
     }
   });
 
-  it("backs up the config, lets generation models see sensitive content, then restarts", () => {
+  it("backs up the config, lets every model, embedding included, see sensitive content, then restarts", () => {
     const directory = temporary();
     const config = path.join(directory, "config.json");
     const original = {
@@ -243,12 +253,14 @@ db.prepare("INSERT INTO perception_records VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run
     });
     expect(child.stderr).toBe("");
     expect(child.status).toBe(0);
-    expect(child.stdout).toContain("OPS_CONFIG_CHANGED allow sensitive for: magpie-primary");
+    expect(child.stdout).toContain(
+      "OPS_CONFIG_CHANGED allow sensitive for: magpie-primary local-embedding",
+    );
     const written = JSON.parse(readFileSync(config, "utf8"));
     expect(written.modelDescriptors.map((entry) => entry.allowedDataClassifications)).toEqual([
       ["public", "private", "sensitive"],
       ["public"],
-      ["public", "private"],
+      ["public", "private", "sensitive"],
     ]);
     const backup = child.stdout.match(/OPS_CONFIG_BACKUP (\S+)/)?.[1];
     expect(JSON.parse(readFileSync(backup, "utf8"))).toEqual(original);

@@ -307,6 +307,7 @@ def discovery_script():
         "    'execStart': [line for line in unit.decode().splitlines() if line.startswith('ExecStart=')],",
         "    'staticRoot': config.get('http', {}).get('staticRoot'),",
         "    'modelCount': len(models),",
+        "    'primaryClassifications': [entry.get('allowedDataClassifications') for entry in config.get('modelDescriptors', []) if isinstance(entry, dict) and entry.get('role') == 'primary'],",
         "    'model': {key: models[0].get(key) for key in ('contextWindow', 'maxTokens')} if len(models) == 1 else None,",
         "    'publicFetchMaximumBytes': fetch.get('maximumBytes') if isinstance(fetch, dict) else None,",
         "    'budgetsPresent': 'budgets' in config,",
@@ -377,6 +378,9 @@ def interpret_discovery(facts, instance, label=None):
     model = facts.get('model') or {}
     if facts.get('modelCount') != 1 or not all(type(model.get(key)) is int and model[key] > 0 for key in ('contextWindow', 'maxTokens')):
         refuse('PACKET_CONFIG_MODEL_LIMITS_NOT_READABLE', instance['configTargets']['modelRef'])
+    primaries = facts.get('primaryClassifications')
+    if not isinstance(primaries, list) or len(primaries) != 1 or not isinstance(primaries[0], list) or not all(level in primaries[0] for level in MODEL_VISIBLE_CLASSIFICATIONS):
+        refuse('PACKET_PRIMARY_MODEL_CANNOT_SEE_SENSITIVE', primaries)
     fetch_bytes = facts.get('publicFetchMaximumBytes')
     if type(fetch_bytes) is not int or fetch_bytes <= 0:
         refuse('PACKET_CONFIG_PUBLIC_FETCH_NOT_READABLE', fetch_bytes)
@@ -411,6 +415,7 @@ def interpret_discovery(facts, instance, label=None):
 
 SPEECH_TARGET_KEYS = {'adapter', 'magpieModelRef', 'provider', 'model', 'voice', 'languageType', 'firstAudioTimeoutMs', 'maximumCharacters'}
 SPEECH_ADAPTERS = ('dashscope-qwen-tts',)
+MODEL_VISIBLE_CLASSIFICATIONS = ('public', 'private', 'sensitive')
 EMBEDDING_TARGET_KEYS = {'ref', 'role', 'provider', 'model', 'version', 'allowedDataClassifications', 'disclosure', 'secretRef', 'capabilities', 'cost', 'dimensions'}
 EMBEDDING_PROFILES = {
     ('vercel-ai-gateway', 'alibaba/qwen3-embedding-8b'): (4096, 1024),
@@ -1024,7 +1029,7 @@ class Hermes:
                 break
             time.sleep(self.poll_seconds)
         if state != '0':
-            tail = self.ssh('tail -n 20 ' + shlex.quote(log_root + '/' + name + '.log')).decode(errors='replace')
+            tail = self.ssh('tail -n 60 ' + shlex.quote(log_root + '/' + name + '.log')).decode(errors='replace')
             refuse('PACKET_HERMES_STEP_FAILED', name + ' exit=' + state + '\n' + tail)
 
     def has_commit(self, commit):

@@ -44,25 +44,43 @@ public final class SenseSink {
     public var localStore: LocalStore { store }
 
     public func record(_ observation: SenseObservation, id: String? = nil, captureSource: String = SenseRecordBuilder.captureSource) {
-        guard let configuration = configuration(), let types = configuration.perception?.recordTypes else { return }
-        guard let upload = try? SenseRecordBuilder.record(
-            observation,
-            id: id ?? SenseRecordBuilder.newId(),
-            captureSource: captureSource,
-            types: types,
-            textLimit: configuration.perception?.recordTextCharacters
-        ) else { return }
-        let queue = queue
-        Task {
-            try? await queue.add(upload)
-            self.scheduleFlush()
+        Task { await keep(observation, id: id, captureSource: captureSource) }
+    }
+
+    @discardableResult
+    public func keep(_ observation: SenseObservation, id: String? = nil, captureSource: String = SenseRecordBuilder.captureSource) async -> Bool {
+        guard let configuration = configuration(), let types = configuration.perception?.recordTypes else { return false }
+        let upload: PerceptionRecordUpload
+        do {
+            upload = try SenseRecordBuilder.record(
+                observation,
+                id: id ?? SenseRecordBuilder.newId(),
+                captureSource: captureSource,
+                types: types,
+                textLimit: configuration.perception?.recordTextCharacters
+            )
+        } catch {
+            return true
         }
+        do {
+            try await queue.add(upload)
+        } catch {
+            await problems.failed(.perceptionUpload, code: "QUEUE_WRITE")
+            return false
+        }
+        scheduleFlush()
+        return true
     }
 
     public func point(_ point: TrackPointUpload) {
         let queue = queue
         Task {
-            try? await queue.add(point)
+            do {
+                try await queue.add(point)
+            } catch {
+                await problems.failed(.perceptionUpload, code: "QUEUE_WRITE")
+                return
+            }
             self.scheduleFlush()
         }
     }
