@@ -28,6 +28,7 @@ import {
   type GatewayAuthenticationContext,
   type GatewayV2InboundMessage,
   GMAIL_SOURCE,
+  isModelVisible,
   MAIL_INBOX_SOURCE_KIND,
   type McpMemorySyncStorePort,
   type OwnerIdentityStatePort,
@@ -140,6 +141,7 @@ import {
   ProductionDataExportControl,
   registerDataExportRoute,
 } from "./production-data-export.js";
+import { deviceChatModels } from "./production-device-chat-models.js";
 import {
   PRODUCTION_DEVICE_OPERATIONS,
   ProductionDeviceControl,
@@ -184,7 +186,6 @@ import {
   PRODUCTION_OBSERVATION_OPERATIONS,
   type ProductionObservation,
 } from "./production-observation.js";
-import { deviceChatModels } from "./production-device-chat-models.js";
 import {
   PRODUCTION_OWNER_PREFERENCE_OPERATIONS,
   ProductionOwnerPreferencesControl,
@@ -1197,7 +1198,8 @@ export async function createProductionHttpComposition(
       if (
         !model ||
         !model.thinkingLevels.includes(selection.thinkingLevel) ||
-        !descriptor?.allowedDataClassifications.some((value) => value === classification)
+        !descriptor ||
+        !isModelVisible(classification)
       )
         throw new ApplicationPortError(
           PORT_ERROR_CODES.NOT_AUTHORITATIVE,

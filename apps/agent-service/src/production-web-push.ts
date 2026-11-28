@@ -3,6 +3,7 @@ import {
   type ApprovalRequest,
   HER_WORDS_PUSH_PREFIX,
   herWordsPushKey,
+  isModelVisible,
   type MemoryReminder,
   type MemoryReminderStorePort,
   type MessageUrgency,
@@ -678,8 +679,7 @@ export class ProductionWebPush {
         ? await this.#options.readMessage(item.threadId, item.sourceRef)
         : undefined;
       if (!message || message.internal === true) return { expired: true };
-      const hidden =
-        message.dataClassification === "sensitive" || message.dataClassification === "restricted";
+      const hidden = !isModelVisible(message.dataClassification);
       const text = hidden ? undefined : (await message.readText())?.trim();
       if (!hidden && !text) return { expired: true };
       return {
@@ -726,8 +726,7 @@ export class ProductionWebPush {
         memoryIds: [reminder.memoryId],
       });
       if (!memory || memory.status !== "active") return { expired: true };
-      const hidden =
-        memory.dataClassification === "sensitive" || memory.dataClassification === "restricted";
+      const hidden = !isModelVisible(memory.dataClassification);
       const text = hidden
         ? undefined
         : (await this.#options.readMemoryText(memory))?.replace(/\s+/gu, " ").trim();

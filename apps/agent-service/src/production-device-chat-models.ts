@@ -1,5 +1,4 @@
 import type {
-  DataClassification,
   OwnerPreferencesStorePort,
   ProductConfiguration,
 } from "@himawari-agent/application";
@@ -8,8 +7,6 @@ import type {
   DeviceChatModelPort,
   DeviceChatModels,
 } from "@himawari-agent/platform-node";
-
-const DEVICE_MESSAGE_CLASSIFICATION: DataClassification = "private";
 
 export interface DeviceChatCatalogEntry {
   readonly ref: string;
@@ -40,10 +37,7 @@ export function deviceChatModels(input: {
   const options: DeviceChatModel[] = (input.catalog ?? [])
     .filter((entry) =>
       configuration.modelDescriptors.some(
-        (descriptor) =>
-          descriptor.ref === entry.ref &&
-          descriptor.role !== "embedding" &&
-          descriptor.allowedDataClassifications.includes(DEVICE_MESSAGE_CLASSIFICATION),
+        (descriptor) => descriptor.ref === entry.ref && descriptor.role !== "embedding",
       ),
     )
     .map((entry) => ({

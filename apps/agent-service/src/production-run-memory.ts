@@ -5,6 +5,7 @@ import {
   type DataClassification,
   type DurableMemoryService,
   type DurableMemoryServiceOptions,
+  isModelVisible,
   type MemoryPort,
   type MemoryProjectionJob,
   type MemorySearchRequest,
@@ -177,7 +178,7 @@ export function createProductionRunMemory(options: {
         "EMBEDDING_EXECUTION_CONTEXT_REQUIRED",
       );
     if (
-      !descriptor.allowedDataClassifications.includes(classification) ||
+      !isModelVisible(classification) ||
       request.model !== descriptor.model ||
       typeof request.input !== "string" ||
       Buffer.byteLength(request.input, "utf8") > EMBEDDING_INPUT_LIMIT ||
