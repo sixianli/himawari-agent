@@ -10,8 +10,15 @@
     "clients/apple/ui-review/DerivedData-mac/",
     "clients/apple/ui-review/DerivedDataWatch/"
   ],
-  "generatedExtensions": [".mp4", ".mov"],
-  "mustBeIgnored": [".claude/worktrees/", ".agents/local/", ".cb-delegate/"],
+  "generatedExtensions": [
+    ".mp4",
+    ".mov"
+  ],
+  "mustBeIgnored": [
+    ".claude/worktrees/",
+    ".agents/local/",
+    ".cb-delegate/"
+  ],
   "allowedLarge": [
     {
       "path": "clients/apple/Tests/Snapshots/",
@@ -36,6 +43,10 @@
     {
       "path": "evals/memory-benchmark/",
       "reason": "公开记忆基准（LoCoMo、LongMemEval）每轮评测的逐题记录，是成绩单和案例库数字的唯一出处；每轮约 1.5MB，只在重跑评测时新增一个日期目录"
+    },
+    {
+      "path": "clients/apple/Sources/HimawariListenEngine/SpeakerModels/",
+      "reason": "声纹用的两个说话人模型（pyannote 分段 MIT、WeSpeaker v2 CC-BY-4.0，共约 13MB，固定在 HuggingFace 修订 7eab74f）；原先点录声纹时才联网下载、没有上限，界面一直转圈（I-261129-030c），所以随 App 打包"
     }
   ]
 }
