@@ -1,7 +1,4 @@
-import type {
-  OwnerPreferencesStorePort,
-  ProductConfiguration,
-} from "@himawari-agent/application";
+import type { OwnerPreferencesStorePort, ProductConfiguration } from "@himawari-agent/application";
 import type {
   DeviceChatModel,
   DeviceChatModelPort,
