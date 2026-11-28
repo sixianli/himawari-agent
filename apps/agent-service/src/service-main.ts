@@ -1566,7 +1566,7 @@ export async function startTenantRuntime(
                 await turnProtector.unprotect({ ownerId, agentId, payload }),
               );
             },
-            embedder: memoryComposition.projection.embedder,
+            embedder: memoryComposition.conversationEmbedder,
             embeddableClassifications: memoryComposition.projection.embeddableClassifications,
             minimumSimilarity: memoryComposition.projection.minimumSimilarity,
             onEmbeddingFailure: conversationTurnFailure,

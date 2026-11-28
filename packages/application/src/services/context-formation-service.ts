@@ -262,29 +262,31 @@ export class ContextFormationService implements ContextFormationPort {
       },
     });
 
-    const [profile, found, recalled] = await Promise.all([
-      this.dependencies.profile
-        ? this.dependencies.profile.compose({
-            ownerId: request.ownerId,
-            agentId: request.agentId,
-            maxClassification: modelVisibleCeiling(),
-            now: this.dependencies.clock.now(),
-          })
-        : Promise.resolve<OwnerProfile>({ blocks: [], memoryIds: [] }),
-      this.dependencies.memory.search({
-        runId: request.runId,
-        ...(request.executionLease ? { executionLease: request.executionLease } : {}),
-        ...(request.signal ? { signal: request.signal } : {}),
-        ...(request.deadlineAt ? { deadlineAt: request.deadlineAt } : {}),
-        dataClassification: request.dataClassification,
-        ownerId: request.ownerId,
-        agentId: request.agentId,
-        queryRef: request.memoryQueryRef,
-        queryTerms: request.memoryQueryTerms,
-        limit: request.memoryLimit,
-      }),
-      this.recallConversations(request, snapshot, eligibleHistory, selectedHistory),
-    ]);
+    const composing = this.dependencies.profile
+      ? this.dependencies.profile.compose({
+          ownerId: request.ownerId,
+          agentId: request.agentId,
+          maxClassification: modelVisibleCeiling(),
+          now: this.dependencies.clock.now(),
+        })
+      : Promise.resolve<OwnerProfile>({ blocks: [], memoryIds: [] });
+    const searched = this.dependencies.memory.search({
+      runId: request.runId,
+      ...(request.executionLease ? { executionLease: request.executionLease } : {}),
+      ...(request.signal ? { signal: request.signal } : {}),
+      ...(request.deadlineAt ? { deadlineAt: request.deadlineAt } : {}),
+      dataClassification: request.dataClassification,
+      ownerId: request.ownerId,
+      agentId: request.agentId,
+      queryRef: request.memoryQueryRef,
+      queryTerms: request.memoryQueryTerms,
+      limit: request.memoryLimit,
+    });
+    const recalling = searched.then(
+      () => this.recallConversations(request, snapshot, eligibleHistory, selectedHistory),
+      () => undefined,
+    );
+    const [profile, found, recalled] = await Promise.all([composing, searched, recalling]);
     const conversationRecall =
       recalled && CLASSIFICATION_RANK[recalled.dataClassification] <= VISIBLE_RANK
         ? recalled

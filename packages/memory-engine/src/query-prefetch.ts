@@ -202,36 +202,49 @@ export interface SharedQueryLimits {
   readonly entries: number;
 }
 
-export function sharedQueryEmbedder(
+export interface SharedQueryEmbedders {
+  readonly leader: Embedder;
+  readonly follower: Embedder;
+}
+
+interface SharedQuery {
+  readonly vector: Promise<Float32Array>;
+  readonly at: number;
+  failed: boolean;
+}
+
+export function sharedQueryEmbedders(
   inner: Embedder,
   options: { readonly limits: () => SharedQueryLimits; readonly now: () => number },
-): Embedder {
-  const recent = new Map<string, { readonly vector: Promise<Float32Array>; readonly at: number }>();
+): SharedQueryEmbedders {
+  const recent = new Map<string, SharedQuery>();
   const forget = () => {
     const { ttlMs, entries } = options.limits();
     const oldest = options.now() - ttlMs;
     for (const [text, entry] of recent)
       if (entry.at < oldest || recent.size > Math.max(0, entries)) recent.delete(text);
   };
-  return {
+  const embed = (text: string, reuseFailure: boolean) => {
+    forget();
+    const known = recent.get(text);
+    if (known && (reuseFailure || !known.failed)) return known.vector;
+    const entry: SharedQuery = { vector: inner.embedQuery(text), at: options.now(), failed: false };
+    recent.set(text, entry);
+    entry.vector.catch(() => {
+      entry.failed = true;
+    });
+    forget();
+    return entry.vector;
+  };
+  const view = (reuseFailure: boolean): Embedder => ({
     get model() {
       return inner.model;
     },
     get dimensions() {
       return inner.dimensions;
     },
-    embedQuery: (text) => {
-      forget();
-      const known = recent.get(text);
-      if (known) return known.vector;
-      const vector = inner.embedQuery(text);
-      recent.set(text, { vector, at: options.now() });
-      vector.catch(() => {
-        if (recent.get(text)?.vector === vector) recent.delete(text);
-      });
-      forget();
-      return vector;
-    },
+    embedQuery: (text) => embed(text, reuseFailure),
     embedDocument: (text) => inner.embedDocument(text),
-  };
+  });
+  return Object.freeze({ leader: view(false), follower: view(true) });
 }

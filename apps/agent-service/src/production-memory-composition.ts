@@ -15,6 +15,7 @@ import {
   AI_GATEWAY_BASE_URL,
   DEFAULT_RELEVANCE_TUNING,
   EgressEmbedder,
+  type Embedder,
   type EmbeddingBoundary,
   HybridMemoryProvider,
   type HybridMemoryProviderOptions,
@@ -23,7 +24,7 @@ import {
   QueryPrefetch,
   type QueryPrefetchLimits,
   QWEN3_EMBEDDING_8B_COST,
-  sharedQueryEmbedder,
+  sharedQueryEmbedders,
 } from "@himawari-agent/memory-engine";
 import {
   assertProductionSecretSource,
@@ -83,6 +84,7 @@ export interface ProductionMemoryComposition {
   readonly identity: string;
   readonly localRuntime: LocalOnnxEmbeddingRuntime | null;
   readonly projection: HybridMemoryProvider;
+  readonly conversationEmbedder: Embedder;
   readonly dedupeSameSource: boolean;
   readonly queryPrefetch?: ProductionQueryPrefetch;
   bindEmbeddingBoundary(
@@ -197,12 +199,13 @@ export async function createProductionMemoryCompositionFromConfiguration(
     embedQuery: (text: string) => embedder.embedQuery(text),
     estimateMicros: (text: string) => Math.ceil([...text].length * pricePerToken),
   });
+  const shared = sharedQueryEmbedders(prefetchingEmbedder(embedder, queue), {
+    limits: () => ({ ttlMs: prefetchLimits.ttlMs, entries: prefetchLimits.entriesPerDevice }),
+    now: () => Date.now(),
+  });
   const projection = new HybridMemoryProvider({
     index: options.index,
-    embedder: sharedQueryEmbedder(prefetchingEmbedder(embedder, queue), {
-      limits: () => ({ ttlMs: prefetchLimits.ttlMs, entries: prefetchLimits.entriesPerDevice }),
-      now: () => Date.now(),
-    }),
+    embedder: shared.leader,
     minimumSimilarity,
     embeddableClassifications: embedding.allowedDataClassifications,
     now: () => new Date().toISOString(),
@@ -227,6 +230,7 @@ export async function createProductionMemoryCompositionFromConfiguration(
     identity,
     localRuntime,
     projection,
+    conversationEmbedder: shared.follower,
     dedupeSameSource: retrieval?.dedupeSameSource ?? true,
     queryPrefetch,
     bindEmbeddingBoundary: (
