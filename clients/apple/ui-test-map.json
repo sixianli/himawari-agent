@@ -220,15 +220,22 @@
     {
       "feature": "登录和连接服务器",
       "scenes": [
-        "11-pairing",
-        "15-pairing-flow-1-scan",
-        "15-pairing-flow-1b-confirm-server",
-        "15-pairing-flow-2-waiting",
-        "15-pairing-flow-3-expired",
-        "15-pairing-flow-4-unreachable",
-        "15-pairing-flow-5-removed"
+        "11-sign-in",
+        "15-sign-in-1-code",
+        "15-sign-in-2-code-invalid",
+        "15-sign-in-3-code-expired",
+        "15-sign-in-4-server",
+        "15-sign-in-5-no-passkey",
+        "15-sign-in-6-removed"
       ],
-      "uncovered": "这套配对流程要被通行密钥登录（PR 721）换掉，等它合并后和端到端测试一起补"
+      "checks": "欢迎页两个按钮能点、设置码页和服务器页能打开能回来；没输设置码不能继续；设置码错或过期有提示、再输入就消失；没通行密钥、设备被移除时有说明（真系统通行密钥弹窗在演示里测不了）",
+      "tests": [
+        "HimawariUITests/SignInTests/testTheWelcomePageOpensTheSetupCodePageAndTheServerSheetAndComesBack",
+        "HimawariUITests/SignInTests/testTheSetupCodePageWaitsForACodeBeforeItCanContinue",
+        "HimawariUITests/SignInTests/testAWrongOrExpiredCodeSaysSoAndTypingAgainClearsTheMessage",
+        "HimawariUITests/SignInTests/testTheServerSheetClosesWithCancel",
+        "HimawariUITests/SignInTests/testTheWelcomePageExplainsAMissingPasskeyAndARemovedDevice"
+      ]
     },
     {
       "feature": "感知：位置详情的“一直允许”开关",

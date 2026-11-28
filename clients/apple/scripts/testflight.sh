@@ -26,9 +26,7 @@ server_settings() {
   server=("HIMAWARI_SERVER_ORIGIN=$origin" "HIMAWARI_SERVER_HOST=$host")
 }
 
-archive_app() {
-  need APPLE_TEAM_ID
-  need HIMAWARI_BUILD_NUMBER
+xcode_archive() {
   server_settings
   rm -rf "$archive"
   xcodebuild archive \
@@ -45,6 +43,12 @@ archive_app() {
     HIMAWARI_RELEASE_CHANNEL=testflight \
     CURRENT_PROJECT_VERSION="$HIMAWARI_BUILD_NUMBER" \
     ${server[@]+"${server[@]}"}
+}
+
+archive_app() {
+  need APPLE_TEAM_ID
+  need HIMAWARI_BUILD_NUMBER
+  xcode_archive
   check_entitlements
 }
 
