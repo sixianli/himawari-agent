@@ -130,6 +130,7 @@ import {
   toolResultCharacters,
 } from "./production-conversation-tools.js";
 import { retrievalDegradeRecorder } from "./production-decision-ledger.js";
+import { ProductionConversationRecall } from "./production-conversation-recall.js";
 import { productionDeviceActionAuthorization } from "./production-device-action-authorization.js";
 import { createProductionDeviceActions } from "./production-device-actions.js";
 import { ProductionExecutionAdmissionHandler } from "./production-execution-admission-handler.js";
@@ -1565,7 +1566,7 @@ export async function startTenantRuntime(
                 await turnProtector.unprotect({ ownerId, agentId, payload }),
               );
             },
-            embedder: memoryComposition.projection.embedder,
+            embedder: memoryComposition.conversationEmbedder,
             embeddableClassifications: memoryComposition.projection.embeddableClassifications,
             minimumSimilarity: memoryComposition.projection.minimumSimilarity,
             onEmbeddingFailure: conversationTurnFailure,
@@ -3502,6 +3503,29 @@ export async function startTenantRuntime(
         ],
         protector,
         memory,
+        ...(conversationTurns
+          ? {
+              conversationRecall: new ProductionConversationRecall({
+                turns: conversationTurns,
+                payloads,
+                protector,
+                embedWithin: (context, operation) => memory.embedWithin(context, operation),
+                maximumCharacters: toolPageCharacters,
+                providerRequestMs: configuration.deadlines.providerRequestMs,
+                relevance: memoryComposition.projection.relevance,
+                ...(configuration.runPolicy?.timeZone
+                  ? { timeZone: configuration.runPolicy.timeZone }
+                  : {}),
+                now: () => clock.now(),
+                onFailure: (error) =>
+                  writeServiceDiagnostic(errorOutput, {
+                    component: "agent-service",
+                    event: "conversation-recall.failed",
+                    code: stableErrorCode(error),
+                  }),
+              }),
+            }
+          : {}),
         tools,
         policy: createProductionRunPolicy({
           configuration,

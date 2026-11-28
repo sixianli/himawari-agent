@@ -169,6 +169,30 @@ import Testing
         #expect(afters(exchange) == ["1", "3"])
     }
 
+    @Test func theOldConversationsARunUsedComeFromItsRecallRecordAndNothingElse() async throws {
+        let lines = [
+            #"{"day":"2026-11-18","conversationId":"thread-books","sequence":1,"preview":"推荐一本好看的科幻小说"}"#,
+            "not json",
+            #"{"day":"2026-11-20","conversationId":"thread-trip","sequence":4,"preview":"下周去京都"}"#,
+        ].joined(separator: "\n")
+        let records: [[String: Any]] = [
+            ["id": "r1", "sequence": 1, "itemId": "c1", "kind": "status", "phase": "completed", "name": "memory.selection", "text": "2", "output": "记忆一", "occurredAt": "2026-11-12T00:00:00Z"],
+            ["id": "r2", "sequence": 2, "itemId": "c2", "kind": "status", "phase": "completed", "name": "conversation.recall", "text": "2", "output": lines, "occurredAt": "2026-11-12T00:00:00Z"],
+            ["id": "r3", "sequence": 3, "itemId": "c3", "kind": "tool", "phase": "completed", "name": "search", "text": "", "occurredAt": "2026-11-12T00:00:00Z"],
+        ]
+        let body = try JSONSerialization.data(withJSONObject: ["type": "run.execution_snapshot", "payload": ["records": records, "nextSequence": NSNull()]])
+        let decoded = try await api(RecordingExchange([HTTPExchangeResponse(status: 200, body: body)])).executionRecords(threadId: "thread-a", runId: "run-a", known: [])
+        #expect(RecalledConversation.used(in: decoded) == [
+            RecalledConversation(day: "2026-11-18", conversationId: "thread-books", sequence: 1, preview: "推荐一本好看的科幻小说"),
+            RecalledConversation(day: "2026-11-20", conversationId: "thread-trip", sequence: 4, preview: "下周去京都"),
+        ])
+        #expect(ProcessLine.steps(from: decoded).map(\.id) == ["c3"])
+        let withoutRecall = Array(decoded.filter { $0.name != "conversation.recall" })
+        #expect(RecalledConversation.used(in: withoutRecall).isEmpty)
+        let older = ExecutionRecord(id: "r1", sequence: 1, itemId: "i1", kind: .tool, phase: .completed, name: "search", occurredAt: Date(timeIntervalSince1970: 0))
+        #expect(RecalledConversation.used(in: [older]).isEmpty)
+    }
+
     @Test func executionRecordsRejectAPageThatDoesNotMoveForward() async throws {
         let exchange = RecordingExchange([executionPage([1, 2], next: 2), executionPage([1, 2], next: 2)])
         await #expect(throws: DeviceAPIError.invalidResponse) {

@@ -10,11 +10,13 @@ import {
 import type { AgentId, OwnerId, ProductThreadMessage, ThreadId } from "@himawari-agent/domain";
 import type { Embedder } from "./embedding.js";
 import { localDay } from "./episodes.js";
+import { DEFAULT_RELEVANCE_TUNING, type RelevanceTuning } from "./relevance.js";
 import { indexableTerms, queryTerms } from "./segmentation.js";
 
 const MESSAGES_PER_READ = 200;
 const MAXIMUM_EMBEDDED_CHARACTERS = 2000;
 const RRF_K = 60;
+const STORE_SEARCH_LIMIT = 500;
 
 export interface ConversationLine {
   readonly sequence: number;
@@ -366,6 +368,92 @@ export class ConversationTurnService {
       .slice(0, input.limit)) {
       const lines = await this.turnLines(turn);
       if (lines.length > 0) hits.push(Object.freeze({ turn, lines: Object.freeze(lines), score }));
+    }
+    return hits;
+  }
+
+  async recall(input: {
+    readonly ownerId: OwnerId;
+    readonly agentId: AgentId;
+    readonly query: string;
+    readonly excludeThreadId: ThreadId | null;
+    readonly excludeEndedFrom?: string | null;
+    readonly allowedClassifications: readonly DataClassification[];
+    readonly maximumCharacters: number;
+    readonly relevance?: RelevanceTuning;
+    readonly within?: EmbedWithin;
+  }): Promise<readonly ConversationTurnHit[]> {
+    const embedder = this.#options.embedder;
+    if (
+      !embedder ||
+      input.maximumCharacters <= 0 ||
+      input.query.trim().length === 0 ||
+      !this.#options.embeddableClassifications.includes("private")
+    )
+      return [];
+    const keptSince =
+      input.excludeEndedFrom == null ? Number.NaN : Date.parse(input.excludeEndedFrom);
+    const excludeWholeThread = Number.isNaN(keptSince);
+    let vector: Float32Array;
+    try {
+      vector = await (input.within ?? direct)("private", () => embedder.embedQuery(input.query));
+    } catch (error) {
+      this.#options.onEmbeddingFailure?.(error);
+      return [];
+    }
+    const result = await this.#options.store.search({
+      ownerId: input.ownerId,
+      agentId: input.agentId,
+      embedding: { model: embedder.model, dimensions: embedder.dimensions, vector },
+      terms: queryTerms(input.query),
+      allowedClassifications: input.allowedClassifications.filter(isModelVisible),
+      from: null,
+      to: null,
+      excludeThreadId: excludeWholeThread ? input.excludeThreadId : null,
+      limit: STORE_SEARCH_LIMIT,
+    });
+    const shown = ({ turn }: { readonly turn: ConversationTurn }) =>
+      excludeWholeThread ||
+      turn.threadId !== input.excludeThreadId ||
+      Date.parse(turn.endedAt) < keptSince;
+    const vectorHits = result.vector.filter(shown);
+    const lexicalHits = result.lexical.filter(shown);
+    const tuning = input.relevance ?? DEFAULT_RELEVANCE_TUNING;
+    const strongestKeyword = Math.max(0, ...lexicalHits.map(({ signal }) => signal));
+    const keyword = new Map(
+      lexicalHits.map(({ turn, signal }) => [
+        turn.id,
+        strongestKeyword > 0 ? Math.max(0, signal) / strongestKeyword : 0,
+      ]),
+    );
+    const floor = this.#options.minimumSimilarity - tuning.cutoffMargin;
+    const admitted = new Set(
+      vectorHits
+        .filter(
+          ({ turn, signal }) =>
+            signal + tuning.keywordWeight * (keyword.get(turn.id) ?? 0) >= floor,
+        )
+        .map(({ turn }) => turn.id),
+    );
+    const fused = new Map<string, { turn: ConversationTurn; score: number }>();
+    for (const list of [vectorHits, lexicalHits])
+      list
+        .filter(({ turn }) => admitted.has(turn.id))
+        .forEach(({ turn }, rank) => {
+          const current = fused.get(turn.id) ?? { turn, score: 0 };
+          current.score += 1 / (RRF_K + rank + 1);
+          fused.set(turn.id, current);
+        });
+    const hits: ConversationTurnHit[] = [];
+    let used = 0;
+    for (const { turn, score } of [...fused.values()].sort(
+      (left, right) => right.score - left.score || left.turn.id.localeCompare(right.turn.id),
+    )) {
+      if (used >= input.maximumCharacters) break;
+      const lines = await this.turnLines(turn);
+      if (lines.length === 0) continue;
+      hits.push(Object.freeze({ turn, lines: Object.freeze(lines), score }));
+      used += lines.reduce((sum, line) => sum + [...line.text].length, 0);
     }
     return hits;
   }

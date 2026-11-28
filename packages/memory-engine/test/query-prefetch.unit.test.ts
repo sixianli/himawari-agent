@@ -5,6 +5,7 @@ import {
   QUERY_PREFETCH_LIMIT_DEFAULTS,
   QueryPrefetch,
   type QueryPrefetchLimits,
+  sharedQueryEmbedders,
   spokenQueryText,
   textSimilarityPermille,
 } from "../src/query-prefetch.ts";
@@ -170,5 +171,76 @@ describe("QueryPrefetch", () => {
         used: true,
       },
     );
+  });
+});
+
+describe("sharedQueryEmbedders", () => {
+  function shared(limits = { ttlMs: 60_000, entries: 2 }) {
+    let now = 1_000_000;
+    const calls: string[] = [];
+    let fail = false;
+    const { leader: embedder, follower } = sharedQueryEmbedders(
+      {
+        model: "fixture",
+        dimensions: 2,
+        embedQuery: async (query) => {
+          calls.push(query);
+          if (fail) throw new Error("EMBEDDING_DOWN");
+          return new Float32Array([[...query].length, 1]);
+        },
+        embedDocument: async () => new Float32Array([0, 0]),
+      },
+      { limits: () => limits, now: () => now },
+    );
+    return {
+      embedder,
+      follower,
+      calls,
+      later: (ms: number) => {
+        now += ms;
+      },
+      failing: (value: boolean) => {
+        fail = value;
+      },
+    };
+  }
+
+  it("embeds the same words once when the memory search and the old-conversation recall both ask at the same time", async () => {
+    const { embedder, calls } = shared();
+    const [memory, conversations] = await Promise.all([
+      embedder.embedQuery("帮我把明天的会改到下午。"),
+      embedder.embedQuery("帮我把明天的会改到下午。"),
+    ]);
+    expect(conversations).toBe(memory);
+    await embedder.embedQuery("帮我把明天的会改到下午。");
+    expect(calls).toEqual(["帮我把明天的会改到下午。"]);
+  });
+
+  it("lets the old-conversation recall, which asks after the memory search, take that search's vector or its failure without asking the provider again", async () => {
+    const { embedder, follower, calls, failing } = shared();
+    const memory = await embedder.embedQuery("明天的会");
+    expect(await follower.embedQuery("明天的会")).toBe(memory);
+    failing(true);
+    await expect(embedder.embedQuery("报销")).rejects.toThrow("EMBEDDING_DOWN");
+    await expect(follower.embedQuery("报销")).rejects.toThrow("EMBEDDING_DOWN");
+    failing(false);
+    await follower.embedQuery("新的一句");
+    expect(calls).toEqual(["明天的会", "报销", "新的一句"]);
+  });
+
+  it("REVERSE: embeds again for different words, after the time limit, beyond the entry limit, and after a failure", async () => {
+    const { embedder, calls, later, failing } = shared();
+    await embedder.embedQuery("a");
+    await embedder.embedQuery("b");
+    later(60_001);
+    await embedder.embedQuery("a");
+    await embedder.embedQuery("b");
+    await embedder.embedQuery("c");
+    await embedder.embedQuery("a");
+    failing(true);
+    await expect(embedder.embedQuery("d")).rejects.toThrow("EMBEDDING_DOWN");
+    failing(false);
+    await embedder.embedQuery("d");
+    expect(calls).toEqual(["a", "b", "a", "b", "c", "a", "d", "d"]);
   });
 });

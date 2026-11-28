@@ -22,6 +22,7 @@ import {
 } from "@himawari-agent/domain";
 import {
   ConversationTurnService,
+  conversationRecallText,
   type Embedder,
   HybridMemoryProvider,
 } from "@himawari-agent/memory-engine";
@@ -76,12 +77,18 @@ export interface StoreStatistics {
   readonly phaseMs: Readonly<Record<"search" | "capture" | "model" | "projection", number>>;
 }
 
+export interface RecalledTurns {
+  readonly text: string;
+  readonly sessionIds: readonly string[];
+}
+
 export interface IngestedStore {
   readonly store: BenchmarkStore;
   readonly statistics: StoreStatistics;
   readonly failures: readonly string[];
   profileText(now: string): Promise<string>;
   related(query: string, now: string): Promise<readonly RelatedMemory[]>;
+  recalledTurns(query: string, now: string): Promise<RecalledTurns | null>;
   storedSessionIds(): Promise<ReadonlySet<string>>;
   conversationTool(
     name: string,
@@ -398,11 +405,12 @@ export async function ingestStore(input: {
     indexedTurns += indexed;
   }
   const indexMs = performance.now() - indexStarted;
+  const pageCharacters = toolResultCharacters(PRODUCTION_CONTEXT_WINDOW, DEFAULT_TOOL_RESULT_SHARE);
   const conversation = new ProductionConversationTools({
     ownerId,
     agentId,
     turns: turnIndex,
-    pageCharacters: toolResultCharacters(PRODUCTION_CONTEXT_WINDOW, DEFAULT_TOOL_RESULT_SHARE),
+    pageCharacters,
     embedWithin: (_invocation, _slot, operation) => operation(),
     timeZone: BENCHMARK_TIME_ZONE,
   });
@@ -467,6 +475,39 @@ export async function ingestStore(input: {
           sessionIds: sessionsOf(record.sourceRefs),
         })),
       );
+    },
+    recalledTurns: async (query, at) => {
+      clock.value = at;
+      const hits = await turnIndex.recall({
+        ownerId,
+        agentId,
+        query,
+        excludeThreadId: null,
+        allowedClassifications: allowed,
+        maximumCharacters: pageCharacters,
+        relevance: provider.relevance,
+      });
+      const shown = conversationRecallText(hits, {
+        maximumCharacters: pageCharacters,
+        timeZone: BENCHMARK_TIME_ZONE,
+      });
+      if (!shown) return null;
+      const sequences = hits
+        .filter(({ turn }) =>
+          shown.turns.some(
+            ({ conversationId, sequence }) =>
+              conversationId === turn.threadId && sequence === turn.firstSequence,
+          ),
+        )
+        .flatMap(({ lines }) => lines.map(({ sequence }) => sequence));
+      return {
+        text: shown.text,
+        sessionIds: [
+          ...new Set(
+            sequences.flatMap((sequence) => sessionOfRef.get(`payload-${sequence}`) ?? []),
+          ),
+        ],
+      };
     },
     storedSessionIds: async () =>
       new Set(
