@@ -20,6 +20,7 @@ const READ_CALLS = [
   "executeQuery",
   "mirror.sync(",
   "queue.flush(",
+  "queue.add(",
 ];
 
 function swiftReadProblemSources(source: string): Map<string, string> {
@@ -71,7 +72,7 @@ describe("[I-130] when Himawari cannot read what the owner allowed, it retries a
     expect(senseFiles().flatMap(({ file, source }) => swallowedReads(file, source))).toEqual([]);
   });
 
-  it("[reverse] catches the reads that used to fail silently: contacts wiped the server copy, mirror uploads were dropped", () => {
+  it("[reverse] catches the reads that used to fail silently: contacts wiped the server copy, mirror uploads and queued health records were dropped", () => {
     expect(
       swallowedReads(
         "ContactsCollector.swift",
@@ -83,6 +84,9 @@ describe("[I-130] when Himawari cannot read what the owner allowed, it retries a
         "SenseSink.swift",
         "        _ = try? await mirror.sync(kind: kind, entries: fitted, batchSize: batch, forceFull: forceFull)",
       ),
+    ).toHaveLength(1);
+    expect(
+      swallowedReads("SenseSink.swift", "            try? await queue.add(upload)"),
     ).toHaveLength(1);
     expect(
       swallowedReads(

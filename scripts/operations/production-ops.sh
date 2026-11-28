@@ -66,6 +66,14 @@ try {
   descriptors = `ERROR ${error.message}`;
 }
 console.log(`OPS_MODEL_DESCRIPTORS ${JSON.stringify(descriptors)}`);
+let web;
+try {
+  const policy = JSON.parse(readFileSync(process.argv[3], "utf8")).runPolicy ?? {};
+  web = Object.fromEntries(["publicSearch", "publicFetch"].map((key) => [key, policy[key] ? { providers: policy[key].providers ?? null } : null]));
+} catch (error) {
+  web = `ERROR ${error.message}`;
+}
+console.log(`OPS_WEB_ROUTES ${JSON.stringify(web)}`);
 JS
     ) 2>&1 | cut -c1-6000
   else

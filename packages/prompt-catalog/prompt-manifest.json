@@ -1446,9 +1446,9 @@
     "reason": "提议箱删除：推断的规则要主人点头时，告诉她用消息下的选项问"
   },
   "tools.result.perception-read.empty": {
-    "sha256": "417a658e6eb2cf55730417f26aa581d053d9653635643a9f6659c7af6261b7cd",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
+    "sha256": "85095c0b10c1ca779cf3187a7dcc15f7713034ec0bbfc537452fceb587972cbf",
+    "changedIn": "I-133",
+    "reason": "读不到感知记录时给出服务器知道的事实，不许猜原因、不许叫主人去查"
   },
   "tools.result.perception-read.hidden": {
     "sha256": "88dabd0971cc71994b5d4e76b92286044172b4f0bbacc1c21353979c7fed8243",

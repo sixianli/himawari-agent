@@ -125,6 +125,7 @@ import { backgroundCommandLimits } from "./production-background-commands.js";
 import { createConfiguredBrowserTools } from "./production-browser-tools.js";
 import { createProductionCapabilityReactivationVerifier } from "./production-capability-reactivation.js";
 import { createConfiguredComputerTools } from "./production-computer-tools.js";
+import { ProductionConversationRecall } from "./production-conversation-recall.js";
 import {
   DEFAULT_TOOL_RESULT_SHARE,
   MEMORY_SNAPSHOT_WINDOW_SHARE,
@@ -132,7 +133,6 @@ import {
   toolResultCharacters,
 } from "./production-conversation-tools.js";
 import { retrievalDegradeRecorder } from "./production-decision-ledger.js";
-import { ProductionConversationRecall } from "./production-conversation-recall.js";
 import { productionDeviceActionAuthorization } from "./production-device-action-authorization.js";
 import { createProductionDeviceActions } from "./production-device-actions.js";
 import { ProductionExecutionAdmissionHandler } from "./production-execution-admission-handler.js";
@@ -1171,6 +1171,8 @@ export async function startTenantRuntime(
     const hostWeb = createConfiguredHostWeb({
       runPolicy: configuration.runPolicy,
       secrets: sources.provider,
+      onReadFailed: (failure) =>
+        writeServiceDiagnostic(errorOutput, { component: "agent-service", ...failure }),
     });
     const hostReadOnlyPort = new DescriptorRelativeReadOnly();
     const computer = await createConfiguredComputerTools(configuration, clock);
