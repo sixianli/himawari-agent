@@ -2,12 +2,34 @@
   "what": "LoCoMo 1540 道题只重放自动召回、不调模型，数每道题的证据原话（前 50 个字）有没有出现在召回文字里",
   "costUsd": 0,
   "evidenceLineRecallByCategory": {
-    "round3MainCode": { "multi-hop": 69.6, "open-domain": 50.0, "single-hop": 92.1, "temporal": 88.8, "all": 79.5 },
-    "neighboursAfterMatches": { "multi-hop": 68.9, "open-domain": 50.5, "single-hop": 92.6, "temporal": 89.3, "all": 79.6 }
+    "round3MainCode": {
+      "multi-hop": 69.6,
+      "open-domain": 50.0,
+      "single-hop": 92.1,
+      "temporal": 88.8,
+      "all": 79.5
+    },
+    "neighboursAfterMatches": {
+      "multi-hop": 68.9,
+      "open-domain": 50.5,
+      "single-hop": 92.6,
+      "temporal": 89.3,
+      "all": 79.6
+    }
   },
   "questionsWithAllEvidenceByCategory": {
-    "round3MainCode": { "multi-hop": 43.6, "open-domain": 45.7, "single-hop": 92.2, "temporal": 87.5 },
-    "neighboursAfterMatches": { "multi-hop": 42.2, "open-domain": 47.8, "single-hop": 92.7, "temporal": 88.2 }
+    "round3MainCode": {
+      "multi-hop": 43.6,
+      "open-domain": 45.7,
+      "single-hop": 92.2,
+      "temporal": 87.5
+    },
+    "neighboursAfterMatches": {
+      "multi-hop": 42.2,
+      "open-domain": 47.8,
+      "single-hop": 92.7,
+      "temporal": 88.2
+    }
   },
   "evidenceLinesLost": 8,
   "evidenceLinesGained": 10,
