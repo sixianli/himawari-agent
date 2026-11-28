@@ -19,6 +19,8 @@ export const PREMISE_MARK = "INCIDENT_PREMISE_MISSING";
 const INCIDENT_ID = /^I-\d{2,}$/;
 const INCIDENT_LINE = /^Incident:[ \t]*(.*?)[ \t]*$/gm;
 const FOLLOW_UP_LINE = /^Incident-follow-up:[ \t]*(.*?)[ \t]*$/gm;
+const RENUMBER_LINE = /^Incident-renumbered:[ \t]*(.*?)[ \t]*$/gm;
+const RENUMBER_VALUE = /^([0-9a-f]{7,40}) (I-\d{2,}) (I-\d{2,})$/;
 const PREMISE_LINE = /^Premise:[ \t]*\S/m;
 const GITHUB_COMMITTER = "noreply@github.com";
 const TEST_FILE = /(^|\/)test_[^/]+\.py$|\.test\.[cm]?[jt]sx?$|Tests\.swift$/;
@@ -121,6 +123,10 @@ function runsAutomatically(relative, runners) {
   return TEST_FILE.test(relative) || runners.includes(relative);
 }
 
+export function runsAutomaticallyIn(root, relative) {
+  return existsSync(path.join(root, relative)) && runsAutomatically(relative, runnerText(root));
+}
+
 export function readCommitIncidents(message) {
   const text = message
     .split("\n")
@@ -128,15 +134,22 @@ export function readCommitIncidents(message) {
     .join("\n");
   const values = [...text.matchAll(INCIDENT_LINE)].map((match) => match[1]);
   const followUps = [...text.matchAll(FOLLOW_UP_LINE)].map((match) => match[1]);
+  const renumberLines = [...text.matchAll(RENUMBER_LINE)].map((match) => match[1]);
+  const renumbered = renumberLines
+    .map((value) => RENUMBER_VALUE.exec(value))
+    .filter(Boolean)
+    .map(([, commit, from, to]) => ({ commit, from, to }));
   const invalid = [
     ...values.filter((value) => value !== "none" && !INCIDENT_ID.test(value)),
     ...followUps.filter((value) => !INCIDENT_ID.test(value)),
+    ...renumberLines.filter((value) => !RENUMBER_VALUE.test(value)),
   ];
   return {
     premise: PREMISE_LINE.test(text),
     declared: values.length + followUps.length > 0,
     occurrences: [...new Set(values.filter((value) => INCIDENT_ID.test(value)))],
     followUps: [...new Set(followUps.filter((value) => INCIDENT_ID.test(value)))],
+    renumbered,
     invalid,
   };
 }
@@ -147,11 +160,12 @@ function repeatsWithoutPremise(occurrences, premise, counts) {
 }
 
 export function checkCommitMessage(message, counts) {
-  const { declared, occurrences, followUps, invalid, premise } = readCommitIncidents(message);
+  const { declared, occurrences, followUps, renumbered, invalid, premise } =
+    readCommitIncidents(message);
   const errors = [];
   if (!declared) errors.push(`${RULE_MARK} commit-msg`);
   for (const value of invalid) errors.push(`INCIDENT_TRAILER_INVALID commit-msg ${value}`);
-  for (const id of [...occurrences, ...followUps])
+  for (const id of [...occurrences, ...followUps, ...renumbered.map(({ to }) => to)])
     if (!counts.has(id)) errors.push(`INCIDENT_TRAILER_UNKNOWN commit-msg ${id}`);
   for (const id of repeatsWithoutPremise(occurrences, premise, counts))
     errors.push(`${PREMISE_MARK} commit-msg ${id}`);
@@ -210,12 +224,14 @@ export function checkIncidentHistory({ root = repositoryRoot, incidents } = {}) 
   const required = requiredCommits(root, ruleActivation(root, RULE_MARK));
   const premiseRequired = requiredCommits(root, ruleActivation(root, PREMISE_MARK));
   const log = git(root, ["log", "--no-merges", "--format=%H%x00%ce%x00%B%x1e", "HEAD"]);
-  const seen = new Map();
+  const counted = [];
+  const renumberings = [];
   for (const record of log.split("\x1e")) {
     const [sha, committer, message] = record.replace(/^\n/, "").split("\0");
     if (!sha || message === undefined) continue;
     const short = sha.slice(0, 12);
-    const { declared, occurrences, followUps, invalid, premise } = readCommitIncidents(message);
+    const { declared, occurrences, followUps, renumbered, invalid, premise } =
+      readCommitIncidents(message);
     if (required.has(sha) && committer !== GITHUB_COMMITTER) {
       if (!declared) errors.push(`${RULE_MARK} ${short}`);
       for (const value of invalid) errors.push(`INCIDENT_TRAILER_INVALID ${short} ${value}`);
@@ -228,10 +244,18 @@ export function checkIncidentHistory({ root = repositoryRoot, incidents } = {}) 
     )
       for (const id of repeatsWithoutPremise(occurrences, premise, countsAt(root, sha)))
         errors.push(`${PREMISE_MARK} ${short} ${id}`);
-    for (const id of [...occurrences, ...followUps])
+    for (const id of [...occurrences, ...followUps, ...renumbered.map(({ to }) => to)])
       if (!table.has(id)) errors.push(`INCIDENT_TRAILER_UNKNOWN ${short} ${id}`);
-    for (const id of occurrences) seen.set(id, [...(seen.get(id) ?? []), short]);
+    for (const id of occurrences) counted.push({ sha, short, id });
+    for (const renumbering of renumbered) renumberings.push({ ...renumbering, by: short });
   }
+  for (const { commit, from, to, by } of renumberings) {
+    const target = counted.find((entry) => entry.sha.startsWith(commit) && entry.id === from);
+    if (target) target.id = to;
+    else errors.push(`INCIDENT_RENUMBER_UNMATCHED ${by} ${commit} ${from}`);
+  }
+  const seen = new Map();
+  for (const { short, id } of counted) seen.set(id, [...(seen.get(id) ?? []), short]);
   for (const [id, commits] of [...seen].sort(([a], [b]) => a.localeCompare(b))) {
     const count = table.get(id);
     if (Number.isSafeInteger(count) && count < commits.length)
