@@ -243,7 +243,9 @@ db.prepare("INSERT INTO perception_records VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run
     });
     expect(child.stderr).toBe("");
     expect(child.status).toBe(0);
-    expect(child.stdout).toContain("OPS_CONFIG_CHANGED allow sensitive for: magpie-primary local-embedding");
+    expect(child.stdout).toContain(
+      "OPS_CONFIG_CHANGED allow sensitive for: magpie-primary local-embedding",
+    );
     const written = JSON.parse(readFileSync(config, "utf8"));
     expect(written.modelDescriptors.map((entry) => entry.allowedDataClassifications)).toEqual([
       ["public", "private", "sensitive"],
