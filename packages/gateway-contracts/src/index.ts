@@ -1,4 +1,5 @@
 export * from "./chat-attachments.js";
+export * from "./chat-settings.js";
 export * from "./client-capabilities.js";
 export * from "./contracts.js";
 export * from "./contracts-v2.js";

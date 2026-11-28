@@ -222,6 +222,10 @@ import {
   readServerDisk,
   readServerRelease,
 } from "./production-server-status-control.js";
+import {
+  type OwnerSettingsGatewayPort,
+  ProductionOwnerSettingsGateway,
+} from "./production-settings-gateway.js";
 import { createProductionSpeech } from "./production-speech.js";
 import {
   PRODUCTION_SPOKEN_DECISION_OPERATIONS,
@@ -408,6 +412,7 @@ export interface ProductionHttpComposition {
   readonly metrics: RuntimeMetricsRegistry;
   readonly home: Pick<ProductionHomeControl, "awaitingCount">;
   readonly perception: Pick<PerceptionService, "reserveModelCost">;
+  readonly ownerSettings: OwnerSettingsGatewayPort;
   listen(): Promise<string>;
   close(): Promise<void>;
 }
@@ -2132,6 +2137,17 @@ export async function createProductionHttpComposition(
     metrics,
     home,
     perception,
+    ownerSettings: new ProductionOwnerSettingsGateway({
+      ownerId,
+      gateway: gatewayV2,
+      sessions: sessionsState,
+      authority: () => ({
+        agentId,
+        deploymentId: configuration.deploymentId,
+        authorityEpoch: authority.authorityEpoch,
+        fencingToken: authority.fencingToken,
+      }),
+    }),
     listen: async () => {
       if (unixSocketPath === undefined) {
         const address = await app.listen({

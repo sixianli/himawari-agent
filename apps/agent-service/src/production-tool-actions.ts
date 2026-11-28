@@ -7,6 +7,7 @@ import {
   type ToolActionRow,
 } from "@himawari-agent/application";
 import { APP_ACTION_CAPABILITY_REF } from "./production-app-tools.js";
+import { BROWSER_CAPABILITY_REF } from "./production-browser-tools.js";
 import {
   RUNTIME_CONTEXT_EXECUTOR,
   TOOL_RESULT_RECALL_CAPABILITY_REF,
@@ -34,11 +35,15 @@ import {
   REMINDER_LIST_CAPABILITY_REF,
   REMINDER_SET_CAPABILITY_REF,
 } from "./production-reminder-writer.js";
+import {
+  SETTINGS_CHANGE_CAPABILITY_REF,
+  SETTINGS_LIST_CAPABILITY_REF,
+  SETTINGS_UNDO_CAPABILITY_REF,
+} from "./production-settings-tools.js";
 import { SUBTHREAD_CAPABILITY_PREFIX } from "./production-subthreads.js";
 import { TELL_OWNER_CAPABILITY_REF } from "./production-tell-owner.js";
 import { THREAD_TASK_CAPABILITY_PREFIX } from "./production-thread-tasks.js";
 import { VAULT_LIST_CAPABILITY_REF } from "./production-vault-tools.js";
-import { BROWSER_CAPABILITY_REF } from "./production-browser-tools.js";
 
 export const BUILT_IN_CAPABILITY_VERSION = "1.0.0";
 
@@ -666,6 +671,48 @@ export const PRODUCTION_TOOL_ACTION_ROWS: readonly ToolActionRow[] = Object.free
     detail: detail(
       { zh: "用连接的应用做事", en: "Use a connected app", ja: "連携したアプリを使う" },
       "tool",
+    ),
+  },
+  {
+    ...READ_DEFAULTS,
+    tool: "settings_list",
+    family: "builtin",
+    capabilityRef: SETTINGS_LIST_CAPABILITY_REF,
+    operation: "list",
+    targetType: "owner-settings",
+    resultOrigin: "owner_data",
+    authorization: "read",
+    executor: "owner_scoped",
+    deduplication: "run_and_tool_call",
+    detail: detail(
+      { zh: "看 Himawari 的设置", en: "List Himawari settings", ja: "Himawari の設定を見る" },
+      "setting",
+    ),
+  },
+  {
+    ...OWNER_WRITE_DEFAULTS,
+    tool: "settings_change",
+    himawariSideOnly: true,
+    capabilityRef: SETTINGS_CHANGE_CAPABILITY_REF,
+    operation: "change",
+    targetType: "owner-settings",
+    standingRuleChange: false,
+    detail: detail(
+      { zh: "改 Himawari 的设置", en: "Change a Himawari setting", ja: "Himawari の設定を変える" },
+      "setting",
+    ),
+  },
+  {
+    ...OWNER_WRITE_DEFAULTS,
+    tool: "settings_undo",
+    himawariSideOnly: true,
+    capabilityRef: SETTINGS_UNDO_CAPABILITY_REF,
+    operation: "undo",
+    targetType: "owner-settings",
+    standingRuleChange: false,
+    detail: detail(
+      { zh: "撤销改过的设置", en: "Undo a settings change", ja: "設定の変更を取り消す" },
+      "changeId",
     ),
   },
   {
