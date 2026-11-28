@@ -255,6 +255,10 @@ public final class ChatStore {
         return line.hasNothingToShow ? nil : line
     }
 
+    public func recalledConversations(for runId: String) -> [RecalledConversation] {
+        RecalledConversation.used(in: executions[runId] ?? [])
+    }
+
     public func transcript(in threadId: String) -> [TranscriptItem] {
         let messages = messages(in: threadId)
         let runs = details[threadId]?.runs ?? []

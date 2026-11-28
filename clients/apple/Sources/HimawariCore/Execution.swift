@@ -29,6 +29,7 @@ public struct ExecutionRecord: Codable, Sendable, Equatable, Identifiable {
     public let occurredAt: Date
     public let activity: String?
     public let activityIcon: String?
+    public let output: String?
 
     public init(
         id: String,
@@ -40,7 +41,8 @@ public struct ExecutionRecord: Codable, Sendable, Equatable, Identifiable {
         text: String = "",
         occurredAt: Date,
         activity: String? = nil,
-        activityIcon: String? = nil
+        activityIcon: String? = nil,
+        output: String? = nil
     ) {
         self.id = id
         self.sequence = sequence
@@ -52,6 +54,39 @@ public struct ExecutionRecord: Codable, Sendable, Equatable, Identifiable {
         self.occurredAt = occurredAt
         self.activity = activity
         self.activityIcon = activityIcon
+        self.output = output
+    }
+}
+
+public struct RecalledConversation: Sendable, Equatable, Identifiable, Decodable {
+    public let day: String
+    public let conversationId: String
+    public let sequence: Int
+    public let preview: String
+
+    public var id: String { "\(conversationId):\(sequence)" }
+
+    public init(day: String, conversationId: String, sequence: Int, preview: String) {
+        self.day = day
+        self.conversationId = conversationId
+        self.sequence = sequence
+        self.preview = preview
+    }
+
+    public static let recordName = "conversation.recall"
+
+    public static func used(in records: [ExecutionRecord]) -> [RecalledConversation] {
+        let decoder = JSONDecoder()
+        var seen = Set<String>()
+        return records
+            .filter { $0.kind == .status && $0.name == recordName }
+            .sorted { $0.sequence < $1.sequence }
+            .flatMap { record in
+                (record.output ?? "").split(separator: "\n").compactMap { line in
+                    try? decoder.decode(RecalledConversation.self, from: Data(line.utf8))
+                }
+            }
+            .filter { seen.insert($0.id).inserted }
     }
 }
 

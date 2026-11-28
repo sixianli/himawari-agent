@@ -66,6 +66,7 @@
 "chat.why.hide" = "閉じる";
 "chat.why.open" = "表示中";
 "chat.why.closed" = "非表示";
+"chat.why.conversations" = "参考にした以前の会話";
 "chat.reply.toAgent" = "Himawari への返信";
 "chat.reply.toOwner" = "自分への返信";
 "chat.reply.missing" = "元のメッセージはありません";
