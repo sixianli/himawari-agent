@@ -187,7 +187,10 @@ describe("Cloudflare Access public paths", () => {
     expect(result.stdout).toContain("PUBLIC_PATHS_OK");
     expect(result.status).toBe(0);
     expect(state.policies).toEqual([
-      expect.objectContaining({ decision: "bypass", include: [{ everyone: {} }] }),
+      expect.objectContaining({
+        decision: "bypass",
+        include: [{ everyone: {} }],
+      }),
     ]);
     const created = state.apps.find((app) => app.name === "Himawari app entry (bypass)");
     expect(created.destinations.map((item) => item.uri)).toEqual([
@@ -227,6 +230,38 @@ describe("Cloudflare Access public paths", () => {
     expect(result.status).toBe(0);
     expect(state.writes[0]).toBe("DELETE /apps/old-device");
     expect(state.apps.map((app) => app.name)).toEqual(["Himawari", "Himawari app entry (bypass)"]);
+  });
+
+  it("refuses to retire an application that guards a path the new application does not open", async () => {
+    const wider = {
+      ...deviceApp,
+      destinations: [
+        { type: "public", uri: `${host}/api/device/v1` },
+        { type: "public", uri: `${host}/api/devices-admin` },
+      ],
+    };
+    const { state, run } = await setup({
+      apps: [wholeSite, wider],
+      config: { retireApplications: ["Himawari device API"] },
+    });
+    const result = await run();
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain(
+      `PUBLIC_PATHS_FAILED RETIRE_UNCOVERED_PATH Himawari device API: ${host}/api/devices-admin`,
+    );
+    expect(state.writes).toEqual([]);
+  });
+
+  it("lists every destination of a retiring application in the plan", async () => {
+    const { run } = await setup({
+      apps: [wholeSite, deviceApp],
+      config: { retireApplications: ["Himawari device API"] },
+    });
+    const result = await run(["--plan"]);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain(
+      `"retire":[{"name":"Himawari device API","destinations":["${host}/api/device/v1"]}]`,
+    );
   });
 
   it("only reports the plan with --plan", async () => {
