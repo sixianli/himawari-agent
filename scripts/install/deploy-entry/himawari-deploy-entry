@@ -11,7 +11,7 @@ refuse() {
 }
 
 request="${SSH_ORIGINAL_COMMAND:-}"
-if [[ "$request" =~ ^ops\ (diagnose|restart)$ ]]; then
+if [[ "$request" =~ ^ops\ ([a-z][a-z-]{0,31})$ ]]; then
   action="${BASH_REMATCH[1]}"
   mkdir -p "$base"
   mirror="$base/ops-mirror.git"
@@ -38,7 +38,7 @@ elif [[ "$request" =~ ^rehearse\ ([0-9a-f]{40})\ boot$ ]]; then
   since=-
   force=0
 else
-  refuse REQUEST_INVALID "only 'deploy <40-hex commit> <40-hex since or -> <0|1 force>' or 'rehearse <40-hex commit> boot' or 'ops <diagnose|restart>' is accepted"
+  refuse REQUEST_INVALID "only 'deploy <40-hex commit> <40-hex since or -> <0|1 force>' or 'rehearse <40-hex commit> boot' or 'ops <action>' is accepted"
 fi
 [[ "$since" != - ]] || since=""
 

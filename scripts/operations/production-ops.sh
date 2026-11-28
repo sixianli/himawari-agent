@@ -20,7 +20,7 @@ refuse() {
   exit "${3:-64}"
 }
 
-[[ "$action" == diagnose || "$action" == restart ]] || refuse ACTION_INVALID "only diagnose or restart"
+[[ "$action" == diagnose || "$action" == restart || "$action" == allow-sensitive ]] || refuse ACTION_INVALID "only diagnose, restart or allow-sensitive"
 [[ -n "$public_key" && -s "$public_key" ]] || refuse KEY_MISSING "HIMAWARI_OPS_PUBLIC_KEY must name the public key that seals the full diagnostics" 70
 
 service_line() {
@@ -101,17 +101,16 @@ sealed() {
   rm -rf "$work"
 }
 
-if [[ "$action" == restart ]]; then
+take_lock() {
   if [[ -n "$lock_file" ]]; then
     exec 9> "$lock_file"
-    flock -n 9 || refuse BUSY "a deploy holds $lock_file; not restarting in the middle of it" 75
+    flock -n 9 || refuse BUSY "a deploy holds $lock_file; not changing the service in the middle of it" 75
   fi
-  echo "OPS_BEFORE_RESTART"
-  summary
-  sealed
+}
+
+restart_service() {
   "$systemctl_bin" restart "$unit" || refuse RESTART_FAILED "systemctl restart $unit failed" 70
-  deadline=$(( SECONDS + start_wait ))
-  state=""
+  local deadline=$(( SECONDS + start_wait )) state=""
   while (( SECONDS < deadline )); do
     state="$("$systemctl_bin" is-active "$unit" 2>/dev/null || true)"
     [[ "$state" == active ]] && break
@@ -120,6 +119,56 @@ if [[ "$action" == restart ]]; then
   [[ "$state" == active ]] || { service_line "$unit"; refuse NOT_ACTIVE "$unit is $state after restart" 70; }
   echo "OPS_RESTARTED $(date -u +%Y-%m-%dT%H:%M:%SZ)"
   service_line "$unit"
+}
+
+allow_sensitive() {
+  [[ -x "$node_bin" ]] || refuse NODE_MISSING "$node_bin" 70
+  [[ -f "$config" ]] || refuse CONFIG_MISSING "$config" 70
+  local backup="$config.before-allow-sensitive-$(date -u +%Y%m%dT%H%M%SZ)" next="$config.allow-sensitive-next"
+  cp -p "$config" "$backup" || refuse BACKUP_FAILED "$backup" 70
+  echo "OPS_CONFIG_BACKUP $backup"
+  local changed
+  changed="$("$node_bin" --no-warnings - "$config" "$next" <<'JS'
+const { readFileSync, writeFileSync } = require("node:fs");
+const [source, target] = process.argv.slice(2);
+const configuration = JSON.parse(readFileSync(source, "utf8"));
+const changed = [];
+for (const descriptor of configuration.modelDescriptors ?? []) {
+  const allowed = descriptor.allowedDataClassifications;
+  if (descriptor.role === "embedding" || !Array.isArray(allowed)) continue;
+  if (!allowed.includes("private") || allowed.includes("sensitive")) continue;
+  descriptor.allowedDataClassifications = ["public", "private", "sensitive"].filter(
+    (value) => value === "sensitive" || allowed.includes(value),
+  );
+  changed.push(descriptor.ref);
+}
+if (changed.length > 0) writeFileSync(target, `${JSON.stringify(configuration, null, 2)}\n`);
+process.stdout.write(changed.join(" "));
+JS
+  )" || refuse CONFIG_UNREADABLE "$config" 70
+  if [[ -z "$changed" ]]; then
+    echo "OPS_CONFIG_UNCHANGED every generation model already allows sensitive"
+    return 1
+  fi
+  chown --reference="$config" "$next" && chmod --reference="$config" "$next" && mv -f "$next" "$config" || refuse CONFIG_WRITE_FAILED "$config" 70
+  echo "OPS_CONFIG_CHANGED allow sensitive for: $changed"
+}
+
+if [[ "$action" == restart ]]; then
+  take_lock
+  echo "OPS_BEFORE_RESTART"
+  summary
+  sealed
+  restart_service
+  exit 0
+fi
+
+if [[ "$action" == allow-sensitive ]]; then
+  take_lock
+  if allow_sensitive; then
+    restart_service
+    summary
+  fi
   exit 0
 fi
 

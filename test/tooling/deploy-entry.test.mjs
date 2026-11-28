@@ -166,7 +166,9 @@ describe("himawari-deploy-entry", () => {
     expect(child.stdout).toContain("OPS_STUB action=diagnose key=KEY!");
     expect(child.stdout).toContain(`lock=${path.join(base, "deploy.lock")}`);
     expect(spawnSync("test", ["-e", path.join(base, "checkout")]).status).not.toBe(0);
-    for (const request of ["ops", "ops stop", "ops diagnose; id", "ops restart now"]) {
+    const passed = runEntry("ops allow-sensitive", repo, fakeTools(), base);
+    expect(passed.stdout).toContain("OPS_STUB action=allow-sensitive");
+    for (const request of ["ops", "ops Stop", "ops diagnose; id", "ops restart now", "ops ../x"]) {
       const refused = runEntry(request, repo);
       expect(refused.status).toBe(64);
       expect(refused.stderr).toContain("REQUEST_INVALID");

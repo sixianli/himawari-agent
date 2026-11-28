@@ -42,7 +42,7 @@ function keys(directory) {
 
 function fakes(directory) {
   const bin = path.join(directory, "bin");
-  mkdirSync(bin);
+  mkdirSync(bin, { recursive: true });
   const log = path.join(directory, "calls");
   writeFileSync(
     path.join(bin, "systemctl"),
@@ -180,7 +180,57 @@ db.prepare("INSERT INTO model_invocation_identities VALUES (?, ?, ?, ?, ?)").run
     }
   });
 
-  it("refuses anything but diagnose and restart", () => {
+  it("backs up the config, lets generation models see sensitive content, then restarts", () => {
+    const directory = temporary();
+    const config = path.join(directory, "config.json");
+    const original = {
+      ownerId: "owner:one",
+      modelDescriptors: [
+        {
+          ref: "magpie-primary",
+          role: "primary",
+          allowedDataClassifications: ["public", "private"],
+        },
+        { ref: "search", role: "primary", allowedDataClassifications: ["public"] },
+        {
+          ref: "local-embedding",
+          role: "embedding",
+          allowedDataClassifications: ["public", "private"],
+        },
+      ],
+    };
+    writeFileSync(config, JSON.stringify(original));
+    const { child } = run("allow-sensitive", directory, {
+      HIMAWARI_OPS_NODE: process.execPath,
+      HIMAWARI_OPS_CONFIG: config,
+      HIMAWARI_OPS_LOCK: path.join(directory, "deploy.lock"),
+    });
+    expect(child.stderr).toBe("");
+    expect(child.status).toBe(0);
+    expect(child.stdout).toContain("OPS_CONFIG_CHANGED allow sensitive for: magpie-primary");
+    const written = JSON.parse(readFileSync(config, "utf8"));
+    expect(written.modelDescriptors.map((entry) => entry.allowedDataClassifications)).toEqual([
+      ["public", "private", "sensitive"],
+      ["public"],
+      ["public", "private"],
+    ]);
+    const backup = child.stdout.match(/OPS_CONFIG_BACKUP (\S+)/)?.[1];
+    expect(JSON.parse(readFileSync(backup, "utf8"))).toEqual(original);
+    expect(readFileSync(path.join(directory, "calls"), "utf8")).toContain(
+      "systemctl restart himawari-prod.service",
+    );
+    expect(child.stdout).toContain("OPS_RESTARTED");
+
+    const again = run("allow-sensitive", directory, {
+      HIMAWARI_OPS_NODE: process.execPath,
+      HIMAWARI_OPS_CONFIG: config,
+    }).child;
+    expect(again.status).toBe(0);
+    expect(again.stdout).toContain("OPS_CONFIG_UNCHANGED");
+    expect(again.stdout).not.toContain("OPS_RESTARTED");
+  });
+
+  it("refuses anything but its own actions", () => {
     const directory = temporary();
     const { child } = run("stop", directory);
     expect(child.status).toBe(64);
