@@ -358,6 +358,8 @@ function settingsApproval(access: SettingsAccess): OwnerScopeIntentExtras {
     Object.entries(access.payload).filter(
       ([key, value]) =>
         value !== null &&
+        key !== "expectedRevision" &&
+        key !== "expectedVersion" &&
         !(key in access.before && JSON.stringify(access.before[key]) === JSON.stringify(value)),
     ),
   );

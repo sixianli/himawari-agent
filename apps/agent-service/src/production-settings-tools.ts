@@ -313,7 +313,7 @@ export class ProductionSettingsTools {
     const setting = findChatSetting(type);
     if (!setting) throw unknown();
     const sessionId = await this.#session(hooks);
-    const before = await this.#read(sessionId, setting);
+    const before = focused(await this.#read(sessionId, setting), values);
     const payload = this.#payload(setting, values, before);
     const tier = chatSettingTier(setting, payload);
     const { recentlyAuthenticated } = await hooks.authorize({ setting, tier, payload, before });
@@ -330,7 +330,7 @@ export class ProductionSettingsTools {
       if (error instanceof OwnerSettingsSessionError) throw noSession();
       throw rejected(error instanceof Error ? error.message.slice(0, 200) : undefined);
     }
-    const after = await this.#read(sessionId, setting);
+    const after = focused(await this.#read(sessionId, setting), values);
     const changed = Object.keys(values);
     const comparable = changed.filter((key) => Object.hasOwn(after, key));
     const confirmed = comparable.every((key) => same(after[key], values[key]));
@@ -373,6 +373,31 @@ export class ProductionSettingsTools {
       );
     return this.#change(call, record.setting, record.before, hooks, changeId);
   }
+}
+
+function focused(
+  snapshot: Readonly<Record<string, unknown>>,
+  values: Readonly<Record<string, unknown>>,
+): Readonly<Record<string, unknown>> {
+  const targets = Object.entries(values).filter(
+    ([key, value]) => key.endsWith("Id") && typeof value === "string",
+  );
+  if (targets.length === 0) return snapshot;
+  for (const list of Object.values(snapshot)) {
+    if (!Array.isArray(list)) continue;
+    for (const item of list) {
+      if (!isRecord(item)) continue;
+      if (targets.some(([key, value]) => item[key] === value || item["id"] === value))
+        return {
+          ...targets.reduce<Record<string, unknown>>(
+            (all, [key, value]) => ({ ...all, [key]: value }),
+            {},
+          ),
+          ...item,
+        };
+    }
+  }
+  return snapshot;
 }
 
 export type SettingsScopedState = Pick<

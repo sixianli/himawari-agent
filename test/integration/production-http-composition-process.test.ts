@@ -2440,7 +2440,7 @@ async function pairInstalledDevice(service: Awaited<ReturnType<typeof openInstal
   });
   expect(finished.status, finished.raw).toBe(201);
   const device = (finished.body as { device: { id: string; revision: number } }).device;
-  return async (route: string, body: object) => {
+  const post = async (route: string, body: object, nonce?: string) => {
     const signed = buildDeviceTestRequest({
       origin: publicOrigin,
       deviceId: device.id,
@@ -2448,12 +2448,19 @@ async function pairInstalledDevice(service: Awaited<ReturnType<typeof openInstal
       method: "POST",
       path: `/api/device/v1/${route}`,
       body: JSON.stringify(body),
+      ...(nonce === undefined ? {} : { confirmKey: confirmKeys.privateKey, nonce }),
     });
     return httpRequest(service.running().address, `/api/device/v1/${route}`, {
       method: "POST",
       headers: signed.headers,
       body: signed.body?.toString("utf8") ?? "",
     });
+  };
+  return async (route: string, body: object, confirmed = false) => {
+    if (!confirmed) return post(route, body);
+    const issued = await post("approvals/challenge", {});
+    expect(issued.status, issued.raw).toBe(201);
+    return post(route, body, (issued.body as { challenge: string }).challenge);
   };
 }
 
@@ -2629,9 +2636,10 @@ it("[PR-A] [iOS-8] a half sentence prepared while the owner speaks sends the mod
 async function settingsConversation(service: Awaited<ReturnType<typeof openInstalledMain>>) {
   const device = await pairInstalledDevice(service);
   let script: ChatReply[] = [];
+  let captured: readonly object[] = [];
   chatReply = (input) => {
     if (!isAgentRequest({ path: "/v1/chat/completions", body: input }))
-      return answerMemoryCapture([])(input);
+      return answerMemoryCapture(captured)(input);
     const messages = input["messages"] as { role: string }[];
     if (messages.at(-1)?.role === "tool") return script.shift() ?? { text: "好了" };
     return script.shift() ?? { text: "好了" };
@@ -2643,8 +2651,9 @@ async function settingsConversation(service: Awaited<ReturnType<typeof openInsta
   expect(created.status, created.raw).toBe(200);
   const threadId = (created.body as { payload: { threadId: string } }).payload.threadId;
   let sent = 0;
-  const say = async (text: string, replies: ChatReply[]) => {
+  const say = async (text: string, replies: ChatReply[], memories: readonly object[] = []) => {
     script = [...replies];
+    captured = memories;
     const start = providerRequests.length;
     const detail = await service.query("thread.detail", { threadId, afterSequence: 0, limit: 100 });
     const revision = (detail.body as { payload: { thread: { revision: number } } }).payload.thread
@@ -2677,8 +2686,10 @@ async function settingsConversation(service: Awaited<ReturnType<typeof openInsta
         { timeout: 30_000, interval: 200 },
       )
       .toBe(true);
-    const results = agentRequests(start)
-      .flatMap((request) => request.body.messages)
+    const messages = agentRequests(start).at(-1)?.body.messages ?? [];
+    const asked = messages.map((message) => message.role).lastIndexOf("user");
+    const results = messages
+      .slice(asked + 1)
       .filter((message) => message.role === "tool")
       .map((message) => JSON.parse(String(message.content)) as Record<string, unknown>);
     return { status: status.at(-1), results, requests: agentRequests(start) };
@@ -2697,7 +2708,38 @@ async function settingsConversation(service: Awaited<ReturnType<typeof openInsta
     expect(answered.status, answered.raw).toBe(200);
     return (answered.body as { payload: Record<string, unknown> }).payload;
   };
-  return { say, read };
+  let approvals = 0;
+  const approve = async (detail: Record<string, unknown>) => {
+    approvals += 1;
+    const approval = detail as {
+      approvalRequestId: string;
+      revision: number;
+      finalRisk: string;
+      semanticSnapshotHash: string;
+    };
+    const answered = await device(
+      "gateway",
+      {
+        gateway: "v2",
+        type: "approval.respond",
+        messageId: `settings-approve-${approvals}`,
+        idempotencyKey: `settings-approve-key-${approvals}`,
+        dataClassification: "private",
+        risk: approval.finalRisk,
+        payload: {
+          approvalRequestId: approval.approvalRequestId,
+          expectedRevision: approval.revision,
+          decision: "approved",
+          semanticSnapshotHash: approval.semanticSnapshotHash,
+          editedPayloadRef: null,
+          recentAuthenticationRef: "device",
+        },
+      },
+      true,
+    );
+    expect(answered.status, answered.raw).toBe(200);
+  };
+  return { say, read, approve };
 }
 
 function settingsApprovals() {
@@ -2733,7 +2775,7 @@ it("[ADR 0315][SET-1] 在聊天里说“暂停记忆”就直接暂停，读回�
     expect(tools.map((tool) => tool.function.name)).toEqual(
       expect.arrayContaining(["settings_list", "settings_change", "settings_undo"]),
     );
-    expect(JSON.stringify(tools)).not.toContain("quiet_hours");
+    expect(JSON.stringify(tools)).not.toContain("quiet_hours.set");
 
     expect((await chat.read("memory.overview.read"))["capturePaused"]).toBe(false);
     const paused = await chat.say("暂停记忆", [
@@ -2766,6 +2808,36 @@ it("[ADR 0315][SET-1] 在聊天里说“暂停记忆”就直接暂停，读回�
     });
     expect((await chat.read("memory.overview.read"))["capturePaused"]).toBe(false);
 
+    const fact = "主人的牙医是樱井医生";
+    await chat.say(
+      "请记住，我的牙医是樱井医生",
+      [{ text: "记下了。" }],
+      [
+        {
+          kind: "durable_fact",
+          decision: "create",
+          text: fact,
+          classification: "private",
+          confidence: 950,
+          explicit: true,
+          category: "health",
+          quote: "请记住，我的牙医是樱井医生",
+        },
+      ],
+    );
+    await expect
+      .poll(
+        () => {
+          const database = openQualifiedDatabase(databasePath);
+          try {
+            return database.prepare("SELECT count(*) AS made FROM memory_generations").get();
+          } finally {
+            database.close();
+          }
+        },
+        { timeout: 30_000 },
+      )
+      .not.toEqual({ made: 0 });
     const quiet = await chat.read("quiet_hours.read");
     const opened = await chat.say("打开勿扰", [
       {
@@ -2785,7 +2857,7 @@ it("[ADR 0315][SET-1] 在聊天里说“暂停记忆”就直接暂停，读回�
     const after = await chat.read("quiet_hours.read");
     expect(after).toMatchObject({ enabled: true, start: "23:00", end: "07:00" });
     expect(after["version"]).not.toBe(quiet["version"]);
-    expect(settingsApprovals()).toEqual([]);
+    expect(settingsApprovals().filter((card) => card["status"] === "pending")).toEqual([]);
   } finally {
     chatReply = undefined;
     await service.stop();
@@ -2820,9 +2892,21 @@ it("[ADR 0315][SET-2][reverse] 只问用法不改设置；改名先出同意卡�
       recentAuthenticationRequired: false,
       display: { displayTitle: "改设置 · 给设备改名" },
     });
-    expect(String((card?.["display"] as { bodyPreview: string }).bodyPreview)).toContain("小葵");
+    const preview = String((card?.["display"] as { bodyPreview: string }).bodyPreview);
+    expect(preview).toContain("小葵");
+    expect(preview).not.toContain("expectedRevision");
     const named = (await chat.read("device.list.read"))["devices"] as { name: string }[];
     expect(named[0]?.name).toBe(phone.name);
+
+    const detail = await chat.read("approval.detail", { approvalRequestId: card?.["id"] });
+    await chat.approve(detail);
+    await expect
+      .poll(
+        async () =>
+          ((await chat.read("device.list.read"))["devices"] as { name: string }[])[0]?.name,
+        { timeout: 30_000, interval: 200 },
+      )
+      .toBe("小葵");
 
     const removed = await chat.say("把这台手机移除", [
       {
