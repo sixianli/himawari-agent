@@ -2,18 +2,10 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-const defaultConfig = path.resolve(
-  import.meta.dirname,
-  "cloudflare-public-paths.json",
-);
-const apiBase =
-  process.env.CLOUDFLARE_API_BASE ?? "https://api.cloudflare.com/client/v4";
-const probeAttempts = Number(
-  process.env.HIMAWARI_PUBLIC_PATHS_PROBE_ATTEMPTS ?? 12,
-);
-const probeDelayMs = Number(
-  process.env.HIMAWARI_PUBLIC_PATHS_PROBE_DELAY_MS ?? 5000,
-);
+const defaultConfig = path.resolve(import.meta.dirname, "cloudflare-public-paths.json");
+const apiBase = process.env.CLOUDFLARE_API_BASE ?? "https://api.cloudflare.com/client/v4";
+const probeAttempts = Number(process.env.HIMAWARI_PUBLIC_PATHS_PROBE_ATTEMPTS ?? 12);
+const probeDelayMs = Number(process.env.HIMAWARI_PUBLIC_PATHS_PROBE_DELAY_MS ?? 5000);
 
 class SyncFailure extends Error {
   constructor(code, detail) {
@@ -27,10 +19,7 @@ function fail(code, detail) {
 }
 
 function isStringList(value) {
-  return (
-    Array.isArray(value) &&
-    value.every((item) => typeof item === "string" && item.length > 0)
-  );
+  return Array.isArray(value) && value.every((item) => typeof item === "string" && item.length > 0);
 }
 
 function normalizePath(value) {
@@ -39,21 +28,16 @@ function normalizePath(value) {
 
 function readConfig(file) {
   const config = JSON.parse(readFileSync(file, "utf8"));
-  if (!/^[0-9a-f]{32}$/.test(config.accountId ?? ""))
-    fail("CONFIG_INVALID", "accountId");
-  if (!/^[a-z0-9.-]+$/.test(config.hostname ?? ""))
-    fail("CONFIG_INVALID", "hostname");
+  if (!/^[0-9a-f]{32}$/.test(config.accountId ?? "")) fail("CONFIG_INVALID", "accountId");
+  if (!/^[a-z0-9.-]+$/.test(config.hostname ?? "")) fail("CONFIG_INVALID", "hostname");
   for (const key of ["applicationName", "policyName"]) {
-    if (typeof config[key] !== "string" || config[key].length === 0)
-      fail("CONFIG_INVALID", key);
+    if (typeof config[key] !== "string" || config[key].length === 0) fail("CONFIG_INVALID", key);
   }
   if (!isStringList(config.paths)) fail("CONFIG_INVALID", "paths");
-  if (!isStringList(config.retireApplications ?? []))
-    fail("CONFIG_INVALID", "retireApplications");
+  if (!isStringList(config.retireApplications ?? [])) fail("CONFIG_INVALID", "retireApplications");
   const seen = new Set();
   for (const entry of config.paths) {
-    if (!entry.startsWith("/") || /[?#*\s]/.test(entry))
-      fail("CONFIG_INVALID_PATH", entry);
+    if (!entry.startsWith("/") || /[?#*\s]/.test(entry)) fail("CONFIG_INVALID_PATH", entry);
     const normalized = normalizePath(entry);
     if (normalized === "") fail("CONFIG_PATH_OPENS_WHOLE_SITE", entry);
     if (seen.has(normalized)) fail("CONFIG_DUPLICATE_PATH", entry);
@@ -86,18 +70,14 @@ function destinationsOf(app) {
       .filter((item) => item.type === "public" && item.uri)
       .map((item) => item.uri);
   }
-  if (
-    Array.isArray(app.self_hosted_domains) &&
-    app.self_hosted_domains.length > 0
-  ) {
+  if (Array.isArray(app.self_hosted_domains) && app.self_hosted_domains.length > 0) {
     return app.self_hosted_domains;
   }
   return app.domain ? [app.domain] : [];
 }
 
 function overlaps(left, right) {
-  if (left.host !== right.host || left.path === "" || right.path === "")
-    return false;
+  if (left.host !== right.host || left.path === "" || right.path === "") return false;
   return (
     left.path === right.path ||
     left.path.startsWith(`${right.path}/`) ||
@@ -163,16 +143,12 @@ async function blockedByAccess(url) {
   return {
     status: response.status,
     blocked:
-      response.status >= 300 &&
-      response.status < 400 &&
-      /cloudflareaccess\.com/i.test(location),
+      response.status >= 300 && response.status < 400 && /cloudflareaccess\.com/i.test(location),
   };
 }
 
 async function probe(config) {
-  const base =
-    process.env.HIMAWARI_PUBLIC_PATHS_PROBE_BASE ??
-    `https://${config.hostname}`;
+  const base = process.env.HIMAWARI_PUBLIC_PATHS_PROBE_BASE ?? `https://${config.hostname}`;
   const results = {};
   for (const entry of config.paths) {
     let last;
@@ -187,10 +163,7 @@ async function probe(config) {
   }
   const gated = await blockedByAccess(`${base}${config.stillGatedPath}`);
   if (!gated.blocked)
-    fail(
-      "GATE_OPEN",
-      `${config.stillGatedPath} answered ${gated.status} without the Access login`,
-    );
+    fail("GATE_OPEN", `${config.stillGatedPath} answered ${gated.status} without the Access login`);
   results[config.stillGatedPath] = `${gated.status} gated`;
   return results;
 }
@@ -207,39 +180,26 @@ async function sync({ configFile, planOnly }) {
   const apps = await listAll(`${account}/apps`);
   const managed = apps.filter((app) => app.name === config.applicationName);
   if (managed.length > 1) fail("DUPLICATE_APPLICATION", config.applicationName);
-  const retiring = apps.filter((app) =>
-    config.retireApplications.includes(app.name),
-  );
+  const retiring = apps.filter((app) => config.retireApplications.includes(app.name));
   for (const app of retiring) {
-    const foreign = destinationsOf(app).filter(
-      (uri) => splitUri(uri).host !== config.hostname,
-    );
-    if (foreign.length > 0)
-      fail("RETIRE_OUTSIDE_HOST", `${app.name}: ${foreign.join(", ")}`);
-    const uncovered = destinationsOf(app).filter(
-      (uri) => !coveredBy(desiredParts, splitUri(uri)),
-    );
-    if (uncovered.length > 0)
-      fail("RETIRE_UNCOVERED_PATH", `${app.name}: ${uncovered.join(", ")}`);
+    const foreign = destinationsOf(app).filter((uri) => splitUri(uri).host !== config.hostname);
+    if (foreign.length > 0) fail("RETIRE_OUTSIDE_HOST", `${app.name}: ${foreign.join(", ")}`);
+    const uncovered = destinationsOf(app).filter((uri) => !coveredBy(desiredParts, splitUri(uri)));
+    if (uncovered.length > 0) fail("RETIRE_UNCOVERED_PATH", `${app.name}: ${uncovered.join(", ")}`);
   }
   const conflicts = [];
   for (const app of apps) {
-    if (
-      app.name === config.applicationName ||
-      config.retireApplications.includes(app.name)
-    )
+    if (app.name === config.applicationName || config.retireApplications.includes(app.name))
       continue;
     for (const uri of destinationsOf(app)) {
       if (desiredParts.some((part) => overlaps(part, splitUri(uri))))
         conflicts.push(`${app.name} -> ${uri}`);
     }
   }
-  if (conflicts.length > 0)
-    fail("CONFLICTING_APPLICATION", conflicts.join("; "));
+  if (conflicts.length > 0) fail("CONFLICTING_APPLICATION", conflicts.join("; "));
 
   const plan = {
-    managed:
-      managed.length === 1 ? "update" : desired.length > 0 ? "create" : "none",
+    managed: managed.length === 1 ? "update" : desired.length > 0 ? "create" : "none",
     destinations: desired,
     retire: retiring.map((app) => ({
       name: app.name,
@@ -257,8 +217,7 @@ async function sync({ configFile, planOnly }) {
   }
 
   if (desired.length === 0) {
-    if (managed.length === 1)
-      await call("DELETE", `${account}/apps/${managed[0].id}`);
+    if (managed.length === 1) await call("DELETE", `${account}/apps/${managed[0].id}`);
     console.log(
       `PUBLIC_PATHS_OK ${JSON.stringify({ ...plan, managed: managed.length === 1 ? "deleted" : "none" })}`,
     );
@@ -269,8 +228,7 @@ async function sync({ configFile, planOnly }) {
   const named = policies.filter((policy) => policy.name === config.policyName);
   if (named.length > 1) fail("DUPLICATE_POLICY", config.policyName);
   let policy = named[0];
-  if (policy && !isEveryoneBypass(policy))
-    fail("POLICY_UNEXPECTED", config.policyName);
+  if (policy && !isEveryoneBypass(policy)) fail("POLICY_UNEXPECTED", config.policyName);
   if (!policy) {
     policy = (
       await call("POST", `${account}/policies`, {
@@ -300,16 +258,12 @@ async function sync({ configFile, planOnly }) {
     .sort();
   const expected = desired.map((uri) => uri.toLowerCase()).sort();
   if (actual.join("\n") !== expected.join("\n")) {
-    fail(
-      "READBACK_MISMATCH",
-      `expected ${expected.join(", ")} got ${actual.join(", ")}`,
-    );
+    fail("READBACK_MISMATCH", `expected ${expected.join(", ")} got ${actual.join(", ")}`);
   }
   const attached = (readBack.policies ?? []).map((item) =>
     typeof item === "string" ? item : item.id,
   );
-  if (attached.length !== 1 || attached[0] !== policy.id)
-    fail("READBACK_MISMATCH", "policies");
+  if (attached.length !== 1 || attached[0] !== policy.id) fail("READBACK_MISMATCH", "policies");
 
   const probes = await probe(config);
   console.log(`PUBLIC_PATHS_OK ${JSON.stringify({ ...plan, probes })}`);

@@ -58,15 +58,12 @@ function cloudflare(initialApps = [], options = {}) {
     );
   };
   const handler = async (request, response) => {
-    if (request.headers.authorization !== "Bearer test-token")
-      return reply(response, 403, null);
+    if (request.headers.authorization !== "Bearer test-token") return reply(response, 403, null);
     const url = new URL(request.url, "http://x");
     const route = url.pathname.slice(prefix.length);
     const body = await readBody(request);
-    if (request.method !== "GET")
-      state.writes.push(`${request.method} ${route}`);
-    if (route === "/apps" && request.method === "GET")
-      return reply(response, 200, state.apps);
+    if (request.method !== "GET") state.writes.push(`${request.method} ${route}`);
+    if (route === "/apps" && request.method === "GET") return reply(response, 200, state.apps);
     if (route === "/policies" && request.method === "GET")
       return reply(response, 200, state.policies);
     if (route === "/policies" && request.method === "POST") {
@@ -76,8 +73,7 @@ function cloudflare(initialApps = [], options = {}) {
     }
     if (route === "/apps" && request.method === "POST") {
       const app = { ...body, id: `app-${state.nextId++}` };
-      if (options.dropDestinations)
-        app.destinations = app.destinations.slice(1);
+      if (options.dropDestinations) app.destinations = app.destinations.slice(1);
       state.apps.push(app);
       return reply(response, 200, app);
     }
@@ -85,8 +81,7 @@ function cloudflare(initialApps = [], options = {}) {
     if (match) {
       const index = state.apps.findIndex((app) => app.id === match[1]);
       if (index === -1) return reply(response, 404, null);
-      if (request.method === "GET")
-        return reply(response, 200, state.apps[index]);
+      if (request.method === "GET") return reply(response, 200, state.apps[index]);
       if (request.method === "PUT") {
         state.apps[index] = { ...body, id: match[1] };
         return reply(response, 200, state.apps[index]);
@@ -107,15 +102,12 @@ function site(state, options = {}) {
     const bypassed = state.apps.some(
       (app) =>
         (app.policies ?? []).some((link) =>
-          state.policies.some(
-            (policy) => policy.id === link.id && policy.decision === "bypass",
-          ),
+          state.policies.some((policy) => policy.id === link.id && policy.decision === "bypass"),
         ) &&
         (app.destinations ?? []).some((destination) => {
           const appPath = destination.uri.slice(host.length).toLowerCase();
           return (
-            appPath !== "" &&
-            (requestPath === appPath || requestPath.startsWith(`${appPath}/`))
+            appPath !== "" && (requestPath === appPath || requestPath.startsWith(`${appPath}/`))
           );
         }),
     );
@@ -200,9 +192,7 @@ describe("Cloudflare Access public paths", () => {
         include: [{ everyone: {} }],
       }),
     ]);
-    const created = state.apps.find(
-      (app) => app.name === "Himawari app entry (bypass)",
-    );
+    const created = state.apps.find((app) => app.name === "Himawari app entry (bypass)");
     expect(created.destinations.map((item) => item.uri)).toEqual([
       `${host}/.well-known/apple-app-site-association`,
       `${host}/api/device/v1`,
@@ -216,13 +206,9 @@ describe("Cloudflare Access public paths", () => {
     const writesAfterFirst = state.writes.length;
     const second = await run();
     expect(second.status).toBe(0);
-    expect(
-      state.apps.filter((app) => app.name === "Himawari app entry (bypass)"),
-    ).toHaveLength(1);
+    expect(state.apps.filter((app) => app.name === "Himawari app entry (bypass)")).toHaveLength(1);
     expect(state.policies).toHaveLength(1);
-    expect(state.writes.slice(writesAfterFirst)).toEqual([
-      expect.stringMatching(/^PUT \/apps\//),
-    ]);
+    expect(state.writes.slice(writesAfterFirst)).toEqual([expect.stringMatching(/^PUT \/apps\//)]);
   });
 
   it("refuses to touch anything while another application guards one of the paths", async () => {
@@ -243,10 +229,7 @@ describe("Cloudflare Access public paths", () => {
     const result = await run();
     expect(result.status).toBe(0);
     expect(state.writes[0]).toBe("DELETE /apps/old-device");
-    expect(state.apps.map((app) => app.name)).toEqual([
-      "Himawari",
-      "Himawari app entry (bypass)",
-    ]);
+    expect(state.apps.map((app) => app.name)).toEqual(["Himawari", "Himawari app entry (bypass)"]);
   });
 
   it("refuses to retire an application that guards a path the new application does not open", async () => {
@@ -292,9 +275,7 @@ describe("Cloudflare Access public paths", () => {
   it("rejects a path that would open the whole site", async () => {
     const { state, run } = await setup({ config: { paths: ["/"] } });
     const result = await run();
-    expect(result.stdout).toContain(
-      "PUBLIC_PATHS_FAILED CONFIG_PATH_OPENS_WHOLE_SITE",
-    );
+    expect(result.stdout).toContain("PUBLIC_PATHS_FAILED CONFIG_PATH_OPENS_WHOLE_SITE");
     expect(state.writes).toEqual([]);
   });
 
