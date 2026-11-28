@@ -88,7 +88,7 @@ let interfaceTargets: [Target] = [
             "HimawariCore",
             .product(name: "FluidAudio", package: "FluidAudio", condition: .when(platforms: [.iOS, .macOS])),
         ],
-        resources: [.process("Resources")]
+        resources: [.process("Resources"), .copy("SpeakerModels")]
     ),
     .executableTarget(name: "ListenEval", dependencies: ["HimawariCore", "HimawariListenEngine"]),
 ]
