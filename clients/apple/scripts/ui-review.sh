@@ -146,6 +146,10 @@ simulator_load() {
   ps -A -o ppid=,%cpu= | awk -v parent="$simulator_launchd" '$1 == parent { total += $2 } END { printf "%d", total }'
 }
 
+busiest_processes() {
+  ps -A -o ppid=,pid=,%cpu=,comm= | awk -v parent="$simulator_launchd" '$1 == parent { $1 = ""; print }' | sort -k2 -rn | head -5 | sed 's/^ */UI_REVIEW_BUSY /' >&2
+}
+
 calm() {
   [ "$(simulator_load)" -lt "$calm_below" ]
 }
@@ -155,7 +159,7 @@ wait_until_calm() {
   while [ "$quiet" -lt 3 ]; do
     if calm; then quiet=$((quiet + 1)); else quiet=0; fi
     [ "$quiet" -lt 3 ] || return 0
-    [ "$waited" -lt "$calm_patience" ] || { echo "UI_REVIEW_FAILED simulator stayed busy for ${calm_patience}s (load $(simulator_load)%, limit ${calm_below}%)" >&2; exit 1; }
+    [ "$waited" -lt "$calm_patience" ] || { busiest_processes; echo "UI_REVIEW_FAILED simulator stayed busy for ${calm_patience}s (load $(simulator_load)%, limit ${calm_below}%)" >&2; exit 1; }
     sleep 2
     waited=$((waited + 2))
   done
