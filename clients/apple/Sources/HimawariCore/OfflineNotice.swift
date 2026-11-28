@@ -7,7 +7,7 @@ public final class OfflineNotice {
     public private(set) var shown = false
     private let grace: TimeInterval
     private let changed: @MainActor (Bool) -> Void
-    private var pending: Task<Void, Never>?
+    private(set) var pending: Task<Void, Never>?
     private var connected = false
 
     public init(grace: TimeInterval = OfflineNotice.graceSeconds, changed: @escaping @MainActor (Bool) -> Void = { _ in }) {
