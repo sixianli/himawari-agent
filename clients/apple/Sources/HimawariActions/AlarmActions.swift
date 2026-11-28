@@ -33,7 +33,8 @@ public struct AlarmPermission: DevicePermission {
 }
 
 public final class AlarmActions: DeviceActionHandler, @unchecked Sendable {
-    public let names = ["alarm.set"]
+    public let names = ["alarm.list", "alarm.set"]
+    public let readOnly: Set<String> = ["alarm.list"]
     public let permission: DevicePermission = AlarmPermission()
 
     public init() {}
@@ -49,6 +50,7 @@ public final class AlarmActions: DeviceActionHandler, @unchecked Sendable {
     public func snapshot(_ delivery: DeviceActionDelivery) async throws -> JSONObject? { [:] }
 
     public func perform(_ delivery: DeviceActionDelivery) async throws -> JSONObject {
+        if delivery.action == "alarm.list" { return try Self.list(within: delivery.resultMaximumBytes) }
         guard let id = Self.alarmId(delivery.id) else { throw DeviceActionFailure(.badArguments) }
         let args = delivery.args
         let date = try args.localDate("time")
@@ -61,8 +63,14 @@ public final class AlarmActions: DeviceActionHandler, @unchecked Sendable {
         return Self.describe(alarm, label: title)
     }
 
+    static func list(within limit: Int?) throws -> JSONObject {
+        let alarms = try AlarmManager.shared.alarms.map { Self.describe($0, label: nil) }
+        let sorted = alarms.sorted { ($0["time"]?.string ?? "~") < ($1["time"]?.string ?? "~") }
+        return DeviceActionListing.fit(sorted, as: "alarms", within: limit)
+    }
+
     public func readBack(_ delivery: DeviceActionDelivery, made: JSONObject?) async throws -> DeviceActionReading {
-        guard let id = Self.alarmId(delivery.id) else { return .unreadable }
+        guard delivery.action != "alarm.list", let id = Self.alarmId(delivery.id) else { return .unreadable }
         let alarms = try AlarmManager.shared.alarms
         guard let alarm = alarms.first(where: { $0.id == id }) else { return .differs(["absent": .bool(true)]) }
         let found = Self.describe(alarm, label: made?["label"]?.string)
@@ -80,7 +88,7 @@ public final class AlarmActions: DeviceActionHandler, @unchecked Sendable {
     }
 
     static func describe(_ alarm: Alarm, label: String?) -> JSONObject {
-        var value: JSONObject = ["alarmId": .string(alarm.id.uuidString)]
+        var value: JSONObject = ["alarmId": .string(alarm.id.uuidString), "state": .string(String(describing: alarm.state))]
         if case let .fixed(date) = alarm.schedule { value["time"] = .string(DeviceActionTime.localText(date)) }
         if let label { value["label"] = .string(label) }
         return value

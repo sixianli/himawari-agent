@@ -28,6 +28,11 @@ public protocol SensesService: AnyObject {
     func delete(_ target: PerceptionDeletionTarget, reason: String) async throws -> PerceptionDeletionSnapshot
     func mirrorCount(_ item: SenseItem) async -> Int?
     func clearMirror(_ item: SenseItem) async throws
+    func retryWaiting() async
+}
+
+public extension SensesService {
+    func retryWaiting() async {}
 }
 
 @MainActor
@@ -59,12 +64,14 @@ public final class LiveSensesService: SensesService {
     ) {
         gateway = SensesGateway(api: api, confirmation: confirmation)
         let queue = PerceptionQueue(store: store, transport: api)
+        let problems = ReadProblems(transport: api)
         deletions = PerceptionDeletionSync(store: store, source: api, queue: queue, thisDevice: deviceId)
         sink = SenseSink(
             queue: queue,
             mirror: MirrorSync(store: store, transport: api),
             store: store,
             deletions: deletions,
+            problems: problems,
             configuration: configuration
         )
         collectors = SenseCollectors.all()
@@ -158,6 +165,10 @@ public final class LiveSensesService: SensesService {
 
     public func flush() async {
         await sink.flush()
+    }
+
+    public func retryWaiting() async {
+        await sink.retryWaiting()
     }
 }
 

@@ -2,25 +2,25 @@ import { mkdir, readdir, rename } from "node:fs/promises";
 import path from "node:path";
 import {
   DEVICE_ACTION_RECORD_STATES,
-  DEVICE_ACTION_RESULT_MAXIMUM_BYTES,
-  DEVICE_ACTION_REGISTRY,
   DEVICE_ACTION_REGISTRATIONS,
+  DEVICE_ACTION_REGISTRY,
+  DEVICE_ACTION_RESULT_MAXIMUM_BYTES,
   type DeviceActionAuthorizationPort,
   type DeviceActionIntent,
-  type DeviceActionResolution,
+  type DeviceActionRegistration,
   DeviceActionRegistry,
+  type DeviceActionResolution,
   PERCEPTION_CONFIGURATION_DEFAULTS,
 } from "@himawari-agent/application";
 import { createRunId } from "@himawari-agent/domain";
-import { validateDeviceActionArguments } from "../../packages/application/src/services/device-action-registry.ts";
 import {
   buildPortableExport,
   LATEST_MIGRATION_SEQUENCE,
   openQualifiedDatabase,
   type PortableFiles,
+  parsePortable,
   SqliteGovernedDeletionAdapter,
   SqliteProductStateRepository,
-  parsePortable,
 } from "@himawari-agent/persistence-sqlite";
 import { createDataExportTextPolicy } from "@himawari-agent/platform-node";
 import {
@@ -44,6 +44,7 @@ import {
   ProductionPerceptionTools,
   perceptionToolDescriptors,
 } from "../../apps/agent-service/src/production-perception-tools.ts";
+import { validateDeviceActionArguments } from "../../packages/application/src/services/device-action-registry.ts";
 import {
   agentId,
   type Harness,
@@ -280,7 +281,7 @@ describe("[iOS-9A] device_action describe is computed from the registry, the dev
       ["device_reminder.create", true],
       ["home.read", false],
     ]);
-    expect(described.actions.map((entry) => "usage" in entry)).toEqual([false, true, false]);
+    expect(described.actions.map((entry) => "usage" in entry)).toEqual([false, true, true]);
     expect(described.actions[1]).toMatchObject({
       usage: TOOL_RESULT_DEVICE_ACTION_USAGE_DEVICE_REMINDER.text,
     });
@@ -2237,4 +2238,158 @@ describe("Himawari reads the owner's calendar and contacts on the device and act
         ]),
     ).toThrow("DEVICE_ACTION_REGISTRATION_INVALID calendar.update");
   });
+});
+
+function sampleArguments(registration: DeviceActionRegistration): Record<string, unknown> {
+  const args: Record<string, unknown> = {};
+  for (const [name, field] of Object.entries(registration.parameters)) {
+    if (!field.required) continue;
+    if (field.type === "string")
+      args[name] =
+        field.values?.[0] ??
+        (field.format === "local_time"
+          ? "2026-11-28T09:00"
+          : field.format === "date"
+            ? "2026-11-28"
+            : "x");
+    else if (field.type === "integer" || field.type === "number") args[name] = field.minimum;
+    else if (field.type === "boolean") args[name] = true;
+    else args[name] = ["x"];
+  }
+  return args;
+}
+
+describe("[I-130] every device read goes through to the device and back, and what it lists can be acted on", () => {
+  const reads = DEVICE_ACTION_REGISTRATIONS.filter(({ actionKind }) => actionKind === "READ");
+  const listed = DEVICE_ACTION_REGISTRATIONS.filter(({ target }) => target?.listedBy);
+
+  it("the registry has reads to check", () => {
+    expect(reads.length).toBeGreaterThan(0);
+  });
+
+  it.each(reads.map((read) => [read.name, read] as const))(
+    "%s reaches the device without asking the owner and hands the model what the device read",
+    async (_name, read) => {
+      const h = await harness();
+      const client = await pairAndConfirm(h);
+      await supports(h, client, [read.name]);
+      const item = { itemId: "item-1", name: "读到的那一项" };
+      const device = await connectDevice(h, client, () => ({
+        outcome: "succeeded",
+        readBack: false,
+        evidence: { done: { items: [item], truncated: false } },
+      }));
+      const { act } = setup(h);
+      await addRun(h, "run-1");
+      const result = await act("run-1", { action: read.name, arguments: sampleArguments(read) });
+      expect(result).toMatchObject({
+        done: true,
+        state: "succeeded",
+        evidence: { done: { items: [item], truncated: false } },
+      });
+      expect(device.claimed[0]).toMatchObject({ action: read.name, ownerPresence: false });
+      await device.close();
+      await h.repository.close();
+    },
+  );
+
+  it.each(reads.map((read) => [read.name, read] as const))(
+    "%s that the device could not do is written to the service log for developers",
+    async (_name, read) => {
+      const h = await harness();
+      const client = await pairAndConfirm(h);
+      await supports(h, client, [read.name]);
+      const device = await connectDevice(h, client, () => ({
+        outcome: "failed",
+        readBack: false,
+        reason: "读失败",
+      }));
+      const { act } = setup(h);
+      await addRun(h, "run-1");
+      await act("run-1", { action: read.name, arguments: sampleArguments(read) }).catch(
+        () => undefined,
+      );
+      expect(h.actionReadFailures).toEqual([
+        {
+          event: "device_action.read_failed",
+          action: read.name,
+          deviceId: expect.any(String),
+          outcome: "failed",
+        },
+      ]);
+      await device.close();
+      await h.repository.close();
+    },
+  );
+
+  it("[reverse] a read that succeeded, or a change the device could not make, is not logged as a failed read", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    const read = reads[0];
+    if (!read) throw new Error("no read");
+    await supports(h, client, [read.name, "calendar.create"]);
+    const device = await connectDevice(h, client, (delivery) =>
+      delivery["action"] === read.name
+        ? { outcome: "succeeded", readBack: false, evidence: { done: { items: [] } } }
+        : { outcome: "failed", readBack: false, reason: "没建成" },
+    );
+    const { act } = setup(h);
+    await addRun(h, "run-1");
+    await act("run-1", { action: read.name, arguments: sampleArguments(read) });
+    h.actions.authorization.current = ownerAllows(true);
+    await act("run-1", {
+      action: "calendar.create",
+      arguments: sampleArguments(
+        DEVICE_ACTION_REGISTRY.get("calendar.create") as DeviceActionRegistration,
+      ),
+    }).catch(() => undefined);
+    expect(h.actionReadFailures).toEqual([]);
+    await device.close();
+    await h.repository.close();
+  });
+
+  it.each(listed.map((registration) => [registration.name, registration] as const))(
+    "%s accepts the id its read listed and refuses one it did not",
+    async (_name, registration) => {
+      const target = registration.target;
+      const lister = target?.listedBy;
+      if (!target || !lister) throw new Error("listedBy missing");
+      const read = DEVICE_ACTION_REGISTRY.get(lister.action);
+      if (!read) throw new Error(`${lister.action} missing`);
+      const h = await harness();
+      const client = await pairAndConfirm(h);
+      await supports(h, client, [read.name, registration.name]);
+      const item = { [target.idKey]: "listed-1", name: "读到的那一项", title: "读到的那一项" };
+      const device = await connectDevice(h, client, (delivery) =>
+        delivery["action"] === read.name
+          ? {
+              outcome: "succeeded",
+              readBack: false,
+              evidence: { done: { [lister.list]: [item], truncated: false } },
+            }
+          : { outcome: "succeeded", readBack: true, evidence: { before: item } },
+      );
+      const { act } = setup(h);
+      await addRun(h, "run-1");
+      await act("run-1", { action: read.name, arguments: sampleArguments(read) });
+      h.actions.authorization.current = ownerAllows(true);
+      await expect(
+        act("run-1", {
+          action: registration.name,
+          arguments: { ...sampleArguments(registration), [target.idKey]: "never-listed" },
+        }),
+      ).rejects.toMatchObject({ note: TOOL_RESULT_DEVICE_ACTION_REASON_TARGET_UNKNOWN.text });
+      const acted = await act("run-1", {
+        action: registration.name,
+        arguments: { ...sampleArguments(registration), [target.idKey]: "listed-1" },
+      });
+      expect(acted).toMatchObject({ done: true });
+      expect(device.claimed.at(-1)).toMatchObject({
+        action: registration.name,
+        arguments: { [target.idKey]: "listed-1" },
+      });
+      await device.close();
+      await h.repository.close();
+    },
+  );
 });

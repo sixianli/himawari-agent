@@ -90,7 +90,58 @@ export type PairedDeviceWarning =
       readonly deviceId: string;
       readonly retained: number;
     }
-  | DeviceStreamDiagnostic;
+  | DeviceStreamDiagnostic
+  | DeviceReadProblem;
+
+export const DEVICE_READ_PROBLEM_SOURCES = [
+  "perception_upload",
+  "mirror_upload",
+  "health",
+  "contacts",
+] as const;
+
+export interface DeviceReadProblem {
+  readonly event: "device.read_failed";
+  readonly deviceId: string;
+  readonly source: (typeof DEVICE_READ_PROBLEM_SOURCES)[number];
+  readonly code: string;
+  readonly failures: number;
+  readonly sinceSeconds: number;
+}
+
+const READ_PROBLEM_CODE = /^[A-Z][A-Z0-9_]{0,63}$/u;
+const READ_PROBLEM_MAXIMUM_COUNT = 1_000_000;
+const READ_PROBLEM_MAXIMUM_SECONDS = 366 * 86_400;
+
+export function deviceReadProblem(
+  deviceId: string,
+  body: Readonly<Record<string, unknown>>,
+): DeviceReadProblem | undefined {
+  const { source, code, failures, sinceSeconds } = body;
+  if (
+    Object.keys(body).some(
+      (key) => !["source", "code", "failures", "sinceSeconds"].includes(key),
+    ) ||
+    !(DEVICE_READ_PROBLEM_SOURCES as readonly unknown[]).includes(source) ||
+    typeof code !== "string" ||
+    !READ_PROBLEM_CODE.test(code) ||
+    !Number.isSafeInteger(failures) ||
+    (failures as number) < 1 ||
+    (failures as number) > READ_PROBLEM_MAXIMUM_COUNT ||
+    !Number.isSafeInteger(sinceSeconds) ||
+    (sinceSeconds as number) < 0 ||
+    (sinceSeconds as number) > READ_PROBLEM_MAXIMUM_SECONDS
+  )
+    return undefined;
+  return {
+    event: "device.read_failed",
+    deviceId,
+    source: source as DeviceReadProblem["source"],
+    code,
+    failures: failures as number,
+    sinceSeconds: sinceSeconds as number,
+  };
+}
 
 export interface DeviceStreamDiagnostic {
   readonly event: "device.stream_opened" | "device.stream_closed" | "device.stream_replaced";
@@ -136,6 +187,14 @@ export class PairedDeviceService {
 
   reportStream(diagnostic: DeviceStreamDiagnostic): void {
     this.#options.onWarning?.(diagnostic);
+  }
+
+  reportReadProblem(problem: DeviceReadProblem, now: number): void {
+    const key = `${problem.deviceId}:read:${problem.source}`;
+    const warned = this.#warnedAt.get(key);
+    if (warned !== undefined && now - warned < WARNING_INTERVAL_MILLISECONDS) return;
+    this.#warnedAt.set(key, now);
+    this.#options.onWarning?.(problem);
   }
 
   #now(): Date {

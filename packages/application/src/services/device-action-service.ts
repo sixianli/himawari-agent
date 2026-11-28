@@ -40,11 +40,11 @@ import {
   type DeviceActionContext,
   type DeviceActionDetail,
   type DeviceActionReadBack,
+  type DeviceActionRegistration,
+  type DeviceActionRegistry,
   type DeviceActionTarget,
   type DeviceActionTargetData,
-  type DeviceActionRegistration,
   type DeviceActionUndoPlan,
-  type DeviceActionRegistry,
   describeDeviceActionParameters,
   deviceActionFingerprint,
   validateDeviceActionArguments,
@@ -109,6 +109,14 @@ export interface DeviceActionServiceOptions {
   readonly timeZone: string;
   readonly now: () => string;
   readonly newId: () => string;
+  readonly onReadFailed?: (failure: DeviceActionReadFailure) => void;
+}
+
+export interface DeviceActionReadFailure {
+  readonly event: "device_action.read_failed";
+  readonly action: string;
+  readonly deviceId: string;
+  readonly outcome: Exclude<DeviceActionReportOutcome, "succeeded">;
 }
 
 export interface DeviceActionDescription {
@@ -740,6 +748,13 @@ export class DeviceActionService {
     if (reported.kind === "recorded") {
       await this.#ledger(reported.record);
       this.#options.delivery.settled(id);
+      if (registration?.actionKind === "READ" && outcome !== "succeeded")
+        this.#options.onReadFailed?.({
+          event: "device_action.read_failed",
+          action: existing.action,
+          deviceId,
+          outcome: outcome as Exclude<DeviceActionReportOutcome, "succeeded">,
+        });
     }
     return { kind: reported.kind, state: reported.record.state };
   }

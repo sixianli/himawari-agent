@@ -334,7 +334,7 @@ export function checkIncidentHistory({ root = repositoryRoot, incidents } = {}) 
     for (const id of occurrences) counted.push({ sha, short, id });
     for (const renumbering of renumbered) renumberings.push({ ...renumbering, by: short });
   }
-  for (const { commit, from, to, by } of renumberings) {
+  for (const { commit, from, to, by } of renumberings.reverse()) {
     const target = counted.find((entry) => entry.sha.startsWith(commit) && entry.id === from);
     if (target) target.id = to;
     else errors.push(`INCIDENT_RENUMBER_UNMATCHED ${by} ${commit} ${from}`);

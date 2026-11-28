@@ -179,3 +179,4 @@
 "detail.notOn.systemDenied" = "没打开：iPhone 的“设置”里没允许 Himawari 使用%@。";
 "detail.notOn.unsupported" = "没打开：你的 Himawari 服务器还不支持%@，更新服务器后再试。";
 "detail.notOn.off" = "没打开：服务器没有开启%@，过一会儿再试。";
+"detail.alwaysSettings" = "到“设置”里把位置改成“始终”";

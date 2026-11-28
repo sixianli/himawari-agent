@@ -142,6 +142,42 @@ db.prepare("INSERT INTO model_invocation_identities VALUES (?, ?, ?, ?, ?)").run
     expect(child.stdout).not.toContain("magpie-token-value-should-not-print");
   });
 
+  it("counts each device's sense records by day and kind, sealed, without their content", () => {
+    const directory = temporary();
+    const database = path.join(directory, "product.sqlite");
+    const seeded = spawnSync(
+      process.execPath,
+      [
+        "--no-warnings",
+        "-e",
+        `const { DatabaseSync } = require("node:sqlite");
+const db = new DatabaseSync(process.argv[1]);
+db.exec("CREATE TABLE paired_devices (id TEXT, kind TEXT, status TEXT, last_seen_at TEXT)");
+db.exec("CREATE TABLE perception_settings (revision INTEGER, disabled_senses TEXT, paused_from TEXT, paused_until TEXT, limit_overrides TEXT, updated_at TEXT)");
+db.exec("CREATE TABLE perception_records (device_id TEXT, type TEXT, capture_source TEXT, occurred_at_ms INTEGER, received_at_ms INTEGER, local_day TEXT, evidence TEXT, status TEXT)");
+db.prepare("INSERT INTO paired_devices VALUES (?, ?, ?, ?)").run("dev_phone", "iphone", "active", new Date().toISOString());
+db.prepare("INSERT INTO perception_records VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run("dev_phone", "health.sample", "sensor", Date.now(), Date.now(), "2026-11-28", JSON.stringify({ subtype: "sleep", value: 420, note: "slept badly after the party" }), "active");`,
+        database,
+      ],
+      { encoding: "utf8" },
+    );
+    expect(seeded.status).toBe(0);
+    const { child, privateKey } = run("senses", directory, {
+      HIMAWARI_OPS_NODE: process.execPath,
+      HIMAWARI_OPS_DATABASE: database,
+    });
+    expect(child.status, child.stderr).toBe(0);
+    expect(child.stdout).not.toContain("health.sample");
+    expect(child.stdout).not.toContain("secret dinner");
+    const log = path.join(directory, "ops.log");
+    writeFileSync(log, child.stdout);
+    const opened = spawnSync("bash", [opener, log, privateKey], { encoding: "utf8" });
+    expect(opened.status).toBe(0);
+    expect(opened.stdout).toContain('"type":"health.sample","subtype":"sleep"');
+    expect(opened.stdout).toContain('SENSES_DEVICES [{"id":"dev_phone","kind":"iphone"');
+    expect(opened.stdout).not.toContain("slept badly");
+  });
+
   it("collects before it restarts and confirms the service came back", () => {
     const directory = temporary();
     const { child } = run("restart", directory, {
