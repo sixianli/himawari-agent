@@ -23,6 +23,9 @@ export const GENERATED_INCIDENT_ID = /^I-\d{6}-[a-z0-9]{4}$/;
 const INCIDENT_LINE = /^Incident:[ \t]*(.*?)[ \t]*$/gm;
 const FOLLOW_UP_LINE = /^Incident-follow-up:[ \t]*(.*?)[ \t]*$/gm;
 const PREMISE_LINE = /^Premise:[ \t]*\S/m;
+const AMEND_LINE = /^Incident-amend:[ \t]*(.*?)[ \t]*$/gm;
+const AMEND_VALUE = /^([0-9a-f]{7,40})[ \t]+((?:Incident|Incident-follow-up|Premise):.*)$/;
+const REPLACED_LINE = /^(?:Incident|Incident-follow-up):/;
 const GITHUB_COMMITTER = "noreply@github.com";
 const TEST_FILE = /(^|\/)test_[^/]+\.py$|\.test\.[cm]?[jt]sx?$|Tests\.swift$/;
 const RUNNER_FILES = ["package.json"];
@@ -138,6 +141,7 @@ export function readCommitIncidents(message) {
   const invalid = [
     ...values.filter((value) => value !== "none" && !INCIDENT_ID.test(value)),
     ...followUps.filter((value) => !INCIDENT_ID.test(value)),
+    ...readAmendments(text).invalid,
   ];
   return {
     premise: PREMISE_LINE.test(text),
@@ -146,6 +150,29 @@ export function readCommitIncidents(message) {
     followUps: [...new Set(followUps.filter((value) => INCIDENT_ID.test(value)))],
     invalid,
   };
+}
+
+export function readAmendments(message) {
+  const amendments = [];
+  const invalid = [];
+  for (const match of message.matchAll(AMEND_LINE)) {
+    const found = AMEND_VALUE.exec(match[1]);
+    if (!found) invalid.push(`Incident-amend: ${match[1]}`);
+    else amendments.push({ target: found[1], line: found[2] });
+  }
+  return { amendments, invalid };
+}
+
+export function amendedMessage(message, lines) {
+  if (lines.length === 0) return message;
+  const replaces = lines.some((line) => REPLACED_LINE.test(line));
+  const kept = replaces
+    ? message
+        .split("\n")
+        .filter((line) => !REPLACED_LINE.test(line))
+        .join("\n")
+    : message;
+  return `${kept}\n${lines.join("\n")}\n`;
 }
 
 function repeatsWithoutPremise(occurrences, premise, counts) {
@@ -259,10 +286,26 @@ export function checkIncidentHistory({ root = repositoryRoot, incidents } = {}) 
   const required = requiredCommits(root, ruleActivation(root, RULE_MARK));
   const premiseRequired = requiredCommits(root, ruleActivation(root, PREMISE_MARK));
   const log = git(root, ["log", "--no-merges", "--format=%H%x00%ce%x00%B%x1e", "HEAD"]);
+  const records = log
+    .split("\x1e")
+    .map((record) => record.replace(/^\n/, "").split("\0"))
+    .filter(([sha, , message]) => sha && message !== undefined);
+  const amended = new Map();
+  for (const [sha, , message] of records)
+    for (const { target, line } of readAmendments(message).amendments) {
+      const matches = records.filter(([candidate]) => candidate.startsWith(target));
+      if (matches.length !== 1) {
+        errors.push(
+          `INCIDENT_AMEND_TARGET_${matches.length === 0 ? "UNKNOWN" : "AMBIGUOUS"} ${sha.slice(0, 12)} ${target}`,
+        );
+        continue;
+      }
+      const full = matches[0][0];
+      amended.set(full, [...(amended.get(full) ?? []), line]);
+    }
   const seen = new Map();
-  for (const record of log.split("\x1e")) {
-    const [sha, committer, message] = record.replace(/^\n/, "").split("\0");
-    if (!sha || message === undefined) continue;
+  for (const [sha, committer, original] of records) {
+    const message = amendedMessage(original, amended.get(sha) ?? []);
     const short = sha.slice(0, 12);
     const { declared, occurrences, followUps, invalid, premise } = readCommitIncidents(message);
     if (required.has(sha) && committer !== GITHUB_COMMITTER) {
@@ -322,15 +365,25 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       try {
         picked = handPickedIds({ incidents });
       } catch {}
+      const message = readFileSync(argumentsGiven[1], "utf8");
+      const unresolved = readAmendments(message).amendments.filter(({ target }) => {
+        try {
+          git(repositoryRoot, ["rev-parse", "--verify", "--quiet", `${target}^{commit}`]);
+          return false;
+        } catch {
+          return true;
+        }
+      });
       const errors = [
         ...listErrors,
         ...picked,
-        ...checkCommitMessage(readFileSync(argumentsGiven[1], "utf8"), counts),
+        ...unresolved.map(({ target }) => `INCIDENT_AMEND_TARGET_UNKNOWN commit-msg ${target}`),
+        ...checkCommitMessage(message, counts),
       ];
       for (const error of errors) process.stderr.write(`${error}\n`);
       if (errors.length > 0) {
         process.stderr.write(
-          "INCIDENT_TRAILER_HELP every commit needs a line `Incident: I-<n>` (this commit fixes one more occurrence of that incident), `Incident-follow-up: I-<n>` (more work on an occurrence already counted) or `Incident: none`; a commit that fixes the second or a later occurrence of an incident also needs a line `Premise: <the assumption that turned out wrong>`; see .claude/rules/incident-gates.md\n",
+          "INCIDENT_TRAILER_HELP every commit needs a line `Incident: I-<n>` (this commit fixes one more occurrence of that incident), `Incident-follow-up: I-<n>` (more work on an occurrence already counted) or `Incident: none`; a commit that fixes the second or a later occurrence of an incident also needs a line `Premise: <the assumption that turned out wrong>`; a line missed or wrong in a pushed commit is fixed by a later commit with `Incident-amend: <sha> <the line>`, not by rewriting history; see .claude/rules/incident-gates.md\n",
         );
         process.exit(1);
       }
