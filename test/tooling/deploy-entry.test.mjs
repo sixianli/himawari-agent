@@ -143,6 +143,29 @@ describe("himawari-deploy-entry", () => {
     }
   });
 
+  it("runs the production ops script from main without touching the deploy checkout", () => {
+    const { repo } = source();
+    mkdirSync(path.join(repo, "scripts/operations"), { recursive: true });
+    writeFileSync(
+      path.join(repo, "scripts/operations/production-ops.sh"),
+      '#!/bin/bash\necho "OPS_STUB action=$1 key=$(head -c 4 "$HIMAWARI_OPS_PUBLIC_KEY") lock=$HIMAWARI_OPS_LOCK"\n',
+    );
+    writeFileSync(path.join(repo, "scripts/operations/production-ops.pub.pem"), "KEY!");
+    git(repo, "add", "-A");
+    git(repo, "commit", "-q", "-m", "ops");
+    const base = temporary();
+    const child = runEntry("ops diagnose", repo, fakeTools(), base);
+    expect(child.status).toBe(0);
+    expect(child.stdout).toContain("OPS_STUB action=diagnose key=KEY!");
+    expect(child.stdout).toContain(`lock=${path.join(base, "deploy.lock")}`);
+    expect(spawnSync("test", ["-e", path.join(base, "checkout")]).status).not.toBe(0);
+    for (const request of ["ops", "ops stop", "ops diagnose; id", "ops restart now"]) {
+      const refused = runEntry(request, repo);
+      expect(refused.status).toBe(64);
+      expect(refused.stderr).toContain("REQUEST_INVALID");
+    }
+  });
+
   it("refuses a commit that exists in the repository but is not on main", () => {
     const { repo, side } = source();
     const child = runEntry(`deploy ${side} - 0`, repo);

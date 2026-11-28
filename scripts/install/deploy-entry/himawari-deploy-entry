@@ -11,8 +11,24 @@ refuse() {
 }
 
 request="${SSH_ORIGINAL_COMMAND:-}"
+if [[ "$request" =~ ^ops\ (diagnose|restart)$ ]]; then
+  action="${BASH_REMATCH[1]}"
+  mkdir -p "$base"
+  mirror="$base/ops-mirror.git"
+  if [[ ! -d "$mirror" ]]; then
+    git init --quiet --bare "$mirror" || refuse CLONE_FAILED "$mirror" 70
+  fi
+  git -C "$mirror" fetch --quiet "$repo_url" +refs/heads/main:refs/heads/main || refuse FETCH_FAILED "$repo_url main" 70
+  ops="$(mktemp -d)"
+  trap 'rm -rf "$ops"' EXIT
+  git -C "$mirror" show main:scripts/operations/production-ops.sh > "$ops/production-ops.sh" || refuse OPS_MISSING "main has no scripts/operations/production-ops.sh" 70
+  git -C "$mirror" show main:scripts/operations/production-ops.pub.pem > "$ops/production-ops.pub.pem" || refuse OPS_MISSING "main has no scripts/operations/production-ops.pub.pem" 70
+  echo "OPS_FROM main $(git -C "$mirror" rev-parse main)"
+  HIMAWARI_OPS_PUBLIC_KEY="$ops/production-ops.pub.pem" HIMAWARI_OPS_LOCK="$(realpath -m "$base/deploy.lock")" bash "$ops/production-ops.sh" "$action"
+  exit $?
+fi
 if [[ ! "$request" =~ ^deploy\ ([0-9a-f]{40})\ (-|[0-9a-f]{40})\ ([01])$ ]]; then
-  refuse REQUEST_INVALID "only 'deploy <40-hex commit> <40-hex since or -> <0|1 force>' is accepted"
+  refuse REQUEST_INVALID "only 'deploy <40-hex commit> <40-hex since or -> <0|1 force>' or 'ops <diagnose|restart>' is accepted"
 fi
 commit="${BASH_REMATCH[1]}"
 since="${BASH_REMATCH[2]}"

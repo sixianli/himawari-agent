@@ -1,0 +1,116 @@
+import { spawn, spawnSync } from "node:child_process";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+
+const operations = path.resolve(import.meta.dirname, "../../scripts/operations");
+const script = path.join(operations, "production-ops.sh");
+const opener = path.join(operations, "open-ops-diagnostics.sh");
+const directories = [];
+
+function temporary() {
+  const directory = mkdtempSync(path.join(os.tmpdir(), "production-ops-"));
+  directories.push(directory);
+  return directory;
+}
+
+afterEach(() => {
+  for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true });
+});
+
+function keys(directory) {
+  const privateKey = path.join(directory, "private.pem");
+  const publicKey = path.join(directory, "public.pem");
+  expect(
+    spawnSync("openssl", ["genpkey", "-algorithm", "RSA", "-pkeyopt", "rsa_keygen_bits:2048", "-out", privateKey]).status,
+  ).toBe(0);
+  expect(spawnSync("openssl", ["pkey", "-in", privateKey, "-pubout", "-out", publicKey]).status).toBe(0);
+  return { privateKey, publicKey };
+}
+
+function fakes(directory) {
+  const bin = path.join(directory, "bin");
+  mkdirSync(bin);
+  const log = path.join(directory, "calls");
+  writeFileSync(
+    path.join(bin, "systemctl"),
+    `#!/bin/bash\necho "systemctl $*" >> ${JSON.stringify(log)}\ncase "$1" in\n  show) echo "ActiveState=active"; echo "SubState=running" ;;\n  is-active) echo active ;;\n  restart) ;;\nesac\n`,
+  );
+  writeFileSync(
+    path.join(bin, "journalctl"),
+    `#!/bin/bash\necho 'owner said: my secret dinner plans {"event":"device.stream_opened","lastDrop":"silent"}'\necho '{"event":"device.stream_closed","code":"RUN_STUCK"}'\n`,
+  );
+  chmodSync(path.join(bin, "systemctl"), 0o755);
+  chmodSync(path.join(bin, "journalctl"), 0o755);
+  return { bin, log };
+}
+
+function run(action, directory, extra = {}) {
+  const { bin } = fakes(directory);
+  const { publicKey, privateKey } = keys(directory);
+  const child = spawnSync("bash", [script, action], {
+    encoding: "utf8",
+    env: {
+      PATH: process.env.PATH,
+      HIMAWARI_OPS_PUBLIC_KEY: publicKey,
+      HIMAWARI_OPS_SYSTEMCTL: path.join(bin, "systemctl"),
+      HIMAWARI_OPS_JOURNALCTL: path.join(bin, "journalctl"),
+      HIMAWARI_OPS_NODE: path.join(directory, "no-node"),
+      HIMAWARI_OPS_START_WAIT: "4",
+      ...extra,
+    },
+  });
+  return { child, privateKey };
+}
+
+describe("production-ops", () => {
+  it("prints only content-free names and counts in the clear and seals the journal for the key holder", () => {
+    const directory = temporary();
+    const { child, privateKey } = run("diagnose", directory);
+    expect(child.status).toBe(0);
+    expect(child.stdout).toContain("OPS_SERVICE himawari-prod.service ActiveState=active");
+    expect(child.stdout).toContain('"event":"device.stream_opened"=1');
+    expect(child.stdout).toContain('"code":"RUN_STUCK"=1');
+    expect(child.stdout).not.toContain("secret dinner");
+    expect(child.stdout).toContain("OPS_DONE");
+    const log = path.join(directory, "ops.log");
+    writeFileSync(log, child.stdout);
+    const opened = spawnSync("bash", [opener, log, privateKey], { encoding: "utf8" });
+    expect(opened.status).toBe(0);
+    expect(opened.stdout).toContain("owner said: my secret dinner plans");
+  });
+
+  it("collects before it restarts and confirms the service came back", () => {
+    const directory = temporary();
+    const { child } = run("restart", directory, { HIMAWARI_OPS_LOCK: path.join(directory, "deploy.lock") });
+    expect(child.status).toBe(0);
+    const calls = readFileSync(path.join(directory, "calls"), "utf8");
+    expect(calls).toContain("systemctl restart himawari-prod.service");
+    expect(child.stdout.indexOf("OPS_SEALED_BEGIN")).toBeLessThan(child.stdout.indexOf("OPS_RESTARTED"));
+  });
+
+  it("does not restart while a deploy holds the lock", async () => {
+    const directory = temporary();
+    const lock = path.join(directory, "deploy.lock");
+    const ready = path.join(directory, "ready");
+    const holder = spawn("bash", ["-c", `exec 9> ${JSON.stringify(lock)}; flock -n 9; touch ${JSON.stringify(ready)}; exec sleep 30`], { stdio: "ignore" });
+    try {
+      const until = Date.now() + 5000;
+      while (Date.now() < until && spawnSync("test", ["-e", ready]).status !== 0) spawnSync("sleep", ["0.1"]);
+      const { child } = run("restart", directory, { HIMAWARI_OPS_LOCK: lock });
+      expect(child.status).toBe(75);
+      expect(child.stderr).toContain("OPS_REFUSED BUSY");
+      expect(spawnSync("test", ["-e", path.join(directory, "calls")]).status).not.toBe(0);
+    } finally {
+      holder.kill("SIGKILL");
+    }
+  });
+
+  it("refuses anything but diagnose and restart", () => {
+    const directory = temporary();
+    const { child } = run("stop", directory);
+    expect(child.status).toBe(64);
+    expect(child.stderr).toContain("OPS_REFUSED ACTION_INVALID");
+  });
+});
