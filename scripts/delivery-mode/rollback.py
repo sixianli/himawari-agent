@@ -75,6 +75,15 @@ def main():
     if consistency.exists() and subprocess.run(['/usr/bin/python3', '-I', str(consistency), str(packet)], stdout=subprocess.DEVNULL, check=False).returncode != 0:
         fail('PACKET_INCONSISTENT')
     plan = rollback_plan(packet)
+    try:
+        route = recover(packet, plan)
+    except SystemExit as stopped:
+        keep_old_release_running(plan, stopped)
+    print('ROLLBACK_PASSED route=' + route + ' release=' + plan['oldPrefix'])
+    return 0
+
+
+def recover(packet, plan):
     prepared = remote(plan, 'prepare')
     if prepared['route'] == 'restore':
         step(packet, 'S2_INSPECT')
@@ -83,8 +92,18 @@ def main():
         step(packet, plan['restoreAction'])
         step(packet, plan['controlAction'])
     remote(plan, 'start')
-    print('ROLLBACK_PASSED route=' + prepared['route'] + ' release=' + plan['oldPrefix'])
-    return 0
+    return prepared['route']
+
+
+def keep_old_release_running(plan, stopped, run_remote=None):
+    print(str(stopped.code), file=sys.stderr, flush=True)
+    print('ROLLBACK_FALLBACK_START: making sure the old release is running even though the rollback stopped', flush=True)
+    try:
+        result = (run_remote or remote)(plan, 'fallback')
+    except SystemExit as fallback_stopped:
+        raise SystemExit(str(stopped.code) + ' and ' + str(fallback_stopped.code)) from None
+    print('ROLLBACK_FALLBACK_RUNNING started=' + str(result.get('started')).lower() + ' release=' + plan['oldPrefix'], flush=True)
+    raise SystemExit(str(stopped.code) + ' (the old release is running; the rollback did not finish, so check its data before deploying again)')
 
 
 if __name__ == '__main__':

@@ -118,6 +118,13 @@ def first_tools_restore(frozen_authorization):
     return first
 
 
+def old_root_files(first_tools):
+    supervisor = Path('__PKT_OLD_OPERATIONS__/pair-supervisor.mjs')
+    if first_tools:
+        return [supervisor]
+    return [Path('__PKT_OLD_OPERATIONS__/runtime-protection.json'), Path('__PKT_OLD_OPERATIONS__/cloud-protected-prepare.mjs'), supervisor]
+
+
 def control_files(first_tools):
     entries = [(CONFIG, 'config.json', __PKT_SERVICE_UID__), (UNIT, 'unit.service', 0), (SNAPSHOT, 'capability-deployment.json', __PKT_SERVICE_UID__), (ATTESTATION, 'startup-attestation.json', __PKT_SERVICE_UID__)]
     return [entry for entry in entries if not first_tools or os.path.lexists(entry[0])]
@@ -375,7 +382,8 @@ def main():
         for entry in original['preserved'] + original['preservedQualification']:
             data = safe_file(entry['path'], entry.get('ownerUid', 0), 0o600)
             require(sha(data) == entry['sha256'], '__PKT_LABEL_UPPER___S9_ORIGINAL_BACKUP_CHANGED')
-        for filename in (Path('__PKT_OLD_OPERATIONS__/runtime-protection.json'), Path('__PKT_OLD_OPERATIONS__/cloud-protected-prepare.mjs'), Path('__PKT_OLD_OPERATIONS__/pair-supervisor.mjs')):
+        first_tools = first_tools_restore(json.loads(safe_file(OPS / 'inputs/s0-db-readback.json'))['authorization'])
+        for filename in old_root_files(first_tools):
             require(sha(safe_file(filename)) == preserved[str(filename)]['sha256'], '__PKT_LABEL_UPPER___S9_SECOND_ROOT_PROTECTION_CHANGED')
         for entry in original['preservedQualification']:
             require(sha(safe_file(entry['source'])) == entry['sha256'], '__PKT_LABEL_UPPER___S9_SECOND_QUALIFICATION_CHANGED')
@@ -383,7 +391,6 @@ def main():
         original_unit = safe_file(EVIDENCE / 'original-unit.service', 0, 0o600)
         require(sha(original_config) == OLD_CONFIG_SHA and sha(original_unit) == original_unit_sha, '__PKT_LABEL_UPPER___S9_ORIGINAL_CONTROL_BYTES_CHANGED')
         require(json.loads(original_config).get('runPolicy', {}).get('coding', {}).get('grantId') == workspace_plan(binding)['grantId'], '__PKT_LABEL_UPPER___S9_ORIGINAL_GRANT_CHANGED')
-        first_tools = first_tools_restore(json.loads(safe_file(OPS / 'inputs/s0-db-readback.json'))['authorization'])
         report['preservedCurrentControlFiles'] = [retain('s9-control-current-' + suffix + '-' + name, safe_file(filename, uid), uid) for filename, name, uid in control_files(first_tools)]
         retain_json('s9-control-before-change-' + suffix + '.json', report)
         service()
@@ -403,10 +410,9 @@ def main():
         command(['/usr/bin/systemctl', 'daemon-reload'], 's9-control-daemon-reload-' + suffix, report)
         after_service = service()
         require(report['targetPrefix'] in after_service['ExecStart'] and str(CONFIG) in after_service['ExecStart'], '__PKT_LABEL_UPPER___S9_RELOADED_PREFIX_CHANGED')
-        expected_helper = '__PKT_OLD_OPERATIONS__/cloud-protected-prepare.mjs'
-        require(expected_helper in after_service['ExecStartPre'], '__PKT_LABEL_UPPER___S9_RELOADED_PREPARE_CHANGED')
-        expected_protection = '__PKT_OLD_OPERATIONS__/runtime-protection.json'
-        require('HIMAWARI_RUNTIME_PROTECTION_FILE=' + expected_protection in after_service['Environment'], '__PKT_LABEL_UPPER___S9_RELOADED_PROTECTION_CHANGED')
+        if not first_tools:
+            require('__PKT_OLD_OPERATIONS__/cloud-protected-prepare.mjs' in after_service['ExecStartPre'], '__PKT_LABEL_UPPER___S9_RELOADED_PREPARE_CHANGED')
+            require('HIMAWARI_RUNTIME_PROTECTION_FILE=__PKT_OLD_OPERATIONS__/runtime-protection.json' in after_service['Environment'], '__PKT_LABEL_UPPER___S9_RELOADED_PROTECTION_CHANGED')
         report['serviceAfter'] = after_service
         report['databaseAfterControlRestore'] = independent_database(binding, schema, restored)
         report['capabilityUpgradeDiscarded'] = report['databaseAfterControlRestore']['capabilityUpgradeDiscarded']

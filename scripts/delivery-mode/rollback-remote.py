@@ -206,13 +206,24 @@ def start(plan, settle_seconds=20, homepage_timeout_seconds=180):
     return {'serviceBefore': before, 'serviceAfter': settled, 'homepage': {**target, 'status': homepage}}
 
 
+def fallback(plan, start_release=None):
+    state = service(plan['unit'])
+    if state.get('SubState') == 'running':
+        return {'serviceBefore': state, 'started': False}
+    if sha(Path(plan['unitPath']).read_bytes()) != plan['oldUnitSha256']:
+        fail('ROLLBACK_FALLBACK_UNIT_NOT_OLD')
+    if state.get('ActiveState') == 'failed':
+        subprocess.run(['/usr/bin/systemctl', 'reset-failed', plan['unit']], check=True, timeout=30, env=SYSTEM_ENV)
+    return {'serviceBefore': state, 'started': True, **(start_release or start)(plan)}
+
+
 def main():
-    if len(sys.argv) != 3 or sys.argv[1] not in ('prepare', 'start'):
+    if len(sys.argv) != 3 or sys.argv[1] not in ('prepare', 'start', 'fallback'):
         fail('ROLLBACK_USAGE')
     plan = json.loads(base64.b64decode(sys.argv[2]))
     if os.getuid() != 0 or socket.gethostname() != plan['hostname']:
         fail('ROLLBACK_PRODUCTION_ROOT_REQUIRED')
-    result = prepare(plan) if sys.argv[1] == 'prepare' else start(plan)
+    result = {'prepare': prepare, 'start': start, 'fallback': fallback}[sys.argv[1]](plan)
     print('ROLLBACK_REMOTE_RESULT ' + json.dumps({'mode': sys.argv[1], 'passed': True, **result}))
     return 0
 

@@ -2374,6 +2374,45 @@ class MaintenanceFailureDetailTest(unittest.TestCase):
             self.assertIn("'failedCondition', 'failureDetail'", source, relative)
 
 
+class MaintenanceUnexpectedFailureDetailTest(unittest.TestCase):
+    def test_I261128_an_unexpected_maintenance_failure_records_its_message_and_frame(self):
+        source = (PACKET_TEMPLATE / 'maintenance/run-maintenance.mjs').read_text()
+        self.assertIn('report.failureDetail = unexpectedFailureDetail(error);', source)
+        functions = []
+        for name in ('precheckFailureCode', 'unexpectedFailureDetail'):
+            start = source.index(f'export function {name}')
+            functions.append(source[start:source.index('\n}\n', start) + 3].replace('export function', 'function'))
+        script = '\n'.join(functions) + '\n'.join([
+            'const lines = [];',
+            'function load() { throw new TypeError("config.models.limits is not iterable \u2603\\nsecond line"); }',
+            'try { load(); } catch (error) { lines.push(unexpectedFailureDetail(error)); }',
+            'lines.push(unexpectedFailureDetail("plain"));',
+            'console.log(JSON.stringify(lines));',
+        ])
+        with tempfile.TemporaryDirectory() as directory:
+            module = Path(directory) / 'detail.mjs'
+            module.write_text(script)
+            child = subprocess.run(['node', str(module)], capture_output=True, text=True, check=False)
+        self.assertEqual(child.returncode, 0, child.stderr)
+        thrown, plain = json.loads(child.stdout)
+        self.assertEqual((thrown['code'], thrown['message']), ('TypeError', 'config.models.limits is not iterable ?'))
+        self.assertTrue(thrown['frame'].startswith('load ('), thrown)
+        self.assertEqual(plain, {'code': 'string'})
+
+
+class RestoreControlFirstToolsTest(unittest.TestCase):
+    RELATIVE = 'maintenance/S9-control-files.py'
+
+    def test_I261128_restoring_to_a_release_without_tools_checks_only_the_old_supervisor(self):
+        source = (PACKET_TEMPLATE / self.RELATIVE).read_text()
+        self.assertIn('for filename in old_root_files(first_tools):', source)
+        self.assertIn('if not first_tools:', source)
+        namespace = execute_definitions(self.RELATIVE, template_definitions(self.RELATIVE, {'old_root_files'}), {'Path': Path})
+        files = namespace['old_root_files']
+        self.assertEqual([path.name for path in files(True)], ['pair-supervisor.mjs'])
+        self.assertEqual([path.name for path in files(False)], ['runtime-protection.json', 'cloud-protected-prepare.mjs', 'pair-supervisor.mjs'])
+
+
 class ForcedStopTest(unittest.TestCase):
     RELATIVE = 'systemd/S2-stop-and-inspect.py'
 
