@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
+trap 'echo "SCRIPT_COMMAND_FAILED file=${BASH_SOURCE[0]} line=$LINENO exit=$? command=$BASH_COMMAND" >&2' ERR
 umask 077
 export PATH=/usr/bin:/bin:/usr/sbin:/sbin
 test "$#" -eq 1
@@ -8,11 +9,10 @@ test "$(hostname)" = __PKT_HOSTNAME__
 test "$(id -u)" -eq 0
 test "$(uname -s)" = Linux
 account=$(getent passwd himawari-prod)
-IFS=: read -r account_name _ service_uid service_gid _ account_home account_shell <<< "$account"
+IFS=: read -r account_name _ service_uid service_gid _ _ account_shell <<< "$account"
 test "$account_name" = himawari-prod
 test "$service_uid" -gt 0
 test "$service_gid" -gt 0
-test "$account_home" = /var/lib/himawari/state
 test "$account_shell" = /usr/sbin/nologin
 test "$(id -G himawari-prod)" = "$service_gid"
 stage=/var/tmp/himawari-__PKT_LABEL__-__PKT_DATE_COMPACT__

@@ -4,18 +4,18 @@ import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import {
+  ExecutionEnvironmentError,
   type RunExecutionLeaseClaim,
   type RuntimeToolInvocation,
-  ExecutionEnvironmentError,
   recoverSandboxExecutionsAtStartup,
   type SandboxExecutionAdmissionRecord,
   type SandboxExecutionJournalPort,
   type SandboxExecutionProjectionContext,
   SandboxExecutionReconciliationService,
-  SessionTraceRecorder,
-  ThreadExecutionProjection,
   type SandboxExecutionRecord,
   type SandboxExecutionRunInventory,
+  SessionTraceRecorder,
+  ThreadExecutionProjection,
 } from "@himawari-agent/application";
 import {
   createIdempotencyKey,
@@ -25,16 +25,16 @@ import {
 } from "@himawari-agent/domain";
 import {
   type ExecutionV2Request,
-  type SandboxExecutionFacts,
-  type SandboxOperationContract,
   SANDBOX_EXECUTION_BACKEND_REFS,
   SANDBOX_TOOL_RESULT_UNRECOVERABLE,
-  sandboxUnrecoverableResultOperationKey,
+  type SandboxExecutionFacts,
+  type SandboxOperationContract,
   SRT_BACKEND_REF,
   SRT_TASK_ENVIRONMENT_BACKEND_REF,
   sandboxExecutionFactsSchema,
-  sandboxExecutionScopeSchema,
   sandboxExecutionPlanCandidateV2Schema,
+  sandboxExecutionScopeSchema,
+  sandboxUnrecoverableResultOperationKey,
 } from "@himawari-agent/execution-contracts";
 import {
   applyMigrations,
@@ -47,16 +47,16 @@ import {
   SqliteRunDispatchOperations,
   SqliteUnconfirmedSandboxPurge,
 } from "@himawari-agent/persistence-sqlite";
-import { createReferenceAdapterSet } from "@himawari-agent/testing";
-import { SANDBOX_RESERVATION_NEVER_STARTED_SQL } from "../../packages/persistence-sqlite/src/sqlite-sandbox-reservation-never-started.ts";
+import { createReferenceAdapterSet, testModelEgress } from "@himawari-agent/testing";
 import { describe, expect, it, vi } from "vitest";
-import { ProductionRunDispatchLoop } from "../../apps/agent-service/src/production-run-dispatch-loop.ts";
 import { createProductionRunComposition } from "../../apps/agent-service/src/production-run-composition.ts";
+import { ProductionRunDispatchLoop } from "../../apps/agent-service/src/production-run-dispatch-loop.ts";
 import { ProductionRuntimeTools } from "../../apps/agent-service/src/production-runtime-tools.ts";
 import { createProductionSandboxToolResult } from "../../apps/agent-service/src/production-sandbox-tool-result.ts";
 import { createProductionWorkerParentBindingRegistry } from "../../apps/agent-service/src/production-worker-parent-binding-registry.ts";
 import { readThreadExecutionEnvironment } from "../../packages/application/src/services/thread-execution-environment.ts";
 import { readThreadExecutionResources } from "../../packages/application/src/services/thread-execution-resources.ts";
+import { SANDBOX_RESERVATION_NEVER_STARTED_SQL } from "../../packages/persistence-sqlite/src/sqlite-sandbox-reservation-never-started.ts";
 import { createFauxModelFixture } from "../../packages/runtime-pi/test/faux-model-fixture.ts";
 import {
   sandboxV2Admission as admission,
@@ -76,7 +76,6 @@ import {
   T2,
 } from "../fixtures/sqlite-capability-invocation-fixture.ts";
 import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
-import { testModelEgress } from "@himawari-agent/testing";
 
 type Fixture = Awaited<ReturnType<typeof openSandboxJournal>>;
 const execFile = promisify(execFileCallback);
@@ -6148,7 +6147,6 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
             capabilities: [],
             capabilityHandleRefs: coding ? [] : [handleRef],
             memoryLimit: 1,
-            maxSelectedMemories: 0,
           }),
           clock,
           ids: adapters.ids,

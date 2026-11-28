@@ -10,10 +10,10 @@ import {
 import {
   initializeStateRoot,
   JsonFileConfigurationPort,
+  storedProductConfiguration,
   writeAuthorityFile,
 } from "@himawari-agent/platform-node";
 
-/** Explicit host administration; this command never publishes an HTTP bootstrap. */
 export async function runInitializeCommand(arguments_: readonly string[]): Promise<unknown> {
   if (
     arguments_.length !== 3 ||
@@ -33,8 +33,6 @@ export async function runInitializeCommand(arguments_: readonly string[]): Promi
     !configuration.memory.storagePath.startsWith(`${path.join(root, "data")}${path.sep}`)
   )
     throw new Error("INITIALIZATION_LAYOUT_INVALID");
-  // mkdir without recursive is the installation claim. Existing directories, files
-  // and symlinks are never overwritten, including after an interrupted attempt.
   try {
     await mkdir(root, { mode: 0o700 });
   } catch (error) {
@@ -57,7 +55,7 @@ export async function runInitializeCommand(arguments_: readonly string[]): Promi
     } finally {
       database.close();
     }
-    const { loadedAt: _loadedAt, ...storedConfiguration } = configuration;
+    const storedConfiguration = storedProductConfiguration(configuration);
     const filename = path.join(root, "configuration.json");
     const file = await open(filename, "wx", 0o600);
     try {
@@ -66,8 +64,6 @@ export async function runInitializeCommand(arguments_: readonly string[]): Promi
     } finally {
       await file.close();
     }
-    // The authority marker is published last. A failed/partial installation cannot
-    // pass normal service startup, which requires this file and the matching DB.
     await writeAuthorityFile(layout, authority);
     return {
       schemaVersion: 1,

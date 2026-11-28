@@ -1,21 +1,22 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
-import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   AgentThreadGatewayService,
   type ApplePushConfiguration,
-  createProactiveSeal,
   DEFAULT_HOME_FEED,
   DEFAULT_VOICE_GATES,
   DEVICE_CONFIGURATION_DEFAULTS,
   type DeviceActionAuthorizationPort,
   type DeviceActionOpenRequestPort,
+  type DeviceActionReadFailure,
   type DeviceActionRecord,
   type DeviceActionRegistry,
   type DeviceConfiguration,
   defaultDeviceHardLimits,
+  deviceVoiceTimingLister,
+  deviceVoiceTimingRecorder,
   type GatewayAuthenticationContext,
   PERCEPTION_CONFIGURATION_DEFAULTS,
   type PerceptionConfiguration,
@@ -28,8 +29,6 @@ import {
   ThreadForkService,
   ThreadQueryService,
   VaultService,
-  VOICE_ADDRESSEE_DEFAULTS,
-  type VoiceAddresseeConfiguration,
   type VoiceGates,
 } from "@himawari-agent/application";
 import {
@@ -58,11 +57,15 @@ import {
   BrowserTextPayloadReader,
   buildHttpGatewayServer,
   DeviceActionHub,
+  type DeviceConnectionsPort,
   DeviceNotificationHub,
-  type DevicePairingAccess,
   DevicePresence,
   DevicePushService,
+  DeviceSignInService,
+  displaySetupCode,
   EnvelopePayloadProtector,
+  FileSetupCodeSource,
+  generateSetupCode,
   NodeVaultCrypto,
   PairedDeviceService,
   type PairedDeviceWarning,
@@ -70,7 +73,7 @@ import {
   PerceptionService,
   ScopedThreadSearchTokenizer,
   SessionBoundCsrfService,
-  VoiceAddresseeDecision,
+  writeSetupCode,
 } from "@himawari-agent/platform-node";
 import {
   buildDeviceTestRequest,
@@ -78,20 +81,26 @@ import {
   type DeviceTestRequestInput,
   generateDeviceTestKeyPair,
   ManualClock,
+  SoftwarePasskey,
 } from "@himawari-agent/testing";
 import type { FastifyInstance } from "fastify";
 import { expect } from "vitest";
 import { ContextExternalContent } from "../../apps/agent-service/src/context-external-content.ts";
 import { createProductionApprovalGateway } from "../../apps/agent-service/src/production-approval-gateway.ts";
 import { createProductionDeviceActions } from "../../apps/agent-service/src/production-device-actions.ts";
+import {
+  type DeviceChatCatalogEntry,
+  deviceChatModels,
+} from "../../apps/agent-service/src/production-device-chat-models.ts";
 import { ProductionHomeControl } from "../../apps/agent-service/src/production-home.ts";
 import {
   ProductionHttpPayloadAdmission,
   ProductionThreadGatewayAccessPolicy,
   utterancePrefetch,
-  voiceAddressee,
 } from "../../apps/agent-service/src/production-http-composition.ts";
-import { ProductionMuseControl } from "../../apps/agent-service/src/production-muse-intake-control.ts";
+import { ProductionSensitiveInterceptionsControl } from "../../apps/agent-service/src/production-sensitive-interceptions-control.ts";
+import { WebPushPresence } from "../../apps/agent-service/src/production-web-push.ts";
+import { ProductionWebPushControl } from "../../apps/agent-service/src/production-web-push-control.ts";
 
 export const ownerId = createOwnerId("owner-device-api");
 export const agentId = createAgentId("agent-device-api");
@@ -110,73 +119,11 @@ export const webToken = "web-session-token-for-device-api-test";
 const csrfKey = new Uint8Array(32).fill(5);
 export const ownerSubjectRef = "cloudflare-access:owner-device-api";
 const temporaryDirectories: string[] = [];
-const decisionServers: Server[] = [];
 
 export async function removeDeviceHarnessDirectories(): Promise<void> {
   await Promise.all([
     ...temporaryDirectories.splice(0).map((directory) => rm(directory, { recursive: true })),
-    ...decisionServers
-      .splice(0)
-      .map((server) => new Promise<void>((resolve) => server.close(() => resolve()))),
   ]);
-}
-
-export const DECISION_GATEWAY_KEY = "proxy-injected";
-export const DECISION_MODEL = "typesafe-ai/jev";
-
-export interface DecisionGateway {
-  readonly requests: { readonly authorization: string; readonly body: Record<string, unknown> }[];
-  answer: (body: Record<string, unknown>) => {
-    readonly status: number;
-    readonly body: unknown;
-    readonly delayMs?: number;
-    readonly headers?: Record<string, string>;
-    readonly unfinished?: boolean;
-  };
-}
-
-export function decisionAnswer(probability: number, model = DECISION_MODEL) {
-  return {
-    status: 200,
-    body: {
-      model,
-      answers: [{ type: "predicate", name: "addressed", probability }],
-      usage: { input_tokens: 380, output_tokens: 21, total_tokens: 401 },
-    },
-  };
-}
-
-async function decisionGateway(): Promise<{
-  readonly gateway: DecisionGateway;
-  readonly baseUrl: string;
-}> {
-  const gateway: DecisionGateway = { requests: [], answer: () => decisionAnswer(0.97) };
-  const server = createServer((request, response) => {
-    const chunks: Buffer[] = [];
-    request.on("data", (chunk: Buffer) => chunks.push(chunk));
-    request.on("end", () => {
-      const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as Record<string, unknown>;
-      gateway.requests.push({ authorization: request.headers.authorization ?? "", body });
-      const answer =
-        request.method === "POST" && request.url === "/v1/decisions"
-          ? gateway.answer(body)
-          : { status: 404, body: { error: { type: "not_found" } } };
-      setTimeout(() => {
-        if (response.destroyed) return;
-        response.writeHead(answer.status, {
-          "content-type": "application/json",
-          ...answer.headers,
-        });
-        if (answer.unfinished) response.write(JSON.stringify(answer.body));
-        else response.end(JSON.stringify(answer.body));
-      }, answer.delayMs ?? 0);
-    });
-  });
-  decisionServers.push(server);
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const address = server.address();
-  if (address === null || typeof address === "string") throw new Error("DECISION_GATEWAY_ADDRESS");
-  return { gateway, baseUrl: `http://127.0.0.1:${address.port}/v1` };
 }
 
 export function sha256Ref(value: string) {
@@ -193,7 +140,10 @@ export interface Harness {
   readonly ownerActive: { current: boolean };
   readonly webAuthentication: GatewayAuthenticationContext;
   readonly warnings: PairedDeviceWarning[];
+  readonly actionReadFailures: DeviceActionReadFailure[];
   readonly stateRoot: string;
+  readonly passkey: SoftwarePasskey;
+  readonly signedIn: string[];
   readonly presence: { deviceId: string; visible: boolean }[];
   readonly registered: { deviceId: string; pushType: string }[];
   readonly revoking: string[];
@@ -202,8 +152,6 @@ export interface Harness {
   readonly perceptionConfiguration: { current: PerceptionConfiguration };
   readonly timeZone: { current: string };
   readonly voiceGates: { current: VoiceGates };
-  readonly decisions: DecisionGateway;
-  readonly addressee: { current: VoiceAddresseeConfiguration };
   readonly prefetch: QueryPrefetch;
   readonly prefetchLimits: { current: QueryPrefetchLimits };
   readonly embeddedQueries: string[];
@@ -231,18 +179,20 @@ export async function harness(
   options: {
     readonly origin?: string;
     readonly staticRoot?: string;
-    readonly pairingAccess?: DevicePairingAccess;
     readonly actionRegistry?: DeviceActionRegistry;
     readonly applePush?: ApplePushConfiguration;
     readonly revokeHookFails?: "prepare" | "wipe";
-    readonly withoutAddressee?: boolean;
     readonly withoutNotifications?: boolean;
+    readonly connections?: DeviceConnectionsPort;
     readonly indexTermLimit?: number;
     readonly indexReadText?: (
       contentRef: string,
       read: (contentRef: string) => Promise<string | undefined>,
     ) => Promise<string | undefined>;
     readonly searchControl?: Parameters<typeof createProductionApprovalGateway>[0]["searchControl"];
+    readonly memorySearch?: (input: {
+      readonly repository: SqliteProductStateRepository;
+    }) => NonNullable<Parameters<typeof createProductionApprovalGateway>[0]["memorySearchControl"]>;
     readonly files?: (input: {
       readonly repository: SqliteProductStateRepository;
       readonly protector: EnvelopePayloadProtector;
@@ -250,6 +200,15 @@ export async function harness(
     readonly exportArchive?: NonNullable<
       Parameters<typeof buildHttpGatewayServer>[0]["devices"]
     >["exportArchive"];
+    readonly speech?: NonNullable<
+      Parameters<typeof buildHttpGatewayServer>[0]["devices"]
+    >["speech"];
+    readonly chatAttachments?: { readonly images: boolean };
+    readonly chatModels?: {
+      readonly primaryRef: string;
+      readonly catalog: readonly DeviceChatCatalogEntry[];
+      readonly privateRefs: readonly string[];
+    };
   } = {},
 ): Promise<Harness> {
   const publicOrigin = options.origin ?? origin;
@@ -300,6 +259,9 @@ export async function harness(
     crypto: new NodeVaultCrypto(),
     notifier: {
       approvalNeeded: async (input) => {
+        vaultNotified.push(input.requestId);
+      },
+      codeNeeded: async (input) => {
         vaultNotified.push(input.requestId);
       },
     },
@@ -388,13 +350,20 @@ export async function harness(
           protector,
         }),
         clock,
+        ...(options.chatModels
+          ? {
+              validateModelSelection: (selection: { readonly modelRef: string }) => {
+                if (!options.chatModels?.catalog.some((entry) => entry.ref === selection.modelRef))
+                  throw new Error("MODEL_SELECTION_NOT_ALLOWED");
+              },
+            }
+          : {}),
         waitForEvents: async () => new Promise((resolve) => setTimeout(resolve, 20)),
       });
       return { controlPlane: adapter, reads: adapter };
     })(),
   });
   const threadAccess = new ProductionThreadGatewayAccessPolicy({ ownerId, agentId, sessions });
-  const ids = { next: (namespace: string) => `${namespace}:${randomUUID()}` };
   const home = new ProductionHomeControl({
     settings: DEFAULT_HOME_FEED,
     listApprovals: () =>
@@ -418,15 +387,17 @@ export async function harness(
     authority: () => authority,
     executionAuthority: () => authority as never,
     ...(options.searchControl ? { searchControl: options.searchControl } : {}),
-    museControl: new ProductionMuseControl({
-      scope: { ownerId, agentId },
-      store: repository.museIntake(),
-      seal: createProactiveSeal({
-        payloads: repository.payloadStore(ownerId, agentId),
-        protector,
-        ids,
-      }),
-      ids,
+    ...(options.memorySearch ? { memorySearchControl: options.memorySearch({ repository }) } : {}),
+    sensitiveInterceptionsControl: new ProductionSensitiveInterceptionsControl({
+      configuration: { ownerId, agentId },
+      store: repository.sensitiveInterceptions(),
+      clock,
+    }),
+    webPushControl: new ProductionWebPushControl({
+      configuration: { ownerId, agentId },
+      store: repository.webPush(),
+      presence: new WebPushPresence(),
+      push: undefined,
       clock,
     }),
   });
@@ -444,6 +415,7 @@ export async function harness(
   const registered: Harness["registered"] = [];
   const revoking: string[] = [];
   const wiped: string[] = [];
+  const signedIn: string[] = [];
   const payloadAdmission = new ProductionHttpPayloadAdmission({
     ownerId,
     agentId,
@@ -515,6 +487,7 @@ export async function harness(
     authority: () => authorityLease,
     clock,
   });
+  const actionReadFailures: DeviceActionReadFailure[] = [];
   const actions = createProductionDeviceActions({
     scope: { ownerId, agentId },
     store: repository.deviceActions(),
@@ -535,6 +508,7 @@ export async function harness(
         authorization.current?.resolve?.(approvalId) ?? { decision: "pending" },
     },
     ...(options.actionRegistry ? { registry: options.actionRegistry } : {}),
+    onReadFailed: (failure) => actionReadFailures.push(failure),
   });
   approvalResolved.current = () => actions.service.reconcile();
   const prefetchLimits = { current: QUERY_PREFETCH_LIMIT_DEFAULTS };
@@ -553,20 +527,6 @@ export async function harness(
     embedDocument: async (text) => new Float32Array([[...text].length, 0]),
   };
   const queryEmbedder = prefetchingEmbedder(fixtureEmbedder, prefetch);
-  const { gateway: decisions, baseUrl: decisionBaseUrl } = await decisionGateway();
-  const addressee = { current: VOICE_ADDRESSEE_DEFAULTS };
-  const addresseeRoute = voiceAddressee(
-    new VoiceAddresseeDecision({
-      model: DECISION_MODEL,
-      inputMicrosPerMillionTokens: 42_000,
-      apiKey: async () => DECISION_GATEWAY_KEY,
-      baseUrl: decisionBaseUrl,
-    }),
-    () => addressee.current,
-    perception,
-    agentId,
-    () => Date.parse(clock.now()),
-  );
   const app = buildHttpGatewayServer({
     publicOrigin,
     staticRoot: options.staticRoot ?? stateRoot,
@@ -636,10 +596,29 @@ export async function harness(
         onPresence: (deviceId, visible) => presence.push({ deviceId, visible }),
         onRegistered: (deviceId, pushType) => registered.push({ deviceId, pushType }),
       }),
-      ...(options.pairingAccess ? { pairingAccess: options.pairingAccess } : {}),
+      signIn: new DeviceSignInService({
+        scope: { ownerId, agentId },
+        store: repository.pairedDevices(),
+        publicOrigin: new URL(publicOrigin),
+        setupCodes: new FileSetupCodeSource(stateRoot),
+        now,
+        onSignedIn: (device) => signedIn.push(device.id),
+      }),
+      appleAppIds: () =>
+        options.applePush
+          ? options.applePush.topics.map((topic) => `${options.applePush?.teamId}.${topic}`)
+          : [],
       perception,
       vault: (scope) =>
         scope.ownerId === ownerId && scope.agentId === agentId ? vault : undefined,
+      ...(options.connections
+        ? {
+            connections: (scope) =>
+              scope.ownerId === ownerId && scope.agentId === agentId
+                ? options.connections
+                : undefined,
+          }
+        : {}),
       actions: {
         service: (scope) =>
           scope.ownerId === ownerId && scope.agentId === agentId ? actions.service : undefined,
@@ -667,8 +646,48 @@ export async function harness(
         perception,
         agentId,
       ),
-      ...(options.withoutAddressee ? {} : { addressee: addresseeRoute }),
       ...(options.exportArchive ? { exportArchive: options.exportArchive } : {}),
+      ...(options.speech ? { speech: options.speech } : {}),
+      ...(options.chatAttachments
+        ? { chatAttachments: () => options.chatAttachments as { readonly images: boolean } }
+        : {}),
+      ...(() => {
+        if (!options.chatModels) return {};
+        const models = options.chatModels;
+        const port = deviceChatModels({
+          catalog: models.catalog,
+          configuration: {
+            ownerId,
+            agentId,
+            modelDescriptors: models.catalog.map((entry) => ({
+              ref: entry.ref,
+              role: entry.ref === models.primaryRef ? "primary" : "specialist",
+              allowedDataClassifications: models.privateRefs.includes(entry.ref)
+                ? ["public", "private"]
+                : ["public"],
+            })) as unknown as Parameters<
+              typeof deviceChatModels
+            >[0]["configuration"]["modelDescriptors"],
+          },
+          preferences: repository.ownerPreferences(),
+        });
+        return port ? { chatModels: port } : {};
+      })(),
+      listVoiceTiming: deviceVoiceTimingLister({
+        ownerId,
+        agentId,
+        trace: repository.traceStore(),
+        payloads: repository.payloadStore(ownerId, agentId),
+        protector,
+      }),
+      recordVoiceTiming: deviceVoiceTimingRecorder({
+        ownerId,
+        agentId,
+        trace: repository.traceStore(),
+        payloads: repository.payloadStore(ownerId, agentId),
+        protector,
+        now: () => clock.now(),
+      }),
     },
   });
   await app.ready();
@@ -681,7 +700,10 @@ export async function harness(
     ownerActive,
     webAuthentication,
     warnings,
+    actionReadFailures,
     stateRoot,
+    passkey: new SoftwarePasskey(publicOrigin),
+    signedIn,
     presence,
     registered,
     revoking,
@@ -690,8 +712,6 @@ export async function harness(
     perceptionConfiguration,
     timeZone,
     voiceGates,
-    decisions,
-    addressee,
     prefetch,
     prefetchLimits,
     embeddedQueries,
@@ -738,34 +758,78 @@ export interface PairedClient {
   readonly revision: number;
 }
 
-export function pairingCode(uri: unknown): string {
-  const encoded = String(uri).replace(/^himawari-pair:/u, "");
-  return (JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")) as { code: string }).code;
+export async function issueSetupCode(h: Harness, minutes = 15): Promise<string> {
+  const code = generateSetupCode();
+  await writeSetupCode({
+    stateRoot: h.stateRoot,
+    scope: { ownerId, agentId },
+    code,
+    now: new Date(h.clock.now()),
+    minutes,
+  });
+  return displaySetupCode(code);
 }
 
-export async function pair(
-  h: Harness,
-  name = "Andy iPhone",
-  kind: "iphone" | "watch" | "mac" = "iphone",
-) {
-  const started = await web(h, "pairing-codes");
-  expect(started.status).toBe(201);
+export async function signInRequest(h: Harness, path: string, body: unknown) {
+  return h.app.inject({
+    method: "POST",
+    url: `/api/device/v1/sign-in/${path}`,
+    headers: { host: new URL(h.origin).host, "content-type": "application/json" },
+    payload: JSON.stringify(body),
+  });
+}
+
+export function signInDevice(name = "Andy iPhone", kind: "iphone" | "watch" | "mac" = "iphone") {
   const keys = generateDeviceTestKeyPair();
   const confirmKeys = generateDeviceTestKeyPair();
-  const response = await h.app.inject({
-    method: "POST",
-    url: "/api/device/v1/pair",
-    headers: { host: new URL(h.origin).host, "content-type": "application/json" },
-    payload: JSON.stringify({
-      pairingCode: pairingCode(started.body["pairingUri"]),
+  return {
+    keys,
+    confirmKeys,
+    device: {
       kind,
       name,
       releaseChannel: "direct",
       devicePublicKey: keys.publicKeySpkiBase64,
       confirmPublicKey: confirmKeys.publicKeySpkiBase64,
-    }),
+    },
+  };
+}
+
+export async function signInWithPasskey(
+  h: Harness,
+  device: ReturnType<typeof signInDevice>["device"] | Record<string, unknown>,
+) {
+  const enrolled =
+    (await h.repository.pairedDevices().listPasskeys({ ownerId, agentId })).length > 0;
+  if (enrolled) {
+    const options = await signInRequest(h, "options", { device });
+    expect(options.statusCode, options.body).toBe(200);
+    const started = options.json() as {
+      flowId: string;
+      publicKey: { challenge: string; rpId: string };
+    };
+    const response = await signInRequest(h, "finish", {
+      flowId: started.flowId,
+      credential: h.passkey.get(started.publicKey),
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    return (response.json() as { device: { id: string; revision: number } }).device;
+  }
+  const options = await signInRequest(h, "setup/options", {
+    setupCode: await issueSetupCode(h),
+    device,
   });
-  return { response, keys, confirmKeys, code: pairingCode(started.body["pairingUri"]) };
+  expect(options.statusCode, options.body).toBe(200);
+  const started = options.json() as {
+    flowId: string;
+    publicKey: { challenge: string; rp: { id: string } };
+  };
+  const response = await signInRequest(h, "setup/finish", {
+    flowId: started.flowId,
+    credential: h.passkey.create(started.publicKey),
+  });
+  expect(response.statusCode, response.body).toBe(201);
+  return (response.json() as { device: { id: string; revision: number } }).device;
 }
 
 export async function pairAndConfirm(
@@ -773,19 +837,13 @@ export async function pairAndConfirm(
   name?: string,
   kind?: "iphone" | "watch" | "mac",
 ): Promise<PairedClient> {
-  const paired = await pair(h, name, kind);
-  expect(paired.response.statusCode).toBe(201);
-  const device = (paired.response.json() as { device: { id: string; revision: number } }).device;
-  const confirmed = await web(h, "confirm", {
-    deviceId: device.id,
-    expectedRevision: device.revision,
-  });
-  expect(confirmed.status).toBe(200);
+  const client = signInDevice(name, kind);
+  const device = await signInWithPasskey(h, client.device);
   return {
     deviceId: device.id,
-    keys: paired.keys,
-    confirmKeys: paired.confirmKeys,
-    revision: (confirmed.body["device"] as { revision: number }).revision,
+    keys: client.keys,
+    confirmKeys: client.confirmKeys,
+    revision: device.revision,
   };
 }
 

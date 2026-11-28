@@ -2,8 +2,6 @@ import Foundation
 
 public enum HapticEvent: String, CaseIterable, Sendable {
     case messageSent
-    case holdToTalkStarted
-    case holdToTalkReleased
     case sheetSettled
     case stopPressed
     case faceIDSucceeded
@@ -16,10 +14,11 @@ public enum HapticEvent: String, CaseIterable, Sendable {
     case heardName
     case listeningStarted
     case listeningStopped
+    case copied
 
     public var source: HapticSource {
         switch self {
-        case .messageSent, .holdToTalkStarted, .holdToTalkReleased, .sheetSettled, .stopPressed, .faceIDSucceeded, .faceIDFailed, .pairingSucceeded:
+        case .messageSent, .sheetSettled, .stopPressed, .faceIDSucceeded, .faceIDFailed, .pairingSucceeded, .copied:
             .owner
         case .approvalNeeded, .approvalNeededWeighty, .longTaskFinished, .taskFailed, .heardName, .listeningStarted, .listeningStopped:
             .himawari
@@ -28,11 +27,11 @@ public enum HapticEvent: String, CaseIterable, Sendable {
 
     public var pattern: HapticPattern {
         switch self {
-        case .messageSent, .holdToTalkReleased, .listeningStopped: .impactLight
-        case .holdToTalkStarted, .listeningStarted: .impactMedium
+        case .messageSent, .listeningStopped: .impactLight
+        case .listeningStarted: .impactMedium
         case .sheetSettled, .heardName: .impactSoft
         case .stopPressed: .impactRigid
-        case .faceIDSucceeded, .longTaskFinished: .success
+        case .faceIDSucceeded, .longTaskFinished, .copied: .success
         case .faceIDFailed: .error
         case .pairingSucceeded: .bloom
         case .approvalNeeded: .knock
@@ -50,7 +49,7 @@ public enum HapticEvent: String, CaseIterable, Sendable {
     }
 
     public var firesWhileRecording: Bool {
-        self == .listeningStarted || self == .holdToTalkStarted
+        self == .listeningStarted
     }
 }
 

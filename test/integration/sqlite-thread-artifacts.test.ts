@@ -13,18 +13,18 @@ import {
 } from "@himawari-agent/application";
 import { createAgentId, createOwnerId, type ProductThreadMessage } from "@himawari-agent/domain";
 import {
+  FILE_LIST_KINDS,
+  FILE_LIST_ORIGINS,
+  FILE_LIST_PAGE_LIMIT,
+  gatewayV2MessageSchema,
+} from "@himawari-agent/gateway-contracts";
+import {
   applyMigrations,
   loadBundledMigrations,
   openQualifiedDatabase,
   SqliteProductStateRepository,
 } from "@himawari-agent/persistence-sqlite";
 import { BrowserThreadFiles } from "@himawari-agent/platform-node";
-import {
-  FILE_LIST_KINDS,
-  FILE_LIST_ORIGINS,
-  FILE_LIST_PAGE_LIMIT,
-  gatewayV2MessageSchema,
-} from "@himawari-agent/gateway-contracts";
 import { afterEach, describe, expect, it } from "vitest";
 import { classifiedThreadTitleReader } from "../../apps/agent-service/src/classified-thread-title.ts";
 import { ProductionFilesControl } from "../../apps/agent-service/src/production-files-control.ts";
@@ -506,7 +506,7 @@ describe("[FD-1] thread artifact storage", () => {
           scope: { ownerId, agentId: AGENT_ID },
           authority: { deploymentId: "deployment-01", authorityEpoch: 1, fencingToken: 1 },
           actor: { actorType: "owner", actorId: ownerId },
-          payload: { kind: null, origin: null, before: null, limit: 2, ...payload },
+          payload: { kind: null, origin: null, before: null, search: null, limit: 2, ...payload },
         });
       const read = async (payload: Record<string, unknown>) => {
         const snapshot = gatewayV2MessageSchema.parse(
@@ -520,7 +520,7 @@ describe("[FD-1] thread artifact storage", () => {
         {
           fileId: "d1",
           threadId: "thread-2",
-          threadTitle: null,
+          threadTitle: "体检结果",
           name: "plan.md",
           kind: "document",
           origin: "generated",
@@ -556,6 +556,10 @@ describe("[FD-1] thread artifact storage", () => {
       expect(
         (await read({ origin: "generated", limit: 10 })).files.map(({ fileId }) => fileId),
       ).toEqual(["d1", "w1"]);
+      expect((await read({ search: "plan", limit: 10 })).files.map(({ fileId }) => fileId)).toEqual(
+        ["d1"],
+      );
+      expect((await read({ search: "tokyo", limit: 10 })).files).toEqual([]);
       const web = new BrowserThreadFiles({
         ownerId: OWNER_ID,
         agentId: AGENT_ID,

@@ -3,7 +3,12 @@ import os from "node:os";
 import path from "node:path";
 import { expect, it } from "vitest";
 import {
+  applyBaseline,
   checkDesign,
+  contrastRatio,
+  findContrastProblems,
+  findFontViolations,
+  findPronounViolations,
   findViolations,
   findWebViolations,
 } from "../../clients/apple/scripts/check-design.mjs";
@@ -44,6 +49,19 @@ it("rejects scattered size numbers in page code", () => {
   }
 });
 
+it("rejects locking page content to one screen height, which stops long pages from scrolling", () => {
+  for (const line of [
+    ".containerRelativeFrame(.vertical, alignment: .top)",
+    ".containerRelativeFrame([.horizontal, .vertical])",
+  ]) {
+    expect(findViolations(line, "X.swift").map((v) => v.code)).toEqual(["screen-height-lock"]);
+  }
+  expect(findViolations(".containerRelativeFrame(.horizontal)", "X.swift")).toEqual([]);
+  expect(findViolations(".frame(maxWidth: .infinity, alignment: .topLeading)", "X.swift")).toEqual(
+    [],
+  );
+});
+
 it("rejects direct calls to the system haptics in page code", () => {
   for (const line of [
     "UIImpactFeedbackGenerator(style: .light).impactOccurred()",
@@ -54,6 +72,79 @@ it("rejects direct calls to the system haptics in page code", () => {
     expect(findViolations(line, "X.swift").map((v) => v.code)).toEqual(["direct-haptics"]);
   }
   expect(findViolations("Haptics.shared.report(.messageSent)", "X.swift")).toEqual([]);
+});
+
+it("rejects shadows on whole views, which also draw a halo around every word inside a card", () => {
+  for (const line of [
+    ".shadow(color: .black, radius: 4)",
+    "content.shadow(radius: 2)",
+    "Text(title).shadow(color: shade, radius: 1, x: 0, y: 1)",
+    "        shadow(color: token.color.color, radius: token.blur / 2, x: token.x, y: token.y)",
+  ]) {
+    expect(findViolations(line, "X.swift").map((v) => v.code)).toContain("content-shadow");
+  }
+  expect(
+    findViolations(
+      "shape.fill(fill).shadow(color: token.color.color, radius: token.blur / 2, x: token.x, y: token.y)",
+      "X.swift",
+    ),
+  ).toEqual([]);
+  expect(
+    findViolations(
+      ".hmRaised(Circle(), fill: Color.hmSurface, shadow: DesignTokens.Shadows.lift)",
+      "X.swift",
+    ),
+  ).toEqual([]);
+});
+
+it("rejects plain buttons whose empty space cannot be tapped", () => {
+  for (const line of [
+    ".buttonStyle(.plain)",
+    ".buttonStyle( .plain )",
+    ".buttonStyle(PlainButtonStyle())",
+    ".buttonStyle(.borderless)",
+  ]) {
+    expect(findViolations(line, "X.swift").map((v) => v.code)).toEqual(["plain-button"]);
+  }
+  expect(findViolations(".buttonStyle(.pressable)", "X.swift")).toEqual([]);
+});
+
+it("lets only the answer body use the system serif, New York, and still rejects custom fonts there", () => {
+  const answer = "Sources/HimawariChat/AnswerFont.swift";
+  expect(findFontViolations(".hmType(Self.voice, design: .serif)", answer)).toEqual([]);
+  expect(
+    findFontViolations(
+      '.font(.custom("STSongti-SC-Regular", size: 18, relativeTo: .body))',
+      answer,
+    ).map((v) => v.code),
+  ).toEqual(["custom-font"]);
+  expect(
+    findFontViolations(
+      ".hmType(Self.voice, design: .serif)",
+      "Sources/HimawariChat/AnswerText.swift",
+    ).map((v) => v.code),
+  ).toEqual(["custom-font"]);
+});
+
+it("rejects custom and serif fonts so text stays on the system font", () => {
+  for (const line of [
+    '.font(.custom("STSongti-SC-Regular", size: 18, relativeTo: .body))',
+    "Font.custom(name, fixedSize: size)",
+    ".font(.system(size: 17, weight: .medium, design: .serif))",
+    "system.fontDescriptor.withDesign(.serif)",
+    'UIFont(name: "STSongti-SC-Bold", size: 18)',
+    "CTFontCreateWithName(name as CFString, 12, nil)",
+  ]) {
+    expect(findFontViolations(line, "X.swift").map((v) => v.code)).toEqual(["custom-font"]);
+  }
+  for (const line of [
+    ".font(.system(.body, weight: .semibold))",
+    ".font(.system(size: 13, weight: .regular, design: .rounded))",
+    "decoder.dateDecodingStrategy = .custom(Self.timestamp)",
+    "UIFont.systemFont(ofSize: size, weight: .semibold)",
+  ]) {
+    expect(findFontViolations(line, "X.swift")).toEqual([]);
+  }
 });
 
 it("accepts token-based code", () => {
@@ -70,10 +161,16 @@ it("accepts token-based code", () => {
   }
 });
 
+const readable = (bg, fg) =>
+  Object.fromEntries(
+    ["surface", "text", "muted", "sun", "danger", "success", "glyph", "onText", "speak"].map(
+      (name) => [name, ["surface", "onText"].includes(name) ? bg : fg],
+    ),
+  );
 const tokens = {
   color: {
-    light: { bg: "#fcfcfb", fill: "rgba(37,41,33,0.06)" },
-    dark: { bg: "#1e1e1e", fill: "rgba(228,228,225,0.08)" },
+    light: { bg: "#fcfcfb", fill: "rgba(37,41,33,0.06)", ...readable("#fcfcfb", "#252921") },
+    dark: { bg: "#1e1e1e", fill: "rgba(228,228,225,0.08)", ...readable("#1e1e1e", "#e4e4e1") },
   },
   shadow: { light: { lift: "0 2 10 rgba(0,0,0,0.07)" }, dark: { lift: "0 2 10 rgba(0,0,0,0.35)" } },
   glass: { blur: 22 },
@@ -149,7 +246,10 @@ it("fails when page code has a literal and when generated tokens are stale", asy
       path.join(apple, "Sources/HimawariChat/Bad.swift"),
       ".font(.system(size: 17))\n",
     );
-    expect(checkDesign(apple, repo).problems.map((p) => p.code)).toEqual(["number-literal"]);
+    expect(checkDesign(apple, repo).problems.map((p) => p.code)).toEqual([
+      "fixed-font",
+      "number-literal",
+    ]);
 
     await rm(path.join(apple, "Sources/HimawariChat/Bad.swift"));
     await writeFile(
@@ -210,5 +310,122 @@ it("rejects literal colors and sizes in the Safari panel and keeps its token CSS
     ).toEqual(["tokens-stale", "web-color-literal"]);
   } finally {
     await rm(repo, { recursive: true, force: true });
+  }
+});
+
+it("rejects tap and long-press gestures that VoiceOver cannot reach", () => {
+  expect(
+    findViolations(".contentShape(Rectangle())\n.onTapGesture(perform: open)\n", "X.swift").map(
+      (v) => v.code,
+    ),
+  ).toEqual(["gesture-without-button"]);
+  expect(findViolations(".onLongPressGesture { start() }", "X.swift").map((v) => v.code)).toEqual([
+    "gesture-without-button",
+  ]);
+  for (const source of [
+    ".onTapGesture(perform: open)\n.accessibilityAction(named: Text(label), open)",
+    ".onTapGesture { open() }\n.accessibilityAddTraits(.isButton)",
+    ".onTapGesture { focus() }\n.gesture(\n  LongPressGesture()\n    .onEnded { _ in end() }\n)\n.accessibilityHidden(true)",
+  ]) {
+    expect(findViolations(source, "X.swift")).toEqual([]);
+  }
+  expect(
+    findViolations(
+      ".onTapGesture { open() }\n}\nText(a).accessibilityAddTraits(.isButton)",
+      "X.swift",
+    ).map((v) => v.code),
+  ).toEqual(["gesture-without-button"]);
+});
+
+it("rejects a hidden system navigation bar, an app-only appearance and fixed font sizes", () => {
+  for (const [line, code] of [
+    ["toolbar(.hidden, for: .navigationBar)", "hidden-navigation-bar"],
+    [".navigationBarHidden(true)", "hidden-navigation-bar"],
+    [".toolbarVisibility(.hidden, for: .navigationBar)", "hidden-navigation-bar"],
+    [".preferredColorScheme(.dark)", "app-color-scheme"],
+    [".font(.system(size: DesignTokens.ProcessRow.fontSize))", "fixed-font"],
+  ]) {
+    expect(findViolations(line, "X.swift").map((v) => v.code)).toEqual([code]);
+  }
+  for (const line of [
+    ".font(.custom(name, size: DesignTokens.TypeScale.body.size, relativeTo: .body))",
+    ".font(.body)",
+    ".toolbar(.hidden, for: .tabBar)",
+  ]) {
+    expect(findViolations(line, "X.swift")).toEqual([]);
+  }
+});
+
+it("measures text contrast of the approved tokens in light and dark", () => {
+  expect(contrastRatio([0, 0, 0], [255, 255, 255])).toBeCloseTo(21, 5);
+  const palette = {
+    bg: "#ffffff",
+    surface: "#ffffff",
+    text: "#000000",
+    muted: "#767676",
+    sun: "#000000",
+    danger: "#000000",
+    success: "#000000",
+    glyph: "#000000",
+    speak: "#000000",
+    onText: "#ffffff",
+  };
+  expect(findContrastProblems({ color: { light: palette } })).toEqual([]);
+  const low = findContrastProblems({ color: { light: { ...palette, muted: "#999999" } } });
+  expect(low.map((p) => [p.appearance, p.fg, p.bg])).toEqual([
+    ["light", "muted", "bg"],
+    ["light", "muted", "surface"],
+  ]);
+  expect(low[0].ratio).toBeLessThan(4.5);
+  expect(
+    findContrastProblems({ color: { dark: { ...palette, glyph: "rgba(0,0,0,0.2)" } } }).map(
+      (p) => p.fg,
+    ),
+  ).toEqual(["glyph", "glyph"]);
+});
+
+it("lets the baseline hold known debt but never more, and flags entries that went stale", () => {
+  const found = [
+    { file: "A.swift", line: 1, code: "fixed-font" },
+    { file: "A.swift", line: 2, code: "fixed-font" },
+    { file: "B.swift", line: 1, code: "fixed-font" },
+  ];
+  expect(
+    applyBaseline(found, [{ file: "A.swift", code: "fixed-font", count: 2, why: "x" }]),
+  ).toEqual([found[2]]);
+  expect(
+    applyBaseline(found, [{ file: "A.swift", code: "fixed-font", count: 1, why: "x" }]).length,
+  ).toBe(3);
+  expect(
+    applyBaseline(found.slice(2), [
+      { file: "A.swift", code: "fixed-font", count: 2, why: "x" },
+    ]).map((p) => p.code),
+  ).toEqual(["fixed-font", "baseline-stale"]);
+  expect(
+    applyBaseline(found.slice(0, 2), [{ file: "A.swift", code: "fixed-font", count: 2 }]).map(
+      (p) => p.code,
+    ),
+  ).toEqual(["baseline-without-reason"]);
+});
+
+it("rejects she, her and their Chinese and Japanese forms in Himawari's interface text", () => {
+  for (const line of [
+    '"chat.reply.toAgent" = "回复她";',
+    '"chat.reply.toAgent" = "彼女への返信";',
+    'text("你的称呼", ja: "呼び名", en: "What she calls you")',
+    '"permission.note" = "Her model answers from the server";',
+  ]) {
+    expect(findPronounViolations(line, "X.strings").map((v) => v.code)).toEqual([
+      "himawari-pronoun",
+    ]);
+  }
+  for (const line of [
+    'case herApprovals = "next-3-her-approvals"',
+    'case her = "self"',
+    '"chat.reply.toAgent" = "回复 Himawari";',
+    'text("Himawari 用的模型", ja: "Himawari が使うモデル", en: "Himawari\'s model")',
+    "if !her.isEmpty {",
+  ]) {
+    expect(findPronounViolations(line, "X.swift")).toEqual([]);
   }
 });

@@ -18,6 +18,14 @@ export const INBOX_MAX_ATTEMPTS = inboxSettingDefinition("maxAttempts").defaultV
 export const INBOX_SUMMARY_CHARACTERS = inboxSettingDefinition("summaryCharacters").defaultValue;
 
 const KIND = /^[a-z][a-z0-9_]{0,63}$/u;
+const INBOX_ENTRY_PREFIX = "inbox:";
+const INBOX_SUMMARY_PREFIX = "inbox-summary:";
+
+export function inboxSummaryRef(entryId: string): string | null {
+  return entryId.startsWith(INBOX_ENTRY_PREFIX)
+    ? `${INBOX_SUMMARY_PREFIX}${entryId.slice(INBOX_ENTRY_PREFIX.length)}`
+    : null;
+}
 const SWEEP_BATCH = 50;
 
 export interface InboxSource {
@@ -181,8 +189,8 @@ export class ProductionInbox {
       input.sourceRef,
       input.sourceVersion,
     );
-    const id = `inbox:${key}`;
-    const summaryRef = `inbox-summary:${key}`;
+    const id = `${INBOX_ENTRY_PREFIX}${key}`;
+    const summaryRef = `${INBOX_SUMMARY_PREFIX}${key}`;
     const previous = this.#locks.get(key) ?? Promise.resolve();
     const turn = previous.then(() => this.#accept({ input, source, summary, now, id, summaryRef }));
     const settled = turn.then(

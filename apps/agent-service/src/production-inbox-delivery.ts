@@ -27,7 +27,9 @@ import type {
   InboxDeliveryEvent,
   InboxDeliveryResult,
 } from "./production-inbox-worker.js";
+import { isApprovalAnswerEvent } from "./production-approval-answers.js";
 import type { ProductionMainThread } from "./production-main-thread.js";
+import { isReminderEvent, type ProductionReminderInbox } from "./production-reminder-inbox.js";
 import type { ProductionSubthreads } from "./production-subthreads.js";
 
 type Admission = Parameters<ThreadCommandService["admitOwnerMessage"]>[0];
@@ -40,6 +42,7 @@ const TERMINAL = new Set(["completed", "failed", "cancelled"]);
 const POLL_MS = 1_000;
 const ADMIT_ATTEMPTS = 3;
 const DAY_MS = 86_400_000;
+const REMINDER_GRACE_MS = 90_000;
 
 export interface InboxRunEvent {
   readonly entryId: string;
@@ -122,9 +125,17 @@ export interface InboxDeliveryOptions {
   ) => Promise<void>;
   readonly subthreads?: Pick<
     ProductionSubthreads,
-    "open" | "subthreadMessage" | "overBudget" | "afterRun"
+    | "open"
+    | "subthreadMessage"
+    | "overBudget"
+    | "afterRun"
+    | "awaitingApproval"
+    | "listAwaitingApproval"
+    | "approvalSettled"
   >;
   readonly checkpoints?: Pick<RunCheckpointStore, "read">;
+  readonly reminders?: Pick<ProductionReminderInbox, "ensureTold">;
+  readonly reminderGraceMs?: number;
   readonly pollMs?: number;
   readonly sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
 }
@@ -161,6 +172,8 @@ export class ProductionInboxDelivery implements InboxDelivery {
     const first = events[0];
     if (!first)
       return { status: "handled", outcome: "empty", reasonCode: "no_events", runId: null };
+    if (input.fromOwner && events.every(({ entry }) => isApprovalAnswerEvent(entry.sourceKind)))
+      return this.#approvalAnswers(input.threadId, events, signal);
     if (input.fromOwner)
       return {
         status: "handled",
@@ -194,9 +207,27 @@ export class ProductionInboxDelivery implements InboxDelivery {
       const classification = await this.#writeMessage(contentRef, inboxEventsMessage(events));
       await this.#admit(main, key, events, runId, contentRef, classification, true);
       await this.#markOutside(runId, events);
-      const status = await this.#await(main, runId, contentRef, signal, true);
+      let status: string;
+      try {
+        status = await this.#await(main, runId, contentRef, signal, true, false, () =>
+          this.#remind(run),
+        );
+      } catch (error) {
+        await this.#remind(run).catch(() => undefined);
+        throw error;
+      }
       if (status === "yielded") return { status: "yield" };
-      if (status !== "completed") return { status: "retry", reasonCode: `run_${status}` };
+      const reminded = await this.#remind(run);
+      if (status !== "completed") {
+        if (reminded && run.events.every(isReminderEvent))
+          return {
+            status: "handled",
+            outcome: "reminder_fallback",
+            reasonCode: `run_${status}`,
+            runId,
+          };
+        return { status: "retry", reasonCode: `run_${status}` };
+      }
       const told = await this.#recordSilence(run);
       return {
         status: "handled",
@@ -207,6 +238,14 @@ export class ProductionInboxDelivery implements InboxDelivery {
     } finally {
       this.#options.registry.close(runId);
     }
+  }
+
+  async #remind(run: InboxRun): Promise<boolean> {
+    const reminders = this.#options.reminders;
+    if (!reminders) return false;
+    for (const event of run.events.filter(isReminderEvent))
+      await reminders.ensureTold({ threadId: run.threadId, runId: run.runId, event });
+    return true;
   }
 
   async #deliverToSubthread(
@@ -245,7 +284,16 @@ export class ProductionInboxDelivery implements InboxDelivery {
     );
     await this.#admit(threadId, key, events, runId, contentRef, classification, false);
     await this.#markOutside(runId, events);
-    const status = await this.#await(threadId, runId, contentRef, signal, false);
+    const status = await this.#await(threadId, runId, contentRef, signal, false, true);
+    if (status === "awaiting_approval") {
+      await subthreads.awaitingApproval({ threadId, runId });
+      return {
+        status: "handled",
+        outcome: "awaiting_approval",
+        reasonCode: "subthread_awaiting_approval",
+        runId,
+      };
+    }
     const cutOff = status === "failed" && (await this.#cutOff(runId));
     if (status !== "completed" && !cutOff) return { status: "retry", reasonCode: `run_${status}` };
     const ending = await subthreads.afterRun({ threadId, runId, cutOff });
@@ -255,6 +303,64 @@ export class ProductionInboxDelivery implements InboxDelivery {
       reasonCode: cutOff ? "subthread_cut_off" : "subthread_ran",
       runId,
     };
+  }
+
+  async #approvalAnswers(
+    threadId: string | null,
+    events: readonly InboxDeliveryEvent[],
+    signal: AbortSignal,
+  ): Promise<InboxDeliveryResult> {
+    const sleep = this.#options.sleep ?? defaultSleep;
+    const runIds = [...new Set(events.map(({ entry }) => entry.sourceRef))] as RunId[];
+    const subthreads = this.#options.subthreads;
+    const subthread = threadId !== null && subthreads ? await subthreads.open(threadId) : undefined;
+    let last: RunId | null = null;
+    for (const runId of runIds) {
+      last = runId;
+      let resumed = false;
+      for (;;) {
+        const stored = await this.#options.runs.readRun(runId);
+        const status = stored?.run.status;
+        if (status === undefined || TERMINAL.has(status)) break;
+        if (status !== "awaiting_approval") resumed = true;
+        else if (resumed) break;
+        if (resumed && !subthread) break;
+        await sleep(this.#options.pollMs ?? POLL_MS, signal);
+      }
+      if (!subthread || !subthreads) continue;
+      const stored = await this.#options.runs.readRun(runId);
+      const status = stored?.run.status;
+      if (status === "awaiting_approval") {
+        await subthreads.awaitingApproval({ threadId: subthread.threadId, runId });
+        continue;
+      }
+      await subthreads.approvalSettled(subthread.threadId);
+      const cutOff = status === "failed" && (await this.#cutOff(runId));
+      if (status === "completed" || cutOff)
+        await subthreads.afterRun({ threadId: subthread.threadId, runId, cutOff });
+    }
+    return {
+      status: "handled",
+      outcome: "resumed",
+      reasonCode: "approval_answered",
+      runId: last,
+    };
+  }
+
+  async sweep(): Promise<void> {
+    const subthreads = this.#options.subthreads;
+    if (!subthreads) return;
+    for (const subthread of await subthreads.listAwaitingApproval()) {
+      const runId = subthread.approvalRunId;
+      if (runId === null) continue;
+      const stored = await this.#options.runs.readRun(runId as RunId);
+      if (stored && !TERMINAL.has(stored.run.status)) continue;
+      await subthreads.approvalSettled(subthread.threadId);
+      const status = stored?.run.status;
+      const cutOff = status === "failed" && (await this.#cutOff(runId as RunId));
+      if (status === "completed" || cutOff)
+        await subthreads.afterRun({ threadId: subthread.threadId, runId, cutOff });
+    }
   }
 
   async #cutOff(runId: RunId): Promise<boolean> {
@@ -340,6 +446,8 @@ export class ProductionInboxDelivery implements InboxDelivery {
     contentRef: string,
     signal: AbortSignal,
     yieldToOwner: boolean,
+    parkOnApproval = false,
+    whenSlow?: () => Promise<unknown>,
   ): Promise<string> {
     const sleep = this.#options.sleep ?? defaultSleep;
     const cancel = () =>
@@ -358,10 +466,18 @@ export class ProductionInboxDelivery implements InboxDelivery {
               () => false,
             )
         : Promise.resolve(false);
+    const slowAt = Date.now() + (this.#options.reminderGraceMs ?? REMINDER_GRACE_MS);
+    let slow = whenSlow;
     try {
       for (;;) {
+        if (slow && Date.now() >= slowAt) {
+          const late = slow;
+          slow = undefined;
+          await late().catch(() => undefined);
+        }
         const stored = await this.#options.runs.readRun(runId);
         if (stored && TERMINAL.has(stored.run.status)) return stored.run.status;
+        if (parkOnApproval && stored?.run.status === "awaiting_approval") return stored.run.status;
         if (
           yieldToOwner &&
           this.#options.cancelRun &&

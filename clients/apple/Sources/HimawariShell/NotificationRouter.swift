@@ -9,9 +9,11 @@ import Observation
 public final class NotificationRouter: NSObject, UNUserNotificationCenterDelegate {
     public static let shared = NotificationRouter()
 
-    @ObservationIgnored var transport: (any ApprovalPushTransport)?
+    @ObservationIgnored var transport: DeviceAPI?
     @ObservationIgnored var mainChatOnScreen = false
     var approvalsRequested = false
+    var agentGrantRequested = false
+    var vaultRequested = false
 
     private static let approveAction = HimawariPush.ActionKind.approve.rawValue
     private static let denyAction = HimawariPush.ActionKind.deny.rawValue
@@ -33,13 +35,26 @@ public final class NotificationRouter: NSObject, UNUserNotificationCenterDelegat
                 intentIdentifiers: []
             ),
             UNNotificationCategory(identifier: HimawariPush.plainCategory, actions: [], intentIdentifiers: []),
+            UNNotificationCategory(
+                identifier: HimawariPush.vaultCodeCategory,
+                actions: [
+                    UNTextInputNotificationAction(
+                        identifier: HimawariPush.vaultCodeAction,
+                        title: L.text("push.vaultCode.enter"),
+                        options: [.authenticationRequired],
+                        textInputButtonTitle: L.text("push.vaultCode.fill"),
+                        textInputPlaceholder: L.text("push.vaultCode.placeholder")
+                    ),
+                ],
+                intentIdentifiers: []
+            ),
         ]
     }
 
     nonisolated static func presentation(category: String, push: HimawariPush?, mainChatOnScreen: Bool) -> UNNotificationPresentationOptions {
         if ListenNotificationRouting.handles(category: category) { return [.banner, .sound] }
         guard let push else { return [.banner, .list, .sound] }
-        if push.kind == HimawariPush.approvalKind || !mainChatOnScreen { return [.banner, .list, .sound] }
+        if [HimawariPush.approvalKind, HimawariPush.agentGrantKind, HimawariPush.vaultApprovalKind, HimawariPush.vaultCodeKind].contains(push.kind) || !mainChatOnScreen { return [.banner, .list, .sound] }
         return []
     }
 
@@ -47,7 +62,10 @@ public final class NotificationRouter: NSObject, UNUserNotificationCenterDelegat
         let content = notification.request.content
         let push = HimawariPush(userInfo: content.userInfo)
         let category = content.categoryIdentifier
-        let onScreen = await MainActor.run { mainChatOnScreen }
+        let onScreen = await MainActor.run {
+            if push?.kind == HimawariPush.agentGrantKind { agentGrantRequested = true }
+            return mainChatOnScreen
+        }
         return Self.presentation(category: category, push: push, mainChatOnScreen: onScreen)
     }
 
@@ -60,12 +78,26 @@ public final class NotificationRouter: NSObject, UNUserNotificationCenterDelegat
             return
         }
         guard let push = HimawariPush(userInfo: content.userInfo) else { return }
+        if let typed = (response as? UNTextInputNotificationResponse)?.userText {
+            await handleCode(typed, in: push)
+            return
+        }
         await handle(push: push, actionIdentifier: actionIdentifier)
+    }
+
+    private func handleCode(_ typed: String, in push: HimawariPush) async {
+        guard let api = transport else {
+            vaultRequested = true
+            return
+        }
+        if await VaultCodePushReply(transport: api).typed(typed, in: push) == .openApp { vaultRequested = true }
     }
 
     private func handle(push: HimawariPush, actionIdentifier: String) async {
         guard let kind = HimawariPush.ActionKind(rawValue: actionIdentifier) else {
+            if push.kind == HimawariPush.vaultApprovalKind || push.kind == HimawariPush.vaultCodeKind { vaultRequested = true }
             if push.kind == HimawariPush.approvalKind { approvalsRequested = true }
+            if push.kind == HimawariPush.agentGrantKind { agentGrantRequested = true }
             return
         }
         guard let transport else {

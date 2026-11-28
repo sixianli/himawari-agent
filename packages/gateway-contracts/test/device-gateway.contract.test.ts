@@ -10,32 +10,13 @@ function rejects(message: Record<string, unknown>) {
 }
 
 describe("device management gateway messages", () => {
-  it("accepts a pairing code of exactly 22 base64url characters", () => {
-    const parsed = gatewayV2MessageSchema.parse(
-      fixture("command", "device.pairing.start", { pairingCode: "abc-_ABC012345678901xw" }),
-    );
-    expect(parsed.type).toBe("device.pairing.start");
-  });
-
-  it.each([
-    ["too short", "A".repeat(21)],
-    ["too long", "A".repeat(23)],
-    ["padded", `${"A".repeat(21)}=`],
-    ["standard base64 plus", `${"A".repeat(21)}+`],
-    ["standard base64 slash", `${"A".repeat(21)}/`],
-    ["empty", ""],
-    ["not canonical (last character carries non-zero padding bits)", `${"A".repeat(21)}B`],
-  ])("rejects a pairing code that is %s", (_name, pairingCode) => {
-    rejects(fixture("command", "device.pairing.start", { pairingCode }));
-  });
-
   it.each([
     ["wrong prefix", "device_AAAAAAAAAAAAAAAAAAAAAA"],
     ["short", "dev_AAAA"],
     ["long", "dev_AAAAAAAAAAAAAAAAAAAAAAA"],
     ["bad character", "dev_AAAAAAAAAAAAAAAAAAAA+A"],
   ])("rejects a device id that is %s", (_name, badId) => {
-    for (const type of ["device.pairing.confirm", "device.revoke"])
+    for (const type of ["device.revoke"])
       rejects(fixture("command", type, { deviceId: badId, expectedRevision: 0 }));
     rejects(
       fixture("command", "device.rename", { deviceId: badId, expectedRevision: 0, name: "x" }),
@@ -45,7 +26,7 @@ describe("device management gateway messages", () => {
   it("rejects negative or fractional expected revisions", () => {
     rejects(fixture("command", "device.revoke", { deviceId, expectedRevision: -1 }));
     rejects(fixture("command", "device.revoke", { deviceId, expectedRevision: 1.5 }));
-    rejects(fixture("command", "device.pairing.confirm", { deviceId }));
+    rejects(fixture("command", "device.revoke", { deviceId }));
   });
 
   it("trims device names and bounds them to 1-64 characters", () => {
@@ -75,8 +56,7 @@ describe("device management gateway messages", () => {
   });
 
   it("rejects extra payload fields on every device command", () => {
-    rejects(fixture("command", "device.pairing.start", { pairingCode: "A".repeat(22), extra: 1 }));
-    for (const type of ["device.pairing.confirm", "device.revoke"])
+    for (const type of ["device.revoke"])
       rejects(fixture("command", type, { deviceId, expectedRevision: 0, extra: 1 }));
     rejects(
       fixture("command", "device.rename", { deviceId, expectedRevision: 0, name: "x", extra: 1 }),
@@ -94,13 +74,11 @@ describe("device management gateway messages", () => {
       status: "pending",
       pairedAt: "2026-11-12T03:00:00.000Z",
       lastSeenAt: null,
-      pairingNumber: "000123",
     };
     const snapshot = (overrides: Record<string, unknown>) =>
       fixture("snapshot", "device.list.snapshot", {
         devices: [device],
         limits: [],
-        pairing: null,
         generatedAt: "2026-11-12T03:00:00.000Z",
         ...overrides,
       });
@@ -110,30 +88,19 @@ describe("device management gateway messages", () => {
         gatewayV2MessageSchema.parse(snapshot({ devices: [{ ...device, releaseChannel }] }));
     });
 
-    it("accepts no pairing and an empty device list", () => {
+    it("accepts an empty device list", () => {
       gatewayV2MessageSchema.parse(snapshot({ devices: [] }));
       gatewayV2MessageSchema.parse(snapshot({}));
-    });
-
-    it("accepts a pairing without access", () => {
-      gatewayV2MessageSchema.parse(
-        snapshot({ pairing: { expiresAt: "2026-11-12T03:10:00.000Z", access: null } }),
-      );
     });
 
     it.each([
       ["unknown kind", { devices: [{ ...device, kind: "tablet" }] }],
       ["unknown status", { devices: [{ ...device, status: "lost" }] }],
       ["unknown release channel", { devices: [{ ...device, releaseChannel: "beta" }] }],
-      ["pairing number with 5 digits", { devices: [{ ...device, pairingNumber: "12345" }] }],
-      ["pairing number with letters", { devices: [{ ...device, pairingNumber: "12345a" }] }],
+      ["a pairing number", { devices: [{ ...device, pairingNumber: "123456" }] }],
       ["unknown limit key", { limits: [{ key: "device.unknown", unit: "bytes", value: 1 }] }],
       ["negative limit", { limits: [{ key: "device.nonce.retained", unit: "count", value: -1 }] }],
-      ["pairing without expiry", { pairing: { access: null } }],
-      [
-        "access with only a client id",
-        { pairing: { expiresAt: "2026-11-12T03:10:00.000Z", access: { clientId: "a" } } },
-      ],
+      ["a pairing", { pairing: null }],
     ])("rejects %s", (_name, overrides) => {
       rejects(snapshot(overrides));
     });
@@ -146,6 +113,8 @@ describe("device management gateway messages", () => {
         ready: true,
         status: "healthy",
         dependencies: [],
+        release: null,
+        disk: null,
         generatedAt: "2026-11-12T03:00:00.000Z",
         ...overrides,
       });
@@ -174,6 +143,8 @@ describe("device management gateway messages", () => {
         { dependencies: [{ name: "sqlite", required: true, status: "healthy" }] },
       ],
       ["missing live", { live: undefined }],
+      ["release without a commit hash", { release: { commit: "main", installedAt: null } }],
+      ["disk with no size", { disk: { availableBytes: 0, totalBytes: 0 } }],
     ])("rejects %s", (_name, overrides) => {
       rejects(status(overrides));
     });

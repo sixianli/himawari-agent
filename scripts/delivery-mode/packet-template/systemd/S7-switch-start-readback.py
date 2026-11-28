@@ -174,6 +174,13 @@ def static_root_configuration(original):
         expected['memory'].pop('minimumSimilarity', None)
         if isinstance(expected['runPolicy'].get('proactive'), dict):
             expected['runPolicy']['proactive'].pop('memoryMinimumSimilarity', None)
+    approved_speech = json.loads('__PKT_TARGET_SPEECH_JSON__')
+    if approved_speech is not None:
+        expected['speech'] = approved_speech
+    for key, value in json.loads('__PKT_TARGET_RUN_POLICY_JSON__').items():
+        expected['runPolicy'][key] = value
+    for secret in json.loads('__PKT_TARGET_SECRET_REFERENCES_JSON__'):
+        expected['secretReferences'] = [entry for entry in expected.get('secretReferences') or [] if not (isinstance(entry, dict) and entry.get('ref') == secret['ref'])] + [secret]
     return expected
 static_root_config = static_root_configuration(original_configuration)
 static_root_config_bytes = (json.dumps(static_root_config, indent=2, ensure_ascii=False) + '\n').encode()

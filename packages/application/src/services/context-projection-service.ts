@@ -1,12 +1,12 @@
-import type { AgentId, OwnerId, RunId } from "@himawari-agent/domain";
+import type { AgentId, MessageId, OwnerId, RunId } from "@himawari-agent/domain";
 import { CHAT_TASK_BOUNDARY } from "@himawari-agent/prompt-catalog";
 import { ApplicationPortError, PORT_ERROR_CODES } from "../ports/common.js";
-import { isMemoryDates } from "../ports/memory-dates.js";
 import {
   contextArtifactOperationKey,
   isProductContextRunState,
   type ProductContextEnvelopeV1,
 } from "../ports/context-projection.js";
+import { isMemoryDates } from "../ports/memory-dates.js";
 import type { PayloadProtectorPort, PayloadStorePort } from "../ports/observability.js";
 import type { RunCheckpointStore } from "../ports/run-checkpoints.js";
 import type { RunPayloadArtifactPort } from "../ports/run-payload-artifacts.js";
@@ -32,6 +32,9 @@ const UNREADABLE_ATTACHMENT = "[附件无法读取]";
 const IMAGE_CONTENT_TYPE = "text/x-himawari-image";
 const IMAGE_DATA_URL = /^data:(image\/(?:png|jpeg|webp|gif));base64,([A-Za-z0-9+/]+={0,2})$/;
 const IMAGE_KIND = / kind="image"/;
+const REPLY_TAG = /^<reply to="([A-Za-z0-9_.:-]+)"\/>\n?/;
+const REPLY_TAGS = /<reply to="[^"<>\n]*"\/>\n?/g;
+const REPLY_QUOTE_LIMIT = 1000;
 const CURRENT_TASK_POLICY = CHAT_TASK_BOUNDARY.text;
 
 export interface ContextProjectionServiceDependencies {
@@ -73,7 +76,11 @@ export class ContextProjectionService implements RuntimeProjectionPort {
     const images: { readonly mimeType: string; readonly data: string }[] = [];
     const prompt = await this.expandAttachments(
       input,
-      await this.readText(input, envelope.prompt.payloadRef, "context prompt"),
+      await this.expandReply(
+        input,
+        await this.readText(input, envelope.prompt.payloadRef, "context prompt"),
+        attachmentClassifications,
+      ),
       attachmentClassifications,
       attachments,
       images,
@@ -374,7 +381,12 @@ export class ContextProjectionService implements RuntimeProjectionPort {
       );
       const content =
         item.role === "owner"
-          ? await this.expandAttachments(input, stored, attachmentClassifications, attachments)
+          ? await this.expandAttachments(
+              input,
+              await this.expandReply(input, stored, attachmentClassifications),
+              attachmentClassifications,
+              attachments,
+            )
           : stored;
       if (item.role === "owner" || item.role === "agent") {
         projected.push({
@@ -496,6 +508,50 @@ export class ContextProjectionService implements RuntimeProjectionPort {
       });
     }
     return Object.freeze(blocks);
+  }
+
+  private async expandReply(
+    input: RuntimeProjectionRequest,
+    text: string,
+    classifications: DataClassification[],
+  ): Promise<string> {
+    const tag = REPLY_TAG.exec(text);
+    if (!tag) return text;
+    const rest = text.slice(tag[0].length);
+    if (!input.threadId) return rest;
+    const [original] = await this.#dependencies.threads.readCommittedMessagesByIds({
+      ownerId: input.ownerId,
+      agentId: input.agentId,
+      threadId: input.threadId,
+      messageIds: [tag[1] as MessageId],
+    });
+    if (
+      !original ||
+      original.threadId !== input.threadId ||
+      original.internal ||
+      (original.role !== "owner" && original.role !== "agent")
+    )
+      return rest;
+    const quoted = await this.readText(
+      input,
+      original.contentRef as PayloadRef,
+      "reply quote",
+      undefined,
+      modelVisibleCeiling(),
+    ).catch((error: unknown) => {
+      if (error instanceof ApplicationPortError) return undefined;
+      throw error;
+    });
+    if (quoted === undefined) return rest;
+    classifications.push(original.dataClassification);
+    const plain = quoted
+      .replace(REPLY_TAGS, "")
+      .replace(ATTACHMENT_TAG, (_tag, name: string) => `[附件 ${name}]`)
+      .trim();
+    const shown =
+      plain.length > REPLY_QUOTE_LIMIT ? `${plain.slice(0, REPLY_QUOTE_LIMIT)}…` : plain;
+    const role = original.role === "owner" ? "user" : "assistant";
+    return `<reply-to role="${role}">\n${shown}\n</reply-to>\n\n${rest}`;
   }
 
   private async expandAttachments(
@@ -772,6 +828,7 @@ function isContextEnvelope(value: unknown): value is ProductContextEnvelopeV1 {
       return (
         (item["kind"] === "thread-summary" ||
           item["kind"] === "memory" ||
+          item["kind"] === "conversation-recall" ||
           item["kind"] === "owner-rules" ||
           item["kind"] === "memory-snapshot" ||
           item["kind"] === "owner-profile" ||

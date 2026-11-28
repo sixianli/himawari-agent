@@ -12,17 +12,27 @@ struct SheetHeader: View {
     let title: String
     let leading: Leading
     let action: () -> Void
+    @Environment(\.herInSidebar) private var inSidebar
 
     var body: some View {
+        if leading == .back || inSidebar {
+            SystemNavigationTitle(Text(title))
+        } else {
+            closeHeader
+        }
+    }
+
+    private var closeHeader: some View {
         HStack {
-            GlassCircleButton(Text(leading == .close ? M.close : M.back), size: SL.headerButton, action: action) {
-                Icon(leading == .close ? .x : .chevronLeft, size: DesignTokens.IconSize.glassButton)
+            GlassCircleButton(Text(M.close), size: SL.headerButton, action: action) {
+                Icon(.x, size: DesignTokens.IconSize.glassButton)
             }
             Spacer()
             Text(title).hmType(DesignTokens.TypeScale.sheetTitle).foregroundStyle(Color.hmText)
             Spacer()
             Color.clear.frame(width: SL.headerButton, height: SL.headerButton)
         }
+        .navigationTitle(title)
     }
 }
 
@@ -62,6 +72,11 @@ struct SettingsRow: View {
     var chevron = false
     var switchState: Binding<Bool>? = nil
     var last = false
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    private var valueStacksUnderTitle: Bool {
+        typeSize.isAccessibilitySize
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -71,6 +86,9 @@ struct SettingsRow: View {
                 }
                 VStack(alignment: .leading, spacing: SL.rowTextGap) {
                     Text(title).hmType(SL.rowValue).foregroundStyle(Color.hmText)
+                    if let value, valueStacksUnderTitle {
+                        valueText(value)
+                    }
                     if let detail {
                         Text(detail).hmType(DesignTokens.TypeScale.caption).foregroundStyle(Color.hmMuted)
                     }
@@ -82,13 +100,11 @@ struct SettingsRow: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                if let value {
-                    Text(value)
-                        .hmType(SL.rowValue)
-                        .foregroundStyle(tone == .attention ? Color.hmDanger : tone == .good ? Color.hmSuccess : Color.hmMuted)
+                if let value, !valueStacksUnderTitle {
+                    valueText(value)
                 }
                 if let switchState {
-                    Toggle("", isOn: switchState).labelsHidden().tint(Color.hmSuccess)
+                    Toggle("", isOn: switchState).labelsHidden()
                 }
                 if chevron {
                     Icon(.chevronRight, size: DesignTokens.IconSize.chevron).foregroundStyle(Color.hmMuted)
@@ -100,24 +116,31 @@ struct SettingsRow: View {
         }
         .contentShape(Rectangle())
     }
+
+    private func valueText(_ value: String) -> some View {
+        Text(value)
+            .hmType(SL.rowValue)
+            .foregroundStyle(tone == .attention ? Color.hmDanger : tone == .good ? Color.hmSun : Color.hmMuted)
+    }
 }
 
 struct SettingsPage<Content: View>: View {
     let gap: CGFloat
+    var systemBar = true
     @ViewBuilder let content: Content
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: gap) { content }
-                .padding(.top, DesignTokens.Size.sheetPaddingTop)
+                .padding(.top, systemBar ? SL.groupGap : DesignTokens.Size.sheetPaddingTop)
                 .padding(.horizontal, DesignTokens.Size.sheetPaddingHorizontal)
                 .padding(.bottom, DesignTokens.Size.sheetPaddingBottom)
-                .containerRelativeFrame(.vertical, alignment: .top)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
         }
         .scrollIndicators(.hidden)
         .himawariScreenBackground()
         #if os(iOS)
-        .toolbar(.hidden, for: .navigationBar)
+        .toolbar(systemBar ? .visible : .hidden, for: .navigationBar)
         #endif
     }
 }
@@ -127,32 +150,14 @@ struct SegmentPicker<Value: Hashable>: View {
     let options: [(Value, String)]
 
     var body: some View {
-        HStack(spacing: 0) {
+        Picker(selection: $selection) {
             ForEach(options, id: \.0) { value, title in
-                option(value, title)
+                Text(title).tag(value)
             }
-        }
-        .padding(ManageLayout.Segment.inset)
-        .background(Color.hmFill, in: RoundedRectangle(cornerRadius: DesignTokens.Radius.segment, style: .continuous))
-    }
-
-    private func option(_ value: Value, _ title: String) -> some View {
-        Button {
-            selection = value
         } label: {
-            Text(title)
-                .hmType(selection == value ? DesignTokens.TypeScale.navTitle : DesignTokens.TypeScale.body)
-                .foregroundStyle(Color.hmText)
-                .frame(maxWidth: .infinity, minHeight: DesignTokens.Size.minTapTarget)
-                .background {
-                    if selection == value {
-                        RoundedRectangle(cornerRadius: DesignTokens.Radius.segment - ManageLayout.Segment.inset, style: .continuous)
-                            .fill(Color.hmSurface)
-                            .hmShadow(DesignTokens.Shadows.lift)
-                    }
-                }
+            EmptyView()
         }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(selection == value ? .isSelected : [])
+        .pickerStyle(.segmented)
+        .labelsHidden()
     }
 }

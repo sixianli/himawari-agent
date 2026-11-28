@@ -142,3 +142,154 @@ it("initializes one product identity and refuses repeated or escaping targets", 
     await rm(root, { recursive: true, force: true });
   }
 });
+
+it("stores a configuration that later admin commands can load when it names retired run policy keys", async () => {
+  const root = await realpath(await mkdtemp(path.join(tmpdir(), "himawari-init-retired-")));
+  try {
+    const source = JSON.parse(
+      await readFile(
+        new URL(
+          "../../../test/integration/fixtures/file-summary/configuration.json",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+    );
+    const stateRoot = path.join(root, "state");
+    const config = {
+      ...source,
+      stateRoot,
+      runtimeDirectory: path.join(stateRoot, "runtime"),
+      cacheDirectory: path.join(stateRoot, "cache"),
+      memory: { ...source.memory, storagePath: path.join(stateRoot, "data", "memory") },
+      runPolicy: { ...source.runPolicy, maxMemoryClassification: "private" },
+    };
+    const input = path.join(root, "input.json");
+    await writeFile(input, JSON.stringify(config), { mode: 0o600 });
+    let errors = "";
+    const sink = new Writable({
+      write(_chunk, _encoding, done) {
+        done();
+      },
+    });
+    const stderr = new Writable({
+      write(chunk, _encoding, done) {
+        errors += String(chunk);
+        done();
+      },
+    });
+    expect(await runAdminCli(["init", "--config", input], sink, stderr), errors).toBe(0);
+    const storedConfig = path.join(stateRoot, "configuration.json");
+    const stored = JSON.parse(await readFile(storedConfig, "utf8"));
+    expect(stored.runPolicy).toEqual(source.runPolicy);
+    const workspace = path.join(root, "workspace");
+    await mkdir(workspace, { mode: 0o700 });
+    errors = "";
+    expect(
+      await runAdminCli(
+        [
+          "workspace",
+          "grant",
+          "--config",
+          storedConfig,
+          "--directory",
+          workspace,
+          "--host-id",
+          "host:test",
+          "--id",
+          "directory:test",
+          "--expires-at",
+          new Date(Date.now() + 3600000).toISOString(),
+          "--confirm",
+          workspace,
+        ],
+        sink,
+        stderr,
+      ),
+      errors,
+    ).toBe(0);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+it("stores a workspace grant expiry as a canonical UTC timestamp whatever form the owner typed", async () => {
+  const root = await realpath(await mkdtemp(path.join(tmpdir(), "himawari-grant-expiry-")));
+  try {
+    const source = JSON.parse(
+      await readFile(
+        new URL(
+          "../../../test/integration/fixtures/file-summary/configuration.json",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+    );
+    const stateRoot = path.join(root, "state");
+    const input = path.join(root, "input.json");
+    await writeFile(
+      input,
+      JSON.stringify({
+        ...source,
+        stateRoot,
+        runtimeDirectory: path.join(stateRoot, "runtime"),
+        cacheDirectory: path.join(stateRoot, "cache"),
+        memory: { ...source.memory, storagePath: path.join(stateRoot, "data", "memory") },
+      }),
+      { mode: 0o600 },
+    );
+    let output = "";
+    let errors = "";
+    const stdout = new Writable({
+      write(chunk, _encoding, done) {
+        output += String(chunk);
+        done();
+      },
+    });
+    const stderr = new Writable({
+      write(chunk, _encoding, done) {
+        errors += String(chunk);
+        done();
+      },
+    });
+    expect(await runAdminCli(["init", "--config", input], stdout, stderr), errors).toBe(0);
+    const workspace = path.join(root, "workspace");
+    await mkdir(workspace, { mode: 0o700 });
+    output = "";
+    expect(
+      await runAdminCli(
+        [
+          "workspace",
+          "grant",
+          "--config",
+          path.join(stateRoot, "configuration.json"),
+          "--directory",
+          workspace,
+          "--host-id",
+          "host:test",
+          "--id",
+          "directory:test",
+          "--expires-at",
+          "2099-01-01T09:00:00+09:00",
+          "--confirm",
+          workspace,
+        ],
+        stdout,
+        stderr,
+      ),
+      errors,
+    ).toBe(0);
+    expect(JSON.parse(output).expiresAt).toBe("2099-01-01T00:00:00.000Z");
+    const db = openQualifiedDatabase(path.join(stateRoot, "data", "product.sqlite"));
+    try {
+      const row = db
+        .prepare("SELECT value_json FROM product_state_records WHERE key = ?")
+        .get("host-workspace:directory-grant:directory:test") as { value_json: string };
+      expect(JSON.parse(row.value_json).expiresAt).toBe("2099-01-01T00:00:00.000Z");
+    } finally {
+      db.close();
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

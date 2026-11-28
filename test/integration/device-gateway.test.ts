@@ -1,5 +1,7 @@
 import { DEFAULT_SEARCH_ASK, type ProductMemoryRecord } from "@himawari-agent/application";
+import { HybridMemoryProvider } from "@himawari-agent/memory-engine";
 import { afterEach, describe, expect, it } from "vitest";
+import { ProductionMemorySearch } from "../../apps/agent-service/src/production-memory-search.ts";
 import { ProductionSearchControl } from "../../apps/agent-service/src/production-search.ts";
 import {
   agentId,
@@ -146,7 +148,8 @@ describe("[第11批] 原生页面经设备接口走和网页同一个处理程�
   it("“改”没有确认签名时被拒，用一次性挑战值加确认签名才执行，并记审计", async () => {
     const h = await harness();
     const client = await pairAndConfirm(h);
-    const clear = () => gatewayBody({ gateway: "v2", type: "muse.data.clear", payload: {} });
+    const clear = () =>
+      gatewayBody({ gateway: "v2", type: "sensitive.interceptions.clear", payload: {} });
 
     const unconfirmed = await gateway(h, client, clear());
     expect(unconfirmed.statusCode).toBe(403);
@@ -161,8 +164,8 @@ describe("[第11批] 原生页面经设备接口走和网页同一个处理程�
     const confirmed = await gateway(h, client, clear(), { nonce: issued.challenge });
     expect(confirmed.statusCode, confirmed.body).toBe(200);
     expect(await auditTrail(h)).toEqual([
-      `device.gateway.change:${client.deviceId}:v2:muse.data.clear:accepted`,
-      `device.gateway.change:${client.deviceId}:v2:muse.data.clear:completed`,
+      `device.gateway.change:${client.deviceId}:v2:sensitive.interceptions.clear:accepted`,
+      `device.gateway.change:${client.deviceId}:v2:sensitive.interceptions.clear:completed`,
     ]);
     await h.repository.close();
   });
@@ -183,7 +186,8 @@ describe("[第11批] 原生页面经设备接口走和网页同一个处理程�
     const h = await harness();
     const client = await pairAndConfirm(h);
     const other = await pairAndConfirm(h);
-    const clear = () => gatewayBody({ gateway: "v2", type: "muse.data.clear", payload: {} });
+    const clear = () =>
+      gatewayBody({ gateway: "v2", type: "sensitive.interceptions.clear", payload: {} });
 
     const issued = await challenge(h, client);
     const first = await gateway(h, client, clear(), { nonce: issued.challenge });
@@ -203,55 +207,6 @@ describe("[第11批] 原生页面经设备接口走和网页同一个处理程�
     expect(expired.statusCode).toBe(401);
     expect(expired.json()).toEqual({ error: { code: "DEVICE_CHALLENGE_INVALID" } });
     expect((await audits(h)).length).toBe(2);
-    await h.repository.close();
-  });
-
-  it("“收紧”只在让 Himawari 收集得更少时免面容；往回打开要确认签名", async () => {
-    const h = await harness();
-    const client = await pairAndConfirm(h);
-    const pause = await gateway(
-      h,
-      client,
-      gatewayBody({ gateway: "v2", type: "muse.intake.set", payload: { paused: true } }),
-    );
-    expect(pause.statusCode, pause.body).toBe(200);
-    const overview = async () => {
-      const response = await gateway(
-        h,
-        client,
-        gatewayBody({ gateway: "v2", type: "muse.overview.read", command: false, payload: {} }),
-      );
-      expect(response.statusCode, response.body).toBe(200);
-      return (response.json() as { payload: { channel: { state: string } } }).payload.channel.state;
-    };
-    expect(await overview()).toBe("paused");
-
-    const resumeWithoutFace = await gateway(
-      h,
-      client,
-      gatewayBody({ gateway: "v2", type: "muse.intake.set", payload: { paused: false } }),
-    );
-    expect(resumeWithoutFace.statusCode).toBe(403);
-    expect(resumeWithoutFace.json()).toEqual({
-      error: { code: "DEVICE_GATEWAY_CONFIRM_REQUIRED" },
-    });
-    expect(await overview()).toBe("paused");
-
-    const issued = await challenge(h, client);
-    const resume = await gateway(
-      h,
-      client,
-      gatewayBody({ gateway: "v2", type: "muse.intake.set", payload: { paused: false } }),
-      { nonce: issued.challenge },
-    );
-    expect(resume.statusCode, resume.body).toBe(200);
-    expect(await overview()).not.toBe("paused");
-    expect(await auditTrail(h)).toEqual([
-      `device.gateway.change:${client.deviceId}:v2:muse.intake.set:accepted`,
-      `device.gateway.change:${client.deviceId}:v2:muse.intake.set:completed`,
-      `device.gateway.tighten:${client.deviceId}:v2:muse.intake.set:accepted`,
-      `device.gateway.tighten:${client.deviceId}:v2:muse.intake.set:completed`,
-    ]);
     await h.repository.close();
   });
 
@@ -283,31 +238,36 @@ describe("[第11批] 原生页面经设备接口走和网页同一个处理程�
   it("关掉一种推送只用设备密钥就过了面容这一关，打开要确认签名", async () => {
     const h = await harness();
     const client = await pairAndConfirm(h);
-    const off = await gateway(
-      h,
-      client,
-      gatewayBody({
-        gateway: "v2",
-        type: "push.kind.set",
-        payload: { kind: "run", enabled: false },
-      }),
-    );
-    expect(off.statusCode).toBe(501);
-    expect(off.json()).toEqual({ error: { code: "PORT_OPERATION_NOT_INSTALLED" } });
-    const on = await gateway(
-      h,
-      client,
-      gatewayBody({
-        gateway: "v2",
-        type: "push.kind.set",
-        payload: { kind: "run", enabled: true },
-      }),
-    );
-    expect(on.statusCode).toBe(403);
-    expect(on.json()).toEqual({ error: { code: "DEVICE_GATEWAY_CONFIRM_REQUIRED" } });
+    const kinds = async () => {
+      const response = await gateway(
+        h,
+        client,
+        gatewayBody({ gateway: "v2", type: "push.status.read", command: false, payload: {} }),
+      );
+      expect(response.statusCode, response.body).toBe(200);
+      return (response.json() as { payload: { kinds: string[] } }).payload.kinds;
+    };
+    const runEnabled = async () => (await kinds()).includes("run");
+    const set = (enabled: boolean) =>
+      gatewayBody({ gateway: "v2", type: "push.kind.set", payload: { kind: "run", enabled } });
+    const off = await gateway(h, client, set(false));
+    expect(off.statusCode, off.body).toBe(200);
+    expect(await runEnabled()).toBe(false);
+
+    const onWithoutFace = await gateway(h, client, set(true));
+    expect(onWithoutFace.statusCode).toBe(403);
+    expect(onWithoutFace.json()).toEqual({ error: { code: "DEVICE_GATEWAY_CONFIRM_REQUIRED" } });
+    expect(await runEnabled()).toBe(false);
+
+    const issued = await challenge(h, client);
+    const on = await gateway(h, client, set(true), { nonce: issued.challenge });
+    expect(on.statusCode, on.body).toBe(200);
+    expect(await runEnabled()).toBe(true);
     expect(await auditTrail(h)).toEqual([
+      `device.gateway.change:${client.deviceId}:v2:push.kind.set:accepted`,
+      `device.gateway.change:${client.deviceId}:v2:push.kind.set:completed`,
       `device.gateway.tighten:${client.deviceId}:v2:push.kind.set:accepted`,
-      `device.gateway.tighten:${client.deviceId}:v2:push.kind.set:failed`,
+      `device.gateway.tighten:${client.deviceId}:v2:push.kind.set:completed`,
     ]);
     await h.repository.close();
   });
@@ -366,7 +326,11 @@ describe("[第11批] 原生页面经设备接口走和网页同一个处理程�
           payload: { action, memoryId: "memory-x" },
         }),
       ),
-      gatewayBody({ gateway: "v2", type: "muse.intake.set", payload: { paused: false } }),
+      gatewayBody({
+        gateway: "v2",
+        type: "push.kind.set",
+        payload: { kind: "run", enabled: false, extra: true },
+      }),
       gatewayBody({
         gateway: "v2",
         type: "memory.settings.set",
@@ -386,7 +350,8 @@ describe("[第11批] 原生页面经设备接口走和网页同一个处理程�
     const h = await harness();
     const client = await pairAndConfirm(h);
     const issued = await challenge(h, client);
-    const clear = () => gatewayBody({ gateway: "v2", type: "muse.data.clear", payload: {} });
+    const clear = () =>
+      gatewayBody({ gateway: "v2", type: "sensitive.interceptions.clear", payload: {} });
     const results = await Promise.all([
       gateway(h, client, clear(), { nonce: issued.challenge }),
       gateway(h, client, clear(), { nonce: issued.challenge }),
@@ -405,10 +370,15 @@ describe("[第11批] 原生页面经设备接口走和网页同一个处理程�
     const response = await gateway(
       h,
       client,
-      gatewayBody({ gateway: "v2", type: "muse.overview.read", command: false, payload: {} }),
+      gatewayBody({
+        gateway: "v2",
+        type: "sensitive.interceptions.read",
+        command: false,
+        payload: { before: null },
+      }),
     );
     expect(response.statusCode, response.body).toBe(200);
-    expect((response.json() as { type: string }).type).toBe("muse.overview.snapshot");
+    expect((response.json() as { type: string }).type).toBe("sensitive.interceptions.snapshot");
     expect(await audits(h)).toEqual([]);
     await h.repository.close();
   });
@@ -517,7 +487,7 @@ describe("[第11批] 原生页面经设备接口走和网页同一个处理程�
     const response = await gateway(
       h,
       client,
-      gatewayBody({ gateway: "v2", type: "muse.snapshot", command: false, payload: {} }),
+      gatewayBody({ gateway: "v2", type: "nothing.defined.read", command: false, payload: {} }),
     );
     expect(response.statusCode).toBe(404);
 
@@ -529,7 +499,12 @@ describe("[第11批] 原生页面经设备接口走和网页同一个处理程�
       const spoofed = await gateway(
         h,
         client,
-        gatewayBody({ gateway: "v2", type: "muse.intake.set", payload: { paused: true }, extra }),
+        gatewayBody({
+          gateway: "v2",
+          type: "push.kind.set",
+          payload: { kind: "run", enabled: false },
+          extra,
+        }),
       );
       expect(spoofed.statusCode, JSON.stringify(extra)).toBe(400);
     }
@@ -640,6 +615,55 @@ describe("手机搜索页问答经设备通道", () => {
     const h = await harness();
     const client = await pairAndConfirm(h);
     const response = await ask(h, client, "我对什么过敏");
+    expect(response.statusCode).not.toBe(200);
+  });
+});
+
+describe("手机记忆页检索经设备通道", () => {
+  const search = (h: Harness, client: PairedClient) =>
+    gateway(
+      h,
+      client,
+      gatewayBody({
+        gateway: "v2",
+        type: "memory.search.read",
+        command: false,
+        payload: { query: "我对什么过敏" },
+      }),
+    );
+
+  it("装配了检索时，手机能调到它；没有任何记忆时结果为空", async () => {
+    const h = await harness({
+      memorySearch: ({ repository }) =>
+        new ProductionMemorySearch({
+          ownerId: ownerId as ProductMemoryRecord["ownerId"],
+          agentId: agentId as ProductMemoryRecord["agentId"],
+          provider: new HybridMemoryProvider({
+            index: repository.memoryIndex(),
+            embedder: null,
+            embeddableClassifications: [],
+            now: () => "2026-11-26T01:00:00.000Z",
+          }),
+          state: repository.productMemoryState(),
+          readText: async () => undefined,
+          embedOutsideRun: (_context, operation) => operation(),
+          requestTimeoutMs: 5_000,
+          clock: { now: () => "2026-11-26T01:00:00.000Z" },
+        }),
+    });
+    const client = await pairAndConfirm(h);
+    const response = await search(h, client);
+    expect(response.statusCode, response.body).toBe(200);
+    expect(JSON.parse(response.body)).toMatchObject({
+      type: "memory.search.snapshot",
+      payload: { query: "我对什么过敏", results: [] },
+    });
+  });
+
+  it("没有装配检索时这个操作不可用", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    const response = await search(h, client);
     expect(response.statusCode).not.toBe(200);
   });
 });

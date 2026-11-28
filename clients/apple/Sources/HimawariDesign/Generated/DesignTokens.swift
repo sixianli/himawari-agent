@@ -3,6 +3,9 @@ import CoreGraphics
 public enum DesignTokens {
     public enum Colors {
         public static let bg = PaletteToken(light: RGBA(red: 252 / 255, green: 252 / 255, blue: 251 / 255, alpha: 1), dark: RGBA(red: 30 / 255, green: 30 / 255, blue: 30 / 255, alpha: 1))
+        public static let bubble = PaletteToken(light: RGBA(red: 239 / 255, green: 239 / 255, blue: 236 / 255, alpha: 1), dark: RGBA(red: 44 / 255, green: 44 / 255, blue: 43 / 255, alpha: 1))
+        public static let bubbleCode = PaletteToken(light: RGBA(red: 37 / 255, green: 41 / 255, blue: 33 / 255, alpha: 0.11), dark: RGBA(red: 255 / 255, green: 255 / 255, blue: 255 / 255, alpha: 0.06))
+        public static let bubbleOwner = PaletteToken(light: RGBA(red: 154 / 255, green: 98 / 255, blue: 0 / 255, alpha: 1), dark: RGBA(red: 154 / 255, green: 98 / 255, blue: 0 / 255, alpha: 1))
         public static let danger = PaletteToken(light: RGBA(red: 167 / 255, green: 60 / 255, blue: 48 / 255, alpha: 1), dark: RGBA(red: 239 / 255, green: 160 / 255, blue: 149 / 255, alpha: 1))
         public static let fill = PaletteToken(light: RGBA(red: 37 / 255, green: 41 / 255, blue: 33 / 255, alpha: 0.06), dark: RGBA(red: 228 / 255, green: 228 / 255, blue: 225 / 255, alpha: 0.08))
         public static let fill2 = PaletteToken(light: RGBA(red: 37 / 255, green: 41 / 255, blue: 33 / 255, alpha: 0.11), dark: RGBA(red: 228 / 255, green: 228 / 255, blue: 225 / 255, alpha: 0.15))
@@ -11,8 +14,8 @@ public enum DesignTokens {
         public static let glow = PaletteToken(light: RGBA(red: 232 / 255, green: 176 / 255, blue: 74 / 255, alpha: 0.34), dark: RGBA(red: 239 / 255, green: 178 / 255, blue: 60 / 255, alpha: 0.18))
         public static let glyph = PaletteToken(light: RGBA(red: 138 / 255, green: 90 / 255, blue: 0 / 255, alpha: 1), dark: RGBA(red: 242 / 255, green: 187 / 255, blue: 79 / 255, alpha: 1))
         public static let highlight = PaletteToken(light: RGBA(red: 248 / 255, green: 235 / 255, blue: 203 / 255, alpha: 1), dark: RGBA(red: 75 / 255, green: 63 / 255, blue: 37 / 255, alpha: 1))
-        public static let muted = PaletteToken(light: RGBA(red: 107 / 255, green: 113 / 255, blue: 100 / 255, alpha: 1), dark: RGBA(red: 160 / 255, green: 160 / 255, blue: 154 / 255, alpha: 1))
-        public static let onSpeak = PaletteToken(light: RGBA(red: 252 / 255, green: 252 / 255, blue: 251 / 255, alpha: 1), dark: RGBA(red: 228 / 255, green: 228 / 255, blue: 225 / 255, alpha: 1))
+        public static let muted = PaletteToken(light: RGBA(red: 86 / 255, green: 91 / 255, blue: 80 / 255, alpha: 1), dark: RGBA(red: 180 / 255, green: 180 / 255, blue: 174 / 255, alpha: 1))
+        public static let onBubbleOwner = PaletteToken(light: RGBA(red: 252 / 255, green: 252 / 255, blue: 251 / 255, alpha: 1), dark: RGBA(red: 252 / 255, green: 252 / 255, blue: 251 / 255, alpha: 1))
         public static let onText = PaletteToken(light: RGBA(red: 252 / 255, green: 252 / 255, blue: 251 / 255, alpha: 1), dark: RGBA(red: 30 / 255, green: 30 / 255, blue: 30 / 255, alpha: 1))
         public static let scrim = PaletteToken(light: RGBA(red: 0 / 255, green: 0 / 255, blue: 0 / 255, alpha: 0.28), dark: RGBA(red: 0 / 255, green: 0 / 255, blue: 0 / 255, alpha: 0.5))
         public static let separator = PaletteToken(light: RGBA(red: 37 / 255, green: 41 / 255, blue: 33 / 255, alpha: 0.09), dark: RGBA(red: 228 / 255, green: 228 / 255, blue: 225 / 255, alpha: 0.1))
@@ -25,13 +28,21 @@ public enum DesignTokens {
         public static let switchOff = PaletteToken(light: RGBA(red: 201 / 255, green: 203 / 255, blue: 194 / 255, alpha: 1), dark: RGBA(red: 85 / 255, green: 85 / 255, blue: 79 / 255, alpha: 1))
         public static let text = PaletteToken(light: RGBA(red: 37 / 255, green: 41 / 255, blue: 33 / 255, alpha: 1), dark: RGBA(red: 228 / 255, green: 228 / 255, blue: 225 / 255, alpha: 1))
         public static let badge = danger
+        public static let codeComment = muted
+        public static let codeKeyword = sun
+        public static let codeNumber = danger
+        public static let codeString = success
+        public static let codeType = glyph
         public static let iconTile = highlight
+        public static let link = sun
+        public static let replyBar = sun
         public static let streamingDot = sunBright
     }
 
     public enum Shadows {
         public static let lift = ShadowToken(x: 0, y: 2, blur: 10, color: PaletteToken(light: RGBA(red: 0 / 255, green: 0 / 255, blue: 0 / 255, alpha: 0.07), dark: RGBA(red: 0 / 255, green: 0 / 255, blue: 0 / 255, alpha: 0.35)))
         public static let liftBig = ShadowToken(x: 0, y: 8, blur: 28, color: PaletteToken(light: RGBA(red: 0 / 255, green: 0 / 255, blue: 0 / 255, alpha: 0.13), dark: RGBA(red: 0 / 255, green: 0 / 255, blue: 0 / 255, alpha: 0.5)))
+        public static let puck = ShadowToken(x: 0, y: 4, blur: 14, color: PaletteToken(light: RGBA(red: 0 / 255, green: 0 / 255, blue: 0 / 255, alpha: 0.25), dark: RGBA(red: 0 / 255, green: 0 / 255, blue: 0 / 255, alpha: 0.25)))
     }
 
     public enum Glass {
@@ -125,7 +136,6 @@ public enum DesignTokens {
     public enum Pairing {
         public static let bannerRadius: CGFloat = 22
         public static let errorIcon: CGFloat = 72
-        public static let errorTitleSize: CGFloat = 26
         public static let errorTop: CGFloat = 156
         public static let glowCenterY: CGFloat = 210
         public static let glowRadius: CGFloat = 310
@@ -139,7 +149,6 @@ public enum DesignTokens {
         public static let stepNumberWidth: CGFloat = 20
         public static let stepRowHeight: CGFloat = 56
         public static let waitingMark: CGFloat = 120
-        public static let waitingTextSize: CGFloat = 22
         public static let waitingTop: CGFloat = 86
     }
 
@@ -178,7 +187,6 @@ public enum DesignTokens {
         public static let fieldRadius: CGFloat = 22
         public static let heroGap: CGFloat = 18
         public static let heroIcon: CGFloat = 72
-        public static let heroTitleSize: CGFloat = 26
         public static let heroTop: CGFloat = 30
         public static let noteInset: CGFloat = 8
         public static let outcomeGap: CGFloat = 14
@@ -195,6 +203,7 @@ public enum DesignTokens {
         public static let buttonPaddingX: CGFloat = 16
         public static let cardButtonGap: CGFloat = 6
         public static let cardButtonHeight: CGFloat = 32
+        public static let chatColumnMaxWidth: CGFloat = 760
         public static let checklistGap: CGFloat = 14
         public static let checklistIcon: CGFloat = 20
         public static let checklistPadding: CGFloat = 24
@@ -241,10 +250,16 @@ public enum DesignTokens {
         public static let settingsPaddingX: CGFloat = 18
         public static let settingsRowPadding: CGFloat = 8
         public static let settingsWidth: CGFloat = 500
+        public static let settingsWindowWidth: CGFloat = 520
+        public static let sidebarMaxWidth: CGFloat = 280
+        public static let sidebarMinWidth: CGFloat = 200
+        public static let sidebarWidth: CGFloat = 220
         public static let smallButtonHeight: CGFloat = 28
         public static let statusBadgeGap: CGFloat = 5
         public static let statusIcon: CGFloat = 17
         public static let talkRowHeight: CGFloat = 38
+        public static let windowMinHeight: CGFloat = 520
+        public static let windowMinWidth: CGFloat = 760
     }
 
     public enum Watch {
@@ -277,6 +292,11 @@ public enum DesignTokens {
     public enum Chat {
         public static let answerBlockGap: CGFloat = 10
         public static let attachCloseButton: CGFloat = 48
+        public static let attachRecentCheck: CGFloat = 24
+        public static let attachRecentCount: CGFloat = 30
+        public static let attachRecentHeight: CGFloat = 120
+        public static let attachRecentMaxWidth: CGFloat = 160
+        public static let attachRecentRadius: CGFloat = 12
         public static let attachRowIcon: CGFloat = 19
         public static let attachRowIconStroke: CGFloat = 1.7
         public static let attachRowTile: CGFloat = 34
@@ -289,17 +309,66 @@ public enum DesignTokens {
         public static let attachTileIcon: CGFloat = 26
         public static let attachTileIconGap: CGFloat = 8
         public static let attachTitleSize: CGFloat = 18
+        public static let backgroundAlertDot: CGFloat = 6
+        public static let backgroundCardGap: CGFloat = 16
+        public static let backgroundCardHeaderPaddingY: CGFloat = 14
+        public static let backgroundCardPaddingY: CGFloat = 6
+        public static let backgroundPageGap: CGFloat = 20
+        public static let backgroundRowLineGap: CGFloat = 3
+        public static let backgroundRowPaddingY: CGFloat = 12
+        public static let backgroundSectionGap: CGFloat = 8
+        public static let backgroundStepPaddingY: CGFloat = 10
+        public static let backgroundTagPaddingX: CGFloat = 8
+        public static let backgroundTagPaddingY: CGFloat = 3
+        public static let bubbleEdge: CGFloat = 16
+        public static let bubbleGroupGap: CGFloat = 2
+        public static let bubbleHerRoom: CGFloat = 40
+        public static let bubbleOwnerShare: CGFloat = 0.78
+        public static let bubblePaddingX: CGFloat = 14
+        public static let bubblePaddingY: CGFloat = 9
+        public static let bubbleRadius: CGFloat = 20
+        public static let bubbleSpeakerGap: CGFloat = 14
+        public static let bubbleStepGap: CGFloat = 6
+        public static let bubbleTimePaddingY: CGFloat = 6
+        public static let codeHeaderPaddingTop: CGFloat = 8
         public static let codePadding: CGFloat = 12
+        public static let codeRadius: CGFloat = 12
+        public static let copiedToastLift: CGFloat = 10
+        public static let copiedToastPaddingHorizontal: CGFloat = 14
+        public static let copiedToastPaddingVertical: CGFloat = 7
+        public static let copiedToastSeconds: CGFloat = 1.2
+        public static let emptyFadeSeconds: CGFloat = 0.4
+        public static let emptyMark: CGFloat = 120
+        public static let emptyWordmarkGap: CGFloat = 14
+        public static let emptyWordmarkSize: CGFloat = 22
         public static let headerFade: CGFloat = 140
         public static let headerFadeSolid: CGFloat = 110
         public static let headerFadeWithBackground: CGFloat = 186
         public static let headerFadeWithBackgroundSolid: CGFloat = 156
         public static let hearingBubbleOpacity: CGFloat = 0.55
+        public static let inlineCodePadding: CGFloat = 3
+        public static let inlineCodeRadius: CGFloat = 4
         public static let listGap: CGFloat = 4
         public static let listIndent: CGFloat = 4
         public static let listMarkerGap: CGFloat = 6
+        public static let liveActivityButton: CGFloat = 44
+        public static let liveActivityIslandMark: CGFloat = 18
+        public static let liveActivityIslandTrailing: CGFloat = 52
+        public static let liveActivityMark: CGFloat = 40
+        public static let puckBannerGap: CGFloat = 8
+        public static let puckBusyLow: CGFloat = 0.7
+        public static let puckContentGap: CGFloat = 12
+        public static let puckLine: CGFloat = 0.5
+        public static let puckMark: CGFloat = 46
+        public static let puckSeeds: CGFloat = 89
+        public static let puckSize: CGFloat = 56
+        public static let puckTop: CGFloat = 6
         public static let quoteBar: CGFloat = 3
         public static let quoteGap: CGFloat = 10
+        public static let replyBarWidth: CGFloat = 3
+        public static let replyFlashOpacity: CGFloat = 0.18
+        public static let replyFlashSeconds: CGFloat = 0.6
+        public static let replyQuoteGap: CGFloat = 8
         public static let tableCellPaddingVertical: CGFloat = 10
         public static let tableCellPaddingHorizontal: CGFloat = 14
         public static let tableFontSize: CGFloat = 15
@@ -312,6 +381,7 @@ public enum DesignTokens {
         public static let talkBarsInInput: CGFloat = 9
         public static let talkBarsOnTalkPage: CGFloat = 13
         public static let talkLabelGap: CGFloat = 10
+        public static let whyCardRadius: CGFloat = 12
     }
 
     public enum Her {
@@ -328,10 +398,8 @@ public enum DesignTokens {
         public static let pagePaddingHorizontal: CGFloat = 16
         public static let pagePaddingBottom: CGFloat = 40
         public static let pillPaddingX: CGFloat = 24
-        public static let rowIcon: CGFloat = 19
-        public static let rowIconStroke: CGFloat = 1.7
         public static let rowSubtitleGap: CGFloat = 2
-        public static let rowTile: CGFloat = 34
+        public static let rowSymbolWidth: CGFloat = 28
         public static let rowTileRadius: CGFloat = 10
     }
 
@@ -385,27 +453,27 @@ public enum DesignTokens {
     }
 
     public enum TypeScale {
-        public static let answer = TypeToken(size: 18, weight: 400, lineHeight: 18 * 1.75, face: .system, tracking: 0)
+        public static let answer = TypeToken(size: 17, weight: 400, lineHeight: 17 * 1.45, face: .system, tracking: 0)
         public static let badge = TypeToken(size: 12, weight: 700, lineHeight: nil, face: .system, tracking: 0)
         public static let body = TypeToken(size: 17, weight: 400, lineHeight: 17 * 1.35, face: .system, tracking: 0)
         public static let bubble = TypeToken(size: 17, weight: 400, lineHeight: 17 * 1.45, face: .system, tracking: 0)
         public static let caption = TypeToken(size: 13, weight: 400, lineHeight: 13 * 1.4, face: .system, tracking: 0)
-        public static let emptyTitle = TypeToken(size: 24, weight: 600, lineHeight: nil, face: .himawari, tracking: 0)
+        public static let emptyTitle = TypeToken(size: 24, weight: 600, lineHeight: nil, face: .system, tracking: 0)
         public static let groupLabel = TypeToken(size: 15, weight: 400, lineHeight: nil, face: .system, tracking: 0)
         public static let macAnswer = TypeToken(size: 15, weight: 500, lineHeight: 15 * 1.6, face: .system, tracking: 0)
         public static let macButton = TypeToken(size: 14, weight: 400, lineHeight: nil, face: .system, tracking: 0)
         public static let macButtonSmall = TypeToken(size: 13, weight: 400, lineHeight: nil, face: .system, tracking: 0)
         public static let macButtonSmallStrong = TypeToken(size: 13, weight: 600, lineHeight: nil, face: .system, tracking: 0)
         public static let macButtonStrong = TypeToken(size: 14, weight: 600, lineHeight: nil, face: .system, tracking: 0)
-        public static let macChecklistTitle = TypeToken(size: 21, weight: 600, lineHeight: 21 * 1.45, face: .himawari, tracking: 0)
+        public static let macChecklistTitle = TypeToken(size: 21, weight: 600, lineHeight: 21 * 1.45, face: .system, tracking: 0)
         public static let macChip = TypeToken(size: 13, weight: 400, lineHeight: nil, face: .system, tracking: 0)
         public static let macDraft = TypeToken(size: 17, weight: 400, lineHeight: nil, face: .system, tracking: 0)
         public static let macInput = TypeToken(size: 19, weight: 400, lineHeight: nil, face: .system, tracking: 0)
         public static let macLabel = TypeToken(size: 12, weight: 600, lineHeight: nil, face: .system, tracking: 0)
-        public static let macNotice = TypeToken(size: 15.5, weight: 600, lineHeight: 15.5 * 1.45, face: .himawari, tracking: 0)
+        public static let macNotice = TypeToken(size: 15.5, weight: 600, lineHeight: 15.5 * 1.45, face: .system, tracking: 0)
         public static let macRow = TypeToken(size: 15, weight: 400, lineHeight: nil, face: .system, tracking: 0)
         public static let macRowStrong = TypeToken(size: 15, weight: 600, lineHeight: nil, face: .system, tracking: 0)
-        public static let macSentence = TypeToken(size: 16, weight: 600, lineHeight: 16 * 1.45, face: .himawari, tracking: 0)
+        public static let macSentence = TypeToken(size: 16, weight: 600, lineHeight: 16 * 1.45, face: .system, tracking: 0)
         public static let macSetting = TypeToken(size: 13.5, weight: 400, lineHeight: nil, face: .system, tracking: 0)
         public static let macSmall = TypeToken(size: 12.5, weight: 400, lineHeight: nil, face: .system, tracking: 0)
         public static let navTitle = TypeToken(size: 17, weight: 600, lineHeight: nil, face: .system, tracking: 0)
@@ -415,7 +483,7 @@ public enum DesignTokens {
         public static let rowAction = TypeToken(size: 15, weight: 600, lineHeight: nil, face: .system, tracking: 0)
         public static let secondary = TypeToken(size: 15, weight: 400, lineHeight: 15 * 1.45, face: .system, tracking: 0)
         public static let senseTime = TypeToken(size: 15, weight: 600, lineHeight: nil, face: .rounded, tracking: 0)
-        public static let senseTitle = TypeToken(size: 26, weight: 600, lineHeight: 26 * 1.4, face: .himawari, tracking: 0)
+        public static let senseTitle = TypeToken(size: 26, weight: 600, lineHeight: 26 * 1.4, face: .system, tracking: 0)
         public static let sheetTitle = TypeToken(size: 18, weight: 700, lineHeight: nil, face: .system, tracking: 0)
         public static let title1 = TypeToken(size: 34, weight: 700, lineHeight: 44, face: .system, tracking: 0)
         public static let watchAnswer = TypeToken(size: 16, weight: 400, lineHeight: nil, face: .system, tracking: 0)

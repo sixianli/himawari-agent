@@ -512,6 +512,7 @@ describe.each(["worker", "direct"] as const)(
               },
               readRun: async () => [],
               readSession: async () => [],
+              readRecentByType: async () => [],
             },
             artifacts: resource.repository.runPayloadArtifactPort(OWNER_ID, AGENT_ID, AUTHORITY),
             protector: protector(),

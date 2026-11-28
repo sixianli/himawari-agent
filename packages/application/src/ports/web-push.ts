@@ -181,7 +181,7 @@ export interface WebPushSendRequest {
   readonly auth: string;
   readonly payload: string;
   readonly ttlSeconds: number;
-  readonly urgency: "normal" | "high";
+  readonly urgency: "low" | "normal" | "high";
   readonly topic: string;
 }
 

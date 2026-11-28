@@ -55,7 +55,7 @@ export class ProductionFilesControl {
         threadId: null,
         kind: query.payload.kind,
         origin: query.payload.origin,
-        search: null,
+        search: query.payload.search,
         before: query.payload.before,
         limit: query.payload.limit,
       })

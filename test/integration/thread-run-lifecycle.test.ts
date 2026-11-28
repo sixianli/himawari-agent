@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import { CHAT_OWNER_SPOKEN_TURN } from "@himawari-agent/prompt-catalog";
 import {
   type AgentRuntimePort,
   ContextFormationService,
@@ -16,8 +17,8 @@ import {
   RunCoordinator,
   type RunDispatchPort,
   RunExecutionInputService,
-  type RunExecutionSource,
   type RunExecutionLease,
+  type RunExecutionSource,
   type RunLifecyclePort,
   type RunModelSelection,
   RunStateCommitCoordinator,
@@ -248,7 +249,6 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
         memoryQueryRef: "payload-run-lifecycle",
         memoryQueryTerms: [],
         memoryLimit: 1,
-        maxSelectedMemories: 0,
         capabilities: [],
         correlationId: "completion-correlation",
         causationId: "completion-cause",
@@ -413,7 +413,6 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
           capabilities: setup.input.context.capabilities,
           capabilityHandleRefs: [],
           memoryLimit: 10,
-          maxSelectedMemories: 0,
         }));
         const inputService = new RunExecutionInputService({
           maximumRunDurationMs: 1000,
@@ -2409,7 +2408,6 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
       capabilities: [],
       capabilityHandleRefs: [],
       memoryLimit: 10,
-      maxSelectedMemories: 5,
     }));
     const options = {
       maximumRunDurationMs: 60_000,
@@ -2661,7 +2659,6 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
           capabilities: [],
           capabilityHandleRefs: unknown || denied ? ["test-handle"] : [],
           memoryLimit: 5,
-          maxSelectedMemories: 0,
         }),
         clock,
         ids: adapters.ids,
@@ -3253,7 +3250,7 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
     expect(await projection.read(query)).toEqual(page);
   });
 
-  it("shows the owner which memories the context formation brought to the model", async () => {
+  it("shows the owner which memories and old conversations the context formation brought to the model", async () => {
     const setup = await executionFixture();
     const payloads = setup.repository.payloadStore(ownerId, agentId);
     const storeText = async (
@@ -3342,6 +3339,21 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
         },
       },
       threads: setup.repository.threadRepository(),
+      conversations: {
+        recall: async () => ({
+          payloadRef: "payload-conversation-recall",
+          dataClassification: "private" as const,
+          turns: [
+            {
+              conversationId: "thread-books",
+              sequence: 3,
+              day: "2026-11-18",
+              startedAt: "2026-11-18T01:00:00.000Z",
+              preview: "推荐一本好看的科幻小说",
+            },
+          ],
+        }),
+      },
       profile: {
         compose: async () => {
           const memoryIds = ["memory-color", "memory-city", "memory-health"].map(createMemoryId);
@@ -3360,7 +3372,7 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
         },
       },
     });
-    await context.form({ ...setup.input.context, maxSelectedMemories: 2 });
+    await context.form(setup.input.context);
     const reads: string[][] = [];
     const projection = new ThreadExecutionProjection({
       threads: setup.repository.threadRepository(),
@@ -3394,6 +3406,17 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
       phase: "completed",
       text: "3",
       output: "- 主人最喜欢的颜色是 蓝色",
+    });
+    expect(records.find((record) => record.name === "conversation.recall")).toMatchObject({
+      kind: "status",
+      phase: "completed",
+      text: "1",
+      output: JSON.stringify({
+        day: "2026-11-18",
+        conversationId: "thread-books",
+        sequence: 3,
+        preview: "推荐一本好看的科幻小说",
+      }),
     });
     expect(reads).toEqual([["memory-tea"], ["memory-color", "memory-city", "memory-health"]]);
     expect(JSON.stringify(records)).not.toContain("PRIVATE_");
@@ -4091,7 +4114,6 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
         capabilities: [],
         capabilityHandleRefs: ["test-handle"],
         memoryLimit: 5,
-        maxSelectedMemories: 0,
       }),
       clock,
       ids: adapters.ids,
@@ -4942,7 +4964,6 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
         capabilities: [],
         capabilityHandleRefs: [],
         memoryLimit: 5,
-        maxSelectedMemories: 0,
       }),
       clock,
       ids: adapters.ids,
@@ -5121,7 +5142,6 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
         capabilities: [],
         capabilityHandleRefs: ["bash-handle"],
         memoryLimit: 5,
-        maxSelectedMemories: 0,
       }),
       clock,
       ids: adapters.ids,
@@ -5311,7 +5331,6 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
             capabilities: [],
             capabilityHandleRefs: [],
             memoryLimit: 10,
-            maxSelectedMemories: 0,
           }),
           folds: setup.repository.threadRepository(),
           ...folds,
@@ -5492,6 +5511,114 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
       const run = await inputFor(only.message.runId as RunId);
       const input = await run.create();
       expect(input.context.trigger.payloadRef).toBe(run.source.payloadRef);
+    });
+
+    it("marks a message the phone heard by voice for her, alone or among others, and never a typed one", async () => {
+      const { send, inputFor } = await foldFixture();
+      const alone = await send("voice-alone", "Himawari 昨天提醒我交房租了", {
+        sourceProofRef: "device-voice:phone-1",
+      });
+      const aloneRun = await inputFor(alone.message.runId as RunId);
+      expect(aloneRun.source.viaPhoneVoice).toBe(true);
+      const aloneInput = await aloneRun.create();
+      expect(aloneInput.context.trigger.payloadRef).toBe(`fold-prompt:${alone.message.runId}`);
+      expect(await aloneRun.read(aloneInput.context.trigger.payloadRef)).toBe(
+        `<owner-message id="${alone.message.id}" source="phone-voice">\nHimawari 昨天提醒我交房租了\n</owner-message>`,
+      );
+    });
+
+    it("appends the spoken-turn note after a talk message, only for talk messages", async () => {
+      const typedFixture = await foldFixture();
+      const typed = await typedFixture.send("typed-solo", "你好");
+      const typedRun = await typedFixture.inputFor(typed.message.runId as RunId);
+      const typedInput = await typedRun.create();
+      expect(typedInput.context.trigger.payloadRef).toBe(typedRun.source.payloadRef);
+
+      const { send, inputFor } = await foldFixture();
+      const spoken = await send("talk-solo", "今天东京天气怎么样", {
+        sourceProofRef: "device-talk:phone-1",
+      });
+      const run = await inputFor(spoken.message.runId as RunId);
+      expect(run.source.viaTalk).toBe(true);
+      const input = await run.create();
+      expect(input.context.trigger.payloadRef).toBe(`fold-prompt:${spoken.message.runId}`);
+      const text = (await run.read(input.context.trigger.payloadRef)) ?? "";
+      expect(text).toBe(
+        `<owner-message id="${spoken.message.id}">\n今天东京天气怎么样\n</owner-message>\n\n${CHAT_OWNER_SPOKEN_TURN.text}`,
+      );
+      expect(text.endsWith("</spoken-turn>")).toBe(true);
+    });
+
+    it("adds the note once when only some of the folded messages were spoken, and none when none were", async () => {
+      const { send, inputFor } = await foldFixture();
+      const typed = await send("t1", "查东京天气");
+      await send("s1", "顺便看看明天", { sourceProofRef: "device-talk:phone-1" });
+      const run = await inputFor(typed.message.runId as RunId);
+      const input = await run.create();
+      const text = (await run.read(input.context.trigger.payloadRef)) ?? "";
+      expect(text.split("<spoken-turn>")).toHaveLength(2);
+      expect(text.endsWith("</spoken-turn>")).toBe(true);
+
+      const plain = await foldFixture();
+      const first = await plain.send("p1", "一");
+      await plain.send("p2", "二", { sourceProofRef: "device:phone-1" });
+      const plainRun = await plain.inputFor(first.message.runId as RunId);
+      const plainText = await plainRun.read((await plainRun.create()).context.trigger.payloadRef);
+      expect(plainText).not.toContain("<spoken-turn>");
+    });
+
+    it("adds the note to a talk message steered into a running answer", async () => {
+      const { send, setup } = await foldFixture();
+      const first = await send("a", "帮我比较三家牙科诊所");
+      const later = await send("b", "只要周六开门的", { sourceProofRef: "device-talk:phone-1" });
+      const firstRun = first.message.runId as RunId;
+      const steering = await steeringFor(setup, firstRun, "running");
+      const notes: { ref: string; modelContent: string }[] = [];
+      const stop = steering.subscribe(firstRun, (note) => {
+        notes.push(note);
+        return true;
+      });
+      await steering.poll();
+      stop();
+      expect(notes[0]?.modelContent).toBe(
+        `<owner-message id="${later.message.id}">\n只要周六开门的\n</owner-message>\n\n${CHAT_OWNER_SPOKEN_TURN.text}`,
+      );
+    });
+
+    it("marks only the folded message that came by voice", async () => {
+      const { send, inputFor } = await foldFixture();
+      const typed = await send("typed", "查东京天气");
+      const spoken = await send("spoken", "顺便看看明天", {
+        sourceProofRef: "device-voice:phone-1",
+      });
+      const touched = await send("touched", "再查一下后天", { sourceProofRef: "device:phone-1" });
+      const run = await inputFor(typed.message.runId as RunId);
+      expect(run.source.viaPhoneVoice).toBeUndefined();
+      const input = await run.create();
+      const text = await run.read(input.context.trigger.payloadRef);
+      expect(text).toContain(`<owner-message id="${typed.message.id}">\n查东京天气`);
+      expect(text).toContain(
+        `<owner-message id="${spoken.message.id}" source="phone-voice">\n顺便看看明天`,
+      );
+      expect(text).toContain(`<owner-message id="${touched.message.id}">\n再查一下后天`);
+    });
+
+    it("marks a voice message steered into a running answer", async () => {
+      const { send, setup } = await foldFixture();
+      const first = await send("a", "帮我比较三家牙科诊所");
+      const later = await send("b", "只要周六开门的", { sourceProofRef: "device-voice:phone-1" });
+      const firstRun = first.message.runId as RunId;
+      const steering = await steeringFor(setup, firstRun, "running");
+      const notes: { ref: string; modelContent: string }[] = [];
+      const stop = steering.subscribe(firstRun, (note) => {
+        notes.push(note);
+        return true;
+      });
+      await steering.poll();
+      stop();
+      expect(notes[0]?.modelContent).toBe(
+        `<owner-message id="${later.message.id}" source="phone-voice">\n只要周六开门的\n</owner-message>`,
+      );
     });
 
     it("stops at the per-run limit and leaves the rest queued for their own Run", async () => {

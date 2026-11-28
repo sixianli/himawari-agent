@@ -27,6 +27,8 @@ export interface RunExecutionSource {
   readonly payloadRef: PayloadRef;
   readonly dataClassification: DataClassification;
   readonly occurredAt: string;
+  readonly viaPhoneVoice?: true;
+  readonly viaTalk?: true;
 }
 
 export interface RunExecutionSourcePort {

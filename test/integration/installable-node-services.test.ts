@@ -1,6 +1,16 @@
 import { type ChildProcessWithoutNullStreams, spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { access, chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  access,
+  chmod,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -653,6 +663,84 @@ describe("installable Node services and admin CLI", { timeout: 60_000 }, () => {
     } finally {
       restoredDatabase.close();
     }
+  });
+
+  it("backs up off-site with restic and passes the restore drill through himawari-backup", async () => {
+    const work = path.join(testRoot, "offsite-backup");
+    const releasesRoot = path.join(work, "releases");
+    const release = path.join(releasesRoot, "2026-11-26-abcdef1");
+    await mkdir(releasesRoot, { recursive: true, mode: 0o700 });
+    await symlink(prefix, release);
+    const unitPath = path.join(work, "himawari-prod.service");
+    await writeFile(
+      unitPath,
+      `Environment=PATH=${path.dirname(process.execPath)}:/usr/bin:/bin\nEnvironment=HOME=${work}\nEnvironment=LANG=C.UTF-8\nExecStart=/bin/true --prefix ${release} --config x\n`,
+    );
+    const passwordFile = path.join(work, "restic-password");
+    await writeFile(passwordFile, "offsite-backup-test-password", { mode: 0o600 });
+    const settings = {
+      repository: path.join(work, "repository"),
+      serviceAccount: os.userInfo().username,
+      config: configurationPath,
+      stateRoot,
+      secretDirectory,
+      unitPath,
+      releasesRoot,
+      workRoot: path.join(work, "state"),
+      passwordFile,
+      rcloneConfig: path.join(work, "rclone.conf"),
+      retention: { daily: 7, weekly: 4, preDeploy: 5, drill: 2 },
+      keepLocal: 2,
+    };
+    const settingsPath = path.join(work, "settings.json");
+    await writeFile(settingsPath, JSON.stringify(settings), { mode: 0o600 });
+    const backupTool = path.join(repositoryRoot, "scripts/operations/backup/himawari-backup.py");
+    const runBackup = (...arguments_: string[]) =>
+      spawnSync(
+        process.env["HIMAWARI_CI_PYTHON"] ?? "python3",
+        ["-I", backupTool, "--settings", settingsPath, ...arguments_],
+        {
+          cwd: work,
+          encoding: "utf8",
+          env: { ...process.env, NODE_PATH: "", NODE_OPTIONS: "" },
+        },
+      );
+
+    const daily = runBackup("run", "--reason", "daily");
+    expect(daily.status, daily.stderr).toBe(0);
+    const dailySummary = JSON.parse(daily.stdout.split("BACKUP_PASSED ")[1] ?? "{}");
+    expect(dailySummary).toMatchObject({ result: "passed", reason: "daily" });
+    expect(dailySummary.snapshot).toMatch(/^[0-9a-f]{64}$/);
+
+    const preDeploy = runBackup("run", "--reason", "pre-deploy");
+    expect(preDeploy.status, preDeploy.stderr).toBe(0);
+
+    const drill = runBackup("drill");
+    expect(drill.status, drill.stderr).toBe(0);
+    const drillSummary = JSON.parse(drill.stdout.split("DRILL_PASSED ")[1] ?? "{}");
+    expect(drillSummary).toMatchObject({ result: "passed", release: "2026-11-26-abcdef1" });
+    expect(drillSummary.backupId).toMatch(/^auto-drill-/);
+
+    const listed = runBackup("status");
+    expect(listed.status, listed.stderr).toBe(0);
+    const status = JSON.parse(listed.stdout.split("BACKUP_STATUS ")[1] ?? "{}");
+    expect(status.count).toBe(3);
+    expect(status.snapshots.map((item: { tags: string[] }) => item.tags[0]).sort()).toEqual([
+      "daily",
+      "drill",
+      "pre-deploy",
+    ]);
+
+    const local = (await readdir(path.join(stateRoot, "recovery-points"))).filter((name) =>
+      name.startsWith("auto-"),
+    );
+    expect(local).toHaveLength(2);
+
+    await writeFile(passwordFile, "a-different-password", { mode: 0o600 });
+    const wrongKey = runBackup("drill");
+    expect(wrongKey.status).toBe(1);
+    expect(wrongKey.stderr).toContain("DRILL_FAILED");
+    expect(wrongKey.stdout).not.toContain("DRILL_PASSED");
   });
 
   it("executes a stopped authority transfer through the installed himawari CLI", async () => {

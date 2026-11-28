@@ -102,14 +102,8 @@ public enum ClientCapabilities {
         ClientCapability(gateway: .v2, type: "proactive.sources.read", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "proactive.source.settings.set", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "proactive.source.switch_off", kind: .command, tier: .tighten, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
-        ClientCapability(gateway: .v2, type: "proactive.backoff.restore", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
-        ClientCapability(gateway: .v2, type: "muse.overview.read", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
-        ClientCapability(gateway: .v2, type: "muse.item.rate", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
-        ClientCapability(gateway: .v2, type: "muse.intake.set", kind: .command, tier: .change, tightenPayload: ["paused": true], tightenOpenKeys: [], tightenEveryItem: nil),
-        ClientCapability(gateway: .v2, type: "muse.data.clear", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "proactive.weekly.read", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "proactive.observation.start", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
-        ClientCapability(gateway: .v2, type: "proactive.gapcase.mark", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "owner.preferences.read", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "owner.preferences.set", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "quiet_hours.read", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
@@ -124,12 +118,17 @@ public enum ClientCapabilities {
         ClientCapability(gateway: .v2, type: "perception.records.delete", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "think.settings.read", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "think.settings.change", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
+        ClientCapability(gateway: .v2, type: "timers.read", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
+        ClientCapability(gateway: .v2, type: "timers.change", kind: .command, tier: .routine, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "sensitive.interceptions.read", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "sensitive.interceptions.clear", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "memory.overview.read", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "memory.basis.read", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "decision.chain.read", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "decision.email.read", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
+        ClientCapability(gateway: .v2, type: "decision.spoken.read", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
+        ClientCapability(gateway: .v2, type: "decision.spoken.rate", kind: .command, tier: .routine, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
+        ClientCapability(gateway: .v2, type: "decision.stats.read", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "memory.approval.respond", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "memory.tidy.undo", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "memory.reminder.respond", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
@@ -153,9 +152,8 @@ public enum ClientCapabilities {
         ClientCapability(gateway: .v2, type: "memory.classify.read", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "home.read", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "search.ask.read", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
+        ClientCapability(gateway: .v2, type: "memory.search.read", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "device.list.read", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
-        ClientCapability(gateway: .v2, type: "device.pairing.start", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
-        ClientCapability(gateway: .v2, type: "device.pairing.confirm", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "device.rename", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "device.revoke", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "server.status.read", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
@@ -163,14 +161,16 @@ public enum ClientCapabilities {
         ClientCapability(gateway: .v2, type: "login.device.revoke", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "login.devices.revoke_others", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "mcp.connections.read", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
-        ClientCapability(gateway: .v2, type: "mcp.connection.create", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "mcp.connection.change", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
-        ClientCapability(gateway: .v2, type: "mcp.connection.rotate", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
+        ClientCapability(gateway: .v2, type: "mcp.grants.read", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
+        ClientCapability(gateway: .v2, type: "mcp.grant.approve", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
+        ClientCapability(gateway: .v2, type: "mcp.grant.deny", kind: .command, tier: .tighten, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "files.list.read", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "data.export.start", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "data.export.cancel", kind: .command, tier: .routine, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "data.export.status.read", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "memory.import.duplicates.read", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
+        ClientCapability(gateway: .v2, type: "memory.import.preview.read", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "memory.import.commit", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "memory.import.undo", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "github.monitor.set_state", kind: .command, tier: .notOnPhone, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
@@ -241,6 +241,9 @@ public enum ClientCapabilities {
     public static let serverFilledReferences = ["authorizationRef", "recentAuthenticationRef"]
     public static let allowanceDays: ClosedRange<Int> = 1...90
     public static let memoryTrashDays = 7
+    public static let memoryImportFilesMaximum = 10
+    public static let memoryImportFileNameMaximum = 128
+    public static let textUploadMaximumCharacters = 65536
 
     public static func find(_ gateway: ClientGateway, _ type: String) -> ClientCapability? {
         all.first { $0.gateway == gateway && $0.type == type }

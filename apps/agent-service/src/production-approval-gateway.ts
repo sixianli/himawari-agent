@@ -7,6 +7,7 @@ import { setTimeout as wait } from "node:timers/promises";
 import {
   AgentGatewayV2Service,
   ApplicationPortError,
+  type ApprovalDisplayOrigin,
   type ApprovalRequest,
   ApprovalService,
   type AuthorityFence,
@@ -27,6 +28,10 @@ type ProductAuthorityFence = ThreadCreateInput["authority"];
 
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 import { createProductionCapabilityLifecycle } from "./production-capability-lifecycle.js";
+import {
+  PRODUCTION_TIMER_OPERATIONS,
+  type ProductionTimerControl,
+} from "./production-timer-control.js";
 import {
   PRODUCTION_DATA_EXPORT_OPERATIONS,
   type ProductionDataExportControl,
@@ -57,10 +62,6 @@ import {
   type ProductionMemoryControl,
 } from "./production-memory-control.js";
 import {
-  PRODUCTION_MUSE_OPERATIONS,
-  type ProductionMuseControl,
-} from "./production-muse-intake-control.js";
-import {
   PRODUCTION_OBSERVATION_OPERATIONS,
   type ProductionObservation,
 } from "./production-observation.js";
@@ -76,6 +77,14 @@ import {
   PRODUCTION_PROACTIVE_OPERATIONS,
   type ProductionProactive,
 } from "./production-proactive.js";
+import {
+  PRODUCTION_MEMORY_SEARCH_OPERATIONS,
+  type ProductionMemorySearch,
+} from "./production-memory-search.js";
+import {
+  PRODUCTION_SPOKEN_DECISION_OPERATIONS,
+  type ProductionSpokenDecisions,
+} from "./production-spoken-decisions.js";
 import { PRODUCTION_SEARCH_OPERATIONS, type ProductionSearchControl } from "./production-search.js";
 import {
   PRODUCTION_SENSITIVE_INTERCEPTION_OPERATIONS,
@@ -127,7 +136,6 @@ export function createProductionApprovalGateway(options: {
   readonly memoryControl?: ProductionMemoryControl;
   readonly webPushControl?: ProductionWebPushControl;
   readonly proactiveControl?: Pick<ProductionProactive, "query" | "execute">;
-  readonly museControl?: Pick<ProductionMuseControl, "query" | "execute">;
   readonly observationControl?: Pick<ProductionObservation, "query" | "execute">;
   readonly ownerPreferencesControl?: ProductionOwnerPreferencesControl;
   readonly quietHoursControl?: ProductionQuietHoursControl;
@@ -137,13 +145,17 @@ export function createProductionApprovalGateway(options: {
   readonly deviceControl?: Pick<ProductionDeviceControl, "query" | "execute">;
   readonly homeControl?: Pick<ProductionHomeControl, "query">;
   readonly searchControl?: Pick<ProductionSearchControl, "query">;
+  readonly memorySearchControl?: Pick<ProductionMemorySearch, "query">;
   readonly dataExportControl?: ProductionDataExportControl;
   readonly filesControl?: ProductionFilesControl;
   readonly loginDevicesControl?: ProductionLoginDevicesControl;
   readonly mcpConnectionsControl?: ProductionMcpConnectionsControl;
   readonly perceptionControl?: Pick<ProductionPerceptionControl, "query" | "execute">;
   readonly inboxControl?: Pick<ProductionInboxControl, "query" | "execute">;
+  readonly timerControl?: Pick<ProductionTimerControl, "query" | "execute">;
+  readonly spokenControl?: Pick<ProductionSpokenDecisions, "query" | "execute">;
   readonly onApprovalResolved?: (approval: ApprovalRequest) => Promise<void>;
+  readonly approvalOrigin?: (threadId: string) => Promise<ApprovalDisplayOrigin | null>;
 }) {
   const { ownerId, agentId } = options.configuration;
   const { repository, clock } = options;
@@ -164,6 +176,7 @@ export function createProductionApprovalGateway(options: {
   const reads = new GovernanceGatewayV2ReadModel({
     ownerId,
     agentId,
+    ...(options.approvalOrigin ? { approvalOrigin: options.approvalOrigin } : {}),
     authorization,
     capabilities,
     clock,
@@ -173,47 +186,55 @@ export function createProductionApprovalGateway(options: {
           ? options.loginDevicesControl.query(query, context)
           : query.type.startsWith("mcp.") && options.mcpConnectionsControl
             ? options.mcpConnectionsControl.query(query, context)
-            : query.type === "home.read" && options.homeControl
-              ? options.homeControl.query(query)
-              : query.type === "search.ask.read" && options.searchControl
-                ? options.searchControl.query(query)
-                : (query.type.startsWith("memory.") || query.type.startsWith("decision.chain.")) &&
-                    options.memoryControl
-                  ? options.memoryControl.query(query)
-                  : query.type.startsWith("push.") && options.webPushControl
-                    ? options.webPushControl.query(query)
-                    : (query.type === "proactive.weekly.read" ||
-                          query.type === "decision.email.read") &&
-                        options.observationControl
-                      ? options.observationControl.query(query)
-                      : query.type.startsWith("proactive.") && options.proactiveControl
-                        ? options.proactiveControl.query(query)
-                        : query.type.startsWith("muse.") && options.museControl
-                          ? options.museControl.query(query)
-                          : query.type.startsWith("quiet_hours.") && options.quietHoursControl
-                            ? options.quietHoursControl.query(query)
-                            : query.type.startsWith("owner.preferences.") &&
-                                options.ownerPreferencesControl
-                              ? options.ownerPreferencesControl.query(query)
-                              : query.type.startsWith("sensitive.interceptions.") &&
-                                  options.sensitiveInterceptionsControl
-                                ? options.sensitiveInterceptionsControl.query(query)
-                                : query.type.startsWith("server.status.") &&
-                                    options.serverStatusControl
-                                  ? options.serverStatusControl.query(query)
-                                  : query.type.startsWith("data.export.") &&
-                                      options.dataExportControl
-                                    ? options.dataExportControl.query(query)
-                                    : query.type.startsWith("files.") && options.filesControl
-                                      ? options.filesControl.query(query, context)
-                                      : query.type.startsWith("device.") && options.deviceControl
-                                        ? options.deviceControl.query(query)
-                                        : query.type.startsWith("perception.") &&
-                                            options.perceptionControl
-                                          ? options.perceptionControl.query(query)
-                                          : query.type.startsWith("think.") && options.inboxControl
-                                            ? options.inboxControl.query(query)
-                                            : searchAuthorization.query(query),
+            : (query.type === "decision.spoken.read" || query.type === "decision.stats.read") &&
+                options.spokenControl
+              ? options.spokenControl.query(query)
+              : query.type === "home.read" && options.homeControl
+                ? options.homeControl.query(query)
+                : query.type === "search.ask.read" && options.searchControl
+                  ? options.searchControl.query(query)
+                  : query.type === "memory.search.read" && options.memorySearchControl
+                    ? options.memorySearchControl.query(query)
+                    : (query.type.startsWith("memory.") ||
+                          query.type.startsWith("decision.chain.")) &&
+                        options.memoryControl
+                      ? options.memoryControl.query(query)
+                      : query.type.startsWith("push.") && options.webPushControl
+                        ? options.webPushControl.query(query)
+                        : (query.type === "proactive.weekly.read" ||
+                              query.type === "decision.email.read") &&
+                            options.observationControl
+                          ? options.observationControl.query(query)
+                          : query.type.startsWith("proactive.") && options.proactiveControl
+                            ? options.proactiveControl.query(query)
+                            : query.type.startsWith("quiet_hours.") && options.quietHoursControl
+                              ? options.quietHoursControl.query(query)
+                              : query.type.startsWith("owner.preferences.") &&
+                                  options.ownerPreferencesControl
+                                ? options.ownerPreferencesControl.query(query)
+                                : query.type.startsWith("sensitive.interceptions.") &&
+                                    options.sensitiveInterceptionsControl
+                                  ? options.sensitiveInterceptionsControl.query(query)
+                                  : query.type.startsWith("server.status.") &&
+                                      options.serverStatusControl
+                                    ? options.serverStatusControl.query(query)
+                                    : query.type.startsWith("data.export.") &&
+                                        options.dataExportControl
+                                      ? options.dataExportControl.query(query)
+                                      : query.type.startsWith("files.") && options.filesControl
+                                        ? options.filesControl.query(query, context)
+                                        : query.type.startsWith("device.") && options.deviceControl
+                                          ? options.deviceControl.query(query)
+                                          : query.type.startsWith("perception.") &&
+                                              options.perceptionControl
+                                            ? options.perceptionControl.query(query)
+                                            : query.type.startsWith("think.") &&
+                                                options.inboxControl
+                                              ? options.inboxControl.query(query)
+                                              : query.type.startsWith("timers.") &&
+                                                  options.timerControl
+                                                ? options.timerControl.query(query)
+                                                : searchAuthorization.query(query),
       async *subscribe({ authentication, signal }) {
         let previous: string | undefined;
         while (!signal?.aborted) {
@@ -333,12 +354,8 @@ export function createProductionApprovalGateway(options: {
           });
           return options.observationControl.execute(command);
         }
-        if (command.type === "proactive.gapcase.mark" && options.observationControl)
-          return options.observationControl.execute(command);
         if (command.type.startsWith("proactive.") && options.proactiveControl)
           return options.proactiveControl.execute(command);
-        if (command.type.startsWith("muse.") && options.museControl)
-          return options.museControl.execute(command);
         if (command.type.startsWith("quiet_hours.") && options.quietHoursControl)
           return options.quietHoursControl.execute(command);
         if (command.type.startsWith("owner.preferences.") && options.ownerPreferencesControl)
@@ -356,6 +373,10 @@ export function createProductionApprovalGateway(options: {
           return options.perceptionControl.execute(command);
         if (command.type.startsWith("think.") && options.inboxControl)
           return options.inboxControl.execute(command);
+        if (command.type === "decision.spoken.rate" && options.spokenControl)
+          return options.spokenControl.execute(command);
+        if (command.type.startsWith("timers.") && options.timerControl)
+          return options.timerControl.execute(command);
         if (command.type.startsWith("workspace.copy.") && options.workspaceCopies)
           return options.workspaceCopies.execute({ authentication, command });
         return searchAuthorization.set(command, options.executionAuthority());
@@ -385,7 +406,6 @@ export function createProductionApprovalGateway(options: {
       ...(options.memoryControl ? PRODUCTION_MEMORY_OPERATIONS : []),
       ...(options.webPushControl ? PRODUCTION_WEB_PUSH_OPERATIONS : []),
       ...(options.proactiveControl ? PRODUCTION_PROACTIVE_OPERATIONS : []),
-      ...(options.museControl ? PRODUCTION_MUSE_OPERATIONS : []),
       ...(options.observationControl ? PRODUCTION_OBSERVATION_OPERATIONS : []),
       ...(options.ownerPreferencesControl ? PRODUCTION_OWNER_PREFERENCE_OPERATIONS : []),
       ...(options.quietHoursControl ? PRODUCTION_QUIET_HOURS_OPERATIONS : []),
@@ -398,12 +418,15 @@ export function createProductionApprovalGateway(options: {
       ...(options.deviceControl ? PRODUCTION_DEVICE_OPERATIONS : []),
       ...(options.homeControl ? PRODUCTION_HOME_OPERATIONS : []),
       ...(options.searchControl ? PRODUCTION_SEARCH_OPERATIONS : []),
+      ...(options.memorySearchControl ? PRODUCTION_MEMORY_SEARCH_OPERATIONS : []),
       ...(options.dataExportControl ? PRODUCTION_DATA_EXPORT_OPERATIONS : []),
       ...(options.filesControl ? PRODUCTION_FILES_OPERATIONS : []),
       ...(options.loginDevicesControl ? PRODUCTION_LOGIN_DEVICE_OPERATIONS : []),
       ...(options.mcpConnectionsControl ? PRODUCTION_MCP_CONNECTION_OPERATIONS : []),
       ...(options.perceptionControl ? PRODUCTION_PERCEPTION_OPERATIONS : []),
       ...(options.inboxControl ? PRODUCTION_INBOX_OPERATIONS : []),
+      ...(options.timerControl ? PRODUCTION_TIMER_OPERATIONS : []),
+      ...(options.spokenControl ? PRODUCTION_SPOKEN_DECISION_OPERATIONS : []),
     ],
     reads,
     controlPlane,

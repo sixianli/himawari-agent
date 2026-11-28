@@ -23,11 +23,9 @@ afterEach(async () => {
 const LEDGER_TABLES = [
   "decision_ledger",
   "decision_signals",
-  "proactive_push_backoff",
   "source_insights",
   "proactive_processed_messages",
   "decision_ledger_payloads",
-  "muse_reference_entries",
 ] as const;
 
 type Database = ReturnType<typeof openQualifiedDatabase>;
@@ -35,21 +33,7 @@ type Database = ReturnType<typeof openQualifiedDatabase>;
 function dumpLedgerTables(database: Database) {
   return {
     ...Object.fromEntries(
-      LEDGER_TABLES.map((table) => [
-        table,
-        database
-          .prepare(`SELECT * FROM ${table}`)
-          .all()
-          .map((row) =>
-            table === "proactive_push_backoff"
-              ? Object.fromEntries(
-                  Object.entries(row as Record<string, unknown>).filter(
-                    ([column]) => column !== "source",
-                  ),
-                )
-              : row,
-          ),
-      ]),
+      LEDGER_TABLES.map((table) => [table, database.prepare(`SELECT * FROM ${table}`).all()]),
     ),
     schemaNames: database
       .prepare(
@@ -85,12 +69,6 @@ function seedLedger(database: Database) {
     .run(OWNER, AGENT, "2026-11-01T00:00:01.000Z", "2026-11-01T00:00:02.000Z");
   database
     .prepare(
-      `INSERT INTO proactive_push_backoff (owner_id, agent_id, class_key, stage, since_at, step_decision_id, ignored_count, updated_at)
-       VALUES (?, ?, 'c', 1, ?, 'd-old', 3, ?)`,
-    )
-    .run(OWNER, AGENT, T0, T0);
-  database
-    .prepare(
       `INSERT INTO source_insights (id, owner_id, agent_id, source, thread_id, last_message_id, result,
         floor_raised, content_ref, due_at, priority, status, decision_id, owner_rating, push_source_key,
         created_at, updated_at, push_class)
@@ -110,13 +88,6 @@ function seedLedger(database: Database) {
        VALUES ('d-old', 0, 'model_input', 'payload-x')`,
     )
     .run();
-  database
-    .prepare(
-      `INSERT INTO muse_reference_entries (id, owner_id, agent_id, muse_at, muse_reminded, timing_ok,
-        content_ok, content_ref, note_ref, paired_decision_id, intake_item_key, recorded_at, paired_message_id)
-       VALUES ('muse-1', ?, ?, ?, 1, 1, 1, 'payload-x', 'payload-x', 'd-old', 'intake-1', ?, 'm-1')`,
-    )
-    .run(OWNER, AGENT, T0, T0);
 }
 
 async function openMigrated() {
@@ -169,7 +140,7 @@ function insertBacklog(database: Database, generationId: string, sourceRunId: st
 }
 
 describe("memory capture backlog migration", () => {
-  it("[P3-5] keeps every decision record and the six tables that point at it when the ledger is rebuilt", async () => {
+  it("[P3-5] keeps every decision record and the five tables that point at it when the ledger is rebuilt", async () => {
     const { database, before } = await openMigrated();
     expect(dumpLedgerTables(database)).toEqual(before);
     expect(() => database.prepare("UPDATE decision_signals SET delay_ms = 9").run()).toThrow(

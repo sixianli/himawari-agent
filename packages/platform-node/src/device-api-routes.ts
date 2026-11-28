@@ -24,19 +24,23 @@ import {
   PERCEPTION_SENSES,
   PERCEPTION_TEXT_MAXIMUM,
   PERCEPTION_UTTERANCE_ID_PATTERN,
+  PHONE_VOICE_PROOF_PREFIX,
   PORT_ERROR_CODES,
+  TALK_PROOF_PREFIX,
   type ThreadGatewayRequestMessage,
   type UploadGrantPurpose,
+  type VaultService,
   VOICE_HEARD_NAME_MAXIMUM_CHARACTERS,
   VOICE_TRIGGERS,
-  type VoiceAddresseeOutcome,
-  type VoiceAddresseeRequest,
   type VoiceEvidence,
   type VoiceGates,
   type VoiceTrigger,
-  type VaultService,
 } from "@himawari-agent/application";
 import {
+  CHAT_ATTACHMENT_TEXT_CHARACTERS,
+  CHAT_ATTACHMENTS_PER_MESSAGE,
+  CHAT_IMAGE_DATA_URL,
+  CHAT_IMAGE_DATA_URL_CHARACTERS,
   DATA_EXPORT_ID_PATTERN,
   HOME_LOCALES,
   THREAD_GATEWAY_SCHEMA_VERSION,
@@ -63,13 +67,21 @@ import {
 } from "./device-notification-hub.js";
 import { DEVICE_PUSH_ERROR_CODES, DevicePushError, type DevicePushPort } from "./device-push.js";
 import type { DeviceSignedRequest } from "./device-request-signature.js";
+import type { DeviceSignInService } from "./device-sign-in.js";
 import {
   type AuthenticatedDeviceRequest,
+  type DeviceStreamDiagnostic,
+  deviceReadProblem,
   PAIRED_DEVICE_ERROR_CODES,
   PairedDeviceError,
   type PairedDeviceService,
 } from "./paired-device-service.js";
 import type { AuthorizedUpload, PerceptionService } from "./perception-service.js";
+import {
+  SPEECH_ERROR_CODES,
+  SpeechSynthesisError,
+  type SpeechSynthesisPort,
+} from "./speech-synthesis.js";
 import {
   PLAIN_TEXT_MAXIMUM_CHARACTERS,
   parseTextAdmission,
@@ -87,7 +99,14 @@ const THREAD_ID_SEGMENT = "[A-Za-z0-9][A-Za-z0-9._:-]{0,127}";
 const FILE_ID_SEGMENT = "[A-Za-z0-9](?:[A-Za-z0-9._:-]|%3[Aa]){0,127}";
 
 export const DEVICE_API_ROUTES = Object.freeze([
-  { method: "POST", path: "pair", signed: false },
+  { method: "GET", path: "sign-in", signed: false },
+  { method: "POST", path: "sign-in/setup/options", signed: false },
+  { method: "POST", path: "sign-in/setup/finish", signed: false },
+  { method: "POST", path: "sign-in/options", signed: false },
+  { method: "POST", path: "sign-in/finish", signed: false },
+  { method: "GET", path: "devices", signed: true },
+  { method: "POST", path: "devices/rename", signed: true },
+  { method: "POST", path: "devices/revoke", signed: true },
   { method: "GET", path: "config", signed: true },
   { method: "GET", path: "stream", signed: true },
   { method: "POST", path: "messages", signed: true },
@@ -107,6 +126,9 @@ export const DEVICE_API_ROUTES = Object.freeze([
   { method: "GET", path: "threads/{threadId}/execution-stream", signed: true },
   { method: "GET", path: "threads/{threadId}/runs/{runId}/execution", signed: true },
   { method: "POST", path: "payloads/text", signed: true },
+  { method: "POST", path: "attachments", signed: true },
+  { method: "POST", path: "voice-timing", signed: true },
+  { method: "GET", path: "voice-timing", signed: true },
   { method: "POST", path: "uploads/begin", signed: true },
   { method: "POST", path: "perception", signed: true, uploadPurpose: "perception" },
   { method: "POST", path: "perception/media", signed: false, uploadPurpose: "media" },
@@ -117,6 +139,7 @@ export const DEVICE_API_ROUTES = Object.freeze([
   { method: "GET", path: "data-export/archive", signed: true },
   { method: "GET", path: "files/content/{fileId}", signed: true },
   { method: "POST", path: "usage/report", signed: true },
+  { method: "POST", path: "read-problems", signed: true },
   { method: "GET", path: "actions", signed: true },
   { method: "POST", path: "actions/claim", signed: true },
   { method: "POST", path: "actions/result", signed: true },
@@ -132,6 +155,16 @@ export const DEVICE_API_ROUTES = Object.freeze([
   { method: "POST", path: "vault/change", signed: true },
   { method: "POST", path: "vault/approve", signed: true },
   { method: "POST", path: "vault/deny", signed: true },
+  { method: "GET", path: "vault/codes", signed: true },
+  { method: "POST", path: "vault/codes/answer", signed: true },
+  { method: "POST", path: "vault/codes/decline", signed: true },
+  { method: "POST", path: "speech", signed: true },
+  { method: "POST", path: "connections/list", signed: true },
+  { method: "POST", path: "connections/authorization", signed: true },
+  { method: "POST", path: "connections/authorization/complete", signed: true },
+  { method: "POST", path: "connections/disconnect", signed: true },
+  { method: "POST", path: "connections/add", signed: true },
+  { method: "POST", path: "connections/remove", signed: true },
 ] as const);
 
 export const DEVICE_UPLOAD_GRANT_HEADER = "himawari-upload-grant" as const;
@@ -174,6 +207,9 @@ const MESSAGE_ID_PATTERN = /^[A-Za-z0-9_-]{16,64}$/u;
 const UTTERANCE_ID_PATTERN = PERCEPTION_UTTERANCE_ID_PATTERN;
 const MACHINE_STRING = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const MESSAGE_TEXT_MAXIMUM = PLAIN_TEXT_MAXIMUM_CHARACTERS;
+const ATTACHMENT_REQUEST_ID = /^[A-Za-z0-9_-]{16,96}$/u;
+const ATTACHMENT_ENVELOPE_BYTES = 1024;
+const UTF8_BYTES_PER_CHARACTER = 3;
 export type DeviceTextClassification = TextAdmissionClassification;
 const VOICE_KEYS = [
   "trigger",
@@ -241,11 +277,6 @@ export interface DeviceApiAuthority {
   readonly fencingToken: number;
 }
 
-export interface DevicePairingAccess {
-  readonly clientId: string;
-  readonly clientSecret: string;
-}
-
 export type DeviceHomeResolution =
   | {
       readonly ok: true;
@@ -273,9 +304,65 @@ export interface DeviceDownload {
   readonly fileName: string;
 }
 
+export type DeviceConnectionAuthorizationStart =
+  | { readonly kind: "browser"; readonly authorizationUrl: string }
+  | { readonly kind: "client_required"; readonly redirectUri: string };
+
+export interface DeviceConnection {
+  readonly name: string;
+  readonly title: string;
+  readonly status: "disconnected" | "connected" | "needs_reconnect";
+  readonly account: string | null;
+  readonly connectedAt: string | null;
+  readonly added: boolean;
+}
+
+export type DeviceConnectionAddOutcome =
+  | { readonly outcome: "added"; readonly connection: DeviceConnection }
+  | { readonly outcome: "invalid_address" }
+  | { readonly outcome: "unreachable" };
+
+export interface DeviceConnectionsPort {
+  list(): Promise<readonly DeviceConnection[]>;
+  begin(input: {
+    readonly deviceId: string;
+    readonly connection: string;
+    readonly callbackScheme: string;
+  }): Promise<DeviceConnectionAuthorizationStart | undefined>;
+  complete(input: {
+    readonly deviceId: string;
+    readonly state: string;
+  }): Promise<"connected" | "denied" | "failed">;
+  disconnect(input: { readonly connection: string }): Promise<boolean | undefined>;
+  add(input: {
+    readonly serverUrl: string;
+    readonly title?: string;
+    readonly clientId?: string;
+    readonly clientSecret?: string;
+  }): Promise<DeviceConnectionAddOutcome | undefined>;
+  remove(input: { readonly connection: string }): Promise<boolean | undefined>;
+}
+
+const CALLBACK_SCHEME_PATTERN = /^[a-z][a-z0-9+-]*(?:\.[a-z0-9+-]+)+$/u;
+const CALLBACK_SCHEME_MAXIMUM_LENGTH = 128;
+const CONNECTION_NAME_PATTERN = /^[a-z][a-z0-9_]{0,63}$/u;
+const AUTHORIZATION_STATE_PATTERN = /^[A-Za-z0-9_-]{16,128}$/u;
+const ADDED_APP_ADDRESS_MAXIMUM = 2048;
+const ADDED_APP_TITLE_MAXIMUM = 80;
+const ADDED_APP_CLIENT_MAXIMUM = 512;
+
+export function isDeviceCallbackScheme(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    value.length <= CALLBACK_SCHEME_MAXIMUM_LENGTH &&
+    CALLBACK_SCHEME_PATTERN.test(value)
+  );
+}
+
 export interface DeviceApiRouteOptions {
   readonly home?: DeviceHomePort;
-  readonly pairingAccess?: DevicePairingAccess;
+  readonly signIn?: DeviceSignInService;
+  readonly connections?: (scope: PairedDeviceScope) => DeviceConnectionsPort | undefined;
   readonly publicOrigin: URL;
   readonly devices: PairedDeviceService;
   readonly configuration: () => DeviceConfiguration;
@@ -295,11 +382,8 @@ export interface DeviceApiRouteOptions {
     }) => Promise<readonly string[]>;
   };
   readonly voiceGates?: () => VoiceGates;
-  readonly addressee?: (input: {
-    readonly authentication: GatewayAuthenticationContext;
-    readonly request: VoiceAddresseeRequest;
-  }) => Promise<VoiceAddresseeOutcome>;
   readonly prefetch?: UtterancePrefetchPort;
+  readonly speech?: SpeechSynthesisPort;
   readonly threadGateway: AgentThreadGatewayPort;
   readonly gateways: DeviceGateways;
   readonly audit: AuditLedgerPort;
@@ -310,7 +394,19 @@ export interface DeviceApiRouteOptions {
     readonly idempotencyKey: string;
     readonly content: string;
     readonly dataClassification?: DeviceTextClassification;
+    readonly contentType?: DevicePayloadContentType;
   }) => Promise<string>;
+  readonly chatAttachments?: () => DeviceChatAttachments;
+  readonly chatModels?: DeviceChatModelPort;
+  readonly listVoiceTiming?: (limit: number) => Promise<readonly unknown[]>;
+  readonly recordVoiceTiming?: (input: {
+    readonly authentication: GatewayAuthenticationContext;
+    readonly messageId: string;
+    readonly runId: string;
+    readonly saidAt: string;
+    readonly firstTextAt: string;
+    readonly firstSoundAt: string | null;
+  }) => Promise<"recorded" | "unknown_run">;
   readonly streamThreadEvents: (input: {
     readonly gateway: AgentThreadGatewayPort;
     readonly authentication: GatewayAuthenticationContext;
@@ -409,10 +505,6 @@ function isNotFound(error: unknown): boolean {
   return error instanceof ApplicationPortError && error.code === PORT_ERROR_CODES.NOT_FOUND;
 }
 
-export function pairingAccessFields({ clientId, clientSecret }: DevicePairingAccess) {
-  return { clientId, clientSecret };
-}
-
 const HOME_ACT_REPLAY_WINDOW_MS = 10 * 60 * 1000;
 const HOME_ACT_REPLAY_LIMIT = 256;
 
@@ -420,21 +512,8 @@ function stableSuffix(deviceId: string, messageId: string): string {
   return createHash("sha256").update(`${deviceId}\n${messageId}`).digest("hex").slice(0, 40);
 }
 
-export function devicePairingNumber(input: {
-  readonly devicePublicKey: string;
-  readonly confirmPublicKey: string;
-}): string {
-  const digest = createHash("sha256")
-    .update(Buffer.from("himawari-pairing-v1", "utf8"))
-    .update(Buffer.from(input.devicePublicKey, "base64"))
-    .update(Buffer.from(input.confirmPublicKey, "base64"))
-    .digest();
-  return String(digest.readUInt32BE(0) % 1_000_000).padStart(6, "0");
-}
-
 export function presentPairedDevice(device: PairedDevice) {
   return {
-    pairingNumber: device.status === "pending" ? devicePairingNumber(device) : null,
     id: device.id,
     revision: device.revision,
     kind: device.kind,
@@ -445,6 +524,59 @@ export function presentPairedDevice(device: PairedDevice) {
     confirmedAt: device.confirmedAt,
     revokedAt: device.revokedAt,
     lastSeenAt: device.lastSeenAt,
+  };
+}
+
+export type DevicePayloadContentType =
+  | "text/plain"
+  | "text/x-himawari-attachment"
+  | "text/x-himawari-image";
+
+export interface DeviceChatModel {
+  readonly ref: string;
+  readonly name: string;
+  readonly provider: string;
+  readonly thinkingLevels: readonly string[];
+  readonly automatic?: boolean;
+  readonly price?: { readonly input: number; readonly output: number };
+  readonly priceTier?: "low" | "mid" | "high";
+}
+
+export interface DeviceChatModels {
+  readonly defaultRef: string;
+  readonly options: readonly DeviceChatModel[];
+}
+
+export interface DeviceModelChoice {
+  readonly modelRef: string;
+  readonly thinkingLevel: string;
+}
+
+export interface DeviceChatModelPort {
+  readonly list: () => DeviceChatModels;
+  readonly ownerChoice: (scope: PairedDeviceScope) => Promise<DeviceModelChoice | null>;
+}
+
+export interface DeviceChatAttachments {
+  readonly images: boolean;
+}
+
+export function presentDeviceAttachments(
+  configuration: DeviceConfiguration,
+  chat: DeviceChatAttachments,
+) {
+  const room = Math.max(
+    0,
+    configuration.limits["device.request.body_bytes"] - ATTACHMENT_ENVELOPE_BYTES,
+  );
+  return {
+    textCharacters: Math.min(
+      CHAT_ATTACHMENT_TEXT_CHARACTERS,
+      Math.floor(room / UTF8_BYTES_PER_CHARACTER),
+    ),
+    imageCharacters: chat.images ? Math.min(CHAT_IMAGE_DATA_URL_CHARACTERS, room) : 0,
+    perMessage: CHAT_ATTACHMENTS_PER_MESSAGE,
+    messageCharacters: MESSAGE_TEXT_MAXIMUM,
   };
 }
 
@@ -492,28 +624,68 @@ export async function presentDevicePerception(
   };
 }
 
+interface HeldDeviceStream {
+  readonly path: string;
+  readonly stream: Readable;
+  readonly connection: NodeJS.EventEmitter & { destroy(): unknown };
+  readonly openedAt: number;
+}
+
+const REOPEN_NUMBERS = ["lastConnected", "lastStatus", "lastError", "offline", "attempts"] as const;
+const DROP_REASON = /^[A-Za-z]{1,24}$/;
+const REPORTED_NUMBER = /^-?\d{1,9}$/;
+
+function reopenReport(query: string): Partial<DeviceStreamDiagnostic> {
+  const params = new URLSearchParams(query);
+  const lastDrop = params.get("lastDrop");
+  if (lastDrop === null || !DROP_REASON.test(lastDrop)) return {};
+  const report: Record<string, string | number> = { lastDrop };
+  for (const key of REOPEN_NUMBERS) {
+    const value = params.get(key);
+    if (value !== null && REPORTED_NUMBER.test(value)) report[key] = Number(value);
+  }
+  return report;
+}
+
 function holdDeviceStream(
-  counts: Map<string, number>,
+  held: Map<string, HeldDeviceStream[]>,
   deviceId: string,
+  path: string,
   stream: Readable,
   maximum: number,
-  connection: NodeJS.EventEmitter,
+  connection: NodeJS.EventEmitter & { destroy(): unknown },
+  report: (diagnostic: DeviceStreamDiagnostic) => void,
 ): void {
-  const open = counts.get(deviceId) ?? 0;
-  if (open >= maximum) {
-    stream.destroy();
-    throw new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.STREAM_LIMIT, 429, {
-      streamConnections: maximum,
+  const open = held.get(deviceId) ?? [];
+  const entry: HeldDeviceStream = { path, stream, connection, openedAt: Date.now() };
+  const heldSeconds = (since: number) => Math.round((Date.now() - since) / 1000);
+  while (open.length >= maximum) {
+    const oldest = open.shift();
+    if (!oldest) break;
+    report({
+      event: "device.stream_replaced",
+      deviceId,
+      path,
+      heldSeconds: heldSeconds(oldest.openedAt),
     });
+    oldest.stream.destroy();
+    oldest.connection.destroy();
   }
-  counts.set(deviceId, open + 1);
+  open.push(entry);
+  held.set(deviceId, open);
   let released = false;
   const release = () => {
     if (released) return;
     released = true;
-    const remaining = (counts.get(deviceId) ?? 1) - 1;
-    if (remaining > 0) counts.set(deviceId, remaining);
-    else counts.delete(deviceId);
+    report({
+      event: "device.stream_closed",
+      deviceId,
+      path,
+      heldSeconds: heldSeconds(entry.openedAt),
+    });
+    const remaining = (held.get(deviceId) ?? []).filter((other) => other !== entry);
+    if (remaining.length > 0) held.set(deviceId, remaining);
+    else held.delete(deviceId);
   };
   stream.once("close", release);
   stream.once("error", release);
@@ -554,14 +726,24 @@ async function* bounded(
 }
 
 export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApiRouteOptions) {
-  const streamCounts = new Map<string, number>();
+  const heldStreams = new Map<string, HeldDeviceStream[]>();
   const holdStream = (
+    request: FastifyRequest,
     deviceId: string,
     stream: Readable,
     maximum: number,
-    connection: NodeJS.EventEmitter,
+    connection: NodeJS.EventEmitter & { destroy(): unknown },
   ) => {
-    holdDeviceStream(streamCounts, deviceId, stream, maximum, connection);
+    const path = request.url.slice(DEVICE_API_PREFIX.length + 1).split("?")[0] ?? "";
+    options.devices.reportStream({
+      event: "device.stream_opened",
+      deviceId,
+      path,
+      ...reopenReport(rawQuery(request)),
+    });
+    holdDeviceStream(heldStreams, deviceId, path, stream, maximum, connection, (diagnostic) =>
+      options.devices.reportStream(diagnostic),
+    );
   };
   const scope = (authentication: GatewayAuthenticationContext): PairedDeviceScope =>
     ({
@@ -682,11 +864,88 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
       device.all("/", async () => options.rejectNotAllowed());
       device.all("/*", async () => options.rejectNotAllowed());
 
-      device.post("/pair", async (request, reply) => {
-        const paired = await options.devices.pair(json(request));
-        return options.sendJson(reply, paired.replayed ? 200 : 201, {
-          device: presentPairedDevice(paired.device),
+      const signIn = (): DeviceSignInService => options.signIn ?? options.rejectNotAllowed();
+
+      device.get("/sign-in", async (_request, reply) =>
+        options.sendJson(reply, 200, signIn().publicInfo()),
+      );
+
+      device.post("/sign-in/setup/options", async (request, reply) =>
+        options.sendJson(reply, 200, await signIn().setupOptions(json(request))),
+      );
+
+      device.post("/sign-in/setup/finish", async (request, reply) =>
+        options.sendJson(reply, 201, {
+          device: presentPairedDevice(await signIn().setupFinish(json(request))),
+        }),
+      );
+
+      device.post("/sign-in/options", async (request, reply) =>
+        options.sendJson(reply, 200, await signIn().signInOptions(json(request))),
+      );
+
+      device.post("/sign-in/finish", async (request, reply) =>
+        options.sendJson(reply, 200, {
+          device: presentPairedDevice(await signIn().signInFinish(json(request))),
+        }),
+      );
+
+      const deviceChange = (body: Record<string, unknown>, extra: readonly string[] = []) => {
+        only(body, ["deviceId", "expectedRevision", ...extra]);
+        if (
+          typeof body["deviceId"] !== "string" ||
+          !/^dev_[A-Za-z0-9_-]{22}$/u.test(body["deviceId"]) ||
+          !Number.isSafeInteger(body["expectedRevision"]) ||
+          (body["expectedRevision"] as number) < 0
+        )
+          options.rejectBody(400);
+        return {
+          deviceId: body["deviceId"] as string,
+          expectedRevision: body["expectedRevision"] as number,
+        };
+      };
+
+      device.get("/devices", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        const devices = await options.devices.list(scope(authenticated.authentication));
+        return options.sendJson(reply, 200, {
+          thisDeviceId: authenticated.device.id,
+          devices: devices
+            .filter((listed) => listed.status === "active")
+            .map((listed) => ({
+              ...presentPairedDevice(listed),
+              online: (heldStreams.get(listed.id) ?? []).some((held) => held.path === "stream"),
+            })),
+          server: {
+            origin: options.publicOrigin.origin,
+            since: options.signIn ? await options.signIn.firstPasskeyAt() : null,
+          },
         });
+      });
+
+      device.post("/devices/rename", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        const body = json(request);
+        const target = deviceChange(body, ["name"]);
+        if (typeof body["name"] !== "string") options.rejectBody(400);
+        const renamed = await options.devices.rename({
+          ...scope(authenticated.authentication),
+          ...target,
+          name: body["name"] as string,
+        });
+        return options.sendJson(reply, 200, { device: presentPairedDevice(renamed) });
+      });
+
+      device.post("/devices/revoke", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        const target = deviceChange(json(request));
+        if (target.deviceId !== authenticated.device.id && !authenticated.confirmed)
+          throw new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.CONFIRMATION_REQUIRED, 403);
+        const revoked = await options.devices.revoke({
+          ...scope(authenticated.authentication),
+          ...target,
+        });
+        return options.sendJson(reply, 200, { device: presentPairedDevice(revoked) });
       });
 
       device.get("/config", async (request, reply) => {
@@ -698,6 +957,10 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
           streamConnections: configuration.streamConnections,
           signatureToleranceSeconds: configuration.signatureToleranceSeconds,
           limits: presentDeviceLimits(configuration),
+          ...(options.chatAttachments
+            ? { attachments: presentDeviceAttachments(configuration, options.chatAttachments()) }
+            : {}),
+          ...(options.chatModels ? { chatModels: options.chatModels.list() } : {}),
           ...(options.perception
             ? {
                 perception: await presentDevicePerception(
@@ -907,6 +1170,75 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
         );
       });
 
+      device.post("/speech", async (request, reply) => {
+        await authenticate(request);
+        const body = json(request);
+        only(body, ["text"]);
+        const text = body["text"];
+        if (typeof text !== "string") return options.rejectBody(400);
+        if (!options.speech) return options.sendJson(reply, 503, { code: "SPEECH_UNAVAILABLE" });
+        const abort = new AbortController();
+        request.raw.once("close", () => abort.abort());
+        let audio: Awaited<ReturnType<SpeechSynthesisPort["synthesize"]>>;
+        try {
+          audio = await options.speech.synthesize({ text, signal: abort.signal });
+        } catch (error) {
+          const code =
+            error instanceof SpeechSynthesisError ? error.code : SPEECH_ERROR_CODES.UPSTREAM_FAILED;
+          request.log.warn(
+            {
+              event: "speech.failed",
+              code,
+              ...(error instanceof SpeechSynthesisError && error.upstreamStatus !== undefined
+                ? { upstreamStatus: error.upstreamStatus }
+                : {}),
+            },
+            "speech synthesis failed",
+          );
+          const status =
+            code === SPEECH_ERROR_CODES.INPUT_INVALID || code === SPEECH_ERROR_CODES.SENSITIVE_TEXT
+              ? 422
+              : code === SPEECH_ERROR_CODES.FIRST_AUDIO_TIMEOUT
+                ? 504
+                : 502;
+          return options.sendJson(reply, status, { code });
+        }
+        const started = performance.now();
+        let bytes = 0;
+        const log = request.log;
+        const counted = Readable.from(
+          (async function* () {
+            let completed = false;
+            try {
+              for await (const chunk of audio.chunks) {
+                bytes += chunk.byteLength;
+                yield Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength);
+              }
+              completed = true;
+            } finally {
+              log.info(
+                {
+                  event: "speech.synthesized",
+                  completed,
+                  characters: audio.characters,
+                  firstAudioMs: audio.firstAudioMs,
+                  streamMs: Math.round(performance.now() - started),
+                  bytes,
+                },
+                "speech synthesized",
+              );
+            }
+          })(),
+        );
+        return reply
+          .code(200)
+          .header("cache-control", "no-store")
+          .header("x-himawari-speech-first-audio-ms", String(audio.firstAudioMs))
+          .header("x-himawari-speech-sample-rate", String(audio.sampleRate))
+          .type(audio.mediaType)
+          .send(counted);
+      });
+
       device.post("/usage/report", async (request, reply) => {
         const authenticated = await authenticate(request);
         await perception().reportDeviceUsage({
@@ -914,6 +1246,14 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
           deviceId: authenticated.device.id,
           body: json(request),
         });
+        return options.sendJson(reply, 200, { accepted: true });
+      });
+
+      device.post("/read-problems", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        const problem = deviceReadProblem(authenticated.device.id, json(request));
+        if (!problem) options.rejectBody(400);
+        options.devices.reportReadProblem(problem, Date.now());
         return options.sendJson(reply, 200, { accepted: true });
       });
 
@@ -1093,6 +1433,121 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
         return options.sendJson(reply, 200, { denied: true });
       });
 
+      device.get("/vault/codes", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        return options.sendJson(reply, 200, {
+          requests: vault(authenticated).pendingCodes(scope(authenticated.authentication)),
+        });
+      });
+
+      device.post("/vault/codes/answer", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        vault(authenticated).answerCode(scope(authenticated.authentication), json(request));
+        return options.sendJson(reply, 200, { answered: true });
+      });
+
+      device.post("/vault/codes/decline", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        vault(authenticated).declineCode(scope(authenticated.authentication), json(request));
+        return options.sendJson(reply, 200, { declined: true });
+      });
+
+      const connections = (authenticated: AuthenticatedDeviceRequest): DeviceConnectionsPort =>
+        options.connections?.(scope(authenticated.authentication)) ?? options.rejectNotAllowed();
+
+      device.post("/connections/list", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        only(json(request), []);
+        return options.sendJson(reply, 200, {
+          connections: await connections(authenticated).list(),
+        });
+      });
+
+      device.post("/connections/authorization", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        const body = json(request);
+        only(body, ["connection", "callbackScheme"]);
+        const connection = body["connection"];
+        const callbackScheme = body["callbackScheme"];
+        if (typeof connection !== "string" || !CONNECTION_NAME_PATTERN.test(connection))
+          options.rejectBody(400);
+        if (!isDeviceCallbackScheme(callbackScheme)) options.rejectBody(400);
+        const started = await connections(authenticated).begin({
+          deviceId: authenticated.device.id,
+          connection,
+          callbackScheme,
+        });
+        if (!started) return options.rejectNotAllowed();
+        return options.sendJson(reply, 200, started);
+      });
+
+      device.post("/connections/authorization/complete", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        const body = json(request);
+        only(body, ["state"]);
+        const state = body["state"];
+        if (typeof state !== "string" || !AUTHORIZATION_STATE_PATTERN.test(state))
+          options.rejectBody(400);
+        const outcome = await connections(authenticated).complete({
+          deviceId: authenticated.device.id,
+          state,
+        });
+        return options.sendJson(reply, 200, { outcome });
+      });
+
+      device.post("/connections/disconnect", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        const body = json(request);
+        only(body, ["connection"]);
+        const connection = body["connection"];
+        if (typeof connection !== "string" || !CONNECTION_NAME_PATTERN.test(connection))
+          options.rejectBody(400);
+        const outcome = await connections(authenticated).disconnect({ connection });
+        if (outcome === undefined) return options.rejectNotAllowed();
+        return options.sendJson(reply, 200, { disconnected: outcome });
+      });
+
+      const optionalText = (value: unknown, maximum: number): string | undefined => {
+        if (value === undefined) return undefined;
+        if (typeof value !== "string" || value.length > maximum) options.rejectBody(400);
+        const trimmed = (value as string).trim();
+        return trimmed.length === 0 ? undefined : trimmed;
+      };
+
+      device.post("/connections/add", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        const body = json(request);
+        only(body, ["serverUrl", "title", "clientId", "clientSecret"]);
+        const serverUrl = optionalText(body["serverUrl"], ADDED_APP_ADDRESS_MAXIMUM);
+        const title = optionalText(body["title"], ADDED_APP_TITLE_MAXIMUM);
+        const clientId = optionalText(body["clientId"], ADDED_APP_CLIENT_MAXIMUM);
+        const secret = optionalText(body["clientSecret"], ADDED_APP_CLIENT_MAXIMUM);
+        if (serverUrl === undefined || (secret !== undefined && clientId === undefined))
+          options.rejectBody(400);
+        if (!authenticated.confirmed)
+          return options.sendJson(reply, 403, { code: "DEVICE_OWNER_PRESENCE_REQUIRED" });
+        const outcome = await connections(authenticated).add({
+          serverUrl: serverUrl as string,
+          ...(title === undefined ? {} : { title }),
+          ...(clientId === undefined ? {} : { clientId }),
+          ...(secret === undefined ? {} : { clientSecret: secret }),
+        });
+        if (outcome === undefined) return options.rejectNotAllowed();
+        return options.sendJson(reply, 200, outcome);
+      });
+
+      device.post("/connections/remove", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        const body = json(request);
+        only(body, ["connection"]);
+        const connection = body["connection"];
+        if (typeof connection !== "string" || !CONNECTION_NAME_PATTERN.test(connection))
+          options.rejectBody(400);
+        const outcome = await connections(authenticated).remove({ connection });
+        if (outcome === undefined) return options.rejectNotAllowed();
+        return options.sendJson(reply, 200, { removed: outcome });
+      });
+
       device.get("/actions/policy", async (request, reply) => {
         const authenticated = await authenticate(request);
         return options.sendJson(
@@ -1250,7 +1705,13 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
               configuration.connectionMaxSeconds * 1000,
             ),
           );
-          holdStream(authenticated.device.id, stream, configuration.streamConnections, reply.raw);
+          holdStream(
+            request,
+            authenticated.device.id,
+            stream,
+            configuration.streamConnections,
+            reply.raw,
+          );
           try {
             options.setStreamHeaders(reply);
             return reply.send(stream);
@@ -1343,8 +1804,11 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
                 "text",
                 "utteranceId",
                 "voice",
+                "spoken",
               ].includes(key),
           ) ||
+          (body["spoken"] !== undefined &&
+            (body["spoken"] !== true || body["voice"] !== undefined)) ||
           (body["voice"] !== undefined &&
             (body["utteranceId"] === undefined || parseVoiceEvidence(body["voice"]) === null)) ||
           (body["utteranceId"] !== undefined &&
@@ -1361,6 +1825,7 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
           body["text"].length > MESSAGE_TEXT_MAXIMUM
         )
           options.rejectBody(400);
+        let heardByPhone = false;
         if (body["voice"] !== undefined) {
           const evidence = parseVoiceEvidence(body["voice"]) as VoiceEvidence;
           const verdict = decideVoiceCommand(evidence, options.voiceGates?.());
@@ -1368,24 +1833,7 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
             return options.sendJson(reply, 409, {
               error: { code: VOICE_COMMAND_UNCONFIRMED_CODE, reason: verdict.reason },
             });
-          const addressed = options.addressee
-            ? await options.addressee({
-                authentication,
-                request: {
-                  deviceId: authenticated.device.id,
-                  utteranceId: body["utteranceId"] as string,
-                  trigger: evidence.trigger,
-                  heardName: evidence.heardName,
-                  text: body["text"] as string,
-                },
-              })
-            : evidence.trigger === "hands_on"
-              ? "addressed"
-              : "addressed_unsure";
-          if (addressed !== "addressed")
-            return options.sendJson(reply, 409, {
-              error: { code: VOICE_COMMAND_UNCONFIRMED_CODE, reason: addressed },
-            });
+          heardByPhone = evidence.trigger !== "hands_on";
         }
         if (typeof body["utteranceId"] === "string")
           options.prefetch?.settle({
@@ -1405,10 +1853,13 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
           content: "thread-action:submit",
         });
         const idempotencyKey = `device-message:${suffix}`;
+        const choice = options.chatModels
+          ? await options.chatModels.ownerChoice(scope(authentication))
+          : null;
         const command = threadGatewayMessageSchema.parse({
           schemaVersion: THREAD_GATEWAY_SCHEMA_VERSION,
           kind: "command",
-          type: "thread.message.submit",
+          type: choice ? "thread.message.submit_configured" : "thread.message.submit",
           messageId: `command:${suffix}`,
           correlationId: `correlation:${suffix}`,
           causationId: null,
@@ -1421,6 +1872,7 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
           actor: { actorType: "owner", actorId: authentication.ownerId },
           idempotencyKey,
           payload: {
+            ...(choice ? { modelRef: choice.modelRef, thinkingLevel: choice.thinkingLevel } : {}),
             threadId: body["threadId"],
             expectedRevision: body["expectedRevision"],
             messageId: `message:${suffix}`,
@@ -1428,7 +1880,7 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
             runId: `run:${suffix}`,
             sessionId: authentication.sessionId,
             contentRef,
-            sourceProofRef: `device:${authenticated.device.id}`,
+            sourceProofRef: `${heardByPhone ? PHONE_VOICE_PROOF_PREFIX : body["spoken"] === true ? TALK_PROOF_PREFIX : "device:"}${authenticated.device.id}`,
             dataClassification: "private",
             occurredAt: now().toISOString(),
             resultRef,
@@ -1441,6 +1893,77 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
             body["utteranceId"],
           );
         return options.sendJson(reply, 200, accepted);
+      });
+
+      device.post("/voice-timing", async (request, reply) => {
+        const { device: paired, authentication } = await authenticate(request);
+        if (!options.recordVoiceTiming) return options.rejectNotAllowed();
+        const body = json(request);
+        only(body, ["messageId", "saidAt", "firstTextAt", "firstSoundAt"]);
+        const { messageId, saidAt, firstTextAt, firstSoundAt } = body;
+        const instant = (value: unknown): value is string =>
+          typeof value === "string" &&
+          ISO_MILLISECONDS.test(value) &&
+          !Number.isNaN(Date.parse(value));
+        if (
+          typeof messageId !== "string" ||
+          !MESSAGE_ID_PATTERN.test(messageId) ||
+          !instant(saidAt) ||
+          !instant(firstTextAt) ||
+          (firstSoundAt !== null && !instant(firstSoundAt))
+        )
+          return options.rejectBody(400);
+        const outcome = await options.recordVoiceTiming({
+          authentication,
+          messageId,
+          runId: `run:${stableSuffix(paired.id, messageId)}`,
+          saidAt,
+          firstTextAt,
+          firstSoundAt,
+        });
+        if (outcome === "unknown_run") return options.rejectBody(404);
+        return options.sendJson(reply, 200, { recorded: true });
+      });
+
+      device.get("/voice-timing", async (request, reply) => {
+        await authenticate(request);
+        if (!options.listVoiceTiming) return options.rejectNotAllowed();
+        const query = new URLSearchParams(rawQuery(request));
+        const requested = query.get("limit");
+        if (requested !== null && !/^[1-9][0-9]{0,5}$/.test(requested))
+          return options.rejectBody(400);
+        const limit = Math.min(requested === null ? 20 : Number(requested), 50);
+        return options.sendJson(reply, 200, { items: await options.listVoiceTiming(limit) });
+      });
+
+      device.post("/attachments", async (request, reply) => {
+        const { device: paired, authentication } = await authenticate(request);
+        const chat = options.chatAttachments?.();
+        if (!chat) return options.rejectNotAllowed();
+        const body = json(request);
+        only(body, ["requestId", "content", "as"]);
+        const { requestId, content } = body;
+        const kind = body["as"];
+        if (
+          typeof requestId !== "string" ||
+          !ATTACHMENT_REQUEST_ID.test(requestId) ||
+          typeof content !== "string" ||
+          content.length === 0 ||
+          (kind !== "text" && kind !== "image")
+        )
+          return options.rejectBody(400);
+        if (kind === "image" && !chat.images) return options.rejectBody(415);
+        const limits = presentDeviceAttachments(options.configuration(), chat);
+        if (content.length > (kind === "image" ? limits.imageCharacters : limits.textCharacters))
+          return options.rejectBody(413);
+        if (kind === "image" && !CHAT_IMAGE_DATA_URL.test(content)) return options.rejectBody(400);
+        const ref = await options.protectText({
+          authentication,
+          idempotencyKey: `device-attachment:${stableSuffix(paired.id, requestId)}`,
+          content,
+          contentType: kind === "image" ? "text/x-himawari-image" : "text/x-himawari-attachment",
+        });
+        return options.sendJson(reply, 201, { ref });
       });
 
       device.post("/payloads/text/new", async (request, reply) => {
@@ -1757,7 +2280,13 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
             configuration.connectionMaxSeconds * 1000,
           ),
         );
-        holdStream(authenticated.device.id, stream, configuration.streamConnections, reply.raw);
+        holdStream(
+          request,
+          authenticated.device.id,
+          stream,
+          configuration.streamConnections,
+          reply.raw,
+        );
         if (!mac) {
           options.push?.streamOpened(authenticated.device.id);
           stream.once("close", () => options.push?.streamClosed(authenticated.device.id));
@@ -1811,38 +2340,6 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
       devices: devices.map(presentPairedDevice),
       limits: presentDeviceLimits(options.configuration()),
     });
-  });
-
-  app.post(`${DEVICE_MANAGEMENT_PREFIX}/pairing-codes`, async (request, reply) => {
-    const authentication = await managed(request);
-    emptyBody(request);
-    if (!authentication.sessionId) options.rejectBody(403);
-    const pairing = await options.devices.startPairing({
-      ...scope(authentication),
-      sessionId: authentication.sessionId as string,
-    });
-    return options.sendJson(reply, 201, {
-      expiresAt: pairing.expiresAt,
-      pairingUri: `himawari-pair:${Buffer.from(
-        JSON.stringify({
-          v: 1,
-          origin: options.publicOrigin.origin,
-          code: pairing.code,
-          ...(options.pairingAccess
-            ? {
-                access: pairingAccessFields(options.pairingAccess),
-              }
-            : {}),
-        }),
-      ).toString("base64url")}`,
-    });
-  });
-
-  app.post(`${DEVICE_MANAGEMENT_PREFIX}/confirm`, async (request, reply) => {
-    const authentication = await managed(request);
-    const body = deviceAction(request);
-    const device = await options.devices.confirm({ ...scope(authentication), ...body });
-    return options.sendJson(reply, 200, { device: presentPairedDevice(device) });
   });
 
   app.post(`${DEVICE_MANAGEMENT_PREFIX}/rename`, async (request, reply) => {

@@ -10,8 +10,7 @@ public struct CardBackground: ViewModifier {
     public func body(content: Content) -> some View {
         content
             .padding(padding)
-            .background(Color.hmSurface, in: RoundedRectangle(cornerRadius: DesignTokens.Radius.card, style: .continuous))
-            .hmShadow(DesignTokens.Shadows.lift)
+            .hmRaised(RoundedRectangle(cornerRadius: DesignTokens.Radius.card, style: .continuous), fill: Color.hmSurface, shadow: DesignTokens.Shadows.lift)
     }
 }
 
@@ -42,15 +41,73 @@ public struct CapsuleButtonStyle: ButtonStyle {
     }
 
     public func makeBody(configuration: Configuration) -> some View {
-        configuration.label
+        CapsuleButtonBody(kind: kind, height: height, fontSize: fontSize, pressed: configuration.isPressed) {
+            configuration.label
+        }
+    }
+}
+
+private struct CapsuleButtonBody<Label: View>: View {
+    let kind: CapsuleKind
+    let height: CGFloat
+    let pressed: Bool
+    let label: Label
+    @ScaledMetric private var fontSize: CGFloat
+    @Environment(\.isEnabled) private var enabled
+
+    init(kind: CapsuleKind, height: CGFloat, fontSize: CGFloat, pressed: Bool, @ViewBuilder label: () -> Label) {
+        self.kind = kind
+        self.height = height
+        self.pressed = pressed
+        self.label = label()
+        _fontSize = ScaledMetric(wrappedValue: fontSize, relativeTo: .body)
+    }
+
+    var body: some View {
+        label
             .font(.system(size: fontSize, weight: kind == .primary ? .semibold : .regular))
             .foregroundStyle(kind == .primary ? Color.hmOnText : Color.hmText)
+            .multilineTextAlignment(.center)
+            .padding(.vertical, 8)
             .frame(maxWidth: .infinity, minHeight: height)
             .padding(.horizontal, 16)
             .background(kind == .primary ? Color.hmText : Color.hmFill, in: Capsule())
-            .opacity(configuration.isPressed ? 0.75 : 1)
+            .opacity(pressed ? 0.75 : enabled ? 1 : 0.5)
             .contentShape(Capsule())
     }
+}
+
+public struct SystemNavigationTitle: View {
+    private let title: Text
+
+    public init(_ title: Text) {
+        self.title = title
+    }
+
+    public var body: some View {
+        Color.clear
+            .frame(height: 0)
+            .accessibilityHidden(true)
+            .navigationTitle(title)
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+    }
+}
+
+public struct PressableButtonStyle: ButtonStyle {
+    public init() {}
+
+    public func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .contentShape(Rectangle())
+            .opacity(configuration.isPressed ? 0.6 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
+
+extension ButtonStyle where Self == PressableButtonStyle {
+    public static var pressable: PressableButtonStyle { PressableButtonStyle() }
 }
 
 public struct RowPillButtonStyle: ButtonStyle {
@@ -195,7 +252,7 @@ public struct GlassCircleButton<Leading: View>: View {
                 .frame(width: size, height: size)
                 .contentShape(Circle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
         .glassEffect(.regular.interactive(), in: Circle())
         .accessibilityLabel(label)
     }
@@ -264,15 +321,16 @@ public struct ToggleRow<Leading: View>: View {
                     title
                         .hmType(DesignTokens.TypeScale.body)
                         .foregroundStyle(Color.hmText)
+                        .fixedSize(horizontal: false, vertical: true)
                     if let detail {
                         detail
                             .hmType(DesignTokens.TypeScale.caption)
                             .foregroundStyle(Color.hmMuted)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
             }
         }
-        .tint(Color.hmSuccess)
         .frame(minHeight: DesignTokens.Size.rowMinHeight)
     }
 }
@@ -326,22 +384,6 @@ public struct EmptyStateView: View {
             .multilineTextAlignment(.center)
             .padding(.horizontal, 32)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}
-
-public struct ScreenTitle: View {
-    private let title: Text
-
-    public init(_ title: Text) {
-        self.title = title
-    }
-
-    public var body: some View {
-        title
-            .hmType(DesignTokens.TypeScale.title1, design: .rounded)
-            .foregroundStyle(Color.hmText)
-            .frame(minHeight: DesignTokens.TypeScale.title1.lineHeight, alignment: .leading)
-            .accessibilityAddTraits(.isHeader)
     }
 }
 

@@ -6,5 +6,7 @@ import WidgetKit
 struct ListenActivityBundle: WidgetBundle {
     var body: some Widget {
         ListenActivityWidget()
+        TalkActivityWidget()
+        BackgroundWorkActivityWidget()
     }
 }

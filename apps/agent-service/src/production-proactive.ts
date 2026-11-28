@@ -10,18 +10,20 @@ import {
   type IdGeneratorPort,
   limitedSourceReader,
   listDailyReviewSubjects,
+  type MailInboxPort,
   type MemoryCheckupService,
   OwnerRuleReplay,
   type OwnerRuleReplayResult,
   type OwnerRuleStorePort,
   PORT_ERROR_CODES,
-  type PrereviewRunResult,
+  PROACTIVE_SOURCE_LIMIT_ON_REACH,
   PROACTIVE_SOURCES,
+  type PrereviewRunResult,
   type ProactiveConfiguration,
   type ProactiveDecision,
-  type MailInboxPort,
   ProactiveMailCheckService,
   type ProactiveMailReader,
+  type ProactiveMailReadFailure,
   type ProactiveModelInvoker,
   type ProactiveOverview,
   type ProactiveProgramEntry,
@@ -34,17 +36,16 @@ import {
   type ProactiveSourceRegistry,
   type ProactiveSourceRunner,
   type ProactiveStorePort,
-  PROACTIVE_SOURCE_LIMIT_ON_REACH,
-  proactiveSourceLimitsValid,
-  readProactiveSourceSettings,
   parseReviewKey,
+  proactiveSourceLimitsValid,
   ReviewPrereviewService,
-  type RuleReviewReport,
-  type RuleReviewService,
   type ReviewPrereviewStorePort,
   type RuleRecord,
+  type RuleReviewReport,
+  type RuleReviewService,
   readDailyReview,
   readProactiveOverview,
+  readProactiveSourceSettings,
   recordProactiveProgramEntry,
   startOfNextZonedDay,
   startOfZonedDay,
@@ -55,14 +56,7 @@ import type {
   GatewayV2Query,
   GatewayV2Snapshot,
 } from "@himawari-agent/gateway-contracts";
-import {
-  DEMO_MAILBOX_ACCOUNT,
-  DEMO_MAILBOX_SETTINGS_RETURN,
-  demoMailboxToken,
-  demoMailboxTokenLocale,
-  type GoogleOAuth,
-  isDemoMailboxToken,
-} from "@himawari-agent/platform-node";
+import type { GoogleOAuth } from "@himawari-agent/platform-node";
 import type { ProactivePushSource } from "./production-web-push.js";
 
 export const PRODUCTION_PROACTIVE_OPERATIONS = Object.freeze([
@@ -76,7 +70,6 @@ export const PRODUCTION_PROACTIVE_OPERATIONS = Object.freeze([
   "proactive.review.rate",
   "proactive.review.checkup",
   "proactive.source.manage",
-  "proactive.backoff.restore",
   "proactive.sources.read",
   "proactive.source.settings.set",
   "proactive.source.switch_off",
@@ -203,9 +196,27 @@ export interface ProductionProactiveOptions {
   readonly ids: IdGeneratorPort;
   readonly onDecision?: (decision: ProactiveDecision) => void;
   readonly onFailure: (error: unknown) => void;
+  readonly onReadFailed?: (failure: ProactiveMailReadFailure) => void;
 }
 
 export type ProactiveAuthorizationOutcome = "connected" | "denied" | "failed";
+
+export interface ProactiveAppAuthorizationStart {
+  readonly kind: "browser";
+  readonly authorizationUrl: string;
+}
+
+export const PROACTIVE_APP_CALLBACK_HOST = "gmail-authorization";
+export const GMAIL_CONNECTION_TITLE = "Gmail";
+
+interface PendingAuthorization {
+  readonly owner: string;
+  readonly expiresAt: number;
+  readonly app?: {
+    readonly callbackScheme: string;
+    reply?: { readonly code: string | null; readonly error: string | null };
+  };
+}
 
 export class ProductionProactive {
   readonly #options: ProductionProactiveOptions;
@@ -214,7 +225,7 @@ export class ProductionProactive {
   readonly #mail: ProactiveMailCheckService;
   #inbox: MailInboxPort | undefined;
   readonly #prereview: ReviewPrereviewService | undefined;
-  readonly #states = new Map<string, { readonly owner: string; readonly expiresAt: number }>();
+  readonly #states = new Map<string, PendingAuthorization>();
   #timer: ReturnType<typeof setInterval> | undefined;
   #running: Promise<void> | undefined;
 
@@ -241,6 +252,7 @@ export class ProductionProactive {
       ...(options.ownerRules ? { ownerRuleStore: options.ownerRules } : {}),
       clock: options.clock,
       ids: options.ids,
+      ...(options.onReadFailed ? { onReadFailed: options.onReadFailed } : {}),
     });
     this.#mail = mail;
     const bound = new Map<string, ProactiveSourceRunner>(
@@ -279,6 +291,10 @@ export class ProductionProactive {
     return this.#mail.readThread(threadId, signal);
   }
 
+  searchMail(query: string, limit: number, signal: AbortSignal) {
+    return this.#mail.searchMail(query, limit, signal);
+  }
+
   async #reviewSources() {
     const options = this.#options;
     return {
@@ -299,68 +315,7 @@ export class ProductionProactive {
     if (this.#timer) return;
     this.#timer = setInterval(() => void this.tick(), this.#options.configuration.intervalMs);
     this.#timer.unref?.();
-    if (!this.#options.configuration.demoInbox) {
-      void this.tick();
-      return;
-    }
-    void this.seedDemoInbox()
-      .catch(this.#options.onFailure)
-      .then(() => this.tick());
-  }
-
-  async seedDemoInbox(options: { readonly restore?: boolean } = {}): Promise<void> {
-    const { scope, store, seal, clock } = this.#options;
-    const demoInbox = this.#options.configuration.demoInbox;
-    if (!demoInbox) return;
-    const existing = await store.readConnection({ ...scope, source: GMAIL_SOURCE.name });
-    const settings = await store.readSettings(scope);
-    if (existing) {
-      const token = await seal.open({ ...scope, ref: existing.tokenRef });
-      if (token === undefined) {
-        if (!options.restore) return;
-      } else if (!isDemoMailboxToken(token)) return;
-      else if (existing.status === "connected" && demoMailboxTokenLocale(token) === demoInbox)
-        return;
-    } else if (!options.restore && settings.updatedAt !== null) return;
-    const now = clock.now();
-    const sealed: string[] = [];
-    let released: readonly string[];
-    try {
-      const accountRef = await seal.seal({ ...scope, text: DEMO_MAILBOX_ACCOUNT, at: now });
-      sealed.push(accountRef);
-      const tokenRef = await seal.seal({
-        ...scope,
-        text: demoMailboxToken(demoInbox, now),
-        at: now,
-      });
-      sealed.push(tokenRef);
-      released = await store.saveConnection({
-        ...scope,
-        connection: {
-          source: GMAIL_SOURCE.name,
-          accountRef,
-          tokenRef,
-          cursor: null,
-          status: "connected",
-          connectedAt: now,
-          updatedAt: now,
-        },
-      });
-    } catch (error) {
-      await seal.release({ ...scope, refs: sealed }).catch(() => undefined);
-      throw error;
-    }
-    if (released.length > 0) await seal.release({ ...scope, refs: released });
-    await store.writeSettings({ ...scope, ...settings, enabled: true, now });
-  }
-
-  async authorizationRedirect(owner: string): Promise<string> {
-    if (this.#options.configuration.demoInbox) {
-      await this.seedDemoInbox({ restore: true });
-      void this.tick();
-      return DEMO_MAILBOX_SETTINGS_RETURN;
-    }
-    return this.beginAuthorization(owner);
+    void this.tick();
   }
 
   async stop(): Promise<void> {
@@ -370,12 +325,7 @@ export class ProductionProactive {
   }
 
   tick(): Promise<void> {
-    this.#running ??= this.#checkable()
-      .then(async (checkable) => {
-        if (!checkable) return;
-        await this.reviewRules();
-        await this.#runSources();
-      })
+    this.#running ??= this.#reviewRulesThenRunSources()
       .catch(this.#options.onFailure)
       .then(async () => {
         await this.prereview();
@@ -384,6 +334,11 @@ export class ProductionProactive {
         this.#running = undefined;
       });
     return this.#running;
+  }
+
+  async #reviewRulesThenRunSources(): Promise<void> {
+    await this.reviewRules();
+    await this.#runSources();
   }
 
   async #runSources(): Promise<void> {
@@ -445,16 +400,6 @@ export class ProductionProactive {
     }
   }
 
-  async #checkable(): Promise<boolean> {
-    if (!this.#options.configuration.demoInbox) return true;
-    const { scope, store, seal } = this.#options;
-    if (!(await store.readSettings(scope)).enabled) return false;
-    const connection = await store.readConnection({ ...scope, source: GMAIL_SOURCE.name });
-    if (!connection) return true;
-    const token = await seal.open({ ...scope, ref: connection.tokenRef });
-    return token === undefined || isDemoMailboxToken(token);
-  }
-
   async replayRule(rule: RuleRecord): Promise<OwnerRuleReplayResult> {
     return new OwnerRuleReplay({
       scope: this.#options.scope,
@@ -481,17 +426,46 @@ export class ProductionProactive {
   }
 
   beginAuthorization(owner: string): string {
-    const now = Date.parse(this.#options.clock.now());
-    for (const [state, entry] of this.#states)
-      if (entry.expiresAt <= now) this.#states.delete(state);
-    while (this.#states.size >= MAX_PENDING_STATES) {
-      const oldest = this.#states.keys().next().value;
-      if (oldest === undefined) break;
-      this.#states.delete(oldest);
-    }
-    const state = randomBytes(24).toString("base64url");
-    this.#states.set(state, { owner, expiresAt: now + STATE_TTL_MS });
-    return this.#options.oauth.authorizationUrl(state);
+    return this.#issueState({ owner });
+  }
+
+  beginAppAuthorization(input: {
+    readonly deviceId: string;
+    readonly callbackScheme: string;
+  }): ProactiveAppAuthorizationStart {
+    return {
+      kind: "browser",
+      authorizationUrl: this.#issueState({
+        owner: input.deviceId,
+        app: { callbackScheme: input.callbackScheme },
+      }),
+    };
+  }
+
+  appCallback(input: {
+    readonly state: string | null;
+    readonly code: string | null;
+    readonly error: string | null;
+  }): string | undefined {
+    const pending = input.state ? this.#states.get(input.state) : undefined;
+    if (!input.state || !pending?.app) return undefined;
+    if (pending.app.reply === undefined && pending.expiresAt > this.#now())
+      pending.app.reply = { code: input.code, error: input.error };
+    return `${pending.app.callbackScheme}://${PROACTIVE_APP_CALLBACK_HOST}?${new URLSearchParams({ state: input.state })}`;
+  }
+
+  async completeAppAuthorization(input: {
+    readonly deviceId: string;
+    readonly state: string;
+  }): Promise<ProactiveAuthorizationOutcome> {
+    const pending = this.#states.get(input.state);
+    if (!pending?.app || pending.owner !== input.deviceId) return "failed";
+    this.#states.delete(input.state);
+    const reply = pending.app.reply;
+    if (!reply || pending.expiresAt <= this.#now()) return "failed";
+    if (reply.error) return reply.error === "access_denied" ? "denied" : "failed";
+    if (!reply.code) return "failed";
+    return this.#connect(reply.code);
   }
 
   async completeAuthorization(input: {
@@ -501,18 +475,37 @@ export class ProductionProactive {
     readonly error: string | null;
   }): Promise<ProactiveAuthorizationOutcome> {
     const pending = input.state ? this.#states.get(input.state) : undefined;
+    if (pending?.app) return "failed";
     if (input.state) this.#states.delete(input.state);
-    if (
-      !pending ||
-      pending.owner !== input.owner ||
-      pending.expiresAt <= Date.parse(this.#options.clock.now())
-    )
+    if (!pending || pending.owner !== input.owner || pending.expiresAt <= this.#now())
       return "failed";
     if (input.error) return input.error === "access_denied" ? "denied" : "failed";
     if (!input.code) return "failed";
+    return this.#connect(input.code);
+  }
+
+  #now(): number {
+    return Date.parse(this.#options.clock.now());
+  }
+
+  #issueState(pending: Omit<PendingAuthorization, "expiresAt">): string {
+    const now = this.#now();
+    for (const [state, entry] of this.#states)
+      if (entry.expiresAt <= now) this.#states.delete(state);
+    while (this.#states.size >= MAX_PENDING_STATES) {
+      const oldest = this.#states.keys().next().value;
+      if (oldest === undefined) break;
+      this.#states.delete(oldest);
+    }
+    const state = randomBytes(24).toString("base64url");
+    this.#states.set(state, { ...pending, expiresAt: now + STATE_TTL_MS });
+    return this.#options.oauth.authorizationUrl(state);
+  }
+
+  async #connect(code: string): Promise<ProactiveAuthorizationOutcome> {
     const { scope, store, seal, oauth } = this.#options;
     try {
-      const granted = await oauth.exchange(input.code);
+      const granted = await oauth.exchange(code);
       const account = await this.#options.readAccount(granted.accessToken);
       const now = this.#options.clock.now();
       const existing = await store.readConnection({ ...scope, source: GMAIL_SOURCE.name });
@@ -542,6 +535,29 @@ export class ProductionProactive {
       this.#options.onFailure(error);
       return "failed";
     }
+  }
+
+  async connection(): Promise<{
+    readonly name: string;
+    readonly title: string;
+    readonly status: "disconnected" | "connected" | "needs_reconnect";
+    readonly account: string | null;
+    readonly connectedAt: string | null;
+    readonly added: false;
+  }> {
+    const { scope, store, seal } = this.#options;
+    const connection = await store.readConnection({ ...scope, source: GMAIL_SOURCE.name });
+    const account = connection
+      ? ((await seal.open({ ...scope, ref: connection.accountRef })) ?? null)
+      : null;
+    return {
+      name: GMAIL_SOURCE.name,
+      title: GMAIL_CONNECTION_TITLE,
+      status: connection?.status ?? "disconnected",
+      account,
+      connectedAt: connection?.connectedAt ?? null,
+      added: false,
+    };
   }
 
   async overview(): Promise<ProactiveOverview> {
@@ -682,11 +698,6 @@ export class ProductionProactive {
         })),
         importantSenders: [...overview.importantSenders],
         dailyLimitReached: overview.dailyLimitReached,
-        backoff: overview.backoff.map((entry) => ({
-          ...entry,
-          classKey: clean(entry.classKey, 128),
-          domain: clean(entry.domain, 128),
-        })),
         insights: overview.insights.map((insight) => ({
           id: insight.id,
           result: insight.result,
@@ -892,15 +903,6 @@ export class ProductionProactive {
         });
         return { resultRef: key, replayed: false };
       }
-      case "proactive.backoff.restore": {
-        const restored = await store.restoreBackoff({
-          ...scope,
-          classKey: command.payload.classKey,
-          now,
-        });
-        if (restored === 0) throw missing();
-        return { resultRef: `proactive-backoff-restored:${restored}`, replayed: false };
-      }
       case "proactive.source.settings.set": {
         const { source, enabled, perDay, perCheck } = command.payload;
         const definition = this.#registry.get(source);
@@ -959,11 +961,6 @@ export class ProductionProactive {
         const connection = await store.readConnection({ ...scope, source: managed.name });
         if (connection && managed.name === GMAIL_SOURCE.name) {
           const token = await seal.open({ ...scope, ref: connection.tokenRef });
-          if (token && this.#options.configuration.demoInbox && !isDemoMailboxToken(token))
-            throw new ApplicationPortError(
-              PORT_ERROR_CODES.INVALID_OPERATION,
-              "PROACTIVE_DEMO_KEEPS_REAL_CONNECTION",
-            );
           if (token) await this.#options.oauth.revoke(token).catch(() => false);
         }
         const released = await store.removeSource({ ...scope, source: managed.name });

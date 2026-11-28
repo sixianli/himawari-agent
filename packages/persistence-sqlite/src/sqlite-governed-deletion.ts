@@ -1175,6 +1175,14 @@ export class SqliteGovernedDeletionAdapter {
       ...this.#values(database, "SELECT text_ref FROM subthread_exchanges WHERE thread_id = ?", [
         threadId,
       ]),
+      ...this.#values(database, "SELECT task_ref FROM subthread_timers WHERE thread_id = ?", [
+        threadId,
+      ]),
+      ...this.#values(
+        database,
+        "SELECT owner_words_ref FROM subthread_timers WHERE thread_id = ? AND owner_words_ref IS NOT NULL",
+        [threadId],
+      ),
       ...this.#values(
         database,
         "SELECT summary_ref FROM result_board_entries WHERE writer_thread_id = ?",
@@ -1273,16 +1281,6 @@ export class SqliteGovernedDeletionAdapter {
         ),
       );
     }
-    refs.push(
-      ...this.#values(
-        database,
-        `SELECT sentence_ref FROM home_item_scores
-        WHERE sentence_ref IS NOT NULL AND approval_request_id IN (
-          SELECT id FROM approval_requests WHERE run_id IN (${placeholders(runIds)})
-        )`,
-        runIds,
-      ),
-    );
     return unique(refs);
   }
 

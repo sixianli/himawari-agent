@@ -1,9 +1,12 @@
 import { createHash } from "node:crypto";
 import {
   type ApprovalRequest,
+  HER_WORDS_PUSH_PREFIX,
   herWordsPushKey,
+  isModelVisible,
   type MemoryReminder,
   type MemoryReminderStorePort,
+  type MessageUrgency,
   type ProductMemoryRecord,
   type ProductMemoryStatePort,
   PUSH_RULE_PROTECTED_CLASSES,
@@ -29,7 +32,6 @@ const PUSH_TOTAL_LIFE_MS = 48 * 3_600_000;
 const DEFAULT_GATE = new PushGate();
 const DELIVER_UNGATED: PushGateDecision = Object.freeze({ action: "deliver", failed: false });
 const PROACTIVE_WINDOW_MS = 24 * 3_600_000;
-const MUSE_CHANNEL_WINDOW_MS = 12 * 3_600_000;
 const RUN_WINDOW_MS = 24 * 3_600_000;
 const HER_WORDS_WINDOW_MS = 24 * 3_600_000;
 const PRUNE_AFTER_MS = 7 * 24 * 3_600_000;
@@ -59,9 +61,6 @@ export const WEB_PUSH_TEXT = {
     mailAct: "邮件里有件事要你处理",
     mailCheck: "有封邮件可能重要，请看原信",
     mailMore: (count: number) => `还有 ${count} 件`,
-    museDown: "Muse 通道中断",
-    museDownBody:
-      "Muse 通道 3 小时没有数据，可能是定时任务的预授权失效或令牌过期，去 Muse 的 Upcoming 看一眼",
   },
   en: {
     reminder: "Himawari reminder",
@@ -79,9 +78,6 @@ export const WEB_PUSH_TEXT = {
     mailAct: "An email needs you to act",
     mailCheck: "An email may be important. Please read it",
     mailMore: (count: number) => `${count} more`,
-    museDown: "Muse channel is down",
-    museDownBody:
-      "No data from Muse for 3 hours. The scheduled task's pre-approval may have expired or the token may be out of date. Check Upcoming in Muse",
   },
   ja: {
     reminder: "Himawari リマインダー",
@@ -99,9 +95,6 @@ export const WEB_PUSH_TEXT = {
     mailAct: "メールに対応が必要な件があります",
     mailCheck: "重要かもしれないメールがあります。原文をご確認ください",
     mailMore: (count: number) => `ほか ${count} 件`,
-    museDown: "Muse の連携が止まっています",
-    museDownBody:
-      "Muse から 3 時間データが届いていません。定期タスクの事前承認が切れたか、トークンの期限切れの可能性があります。Muse の Upcoming を確認してください",
   },
 } as const satisfies Record<WebPushLocale, unknown>;
 
@@ -208,12 +201,12 @@ export interface ProductionWebPushOptions {
   readonly sender: WebPushSenderPort;
   readonly presence: WebPushPresence;
   readonly reminders: Pick<MemoryReminderStorePort, "listDue" | "read">;
+  readonly remindersViaInbox?: boolean;
   readonly memories: Pick<ProductMemoryStatePort, "readMany">;
   readonly readMemoryText: (memory: ProductMemoryRecord) => Promise<string | undefined>;
   readonly listApprovals: () => Promise<readonly ApprovalRequest[]>;
   readonly awaitingCount: () => Promise<number | undefined>;
   readonly proactive?: ProactivePushSource;
-  readonly museChannel?: MuseChannelPushSource;
   readonly readLocale?: () => Promise<WebPushLocale | null>;
   readonly runThread: (runId: string) => Promise<string | null>;
   readonly threadTitle: (threadId: string) => Promise<{ readonly title: string | null } | null>;
@@ -229,6 +222,7 @@ export interface ProductionWebPushOptions {
     | undefined
   >;
   readonly publicOrigin: string;
+  readonly messageUrgency?: (messageId: string) => Promise<MessageUrgency | undefined>;
   readonly timeZone?: string;
   readonly readPushRules?: () => Promise<readonly RuleRecord[]>;
   readonly gate?: PushGate;
@@ -238,10 +232,6 @@ export interface ProductionWebPushOptions {
   readonly intervalMs?: number;
   readonly onDelivery?: (outcome: { readonly kind: string; readonly code?: string }) => void;
   readonly onFailure: (error: unknown) => void;
-}
-
-export interface MuseChannelPushSource {
-  listActive(now: string): Promise<readonly { readonly outageStartedAt: string }[]>;
 }
 
 export interface ProactivePushSource {
@@ -391,7 +381,7 @@ export class ProductionWebPush {
     const { ownerId, agentId, store } = this.#options;
     const scope = { ownerId, agentId };
     const items: WebPushOutboxItem[] = [];
-    for (const reminder of reminders)
+    for (const reminder of this.#options.remindersViaInbox ? [] : reminders)
       items.push({
         ...scope,
         sourceKey: `reminder:${reminder.id}:${reminder.remindAt}`,
@@ -450,17 +440,6 @@ export class ProductionWebPush {
         threadId: null,
         createdAt: now,
         expiresAt: new Date(Date.parse(push.readyAt) + PROACTIVE_WINDOW_MS).toISOString(),
-      });
-    const museOutages = (await this.#options.museChannel?.listActive(now)) ?? [];
-    for (const outage of museOutages)
-      items.push({
-        ...scope,
-        sourceKey: `muse-channel:${outage.outageStartedAt}`,
-        kind: "reminder",
-        sourceRef: outage.outageStartedAt,
-        threadId: null,
-        createdAt: now,
-        expiresAt: new Date(Date.parse(now) + MUSE_CHANNEL_WINDOW_MS).toISOString(),
       });
     const next = cursor ? runs.at(-1)?.cursor : now;
     if (items.length === 0 && !next) return;
@@ -695,27 +674,12 @@ export class ProductionWebPush {
     const origin = this.#options.publicOrigin;
     const threadUrl = (threadId: string | null) =>
       threadId ? `${origin}/threads/${encodeURIComponent(threadId)}` : `${origin}/`;
-    if (item.kind === "reminder" && item.sourceKey.startsWith("muse-channel:")) {
-      const active = await this.#options.museChannel?.listActive(now);
-      if (!active?.some(({ outageStartedAt }) => outageStartedAt === item.sourceRef))
-        return { expired: true };
-      return {
-        expired: false,
-        build: (locale) => ({
-          title: WEB_PUSH_TEXT[locale].museDown,
-          body: WEB_PUSH_TEXT[locale].museDownBody,
-          navigate: `${origin}/`,
-          lang: locale,
-        }),
-      };
-    }
     if (pushClassOf(item) === "her_words") {
       const message = item.threadId
         ? await this.#options.readMessage(item.threadId, item.sourceRef)
         : undefined;
       if (!message || message.internal === true) return { expired: true };
-      const hidden =
-        message.dataClassification === "sensitive" || message.dataClassification === "restricted";
+      const hidden = !isModelVisible(message.dataClassification);
       const text = hidden ? undefined : (await message.readText())?.trim();
       if (!hidden && !text) return { expired: true };
       return {
@@ -762,8 +726,7 @@ export class ProductionWebPush {
         memoryIds: [reminder.memoryId],
       });
       if (!memory || memory.status !== "active") return { expired: true };
-      const hidden =
-        memory.dataClassification === "sensitive" || memory.dataClassification === "restricted";
+      const hidden = !isModelVisible(memory.dataClassification);
       const text = hidden
         ? undefined
         : (await this.#options.readMemoryText(memory))?.replace(/\s+/gu, " ").trim();
@@ -845,6 +808,9 @@ export class ProductionWebPush {
   ): Promise<void> {
     const { item, subscription, attempt } = entry;
     const topic = webPushTopic(item.sourceKey);
+    const chosen = item.sourceKey.startsWith(HER_WORDS_PUSH_PREFIX)
+      ? await this.#options.messageUrgency?.(item.sourceRef)
+      : undefined;
     let result: WebPushSendResult;
     try {
       result = await this.#options.sender.send({
@@ -853,7 +819,7 @@ export class ProductionWebPush {
         auth: subscription.auth,
         payload: webPushPayload({ ...content.build(locale), tag: topic, badge }),
         ttlSeconds: Math.max(1, Math.floor((Date.parse(item.expiresAt) - Date.parse(now)) / 1_000)),
-        urgency: item.kind === "run" ? "normal" : "high",
+        urgency: chosen ?? (item.kind === "run" ? "normal" : "high"),
         topic,
       });
     } catch (error) {

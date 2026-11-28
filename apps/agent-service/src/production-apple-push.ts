@@ -10,16 +10,28 @@ import {
   type ApplePushSendResult,
   type ApplePushStorePort,
   type ApprovalRequest,
+  type BackgroundWorkActivityRegistration,
   type DeviceActionRecord,
-  hasVisibleText,
+  HER_WORDS_PUSH_PREFIX,
   type MemoryReminder,
+  type MessageUrgency,
   type NotificationAction,
   type NotificationActionTokenInput,
   type PairedDeviceScope,
   type WebPushLocale,
   type WebPushOutboxItem,
 } from "@himawari-agent/application";
+import type { ThreadBackgroundWork } from "@himawari-agent/gateway-contracts";
 import { notificationActionHash } from "@himawari-agent/platform-node";
+import {
+  BACKGROUND_WORK_ACTIVITY_ATTRIBUTES_TYPE,
+  type BackgroundWorkEntry,
+  backgroundWorkContentState,
+  backgroundWorkEntries,
+  backgroundWorkStateDigest,
+  isBackgroundWorkFinished,
+  isBackgroundWorkLive,
+} from "./background-work-activity.js";
 import {
   type PushCompanionChannel,
   type PushContent,
@@ -32,6 +44,7 @@ const PAYLOAD_BYTES = 4_096;
 const WIDGET_EXPIRY_SECONDS = 3_600;
 const ACTIVITY_BATCH = 20;
 const ACTIVITY_READ_BATCH = 500;
+const BACKGROUND_END_LINGER_SECONDS = 30;
 const TOKEN_PRUNE_AFTER_MS = 7 * 24 * 3_600_000;
 const TERMINAL_PHASES: ReadonlySet<AppleLiveActivityPhase> = new Set([
   "completed",
@@ -50,6 +63,12 @@ export const APPLE_PUSH_TEXT = {
     openBody: "这台设备上有一件事在等着做",
     vaultTitle: "Himawari 请你批准一次使用",
     vaultBody: "点开后刷脸批准或拒绝",
+    codeTitle: "Himawari 需要一个验证码",
+    codeBody: (purpose: string, host: string) => `${purpose}（${host}）`,
+    mcpGrantTitle: "有 agent 想接入 Himawari",
+    mcpGrantBody: (name: string, host: string) =>
+      `「${name}」（${host}）。点开后用面容 ID 批准或拒绝`,
+    signedInTitle: "新设备已登录",
   },
   en: {
     approve: "Approve",
@@ -61,6 +80,12 @@ export const APPLE_PUSH_TEXT = {
     openBody: "Something is waiting to be done on this device",
     vaultTitle: "Himawari needs your approval",
     vaultBody: "Open to approve or decline with Face ID",
+    codeTitle: "Himawari needs a verification code",
+    codeBody: (purpose: string, host: string) => `${purpose} (${host})`,
+    mcpGrantTitle: "An agent wants to connect to Himawari",
+    mcpGrantBody: (name: string, host: string) =>
+      `“${name}” (${host}). Open to approve or decline with Face ID`,
+    signedInTitle: "New device signed in",
   },
   ja: {
     approve: "承認",
@@ -72,6 +97,12 @@ export const APPLE_PUSH_TEXT = {
     openBody: "このデバイスで行う操作が待っています",
     vaultTitle: "Himawari が使用の承認を求めています",
     vaultBody: "開いて Face ID で承認または拒否",
+    codeTitle: "Himawari が確認コードを求めています",
+    codeBody: (purpose: string, host: string) => `${purpose}（${host}）`,
+    mcpGrantTitle: "エージェントが Himawari への接続を求めています",
+    mcpGrantBody: (name: string, host: string) =>
+      `「${name}」（${host}）。開いて Face ID で承認または拒否`,
+    signedInTitle: "新しいデバイスがログインしました",
   },
 } as const satisfies Record<WebPushLocale, unknown>;
 
@@ -94,6 +125,12 @@ function clip(text: string, bytes: number): string {
   return `${result}…`;
 }
 
+const INTERRUPTION_LEVELS: Readonly<Record<MessageUrgency, string>> = Object.freeze({
+  low: "passive",
+  normal: "active",
+  high: "time-sensitive",
+});
+
 export function applePushAlertPayload(input: {
   readonly title: string;
   readonly body: string;
@@ -102,6 +139,7 @@ export function applePushAlertPayload(input: {
   readonly kind: WebPushOutboxItem["kind"];
   readonly badge?: number | undefined;
   readonly actions: readonly ApplePushAction[];
+  readonly urgency?: MessageUrgency | undefined;
 }): string {
   const build = (title: string, body: string) =>
     JSON.stringify({
@@ -111,7 +149,12 @@ export function applePushAlertPayload(input: {
         ...(input.badge === undefined ? {} : { badge: input.badge }),
         "thread-id": input.kind,
         "mutable-content": 1,
-        "interruption-level": input.kind === "approval" ? "time-sensitive" : "active",
+        "interruption-level":
+          input.urgency !== undefined
+            ? INTERRUPTION_LEVELS[input.urgency]
+            : input.kind === "approval"
+              ? "time-sensitive"
+              : "active",
         category: input.actions.length > 0 ? "himawari.actions" : "himawari.plain",
       },
       notificationId: input.tag,
@@ -161,6 +204,33 @@ export function applePushOpenRequestPayload(input: {
   });
 }
 
+export const DEVICE_SIGNED_IN_PUSH_KIND = "device_signed_in" as const;
+const DEVICE_SIGNED_IN_PUSH_LIFETIME_SECONDS = 86_400;
+
+export function applePushDeviceSignedInPayload(input: {
+  readonly title: string;
+  readonly body: string;
+  readonly deviceId: string;
+}): string {
+  return JSON.stringify({
+    aps: {
+      alert: { title: input.title, body: input.body },
+      sound: "default",
+      "thread-id": DEVICE_SIGNED_IN_PUSH_KIND,
+      "interruption-level": "active",
+      category: "himawari.plain",
+    },
+    himawari: {
+      v: 1,
+      tag: `device-signed-in-${input.deviceId}`,
+      kind: DEVICE_SIGNED_IN_PUSH_KIND,
+      navigate: "/devices",
+      deviceId: input.deviceId,
+      actions: [],
+    },
+  });
+}
+
 export const VAULT_APPROVAL_PUSH_KIND = "vault_approval" as const;
 
 export function applePushVaultApprovalPayload(input: {
@@ -187,6 +257,61 @@ export function applePushVaultApprovalPayload(input: {
   });
 }
 
+export const VAULT_CODE_PUSH_KIND = "vault_code" as const;
+export const VAULT_CODE_PUSH_CATEGORY = "himawari.vault-code" as const;
+const VAULT_CODE_BODY_BYTES = 360;
+
+export function applePushVaultCodePayload(input: {
+  readonly title: string;
+  readonly body: string;
+  readonly requestId: string;
+}): string {
+  return JSON.stringify({
+    aps: {
+      alert: { title: input.title, body: clip(input.body, VAULT_CODE_BODY_BYTES) },
+      sound: "default",
+      "thread-id": VAULT_CODE_PUSH_KIND,
+      "interruption-level": "time-sensitive",
+      category: VAULT_CODE_PUSH_CATEGORY,
+    },
+    himawari: {
+      v: 1,
+      tag: `vault-code-${input.requestId}`,
+      kind: VAULT_CODE_PUSH_KIND,
+      navigate: "/",
+      vaultCodeRequestId: input.requestId,
+      actions: [],
+    },
+  });
+}
+
+export const MCP_GRANT_PUSH_KIND = "mcp_grant" as const;
+const MCP_GRANT_NAME_BYTES = 120;
+
+export function applePushMcpGrantPayload(input: {
+  readonly title: string;
+  readonly body: string;
+  readonly grantId: string;
+}): string {
+  return JSON.stringify({
+    aps: {
+      alert: { title: input.title, body: input.body },
+      sound: "default",
+      "thread-id": MCP_GRANT_PUSH_KIND,
+      "interruption-level": "time-sensitive",
+      category: "himawari.plain",
+    },
+    himawari: {
+      v: 1,
+      tag: `mcp-grant-${input.grantId}`,
+      kind: MCP_GRANT_PUSH_KIND,
+      navigate: "/",
+      mcpGrantId: input.grantId,
+      actions: [],
+    },
+  });
+}
+
 export function liveActivityPhase(status: string): AppleLiveActivityPhase {
   if (status === "completed" || status === "failed" || status === "cancelled") return status;
   if (status === "awaiting_approval") return "waiting_for_owner";
@@ -199,14 +324,11 @@ export interface ProductionApplePushOptions extends PairedDeviceScope {
   readonly sender: ApplePushSenderPort;
   readonly configuration: () => ApplePushConfiguration;
   readonly threadTitle: (threadId: string) => Promise<{ readonly title: string | null } | null>;
+  readonly backgroundWork?: () => Promise<ThreadBackgroundWork>;
   readonly publicOrigin: string;
+  readonly messageUrgency?: (messageId: string) => Promise<MessageUrgency | undefined>;
   readonly now: () => string;
   readonly randomBytes?: (size: number) => Buffer;
-  readonly approvalCopy?: (input: {
-    readonly approvalRequestId: string;
-    readonly semanticSnapshotHash: string;
-    readonly locale: WebPushLocale;
-  }) => Promise<{ readonly affirmLabel: string | null }>;
   readonly onDelivery?: (outcome: {
     readonly pushType: string;
     readonly kind: string;
@@ -229,6 +351,12 @@ export class ProductionApplePush implements PushCompanionChannel {
     string,
     { readonly phase: string; readonly attempts: number; readonly notBefore: number }
   >();
+  readonly #backgroundStarts = new Map<
+    string,
+    { readonly attempts: number; readonly notBefore: number }
+  >();
+  readonly #backgroundLiveSince = new Map<string, number>();
+  readonly #backgroundIdleSince = new Map<string, number>();
   #widgetsDirtyForAll = true;
   #homeDigest: string | undefined;
 
@@ -241,7 +369,7 @@ export class ProductionApplePush implements PushCompanionChannel {
     return { ownerId: this.#options.ownerId, agentId: this.#options.agentId };
   }
 
-  #configured(registration: ApplePushRegistration): boolean {
+  #configured(registration: Pick<ApplePushRegistration, "topic" | "environment">): boolean {
     const configuration = this.#options.configuration();
     return (
       configuration.topics.includes(registration.topic) &&
@@ -319,6 +447,41 @@ export class ProductionApplePush implements PushCompanionChannel {
     }
   }
 
+  async announceSignedIn(device: { readonly id: string; readonly name: string }): Promise<void> {
+    try {
+      const registrations = (
+        await this.#options.store.listRegistrations({ ...this.#scope(), pushType: "alert" })
+      ).filter(
+        (registration) =>
+          registration.status === "active" &&
+          registration.deviceId !== device.id &&
+          this.#configured(registration),
+      );
+      const now = this.#options.now();
+      for (const registration of registrations) {
+        const text = APPLE_PUSH_TEXT[registration.locale];
+        const result = await this.#transmit("alert", DEVICE_SIGNED_IN_PUSH_KIND, {
+          token: registration.token,
+          environment: registration.environment,
+          topic: registration.topic,
+          pushType: "alert",
+          priority: 10,
+          expiresAtSeconds:
+            Math.floor(Date.parse(now) / 1_000) + DEVICE_SIGNED_IN_PUSH_LIFETIME_SECONDS,
+          collapseId: `device-signed-in-${device.id}`,
+          payload: applePushDeviceSignedInPayload({
+            title: text.signedInTitle,
+            body: device.name,
+            deviceId: device.id,
+          }),
+        });
+        await this.#applyRegistrationOutcome(registration, result, now);
+      }
+    } catch (error) {
+      this.#options.onFailure(error);
+    }
+  }
+
   async requestVaultApproval(input: {
     readonly requestId: string;
     readonly expiresAt: string;
@@ -344,6 +507,80 @@ export class ProductionApplePush implements PushCompanionChannel {
             title: text.vaultTitle,
             body: text.vaultBody,
             requestId: input.requestId,
+          }),
+        });
+        await this.#applyRegistrationOutcome(registration, result, now);
+      }
+    } catch (error) {
+      this.#options.onFailure(error);
+    }
+  }
+
+  async requestVaultCode(input: {
+    readonly requestId: string;
+    readonly origin: string;
+    readonly purpose: string;
+    readonly expiresAt: string;
+  }): Promise<void> {
+    const registrations = (
+      await this.#options.store.listRegistrations({ ...this.#scope(), pushType: "alert" })
+    ).filter((registration) => registration.status === "active" && this.#configured(registration));
+    if (registrations.length === 0) throw new Error("VAULT_CODE_NO_PHONE");
+    const now = this.#options.now();
+    const host = new URL(input.origin).host;
+    let delivered = 0;
+    for (const registration of registrations) {
+      const text = APPLE_PUSH_TEXT[registration.locale];
+      const result = await this.#transmit("alert", VAULT_CODE_PUSH_KIND, {
+        token: registration.token,
+        environment: registration.environment,
+        topic: registration.topic,
+        pushType: "alert",
+        priority: 10,
+        expiresAtSeconds: Math.floor(Date.parse(input.expiresAt) / 1_000),
+        collapseId: `vault-code-${input.requestId}`,
+        payload: applePushVaultCodePayload({
+          title: text.codeTitle,
+          body: text.codeBody(input.purpose, host),
+          requestId: input.requestId,
+        }),
+      });
+      if (result.kind === "sent") delivered += 1;
+      await this.#applyRegistrationOutcome(registration, result, now);
+    }
+    if (delivered === 0) throw new Error("VAULT_CODE_NOT_DELIVERED");
+  }
+
+  async requestMcpGrant(input: {
+    readonly id: string;
+    readonly clientName: string;
+    readonly clientHost: string;
+    readonly expiresAt: string;
+  }): Promise<void> {
+    try {
+      const registrations = (
+        await this.#options.store.listRegistrations({ ...this.#scope(), pushType: "alert" })
+      ).filter(
+        (registration) => registration.status === "active" && this.#configured(registration),
+      );
+      const now = this.#options.now();
+      for (const registration of registrations) {
+        const text = APPLE_PUSH_TEXT[registration.locale];
+        const result = await this.#transmit("alert", MCP_GRANT_PUSH_KIND, {
+          token: registration.token,
+          environment: registration.environment,
+          topic: registration.topic,
+          pushType: "alert",
+          priority: 10,
+          expiresAtSeconds: Math.floor(Date.parse(input.expiresAt) / 1_000),
+          collapseId: `mcp-grant-${input.id}`.slice(0, 64),
+          payload: applePushMcpGrantPayload({
+            title: text.mcpGrantTitle,
+            body: text.mcpGrantBody(
+              clip(input.clientName, MCP_GRANT_NAME_BYTES),
+              clip(input.clientHost, MCP_GRANT_NAME_BYTES),
+            ),
+            grantId: input.id,
           }),
         });
         await this.#applyRegistrationOutcome(registration, result, now);
@@ -445,29 +682,11 @@ export class ProductionApplePush implements PushCompanionChannel {
     });
   }
 
-  async #approvalCopy(approval: ApprovalRequest, locale: WebPushLocale): Promise<string | null> {
-    const read = this.#options.approvalCopy;
-    if (!read) return null;
-    try {
-      const copy = await read({
-        approvalRequestId: approval.id,
-        semanticSnapshotHash: approval.semanticSnapshotHash,
-        locale,
-      });
-      const label = copy.affirmLabel?.trim() ?? "";
-      return hasVisibleText(label) ? label : null;
-    } catch (error) {
-      this.#options.onFailure(error);
-      return null;
-    }
-  }
-
   async #actions(
     entry: ApplePushDue,
     now: string,
     locale: WebPushLocale,
     approval: ApprovalRequest | undefined,
-    affirmLabel: string | null,
   ): Promise<readonly ApplePushAction[]> {
     if (entry.item.kind !== "approval" || !approval) return [];
     const ownerPresence =
@@ -483,8 +702,8 @@ export class ProductionApplePush implements PushCompanionChannel {
     const actions: ApplePushAction[] = [
       {
         action: "approve",
-        label: ownerPresence ? text.approveInApp : (affirmLabel ?? text.approve),
-        labelBasis: !ownerPresence && affirmLabel !== null ? "model" : "catalog",
+        label: ownerPresence ? text.approveInApp : text.approve,
+        labelBasis: "catalog",
         polarity: "positive",
         token: random(32).toString("base64url"),
         ownerPresence,
@@ -530,20 +749,17 @@ export class ProductionApplePush implements PushCompanionChannel {
     const { item, registration, attempt } = entry;
     const tag = webPushTopic(item.sourceKey);
     const built = content.build(locale);
+    const urgency = item.sourceKey.startsWith(HER_WORDS_PUSH_PREFIX)
+      ? await this.#options.messageUrgency?.(item.sourceRef)
+      : undefined;
     const approval =
       item.kind === "approval" ? approvals.find(({ id }) => id === item.sourceRef) : undefined;
-    const affirmLabel =
-      approval &&
-      (approval as ApprovalRequest & { recentAuthenticationRequired?: boolean })
-        .recentAuthenticationRequired !== true
-        ? await this.#approvalCopy(approval, locale)
-        : null;
     const result = await this.#transmit("alert", item.kind, {
       token: registration.token,
       environment: registration.environment,
       topic: registration.topic,
       pushType: "alert",
-      priority: item.kind === "run" ? 5 : 10,
+      priority: item.kind === "run" || urgency === "low" ? 5 : 10,
       expiresAtSeconds: Math.floor(Date.parse(item.expiresAt) / 1_000),
       collapseId: tag,
       payload: applePushAlertPayload({
@@ -555,7 +771,8 @@ export class ProductionApplePush implements PushCompanionChannel {
         tag,
         kind: item.kind,
         badge,
-        actions: await this.#actions(entry, now, locale, approval, affirmLabel),
+        urgency,
+        actions: await this.#actions(entry, now, locale, approval),
       }),
     });
     const attempts = (attempt?.attempts ?? 0) + 1;
@@ -617,6 +834,7 @@ export class ProductionApplePush implements PushCompanionChannel {
     }
     await this.#refreshWidgets(input.now);
     await this.#updateActivities(input.now, input.accountLocale, input.visible);
+    await this.#updateBackgroundActivities(input.now, input.accountLocale, input.visible);
   }
 
   async #refreshWidgets(now: string): Promise<void> {
@@ -657,6 +875,247 @@ export class ProductionApplePush implements PushCompanionChannel {
 
   async #title(threadId: string, locale: WebPushLocale): Promise<string> {
     return (await this.#options.threadTitle(threadId))?.title ?? APPLE_PUSH_TEXT[locale].untitled;
+  }
+
+  async #updateBackgroundActivities(
+    now: string,
+    accountLocale: WebPushLocale | null,
+    visible: boolean,
+  ): Promise<void> {
+    const { store, backgroundWork } = this.#options;
+    if (!backgroundWork) return;
+    const registrations = await store.listBackgroundActivities(this.#scope());
+    if (registrations.length === 0) {
+      this.#backgroundStarts.clear();
+      this.#backgroundLiveSince.clear();
+      this.#backgroundIdleSince.clear();
+      return;
+    }
+    let entries: readonly BackgroundWorkEntry[];
+    try {
+      entries = backgroundWorkEntries(await backgroundWork());
+    } catch (error) {
+      this.#options.onFailure(error);
+      return;
+    }
+    const configuration = this.#options.configuration();
+    const at = Date.parse(now);
+    const seconds = Math.floor(at / 1_000);
+    const bySubthread = new Map(entries.map((entry) => [entry.subthread.subthreadId, entry]));
+    for (const [id, entry] of bySubthread) {
+      const { subthread } = entry;
+      if (isBackgroundWorkLive(subthread)) {
+        if (!this.#backgroundLiveSince.has(id)) this.#backgroundLiveSince.set(id, at);
+        this.#backgroundIdleSince.delete(id);
+      } else {
+        this.#backgroundLiveSince.delete(id);
+        if (!this.#backgroundIdleSince.has(id)) this.#backgroundIdleSince.set(id, at);
+      }
+    }
+    for (const map of [this.#backgroundLiveSince, this.#backgroundIdleSince])
+      for (const id of map.keys()) if (!bySubthread.has(id)) map.delete(id);
+    const starters = registrations.filter(({ subthreadId }) => subthreadId === "");
+    const running = registrations.filter(({ subthreadId }) => subthreadId !== "");
+    const startAfter = configuration.liveActivityStartAfterSeconds * 1_000;
+    const minimum = configuration.liveActivityUpdateMinimumSeconds * 1_000;
+    for (const registration of running) {
+      const entry = bySubthread.get(registration.subthreadId);
+      if (registration.token === null) {
+        const waiting = this.#backgroundIdleSince.get(registration.subthreadId);
+        if (
+          !entry ||
+          isBackgroundWorkFinished(entry.subthread) ||
+          (waiting !== undefined && at - waiting >= startAfter)
+        )
+          await this.#dropBackgroundActivity(registration.deviceId, registration.subthreadId);
+        continue;
+      }
+      const idleSince = this.#backgroundIdleSince.get(registration.subthreadId);
+      const ended =
+        !entry ||
+        isBackgroundWorkFinished(entry.subthread) ||
+        (idleSince !== undefined && at - idleSince >= startAfter);
+      if (!this.#configured(registration)) {
+        if (ended)
+          await this.#dropBackgroundActivity(registration.deviceId, registration.subthreadId);
+        continue;
+      }
+      const state = entry
+        ? backgroundWorkContentState(entry.subthread, clip)
+        : {
+            phase: "finished" as const,
+            step: 0,
+            stepCount: 0,
+            completedCount: 0,
+            activity: null,
+            updatedAt: now,
+          };
+      const finalState = ended ? { ...state, phase: "finished" as const } : state;
+      const digest = backgroundWorkStateDigest(finalState);
+      if (!ended) {
+        if (registration.stateDigest === digest) continue;
+        if (registration.pushedAt !== null && at - Date.parse(registration.pushedAt) < minimum)
+          continue;
+      }
+      const result = await this.#transmit(
+        "liveactivity",
+        ended ? "background_end" : "background_update",
+        {
+          token: registration.token,
+          environment: registration.environment,
+          topic: registration.topic,
+          pushType: "liveactivity",
+          priority: ended || finalState.phase === "waiting_for_owner" ? 10 : 5,
+          expiresAtSeconds: seconds + configuration.liveActivityStaleAfterSeconds,
+          collapseId: null,
+          payload: JSON.stringify({
+            aps: {
+              timestamp: seconds,
+              event: ended ? "end" : "update",
+              "content-state": finalState,
+              ...(ended
+                ? { "dismissal-date": seconds + BACKGROUND_END_LINGER_SECONDS }
+                : { "stale-date": seconds + configuration.liveActivityStaleAfterSeconds }),
+            },
+          }),
+        },
+      );
+      if (ended || result.kind === "gone") {
+        await this.#dropBackgroundActivity(registration.deviceId, registration.subthreadId);
+        continue;
+      }
+      await store.markBackgroundActivity({
+        ...this.#scope(),
+        registrationId: registration.id,
+        stateDigest: result.kind === "retry" || result.kind === "rate_limited" ? null : digest,
+        pushedAt: now,
+      });
+    }
+    const live = [...bySubthread.values()].filter(({ subthread }) => {
+      const since = this.#backgroundLiveSince.get(subthread.subthreadId);
+      return since !== undefined && at - since >= startAfter;
+    });
+    if (starters.length === 0 || visible || live.length === 0) {
+      this.#pruneBackgroundStarts(starters, live);
+      return;
+    }
+    const limit = configuration.liveActivityRegistrationsPerDevice;
+    let started = 0;
+    for (const starter of starters) {
+      const present = new Set(
+        registrations
+          .filter(
+            ({ deviceId, subthreadId }) => deviceId === starter.deviceId && subthreadId !== "",
+          )
+          .map(({ subthreadId }) => subthreadId),
+      );
+      for (const entry of live) {
+        const { subthread } = entry;
+        const key = `${starter.deviceId}\n${subthread.subthreadId}`;
+        const remembered = this.#backgroundStarts.get(key);
+        if (
+          started >= ACTIVITY_BATCH ||
+          present.size >= limit ||
+          present.has(subthread.subthreadId) ||
+          (remembered !== undefined && at < remembered.notBefore) ||
+          starter.token === null ||
+          !this.#configured(starter)
+        )
+          continue;
+        const locale = accountLocale ?? starter.locale;
+        const state = backgroundWorkContentState(subthread, clip);
+        const pending = await store.saveBackgroundActivity({
+          ...this.#scope(),
+          id: `bwa_${(this.#options.randomBytes ?? randomBytes)(16).toString("base64url")}`,
+          deviceId: starter.deviceId,
+          subthreadId: subthread.subthreadId,
+          token: null,
+          environment: starter.environment,
+          topic: starter.topic,
+          locale: starter.locale,
+          startedAt: now,
+          activityLimit: limit,
+          now,
+        });
+        started += 1;
+        const result = await this.#transmit("liveactivity", "background_start", {
+          token: starter.token,
+          environment: starter.environment,
+          topic: starter.topic,
+          pushType: "liveactivity",
+          priority: 10,
+          expiresAtSeconds: seconds + configuration.liveActivityStaleAfterSeconds,
+          collapseId: null,
+          payload: JSON.stringify({
+            aps: {
+              timestamp: seconds,
+              event: "start",
+              "content-state": state,
+              "stale-date": seconds + configuration.liveActivityStaleAfterSeconds,
+              "attributes-type": BACKGROUND_WORK_ACTIVITY_ATTRIBUTES_TYPE,
+              attributes: {
+                subthreadId: subthread.subthreadId,
+                matter: entry.matter,
+                title: subthread.title,
+              },
+              alert: {
+                title: APPLE_PUSH_TEXT[locale].progress,
+                body: clip(subthread.title ?? entry.matter, 120),
+              },
+            },
+          }),
+        });
+        if (result.kind === "sent") {
+          present.add(subthread.subthreadId);
+          this.#backgroundStarts.delete(key);
+          await store.markBackgroundActivity({
+            ...this.#scope(),
+            registrationId: pending.id,
+            stateDigest: backgroundWorkStateDigest(state),
+            pushedAt: now,
+          });
+          continue;
+        }
+        await this.#dropBackgroundActivity(starter.deviceId, subthread.subthreadId);
+        const attempts = (remembered?.attempts ?? 0) + 1;
+        this.#backgroundStarts.set(key, {
+          attempts,
+          notBefore:
+            (result.kind === "rate_limited" || result.kind === "retry") &&
+            attempts <= RETRY_DELAYS_MS.length
+              ? at + (RETRY_DELAYS_MS[attempts - 1] ?? RATE_LIMIT_DELAY_MS)
+              : Number.POSITIVE_INFINITY,
+        });
+        if (result.kind === "gone")
+          await store.removeBackgroundActivity({
+            ...this.#scope(),
+            deviceId: starter.deviceId,
+            subthreadId: "",
+          });
+      }
+    }
+    this.#pruneBackgroundStarts(starters, live);
+  }
+
+  #pruneBackgroundStarts(
+    starters: readonly BackgroundWorkActivityRegistration[],
+    live: readonly BackgroundWorkEntry[],
+  ): void {
+    const devices = new Set(starters.map(({ deviceId }) => deviceId));
+    const subthreads = new Set(live.map(({ subthread }) => subthread.subthreadId));
+    for (const key of this.#backgroundStarts.keys()) {
+      const separator = key.indexOf("\n");
+      if (!devices.has(key.slice(0, separator)) || !subthreads.has(key.slice(separator + 1)))
+        this.#backgroundStarts.delete(key);
+    }
+  }
+
+  async #dropBackgroundActivity(deviceId: string, subthreadId: string): Promise<void> {
+    await this.#options.store.removeBackgroundActivity({
+      ...this.#scope(),
+      deviceId,
+      subthreadId,
+    });
   }
 
   async #updateActivities(

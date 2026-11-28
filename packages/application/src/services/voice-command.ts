@@ -21,6 +21,9 @@ export interface VoiceEvidence {
 
 export const VOICE_HEARD_NAME_MAXIMUM_CHARACTERS = 64;
 
+export const PHONE_VOICE_PROOF_PREFIX = "device-voice:";
+export const TALK_PROOF_PREFIX = "device-talk:";
+
 export type VoiceCommandVerdict =
   | { readonly accepted: true; readonly reason: "hands_on" | "airpods_name" | "ambient_name" }
   | {

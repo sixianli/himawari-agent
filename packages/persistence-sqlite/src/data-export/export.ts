@@ -9,8 +9,8 @@ import {
   enforcedRuleCount,
   type PortableRule,
   type PortableRuleVersion,
-  type RuleSuspendReason,
   RULES_INDEX_FILE,
+  type RuleSuspendReason,
   renderRulesMarkdown,
   ruleParametersKey,
 } from "./rules.js";
@@ -809,7 +809,7 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
       reason: "可重建的派生数据；导入后服务启动时按当时的向量模型自动补建",
     },
     {
-      what: "配对设备的公钥、配对码和请求随机值",
+      what: "设备公钥、通行密钥、设置码记录和请求随机值",
       count: null,
       reason:
         "是凭据，不导出；设备的名字、种类和状态在 data/paired-devices.jsonl 里，只供查看，导入时不恢复，换库后设备要重新配对",
@@ -834,7 +834,7 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
   ];
   if (options.withEvidence !== true)
     omitted.push({
-      what: "决策的模型输入输出原文、邮件检查结果、Muse 校准记录",
+      what: "决策的模型输入输出原文、邮件检查结果",
       count: null,
       reason: "可能含邮件正文等第三方内容；加 --with-evidence 才导出，且只放进密封文件",
     });
@@ -943,19 +943,6 @@ function buildEvidence(
       reviewedAt: optionalString(row["reviewed_at"]),
       ownerRating: optionalString(row["owner_rating"]),
       receivedAt: optionalString(row["received_at"]),
-    })),
-    museEntries: snapshot.museEntries.map((row) => ({
-      id: str(row["id"]),
-      museAt: str(row["muse_at"]),
-      museReminded: flag(row["muse_reminded"]),
-      timingOk: optionalFlag(row["timing_ok"]),
-      contentOk: optionalFlag(row["content_ok"]),
-      content: optionalPayload(row["content_ref"]),
-      note: optionalPayload(row["note_ref"]),
-      pairedDecisionId: optionalString(row["paired_decision_id"]),
-      intakeItemKey: optionalString(row["intake_item_key"]),
-      recordedAt: str(row["recorded_at"]),
-      pairedMessageId: optionalString(row["paired_message_id"]),
     })),
     prereviews: snapshot.prereviews.map((row) => ({
       id: str(row["id"]),

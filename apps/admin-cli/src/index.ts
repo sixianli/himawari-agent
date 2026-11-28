@@ -33,9 +33,12 @@ import { runInitializeCommand } from "./initialize-command.js";
 import { runMemoryCommand } from "./memory-command.js";
 import { runPushCommand } from "./push-command.js";
 import { runSandboxCommand } from "./sandbox-command.js";
+import { runSignInCommand } from "./sign-in-command.js";
 import { lockStoppedTarget } from "./stopped-target-lock.js";
 import { runThreadCommand } from "./thread-command.js";
 import { runWorkspaceCommand } from "./workspace-command.js";
+
+export { runOutagePush } from "./outage-push-command.js";
 
 export const adminCliWorkspace = {
   applicationKind: "offline-admin",
@@ -769,6 +772,10 @@ export async function runAdminCli(
     }
     if (arguments_[0] === "diagnose") {
       output.write(`${JSON.stringify(await runDiagnoseCommand(arguments_))}\n`);
+      return 0;
+    }
+    if (arguments_[0] === "sign-in") {
+      output.write(`${JSON.stringify(await runSignInCommand(arguments_))}\n`);
       return 0;
     }
     if (arguments_[0] === "push") {

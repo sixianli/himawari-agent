@@ -1,4 +1,6 @@
+import contextlib
 import importlib.util
+import io
 import json
 import os
 import re
@@ -7,6 +9,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+import unittest.mock
 from unittest import mock
 
 HERE = Path(__file__).resolve().parent
@@ -373,6 +376,17 @@ class KernelPreflightTest(unittest.TestCase):
         self.assertEqual(self.failed(savedBootKernel=''), ['NEXT_BOOT_KERNEL_IS_RUNNING_KERNEL'])
         self.assertEqual(self.failed(runningKernel=''), ['NEXT_BOOT_KERNEL_IS_RUNNING_KERNEL', 'RUNNING_KERNEL_MATCHES_QUALIFICATION'])
 
+    def first_failed(self, **changes):
+        facts = dict(line.split('=', 1) for line in GOOD_FACTS.splitlines())
+        facts.update(changes)
+        return [name for name, passed in preflight.checks(BINDING, facts, 1000, first=True) if not passed]
+
+    def test_a_first_tools_deployment_on_a_host_with_no_receipt_yet_qualifies_the_running_kernel(self):
+        self.assertEqual(self.first_failed(qualifiedKernel='none'), [])
+        self.assertEqual(self.failed(qualifiedKernel='none'), ['RUNNING_KERNEL_MATCHES_QUALIFICATION'])
+        self.assertEqual(self.first_failed(qualifiedKernel=''), ['RUNNING_KERNEL_MATCHES_QUALIFICATION'])
+        self.assertEqual(self.first_failed(qualifiedKernel='6.8.0-139-generic'), ['RUNNING_KERNEL_MATCHES_QUALIFICATION'])
+
     def test_running_kernel_different_from_the_qualified_one_is_refused(self):
         self.assertEqual(self.failed(qualifiedKernel='6.8.0-139-generic'), ['RUNNING_KERNEL_MATCHES_QUALIFICATION'])
         self.assertEqual(self.failed(qualifiedKernel=''), ['RUNNING_KERNEL_MATCHES_QUALIFICATION'])
@@ -537,9 +551,167 @@ class KernelPreflightTest(unittest.TestCase):
                 os.utime(receipt, (1000, 1000))
             self.assertEqual(self.qualified(root), '6.8.0-142-generic')
 
-    def test_a_directory_without_receipts_gives_an_empty_answer(self):
+    def test_a_directory_without_receipts_says_none_were_recorded(self):
         with tempfile.TemporaryDirectory() as directory:
-            self.assertEqual(self.qualified(Path(directory)), '')
+            self.assertEqual(self.qualified(Path(directory)), 'none')
+
+
+class HostSystemBootTest(unittest.TestCase):
+    TAG = KernelPreflightTest.TAG
+    UUID, ADVANCED = KernelPreflightTest.UUID, KernelPreflightTest.ADVANCED
+    entry_id, grub_config, next_boot = KernelPreflightTest.entry_id, KernelPreflightTest.grub_config, KernelPreflightTest.next_boot
+
+    def remote(self, root):
+        namespace = {'__name__': 'host_system_fixture'}
+        exec(compile(load('host_system', 'host-system.py').remote_program(), 'host-system-remote', 'exec'), namespace)
+        namespace['settings']['bootPaths'] = [str(root / 'grub.cfg'), str(root / 'grubenv'), str(root)]
+        return namespace
+
+    def test_pinning_picks_the_running_kernel_by_its_versioned_entry_not_the_simple_or_recovery_one(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'grub.cfg').write_text(self.grub_config())
+            path = self.remote(root)['running_entry_path']('6.8.0-142-generic')
+        self.assertEqual(path, self.ADVANCED + '>' + self.entry_id('6.8.0-142-generic'))
+        self.assertEqual(self.next_boot(saved_entry=path), ('6.8.0-142-generic',) * 2)
+
+    def test_pinning_refuses_a_kernel_grub_does_not_list(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'grub.cfg').write_text(self.grub_config())
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output), self.assertRaises(SystemExit):
+                self.remote(root)['running_entry_path']('7.0.0-1013-oracle')
+        self.assertIn('HOST_SYSTEM_FAILED RUNNING_KERNEL_NOT_IN_GRUB', output.getvalue())
+
+    def test_grub_tools_are_found_in_sbin_where_ubuntu_installs_them(self):
+        namespace = self.remote(Path('/nonexistent'))
+        with unittest.mock.patch.object(namespace['shutil'], 'which', side_effect=lambda name, path: '/usr/sbin/' + name if path.split(':')[0] == '/usr/sbin' else None):
+            self.assertEqual(namespace['system_tool']('grub-set-default'), '/usr/sbin/grub-set-default')
+
+    def test_a_missing_grub_tool_or_binary_is_reported_as_a_host_system_failure_not_a_traceback(self):
+        namespace = self.remote(Path('/nonexistent'))
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output), unittest.mock.patch.object(namespace['shutil'], 'which', return_value=None), self.assertRaises(SystemExit):
+            namespace['system_tool']('grub-set-default')
+        with contextlib.redirect_stdout(output), self.assertRaises(SystemExit):
+            namespace['run'](['/nonexistent/grub-set-default'])
+        self.assertIn('HOST_SYSTEM_FAILED GRUB_TOOL_MISSING grub-set-default', output.getvalue())
+        self.assertIn('HOST_SYSTEM_FAILED COMMAND_NOT_RUNNABLE /nonexistent/grub-set-default', output.getvalue())
+
+    def test_the_remote_program_reuses_the_preflight_checks_and_pins_every_document_package(self):
+        settings = self.remote(Path('/nonexistent'))['settings']
+        self.assertEqual(settings['documentCheck'], preflight.DOCUMENT_TOOLS_CHECK)
+        self.assertEqual(settings['bootReader'], preflight.READ_NEXT_BOOT_KERNEL)
+        lines = [line for line in settings['requirements'].splitlines() if line]
+        self.assertEqual(len(lines), 14)
+        self.assertTrue(all(re.fullmatch(r'[a-z0-9-]+==[0-9.]+( --hash=sha256:[0-9a-f]{64})+', line) for line in lines), lines)
+        self.assertIn('weasyprint==70.0 ', settings['requirements'])
+
+
+class LastFailureReportTest(unittest.TestCase):
+    def report(self, root, packet=None):
+        module = load('last_failure_report', 'last-failure-report.py')
+        module.STATE = root
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            module.report_evidence(root / 'first-20261127-evidence.attempt-failed-20261127T073915Z')
+        return module, output.getvalue().splitlines()
+
+    def test_I120_the_next_deploy_prints_why_the_last_one_failed_from_the_files_left_on_the_host(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            evidence = root / 'first-20261127-evidence.attempt-failed-20261127T073915Z'
+            evidence.mkdir()
+            (evidence / 'step-s6_acceptance-1-result.json').write_text(json.dumps({'action': 'S6_ACCEPTANCE', 'passed': False, 'exitCode': 1}))
+            (evidence / 'step-s1_install-1-result.json').write_text(json.dumps({'action': 'S1_INSTALL', 'passed': True, 'exitCode': 0}))
+            (evidence / 's6-npm-observation.stderr').write_text('Traceback\nRuntimeError: FIRST_NPM_FROZEN_OBSERVATION_CHANGED:npm\n')
+            (evidence / 'step-s1_install-1.stderr').write_text('')
+            _, lines = self.report(root)
+        self.assertIn('LAST_FAILURE_TAIL s6-npm-observation.stderr RuntimeError: FIRST_NPM_FROZEN_OBSERVATION_CHANGED:npm', lines)
+        self.assertTrue(any(line.startswith('LAST_FAILURE_STEP ') and 'S6_ACCEPTANCE' in line for line in lines))
+        self.assertFalse(any('S1_INSTALL' in line for line in lines))
+        self.assertFalse(any('step-s1_install-1.stderr' in line for line in lines))
+
+    def test_I120_the_report_reads_the_saved_cloud_acceptance_failure(self):
+        module = load('last_failure_report', 'last-failure-report.py')
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            module.STATE = root
+            older = root / 'release-cleanup/failed-acceptance/20261127T080000Z-himawari-first/run-01'
+            newest = root / 'release-cleanup/failed-acceptance/20261127T092948Z-himawari-first/run-01'
+            for run in (older, newest):
+                run.mkdir(parents=True)
+            (older / 'console.stderr').write_text('old failure\n')
+            (newest / 'run-report.json').write_text(json.dumps({'passed': False, 'exitCode': 1, 'runnerErrors': [{'type': 'RuntimeError', 'message': 'ACCEPTANCE_SUBCOMMAND_FAILED'}]}))
+            (newest / 'acceptance-report.json').write_text(json.dumps({'passed': False, 'commands': [{'name': 'scratch-guard', 'exitCode': 0}, {'name': 'r2l6-console', 'exitCode': 1}]}))
+            (newest / 'r2l6').mkdir()
+            (newest / 'r2l6/report.json').write_text(json.dumps({'passed': False, 'failure': {'reason': 'Error: R2_L6_CONTROLLER_FAILED_EXIT', 'phase': 'restart'}, 'assertions': [{'id': 'install', 'passed': True}, {'id': 'restart', 'passed': False}]}))
+            (newest / 'r2l6/passed.json').write_text(json.dumps({'passed': True, 'failure': 'ignored'}))
+            copied = newest / 'scratch-failure-files/source/test/qualification/evidence'
+            copied.mkdir(parents=True)
+            (copied / 'contracts-before.log').write_text('FAIL old committed evidence\n')
+            (newest / 'r2l6-console.stderr').write_text('Error: sandbox refused\n')
+            (newest / 'scratch-guard.stderr').write_text('')
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                module.report_failed_acceptance()
+        lines = output.getvalue().splitlines()
+        self.assertIn('LAST_FAILURE_REPORT run-01/run-report.json {"runnerErrors": [{"message": "ACCEPTANCE_SUBCOMMAND_FAILED", "type": "RuntimeError"}]}', lines)
+        self.assertIn('LAST_FAILURE_REPORT run-01/acceptance-report.json {"failedCommands": [{"exitCode": 1, "name": "r2l6-console"}]}', lines)
+        self.assertIn('LAST_FAILURE_REPORT run-01/r2l6/report.json {"failedAssertions": ["restart"], "failure": {"phase": "restart", "reason": "Error: R2_L6_CONTROLLER_FAILED_EXIT"}}', lines)
+        self.assertIn('LAST_FAILURE_TAIL r2l6-console.stderr Error: sandbox refused', lines)
+        self.assertFalse(any('scratch-guard' in line or 'old failure' in line or 'ignored' in line or 'old committed evidence' in line for line in lines))
+
+    def test_npm_differences_name_the_exact_field_that_moved(self):
+        module = load('last_failure_report', 'last-failure-report.py')
+        expected = {'npm': {'version': '10.9.4', 'requestedPathChain': [{'path': '/opt', 'uid': 0}]}, 'node': {'version': 'v22.22.3'}}
+        actual = {'npm': {'version': '10.9.4', 'requestedPathChain': [{'path': '/opt', 'uid': 1000}]}, 'node': {'version': 'v22.22.3'}}
+        self.assertEqual(module.differences(expected, actual), ['npm.requestedPathChain[0].uid expected=0 actual=1000'])
+        self.assertEqual(module.differences(expected, expected), [])
+
+    def test_tool_source_probe_flags_links_and_missing_tools_before_s6_copies_them(self):
+        module = load('last_failure_report', 'last-failure-report.py')
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'bash').write_text('x')
+            (root / 'rg').symlink_to(root / 'bash')
+            module.TOOL_SOURCES = [str(root / 'bash'), str(root / 'rg'), str(root / 'bwrap')]
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                module.probe_tool_sources()
+        lines = output.getvalue().splitlines()
+        self.assertEqual(lines, [
+            'LAST_FAILURE_READY ok tool-source ' + str(root / 'bash') + ' regular file',
+            'LAST_FAILURE_READY FAIL tool-source ' + str(root / 'rg') + ' is a link or not a regular file',
+            'LAST_FAILURE_READY FAIL tool-source ' + str(root / 'bwrap') + ' missing',
+        ])
+
+    def test_download_probe_checks_every_reference_url_the_packet_will_fetch(self):
+        module = load('last_failure_report', 'last-failure-report.py')
+        with tempfile.TemporaryDirectory() as directory:
+            packet = Path(directory)
+            script = packet / 'acceptance/cloud/download-question-12.py'
+            script.parent.mkdir(parents=True)
+            script.write_text((HERE / 'packet-template/acceptance/cloud/download-question-12.py').read_text().replace('__PKT_FD_TRIPLE__', 'aarch64-unknown-linux-gnu'))
+            asked = []
+
+            def answer(request, timeout):
+                asked.append((request.get_method(), request.full_url))
+                if 'registry.npmjs.org' in request.full_url:
+                    raise OSError('blocked')
+                response = mock.MagicMock()
+                response.status = 200
+                response.__enter__.return_value = response
+                return response
+
+            output = io.StringIO()
+            with mock.patch.object(module.urllib.request, 'urlopen', answer), contextlib.redirect_stdout(output):
+                module.probe_downloads(packet)
+        self.assertEqual([method for method, _ in asked], ['HEAD', 'HEAD'])
+        lines = output.getvalue().splitlines()
+        self.assertIn('LAST_FAILURE_READY ok download 200 https://github.com/sharkdp/fd/releases/download/v10.5.0/fd-v10.5.0-aarch64-unknown-linux-gnu.tar.gz', lines)
+        self.assertIn('LAST_FAILURE_READY FAIL download OSError blocked https://registry.npmjs.org/is-number/-/is-number-7.0.0.tgz', lines)
 
 
 class DeployHarness(unittest.TestCase):
@@ -983,6 +1155,40 @@ class DeployOrderTest(DeployHarness):
         self.assertEqual(calls, [])
         self.assertIn('PREFLIGHT_REFREEZE', Path(result['log']).read_text())
         self.assertIn('make-packet.py freeze', Path(result['log']).read_text())
+
+
+class ShadowRehearsalStepTest(DeployHarness):
+    def fake_shadow(self):
+        (self.scripts / 'shadow-rehearsal.sh').write_text('echo "shadow $1" >> ' + str(self.calls) + '\nexit "${FAKE_SHADOW_EXIT:-0}"\n')
+
+    def test_I120_a_failed_shadow_rehearsal_stops_before_the_service_stop_after_the_steps_that_need_the_network(self):
+        self.fake_shadow()
+        code, result, calls = self.deploy(HIMAWARI_DEPLOY_SHADOW_REHEARSAL='1', FAKE_SHADOW_EXIT='1')
+        self.assertEqual((code, result['result'], result['stoppedAt']), (10, 'stopped-before-service-stop', 'SHADOW_REHEARSAL'))
+        self.assertEqual(calls, ['S1_TRANSPORT', 'S1_INSTALL', 'S6_ACCEPTANCE', 'shadow', str(self.packet)])
+        self.assertNotIn('rollback', calls)
+
+    def test_a_passed_shadow_rehearsal_runs_right_before_the_stop(self):
+        self.fake_shadow()
+        code, result, calls = self.deploy(HIMAWARI_DEPLOY_SHADOW_REHEARSAL='1')
+        self.assertEqual((code, result['result']), (0, 'passed'))
+        self.assertEqual(calls[2:6], ['S6_ACCEPTANCE', 'shadow', str(self.packet), 'S2_STOP'])
+
+    def test_the_shadow_machine_resumes_at_the_stop_without_cleaning_or_rechecking_what_ran_on_the_host(self):
+        code, result, calls = self.deploy_with_cleanup(HIMAWARI_DEPLOY_FROM_STEP='S2_STOP', FAKE_FACTS=GOOD_FACTS.replace('authority=1 31', 'authority=1 32'))
+        self.assertEqual((code, result['result']), (0, 'passed'), Path(result['log']).read_text())
+        self.assertEqual(calls[0], 'S2_STOP')
+        self.assertNotIn('S6_ACCEPTANCE', calls)
+        self.assertEqual(calls[-2:], ['S8_READBACK', 'cleanup-apply'])
+        self.assertEqual(calls.count('cleanup-apply'), 1)
+
+    def test_only_the_stop_can_be_resumed_and_acceptance_after_the_stop_cannot_be_rehearsed(self):
+        code, result, calls = self.deploy(HIMAWARI_DEPLOY_FROM_STEP='S1_INSTALL')
+        self.assertEqual((code, result['result']), (9, 'invalid-from-step'))
+        self.assertEqual(calls, [])
+        code, result, calls = self.deploy(HIMAWARI_DEPLOY_SHADOW_REHEARSAL='1', HIMAWARI_DEPLOY_ACCEPTANCE_AFTER_STOP='1')
+        self.assertEqual((code, result['result']), (9, 'options-conflict'))
+        self.assertEqual(calls, [])
 
 
 class KernelPreflightHintTest(DeployHarness):

@@ -359,6 +359,7 @@ describe("thread control center interactions", () => {
         committedAt: NOW,
         options: null,
         chosenFrom: null,
+        spoken: false,
       },
     ];
     await render();
@@ -384,6 +385,7 @@ describe("thread control center interactions", () => {
       committedAt: NOW,
       options: null,
       chosenFrom: null,
+      spoken: false,
     });
     readText.mockImplementation(async (ref: string) => ({
       content: ref === "title-source" ? "原来的对话" : ref,
@@ -446,6 +448,7 @@ describe("thread control center interactions", () => {
       committedAt: NOW,
       options: null,
       chosenFrom: null,
+      spoken: false,
     });
     readText.mockImplementation(async (ref: string) => ({ content: ref }));
     query.mockImplementation(async (request, signal) =>
@@ -758,6 +761,7 @@ describe("thread control center interactions", () => {
         itemId: "message:live",
         offset,
         text,
+        emittedAt: null,
         observedAt: "2026-09-14T00:00:00.000Z",
       },
     });
@@ -1213,6 +1217,7 @@ describe("thread control center interactions", () => {
         committedAt: NOW,
         options: null,
         chosenFrom: null,
+        spoken: false,
       },
     ];
     state = {
@@ -1279,6 +1284,7 @@ describe("thread control center interactions", () => {
           committedAt: NOW,
           options: null,
           chosenFrom: null,
+          spoken: false,
         },
       ];
       options = { ...options, configuration: { ...configuration, executionStateAvailable: true } };
@@ -1338,6 +1344,7 @@ describe("thread control center interactions", () => {
         committedAt: NOW,
         options: null,
         chosenFrom: null,
+        spoken: false,
       },
     ];
     options = {
@@ -1415,6 +1422,7 @@ describe("thread control center interactions", () => {
         committedAt: NOW,
         options: null,
         chosenFrom: null,
+        spoken: false,
       },
     ];
     await render();
@@ -1500,6 +1508,7 @@ describe("thread control center interactions", () => {
         committedAt: NOW,
         options: null,
         chosenFrom: null,
+        spoken: false,
       },
     ];
     options = {
@@ -1701,6 +1710,7 @@ describe("thread control center interactions", () => {
         committedAt: NOW,
         options: null,
         chosenFrom: null,
+        spoken: false,
       },
     ];
     options = {
@@ -1788,6 +1798,7 @@ describe("thread control center interactions", () => {
         committedAt: NOW,
         options: null,
         chosenFrom: null,
+        spoken: false,
       },
     ];
     options = {
@@ -2217,6 +2228,7 @@ describe("thread control center interactions", () => {
         committedAt: NOW,
         options: null,
         chosenFrom: null,
+        spoken: false,
       },
     ];
     readText.mockClear();
@@ -2712,6 +2724,7 @@ it("[UI-50] shows each message as soon as its own text arrives, newest first, wi
     committedAt: NOW,
     options: null,
     chosenFrom: null,
+    spoken: false,
   });
   threadMessages = [row(1, "owner"), row(2, "agent"), row(3, "owner"), row(4, "agent")];
   const asked: string[] = [];
@@ -2784,6 +2797,7 @@ describe("pushed conversation updates", () => {
     committedAt: NOW,
     options: null,
     chosenFrom: null,
+    spoken: false,
   });
   const executionState = (runRevision: number, revision: string): ThreadExecutionState => ({
     runRevision,
@@ -3255,6 +3269,7 @@ describe("more panel", () => {
     committedAt: NOW,
     options: null,
     chosenFrom: null,
+    spoken: false,
   });
   const panelText = () => container.querySelector(".more-panel")?.textContent ?? "";
 

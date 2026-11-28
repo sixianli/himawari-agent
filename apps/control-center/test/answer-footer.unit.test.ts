@@ -102,6 +102,7 @@ const detail = (): Detail => ({
         committedAt: at(0),
         options: null,
         chosenFrom: null,
+        spoken: false,
       },
       {
         messageId: "message:agent",
@@ -115,6 +116,7 @@ const detail = (): Detail => ({
         committedAt: at(27082),
         options: null,
         chosenFrom: null,
+        spoken: false,
       },
     ],
     runs: [completedRun],
@@ -216,6 +218,7 @@ const bgHistory = (finished: boolean) => {
                     committedAt: at(520_000),
                     options: null,
                     chosenFrom: null,
+                    spoken: false,
                   },
                 ]
               : []),

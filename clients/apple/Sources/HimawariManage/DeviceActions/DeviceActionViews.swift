@@ -15,24 +15,29 @@ struct ApprovalCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(approval.title)
-                        .hmType(DesignTokens.TypeScale.navTitle)
-                        .foregroundStyle(Color.hmText)
-                        .multilineTextAlignment(.leading)
-                    if let body = approval.display?.bodyPreview {
-                        Text(body)
-                            .hmType(DesignTokens.TypeScale.secondary)
-                            .foregroundStyle(Color.hmMuted)
-                            .lineLimit(2)
+            Button(action: open) {
+                HStack(alignment: .top, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(approval.title)
+                            .hmType(DesignTokens.TypeScale.navTitle)
+                            .foregroundStyle(Color.hmText)
                             .multilineTextAlignment(.leading)
+                        if let body = approval.display?.bodyPreview {
+                            Text(body)
+                                .hmType(DesignTokens.TypeScale.secondary)
+                                .foregroundStyle(Color.hmMuted)
+                                .lineLimit(2)
+                                .multilineTextAlignment(.leading)
+                        }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    Icon(.chevronRight, size: DesignTokens.IconSize.chevron)
+                        .foregroundStyle(Color.hmMuted)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                Icon(.chevronRight, size: DesignTokens.IconSize.chevron)
-                    .foregroundStyle(Color.hmMuted)
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.pressable)
+            .accessibilityHint(Text(L.text("approval.open")))
             AllowancePicker(approval: approval, days: allowanceDays, selection: $allowFor)
             HStack(spacing: 8) {
                 Button(ApprovalWords.decline(approval)) { respond(false, .once) }
@@ -41,12 +46,8 @@ struct ApprovalCard: View {
                     .buttonStyle(CapsuleButtonStyle(.primary, height: DesignTokens.Size.pill))
             }
             .disabled(busy)
-            .opacity(busy ? 0.5 : 1)
         }
         .himawariCard(padding: EdgeInsets(top: 18, leading: 18, bottom: 18, trailing: 18))
-        .contentShape(Rectangle())
-        .onTapGesture(perform: open)
-        .accessibilityAction(named: Text(L.text("approval.open")), open)
     }
 }
 
@@ -67,19 +68,7 @@ struct NavigationHeader: View {
     let back: () -> Void
 
     var body: some View {
-        ZStack {
-            title
-                .hmType(DesignTokens.TypeScale.navTitle)
-                .foregroundStyle(Color.hmText)
-            HStack {
-                GlassCircleButton(Text(L.text("common.back")), action: back) {
-                    Icon(.chevronLeft, size: DesignTokens.IconSize.glassButton)
-                }
-                Spacer()
-            }
-        }
-        .frame(minHeight: DesignTokens.Size.navBarHeight)
-        .padding(.horizontal, 16)
+        SystemNavigationTitle(title)
     }
 }
 
@@ -169,7 +158,7 @@ public struct ApprovalsView: View {
                                     .padding(.bottom, 4)
                             }
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
                     if index < model.handled.count - 1 { RowSeparator() }
                 }
             }
@@ -271,7 +260,7 @@ public struct ApprovalDetailView: View {
             Button { openThread(origin.threadId) } label: {
                 infoRow(L.text("approval.from"), text, chevron: true)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
         } else {
             infoRow(L.text("approval.from"), text, chevron: false)
         }
@@ -307,38 +296,42 @@ public struct ApprovalDetailView: View {
 
 public struct DeviceAbilitiesSection: View {
     let model: DeviceActionsModel
-    @State private var primer: PermissionState?
 
     public init(model: DeviceActionsModel) {
         self.model = model
     }
 
+    private var actions: [DevicePolicyEntry] { model.policy?.actions ?? [] }
+
+    private var unmatchedActions: [DevicePolicyEntry] {
+        let known = Set(model.permissions.map(\.id))
+        return actions.filter { entry in model.permissionOfAction[entry.name].map { !known.contains($0) } ?? true }
+    }
+
     public var body: some View {
-        VStack(alignment: .leading, spacing: 22) {
-            if let policy = model.policy, !policy.actions.isEmpty {
-                GroupedSection(Text(L.text("abilities.title"))) {
-                    ForEach(Array(policy.actions.enumerated()), id: \.element.id) { index, entry in
-                        ToggleRow(
-                            Text(entry.shownTitle),
-                            isOn: Binding(
-                                get: { entry.allowed },
-                                set: { allowed in Task { await model.setAllowed(entry.name, allowed: allowed) } }
-                            )
-                        ) { EmptyView() }
-                        if index < policy.actions.count - 1 { RowSeparator() }
+        VStack(alignment: .leading, spacing: DesignTokens.Her.pageGap) {
+            if !model.permissions.isEmpty {
+                GroupedSection(Text(L.text("abilities.allowedBySystem"))) {
+                    ForEach(Array(model.permissions.enumerated()), id: \.element.id) { index, permission in
+                        if index > 0 { RowSeparator() }
+                        NavigationLink {
+                            PermissionAbilitiesPage(model: model, permissionId: permission.id)
+                        } label: {
+                            GroupedRow(Text(permission.name), icon: { EmptyView() }) {
+                                Text(L.text("permission.status.\(permission.status.rawValue)"))
+                                    .hmType(DesignTokens.TypeScale.body)
+                                    .foregroundStyle(Color.hmMuted)
+                            }
+                        }
+                        .buttonStyle(.pressable)
                     }
                 }
             }
-            if !model.permissions.isEmpty {
-                GroupedSection(Text(L.text("abilities.system"))) {
-                    ForEach(Array(model.permissions.enumerated()), id: \.element.id) { index, permission in
-                        Button { primer = permission } label: {
-                            GroupedRow(Text(permission.name), icon: { EmptyView() }) {
-                                Text(L.text("permission.status.\(permission.status.rawValue)"))
-                            }
-                        }
-                        .buttonStyle(.plain)
-                        if index < model.permissions.count - 1 { RowSeparator() }
+            if !unmatchedActions.isEmpty {
+                GroupedSection(Text(L.text("abilities.title"))) {
+                    ForEach(Array(unmatchedActions.enumerated()), id: \.element.id) { index, entry in
+                        if index > 0 { RowSeparator() }
+                        AbilityToggle(model: model, entry: entry)
                     }
                 }
             }
@@ -349,14 +342,76 @@ public struct DeviceAbilitiesSection: View {
             }
         }
         .task { await model.refresh() }
-        .sheet(item: $primer) { permission in
-            PermissionPrimerView(permission: model.permissions.first { $0.id == permission.id } ?? permission) {
-                Task { await model.request(permission.id) }
+    }
+}
+
+struct PermissionAbilitiesPage: View {
+    let model: DeviceActionsModel
+    let permissionId: String
+    @State private var primer: PermissionState?
+
+    private var permission: PermissionState? { model.permissions.first { $0.id == permissionId } }
+
+    private var entries: [DevicePolicyEntry] {
+        (model.policy?.actions ?? []).filter { model.permissionOfAction[$0.name] == permissionId }
+    }
+
+    var body: some View {
+        SettingsPage(gap: DesignTokens.Her.pageGap) {
+            if let permission {
+                GroupedSection {
+                    Button { primer = permission } label: {
+                        GroupedRow(Text(L.text("abilities.systemAccess")), icon: { EmptyView() }) {
+                            Text(L.text("permission.status.\(permission.status.rawValue)"))
+                                .hmType(DesignTokens.TypeScale.body)
+                                .foregroundStyle(Color.hmMuted)
+                        }
+                    }
+                    .buttonStyle(.pressable)
+                }
+                Text(permission.purpose)
+                    .font(.footnote)
+                    .foregroundStyle(Color.hmMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+                if !entries.isEmpty {
+                    GroupedSection(Text(L.text("abilities.title"))) {
+                        ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
+                            if index > 0 { RowSeparator() }
+                            AbilityToggle(model: model, entry: entry)
+                        }
+                    }
+                }
+                if let problem = model.problem {
+                    Text(problem)
+                        .hmType(DesignTokens.TypeScale.caption)
+                        .foregroundStyle(Color.hmDanger)
+                }
+            }
+        }
+        .navigationTitle(permission?.name ?? "")
+        .sheet(item: $primer) { shown in
+            PermissionPrimerView(permission: model.permissions.first { $0.id == shown.id } ?? shown) {
+                Task { await model.request(shown.id) }
             } close: {
                 primer = nil
             }
             .presentationDetents([.medium, .large])
         }
+    }
+}
+
+struct AbilityToggle: View {
+    let model: DeviceActionsModel
+    let entry: DevicePolicyEntry
+
+    var body: some View {
+        ToggleRow(
+            Text(entry.shownTitle),
+            isOn: Binding(
+                get: { entry.allowed },
+                set: { allowed in Task { await model.setAllowed(entry.name, allowed: allowed) } }
+            )
+        ) { EmptyView() }
     }
 }
 
@@ -388,7 +443,7 @@ public struct PermissionPrimerView: View {
             case .authorized:
                 Text(L.text("permission.allowed"))
                     .hmType(DesignTokens.TypeScale.secondary)
-                    .foregroundStyle(Color.hmSuccess)
+                    .foregroundStyle(Color.hmSun)
             case .notDetermined:
                 Text(L.text("permission.next"))
                     .hmType(DesignTokens.TypeScale.secondary)

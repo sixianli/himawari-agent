@@ -41,7 +41,7 @@ struct MessageOptionsView: View {
             .frame(maxWidth: DesignTokens.Options.maxWidth, alignment: .leading)
             .opacity(item.isOpen ? 1 : DesignTokens.Options.staleOpacity)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
         .disabled(!tappable(item))
         .accessibilityHint(item.action?.summary ?? item.reason ?? "")
     }
@@ -71,6 +71,7 @@ struct MessageOptionsView: View {
 
 struct ChosenOptionBubble: View {
     let text: String
+    var maxWidth: CGFloat = DesignTokens.Size.bubbleMaxWidth
 
     var body: some View {
         VStack(alignment: .trailing, spacing: DesignTokens.Options.chosenCaptionGap) {
@@ -78,7 +79,7 @@ struct ChosenOptionBubble: View {
                 .hmType(DesignTokens.TypeScale.caption)
                 .foregroundStyle(Color.hmMuted)
                 .padding(.trailing, DesignTokens.Options.chosenCaptionInset)
-            OwnerBubble(text: text)
+            OwnerBubble(text: text, maxWidth: maxWidth)
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
     }

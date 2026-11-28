@@ -166,7 +166,6 @@ export function buildProductPathConfiguration(input: ProductPathConfigurationInp
       version: "product-path-v1",
       systemInstruction: "请用中文回答。文件工具使用工作目录内的相对路径。",
       memoryLimit: 5,
-      maxSelectedMemories: 0,
       coding: {
         hostId,
         workerInstanceId,

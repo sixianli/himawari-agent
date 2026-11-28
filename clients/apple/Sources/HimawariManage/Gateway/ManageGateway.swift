@@ -79,6 +79,15 @@ public actor ManageGateway {
         }
     }
 
+    public func post(_ path: String, body: JSONValue) async throws -> Data {
+        try await send(path: path, body: body, nonce: nil, confirm: nil)
+    }
+
+    public func confirmedPost(_ path: String, body: JSONValue, reason: String) async throws -> Data {
+        let challenge = try await issueChallenge()
+        return try await send(path: path, body: body, nonce: challenge, confirm: ConfirmPrompt(reason: reason))
+    }
+
     public func uploadText(_ content: String, dataClassification: String = "private") async throws -> String {
         let data = try await send(
             path: Self.textPath,

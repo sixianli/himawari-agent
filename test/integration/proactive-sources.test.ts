@@ -5,17 +5,19 @@ import {
   createProactiveSeal,
   defineProactiveSources,
   type FlatMailReader,
-  type MailInboxPort,
   GMAIL_SOURCE,
   limitedSourceReader,
+  type MailInboxPort,
   mailReader,
   PROACTIVE_SOURCES,
   type ProactiveMail,
   ProactiveMailCheckService,
+  type ProactiveMailReadFailure,
   type ProactiveSource,
   type ProactiveSourceDefinition,
   type ProactiveSourceLimitHit,
   type ProactiveSourceRegistry,
+  ProactiveSourceUnauthorizedError,
   proactiveSourceDefinitionProblems,
   readProactiveOverview,
   recordProactiveProgramEntry,
@@ -153,6 +155,8 @@ describe("[iOS-7] proactive source registry", () => {
         limits?: ProactiveSourceLimitHit[];
         perCheckMs?: number;
         accept?: () => boolean;
+        search?: FlatMailReader["search"];
+        onReadFailed?: (failure: ProactiveMailReadFailure) => void;
       } = {},
     ) => {
       const reader: FlatMailReader & { items: ProactiveMail[]; nextCursor: string | null } = {
@@ -162,6 +166,7 @@ describe("[iOS-7] proactive source registry", () => {
         async fetch() {
           return { kind: "items" as const, items: reader.items, cursor: reader.nextCursor };
         },
+        ...(extra.search ? { search: extra.search } : {}),
       };
       const limits = extra.limits;
       const submitted: Parameters<MailInboxPort["submit"]>[0][] = [];
@@ -187,6 +192,7 @@ describe("[iOS-7] proactive source registry", () => {
         perCheckMs: extra.perCheckMs ?? 180_000,
         clock,
         ids,
+        ...(extra.onReadFailed ? { onReadFailed: extra.onReadFailed } : {}),
       });
       return { reader, service, submitted };
     };
@@ -256,6 +262,61 @@ describe("[iOS-7] proactive source registry", () => {
       pushes: createProactivePushSource({ scope, store, seal }),
     };
   }
+
+  it("[I-130] a mail search that fails once is retried by Himawari, and one that keeps failing is reported to developers, not handed to the owner", async () => {
+    const h = await harness();
+    await h.connect(NOTES);
+    const failures: ProactiveMailReadFailure[] = [];
+    let calls = 0;
+    const flaky = h.checker(NOTES, {
+      search: async () => {
+        calls += 1;
+        if (calls === 1) throw new Error("GOOGLE_SEARCH_503");
+        return [mail(NOTES, "note-1")];
+      },
+      onReadFailed: (failure) => failures.push(failure),
+    });
+    const found = await flaky.service.searchMail("from:friend", 20, new AbortController().signal);
+    expect(found).toMatchObject({ kind: "found", mails: [{ messageId: "note-1" }] });
+    expect(calls).toBe(2);
+    expect(failures).toEqual([]);
+
+    const broken = h.checker(NOTES, {
+      search: async () => {
+        throw new Error("GOOGLE_SEARCH_500");
+      },
+      onReadFailed: (failure) => failures.push(failure),
+    });
+    expect(
+      await broken.service.searchMail("from:friend", 20, new AbortController().signal),
+    ).toEqual({ kind: "failed" });
+    expect(failures).toEqual([
+      expect.objectContaining({ source: NOTES, operation: "search", attempts: 2 }),
+    ]);
+    expect((await h.store.readConnection({ ...scope, source: NOTES }))?.status).toBe("connected");
+  });
+
+  it("[I-130][reverse] a mail search refused because the sign-in expired asks the owner to reconnect and is not retried or reported", async () => {
+    const h = await harness();
+    await h.connect(NOTES);
+    const failures: ProactiveMailReadFailure[] = [];
+    let calls = 0;
+    const expired = h.checker(NOTES, {
+      search: async () => {
+        calls += 1;
+        throw new ProactiveSourceUnauthorizedError();
+      },
+      onReadFailed: (failure) => failures.push(failure),
+    });
+    expect(
+      await expired.service.searchMail("from:friend", 20, new AbortController().signal),
+    ).toEqual({ kind: "not_connected" });
+    expect(calls).toBe(1);
+    expect(failures).toEqual([]);
+    expect((await h.store.readConnection({ ...scope, source: NOTES }))?.status).toBe(
+      "needs_reconnect",
+    );
+  });
 
   it("[iOS-7] registers Gmail alone, with every pipeline fact filled in", () => {
     expect(PROACTIVE_SOURCES.names).toEqual(["gmail"]);
@@ -699,11 +760,6 @@ describe("[iOS-7] proactive source registry", () => {
         const check = h.checker(source);
         check.reader.items = [mail(source, id)];
         expect(await check.service.run()).toMatchObject({ scenario: source, verdict: "silent" });
-        h.exec(
-          `INSERT OR REPLACE INTO proactive_push_backoff (owner_id, agent_id, source, class_key, stage,
-             since_at, ignored_count, updated_at)
-           VALUES ('${OWNER_ID}', '${AGENT_ID}', '${source}', 'due:example.com', 1, '${h.clock.now()}', 3, '${h.clock.now()}')`,
-        );
       }
     };
     const left = (table: string, column = "source", where = "") =>
@@ -713,7 +769,6 @@ describe("[iOS-7] proactive source registry", () => {
     const everywhere = () => ({
       insights: left("source_insights"),
       processed: left("proactive_processed_messages"),
-      backoff: left("proactive_push_backoff"),
       decisions: left("decision_ledger", "scenario", "WHERE kind = 'proactive'"),
       connections: left("proactive_connections"),
       pushes: h.query("SELECT COUNT(*) AS total FROM proactive_pushes")[0]?.["total"],
@@ -723,7 +778,6 @@ describe("[iOS-7] proactive source registry", () => {
     expect(await everywhere()).toEqual({
       insights: [],
       processed: both,
-      backoff: both,
       decisions: both,
       connections: both,
       pushes: 0,
@@ -733,7 +787,6 @@ describe("[iOS-7] proactive source registry", () => {
     expect(await everywhere()).toEqual({
       insights: [],
       processed: ["gmail"],
-      backoff: ["gmail"],
       decisions: ["gmail"],
       connections: both,
       pushes: 0,
@@ -746,7 +799,6 @@ describe("[iOS-7] proactive source registry", () => {
     expect(after).toMatchObject({
       insights: [],
       processed: ["gmail", "gmail"],
-      backoff: ["gmail"],
       connections: ["gmail"],
     });
     expect(after.decisions.filter((source) => source === "gmail")).toHaveLength(2);

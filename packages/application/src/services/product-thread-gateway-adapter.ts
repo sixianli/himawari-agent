@@ -67,8 +67,17 @@ export interface ThreadMessageOptionsPort {
   }): Promise<ThreadCommandOutcome>;
 }
 
+export interface ThreadSpokenMessagesPort {
+  spoken(input: {
+    readonly ownerId: string;
+    readonly agentId: string;
+    readonly messages: readonly ProductThreadMessage[];
+  }): Promise<ReadonlySet<string>>;
+}
+
 export interface ProductThreadGatewayAdapterDependencies {
   readonly messageOptions?: ThreadMessageOptionsPort;
+  readonly spokenMessages?: ThreadSpokenMessagesPort;
   readonly execution?: {
     readState?(input: {
       ownerId: string;
@@ -128,6 +137,14 @@ export interface ProductThreadGatewayAdapterDependencies {
   readonly eventPollMilliseconds?: number;
   readonly executionPollMilliseconds?: number;
   readonly live?: Pick<ExecutionLiveFeed, "subscribe" | "current">;
+}
+
+interface PendingText {
+  readonly runId: string;
+  readonly itemId: string;
+  readonly offset: number;
+  text: string;
+  emittedAt?: string;
 }
 
 interface WatchedExecutionRun {
@@ -433,6 +450,13 @@ export class ProductThreadGatewayAdapter
               messages: result.messages,
             })
           : new Map();
+        const spoken = this.#dependencies.spokenMessages
+          ? await this.#dependencies.spokenMessages.spoken({
+              ownerId,
+              agentId,
+              messages: result.messages,
+            })
+          : new Set<string>();
         return parseResult({
           ...responseEnvelope(query, "snapshot", "thread.detail_snapshot"),
           payload: {
@@ -449,6 +473,7 @@ export class ProductThreadGatewayAdapter
               committedAt: message.committedAt,
               options: decorations.get(message.id)?.options ?? null,
               chosenFrom: decorations.get(message.id)?.chosenFrom ?? null,
+              spoken: spoken.has(message.id),
             })),
             runs: result.runs.map((run) => ({ ...run, runId: run.runId })),
             nextSequence:
@@ -636,7 +661,7 @@ export class ProductThreadGatewayAdapter
     const agentId = createAgentId(input.subscription.scope.agentId);
     const threadId = createThreadId(input.subscription.payload.threadId);
     const live = this.#dependencies.live;
-    const pendingTexts: { runId: string; itemId: string; offset: number; text: string }[] = [];
+    const pendingTexts: PendingText[] = [];
     let changedRuns = false;
     let wake: (() => void) | undefined;
     const signalled = () => {
@@ -644,10 +669,14 @@ export class ProductThreadGatewayAdapter
       wake = undefined;
       resolve?.();
     };
-    const queueText = (text: { runId: string; itemId: string; offset: number; text: string }) => {
+    const queueText = (text: PendingText) => {
       const last = pendingTexts.at(-1);
       if (last && last.runId === text.runId && last.itemId === text.itemId) {
-        if (text.offset === 0) pendingTexts[pendingTexts.length - 1] = { ...text };
+        if (text.offset === 0)
+          pendingTexts[pendingTexts.length - 1] = {
+            ...text,
+            ...(last.emittedAt ? { emittedAt: last.emittedAt } : {}),
+          };
         else if (text.offset === last.offset + last.text.length) last.text += text.text;
         else pendingTexts.push({ ...text });
       } else pendingTexts.push({ ...text });
@@ -714,6 +743,7 @@ export class ProductThreadGatewayAdapter
                 itemId: text.itemId,
                 offset: text.offset + start,
                 text: text.text.slice(start, start + 60000),
+                emittedAt: text.emittedAt ?? null,
                 observedAt: this.#dependencies.clock.now(),
               },
               "thread.execution_text",

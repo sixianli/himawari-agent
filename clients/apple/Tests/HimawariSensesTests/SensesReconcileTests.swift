@@ -28,7 +28,10 @@ final class RecordingSensesService: SensesService {
     func setSense(_ sense: String, enabled: Bool, revision: Int, reason: String) async throws {}
     func refreshServer() async { server = serverAfterRefresh }
     func setRetention(key: String, days: Int?, revision: Int, reason: String) async throws {}
-    func deleteRecords(_ item: SenseItem, reason: String) async throws -> PerceptionDeleteResult { throw SensesGatewayError.notInstalled }
+    func deleteRecords(_ item: SenseItem, reason: String) async throws -> PerceptionDeletionSnapshot { throw SensesGatewayError.notInstalled }
+    func dayPage(_ day: String?, cursor: String?) async throws -> PerceptionDaySnapshot { throw SensesGatewayError.notInstalled }
+    func episode(_ episodeId: String, cursor: String?) async throws -> PerceptionEpisodeSnapshot { throw SensesGatewayError.notInstalled }
+    func delete(_ target: PerceptionDeletionTarget, reason: String) async throws -> PerceptionDeletionSnapshot { throw SensesGatewayError.notInstalled }
     var mirrorCounts: [SenseItem: Int] = [:]
     func mirrorCount(_ item: SenseItem) async -> Int? { mirrorCounts[item] }
     func clearMirror(_ item: SenseItem) async throws {}
@@ -106,5 +109,35 @@ struct SensesReconcileTests {
         #expect(!model.serverCopyRemovable(.location))
         await model.turnOn(.calendar)
         #expect(!model.serverCopyRemovable(.calendar))
+    }
+}
+
+@MainActor
+struct SenseTurnOnFeedbackTests {
+    @Test func turningOnThatDoesNotEndOnSaysWhy() async {
+        let service = RecordingSensesService()
+        service.server = SenseServerView(state: "active", enabledSenses: [], knownTypes: ["location.visit"])
+        service.serverAfterRefresh = service.server
+        let model = SensesModel(service: service, store: MemoryLocalStore())
+        await model.turnOn(.photos)
+        #expect(model.state(.photos) == .serverUnsupported)
+        #expect(model.notice != nil)
+    }
+
+    @Test func turningOnThatWorksSaysNothing() async {
+        let service = RecordingSensesService()
+        service.server = SensesReconcileTests.allowingServer
+        let model = SensesModel(service: service, store: MemoryLocalStore())
+        await model.turnOn(.calendar)
+        #expect(model.state(.calendar) == .on)
+        #expect(model.notice == nil)
+    }
+
+    @Test func everyStateThatIsNotOnHasAReason() {
+        #expect(SensesModel.notOnReason(.on) == nil)
+        #expect(SensesModel.notOnReason(.serverPaused) == nil)
+        #expect(SensesModel.notOnReason(.off) != nil)
+        #expect(SensesModel.notOnReason(.systemDenied) != nil)
+        #expect(SensesModel.notOnReason(.serverUnsupported) != nil)
     }
 }

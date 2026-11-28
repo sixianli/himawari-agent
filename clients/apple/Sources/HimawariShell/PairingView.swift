@@ -84,15 +84,14 @@ struct PairingView: View {
                         .padding(.vertical, 12)
                         .padding(.horizontal, 18)
                         .frame(maxWidth: .infinity)
-                        .background(Color.hmSurface, in: RoundedRectangle(cornerRadius: DesignTokens.Pairing.bannerRadius, style: .continuous))
-                        .hmShadow(DesignTokens.Shadows.lift)
+                        .hmRaised(RoundedRectangle(cornerRadius: DesignTokens.Pairing.bannerRadius, style: .continuous), fill: Color.hmSurface, shadow: DesignTokens.Shadows.lift)
                         .padding(.bottom, -7)
                 }
                 SunflowerMark(growing: model.phase == .submitting)
                     .frame(width: DesignTokens.Size.pairingMark, height: DesignTokens.Size.pairingMark)
                 VStack(spacing: 10) {
                     Text(L.text("pairing.hello"))
-                        .font(.system(size: removed ? DesignTokens.Pairing.removedTitleSize : DesignTokens.TypeScale.title1.size, weight: .bold, design: .rounded))
+                        .hmType(TypeToken(size: removed ? DesignTokens.Pairing.removedTitleSize : DesignTokens.TypeScale.title1.size, weight: 700, lineHeight: nil, face: .rounded, tracking: 0))
                         .foregroundStyle(Color.hmText)
                         .multilineTextAlignment(.center)
                         .lineLimit(1)
@@ -138,8 +137,7 @@ struct PairingView: View {
             }
         }
         .padding(.horizontal, 18)
-        .background(Color.hmSurface, in: RoundedRectangle(cornerRadius: DesignTokens.Pairing.stepCardRadius, style: .continuous))
-        .hmShadow(DesignTokens.Shadows.lift)
+        .hmRaised(RoundedRectangle(cornerRadius: DesignTokens.Pairing.stepCardRadius, style: .continuous), fill: Color.hmSurface, shadow: DesignTokens.Shadows.lift)
     }
 
     private func confirmServer(_ host: String) -> some View {
@@ -149,7 +147,7 @@ struct PairingView: View {
                     .frame(width: DesignTokens.Pairing.waitingMark, height: DesignTokens.Pairing.waitingMark)
                 VStack(spacing: 12) {
                     Text(host)
-                        .font(.system(size: DesignTokens.TypeScale.title1.size, weight: .bold))
+                        .hmType(TypeToken(size: DesignTokens.TypeScale.title1.size, weight: 700, lineHeight: nil, face: .system, tracking: 0))
                         .foregroundStyle(Color.hmText)
                         .multilineTextAlignment(.center)
                         .lineLimit(1)
@@ -187,8 +185,7 @@ struct PairingView: View {
                         .foregroundStyle(Color.hmText)
                         .accessibilityLabel(Text(number.replacingOccurrences(of: " ", with: "")))
                     Text(L.text("pairing.waiting"))
-                        .font(.himawari(DesignTokens.Pairing.waitingTextSize, weight: .semibold))
-                        .hmLineHeight(DesignTokens.Pairing.waitingTextSize * 1.5)
+                        .font(.system(.title2, weight: .semibold))
                         .foregroundStyle(Color.hmText)
                         .multilineTextAlignment(.center)
                 }
@@ -208,7 +205,7 @@ struct PairingView: View {
                 Icon(icon, size: DesignTokens.Pairing.errorIcon)
                     .foregroundStyle(tint)
                 Text(L.text("pairing.problem.\(Self.key(problem)).title"))
-                    .font(.himawari(DesignTokens.Pairing.errorTitleSize, weight: .semibold))
+                    .font(.system(.title, weight: .semibold))
                     .foregroundStyle(Color.hmText)
                     .multilineTextAlignment(.center)
                 Text(Self.detail(problem))
@@ -241,7 +238,7 @@ struct PairingView: View {
             .hmType(DesignTokens.TypeScale.body)
             .foregroundStyle(Color.hmSun)
             .frame(minHeight: DesignTokens.Size.minTapTarget)
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
     }
 
     static func detail(_ problem: PairingProblem) -> String {

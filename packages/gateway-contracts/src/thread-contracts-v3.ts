@@ -427,6 +427,7 @@ export const threadMessageSummaryV3Schema = object({
   committedAt: timestamp,
   options: nullable(messageOptionsV3Schema),
   chosenFrom: nullable(chosenOptionV3Schema),
+  spoken: booleanValue,
 });
 
 export const threadRunSummaryV3Schema = object({
@@ -630,6 +631,7 @@ export const threadExecutionTextSchema = object({
     itemId: machineString,
     offset: integer(0),
     text: displayText,
+    emittedAt: nullable(timestamp),
     observedAt: timestamp,
   }),
 });

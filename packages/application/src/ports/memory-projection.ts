@@ -189,6 +189,14 @@ export interface ProductMemoryStatePort {
     readonly agentId: AgentId;
     readonly id: number;
   }): Promise<MemoryHistoryEvent | undefined>;
+  listHistoryAfter(input: {
+    readonly ownerId: OwnerId;
+    readonly agentId: AgentId;
+    readonly afterId: number;
+    readonly since: string;
+    readonly kinds: readonly MemoryHistoryEvent["kind"][];
+    readonly limit: number;
+  }): Promise<readonly MemoryHistoryEvent[]>;
   numbers(input: {
     readonly ownerId: OwnerId;
     readonly agentId: AgentId;

@@ -5,8 +5,8 @@ decision_status: accepted
 supersedes: "https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0219-read-only-mcp-entry-with-static-token.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0225-external-agents-propose-memory-with-in-client-confirmation.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0226-external-agents-propose-rules-through-the-rule-proposal-flow.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0227-mcp-entry-checks-cloudflare-access-sign-in.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0228-external-memory-proposals-wait-for-owner-confirmation.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0242-external-agents-join-the-memory-hub-through-one-entry.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0246-external-proposals-join-the-data-export-and-web.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0261-external-proposals-follow-restricted-deletion-and-expiry.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0281-memory-from-outside-agents-saves-directly-when-the-owner-turns-it-on.md"
 superseded_by: ""
 date: "2026-11-26"
-covers: "apps/agent-service/src/production-mcp-read.ts, apps/agent-service/src/production-mcp-memory-writer.ts, apps/agent-service/src/production-mcp-rule-writer.ts, apps/agent-service/src/production-mcp-sync.ts, apps/agent-service/src/production-mcp-connections-control.ts, packages/persistence-sqlite/src/sqlite-external-memory-proposal-operations.ts, packages/persistence-sqlite/src/sqlite-mcp-memory-sync-operations.ts, packages/persistence-sqlite/src/external-proposal-text.ts, apps/control-center/src/components/mcp-connections-settings.tsx"
-verified_at: "7d0ffcd52cbb69d4941871cf9bf08d93f3843da8"
+covers: "apps/agent-service/src/production-mcp-read.ts, apps/agent-service/src/production-mcp-authorization.ts, apps/agent-service/src/production-mcp-authorization-routes.ts, apps/agent-service/src/production-mcp-client-metadata.ts, apps/agent-service/src/production-mcp-memory-writer.ts, apps/agent-service/src/production-mcp-rule-writer.ts, apps/agent-service/src/production-mcp-sync.ts, apps/agent-service/src/production-mcp-connections-control.ts, packages/persistence-sqlite/src/sqlite-mcp-oauth-operations.ts, packages/persistence-sqlite/src/sqlite-external-memory-proposal-operations.ts, packages/persistence-sqlite/src/sqlite-mcp-memory-sync-operations.ts, packages/persistence-sqlite/src/external-proposal-text.ts"
+verified_at: "25bf70417f1e982afea4a04437b43ca13dbf8d11"
 ---
 
 # ADR 0307：外部 agent 经一个 MCP 入口读写 Himawari 的记忆
@@ -49,9 +49,15 @@ Andy 要 Himawari 当他的记忆中心：别的 AI agent（Claude Code、Codex�
 
 ### 入口和登录
 
-1. 路径是 `/api/mcp/v1`（`MCP_READ_PATH`），另有带接入密钥的 `/api/mcp/v1/:secret`，挂在现有的 Fastify 上，用官方 SDK 的 `createMcpHandler`，按 2026-07-28 版规范服务。请求体上限 64 KiB（`MCP_READ_BODY_LIMIT`）。
-2. 登录只认 Cloudflare Access 凭证（请求头 `cf-access-jwt-assertion`），用 `CloudflareAccessJwtVerifier` 校验，再核对凭证主体就是 Himawari 已绑定、状态为 active 的主人；没有凭证、签名或 audience 不对、过期、不是主人，一律 401，不写决策记录。不再接受固定令牌。
-3. 配置是 `runPolicy.mcpRead: { audience, proposals? }`。`audience` 必须和网页登录的 `configuration.identity.audience` 不同（两个入口各用一个 Access 应用）；`identity` 不是 Cloudflare Access 时启动拒绝。`proposals: true` 才出现写工具（`MCP_WRITE_TOOL_NAMES`），接入上的设置只能在它之内再收窄，不能放宽。
+1. 路径只有 `/api/mcp/v1`（`MCP_READ_PATH`），所有 agent 填同一个网址，挂在现有的 Fastify 上，用官方 SDK 的 `createMcpHandler`，按 2026-07-28 版规范服务。请求体上限 64 KiB（`MCP_READ_BODY_LIMIT`）。
+2. 登录按 MCP 授权规范（[2025-11-25 版](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization)）用 OAuth 2.1 访问令牌（[ADR 0309](0309-apps-sign-in-with-passkeys-and-the-web-is-removed.md#mcp-oauth) 第 12 条）。请求头 `Authorization: Bearer <令牌>`；没有、认不出、过期、被吊销、所属接入已撤销的一律 401，带 `WWW-Authenticate` 头，里面写 `resource_metadata`（受保护资源说明的网址）和 `scope`（`himawari:read himawari:write`），让客户端自己找到授权服务器；接入暂停的回 403。令牌的受众必须是本入口（RFC 8707 的 `resource`），别的服务的令牌不收。读令牌库出错回 503，不当成 401。
+3. Himawari 自己当授权服务器，路径前缀 `/api/mcp-auth/v1`（`MCP_AUTH_PREFIX`）：
+    - 发现：受保护资源说明在 `/.well-known/oauth-protected-resource/api/mcp/v1`（RFC 9728，根路径也给一份），授权服务器说明在 `/.well-known/oauth-authorization-server`（RFC 8414），写明只支持授权码加 PKCE S256、公开客户端（`none`）、`client_id_metadata_document_supported: true`、`authorization_response_iss_parameter_supported: true`。
+    - 客户端登记两种都收：客户端说明文件（client_id 本身是一个 https 网址，`McpClientMetadataCache` 去取，只连公网地址、不跟随跳转、最多 5 KiB、5 秒超时，按对方缓存头缓存 5 分钟到 24 小时，client_id 必须和文件里一字不差，带共享密钥的认证方式拒绝）和动态登记（RFC 7591，`/register`，只发公开客户端；24 小时没用上的登记自动清掉，同时最多 100 个没绑定接入的登记，`MCP_OAUTH_UNBOUND_CLIENT_MAXIMUM`）。回调地址只收 https、本机回环 http（端口不比）和反向域名的自定义协议。
+    - 授权：`/authorize` 检查客户端、回调地址、PKCE、`resource` 后，生成一条待同意的授权（10 分钟有效，同时最多 20 条），给主人的 iPhone 发推送（`mcp_grant`），网页上只显示“去 iPhone 上同意”和对方名字、回调地址的域名；主人在 App 里用面容 ID 同意（网关操作 `mcp.grant.approve`，需要设备签名，`change` 级）或拒绝（`mcp.grant.deny`），等候页自己轮询 `/authorize/status` 后跳回对方，回调带 `code`、`state`、`iss`。动态登记的客户端在批准页标“未经核实”。
+    - 换令牌：`/token` 校验授权码（5 分钟、只能用一次，重用就吊销这次发出的全部令牌）、PKCE、回调地址、`resource`；访问令牌 1 小时，刷新令牌 90 天、每次刷新都换新的，旧刷新令牌再被用就吊销整组（OAuth 2.1 对公开客户端的要求）。`/revoke`（RFC 7009）吊销令牌。
+    - 令牌只存 SHA-256（表 `mcp_oauth_tokens`），客户端存在 `mcp_oauth_clients`；过期的令牌每小时最多清一次。待同意的授权和授权码只在内存里，服务重启后要重新接入一次。
+    - 权限范围：`himawari:read` 读，`himawari:write` 推送和提议；主人在批准页可以只给读。原来的 `runPolicy.mcpRead` 配置停用，写着也被忽略（启动时记入 `retiredKeys`）。
 4. 限流：全入口有效请求每分钟 30 次、无效请求 60 次（`AdmissionWindows`）；每个接入另有自己的一份，钩子的自动搜索单独每分钟 60 次（`MCP_HOOK_READS_PER_MINUTE`）。公钥集遇到不认识的 `kid` 时 30 秒内不重复下载，和 jose 库的 `cooldownDuration` 同样做法。
 5. 确认框的状态（`requestState`）用 SDK 的 `createRequestStateCodec` 加 HMAC 签名，有效期 10 分钟（`MCP_PROPOSAL_STATE_TTL_SECONDS`），签名密钥在进程启动时随机生成，服务重启后旧状态全部失效。
 
@@ -59,10 +65,10 @@ Andy 要 Himawari 当他的记忆中心：别的 AI agent（Claude Code、Codex�
 
 ### 接入
 
-6. 每个接入由主人在设置页“接入的 agent”里建，得到一个带随机密钥的专属网址。服务端只存密钥的 SHA-256（表 `mcp_connections`），按密钥认出接入，生成自己的接入编号；日志、错误和决策记录只写接入编号，不写密钥或带密钥的路径。
-7. 每个接入有：名字、勾选的能力、读取上限（`public`、`private`、`sensitive`，新建默认 `private`，`MCP_READ_DEFAULT_CEILING`）、推送设置 `pushPolicy`（`ask` 先问我，`direct` 直接存；设置页新建时默认选直接存，Andy 2026-11-15 定；接口层新建必须明写）、状态（在用、暂停、撤销）。可以暂停、撤销（网址立刻失效）、换密钥（旧密钥立刻失效，编号、设置和统计不变）。
-8. 对方自报的客户端名只当附注显示，标“自称”，不当权限：所有客户端都以 Andy 本人登录，凭证主体相同，能分清是哪个接入的只有密钥。不带密钥的网址不提供工具，只提示主人去建接入。不写死客户端名单，不自动建记录。
-9. 密钥在路径里而不是请求头里，因为“填一个网址”是各家客户端都有的接法。残余风险：密钥会留在对方的配置文件里，也可能被沿途设施的访问日志记下；应对是密钥单独进不了门（还要过 Cloudflare 登录），并且可以随时撤销、换新。
+6. 接入不再由主人手动建：对方第一次经主人同意拿到令牌时，服务端按批准页上的设置建一条接入（表 `mcp_connections`），客户端登记记下它绑定的接入；同一个客户端再次授权沿用原来的接入，编号、设置和统计不变。日志、错误和决策记录只写接入编号，不写令牌。`mcp_connections.secret_sha256` 这一列已不使用，新接入填一个随机值（SQLite 删不掉带唯一约束的列）。
+7. 每个接入有：名字、读取上限（`public`、`private`、`sensitive`，默认 `private`）、推送设置 `pushPolicy`（`ask` 先问我，`direct` 直接存；批准页默认选直接存，`MCP_DEFAULT_PUSH_POLICY`，Andy 2026-11-15 定）、状态（在用、暂停、撤销）。在 App 的“接入的 agent”里可以改名、改上限和推送设置、暂停、撤销（网关操作 `mcp.connection.change`）；撤销后这个接入的令牌立刻失效，对方再来要重新经主人同意，并建新的接入。
+8. 对方自报的客户端名只当附注显示，标“自称”，不当权限。能分清是哪个接入的只有令牌。不写死客户端名单。
+9. 令牌在请求头里，不在网址里，不会留在对方的配置文件或沿途访问日志里。残余风险：动态登记的客户端名字是对方自己写的，可能冒充；应对是批准页标出“未经核实”、显示回调地址的域名，回调指向本机的另外提示。
 
 <a id="read"></a>
 
@@ -135,7 +141,8 @@ Andy 要 Himawari 当他的记忆中心：别的 AI agent（Claude Code、Codex�
     | 三 | 只能挂 MCP | 使用说明和工具描述 | 主人说“同步记忆”或模型自己调 | 尽力而为 |
     | 四 | 不能挂 MCP | 主人贴“关于我”文本 | 主人贴提示词让它列出记忆，再贴回 | 手动 |
 
-34. 第一档的助手程序装在主人电脑上，被钩子调用：直接读对方的记忆目录（只读，不改不删），只推有变化的；用 Cloudflare 服务令牌过第一道门、接入密钥定身份（同 Muse 收件入口，[ADR 0162](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0162-receive-muse-data-through-a-service-token-and-an-app-secret.md)）；每次限时很短，超时就放行。
+34. 第一档的助手程序装在主人电脑上，被钩子调用：直接读对方的记忆目录（只读，不改不删），只推有变化的；和其他客户端一样经 OAuth 接入、主人同意，令牌存在主人电脑上；每次限时很短，超时就放行。它怎样和模型所在的客户端区分开（第 16 条只认它报的删除），等它做出来时再定。
+
 35. 规则带到别的 agent 那里只是文字要求：`start_here` 和页面上写明，这些在 Himawari 里必定执行，在别的 agent 里做不到。
 
 <a id="usage"></a>
@@ -143,7 +150,7 @@ Andy 要 Himawari 当他的记忆中心：别的 AI agent（Claude Code、Codex�
 ### 用量和上限
 
 36. 用量存在按天统计表 `mcp_connection_usage_daily`，键是“接入 + 天 + 工具 + 进门方式（`oauth` 或 `service_token`）+ 是不是 `auto` + 计数项”，同一个键只累加。读取计调用、空手而归、有内容、失败、被限流；推送每次调用记一次，失败的也记。只统计认出了接入的调用。不用决策记录存这些数。
-37. 设置页“接入的 agent”显示每个接入的用量和最近一次的时间；周报用同一套统计函数。每个上限都在页面上显示当前用量。
+37. App 的“接入的 agent”显示每个接入的用量和最近一次的时间；周报用同一套统计函数。每个上限都在页面上显示当前用量。
 
 <a id="export"></a>
 
@@ -160,14 +167,16 @@ Andy 要 Himawari 当他的记忆中心：别的 AI agent（Claude Code、Codex�
 - 确认统一到 Himawari 里做：现在 `propose_memory` 和 `propose_rule` 在支持确认框的客户端里仍会弹框（`elicitationSupported`）；目标是去掉客户端里的确认框，规则提议也到 Himawari 的待确认页确认。
 - 第一档的助手程序和 Claude Code 插件不在本仓库里。
 - 网页上的“接入一个 agent”向导、待确认页的“先帮我筛一遍”（由低价模型给建议，要另出 ADR 定发给哪些模型、怎样遮盖）、第四档的“关于我”文本生成。
-- Himawari 自己的日志、错误和指标里不出现密钥或带密钥路径的自动检查。
+- Himawari 自己的日志、错误和指标里不出现令牌的自动检查。
+- iPhone 和 Mac App 上的批准页和“接入的 agent”页（服务端的网关操作已经有了）。
 
 <a id="options"></a>
 
 ## 放弃的做法
 
 - **固定令牌认证**（原 ADR 0219、0225）：Claude 应用和 Muse 接不上固定令牌，一个入口只留一套认证。
-- **实现 OAuth 2.1 授权服务**：鉴权本身不是 MCP 规范的必选项，Cloudflare Access 已经提供登录。
+- **Cloudflare Access 登录加路径里的接入密钥**（原第 2、3、6、9 条）：不是 MCP 规范的接法，Claude 等客户端不能自己完成接入，要主人手动拷网址；网页删掉后也没有地方建接入（[ADR 0309](0309-apps-sign-in-with-passkeys-and-the-web-is-removed.md#mcp-oauth)）。
+- **只做动态登记，不做客户端说明文件**：规范把说明文件排在动态登记前面，Claude 连接器两种都支持；只做一种会让另一类客户端接不上。
 - **收别家的原始对话，由 Himawari 抽取记忆**：要用 Himawari 的模型逐段抽，Andy 2026-11-12 选了不做，只收对方记好的笔记。
 - **让项目笔记进 Himawari 自己的聊天**：会让每个老对话的请求开头换新一次，Andy 2026-11-12 选了不做。
 - **按字段各自遮盖**：会漏掉“后面才点名、前面单独出现”的密码。
@@ -179,4 +188,4 @@ Andy 要 Himawari 当他的记忆中心：别的 AI agent（Claude Code、Codex�
 
 - 确认之后的记忆和主人自己在 Himawari 里产生的记忆走同一条路，后面的检索、概况、主动提议不按“它是哪个 agent 推来的”分别处理。
 - 第二、三档仍靠对方模型自觉，产品里如实标为“尽力而为”。
-- 门槛：`test/integration/mcp-read.test.ts`（登录、遮盖、读取上限）、`npm run check:data-export`（待确认表的导出导入）、`npm run check:prompt-catalog`（工具说明文字）。
+- 门槛：`test/integration/mcp-read.test.ts`（令牌、遮盖、读取上限）、`test/integration/mcp-connections-store.test.ts`（令牌轮换和重用吊销）、`apps/agent-service/test/production-http-composition.unit.test.ts`（从发现到换令牌、调用、吊销的整条流程）、`npm run check:data-export`（待确认表的导出导入）、`npm run check:prompt-catalog`（工具说明文字）。

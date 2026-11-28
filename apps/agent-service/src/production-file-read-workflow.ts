@@ -20,6 +20,7 @@ import {
 import type { SandboxWorkspaceCopy } from "@himawari-agent/execution-contracts";
 import type { ExternalRedactionOptions } from "@himawari-agent/sensitive-capture";
 import type { ApprovalDisplayBuilder } from "./production-approval-display.js";
+import type { ProductionComputerTools } from "./production-computer-tools.js";
 import type { ProductionHostReadOnly } from "./production-host-read.js";
 import type { ProductionHostWeb } from "./production-host-web.js";
 import type { ProductionThreadArtifacts } from "./production-thread-artifacts.js";
@@ -67,6 +68,7 @@ export interface ProductionFileReadServices {
     input: Parameters<CapabilityHandleService["issue"]>[0],
   ): ReturnType<CapabilityHandleService["issue"]>;
   readonly hostReadOnly?: ProductionHostReadOnly;
+  readonly computer?: ProductionComputerTools;
   readonly workspaceLedger?: ProductionWorkspaceLedger;
   readonly threadArtifacts?: ProductionThreadArtifacts;
   reconcileDeletedArtifacts?(): Promise<number>;

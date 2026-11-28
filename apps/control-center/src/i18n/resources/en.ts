@@ -133,6 +133,9 @@ export const messages = {
   "fork.openSource": "Open original",
   "fork.inheritedLabel": "From the original chat",
   "fork.divider": "Above is from the original · New chat starts here",
+  "reply.toAgent": "Replying to her",
+  "reply.toOwner": "Replying to yourself",
+  "reply.missing": "Original message is gone",
   "fork.mark": "Branched chat",
   "answer.at": "{at, time, short}",
   "answer.sources": "{count, plural, one {# source} other {# sources}}",
@@ -1112,11 +1115,6 @@ export const messages = {
   "proactive.reconnect.button": "Reconnect",
   "proactive.dailyLimit":
     "Mail checks hit today’s spending limit. The model is paused, but rules still bring in mail from banks, schools and the like. It resumes at 0:00, and chat is unaffected.",
-  "proactive.backoff.stage1":
-    "You skipped {count} reminders in a row from {domain}, so pushes for them are reduced to at most one a day. They still appear on this page.",
-  "proactive.backoff.stage2":
-    "You skipped {count} more reminders from {domain} after pushes were reduced, so pushes for them are paused. They still appear on this page.",
-  "proactive.backoff.restore": "Restore pushes",
   "proactive.paused": "Proactive reminders are off: no mail is read, logged or pushed.",
   "proactive.foot":
     "Due reminders and urgent emails are pushed to devices where you turned on notifications.",
@@ -1238,34 +1236,7 @@ export const messages = {
     "{a, select, merge {Merged} supersede {Replaced} archive {Archived} reflect {Summarized} hold {Found differing statements} other {Tidied}}",
   "decision.chain.repeated": "repeated",
   "decision.chain.nodeCut": "more below",
-  "decision.email.open": "View this email",
-  "decision.email.title": "Email decision detail",
-  "decision.email.back": "Back",
-  "decision.email.failed": "Could not read this email's decision detail. Try again later.",
   "decision.email.thisMail": "Used by this email",
-  "decision.email.thisMailUsed": "Used by this email",
-  "decision.email.mailTitle": "Judgment on this email",
-  "decision.email.noMail": "There is no judgment record for this email.",
-  "decision.email.outcome":
-    "{o, select, act {Needs you to act} know {Worth knowing} check {Might matter, read the original} ignore {Ignore} skipped {Email was not read} other {No record}}",
-  "decision.email.skip":
-    "{r, select, category {Reason: skipped by mail category} sensitive {Reason: skipped as sensitive} own_mail {Reason: skipped, sent by you} other {Reason: no record}}",
-  "decision.email.counts":
-    "{rules} rules hit · {memories} memories used · {related} related emails",
-  "decision.email.sameJudgment":
-    "The basis below belongs to the judgment this email was part of (one judgment can read several emails). Items marked “Used by this email” were used by this email itself.",
-  "decision.email.week": "Calibration for the period this email falls in",
-  "decision.email.weekWithheld": "This period has not ended yet, so ratios are not shown.",
-  "decision.email.muse": "What Muse did with this email",
-  "decision.email.museNone": "Muse has no entry for this email.",
-  "decision.email.museReminded":
-    "{v, select, yes {Muse reminded you} other {Muse did not remind you}}",
-  "decision.email.museJudged": "{v, select, ok {right} bad {wrong} other {not rated}}",
-  "decision.email.museRating": "Your rating: timing {timing}; content {content}",
-  "decision.email.museCut": "Muse has many entries; only the first 20 are shown.",
-  "decision.email.compareTitle": "Side by side",
-  "decision.email.compare":
-    "{c, select, both {Both reminded you} museOnly {Only Muse reminded you, Himawari did not} himawariOnly {Only Himawari reminded you, Muse did not} bothSilent {Neither reminded you} noMuseEntry {Muse has no entry for this email, so there is nothing to compare} other {Himawari has no judgment record for this email, so there is nothing to compare}}",
   "proactive.metric.spoke": "Total proactive reminders",
   "proactive.metric.hits": "Appropriate reminders",
   "proactive.metric.misfires": "Unneeded reminders",
@@ -1345,48 +1316,6 @@ export const messages = {
   "proactive.data.confirm":
     "This deletes every reminder check record, extracted email result and review record. Gmail stays connected. Delete?",
   "proactive.data.cleared": "All deleted.",
-  "muse.title": "Muse comparison",
-  "muse.note":
-    "These are reminders Muse pushes to Himawari on a schedule. For each one, judge two things: was the timing right, and was the content right. No hit rate is shown until there are enough samples.",
-  "muse.channel.never": "No data from Muse yet.",
-  "muse.channel.ok": "Channel is working. Last batch at {time}",
-  "muse.channel.stale": "The channel may be down. Last batch at {time}",
-  "muse.channel.down": "The channel is down. Last batch at {time}",
-  "muse.channel.paused": "Receiving is paused. New data from Muse is refused",
-  "muse.channel.gaps":
-    "Batch numbers skipped {count, plural, one {# time} other {# times}}. A batch may have been missed; Muse decides whether to resend it",
-  "muse.received":
-    "{count, plural, one {# reminder} other {# reminders}} received in the last 7 days",
-  "muse.suppressed":
-    "{count, plural, one {# more was} other {# more were}} held back by Muse and never reached you",
-  "muse.pending": "{count} waiting for your rating",
-  "muse.delay":
-    "Median delay from event to reminder: about {duration} ({count, plural, one {# reminder} other {# reminders}})",
-  "muse.duration.minutes": "{value} min",
-  "muse.duration.hours": "{value} h",
-  "muse.kind.proactive": "Proactive",
-  "muse.kind.scheduled": "Scheduled",
-  "muse.withheld": "A sensitive item",
-  "muse.noText": "No text",
-  "muse.timing": "Timing",
-  "muse.content": "Content",
-  "muse.right": "Right",
-  "muse.wrong": "Wrong",
-  "muse.undo": "Undo rating",
-  "muse.empty": "Nothing to rate in the last 30 days.",
-  "muse.failed": "Muse comparison can’t be read right now. It will retry shortly.",
-  "muse.settings.title": "Receive Muse data",
-  "muse.settings.hint":
-    "While paused, new data from Muse is refused. What was already received stays.",
-  "muse.settings.pause": "Pause receiving",
-  "muse.settings.resume": "Resume receiving",
-  "muse.settings.paused": "Paused",
-  "muse.settings.clear": "Clear Muse data",
-  "muse.settings.clearHint":
-    "Deletes the Muse items received automatically, your ratings of them and the cases you added to the Backlog. Muse comparison entries you typed in by hand stay.",
-  "muse.settings.clearConfirm":
-    "Delete every Muse item received automatically, your ratings of them and the cases you added to the Backlog? This can’t be undone.",
-  "muse.settings.cleared": "Cleared.",
   "proactive.when.dueToday": "Due today {time}",
   "proactive.line.allSkipped":
     "{count, plural, one {# new email} other {# new emails}}, all spam, skipped by rule and not sent to the model",
@@ -1518,48 +1447,6 @@ export const messages = {
   "weekly.stats.title": "Proactive reminders · four counts from the reminder check record",
   "weekly.stats.note":
     "These four numbers cover the last 30 days and are counted differently from the ratios above: here, opening a reminder within 24 hours also counts as appropriate, and dismissing it or not opening it within 24 hours counts as unneeded. The ratios above count only what you rated.",
-  "weekly.muse.title": "Muse comparison",
-  "weekly.muse.empty": "Too few: no Muse comparison entries this week.",
-  "weekly.muse.bucket":
-    "{b, select, both {Both reminded} museOnly {Only Muse reminded} himawariOnly {Only Himawari reminded} bothSilent {Neither reminded} other {Himawari has no record of this email}}",
-  "weekly.muse.unpaired": "Unpaired entries",
-  "weekly.muse.rate": "Pairing rate",
-  "weekly.muse.def":
-    "Pairing rate = entries matched to the same email ÷ all Muse comparison entries this week.",
-  "weekly.gap.title": "Gap to Muse",
-  "weekly.gap.notFull": "This week is not over yet. The gap lines appear once it ends.",
-  "weekly.gap.empty":
-    "No email this week is both paired and rated by you, so neither gap line has samples.",
-  "weekly.gap.note":
-    'Uses only emails paired to the same message where you rated Himawari\'s judgment. "Should remind" means a reminder you rated "right" or a silence you rated "missed"; "should not remind" means a reminder you rated "unneeded" or a silence you rated "right". Difference = Muse − Himawari; the interval is the 95% paired-difference interval over the same emails. Samples lean toward emails you chose to rate; memory is not compared with Muse.',
-  "weekly.gap.line":
-    "{l, select, hitRate {Hit rate (share reminded among emails that should be reminded)} other {Unneeded-reminder rate (share reminded among emails that should not be)}}",
-  "weekly.gap.mails": "{n} paired and rated emails",
-  "weekly.gap.few": "Too few ({n} emails). Look at the cases below; no conclusion.",
-  "weekly.gap.rates": "Muse {muse}; Himawari {himawari}",
-  "weekly.gap.diff": "Difference {d} (interval {low} to {high})",
-  "weekly.gap.verdict":
-    "{v, select, museHigher {Muse is higher on this ratio.} himawariHigher {Himawari is higher on this ratio.} other {The interval spans 0, so the two cannot be told apart.}}",
-  "weekly.cases.title": "Muse got it right, Himawari did not",
-  "weekly.cases.empty": "No such cases this week.",
-  "weekly.cases.muse": "What Muse did",
-  "weekly.cases.himawari": "What Himawari did at the time",
-  "weekly.cases.outcome":
-    "{o, select, ignore {Judged it ignorable and did not remind.} skipped {The email was skipped, so no judgment was made.} other {Did not remind.}}",
-  "weekly.cases.attr":
-    "{a, select, notRemembered {Not remembered} notRetrieved {Not retrieved} notReadFully {Not read fully} other {Wrong judgment}}",
-  "weekly.cases.rating":
-    "{r, select, missed {Your rating: missed} useful {Your rating: right} unneeded {Your rating: unneeded} other {Not rated yet}}",
-  "weekly.cases.memory":
-    "{m} related memories retrieved for this email; {r} related earlier emails read.",
-  "weekly.cases.withheld": "Muse's text was not kept, by rule.",
-  "weekly.cases.noText": "No text kept.",
-  "weekly.cases.noReason": "No reason kept.",
-  "weekly.cases.note":
-    'The label is set by a program from the read record of the check that covered that email, not guessed by a model. "Not remembered" only means retrieval worked but returned nothing; it cannot tell never stored from stored but not matched.',
-  "weekly.cases.mark":
-    "{on, select, yes {Added to Backlog. Click again to undo} other {Add to Backlog}}",
-  "weekly.cases.markFailed": "That did not work. Please try again.",
   "weekly.implicit.title": "Observed signals · not ratings",
   "weekly.implicit.notFull": "Week not over yet",
   "weekly.implicit.empty": "No decision sent a reminder this week.",
@@ -1731,19 +1618,11 @@ export const messages = {
   "agents.weekly.window": "{from} to {to}",
   "agents.weekly.empty": "No connections this week.",
   "review.settings.devices": "Devices",
-  "devices.help": "Pair Himawari on an iPhone, Apple Watch or Mac by scanning a QR code.",
-  "devices.add": "Add device",
-  "devices.qrLabel": "Pairing QR code",
-  "devices.qrHelp":
-    "Scan this code in Himawari on the device. It works once, until {time}. The device then appears below and works only after you confirm it.",
+  "devices.help":
+    "Devices sign in from the Himawari App with a passkey. To add one, open the App on it.",
   "devices.empty": "No paired devices yet.",
   "devices.listLabel": "Paired devices",
-  "devices.pendingNotice":
-    "A {kind} named “{name}” wants to pair. If you don't recognize it, remove it.",
   "devices.revoked": "{kind}, removed",
-  "devices.pairingNumber":
-    "Check number {number}. Confirm only if your device shows the same number.",
-  "devices.confirm": "Confirm",
   "devices.rename": "Rename",
   "devices.name": "Device name",
   "devices.save": "Save",

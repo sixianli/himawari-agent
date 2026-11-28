@@ -15,6 +15,7 @@ struct HerAllowancesPage: View {
                 Text(M.allowancesEmpty)
                     .hmType(DesignTokens.TypeScale.caption)
                     .foregroundStyle(Color.hmMuted)
+                    .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, DesignTokens.Allowance.footInset)
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else {
@@ -29,12 +30,13 @@ struct HerAllowancesPage: View {
                     Button { choosingDays = true } label: {
                         SettingsRow(icon: nil, title: M.allowanceDaysTitle, value: M.allowanceDaysValue(days), chevron: true, last: true)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
                 }
             }
             Text(M.allowancesFoot)
                 .hmType(DesignTokens.TypeScale.caption)
                 .foregroundStyle(Color.hmMuted)
+                .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, DesignTokens.Allowance.footInset)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -81,7 +83,7 @@ struct AllowanceRow: View {
                         .frame(minHeight: DesignTokens.Size.minTapTarget)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
             }
             .padding(.vertical, SL.rowPaddingVertical)
             .frame(minHeight: SL.rowMinHeight)

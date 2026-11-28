@@ -15,14 +15,16 @@ public struct OutgoingMessage: Codable, Sendable, Equatable, Identifiable {
     public var expectedRevision: Int
     public let text: String
     public let createdAt: Date
+    public let spoken: Bool?
     public var id: String { messageId }
 
-    public init(messageId: String = OutgoingMessage.newId(), threadId: String, expectedRevision: Int, text: String, createdAt: Date) {
+    public init(messageId: String = OutgoingMessage.newId(), threadId: String, expectedRevision: Int, text: String, createdAt: Date, spoken: Bool = false) {
         self.messageId = messageId
         self.threadId = threadId
         self.expectedRevision = expectedRevision
         self.text = text
         self.createdAt = createdAt
+        self.spoken = spoken ? true : nil
     }
 
     public static func newId() -> String {
@@ -181,8 +183,9 @@ public final class DeviceAPI: Sendable {
             let threadId: String
             let expectedRevision: Int
             let text: String
+            let spoken: Bool?
         }
-        let body = Body(messageId: message.messageId, threadId: message.threadId, expectedRevision: message.expectedRevision, text: message.text)
+        let body = Body(messageId: message.messageId, threadId: message.threadId, expectedRevision: message.expectedRevision, text: message.text, spoken: message.spoken)
         let data = try await http.send(DeviceRequest(method: "POST", path: "messages", body: try JSONEncoder().encode(body)))
         return try outcome(data)
     }

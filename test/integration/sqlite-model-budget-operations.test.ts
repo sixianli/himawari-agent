@@ -1535,8 +1535,24 @@ describe.each(["worker", "direct"] as const)("SQLite budget contracts (%s)", (ex
             },
           },
           payloads: { get: async () => ({ dataClassification: "private" }) as never },
-          memory: {
-            search: async () => {
+          memory: { search: async () => [] },
+          admission: async () => admission,
+          budget,
+          assertActive: async () => {},
+          now: () => NOW,
+        });
+        await expect(
+          memory.embedWithin(
+            {
+              ownerId: OWNER_ID,
+              agentId: AGENT_ID,
+              runId: RUN_ID,
+              executionLease: claimFromRunExecutionLease(claimed),
+              dataClassification: "private",
+              deadlineAt: FAR_FUTURE,
+              slot: "memory-recall:call-1",
+            },
+            async () => {
               if (!boundary) throw new Error("BOUNDARY_MISSING");
               await boundary(
                 {
@@ -1549,24 +1565,7 @@ describe.each(["worker", "direct"] as const)("SQLite budget contracts (%s)", (ex
               );
               return [];
             },
-          },
-          admission: async () => admission,
-          budget,
-          assertActive: async () => {},
-          now: () => NOW,
-        });
-        await expect(
-          memory.search({
-            ownerId: OWNER_ID,
-            agentId: AGENT_ID,
-            runId: RUN_ID,
-            executionLease: claimFromRunExecutionLease(claimed),
-            dataClassification: "private",
-            queryRef: "query" as never,
-            queryTerms: [],
-            limit: 3,
-            deadlineAt: FAR_FUTURE,
-          }),
+          ),
         ).resolves.toEqual([]);
 
         const main = await admission.begin({

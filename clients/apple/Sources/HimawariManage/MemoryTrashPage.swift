@@ -61,7 +61,7 @@ struct TrashRow: View {
                         .frame(minHeight: DesignTokens.Size.minTapTarget)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
             }
             .padding(.vertical, SL.rowPaddingVertical)
             .frame(minHeight: SL.rowMinHeight)

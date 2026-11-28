@@ -63,27 +63,24 @@ public struct ProcessRowView: View {
             .animation(.easeInOut(duration: 0.25), value: current.id)
         case let .waiting(step):
             ProcessLineLabel(icon: .handStop, text: step.title.isEmpty ? L.text("process.waiting") : step.title, tint: .hmSun, shimmering: false)
-        case let .finished(steps, seconds):
-            summary(icon: .check, text: L.format("process.didThings", steps.count), steps: steps, seconds: seconds)
-        case let .stopped(steps, seconds):
-            summary(icon: .playerStop, text: L.text("process.stopped"), steps: steps, seconds: seconds)
-        case let .failed(steps, seconds):
-            summary(icon: .alertCircle, text: L.text("process.failed"), steps: steps, seconds: seconds)
+        case let .finished(steps, _):
+            summary(icon: .check, text: L.format("process.didThings", steps.count), steps: steps)
+        case let .stopped(steps, _):
+            summary(icon: .stop, text: L.text("process.stopped"), steps: steps)
+        case let .failed(steps, _):
+            summary(icon: .alertCircle, text: L.text("process.failed"), steps: steps)
         }
     }
 
-    private func summary(icon: IconName, text: String, steps: [ProcessStep], seconds: Int) -> some View {
+    private func summary(icon: IconName, text: String, steps: [ProcessStep]) -> some View {
         Button {
             showingSteps = true
         } label: {
             HStack(spacing: DesignTokens.ProcessRow.gap) {
                 Icon(icon, size: DesignTokens.IconSize.processRow)
                 Text(text)
-                    .font(.system(size: DesignTokens.ProcessRow.fontSize))
+                    .hmType(ProcessRowText.type)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                Text(L.format("process.seconds", seconds))
-                    .hmType(DesignTokens.TypeScale.caption)
-                    .monospacedDigit()
                 if !steps.isEmpty {
                     Icon(.chevronRight, size: DesignTokens.IconSize.chevron)
                 }
@@ -91,7 +88,7 @@ public struct ProcessRowView: View {
             .foregroundStyle(Color.hmMuted)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
         .disabled(steps.isEmpty)
         .accessibilityHint(Text(L.text("process.expand")))
         .sheet(isPresented: $showingSteps) {
@@ -125,7 +122,7 @@ struct ProcessStepsSheet: View {
                             .frame(width: DesignTokens.Size.glassButton, height: DesignTokens.Size.glassButton)
                             .background(Color.hmFill, in: Circle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
                     .accessibilityLabel(Text(L.text("process.sheet.close")))
                     Spacer()
                 }
@@ -152,8 +149,7 @@ struct ProcessStepsSheet: View {
                     }
                 }
                 .padding(.horizontal, DesignTokens.Size.cardPaddingX)
-                .background(Color.hmSurface, in: RoundedRectangle(cornerRadius: DesignTokens.Radius.card, style: .continuous))
-                .hmShadow(DesignTokens.Shadows.lift)
+                .hmRaised(RoundedRectangle(cornerRadius: DesignTokens.Radius.card, style: .continuous), fill: Color.hmSurface, shadow: DesignTokens.Shadows.lift)
             }
             .scrollIndicators(.hidden)
         }
@@ -176,7 +172,7 @@ struct ProcessLineLabel: View {
                 ShimmerText(text: text)
             } else {
                 Text(text)
-                    .font(.system(size: DesignTokens.ProcessRow.fontSize))
+                    .hmType(ProcessRowText.type)
                     .foregroundStyle(tint)
             }
         }
@@ -226,4 +222,8 @@ extension EnvironmentValues {
     @Entry public var processStepsOpenAfter: Double? = nil
     @Entry public var transcriptScrollsToTopAfter: Double? = nil
     @Entry public var listClock: Date? = nil
+}
+
+enum ProcessRowText {
+    static let type = TypeToken(size: DesignTokens.ProcessRow.fontSize, weight: 400, lineHeight: nil, face: .system, tracking: 0)
 }

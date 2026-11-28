@@ -368,6 +368,17 @@ export class SqliteMemoryOperations {
         );
       case "memory.readHistory":
         return this.readHistory(payload as { ownerId: OwnerId; agentId: AgentId; id: number });
+      case "memory.listHistoryAfter":
+        return this.listHistoryAfter(
+          payload as {
+            ownerId: OwnerId;
+            agentId: AgentId;
+            afterId: number;
+            since: string;
+            kinds: readonly MemoryHistoryEvent["kind"][];
+            limit: number;
+          },
+        );
       case "memory.numbers":
         return this.numbers(
           payload as { ownerId: OwnerId; agentId: AgentId; memoryIds: readonly MemoryId[] },
@@ -1047,6 +1058,41 @@ export class SqliteMemoryOperations {
       .pluck()
       .get(input.ownerId, input.agentId, input.number) as string | undefined;
     return found === undefined ? undefined : (found as MemoryId);
+  }
+
+  private listHistoryAfter(input: {
+    ownerId: OwnerId;
+    agentId: AgentId;
+    afterId: number;
+    since: string;
+    kinds: readonly MemoryHistoryEvent["kind"][];
+    limit: number;
+  }): readonly MemoryHistoryEvent[] {
+    if (!Number.isSafeInteger(input.afterId) || input.afterId < 0)
+      this.fail("PORT_INVALID_OPERATION", "Memory history cursor is invalid");
+    if (!Number.isSafeInteger(input.limit) || input.limit < 1 || input.limit > 1000)
+      this.fail("PORT_INVALID_OPERATION", "Memory history limit is invalid");
+    if (!validIsoTimestamp(input.since))
+      this.fail("PORT_INVALID_OPERATION", "Memory history time is invalid");
+    if (input.kinds.length === 0) return [];
+    const rows = this.database
+      .prepare(
+        `${memoryHistorySelect}
+        WHERE m.owner_id = ? AND m.agent_id = ? AND h.rowid > ? AND h.occurred_at >= ?
+          AND h.kind IN (SELECT value FROM json_each(?))
+          AND m.status = 'active'
+        ORDER BY h.rowid
+        LIMIT ?`,
+      )
+      .all(
+        input.ownerId,
+        input.agentId,
+        input.afterId,
+        input.since,
+        JSON.stringify([...new Set(input.kinds)]),
+        input.limit,
+      ) as MemoryHistoryRow[];
+    return rows.map(memoryHistoryEvent);
   }
 
   private readHistory(input: {

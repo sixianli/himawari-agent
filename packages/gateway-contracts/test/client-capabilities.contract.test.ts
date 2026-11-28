@@ -67,15 +67,12 @@ describe("[第11批] 客户端能力表", () => {
 
   it("只有让 Himawari 收集得更少的那个值算收紧，往回打开要面容", () => {
     const memory = findClientCapability("v2", "memory.settings.set");
-    const muse = findClientCapability("v2", "muse.intake.set");
     expect(memory && requiredClientTier(memory, { capturePaused: true })).toBe("tighten");
     expect(memory && requiredClientTier(memory, { capturePaused: false })).toBe("change");
     expect(memory && requiredClientTier(memory, { capturePaused: "true" })).toBe("change");
     expect(memory && requiredClientTier(memory, { capturePaused: true, extra: true })).toBe(
       "change",
     );
-    expect(muse && requiredClientTier(muse, { paused: true })).toBe("tighten");
-    expect(muse && requiredClientTier(muse, { paused: false })).toBe("change");
     const push = findClientCapability("v2", "push.kind.set");
     expect(push && requiredClientTier(push, { kind: "reminder", enabled: false })).toBe("tighten");
     expect(push && requiredClientTier(push, { kind: "run", enabled: true })).toBe("change");
@@ -135,8 +132,6 @@ describe("[第11批] 客户端能力表", () => {
     ])
       expect(tiers(type), type).toBe("read");
     for (const type of [
-      "device.pairing.start",
-      "device.pairing.confirm",
       "device.rename",
       "device.revoke",
       "login.device.revoke",
@@ -145,6 +140,7 @@ describe("[第11批] 客户端能力表", () => {
     ])
       expect(tiers(type), type).toBe("change");
     expect(tiers("data.export.cancel")).toBe("routine");
+    expect(tiers("timers.change")).toBe("routine");
   });
 
   it("正文还带别的设置的开关整个算改，暂停提醒用只有方向的单独类型", () => {

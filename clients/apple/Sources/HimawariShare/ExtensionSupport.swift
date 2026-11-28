@@ -124,7 +124,6 @@ open class HandoverHostController: UIViewController {
     override open func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .clear
-        SerifFace.shared.prepare()
         Task { await load() }
     }
 
@@ -139,7 +138,7 @@ open class HandoverHostController: UIViewController {
             finish()
         }
         self.model = model
-        let host = UIHostingController(rootView: HandoverSheetScene(model: model))
+        let host = UIHostingController(rootView: HandoverSheetScene(model: model).tint(Color.hmSun))
         host.view.backgroundColor = .clear
         addChild(host)
         host.view.translatesAutoresizingMaskIntoConstraints = false

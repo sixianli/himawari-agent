@@ -18,7 +18,6 @@ import {
   type ConfiguredModelDescriptor,
   type DataClassification,
   DEFAULT_HOME_FEED,
-  DEFAULT_HOME_URGENCY,
   DEFAULT_REVIEW_PREREVIEW,
   DEFAULT_SEARCH_ASK,
   DEVICE_CONFIGURATION_DEFAULTS,
@@ -52,25 +51,18 @@ import {
   type RealEvalMode,
   type RecentAuthenticationConfiguration,
   type RunPolicyConfiguration,
+  SPEECH_ADAPTERS,
+  type SpeechAdapter,
+  type SpeechConfiguration,
   type TaskEnvironmentConfiguration,
   type TaskEnvironmentImageConfiguration,
   type ToolRefusalConfiguration,
-  VOICE_ADDRESSEE_DEFAULTS,
-  VOICE_ADDRESSEE_RANGES,
-  type VoiceAddresseeConfiguration,
-  type VoiceAddresseeRouteConfiguration,
   WEB_FETCH_MAXIMUM_BYTES,
   WEB_PROVIDER_IDS,
   WEB_PROVIDERS,
   type WebProviderId,
 } from "@himawari-agent/application";
-import {
-  createAgentId,
-  createDeploymentId,
-  createOwnerId,
-  DEMO_LOCALES,
-  isDemoLocale,
-} from "@himawari-agent/domain";
+import { createAgentId, createDeploymentId, createOwnerId } from "@himawari-agent/domain";
 import { assertMachineSecretFree } from "@himawari-agent/sensitive-capture";
 
 export const CONFIGURATION_SCHEMA_VERSION = "himawari.configuration.v1" as const;
@@ -527,6 +519,57 @@ function parseModel(value: unknown, index: number): ConfiguredModelDescriptor {
     throw invalid(`${field}.baseUrl`, "is only supported for Magpie");
   }
   return Object.freeze(descriptor);
+}
+
+export const SPEECH_FIRST_AUDIO_TIMEOUT_RANGE = Object.freeze({ minimum: 200, maximum: 10_000 });
+export const SPEECH_MAXIMUM_CHARACTERS_RANGE = Object.freeze({ minimum: 1, maximum: 600 });
+
+function parseSpeechConfiguration(value: unknown): SpeechConfiguration {
+  const field = "configuration.speech";
+  const input = record(value, field);
+  rejectUnknown(
+    input,
+    [
+      "adapter",
+      "magpieModelRef",
+      "provider",
+      "model",
+      "voice",
+      "languageType",
+      "firstAudioTimeoutMs",
+      "maximumCharacters",
+    ],
+    field,
+  );
+  const adapter = string(input["adapter"], `${field}.adapter`);
+  if (!(SPEECH_ADAPTERS as readonly string[]).includes(adapter))
+    throw invalid(`${field}.adapter`, "is not a supported speech adapter");
+  const provider = string(input["provider"], `${field}.provider`);
+  if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(provider))
+    throw invalid(`${field}.provider`, "must be a Magpie provider id");
+  const languageType = string(input["languageType"], `${field}.languageType`);
+  if (!/^[A-Za-z]{2,32}$/.test(languageType))
+    throw invalid(`${field}.languageType`, "must be a language name");
+  return Object.freeze({
+    adapter: adapter as SpeechAdapter,
+    magpieModelRef: safeReference(input["magpieModelRef"], `${field}.magpieModelRef`),
+    provider,
+    model: safeReference(input["model"], `${field}.model`),
+    voice: safeReference(input["voice"], `${field}.voice`),
+    languageType,
+    firstAudioTimeoutMs: integer(
+      input["firstAudioTimeoutMs"],
+      `${field}.firstAudioTimeoutMs`,
+      SPEECH_FIRST_AUDIO_TIMEOUT_RANGE.minimum,
+      SPEECH_FIRST_AUDIO_TIMEOUT_RANGE.maximum,
+    ),
+    maximumCharacters: integer(
+      input["maximumCharacters"],
+      `${field}.maximumCharacters`,
+      SPEECH_MAXIMUM_CHARACTERS_RANGE.minimum,
+      SPEECH_MAXIMUM_CHARACTERS_RANGE.maximum,
+    ),
+  });
 }
 
 function parseNumberMap(value: unknown, field: string): Readonly<Record<string, number>> {
@@ -1086,8 +1129,61 @@ function parseAutomaticReview(
 export const WEB_PUSH_SECRET_PURPOSE = "web-push";
 export const APPLE_PUSH_SECRET_PURPOSE = "apple-push";
 export const GOOGLE_OAUTH_CLIENT_SECRET_PURPOSE = "google-oauth-client";
-export const MUSE_INTAKE_SECRET_PURPOSE = "muse-intake";
-export const GAP_EXPORT_SECRET_PURPOSE = "gap-export";
+export const APP_CONNECTION_CLIENT_SECRET_PURPOSE = "app-connection-client";
+
+function parseAppConnections(
+  value: unknown,
+): NonNullable<RunPolicyConfiguration["appConnections"]> {
+  const field = "configuration.runPolicy.appConnections";
+  if (!Array.isArray(value) || value.length > 32)
+    throw invalid(field, "must be a list of at most 32 apps");
+  const names = new Set<string>();
+  return Object.freeze(
+    value.map((entry, index) => {
+      const at = `${field}[${index}]`;
+      const item = record(entry, at);
+      rejectUnknown(
+        item,
+        ["name", "title", "serverUrl", "clientId", "clientSecretRef", "trustsReadOnlyLabels"],
+        at,
+      );
+      const name = string(item["name"], `${at}.name`);
+      if (!/^[a-z][a-z0-9_]{0,63}$/u.test(name) || names.has(name))
+        throw invalid(`${at}.name`, "must be a unique lowercase name");
+      names.add(name);
+      const title = string(item["title"], `${at}.title`);
+      if (title.length > 64) throw invalid(`${at}.title`, "must be at most 64 characters");
+      const serverUrl = string(item["serverUrl"], `${at}.serverUrl`);
+      let parsed: URL;
+      try {
+        parsed = new URL(serverUrl);
+      } catch {
+        throw invalid(`${at}.serverUrl`, "must be an https URL");
+      }
+      if (parsed.protocol !== "https:" || parsed.username || parsed.password || parsed.hash)
+        throw invalid(`${at}.serverUrl`, "must be an https URL");
+      const clientId =
+        item["clientId"] === undefined ? undefined : string(item["clientId"], `${at}.clientId`);
+      if (
+        clientId !== undefined &&
+        (clientId.length > 256 || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(clientId))
+      )
+        throw invalid(`${at}.clientId`, "must be an OAuth client id");
+      if (item["clientSecretRef"] !== undefined && clientId === undefined)
+        throw invalid(`${at}.clientSecretRef`, "needs a clientId");
+      return Object.freeze({
+        name,
+        title,
+        serverUrl: parsed.href,
+        ...(clientId === undefined ? {} : { clientId }),
+        ...(item["clientSecretRef"] === undefined
+          ? {}
+          : { clientSecretRef: safeReference(item["clientSecretRef"], `${at}.clientSecretRef`) }),
+        trustsReadOnlyLabels: boolean(item["trustsReadOnlyLabels"], `${at}.trustsReadOnlyLabels`),
+      });
+    }),
+  );
+}
 
 function parseProactive(value: unknown): NonNullable<RunPolicyConfiguration["proactive"]> {
   const field = "configuration.runPolicy.proactive";
@@ -1097,7 +1193,6 @@ function parseProactive(value: unknown): NonNullable<RunPolicyConfiguration["pro
     [
       "modelRef",
       "gmail",
-      "demoInbox",
       "intervalMs",
       "perCheckCostMicros",
       "perCheckMs",
@@ -1118,19 +1213,13 @@ function parseProactive(value: unknown): NonNullable<RunPolicyConfiguration["pro
       "reviewSilentSharePermille",
       "reviewPrereview",
       "reviewMemoryUnusedDays",
-      "backoffThreshold",
     ],
     field,
   );
-  const demoInbox = input["demoInbox"];
-  if (demoInbox !== undefined && !isDemoLocale(demoInbox))
-    throw invalid(`${field}.demoInbox`, `must be one of ${DEMO_LOCALES.join(", ")}`);
-  if ((input["gmail"] === undefined) === (demoInbox === undefined))
-    throw invalid(field, "must set exactly one of gmail and demoInbox");
-  const gmail = input["gmail"] === undefined ? undefined : record(input["gmail"], `${field}.gmail`);
-  if (gmail) rejectUnknown(gmail, ["clientId", "clientSecretRef"], `${field}.gmail`);
-  const clientId = gmail ? string(gmail["clientId"], `${field}.gmail.clientId`) : "";
-  if (gmail && (clientId.length > 256 || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(clientId)))
+  const gmail = record(input["gmail"], `${field}.gmail`);
+  rejectUnknown(gmail, ["clientId", "clientSecretRef"], `${field}.gmail`);
+  const clientId = string(gmail["clientId"], `${field}.gmail.clientId`);
+  if (clientId.length > 256 || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(clientId))
     throw invalid(`${field}.gmail.clientId`, "must be a Google OAuth client id");
   const optional = (key: string, fallback: number, minimum: number, maximum: number) =>
     input[key] === undefined ? fallback : integer(input[key], `${field}.${key}`, minimum, maximum);
@@ -1169,24 +1258,15 @@ function parseProactive(value: unknown): NonNullable<RunPolicyConfiguration["pro
     );
   return Object.freeze({
     modelRef: safeReference(input["modelRef"], `${field}.modelRef`),
-    ...(gmail
-      ? {
-          gmail: Object.freeze({
-            clientId,
-            clientSecretRef: safeReference(
-              gmail["clientSecretRef"],
-              `${field}.gmail.clientSecretRef`,
-            ),
-          }),
-        }
-      : {}),
-    ...(demoInbox === undefined ? {} : { demoInbox }),
+    gmail: Object.freeze({
+      clientId,
+      clientSecretRef: safeReference(gmail["clientSecretRef"], `${field}.gmail.clientSecretRef`),
+    }),
     reviewBudgetSeconds: optional("reviewBudgetSeconds", 120, 10, 3_600),
     reviewSecondsPerItem: optional("reviewSecondsPerItem", 5, 1, 60),
     reviewSilentSharePermille: optional("reviewSilentSharePermille", 500, 0, 1_000),
     reviewPrereview: parseReviewPrereview(input["reviewPrereview"], `${field}.reviewPrereview`),
     reviewMemoryUnusedDays: optional("reviewMemoryUnusedDays", 90, 7, 3_650),
-    backoffThreshold: optional("backoffThreshold", 3, 0, 10),
     intervalMs: optional("intervalMs", 900_000, 60_000, 86_400_000),
     perCheckMs: optional("perCheckMs", 180_000, 10_000, 900_000),
     dailyCostMicros,
@@ -1304,25 +1384,6 @@ function parseReviewPrereview(
   });
 }
 
-function parseMuseIntake(value: unknown): NonNullable<RunPolicyConfiguration["museIntake"]> {
-  const field = "configuration.runPolicy.museIntake";
-  const input = record(value, field);
-  rejectUnknown(input, ["enabled", "secretRef", "gapExportSecretRef"], field);
-  if (typeof input["enabled"] !== "boolean") throw invalid(`${field}.enabled`, "must be a boolean");
-  return Object.freeze({
-    enabled: input["enabled"],
-    secretRef: safeReference(input["secretRef"], `${field}.secretRef`),
-    ...(input["gapExportSecretRef"] === undefined
-      ? {}
-      : {
-          gapExportSecretRef: safeReference(
-            input["gapExportSecretRef"],
-            `${field}.gapExportSecretRef`,
-          ),
-        }),
-  });
-}
-
 function parseImportDuplicates(value: unknown): ImportDuplicateConfiguration {
   const field = "configuration.runPolicy.importDuplicates";
   const input = record(value, field);
@@ -1348,16 +1409,6 @@ function parseImportDuplicates(value: unknown): ImportDuplicateConfiguration {
   });
 }
 
-function parseMcpRead(value: unknown): NonNullable<RunPolicyConfiguration["mcpRead"]> {
-  const field = "configuration.runPolicy.mcpRead";
-  const input = record(value, field);
-  rejectUnknown(input, ["audience", "proposals"], field);
-  const audience = safeReference(input["audience"], `${field}.audience`);
-  if (input["proposals"] === undefined) return Object.freeze({ audience });
-  if (input["proposals"] !== true) throw invalid(`${field}.proposals`, "must be true when present");
-  return Object.freeze({ audience, proposals: true as const });
-}
-
 function parseInbox(value: unknown): NonNullable<RunPolicyConfiguration["inbox"]> {
   const field = "configuration.runPolicy.inbox";
   const input = record(value, field);
@@ -1373,6 +1424,24 @@ function parseInbox(value: unknown): NonNullable<RunPolicyConfiguration["inbox"]
     if (input[key] !== undefined) parsed[key] = integer(input[key], `${field}.${key}`, low, high);
   }
   return Object.freeze(parsed);
+}
+
+function parseUserComputers(value: unknown): NonNullable<RunPolicyConfiguration["userComputers"]> {
+  const field = "configuration.runPolicy.userComputers";
+  const input = record(value, field);
+  rejectUnknown(input, ["socketPath"], field);
+  return Object.freeze({ socketPath: absolutePath(input["socketPath"], `${field}.socketPath`) });
+}
+
+function parseBrowser(value: unknown): NonNullable<RunPolicyConfiguration["browser"]> {
+  const field = "configuration.runPolicy.browser";
+  const input = record(value, field);
+  rejectUnknown(input, ["maxOutputBytes", "maxTextChars", "responseReserveMs"], field);
+  return Object.freeze({
+    maxOutputBytes: integer(input["maxOutputBytes"], `${field}.maxOutputBytes`, 1024, 67_108_864),
+    maxTextChars: integer(input["maxTextChars"], `${field}.maxTextChars`, 100, 1_000_000),
+    responseReserveMs: integer(input["responseReserveMs"], `${field}.responseReserveMs`, 0, 60_000),
+  });
 }
 
 function parseWebPush(value: unknown): NonNullable<RunPolicyConfiguration["webPush"]> {
@@ -1566,37 +1635,6 @@ function parseSearchAsk(value: unknown): NonNullable<RunPolicyConfiguration["sea
   );
 }
 
-function parseVoiceAddressee(value: unknown): VoiceAddresseeRouteConfiguration {
-  const field = "configuration.runPolicy.voiceAddressee";
-  const input = record(value, field);
-  const keys = Object.keys(VOICE_ADDRESSEE_DEFAULTS) as (keyof VoiceAddresseeConfiguration)[];
-  rejectUnknown(input, [...keys, "model", "secretRef", "inputMicrosPerMillionTokens"], field);
-  const tuning = Object.fromEntries(
-    keys.map((key) => {
-      const [minimum, maximum] = VOICE_ADDRESSEE_RANGES[key];
-      return [
-        key,
-        input[key] === undefined
-          ? VOICE_ADDRESSEE_DEFAULTS[key]
-          : integer(input[key], `${field}.${key}`, minimum, maximum),
-      ];
-    }),
-  ) as unknown as VoiceAddresseeConfiguration;
-  if (tuning.noAtMostPermille >= tuning.yesAtLeastPermille)
-    throw invalid(`${field}.noAtMostPermille`, "must be smaller than yesAtLeastPermille");
-  return Object.freeze({
-    ...tuning,
-    model: safeReference(input["model"], `${field}.model`),
-    secretRef: safeReference(input["secretRef"], `${field}.secretRef`),
-    inputMicrosPerMillionTokens: integer(
-      input["inputMicrosPerMillionTokens"],
-      `${field}.inputMicrosPerMillionTokens`,
-      1,
-      100_000_000,
-    ),
-  });
-}
-
 function parsePerception(value: unknown): PerceptionConfiguration {
   const field = "configuration.runPolicy.perception";
   const input = record(value, field);
@@ -1619,54 +1657,6 @@ function parsePerception(value: unknown): PerceptionConfiguration {
       "must not be smaller than episodeSilenceSeconds",
     );
   return Object.freeze(parsed);
-}
-
-function parseHomeUrgency(value: unknown): NonNullable<RunPolicyConfiguration["homeUrgency"]> {
-  const field = "configuration.runPolicy.homeUrgency";
-  const input = record(value, field);
-  const bounds = {
-    dailyLimit: [0, 100_000],
-    dailyCostMicros: [0, 100_000_000],
-    perCall: [1, 50],
-    referenceLimit: [0, 200],
-    requestTimeoutMs: [1_000, 300_000],
-    checkIntervalSeconds: [10, 86_400],
-    retryAfterHours: [1, 720],
-  } as const;
-  const keys = Object.keys(bounds) as (keyof typeof bounds)[];
-  rejectUnknown(input, ["enabled", "modelRef", "affirmLabelMax", ...keys], field);
-  const limits =
-    input["affirmLabelMax"] === undefined
-      ? DEFAULT_HOME_URGENCY.affirmLabelMax
-      : record(input["affirmLabelMax"], `${field}.affirmLabelMax`);
-  for (const locale of Object.keys(limits))
-    if (!/^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$/u.test(locale) || locale.length > 16)
-      throw invalid(`${field}.affirmLabelMax.${locale}`, "must be a language tag");
-  return Object.freeze({
-    enabled:
-      input["enabled"] === undefined
-        ? DEFAULT_HOME_URGENCY.enabled
-        : boolean(input["enabled"], `${field}.enabled`),
-    ...(input["modelRef"] === undefined
-      ? {}
-      : { modelRef: safeReference(input["modelRef"], `${field}.modelRef`) }),
-    ...(Object.fromEntries(
-      keys.map((key) => [
-        key,
-        input[key] === undefined
-          ? DEFAULT_HOME_URGENCY[key]
-          : integer(input[key], `${field}.${key}`, bounds[key][0], bounds[key][1]),
-      ]),
-    ) as Record<keyof typeof bounds, number>),
-    affirmLabelMax: Object.freeze(
-      Object.fromEntries(
-        Object.entries(limits).map(([locale, limit]) => [
-          locale,
-          integer(limit, `${field}.affirmLabelMax.${locale}`, 1, 64),
-        ]),
-      ),
-    ),
-  });
 }
 
 function parseRealEval(value: unknown): NonNullable<RunPolicyConfiguration["realEval"]> {
@@ -1749,13 +1739,14 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       "perception",
       "voiceAddressee",
       "deliveryTiming",
-      "homeUrgency",
       "proactive",
-      "museIntake",
+      "appConnections",
       "importDuplicates",
       "realEval",
       "mcpRead",
       "inbox",
+      "userComputers",
+      "browser",
     ],
     "configuration.runPolicy",
   );
@@ -1814,19 +1805,16 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
     ...(input["perception"] === undefined
       ? {}
       : { perception: parsePerception(input["perception"]) }),
-    ...(input["voiceAddressee"] === undefined
-      ? {}
-      : { voiceAddressee: parseVoiceAddressee(input["voiceAddressee"]) }),
-    ...(input["homeUrgency"] === undefined
-      ? {}
-      : { homeUrgency: parseHomeUrgency(input["homeUrgency"]) }),
     ...(input["proactive"] === undefined ? {} : { proactive: parseProactive(input["proactive"]) }),
-    ...(input["realEval"] === undefined ? {} : { realEval: parseRealEval(input["realEval"]) }),
-    ...(input["museIntake"] === undefined
+    ...(input["appConnections"] === undefined
       ? {}
-      : { museIntake: parseMuseIntake(input["museIntake"]) }),
-    ...(input["mcpRead"] === undefined ? {} : { mcpRead: parseMcpRead(input["mcpRead"]) }),
+      : { appConnections: parseAppConnections(input["appConnections"]) }),
+    ...(input["realEval"] === undefined ? {} : { realEval: parseRealEval(input["realEval"]) }),
     ...(input["inbox"] === undefined ? {} : { inbox: parseInbox(input["inbox"]) }),
+    ...(input["userComputers"] === undefined
+      ? {}
+      : { userComputers: parseUserComputers(input["userComputers"]) }),
+    ...(input["browser"] === undefined ? {} : { browser: parseBrowser(input["browser"]) }),
     ...(input["importDuplicates"] === undefined
       ? {}
       : { importDuplicates: parseImportDuplicates(input["importDuplicates"]) }),
@@ -1841,23 +1829,32 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
           ),
         }),
     memoryLimit,
-    maxSelectedMemories: integer(
-      input["maxSelectedMemories"],
-      "configuration.runPolicy.maxSelectedMemories",
-      0,
-      memoryLimit,
-    ),
     ...retiredRunPolicyKeys(input),
   });
 }
 
-const RETIRED_RUN_POLICY_KEYS = ["maxMemoryClassification", "deliveryTiming"] as const;
+const RETIRED_RUN_POLICY_KEYS = [
+  "mcpRead",
+  "maxMemoryClassification",
+  "deliveryTiming",
+  "maxSelectedMemories",
+  "voiceAddressee",
+] as const;
 
 function retiredRunPolicyKeys(input: JsonRecord): {
   readonly retiredKeys?: readonly string[];
 } {
   const retired = RETIRED_RUN_POLICY_KEYS.filter((key) => input[key] !== undefined);
   return retired.length === 0 ? {} : { retiredKeys: Object.freeze(retired) };
+}
+
+export function storedProductConfiguration(
+  configuration: ProductConfiguration,
+): Omit<ProductConfiguration, "loadedAt"> {
+  const { loadedAt: _loadedAt, ...stored } = configuration;
+  if (!stored.runPolicy?.retiredKeys) return stored;
+  const { retiredKeys: _retiredKeys, ...runPolicy } = stored.runPolicy;
+  return { ...stored, runPolicy };
 }
 
 export const DEVICE_ACCESS_SECRET_PURPOSES = [
@@ -1884,6 +1881,7 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       "taskEnvironments",
       "http",
       "identity",
+      "speech",
       "modelDescriptors",
       "memory",
       "repositoryAllowlistRefs",
@@ -1950,6 +1948,8 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
   if (http?.previewOrigin !== undefined && new URL(http.previewOrigin).host === origin.host) {
     throw invalid("configuration.http.previewOrigin", "must differ from the public origin");
   }
+  const speech =
+    input["speech"] === undefined ? undefined : parseSpeechConfiguration(input["speech"]);
   if ((http === undefined) !== (identity === undefined)) {
     throw invalid("configuration", "http and identity must be configured together");
   }
@@ -2114,26 +2114,25 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
   const runPolicy =
     input["runPolicy"] === undefined ? undefined : parseRunPolicy(input["runPolicy"]);
   assertWebProviderSecretReferences(runPolicy, secretReferences);
-  if (runPolicy?.mcpRead && (!identity || identity.kind === "built-in"))
-    throw invalid(
-      "configuration.runPolicy.mcpRead",
-      "requires configuration.identity to use Cloudflare Access",
-    );
-  if (
-    runPolicy?.mcpRead &&
-    identity?.kind !== "built-in" &&
-    identity?.audience === runPolicy.mcpRead.audience
-  )
-    throw invalid(
-      "configuration.runPolicy.mcpRead.audience",
-      "must differ from configuration.identity.audience",
-    );
   if (runPolicy?.webPush)
     assertIdentitySecretReference(
       secretReferences,
       runPolicy.webPush.secretRef,
       WEB_PUSH_SECRET_PURPOSE,
       "configuration.runPolicy.webPush.secretRef",
+    );
+  if (
+    runPolicy?.userComputers &&
+    runPolicy.coding?.enabledTools.some((tool) => tool === "move_directory" || tool === "save_copy")
+  )
+    throw invalid(
+      "configuration.runPolicy.coding.enabledTools",
+      "move_directory and save_copy work on the original host directory, so they cannot be enabled while tools run in each user's computer",
+    );
+  if (runPolicy?.browser && !runPolicy.userComputers)
+    throw invalid(
+      "configuration.runPolicy.browser",
+      "requires configuration.runPolicy.userComputers, because the browser runs in each user's computer",
     );
   if (runPolicy?.applePush && !runPolicy.webPush)
     throw invalid(
@@ -2154,29 +2153,22 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       "model-auth",
       "configuration.runPolicy.importDuplicates.secretRef",
     );
-  if (runPolicy?.museIntake)
-    assertIdentitySecretReference(
-      secretReferences,
-      runPolicy.museIntake.secretRef,
-      MUSE_INTAKE_SECRET_PURPOSE,
-      "configuration.runPolicy.museIntake.secretRef",
-    );
-  if (runPolicy?.museIntake?.gapExportSecretRef !== undefined)
-    assertIdentitySecretReference(
-      secretReferences,
-      runPolicy.museIntake.gapExportSecretRef,
-      GAP_EXPORT_SECRET_PURPOSE,
-      "configuration.runPolicy.museIntake.gapExportSecretRef",
-    );
-  const proactive = runPolicy?.proactive;
-  if (proactive) {
-    if (proactive.gmail)
+  for (const [index, connection] of (runPolicy?.appConnections ?? []).entries())
+    if (connection.clientSecretRef !== undefined)
       assertIdentitySecretReference(
         secretReferences,
-        proactive.gmail.clientSecretRef,
-        GOOGLE_OAUTH_CLIENT_SECRET_PURPOSE,
-        "configuration.runPolicy.proactive.gmail.clientSecretRef",
+        connection.clientSecretRef,
+        APP_CONNECTION_CLIENT_SECRET_PURPOSE,
+        `configuration.runPolicy.appConnections[${index}].clientSecretRef`,
       );
+  const proactive = runPolicy?.proactive;
+  if (proactive) {
+    assertIdentitySecretReference(
+      secretReferences,
+      proactive.gmail.clientSecretRef,
+      GOOGLE_OAUTH_CLIENT_SECRET_PURPOSE,
+      "configuration.runPolicy.proactive.gmail.clientSecretRef",
+    );
     const descriptor = modelDescriptors.find(({ ref }) => ref === proactive.modelRef);
     if (
       !descriptor ||
@@ -2186,20 +2178,6 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
     )
       throw invalid(
         "configuration.runPolicy.proactive.modelRef",
-        "must name a configured openai-completions generation model that accepts private data",
-      );
-  }
-  const homeUrgencyModelRef = runPolicy?.homeUrgency?.modelRef;
-  if (homeUrgencyModelRef !== undefined) {
-    const descriptor = modelDescriptors.find(({ ref }) => ref === homeUrgencyModelRef);
-    if (
-      !descriptor ||
-      descriptor.role === "embedding" ||
-      descriptor.api !== "openai-completions" ||
-      !descriptor.allowedDataClassifications.includes("private")
-    )
-      throw invalid(
-        "configuration.runPolicy.homeUrgency.modelRef",
         "must name a configured openai-completions generation model that accepts private data",
       );
   }
@@ -2229,6 +2207,11 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
         "needs an embedding model that accepts sensitive data",
       );
   }
+  if (speech) {
+    const descriptor = modelDescriptors.find(({ ref }) => ref === speech.magpieModelRef);
+    if (!descriptor || descriptor.provider !== "magpie" || descriptor.role !== "primary")
+      throw invalid("configuration.speech.magpieModelRef", "must name a configured Magpie model");
+  }
   const review = runPolicy?.automaticReview;
   if (review) {
     const descriptor = modelDescriptors.find(({ ref }) => ref === review.modelRef);
@@ -2256,6 +2239,7 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
     ...(taskEnvironments === undefined ? {} : { taskEnvironments }),
     ...(http === undefined ? {} : { http }),
     ...(identity === undefined ? {} : { identity }),
+    ...(speech === undefined ? {} : { speech }),
     modelDescriptors,
     memory: Object.freeze({
       adapter: "himawari-sqlite" as const,

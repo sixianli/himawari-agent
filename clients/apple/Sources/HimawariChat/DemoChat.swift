@@ -10,6 +10,7 @@ public struct DemoChatState {
     public var streaming: [String: StreamingReply] = [:]
     public var connection: ChatConnection = .online
     public var executions: [String: [ExecutionRecord]] = [:]
+    public var backgroundWork: BackgroundWork?
 
     public init() {}
 }
@@ -31,6 +32,7 @@ extension ChatStore {
         store.connection = state.connection
         store.offlineShown = state.connection != .online
         store.executions = state.executions
+        store.backgroundWork = state.backgroundWork
         return store
     }
 }
@@ -111,6 +113,29 @@ public enum DemoChatFixtures {
     | 9:30 | 12:03 | 还有 |
     | 11:00 | 13:33 | 只剩靠过道 |
     """
+    static let richQuestion = "写个 Swift 函数算两站之间的车程，顺便给我官网链接"
+    static let richAnswer = """
+    可以用 `TimeInterval` 算差值，[JR 东海官网](https://jr-central.co.jp) 有时刻表，也可以直接看 https://www.jr-central.co.jp/timetable 。
+
+    ```swift
+    func ride(from start: Date, to end: Date) -> Int {
+        let minutes = end.timeIntervalSince(start) / 60
+        return Int(minutes.rounded())
+    }
+    ```
+
+    没写语言的代码块不上色：
+
+    ```
+    9:30 -> 12:03
+    ```
+
+    | 出发 | 到达 | 车程 |
+    | --- | --- | --- |
+    | 9:30 | 12:03 | 153 分钟 |
+
+    另外 5*3 是 15，a.b 只是字段名。
+    """
     static let answerFormattedStreaming = "三班里 **9:30 那班最合适**：\n\n- 7:00：太早，到了要等 4 个小时\n- **9:30**：12:0"
 
     private static func todayAt(_ hour: Int, _ minute: Int, daysAgo: Int = 0) -> Date {
@@ -166,6 +191,48 @@ public enum DemoChatFixtures {
             ],
             runs: [],
             texts: ["text:m1": question, "text:m2": answerFormatted]
+        )
+    }
+
+    public static func rich() -> DemoChatState {
+        let start = todayAt(14, 48)
+        return osaka(
+            messages: [
+                message("m1", 1, role: "owner", at: start),
+                message("m2", 2, role: "agent", at: start.addingTimeInterval(13)),
+            ],
+            runs: [],
+            texts: ["text:m1": richQuestion, "text:m2": richAnswer]
+        )
+    }
+
+    static let replyAnswer = "周五大阪晴转多云，最高 18 度，傍晚降温明显。"
+    static let replyQuestion = "那要带外套吗？"
+    static let replyAnswerTwo = "要带。傍晚会降到 9 度左右，一件薄外套就够。"
+    static let replyToGone = "这条也帮我记一下"
+
+    public static func empty() -> DemoChatState {
+        osaka(messages: [], runs: [], texts: [:])
+    }
+
+    public static func replied() -> DemoChatState {
+        let start = todayAt(14, 48)
+        return osaka(
+            messages: [
+                message("m1", 1, role: "owner", at: start),
+                message("m2", 2, role: "agent", at: start.addingTimeInterval(13)),
+                message("m3", 3, role: "owner", at: start.addingTimeInterval(60)),
+                message("m4", 4, role: "agent", at: start.addingTimeInterval(70)),
+                message("m5", 5, role: "owner", at: start.addingTimeInterval(120)),
+            ],
+            runs: [],
+            texts: [
+                "text:m1": question,
+                "text:m2": replyAnswer,
+                "text:m3": MessageReply.compose(replyingTo: "m2", text: replyQuestion),
+                "text:m4": replyAnswerTwo,
+                "text:m5": MessageReply.compose(replyingTo: "m0", text: replyToGone),
+            ]
         )
     }
 
@@ -287,6 +354,144 @@ public enum DemoChatFixtures {
         state.threads = base.threads
         state.details = base.details
         state.texts = base.texts
+        return state
+    }
+
+    public enum ScrollLoad: String, CaseIterable, Sendable {
+        case realistic
+        case plain
+        case long
+        case table
+        case code
+    }
+
+    static let longAnswer = """
+    ## 周五的安排
+
+    先说结论：**8:50 出门**，坐 9:30 的新干线。下面是我这样排的理由，你看哪里要改。
+
+    会面定在 14:00，地点在新大阪站北口旁边的咖啡馆，田中上次说他会提前十分钟到。你从家走到品川站平时要 18 分钟，早高峰进站和买便当再留 15 分钟，所以 8:50 出门比较稳。
+
+    - 9:30 品川发，12:03 到新大阪，车上可以把 `报价单 v3` 再过一遍
+    - 12:10 到 13:20 在站里吃午饭，我查了 [新大阪站美食街](https://www.shin-osaka.jp/gourmet) 的营业时间
+    - 13:40 往北口走，步行 6 分钟
+
+    > 田中邮件里提到想顺便聊一下明年的合作，你可能要准备一两句。
+
+    回程我先没订。如果谈得顺利想多留一会儿，18:00 以后每 10 分钟都有一班，指定席现在都还有空位。要我现在就订 17:00 那班吗？
+    """
+
+    static let plainAnswer = String(repeating: "会面定在 14:00，新大阪站附近。坐 9:30 的新干线，12:03 到，留出吃午饭的时间。你平时从家走到车站约 18 分钟，建议 8:50 出门。", count: 3)
+
+    public static func scrollLoad(_ load: ScrollLoad, turns: Int = 60) -> DemoChatState {
+        let start = todayAt(9, 0, daysAgo: 3)
+        let answers = [answer, answerFormatted, longAnswer, richAnswer, longAnswer]
+        let questions = [question, "那回程呢？", "顺便帮我看一下当天大阪的天气，要不要带伞，还有傍晚会不会降温很多", richQuestion, "好的"]
+        var messages: [[String: Any]] = []
+        var texts: [String: String] = [:]
+        var runs: [(String, String)] = []
+        var state = DemoChatState()
+        for index in 0..<turns {
+            let runId = "run:\(String(format: "%04x", index + 256))"
+            let at = start.addingTimeInterval(Double(index * 600))
+            messages.append(message("q\(index)", index * 2 + 1, role: "owner", at: at))
+            messages.append(message("a\(index)", index * 2 + 2, role: "agent", runId: runId, at: at.addingTimeInterval(13)))
+            texts["text:q\(index)"] = questions[index % questions.count]
+            texts["text:a\(index)"] = switch load {
+            case .realistic: answers[index % answers.count]
+            case .plain: plainAnswer
+            case .long: longAnswer
+            case .table: answerFormatted
+            case .code: richAnswer
+            }
+            runs.append((runId, "completed"))
+            state.executions[runId] = steps(runId: runId, start: at)
+        }
+        let base = osaka(messages: messages, runs: runs, texts: texts)
+        state.threads = base.threads
+        state.details = base.details
+        state.texts = base.texts
+        return state
+    }
+}
+
+public extension DemoChatFixtures {
+    static let backgroundFlightsId = "thread-sub-0000000000000000000000000000000b"
+
+    static func backgroundWork(empty: Bool = false) -> DemoChatState {
+        var state = answered()
+        guard !empty else {
+            state.backgroundWork = BackgroundWork(matters: [])
+            return state
+        }
+        let morning = todayAt(10, 0)
+        typealias Sub = BackgroundWork.Subthread
+        let flights = Sub(
+            subthreadId: backgroundFlightsId,
+            status: .open,
+            activity: .running,
+            openedAt: morning,
+            updatedAt: todayAt(14, 40),
+            progress: "三班都查到了，正在比价格和到达时间，下午给你结果。",
+            progressAt: todayAt(14, 35),
+            runCount: 2,
+            spentMicros: 70_000,
+            budgetMicros: 300_000,
+            title: "订去大阪的机票",
+            runs: [
+                .init(runId: "run:sub-1", status: "completed", startedAt: todayAt(10, 5), updatedAt: todayAt(10, 9)),
+                .init(runId: "run:sub-2", status: "running", startedAt: todayAt(14, 30), updatedAt: todayAt(14, 40)),
+            ],
+            exchanges: [
+                .init(direction: .toSubthread, kind: .brief, text: "订 12 月 3 日早上去大阪的机票，经济舱，靠窗，预算 300 美元以内。", at: todayAt(10, 0)),
+                .init(direction: .toMain, kind: .question, text: "关西机场和伊丹机场都可以吗？伊丹离酒店更近，但便宜的班次少。", at: todayAt(10, 8)),
+                .init(direction: .toSubthread, kind: .message, text: "都可以，优先伊丹。", at: todayAt(10, 20)),
+                .init(direction: .toMain, kind: .progress, text: "三班都查到了，正在比价格和到达时间。", at: todayAt(14, 35)),
+            ],
+            tasks: [
+                .init(number: 1, status: .completed, subject: "查 12 月 3 日早上的航班"),
+                .init(number: 2, status: .inProgress, subject: "比价格和到达时间", activeForm: "正在比三班的价格"),
+                .init(number: 3, status: .pending, subject: "订票并发确认"),
+            ]
+        )
+        let hotel = Sub(
+            subthreadId: "thread-sub-0000000000000000000000000000000c",
+            status: .open,
+            activity: .overBudget,
+            openedAt: morning,
+            updatedAt: todayAt(14, 20),
+            spentMicros: 310_000,
+            budgetMicros: 300_000,
+            title: "订梅田附近的酒店"
+        )
+        let invoices = Sub(
+            subthreadId: "thread-sub-0000000000000000000000000000000d",
+            status: .open,
+            activity: .waitingResult,
+            openedAt: todayAt(9, 0),
+            updatedAt: todayAt(13, 10),
+            spentMicros: 4_000,
+            budgetMicros: 200_000,
+            title: "整理 11 月发票",
+            tasks: [
+                .init(number: 1, status: .completed, subject: "找出邮件里的发票"),
+                .init(number: 2, status: .inProgress, subject: "等会计系统导出", activeForm: "在等会计系统导出"),
+            ]
+        )
+        state.backgroundWork = BackgroundWork(matters: [
+            .init(matter: "12 月 3 日大阪出差", subthreads: [flights, hotel]),
+            .init(matter: "报销", subthreads: [invoices]),
+        ])
+        let early = todayAt(10, 5)
+        state.executions["run:sub-1"] = [
+            ExecutionRecord(id: "s1a", sequence: 1, itemId: "search", kind: .tool, phase: .completed, name: "search", occurredAt: early, activity: "查了航班", activityIcon: "plane"),
+        ]
+        let late = todayAt(14, 30)
+        state.executions["run:sub-2"] = [
+            ExecutionRecord(id: "s2a", sequence: 1, itemId: "web", kind: .tool, phase: .completed, name: "web", occurredAt: late, activity: "看了三家航空公司的网页", activityIcon: "world-search"),
+            ExecutionRecord(id: "s2b", sequence: 2, itemId: "table", kind: .tool, phase: .completed, name: "table", occurredAt: late.addingTimeInterval(240), activity: "列了价格对比表", activityIcon: "table"),
+            ExecutionRecord(id: "s2c", sequence: 3, itemId: "calc", kind: .tool, phase: .started, name: "calc", occurredAt: late.addingTimeInterval(540), activity: "在算到酒店的时间", activityIcon: "calculator"),
+        ]
         return state
     }
 }

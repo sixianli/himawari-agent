@@ -1,14 +1,21 @@
 import Foundation
 import HimawariCore
 import Observation
+#if canImport(os)
+import os
+#endif
 
 public enum TranscriptItem: Identifiable, Equatable {
     case message(ThreadMessage)
     case process(runId: String)
 
+    public static func id(ofMessage messageId: String) -> String {
+        "message:\(messageId)"
+    }
+
     public var id: String {
         switch self {
-        case let .message(message): "message:\(message.messageId)"
+        case let .message(message): Self.id(ofMessage: message.messageId)
         case let .process(runId): "process:\(runId)"
         }
     }
@@ -34,6 +41,7 @@ public final class ChatStore {
     public internal(set) var offlineShown = false
     public private(set) var loadingThreads = false
     public internal(set) var executions: [String: [ExecutionRecord]] = [:]
+    public internal(set) var backgroundWork: BackgroundWork?
 
     @ObservationIgnored private let api: DeviceAPI
     @ObservationIgnored private let outbox: Outbox
@@ -50,6 +58,7 @@ public final class ChatStore {
     @ObservationIgnored private var createdRevisions: [String: Int] = [:]
     @ObservationIgnored private var pendingTextRefs: Set<String> = []
     @ObservationIgnored private var executionLoads = ReloadGate<String>()
+    @ObservationIgnored private var backgroundLoads = ReloadGate<String>()
     @ObservationIgnored private let heartbeatSeconds: @Sendable () -> TimeInterval
     @ObservationIgnored private var watched: (threadId: String, stream: DeviceEventStream, task: Task<Void, Never>)?
     @ObservationIgnored private let answerLocale: AnswerLocale
@@ -162,6 +171,7 @@ public final class ChatStore {
     }
 
     private func restartConnections() {
+        notice?.retrying()
         events.restartConnection()
         watched?.stream.restartConnection()
     }
@@ -224,6 +234,7 @@ public final class ChatStore {
             }
             await loadTexts(detail.messages.map(\.contentRef) + [detail.thread.titleRef].compactMap { $0 })
             if let reply = streaming[threadId], reply.isSettled(in: detail) || detail.runs.allSatisfy({ ProcessLine.terminalRunStatuses.contains($0.status) }) {
+                StreamingLog.cleared(runId: reply.runId, ownRunListed: detail.runs.contains { $0.runId == reply.runId }, runs: detail.runs.count, characters: reply.text.count)
                 streaming[threadId] = nil
             }
             persist()
@@ -238,28 +249,25 @@ public final class ChatStore {
 
     public func processLine(for runId: String, in threadId: String) -> ProcessLine? {
         guard let run = run(runId, in: threadId) else { return nil }
-        let records = executions[runId]
-        let line = ProcessLine.make(records: records ?? [], runStatus: run.status)
-        if ProcessLine.terminalRunStatuses.contains(run.status) && records == nil { return nil }
-        return line.hasNothingToShow ? nil : line
+        return TranscriptLayout.line(records: executions[runId], runStatus: run.status)
+    }
+
+    public func recalledConversations(for runId: String) -> [RecalledConversation] {
+        RecalledConversation.used(in: executions[runId] ?? [])
     }
 
     public func transcript(in threadId: String) -> [TranscriptItem] {
-        let messages = messages(in: threadId)
-        let runs = details[threadId]?.runs ?? []
-        var shown = Set<String>()
-        var items: [TranscriptItem] = []
-        for message in messages {
-            if message.role == .agent, let runId = message.runId, !shown.contains(runId), runs.contains(where: { $0.runId == runId }) {
-                shown.insert(runId)
-                items.append(.process(runId: runId))
+        TranscriptLayout.entries(messages: messages(in: threadId), runs: details[threadId]?.runs ?? []).map { entry in
+            switch entry {
+            case let .message(message): .message(message)
+            case let .process(runId): .process(runId: runId)
             }
-            items.append(.message(message))
         }
-        for run in runs where !shown.contains(run.runId) && !ProcessLine.terminalRunStatuses.contains(run.status) {
-            items.append(.process(runId: run.runId))
-        }
-        return items
+    }
+
+    public func showExecution(_ runId: String, in threadId: String) async {
+        guard ExecutionRefresh.needed(loaded: executions[runId] != nil, runStatus: run(runId, in: threadId)?.status) else { return }
+        await loadExecution(runId, in: threadId)
     }
 
     public func loadExecution(_ runId: String, in threadId: String) async {
@@ -267,7 +275,8 @@ public final class ChatStore {
         guard executionLoads.begin(runId) else { return }
         while true {
             do {
-                executions[runId] = try await api.executionRecords(threadId: threadId, runId: runId, known: executions[runId] ?? [])
+                let records = try await api.executionRecords(threadId: threadId, runId: runId, known: executions[runId] ?? [])
+                if executions[runId] != records { executions[runId] = records }
             } catch {
                 executionLoads.cancel(runId)
                 await handle(error)
@@ -278,6 +287,24 @@ public final class ChatStore {
                 return
             }
             if !executionLoads.finish(runId) { return }
+        }
+    }
+
+    public func refreshBackgroundWork() async {
+        guard !frozen else { return }
+        guard backgroundLoads.begin("work") else { return }
+        while true {
+            do {
+                backgroundWork = try await api.backgroundWork()
+            } catch {
+                backgroundLoads.cancel("work")
+                return
+            }
+            if frozen {
+                backgroundLoads.cancel("work")
+                return
+            }
+            if !backgroundLoads.finish("work") { return }
         }
     }
 
@@ -300,18 +327,18 @@ public final class ChatStore {
         return created.threadId
     }
 
-    public func send(_ text: String, in threadId: String) async {
+    public func send(_ text: String, in threadId: String, spoken: Bool = false, messageId: String = OutgoingMessage.newId()) async {
         guard !frozen else { return }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         let revision = details[threadId]?.thread.revision ?? threads.first(where: { $0.threadId == threadId })?.revision ?? createdRevisions[threadId] ?? 1
-        await outbox.enqueue(OutgoingMessage(threadId: threadId, expectedRevision: revision, text: trimmed, createdAt: Date()))
+        await outbox.enqueue(OutgoingMessage(messageId: messageId, threadId: threadId, expectedRevision: revision, text: trimmed, createdAt: Date(), spoken: spoken))
         await flush()
     }
 
-    public func send(_ text: String, attachments: [ChatAttachment], requestId: String, in threadId: String) async throws {
+    public func send(_ text: String, attachments: [ChatAttachment], requestId: String, in threadId: String, spoken: Bool = false, messageId: String = OutgoingMessage.newId()) async throws {
         guard !attachments.isEmpty else {
-            await send(text, in: threadId)
+            await send(text, in: threadId, spoken: spoken, messageId: messageId)
             return
         }
         let composed = try await api.compose(
@@ -320,7 +347,7 @@ public final class ChatStore {
             requestId: requestId,
             images: images
         )
-        await send(composed, in: threadId)
+        await send(composed, in: threadId, spoken: spoken, messageId: messageId)
     }
 
     public func retry(_ messageId: String) async {
@@ -386,6 +413,7 @@ public final class ChatStore {
             connection = .online
             onDeviceActions()
             await flush()
+            await refreshBackgroundWork()
         case .deviceActions:
             onDeviceActions()
         case .disconnected:
@@ -395,16 +423,25 @@ public final class ChatStore {
                 await load(threadEvent.threadId)
             }
             await refreshThreads()
+            await refreshBackgroundWork()
         case let .executionText(chunk):
-            guard !StreamingReply(runId: chunk.runId).isSettled(in: details[chunk.threadId]) else { break }
-            var reply = streaming[chunk.threadId].flatMap { $0.runId == chunk.runId ? $0 : nil } ?? StreamingReply(runId: chunk.runId)
+            guard !StreamingReply(runId: chunk.runId).isSettled(in: details[chunk.threadId]) else {
+                StreamingLog.received(chunk, kept: false, shown: 0, fresh: false)
+                break
+            }
+            let existing = streaming[chunk.threadId].flatMap { $0.runId == chunk.runId ? $0 : nil }
+            var reply = existing ?? StreamingReply(runId: chunk.runId)
             reply.apply(chunk)
             streaming[chunk.threadId] = reply
+            StreamingLog.received(chunk, kept: true, shown: reply.text.count, fresh: existing == nil)
         case let .executionChanged(threadId, runId):
             if details[threadId] != nil {
                 await load(threadId)
                 await loadExecution(runId, in: threadId)
+            } else if executions[runId] != nil {
+                await loadExecution(runId, in: threadId)
             }
+            await refreshBackgroundWork()
         case .notificationDeliver, .notificationWithdraw:
             onNotification?(event)
         case .unavailable:
@@ -412,6 +449,7 @@ public final class ChatStore {
         case .resyncRequired:
             await refreshThreads()
             for threadId in details.keys { await load(threadId) }
+            await refreshBackgroundWork()
         case .sessionInvalid:
             connection = .offline
             onSessionInvalid()
@@ -450,5 +488,23 @@ public final class ChatStore {
             if left.updatedAt != right.updatedAt { return left.updatedAt > right.updatedAt }
             return left.threadId < right.threadId
         }
+    }
+}
+
+enum StreamingLog {
+    #if canImport(os)
+    private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "himawari", category: "streaming")
+    #endif
+
+    static func received(_ chunk: ExecutionText, kept: Bool, shown: Int, fresh: Bool) {
+        #if canImport(os)
+        logger.notice("text run=\(chunk.runId, privacy: .public) item=\(chunk.itemId, privacy: .public) offset=\(chunk.offset) length=\(chunk.text.utf16.count) kept=\(kept) fresh=\(fresh) shown=\(shown)")
+        #endif
+    }
+
+    static func cleared(runId: String, ownRunListed: Bool, runs: Int, characters: Int) {
+        #if canImport(os)
+        logger.notice("cleared run=\(runId, privacy: .public) ownRunListed=\(ownRunListed) runs=\(runs) characters=\(characters)")
+        #endif
     }
 }

@@ -440,6 +440,7 @@ describe("Thread Gateway v3 contracts", () => {
               committedAt: "2026-08-28T00:00:30.000Z",
               options: null,
               chosenFrom: null,
+              spoken: false,
             },
           ],
           runs: [

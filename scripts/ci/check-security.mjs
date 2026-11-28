@@ -817,6 +817,9 @@ export async function runSecurityChecks({
             : "passed",
       findingCount: current.length,
       exceptedCount: current.filter((finding) => finding.excepted).length,
+      blocking: current
+        .filter((finding) => finding.blocking && !finding.excepted)
+        .map(({ id, path, line, scope, commit }) => ({ id, path, line, scope, commit })),
     };
   });
   const report = {

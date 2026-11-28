@@ -115,12 +115,6 @@ import {
   type PiToolRefusalLimits,
 } from "./pi-tool-progress-guard.js";
 import {
-  carriesToolActivity,
-  processIconsSection,
-  removeToolActivity,
-  withToolActivityParameters,
-} from "./tool-activity.js";
-import {
   observeProviderRejections,
   type ProviderRejection,
 } from "./provider-rejection-observation.js";
@@ -129,6 +123,12 @@ import {
   runtimeEnvironmentAfterCompaction,
   splitRuntimeEnvironment,
 } from "./runtime-environment-block.js";
+import {
+  carriesToolActivity,
+  processIconsSection,
+  removeToolActivity,
+  withToolActivityParameters,
+} from "./tool-activity.js";
 import {
   clearToolResults,
   DEFAULT_CLEAR_AT_LEAST_TOKENS,
@@ -221,6 +221,7 @@ export interface PiAgentRuntimeAdapterDependencies {
   readonly models: PiModelBindingPort;
   readonly resources?: PiRuntimeResourcePort;
   readonly cwd: string;
+  readonly toolsRunInComputer?: boolean;
   readonly agentDir?: string;
   readonly timeZone?: string;
   readonly now?: () => string;
@@ -2164,7 +2165,9 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         },
       });
       if (!builtin) throw new Error("PI_READ_DEFINITION_MISSING");
-      const text = himawariBuiltinToolText(builtin);
+      const text = himawariBuiltinToolText(builtin, {
+        toolsRunInComputer: this.#dependencies.toolsRunInComputer === true,
+      });
       return {
         name: builtin.name,
         label: builtin.label,
@@ -2362,7 +2365,16 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       if (result.contentClassification)
         this.#raiseVisible(request.runId, result.contentClassification, request.dataClassification);
       return {
-        content: [{ type: "text", text: result.modelContent }],
+        content: [
+          { type: "text", text: result.modelContent },
+          ...(result.modelImages
+            ? result.modelImages.map(({ mimeType, data }) => ({
+                type: "image" as const,
+                mimeType,
+                data,
+              }))
+            : []),
+        ],
         details: {
           ...(result.executionTiming ? { executionTiming: result.executionTiming } : {}),
           productOutcome: result.outcome,

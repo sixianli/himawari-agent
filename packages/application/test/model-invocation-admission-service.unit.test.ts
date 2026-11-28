@@ -408,6 +408,18 @@ describe("ModelInvocationAdmissionService", () => {
     ]);
   });
 
+  it("[I-129] admits health content to a model whose old configuration listed only private data", async () => {
+    const fixture = serviceFixture({ ...DESCRIPTOR, allowedDataClassifications: ["private"] });
+    fixture.invocations.beginResult = {
+      disposition: "fresh",
+      identity: identityWith({ dataClassification: "sensitive" }),
+    };
+
+    await fixture.service.begin(input({ dataClassification: "sensitive" }));
+
+    expect(fixture.invocations.beginCalls[0]).toMatchObject({ dataClassification: "sensitive" });
+  });
+
   it.each(INVALID_INPUTS)(
     "rejects an invalid %s before reserve or provider access",
     async (_name, override) => {

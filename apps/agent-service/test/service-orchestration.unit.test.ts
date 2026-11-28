@@ -296,6 +296,9 @@ beforeEach(() => {
     "conversationTurns",
     "externalMemoryProposals",
     "mcpMemorySync",
+    "mcpOAuth",
+    "mcpConnections",
+    "proactive",
     "memoryConsolidation",
     "threadRepository",
     "sensitiveInterceptions",
@@ -787,12 +790,12 @@ function web() {
     "modelBudgetPort",
     "modelUsage",
     "decisionLedger",
-    "gapCaseMarks",
     "perception",
     "pairedDevices",
     "deviceActions",
     "vault",
     "subthreads",
+    "appConnections",
   ])
     repository[key] = vi.fn(() => port);
   const memory = {

@@ -83,7 +83,12 @@ export class ProductionOwnerSteering {
     try {
       const parts = [];
       for (const message of folded)
-        parts.push({ id: message.messageId, text: await this.#text(message.contentRef) });
+        parts.push({
+          id: message.messageId,
+          text: await this.#text(message.contentRef),
+          viaPhoneVoice: message.viaPhoneVoice === true,
+          viaTalk: message.viaTalk === true,
+        });
       delivered =
         this.#listeners.get(runId) === listener &&
         listener({

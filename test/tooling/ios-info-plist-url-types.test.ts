@@ -6,7 +6,7 @@ const plist = readFileSync(
   "utf8",
 );
 
-describe("the iOS Info.plist registers both link schemes", () => {
+describe("the iOS Info.plist registers every link scheme the app opens", () => {
   it("has exactly one CFBundleURLTypes key", () => {
     expect(plist.match(/<key>CFBundleURLTypes<\/key>/g)?.length).toBe(1);
   });
@@ -14,5 +14,9 @@ describe("the iOS Info.plist registers both link schemes", () => {
   it("registers himawari and himawari-pair", () => {
     expect(plist).toContain("<string>himawari</string>");
     expect(plist).toContain("<string>himawari-pair</string>");
+  });
+
+  it("registers otpauth so a site's two-step link opens the vault form", () => {
+    expect(plist).toContain("<string>otpauth</string>");
   });
 });

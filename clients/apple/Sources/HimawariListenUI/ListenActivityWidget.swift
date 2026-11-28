@@ -11,33 +11,61 @@ public struct ListenActivityWidget: Widget {
 
     public var body: some WidgetConfiguration {
         ActivityConfiguration(for: ListenActivityAttributes.self) { context in
-            ListenActivityLockView(state: context.state)
-                .activityBackgroundTint(Color.hmGlass)
+            Group {
+                if context.isStale {
+                    ListenStoppedView()
+                } else {
+                    ListenActivityLockView(state: context.state)
+                }
+            }
+                .activityBackgroundTint(Color.hmSurface)
                 .activitySystemActionForegroundColor(Color.hmText)
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.bottom) {
-                    ListenActivityLockView(state: context.state)
-                        .environment(\.colorScheme, .dark)
+                    Group {
+                        if context.isStale {
+                            ListenStoppedView()
+                        } else {
+                            ListenActivityLockView(state: context.state)
+                        }
+                    }
+                    .environment(\.colorScheme, .dark)
                 }
             } compactLeading: {
                 HStack(spacing: 6) {
                     SunflowerMark()
                         .frame(width: 18, height: 18)
-                    Text(ListenActivityLockView.title(context.state))
+                    Text(context.isStale ? L.text("live.stopped") : ListenActivityLockView.title(context.state))
                         .font(.system(size: 13, weight: .semibold))
                 }
             } compactTrailing: {
-                ListenElapsedText(startedAt: context.state.startedAt)
-                    .font(.rounded(13, weight: .regular))
-                    .foregroundStyle(.white.opacity(0.8))
-                    .monospacedDigit()
-                    .frame(maxWidth: 52)
+                if !context.isStale {
+                    ListenElapsedText(startedAt: context.state.startedAt)
+                        .font(.rounded(13, weight: .regular))
+                        .foregroundStyle(.white.opacity(0.8))
+                        .monospacedDigit()
+                        .frame(maxWidth: 52)
+                }
             } minimal: {
                 SunflowerMark()
                     .frame(width: 18, height: 18)
             }
         }
+    }
+}
+
+struct ListenStoppedView: View {
+    var body: some View {
+        HStack(spacing: 12) {
+            SunflowerMark()
+                .frame(width: DesignTokens.IconSize.listRow, height: DesignTokens.IconSize.listRow)
+            Text(L.text("live.stopped"))
+                .font(.headline)
+                .foregroundStyle(Color.hmText)
+            Spacer(minLength: 0)
+        }
+        .padding(16)
     }
 }
 
@@ -57,9 +85,9 @@ struct ListenActivityLockView: View {
         switch state.phase {
         case .listening:
             ListenLockBanner(state: state) { label in
-                Button(intent: PauseListeningIntent()) { label }.buttonStyle(.plain)
+                Button(intent: PauseListeningIntent()) { label }.buttonStyle(.pressable)
             } stop: { label in
-                Button(intent: StopListeningIntent()) { label }.buttonStyle(.plain)
+                Button(intent: StopListeningIntent()) { label }.buttonStyle(.pressable)
             }
         case .paused:
             ListenLockBanner(state: state) { _ in
@@ -71,20 +99,18 @@ struct ListenActivityLockView: View {
                         .frame(height: 44)
                         .background(Color.hmFill, in: Capsule())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
             } stop: { label in
-                Button(intent: StopListeningIntent()) { label }.buttonStyle(.plain)
+                Button(intent: StopListeningIntent()) { label }.buttonStyle(.pressable)
             }
         case .calling:
             ListenCallPanel(state: state, levels: VoiceLevels.resting)
-                .environment(\.colorScheme, .dark)
         case .asking:
             ListenAskPanel(state: state) { label in
-                Button(intent: NotMeIntent()) { label }.buttonStyle(.plain)
+                Button(intent: NotMeIntent()) { label }.buttonStyle(.pressable)
             } itsMe: { label in
-                Button(intent: ItsMeIntent()) { label }.buttonStyle(.plain)
+                Button(intent: ItsMeIntent()) { label }.buttonStyle(.pressable)
             }
-            .environment(\.colorScheme, .dark)
         }
     }
 }

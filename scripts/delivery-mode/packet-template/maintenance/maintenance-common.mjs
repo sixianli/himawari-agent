@@ -7,7 +7,7 @@ import { hostname } from "node:os";
 import { pathToFileURL } from "node:url";
 import { Worker } from "node:worker_threads";
 import { createRequire } from "node:module";
-import { fixed, openReadonly, readS0State, readRouteAuthorization, readExistingWorkspace, one, catalogRegistrationPrefix, canonicalJson, historyDigests, historyTables, historyRow, ledgerMigrationId } from "../s0-db/read-s0-db.mjs";
+import { fixed, openReadonly, readGrantsWithoutSnapshot, readS0State, readRouteAuthorization, readExistingWorkspace, one, catalogRegistrationPrefix, canonicalJson, historyDigests, historyTables, historyRow, ledgerMigrationId } from "../s0-db/read-s0-db.mjs";
 import { validateWorkspacePlan, verifyExistingGrant, verifyWorkspaceIdentity } from "./workspace-grant.mjs";
 import { requireNoDatabaseSidecars } from "./raw-copy-recovery.mjs";
 import { newCapabilityRefs, webNetwork, webProviderSecretRef } from "../signing/cloud-capability-manifest.mjs";
@@ -148,6 +148,19 @@ export function readFrozenS0() {
   return { s0: JSON.parse(bytes), sha256: sha(bytes) };
 }
 
+export function isFirstTools(frozen, refs = newCapabilityRefs) {
+  const first = frozen.authorization.capabilities.length === 0;
+  assert(!first || refs.length > 0, "__PKT_LABEL_UPPER___MAINTENANCE_FIRST_TOOLS_REFS_MISSING");
+  assert(!first || frozen.authorization.directoryGrants.length === 1, "__PKT_LABEL_UPPER___MAINTENANCE_FIRST_TOOLS_GRANT_MISSING");
+  return first;
+}
+
+export function routeIdentity(configuration, plan) {
+  const route = configuration.runPolicy?.[plan.routeKey];
+  assert(route && typeof route === "object" && typeof route.hostId === "string" && typeof route.workerInstanceId === "string" && route.grantId === plan.grantId, "__PKT_LABEL_UPPER___MAINTENANCE_ROUTE_IDENTITY_INVALID");
+  return { hostId: route.hostId, workerInstanceId: route.workerInstanceId };
+}
+
 function readPendingCapabilities(database, binding, snapshot, runnerDigest) {
   return snapshot.capabilities.filter((entry) => newCapabilityRefs.includes(entry.manifest?.ref)).map((entry) => {
     const manifest = entry.manifest;
@@ -199,6 +212,7 @@ export function readCatalogState(binding, { prepared = false, upgraded = false, 
   const plan = validateWorkspacePlan(binding.workspace);
   assert(prepared || !upgraded, "__PKT_LABEL_UPPER___MAINTENANCE_CATALOG_STATE_ARGUMENT_INVALID");
   const { s0: frozen, sha256: s0Sha256 } = readFrozenS0();
+  const first = isFirstTools(frozen);
   assert.equal(safeFile(fixed.configuration, [fixed.uid]).mode & 0o777, 0o600, "__PKT_LABEL_UPPER___MAINTENANCE_CONFIG_MODE_INVALID");
   const configurationBytes = readFileSync(fixed.configuration);
   const configuration = JSON.parse(configurationBytes);
@@ -206,12 +220,18 @@ export function readCatalogState(binding, { prepared = false, upgraded = false, 
   if (!prepared) assert(stage === "original" ? sha(configurationBytes) === binding.service.oldConfigSha256 : stage === "static-root" && sha(configurationBytes) === staticRootConfigurationSha256(binding), "__PKT_LABEL_UPPER___MAINTENANCE_UNPREPARED_CONFIG_REQUIRED");
   else assert.equal(stage, "prepared", "__PKT_LABEL_UPPER___MAINTENANCE_PREPARED_CONFIG_REQUIRED");
   assert.equal(configuration.runPolicy?.coding?.grantId, plan.grantId, "__PKT_LABEL_UPPER___MAINTENANCE_CONFIG_GRANT_CHANGED");
+  const withSnapshot = !first || prepared;
+  if (!withSnapshot) assert(!Object.hasOwn(configuration, "capabilityDeployment"), "__PKT_LABEL_UPPER___MAINTENANCE_FIRST_TOOLS_SNAPSHOT_PRESENT");
   const snapshotPath = `${fixed.stateRoot}/deployment/capability-deployment.json`;
-  assert.equal(configuration.capabilityDeployment.snapshotPath, snapshotPath, "__PKT_LABEL_UPPER___MAINTENANCE_SNAPSHOT_PATH_CHANGED");
-  assert.equal(safeFile(snapshotPath, [fixed.uid]).mode & 0o777, 0o600, "__PKT_LABEL_UPPER___MAINTENANCE_SNAPSHOT_MODE_INVALID");
-  const snapshotBytes = readFileSync(snapshotPath);
-  assert.equal(configuration.capabilityDeployment.sha256, `sha256:${sha(snapshotBytes)}`, "__PKT_LABEL_UPPER___MAINTENANCE_SNAPSHOT_CHANGED");
-  const snapshot = JSON.parse(snapshotBytes);
+  let snapshotBytes = null;
+  let snapshot = null;
+  if (withSnapshot) {
+    assert.equal(configuration.capabilityDeployment.snapshotPath, snapshotPath, "__PKT_LABEL_UPPER___MAINTENANCE_SNAPSHOT_PATH_CHANGED");
+    assert.equal(safeFile(snapshotPath, [fixed.uid]).mode & 0o777, 0o600, "__PKT_LABEL_UPPER___MAINTENANCE_SNAPSHOT_MODE_INVALID");
+    snapshotBytes = readFileSync(snapshotPath);
+    assert.equal(configuration.capabilityDeployment.sha256, `sha256:${sha(snapshotBytes)}`, "__PKT_LABEL_UPPER___MAINTENANCE_SNAPSHOT_CHANGED");
+    snapshot = JSON.parse(snapshotBytes);
+  }
   const runtimeRoot = `${prepared ? newPrefix : oldPrefix}/lib/himawari-agent`;
   const database = allowLiveWal ? openReadonly(sqliteDriverRoot, fixed.database) : openRecoveryReadonly(newPrefix, fixed.database, fixed.uid);
   try {
@@ -221,10 +241,14 @@ export function readCatalogState(binding, { prepared = false, upgraded = false, 
       safeFile(filename, [0]);
       return sha(readFileSync(filename));
     };
-    const registeredSnapshot = upgraded ? snapshot : { ...snapshot, capabilities: snapshot.capabilities.filter((entry) => !newCapabilityRefs.includes(entry.manifest?.ref)) };
-    const authorization = readRouteAuthorization(database, configuration, registeredSnapshot, runnerDigest, upgraded ? undefined : catalogRegistrationRuntimeRoot);
+    const unregistered = first && !upgraded;
+    const registeredSnapshot = upgraded ? snapshot : unregistered ? null : { ...snapshot, capabilities: snapshot.capabilities.filter((entry) => !newCapabilityRefs.includes(entry.manifest?.ref)) };
+    const authorization = unregistered ? { directoryGrants: readGrantsWithoutSnapshot(database, configuration, readExistingWorkspace(plan.canonicalPath)), capabilities: [] } : readRouteAuthorization(database, configuration, registeredSnapshot, runnerDigest, upgraded ? undefined : catalogRegistrationRuntimeRoot);
     verifyExistingGrant(authorization.directoryGrants, frozen.authorization.directoryGrants, plan);
-    const pending = upgraded ? [] : readPendingCapabilities(database, binding, snapshot, runnerDigest);
+    const identity = first ? routeIdentity(configuration, plan) : undefined;
+    if (identity && upgraded) for (const capability of authorization.capabilities) assert(capability.hostId === identity.hostId && capability.workerInstanceId === identity.workerInstanceId, "__PKT_LABEL_UPPER___MAINTENANCE_FIRST_TOOLS_IDENTITY_CHANGED");
+    const pending = upgraded || snapshot === null ? [] : readPendingCapabilities(database, binding, snapshot, runnerDigest);
+    if (identity) for (const entry of pending) assert(entry.hostId === identity.hostId && entry.workerInstanceId === identity.workerInstanceId, "__PKT_LABEL_UPPER___MAINTENANCE_FIRST_TOOLS_IDENTITY_CHANGED");
     assert.deepEqual(pending.map((entry) => entry.capabilityRef), prepared && !upgraded ? [...newCapabilityRefs] : [], "__PKT_LABEL_UPPER___MAINTENANCE_PENDING_CAPABILITY_SET_CHANGED");
     const records = readCatalogRecords(database, binding, frozen, upgraded ? newCapabilityRefs : []);
     const authorityRow = one(database, "SELECT id,status,authority_epoch,fencing_token FROM deployments WHERE id=? AND owner_id=? AND agent_id=?", [binding.identity.deploymentId, binding.identity.ownerId, binding.identity.agentId]);
@@ -234,7 +258,7 @@ export function readCatalogState(binding, { prepared = false, upgraded = false, 
     database.exec("COMMIT");
     const strict = catalogStrictView(records.capabilities, snapshot);
     const workspace = verifyWorkspaceIdentity(readExistingWorkspace(plan.canonicalPath), frozen.workspace, plan);
-    return { frozen, s0Sha256, authority, authorization, pending, records: { ...records, capabilities: records.capabilities.map(({ record, ...rest }) => rest) }, strict, workspace, configurationSha256: sha(configurationBytes), snapshotSha256: sha(snapshotBytes) };
+    return { frozen, s0Sha256, authority, authorization, pending, records: { ...records, capabilities: records.capabilities.map(({ record, ...rest }) => rest) }, strict, workspace, configurationSha256: sha(configurationBytes), snapshotSha256: snapshotBytes === null ? null : sha(snapshotBytes), ...(identity ? { routeIdentity: identity } : {}) };
   } finally {
     database.close();
   }
@@ -263,9 +287,10 @@ export function verifyPreparedCapabilities(prepared) {
   }
 }
 
-export function verifyPendingCapabilities(pending, frozen) {
-  assert.deepEqual(pending.map((entry) => entry.capabilityRef), [...newCapabilityRefs], "__PKT_LABEL_UPPER___MAINTENANCE_PENDING_CAPABILITY_SET_CHANGED");
-  const identity = frozen.authorization.capabilities[0];
+export function verifyPendingCapabilities(pending, frozen, refs = newCapabilityRefs) {
+  assert.deepEqual(pending.map((entry) => entry.capabilityRef), [...refs], "__PKT_LABEL_UPPER___MAINTENANCE_PENDING_CAPABILITY_SET_CHANGED");
+  const identity = frozen.authorization.capabilities[0] ?? { hostId: frozen.authorization.directoryGrants[0]?.hostId, workerInstanceId: pending[0]?.workerInstanceId };
+  assert(typeof identity.hostId === "string" && typeof identity.workerInstanceId === "string", "__PKT_LABEL_UPPER___MAINTENANCE_NEW_CAPABILITY_IDENTITY_CHANGED");
   for (const entry of pending) {
     assert.equal(entry.registered, false, "__PKT_LABEL_UPPER___MAINTENANCE_NEW_CAPABILITY_ALREADY_REGISTERED");
     assert.equal(entry.version, "1.0.0", "__PKT_LABEL_UPPER___MAINTENANCE_NEW_CAPABILITY_VERSION_CHANGED");
@@ -275,17 +300,19 @@ export function verifyPendingCapabilities(pending, frozen) {
   }
 }
 
-export function upgradeResultExpectation(value) {
+export function upgradeResultExpectation(value, newRefs = newCapabilityRefs) {
   assert(value.frozen || (Array.isArray(value.upgraded) && Array.isArray(value.current) && Array.isArray(value.registered)), "__PKT_LABEL_UPPER___MAINTENANCE_UPGRADE_RESULT_SHAPE_CHANGED");
   const refs = value.frozen ? value.frozen.authorization.capabilities.map((capability) => capability.capabilityRef) : value.upgraded;
-  return { snapshotDigest: value.snapshotDigest, planDigest: value.planDigest, upgraded: [...refs].sort(), current: value.frozen ? [] : value.current, registered: value.frozen ? [...newCapabilityRefs] : value.registered, keys: value.frozen ? ["current", "planDigest", "registered", "snapshotDigest", "upgraded"] : Object.keys(value).sort() };
+  return { snapshotDigest: value.snapshotDigest, planDigest: value.planDigest, upgraded: [...refs].sort(), current: value.frozen ? [] : value.current, registered: value.frozen ? [...newRefs] : value.registered, keys: value.frozen ? ["current", "planDigest", "registered", "snapshotDigest", "upgraded"] : Object.keys(value).sort() };
 }
 
-export function verifyUpgradedCatalog(current, previousAudit) {
+export function verifyUpgradedCatalog(current, previousAudit, newRefs = newCapabilityRefs) {
   const frozen = current.frozen;
   verifyAuthorizationUsable(current.authorization);
   const refs = frozen.authorization.capabilities.map((capability) => capability.capabilityRef);
-  assert.deepEqual(current.authorization.capabilities.map((capability) => capability.capabilityRef).sort(), [...refs, ...newCapabilityRefs].sort(), "__PKT_LABEL_UPPER___MAINTENANCE_UPGRADED_CAPABILITY_SET_CHANGED");
+  const identity = frozen.authorization.capabilities[0] ?? current.routeIdentity;
+  assert(identity && typeof identity.hostId === "string" && typeof identity.workerInstanceId === "string", "__PKT_LABEL_UPPER___MAINTENANCE_REGISTERED_IDENTITY_CHANGED");
+  assert.deepEqual(current.authorization.capabilities.map((capability) => capability.capabilityRef).sort(), [...refs, ...newRefs].sort(), "__PKT_LABEL_UPPER___MAINTENANCE_UPGRADED_CAPABILITY_SET_CHANGED");
   const upgraded = [];
   for (const [index, original] of frozen.authorization.capabilities.entries()) {
     const capability = byRef(current.authorization.capabilities, original.capabilityRef);
@@ -300,12 +327,12 @@ export function verifyUpgradedCatalog(current, previousAudit) {
     assert(strict.capabilityRef === capability.capabilityRef && strict.lifecycle === "active" && strict.pendingDeclaration === null && strict.declarationEqualsSnapshot === true && strict.qualificationEqualsSnapshot === true && strict.transitionOutcome === "activated" && strict.rollbackIntegrity === original.storedIntegrity && strict.unrevokedHandles === 0, "__PKT_LABEL_UPPER___MAINTENANCE_UPGRADED_DECLARATION_NOT_STRICT");
     upgraded.push({ capabilityRef: capability.capabilityRef, revision: capability.revision, storedIntegrity: capability.storedIntegrity, registryRecordSha256: capability.registryRecordSha256 });
   }
-  for (const [offset, ref] of newCapabilityRefs.entries()) {
+  for (const [offset, ref] of newRefs.entries()) {
     const index = refs.length + offset;
     const capability = byRef(current.authorization.capabilities, ref);
     const record = current.records.capabilities[index];
     const strict = current.strict[index];
-    assert(capability.runtimeRoot === `${newPrefix}/lib/himawari-agent` && capability.version === "1.0.0" && capability.status === "active" && capability.hostId === frozen.authorization.capabilities[0].hostId && capability.workerInstanceId === frozen.authorization.capabilities[0].workerInstanceId, "__PKT_LABEL_UPPER___MAINTENANCE_REGISTERED_IDENTITY_CHANGED");
+    assert(capability.runtimeRoot === `${newPrefix}/lib/himawari-agent` && capability.version === "1.0.0" && capability.status === "active" && capability.hostId === identity.hostId && capability.workerInstanceId === identity.workerInstanceId, "__PKT_LABEL_UPPER___MAINTENANCE_REGISTERED_IDENTITY_CHANGED");
     assert.equal(capability.storedIntegrity, "sha256:" + capability.runnerSha256, "__PKT_LABEL_UPPER___MAINTENANCE_REGISTERED_INTEGRITY_CHANGED");
     assert(record.capabilityRef === ref && record.registryRecordSha256 === capability.registryRecordSha256 && record.integrity === capability.storedIntegrity && record.revision === capability.revision, "__PKT_LABEL_UPPER___MAINTENANCE_REGISTERED_RECORD_CHANGED");
     assert(strict.capabilityRef === ref && strict.lifecycle === "active" && strict.pendingDeclaration === null && strict.declarationEqualsSnapshot === true && strict.qualificationEqualsSnapshot === true && strict.rollbackIntegrity === null && strict.transitionOutcome === null && capability.revision === 1 && strict.unrevokedHandles === 0, "__PKT_LABEL_UPPER___MAINTENANCE_REGISTERED_DECLARATION_NOT_STRICT");
@@ -313,7 +340,7 @@ export function verifyUpgradedCatalog(current, previousAudit) {
   }
   const audit = current.records.upgradeAudit;
   assert.deepEqual(audit.slice(0, previousAudit.length), previousAudit, "__PKT_LABEL_UPPER___MAINTENANCE_UPGRADE_AUDIT_CHANGED");
-  assert.deepEqual(audit.slice(previousAudit.length).map((entry) => `${entry.action}:${entry.targetRef}:${entry.outcome}`).sort(), [...refs, ...newCapabilityRefs].map((ref) => `${expectedCatalogAudit[ref]}:${ref}:completed`).sort(), "__PKT_LABEL_UPPER___MAINTENANCE_UPGRADE_AUDIT_MISSING");
+  assert.deepEqual(audit.slice(previousAudit.length).map((entry) => `${entry.action}:${entry.targetRef}:${entry.outcome}`).sort(), [...refs.map((ref) => `${expectedCatalogAudit[ref]}:${ref}:completed`), ...newRefs.map((ref) => `owner.capability.register:${ref}:completed`)].sort(), "__PKT_LABEL_UPPER___MAINTENANCE_UPGRADE_AUDIT_MISSING");
   return upgraded;
 }
 
@@ -344,6 +371,9 @@ export const approvedModelLimits = Object.freeze({ contextWindow: __PKT_TARGET_C
 export const originalPublicFetchBytes = __PKT_ORIGINAL_PUBLIC_FETCH_BYTES__;
 export const approvedPublicFetchBytes = __PKT_TARGET_PUBLIC_FETCH_BYTES__;
 export const approvedEmbeddingDescriptor = Object.freeze(__PKT_TARGET_EMBEDDING_JSON__);
+export const approvedSpeech = Object.freeze(__PKT_TARGET_SPEECH_JSON__);
+export const approvedRunPolicyAdditions = Object.freeze(__PKT_TARGET_RUN_POLICY_JSON__);
+export const approvedSecretReferences = Object.freeze(__PKT_TARGET_SECRET_REFERENCES_JSON__);
 
 function applyApprovedEmbedding(configuration) {
   if (approvedEmbeddingDescriptor === null) return;
@@ -366,6 +396,9 @@ export function staticRootConfiguration(original) {
   Object.assign(configuration.modelDescriptors.find((entry) => entry?.ref === approvedModelRef), approvedModelLimits);
   configuration.runPolicy.publicFetch.maximumBytes = approvedPublicFetchBytes;
   applyApprovedEmbedding(configuration);
+  if (approvedSpeech !== null) configuration.speech = structuredClone(approvedSpeech);
+  for (const [key, value] of Object.entries(approvedRunPolicyAdditions)) configuration.runPolicy[key] = structuredClone(value);
+  for (const secret of approvedSecretReferences) configuration.secretReferences = [...(configuration.secretReferences ?? []).filter((entry) => entry?.ref !== secret.ref), structuredClone(secret)];
   return configuration;
 }
 
@@ -568,8 +601,10 @@ export function readRestoredCatalog(binding, prefix = oldPrefix) {
   try {
     database.exec("BEGIN");
     const records = readCatalogRecords(database, binding, frozen);
+    const registered = isFirstTools(frozen) ? rows(database, "SELECT count(*) AS count FROM capability_declarations WHERE owner_id=? AND agent_id=?", [binding.identity.ownerId, binding.identity.agentId])[0].count : 0;
     database.exec("COMMIT");
     verifyCatalogRecordsAtS0(records, frozen);
+    assert.equal(registered, 0, "__PKT_LABEL_UPPER___MAINTENANCE_RESTORED_CATALOG_HAS_REGISTRATIONS");
     return { ...records, capabilities: records.capabilities.map(({ record, ...rest }) => rest) };
   } finally {
     database.close();

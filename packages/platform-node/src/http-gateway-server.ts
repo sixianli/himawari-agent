@@ -1,3 +1,4 @@
+import type { DeviceSignInService } from "./device-sign-in.js";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { Readable } from "node:stream";
@@ -20,6 +21,9 @@ import {
 } from "@himawari-agent/application";
 import type { DeploymentHealthSnapshot } from "@himawari-agent/domain";
 import {
+  CHAT_ATTACHMENT_TEXT_CHARACTERS,
+  CHAT_IMAGE_DATA_URL,
+  CHAT_IMAGE_DATA_URL_CHARACTERS,
   ContractValidationError,
   type EventSubscription,
   type GatewayCommand,
@@ -44,7 +48,6 @@ import type { DeviceActionHub } from "./device-action-hub.js";
 import {
   type DeviceApiRouteOptions,
   type DeviceHomePort,
-  type DevicePairingAccess,
   registerDeviceApiRoutes,
   type UtterancePrefetchPort,
 } from "./device-api-routes.js";
@@ -59,6 +62,7 @@ import {
 import type { PerceptionService } from "./perception-service.js";
 import { withPreviewStorage } from "./preview-page-storage.js";
 import type { RuntimeMetricsSnapshot } from "./runtime-observability.js";
+import type { SpeechSynthesisPort } from "./speech-synthesis.js";
 import { PLAIN_TEXT_MAXIMUM_CHARACTERS, parseTextAdmission } from "./text-admission.js";
 
 export const HTTP_GATEWAY_ERROR_CODES = Object.freeze({
@@ -143,9 +147,11 @@ export interface HttpGatewayServerOptions {
     readonly audit: AuditLedgerPort;
     readonly onAuditFailed?: (failure: DeviceGatewayAuditFailure) => void;
     readonly push?: DevicePushPort;
-    readonly pairingAccess?: DevicePairingAccess;
+    readonly signIn?: DeviceSignInService;
+    readonly appleAppIds?: () => readonly string[];
     readonly perception?: PerceptionService;
     readonly vault?: (scope: PairedDeviceScope) => VaultService | undefined;
+    readonly connections?: DeviceApiRouteOptions["connections"];
     readonly actions?: {
       readonly service: (scope: PairedDeviceScope) => DeviceActionService | undefined;
       readonly hub: DeviceActionHub;
@@ -154,8 +160,12 @@ export interface HttpGatewayServerOptions {
     readonly home?: DeviceHomePort;
     readonly voiceGates?: () => VoiceGates;
     readonly prefetch?: UtterancePrefetchPort;
-    readonly addressee?: DeviceApiRouteOptions["addressee"];
+    readonly speech?: SpeechSynthesisPort;
     readonly exportArchive?: DeviceApiRouteOptions["exportArchive"];
+    readonly chatAttachments?: DeviceApiRouteOptions["chatAttachments"];
+    readonly chatModels?: DeviceApiRouteOptions["chatModels"];
+    readonly recordVoiceTiming?: DeviceApiRouteOptions["recordVoiceTiming"];
+    readonly listVoiceTiming?: DeviceApiRouteOptions["listVoiceTiming"];
   };
   readonly health?: HttpGatewayHealthPort;
   readonly metrics?: HttpGatewayMetricsPort;
@@ -240,10 +250,7 @@ const JSON_CONTENT_TYPE = "application/json";
 const SSE_CONTENT_TYPE = "text/event-stream; charset=utf-8";
 const DEFAULT_BODY_LIMIT = 256 * 1024;
 const DEFAULT_ASSET_LIMIT = 8 * 1024 * 1024;
-const ATTACHMENT_TEXT_CHARACTERS = 256 * 1024;
 const ATTACHMENT_BODY_LIMIT = 2 * 1024 * 1024;
-const IMAGE_DATA_URL_CHARACTERS = 1_500_000;
-const IMAGE_DATA_URL = /^data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+={0,2}$/;
 const DEFAULT_HEARTBEAT_MILLISECONDS = 15_000;
 const SLOW_REQUEST_MILLISECONDS = 2_000;
 const STREAM_PATH = /\/(?:execution-)?events$/;
@@ -934,6 +941,8 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
 
   app.setErrorHandler((error, _request, reply) => {
     if (error instanceof PairedDeviceError) {
+      const retryAfter = error.details["retryAfterSeconds"];
+      if (typeof retryAfter === "number") reply.header("retry-after", String(retryAfter));
       sendJson(reply, error.statusCode, { error: { ...error.details, code: error.code } });
       return;
     }
@@ -994,6 +1003,12 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
             : HTTP_GATEWAY_ERROR_CODES.REQUEST_INVALID,
       },
     });
+  });
+
+  app.get("/.well-known/apple-app-site-association", async (_request, reply) => {
+    const apps = options.devices?.appleAppIds?.() ?? [];
+    if (apps.length === 0) return sendJson(reply, 404, { error: { code: "NOT_FOUND" } });
+    return sendJson(reply, 200, { webcredentials: { apps: [...apps] } });
   });
 
   app.get("/health/live", async (_request, reply) => {
@@ -1330,14 +1345,15 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
       ...(options.devices.home ? { home: options.devices.home } : {}),
       devices: options.devices.service,
       configuration: options.devices.configuration,
-      ...(options.devices.pairingAccess ? { pairingAccess: options.devices.pairingAccess } : {}),
+      ...(options.devices.signIn ? { signIn: options.devices.signIn } : {}),
       ...(options.devices.perception ? { perception: options.devices.perception } : {}),
       ...(options.devices.actions ? { actions: options.devices.actions } : {}),
       ...(options.devices.vault ? { vault: options.devices.vault } : {}),
+      ...(options.devices.connections ? { connections: options.devices.connections } : {}),
       ...(options.devices.notifications ? { notifications: options.devices.notifications } : {}),
       ...(options.devices.voiceGates ? { voiceGates: options.devices.voiceGates } : {}),
       ...(options.devices.prefetch ? { prefetch: options.devices.prefetch } : {}),
-      ...(options.devices.addressee ? { addressee: options.devices.addressee } : {}),
+      ...(options.devices.speech ? { speech: options.devices.speech } : {}),
       ...(options.devices.exportArchive ? { exportArchive: options.devices.exportArchive } : {}),
       ...(options.files
         ? {
@@ -1378,9 +1394,19 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
             idempotencyKey: input.idempotencyKey,
             content: input.content,
             dataClassification: input.dataClassification ?? "private",
-            contentType: "text/plain",
+            contentType: input.contentType ?? "text/plain",
           })
         ).payloadRef,
+      ...(options.devices.listVoiceTiming
+        ? { listVoiceTiming: options.devices.listVoiceTiming }
+        : {}),
+      ...(options.devices.recordVoiceTiming
+        ? { recordVoiceTiming: options.devices.recordVoiceTiming }
+        : {}),
+      ...(options.devices.chatAttachments
+        ? { chatAttachments: options.devices.chatAttachments }
+        : {}),
+      ...(options.devices.chatModels ? { chatModels: options.devices.chatModels } : {}),
       streamThreadEvents: streamThreadGatewayEvents,
       ...(options.payloadRead
         ? {
@@ -1486,13 +1512,13 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
     app.post(
       "/api/payload/v1/attachment",
       { bodyLimit: ATTACHMENT_BODY_LIMIT },
-      admitText(ATTACHMENT_TEXT_CHARACTERS, "text/x-himawari-attachment"),
+      admitText(CHAT_ATTACHMENT_TEXT_CHARACTERS, "text/x-himawari-attachment"),
     );
     app.post(
       "/api/payload/v1/image",
       { bodyLimit: ATTACHMENT_BODY_LIMIT },
-      admitText(IMAGE_DATA_URL_CHARACTERS, "text/x-himawari-image", (content) =>
-        IMAGE_DATA_URL.test(content),
+      admitText(CHAT_IMAGE_DATA_URL_CHARACTERS, "text/x-himawari-image", (content) =>
+        CHAT_IMAGE_DATA_URL.test(content),
       ),
     );
   }

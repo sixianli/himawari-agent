@@ -17,14 +17,12 @@ import { DeviceSettings } from "./components/device-settings.js";
 import { AccountDevices, AccountLogin, accountRequest } from "./components/account-login.js";
 import { BrowserEntryScreen } from "./components/browser-entry-screen.js";
 import { ActionButton, Banner } from "./components/index.js";
-import { McpConnectionsSettings } from "./components/mcp-connections-settings.js";
 import {
   focusedMemoryIds,
   MemoryReminders,
   MemoryTurnNote,
   OPEN_MEMORY_PAGE,
 } from "./components/memory-panel.js";
-import { MuseDataSettings } from "./components/muse-reference.js";
 import { NotificationSettings } from "./components/notification-settings.js";
 import { AutoMemorySetting } from "./components/personalization-settings.js";
 import {
@@ -52,10 +50,8 @@ import {
   ControlCenterIntlProvider,
   useControlCenterIntl,
 } from "./i18n/runtime.js";
-import { mcpConnectionsInstalled } from "./mcp-connections.js";
 import { useMemory } from "./memory.js";
 import { requestMessageFocus } from "./message-focus.js";
-import { useMuse } from "./muse.js";
 import { useOwnerPreferenceSync } from "./owner-preferences.js";
 import { resumedAfterLongAbsence } from "./page-resume.js";
 import {
@@ -404,12 +400,6 @@ function LocalizedControlCenterApp({
     connected: connection !== "offline",
     refreshSignal: gatewayRefreshSignal + threadRefreshSignal,
   });
-  const muse = useMuse({
-    client,
-    configuration,
-    connected: connection !== "offline",
-    refreshSignal: gatewayRefreshSignal + threadRefreshSignal,
-  });
   const settingsOpen = route.page === "settings";
   const [sensitiveOpen, setSensitiveOpen] = useState(false);
   useEffect(() => {
@@ -466,7 +456,6 @@ function LocalizedControlCenterApp({
                 <RemindersPage
                   memory={memory}
                   proactive={proactive}
-                  muse={muse}
                   focus={reminderFocus}
                   locale={locale}
                   message={message}
@@ -593,19 +582,8 @@ function LocalizedControlCenterApp({
               />
             ) : null}
             {proactive ? <ProactiveDataSettings proactive={proactive} message={message} /> : null}
-            {muse ? <MuseDataSettings muse={muse} message={message} /> : null}
           </>
         )
-      }
-      settingsAgents={
-        client && configuration && mcpConnectionsInstalled(configuration) ? (
-          <McpConnectionsSettings
-            client={client}
-            configuration={configuration}
-            connected={threadConnection !== "offline"}
-            message={message}
-          />
-        ) : undefined
       }
       settingsDevices={
         configuration?.installedDeviceApi ? (

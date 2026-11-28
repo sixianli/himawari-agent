@@ -317,6 +317,17 @@ describe("chat export", () => {
       expect(everyText(files)).not.toContain(ref);
   });
 
+  it("[REPLY] a reply keeps only its own words in the export", async () => {
+    const s = await side("reply-tag");
+    await seedThread(s, "t-1", {
+      messages: [{ text: '<reply to="t-1-m0"/>\n要带伞吗？' }],
+    });
+    const { files } = await exportOf(s);
+    const [thread] = jsonl(files) as [ThreadRow];
+    expect(thread.messages[0]?.text).toBe("要带伞吗？");
+    expect(everyText(files)).not.toContain("reply to=");
+  });
+
   it("[多人7] an attachment name over 1024 characters is shortened and the export still verifies", async () => {
     const s = await side("long-attachment-name");
     await seedThread(s, "t-1", {

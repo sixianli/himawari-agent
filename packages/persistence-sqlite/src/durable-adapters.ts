@@ -1,4 +1,5 @@
 import type {
+  AppConnectionStorePort,
   ApplePushStorePort,
   AttentionStatePort,
   AuditLedgerPort,
@@ -16,15 +17,14 @@ import type {
   DeviceActionStorePort,
   ExecutionEnvironmentStorePort,
   ExternalMemoryProposalStorePort,
-  GapCaseMarkPort,
   GatewayReadModelPort,
   GitHubIntegrationStatePort,
   GovernanceMutationReceiptStorePort,
-  HomeUrgencyStorePort,
   InboxStorePort,
   LedgerObservationPort,
   McpConnectionStorePort,
   McpMemorySyncStorePort,
+  McpOAuthStorePort,
   MemoryBookStorePort,
   MemoryCaptureBacklogPort,
   MemoryCheckupStorePort,
@@ -38,7 +38,6 @@ import type {
   ModelBudgetPort,
   ModelInvocationIdentityPort,
   ModelUsageStorePort,
-  MuseIntakePort,
   OwnerIdentityStatePort,
   OwnerPreferencesStorePort,
   OwnerRuleStorePort,
@@ -314,6 +313,7 @@ export class SqliteDurableAdapters {
         this.context.read("trace.readRun", { runId, afterSequence, limit }),
       readSession: (sessionId, afterRecordedAt, limit) =>
         this.context.read("trace.readSession", { sessionId, afterRecordedAt, limit }),
+      readRecentByType: (input) => this.context.read("trace.readRecentByType", input),
     });
   }
 
@@ -934,6 +934,7 @@ export class SqliteDurableAdapters {
       appendHistory: (input) => this.context.write("memory.appendHistory", input),
       listHistory: (input) => this.context.read("memory.listHistory", input),
       readHistory: (input) => this.context.read("memory.readHistory", input),
+      listHistoryAfter: (input) => this.context.read("memory.listHistoryAfter", input),
       numbers: (input) => this.context.read("memory.numbers", input),
       byNumber: (input) => this.context.read("memory.byNumber", input),
     });
@@ -1055,26 +1056,27 @@ export class SqliteDurableAdapters {
     });
   }
 
-  mcpConnections(): McpConnectionStorePort {
-    return Object.freeze<McpConnectionStorePort>({
-      create: (input) => this.context.write("mcpConnection.create", input),
-      list: (input) => this.context.read("mcpConnection.list", input),
-      read: (input) => this.context.read("mcpConnection.read", input),
-      findBySecret: (input) => this.context.read("mcpConnection.findBySecret", input),
-      change: (input) => this.context.write("mcpConnection.change", input),
-      rotateSecret: (input) => this.context.write("mcpConnection.rotateSecret", input),
-      touch: (input) => this.context.write("mcpConnection.touch", input),
-      addUsage: (input) => this.context.write("mcpConnection.addUsage", input),
-      usage: (input) => this.context.read("mcpConnection.usage", input),
+  mcpOAuth(): McpOAuthStorePort {
+    return Object.freeze<McpOAuthStorePort>({
+      registerClient: (input) => this.context.write("mcpOAuth.registerClient", input),
+      readClient: (input) => this.context.read("mcpOAuth.readClient", input),
+      bindGrant: (input) => this.context.write("mcpOAuth.bindGrant", input),
+      issueTokens: (input) => this.context.write("mcpOAuth.issueTokens", input),
+      findAccess: (input) => this.context.read("mcpOAuth.findAccess", input),
+      rotateRefresh: (input) => this.context.write("mcpOAuth.rotateRefresh", input),
+      revokeToken: (input) => this.context.write("mcpOAuth.revokeToken", input),
+      pruneExpired: (input) => this.context.write("mcpOAuth.pruneExpired", input),
     });
   }
 
-  homeUrgency(): HomeUrgencyStorePort {
-    return Object.freeze<HomeUrgencyStorePort>({
-      listScores: (input) => this.context.read("homeUrgency.listScores", input),
-      listRecentFailures: (input) => this.context.read("homeUrgency.listRecentFailures", input),
-      countSince: (input) => this.context.read("homeUrgency.countSince", input),
-      recordCall: (input) => this.context.write("homeUrgency.recordCall", input),
+  mcpConnections(): McpConnectionStorePort {
+    return Object.freeze<McpConnectionStorePort>({
+      list: (input) => this.context.read("mcpConnection.list", input),
+      read: (input) => this.context.read("mcpConnection.read", input),
+      change: (input) => this.context.write("mcpConnection.change", input),
+      touch: (input) => this.context.write("mcpConnection.touch", input),
+      addUsage: (input) => this.context.write("mcpConnection.addUsage", input),
+      usage: (input) => this.context.read("mcpConnection.usage", input),
     });
   }
 
@@ -1105,6 +1107,13 @@ export class SqliteDurableAdapters {
       spentMicros: (input) => this.context.read("subthread.spentMicros", input),
       listExchanges: (input) => this.context.read("subthread.listExchanges", input),
       recordExchange: (input) => this.context.write("subthread.recordExchange", input),
+      listAwaitingApproval: (input) => this.context.read("subthread.listAwaitingApproval", input),
+      createTimer: (input) => this.context.write("subthread.createTimer", input),
+      readTimer: (input) => this.context.read("subthread.readTimer", input),
+      listTimers: (input) => this.context.read("subthread.listTimers", input),
+      listDueTimers: (input) => this.context.read("subthread.listDueTimers", input),
+      advanceTimer: (input) => this.context.write("subthread.advanceTimer", input),
+      setTimerStatus: (input) => this.context.write("subthread.setTimerStatus", input),
       recordResult: (input) => this.context.write("subthread.recordResult", input),
       listResults: (input) => this.context.read("subthread.listResults", input),
       readResult: (input) => this.context.write("subthread.readResult", input),
@@ -1127,6 +1136,8 @@ export class SqliteDurableAdapters {
       clearSummary: (input) => this.context.write("inbox.clearSummary", input),
       readSettings: (input) => this.context.write("inbox.readSettings", input),
       changeSettings: (input) => this.context.write("inbox.changeSettings", input),
+      recordUrgency: (input) => this.context.write("inbox.recordUrgency", input),
+      readUrgency: (input) => this.context.write("inbox.readUrgency", input),
     });
   }
 
@@ -1220,12 +1231,23 @@ export class SqliteDurableAdapters {
       markPushEnqueued: (input) => this.context.write("proactive.markPushEnqueued", input),
       readPush: (input) => this.context.read("proactive.readPush", input),
       readInsights: (input) => this.context.read("proactive.readInsights", input),
-      previewBackoff: (input) => this.context.read("proactive.previewBackoff", input),
-      listBackoff: (input) => this.context.read("proactive.listBackoff", input),
-      restoreBackoff: (input) => this.context.write("proactive.restoreBackoff", input),
       listSourceSettings: (input) => this.context.read("proactive.listSourceSettings", input),
       writeSourceSettings: (input) => this.context.write("proactive.writeSourceSettings", input),
       processedSince: (input) => this.context.read("proactive.processedSince", input),
+    });
+  }
+  appConnections(): AppConnectionStorePort {
+    return Object.freeze<AppConnectionStorePort>({
+      read: (input) => this.context.read("appConnections.read", input),
+      list: (input) => this.context.read("appConnections.list", input),
+      save: (input) => this.context.write("appConnections.save", input),
+      mark: (input) => this.context.write("appConnections.mark", input),
+      remove: (input) => this.context.write("appConnections.remove", input),
+      listApps: (input) => this.context.read("appConnections.listApps", input),
+      addApp: (input) => this.context.write("appConnections.addApp", input),
+      removeApp: (input) => this.context.write("appConnections.removeApp", input),
+      readClient: (input) => this.context.read("appConnections.readClient", input),
+      saveClient: (input) => this.context.write("appConnections.saveClient", input),
     });
   }
   ownerPreferences(): OwnerPreferencesStorePort {
@@ -1235,31 +1257,23 @@ export class SqliteDurableAdapters {
     });
   }
 
-  gapCaseMarks(): GapCaseMarkPort {
-    return Object.freeze<GapCaseMarkPort>({
-      mark: (input) => this.context.write("decisionLedger.gapMark", input),
-      unmark: (input) => this.context.write("decisionLedger.gapUnmark", input),
-      list: (input) => this.context.read("decisionLedger.gapMarks", input),
-    });
-  }
-
   decisionLedger(): DecisionLedgerPort {
     return Object.freeze<DecisionLedgerPort>({
       append: (input) => this.context.write("decisionLedger.append", input),
       recordSpoken: (input) => this.context.write("decisionLedger.recordSpoken", input),
+      spokenMessages: (input) => this.context.read("decisionLedger.spokenMessages", input),
+      readSpoken: (input) => this.context.read("decisionLedger.readSpoken", input),
+      spokenStats: (input) => this.context.read("decisionLedger.spokenStats", input),
       appendIfChanged: (input) => this.context.write("decisionLedger.appendIfChanged", input),
       list: (input) => this.context.read("decisionLedger.list", input),
       read: (input) => this.context.read("decisionLedger.read", input),
       rate: (input) => this.context.write("decisionLedger.rate", input),
       listReviewPool: (input) => this.context.read("decisionLedger.listReviewPool", input),
       rateMany: (input) => this.context.write("decisionLedger.rateMany", input),
-      recordMuse: (input) => this.context.write("decisionLedger.recordMuse", input),
-      listMuse: (input) => this.context.read("decisionLedger.listMuse", input),
       lastRuleUses: (input) => this.context.read("decisionLedger.lastRuleUses", input),
       listSignals: (input) => this.context.read("decisionLedger.listSignals", input),
       readCalibrationRows: (input) =>
         this.context.read("decisionLedger.readCalibrationRows", input),
-      readGapCandidates: (input) => this.context.read("decisionLedger.readGapCandidates", input),
       readMailTrace: (input) => this.context.read("decisionLedger.readMailTrace", input),
     });
   }
@@ -1276,18 +1290,6 @@ export class SqliteDurableAdapters {
       appendCheck: (input) => this.context.write("ledgerObservation.appendCheck", input),
       listChecks: (input) => this.context.read("ledgerObservation.listChecks", input),
       listEvents: (input) => this.context.read("ledgerObservation.listEvents", input),
-    });
-  }
-
-  museIntake(): MuseIntakePort {
-    return Object.freeze<MuseIntakePort>({
-      ingestBatch: (input) => this.context.write("museIntake.ingestBatch", input),
-      listItems: (input) => this.context.read("museIntake.listItems", input),
-      channelStatus: (input) => this.context.read("museIntake.channelStatus", input),
-      checkChannel: (input) => this.context.write("museIntake.checkChannel", input),
-      setPaused: (input) => this.context.write("museIntake.setPaused", input),
-      rate: (input) => this.context.write("museIntake.rate", input),
-      clearAll: (input) => this.context.write("museIntake.clearAll", input),
     });
   }
 
@@ -1328,12 +1330,11 @@ export class SqliteDurableAdapters {
 
   pairedDevices(): PairedDeviceStorePort {
     return Object.freeze<PairedDeviceStorePort>({
-      createPairingCode: (input) => this.context.write("pairedDevices.createPairingCode", input),
-      redeemPairingCode: (input) => this.context.write("pairedDevices.redeemPairingCode", input),
+      listPasskeys: (input) => this.context.read("pairedDevices.listPasskeys", input),
+      readPasskey: (credentialId) => this.context.read("pairedDevices.readPasskey", credentialId),
+      signInDevice: (input) => this.context.write("pairedDevices.signInDevice", input),
       readDevice: (deviceId) => this.context.read("pairedDevices.readDevice", deviceId),
       listDevices: (input) => this.context.read("pairedDevices.listDevices", input),
-      readOpenPairingCode: (input) => this.context.read("pairedDevices.readOpenPairingCode", input),
-      confirmDevice: (input) => this.context.write("pairedDevices.confirmDevice", input),
       renameDevice: (input) => this.context.write("pairedDevices.renameDevice", input),
       revokeDevice: (input) => this.context.write("pairedDevices.revokeDevice", input),
       recordNonce: (input) => this.context.write("pairedDevices.recordNonce", input),
@@ -1356,6 +1357,14 @@ export class SqliteDurableAdapters {
       setCompanion: (input) => this.context.write("applePush.setCompanion", input),
       listActivityRuns: (input) => this.context.read("applePush.listActivityRuns", input),
       readActivityRuns: (input) => this.context.read("applePush.readActivityRuns", input),
+      saveBackgroundActivity: (input) =>
+        this.context.write("applePush.saveBackgroundActivity", input),
+      removeBackgroundActivity: (input) =>
+        this.context.write("applePush.removeBackgroundActivity", input),
+      listBackgroundActivities: (input) =>
+        this.context.read("applePush.listBackgroundActivities", input),
+      markBackgroundActivity: (input) =>
+        this.context.write("applePush.markBackgroundActivity", input),
       prune: (input) => this.context.write("applePush.prune", input),
     });
   }

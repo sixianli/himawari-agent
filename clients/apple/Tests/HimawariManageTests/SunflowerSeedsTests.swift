@@ -37,4 +37,78 @@ final class SunflowerSeedsTests: XCTestCase {
             XCTAssertEqual(Double(seeds) / SunflowerSeeds.growthPerSecond(seeds: seeds), SunflowerSeeds.fullGrowthSeconds, accuracy: 0.0001)
         }
     }
+
+    private func visible(_ growth: Double, _ seeds: Int) -> Int {
+        SunflowerSeeds.at(growth: growth, seeds: seeds, startsEmpty: true).filter { $0.radius > 0 }.count
+    }
+
+    func testBusyMarkBreathesBetweenSeventyPercentAndTheWholeFlower() {
+        let counts = stride(from: 0.0, through: 20.0, by: 0.05).map {
+            visible(SunflowerSeeds.breathing(seconds: $0, seeds: 34, low: 0.7), 34)
+        }
+        XCTAssertEqual(counts.min(), 24)
+        XCTAssertEqual(counts.max(), 34)
+    }
+
+    func testTheChatPuckBreathesItsOwnEightyNineSeedsInsteadOfTheSizeTier() {
+        let seeds = Int(DesignTokens.Chat.puckSeeds)
+        XCTAssertEqual(seeds, 89)
+        XCTAssertEqual(SunflowerSeeds.seedCount(forDiameter: Double(DesignTokens.Chat.puckMark)), 34)
+        XCTAssertEqual(drawn(seeds).count, 89)
+        let counts = stride(from: 0.0, through: 20.0, by: 0.05).map {
+            visible(SunflowerSeeds.breathing(seconds: $0, seeds: seeds, low: Double(DesignTokens.Chat.puckBusyLow)), seeds)
+        }
+        XCTAssertEqual(counts.min(), 63)
+        XCTAssertEqual(counts.max(), 89)
+        let leg = Double(seeds) * (1 - Double(DesignTokens.Chat.puckBusyLow)) / SunflowerSeeds.growthPerSecond(seeds: seeds)
+        XCTAssertEqual(leg, SunflowerSeeds.fullGrowthSeconds * 0.3, accuracy: 0.0001)
+    }
+
+    func testBreathingMovesAtTheUsualGrowthSpeed() {
+        let leg = 34 * 0.3 / SunflowerSeeds.growthPerSecond(seeds: 34)
+        XCTAssertEqual(SunflowerSeeds.breathing(seconds: 0, seeds: 34, low: 0.7), 34 * 0.7, accuracy: 0.0001)
+        XCTAssertEqual(SunflowerSeeds.breathing(seconds: leg, seeds: 34, low: 0.7), 34, accuracy: 0.0001)
+        XCTAssertEqual(SunflowerSeeds.breathing(seconds: 2 * leg, seeds: 34, low: 0.7), 34 * 0.7, accuracy: 0.0001)
+    }
+
+    func testTheEmptyChatFlowerGrowsOnceAndStaysWhole() {
+        XCTAssertEqual(visible(SunflowerSeeds.growingOnce(seconds: 0, seeds: 144), 144), 0)
+        XCTAssertEqual(SunflowerSeeds.growingOnce(seconds: 1000, seeds: 144), SunflowerSeeds.resting(seeds: 144))
+        XCTAssertEqual(visible(SunflowerSeeds.growingOnce(seconds: 1000, seeds: 144), 144), 144)
+    }
+
+    func testAnIdleMarkKeepsGrowingNewSeedsMoreSlowlyThanAnAnsweringOne() {
+        let seeds = 89
+        let rest = SunflowerSeeds.resting(seeds: seeds)
+        XCTAssertEqual(SunflowerSeeds.idling(seconds: 0, seeds: seeds), rest)
+        let idleAfterTen = SunflowerSeeds.idling(seconds: 10, seeds: seeds)
+        let busyAfterTen = rest + 10 * SunflowerSeeds.growthPerSecond(seeds: seeds)
+        XCTAssertGreaterThan(idleAfterTen, rest + 1)
+        XCTAssertLessThan(idleAfterTen, busyAfterTen)
+        XCTAssertGreaterThan(SunflowerSeeds.idling(seconds: 60, seeds: seeds), idleAfterTen)
+    }
+
+    func testTheNewestSeedsStandOutOnTheLightBackgroundAndStayPaleOnTheDarkOne() {
+        let growth = SunflowerSeeds.resting(seeds: 89)
+        let newest = { (onLight: Bool) in
+            SunflowerSeeds.at(growth: growth, seeds: 89, onLight: onLight).filter { $0.radius > 0 }.min { $0.radius < $1.radius }!
+        }
+        let lightBackground = luminance(252, 252, 251)
+        let light = newest(true)
+        XCTAssertGreaterThanOrEqual(contrast(luminance(light.red * 255, light.green * 255, light.blue * 255), lightBackground), 4.5)
+        let dark = newest(false)
+        XCTAssertEqual([dark.red, dark.green, dark.blue].map { ($0 * 255).rounded() }, [255, 236, 170])
+    }
+
+    private func luminance(_ r: Double, _ g: Double, _ b: Double) -> Double {
+        let channel = { (value: Double) -> Double in
+            let c = value / 255
+            return c <= 0.03928 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4)
+        }
+        return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
+    }
+
+    private func contrast(_ a: Double, _ b: Double) -> Double {
+        (max(a, b) + 0.05) / (min(a, b) + 0.05)
+    }
 }

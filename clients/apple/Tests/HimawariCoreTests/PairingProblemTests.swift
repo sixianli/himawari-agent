@@ -16,6 +16,13 @@ import Testing
         #expect(PairingProblem.from(DeviceKeyError.secureEnclaveUnavailable) == .keysUnavailable)
     }
 
+    @Test func aKeyThatCannotBeMadeOrReadIsAKeyProblemNotAnUnreachableServer() {
+        for error in [DeviceKeyError.notCreated(.confirm), .keyUnreadable(.confirm)] {
+            #expect(PairingProblem.from(error) == .keysUnavailable)
+            #expect(!PairingAttempt.mayHavePaired(error))
+        }
+    }
+
     @Test func recordRoundTripsWithoutLosingTheNumber() throws {
         let record = PairingRecord(origin: URL(string: "https://a.test")!, deviceId: "dev_x", access: ServiceAccessToken(clientId: "i", secret: "s"), status: .pending, pairingNumber: "012345")
         let decoded = try JSONDecoder().decode(PairingRecord.self, from: JSONEncoder().encode(record))

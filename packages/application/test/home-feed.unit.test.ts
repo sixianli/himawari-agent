@@ -84,11 +84,11 @@ describe("home feed ordering", () => {
     ["insight:rule", "rule"],
     ["reminder:overdue", "deadline"],
     ["approval:soon", "deadline"],
-    ["approval:later", "unscored"],
-    ["memory_request:new", "unscored"],
-    ["memory_request:tie-a", "unscored"],
-    ["memory_request:tie-b", "unscored"],
-    ["memory_request:old", "unscored"],
+    ["approval:later", "awaiting"],
+    ["memory_request:new", "awaiting"],
+    ["memory_request:tie-a", "awaiting"],
+    ["memory_request:tie-b", "awaiting"],
+    ["memory_request:old", "awaiting"],
     ["tidy:new", "recency"],
     ["run:old", "recency"],
   ];
@@ -112,7 +112,7 @@ describe("home feed ordering", () => {
 
   it("stops raising a deadline once the lead time is set to zero and the deadline is still ahead", () => {
     const ordered = orderHomeItems(candidates, NOW, 0);
-    expect(ordered.find(({ key }) => key === "approval:soon")?.rank).toBe("unscored");
+    expect(ordered.find(({ key }) => key === "approval:soon")?.rank).toBe("awaiting");
     expect(ordered.find(({ key }) => key === "reminder:overdue")?.rank).toBe("deadline");
   });
 

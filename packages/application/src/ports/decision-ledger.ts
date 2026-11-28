@@ -1,18 +1,10 @@
-import type {
-  CalibrationDecisionRow,
-  ImplicitSignalRow,
-  MailJudgment,
-  MuseEntryRow,
-} from "@himawari-agent/calibration";
+import type { CalibrationDecisionRow, ImplicitSignalRow } from "@himawari-agent/calibration";
 import type { PrereviewWeekRow } from "@himawari-agent/calibration/prereview";
 import type { AgentId, OwnerId } from "@himawari-agent/domain";
 import type { RuleBookVersion } from "../rules/rule-ref.js";
-import type { ProactiveScope } from "./proactive-checks.js";
 
 export interface CalibrationRowsSnapshot {
   readonly decisions: readonly CalibrationDecisionRow[];
-  readonly entries: readonly MuseEntryRow[];
-  readonly mailJudgments: readonly (readonly [string, MailJudgment])[];
   readonly signals: readonly ImplicitSignalRow[];
   readonly prereviews: readonly PrereviewWeekRow[];
 }
@@ -241,70 +233,6 @@ export interface DecisionRecordRead {
   readonly ruleVersions?: Readonly<Record<string, RuleBookVersion>>;
 }
 
-interface MuseReferenceBase {
-  readonly id: string;
-  readonly ownerId: OwnerId;
-  readonly agentId: AgentId;
-  readonly museAt: string;
-  readonly noteRef: string | null;
-  readonly intakeItemKey?: string | null;
-  readonly pairedMessageId?: string | null;
-  readonly recordedAt: string;
-}
-
-export interface MuseRemindedWrite extends MuseReferenceBase {
-  readonly museReminded: true;
-  readonly timingOk: boolean;
-  readonly contentOk: boolean;
-  readonly contentRef: string | null;
-  readonly pairedDecisionId: string | null;
-}
-
-export interface MuseSilentWrite extends MuseReferenceBase {
-  readonly museReminded: false;
-  readonly pairedDecisionId: string | null;
-}
-
-export type MuseReferenceWrite = MuseRemindedWrite | MuseSilentWrite;
-
-export interface MuseReferenceEntry {
-  readonly id: string;
-  readonly museAt: string;
-  readonly museReminded: boolean;
-  readonly timingOk: boolean | null;
-  readonly contentOk: boolean | null;
-  readonly contentRef: string | null;
-  readonly noteRef: string | null;
-  readonly pairedDecisionId: string | null;
-  readonly intakeItemKey: string | null;
-  readonly pairedMessageId: string | null;
-  readonly recordedAt: string;
-}
-
-export interface GapCandidate {
-  readonly entryId: string;
-  readonly museAt: string;
-  readonly timingOk: boolean | null;
-  readonly contentOk: boolean | null;
-  readonly pairedMessageId: string;
-  readonly museTitleRef: string | null;
-  readonly museTextRef: string | null;
-  readonly museContentRef: string | null;
-  readonly museTextWithheld: boolean;
-  readonly decisionId: string;
-  readonly outcome: string;
-  readonly ownerRating: DecisionRating | null;
-  readonly reasonCode: string;
-  readonly reasonRef: string | null;
-  readonly decidedAt: string;
-  readonly relatedRead: string | null;
-  readonly memoryRecall: string | null;
-  readonly memoryHitsForMail: number;
-  readonly relatedMessagesForMail: number;
-}
-
-export const MAIL_TRACE_MUSE_LIMIT = 20;
-
 export interface MailTraceProcessed {
   readonly decisionId: string;
   readonly threadId: string;
@@ -314,23 +242,8 @@ export interface MailTraceProcessed {
   readonly processedAt: string;
 }
 
-export interface MailTraceMuseEntry {
-  readonly entryId: string;
-  readonly museAt: string;
-  readonly museReminded: boolean;
-  readonly timingOk: boolean | null;
-  readonly contentOk: boolean | null;
-  readonly kind: string | null;
-  readonly state: string | null;
-  readonly titleRef: string | null;
-  readonly textRef: string | null;
-  readonly contentRef: string | null;
-  readonly textWithheld: boolean;
-}
-
 export interface MailTrace {
   readonly processed: MailTraceProcessed | null;
-  readonly museEntries: readonly MailTraceMuseEntry[];
 }
 
 export interface RuleLastUse {
@@ -349,6 +262,8 @@ export const SPOKEN_VERDICTS = ["pushed", "silent"] as const;
 
 export type SpokenVerdict = (typeof SPOKEN_VERDICTS)[number];
 
+export const SPOKEN_REASON_CODES = { pushed: "told_pushed", inApp: "told_in_app" } as const;
+
 export interface SpokenDecisionWrite {
   readonly id: string;
   readonly ownerId: OwnerId;
@@ -366,9 +281,40 @@ export interface SpokenDecisionWrite {
   readonly durationMs: number;
 }
 
+export interface SpokenDecisionRecord {
+  readonly id: string;
+  readonly scenario: string;
+  readonly decidedAt: string;
+  readonly verdict: SpokenVerdict;
+  readonly subjectRef: string;
+  readonly sourceIds: readonly string[];
+  readonly reasonRef: string | null;
+  readonly rating: DecisionRating | null;
+  readonly durationMs: number;
+}
+
+export interface SpokenStats {
+  readonly spoken: number;
+  readonly rated: number;
+  readonly useful: number;
+  readonly unneeded: number;
+}
+
 export interface DecisionLedgerPort {
   append(write: DecisionLedgerWrite): Promise<void>;
   recordSpoken(write: SpokenDecisionWrite): Promise<boolean>;
+  spokenMessages(
+    input: DecisionLedgerScope & {
+      readonly messageIds: readonly string[];
+      readonly since: string;
+    },
+  ): Promise<readonly string[]>;
+  readSpoken(
+    input: DecisionLedgerScope & { readonly messageId: string },
+  ): Promise<readonly SpokenDecisionRecord[]>;
+  spokenStats(
+    input: DecisionLedgerScope & { readonly start: string; readonly end: string },
+  ): Promise<SpokenStats>;
   appendIfChanged(input: {
     readonly write: DecisionLedgerWrite;
     readonly reasonCodes: readonly string[];
@@ -409,42 +355,14 @@ export interface DecisionLedgerPort {
   listSignals(
     input: DecisionLedgerScope & { readonly decisionIds: readonly string[] },
   ): Promise<readonly DecisionSignalEntry[]>;
-  recordMuse(write: MuseReferenceWrite): Promise<void>;
   readCalibrationRows(input: {
     readonly ownerId: OwnerId;
     readonly agentId: AgentId;
     readonly start: string;
     readonly end: string;
   }): Promise<CalibrationRowsSnapshot>;
-  listMuse(
-    input: DecisionLedgerScope & { readonly since: string; readonly limit: number },
-  ): Promise<readonly MuseReferenceEntry[]>;
   lastRuleUses(
     input: DecisionLedgerScope & { readonly ruleIds: readonly string[] },
   ): Promise<readonly RuleLastUse[]>;
   readMailTrace(input: DecisionLedgerScope & { readonly messageId: string }): Promise<MailTrace>;
-  readGapCandidates(input: {
-    readonly ownerId: OwnerId;
-    readonly agentId: AgentId;
-    readonly start: string;
-    readonly end: string;
-  }): Promise<readonly GapCandidate[]>;
-}
-
-export interface GapCaseMarkRow {
-  readonly caseId: string;
-  readonly snapshotRef: string;
-  readonly markedAt: string;
-}
-
-export interface GapCaseMarkPort {
-  mark(
-    input: ProactiveScope & {
-      readonly caseId: string;
-      readonly snapshotRef: string;
-      readonly at: string;
-    },
-  ): Promise<boolean>;
-  unmark(input: ProactiveScope & { readonly caseId: string }): Promise<string | null>;
-  list(input: ProactiveScope): Promise<readonly GapCaseMarkRow[]>;
 }

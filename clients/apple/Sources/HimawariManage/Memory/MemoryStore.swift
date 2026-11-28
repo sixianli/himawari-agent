@@ -40,6 +40,22 @@ public final class MemoryStore {
         }
     }
 
+    public func search(_ query: String) async throws -> [MemorySearchHit] {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+        let data = try await gateway.read(.v2, "memory.search.read", payload: ["query": .string(trimmed)])
+        return try JSONDecoder().decode(Snapshot<MemorySearchSnapshot>.self, from: data).payload.results
+    }
+
+    public func memory(_ id: String) -> MemoryItem? {
+        overview?.memories.first { $0.memoryId == id && $0.status == "active" }
+    }
+
+    public func rule(_ id: String?) -> RuleSummary? {
+        guard let id else { return nil }
+        return rules.first { $0.ruleId == id }
+    }
+
     public func groups(categoryLabel: (String) -> String) -> [MemoryGroup] {
         MemoryOrganizer.groups(overview?.memories ?? [], categoryLabel: categoryLabel)
     }
@@ -163,7 +179,7 @@ public final class MemoryStore {
     public func summary(categoryLabel: (String) -> String) -> MemorySummary? {
         guard phase == .loaded else { return nil }
         let shown = groups(categoryLabel: categoryLabel)
-        return MemorySummary(memories: shown.reduce(0) { $0 + $1.items.count }, rules: rules.count)
+        return MemorySummary(memories: shown.reduce(0) { $0 + $1.items.count })
     }
 
     public func setCapturePaused(_ paused: Bool, reason: String) async throws {

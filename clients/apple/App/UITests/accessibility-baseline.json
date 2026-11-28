@@ -1,0 +1,1132 @@
+[
+  {
+    "key": "04-chat|light|sufficientElementDescription",
+    "count": 1,
+    "why": "有能点或能读的元素没有名字；交 iPhone 编码线程按第 76 条补 accessibilityLabel"
+  },
+  {
+    "key": "05-memory|dark|contrast",
+    "count": 6,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "05-memory|light|contrast",
+    "count": 7,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "06-memory-detail|dark|contrast",
+    "count": 4,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "06-memory-detail|light|contrast",
+    "count": 4,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "06-memory-detail|light|textClipped",
+    "count": 3,
+    "why": "放大字号后文字可能被截断；交 iPhone 编码线程按第 73 条改（挤不下就换行或竖排）"
+  },
+  {
+    "key": "11-pairing|light|contrast",
+    "count": 2,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "11-pairing|light|dynamicType",
+    "count": 3,
+    "why": "文字不完全跟动态字体放大（多半是 RootView 把字号封顶在 accessibility2，以及固定行高）；交 iPhone 编码线程按第 73 条改"
+  },
+  {
+    "key": "11-pairing|light|textClipped",
+    "count": 5,
+    "why": "去掉 RootView 的字号上限后，最大无障碍字号下这些文字被截断（之前被上限挡住没量到）；交 iPhone 编码线程按第 73 条改成能换行或改排版"
+  },
+  {
+    "key": "15-pairing-flow-1b-confirm-server|light|contrast",
+    "count": 2,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "15-pairing-flow-1b-confirm-server|light|sufficientElementDescription",
+    "count": 1,
+    "why": "有能点或能读的元素没有名字；交 iPhone 编码线程按第 76 条补 accessibilityLabel"
+  },
+  {
+    "key": "15-pairing-flow-2-waiting|light|textClipped",
+    "count": 1,
+    "why": "放大字号后文字可能被截断；交 iPhone 编码线程按第 73 条改（挤不下就换行或竖排）"
+  },
+  {
+    "key": "15-pairing-flow-3-expired|dark|contrast",
+    "count": 1,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "15-pairing-flow-3-expired|light|contrast",
+    "count": 1,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "15-pairing-flow-3-expired|light|textClipped",
+    "count": 1,
+    "why": "放大字号后文字可能被截断；交 iPhone 编码线程按第 73 条改（挤不下就换行或竖排）"
+  },
+  {
+    "key": "15-pairing-flow-4-unreachable|light|contrast",
+    "count": 1,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "15-pairing-flow-4-unreachable|light|textClipped",
+    "count": 1,
+    "why": "放大字号后文字可能被截断；交 iPhone 编码线程按第 73 条改（挤不下就换行或竖排）"
+  },
+  {
+    "key": "15-pairing-flow-5-removed|dark|contrast",
+    "count": 2,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "15-pairing-flow-5-removed|light|contrast",
+    "count": 2,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "15-pairing-flow-5-removed|light|textClipped",
+    "count": 2,
+    "why": "去掉 RootView 的字号上限后，最大无障碍字号下这些文字被截断（之前被上限挡住没量到）；交 iPhone 编码线程按第 73 条改成能换行或改排版"
+  },
+  {
+    "key": "16-chat-states-1-empty|light|sufficientElementDescription",
+    "count": 1,
+    "why": "有能点或能读的元素没有名字；交 iPhone 编码线程按第 76 条补 accessibilityLabel"
+  },
+  {
+    "key": "16-chat-states-3-sending|light|sufficientElementDescription",
+    "count": 1,
+    "why": "有能点或能读的元素没有名字；交 iPhone 编码线程按第 76 条补 accessibilityLabel"
+  },
+  {
+    "key": "16-chat-states-4-offline|light|sufficientElementDescription",
+    "count": 1,
+    "why": "有能点或能读的元素没有名字；交 iPhone 编码线程按第 76 条补 accessibilityLabel"
+  },
+  {
+    "key": "16-chat-states-5-answering|light|sufficientElementDescription",
+    "count": 1,
+    "why": "有能点或能读的元素没有名字；交 iPhone 编码线程按第 76 条补 accessibilityLabel"
+  },
+  {
+    "key": "16-chat-states-6-steps|dark|contrast",
+    "count": 3,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "16-chat-states-6-steps|light|contrast",
+    "count": 3,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "16-chat-states-6-steps|light|sufficientElementDescription",
+    "count": 1,
+    "why": "有能点或能读的元素没有名字；交 iPhone 编码线程按第 76 条补 accessibilityLabel"
+  },
+  {
+    "key": "16-chat-states-6-steps|light|textClipped",
+    "count": 5,
+    "why": "放大字号后文字可能被截断；交 iPhone 编码线程按第 73 条改（挤不下就换行或竖排）"
+  },
+  {
+    "key": "17-today-more-1-approvals|dark|contrast",
+    "count": 7,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "17-today-more-1-approvals|light|contrast",
+    "count": 7,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "17-today-more-1-approvals|light|textClipped",
+    "count": 2,
+    "why": "放大字号后文字可能被截断；交 iPhone 编码线程按第 73 条改（挤不下就换行或竖排）"
+  },
+  {
+    "key": "17-today-more-2-detail|dark|contrast",
+    "count": 2,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "17-today-more-2-detail|light|contrast",
+    "count": 2,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "17-today-more-2-detail|light|textClipped",
+    "count": 1,
+    "why": "去掉 RootView 的字号上限后，最大无障碍字号下这些文字被截断（之前被上限挡住没量到）；交 iPhone 编码线程按第 73 条改成能换行或改排版"
+  },
+  {
+    "key": "17-today-more-3-detail-face-id|dark|contrast",
+    "count": 5,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "17-today-more-3-detail-face-id|light|contrast",
+    "count": 5,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "17-today-more-3-detail-face-id|light|textClipped",
+    "count": 2,
+    "why": "去掉 RootView 的字号上限后，最大无障碍字号下这些文字被截断（之前被上限挡住没量到）；交 iPhone 编码线程按第 73 条改成能换行或改排版"
+  },
+  {
+    "key": "18-memory-more-1-edit|light|textClipped",
+    "count": 1,
+    "why": "放大字号后文字可能被截断；交 iPhone 编码线程按第 73 条改（挤不下就换行或竖排）"
+  },
+  {
+    "key": "18-memory-more-2-rules|dark|contrast",
+    "count": 2,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "18-memory-more-2-rules|light|contrast",
+    "count": 2,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "18-memory-more-3-rule-detail|dark|contrast",
+    "count": 3,
+    "why": "第一次真正在深色下量出来的（之前“深色”那一遍其实在浅色下跑，事故 I-121）：浅灰小字在深色底上对比度不够；协调者 2026-11-27 定按实测登记，PR 745 合并后在本线程把深色灰字调亮修掉"
+  },
+  {
+    "key": "18-memory-more-3-rule-detail|light|contrast",
+    "count": 1,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "18-memory-more-3-rule-detail|light|textClipped",
+    "count": 2,
+    "why": "放大字号后文字可能被截断；交 iPhone 编码线程按第 73 条改（挤不下就换行或竖排）"
+  },
+  {
+    "key": "19-senses-1-overview|dark|contrast",
+    "count": 9,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "19-senses-1-overview|light|contrast",
+    "count": 11,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "19-senses-2-intro|dark|contrast",
+    "count": 1,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "19-senses-2-intro|light|contrast",
+    "count": 1,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "19-senses-4-detail|dark|contrast",
+    "count": 6,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "19-senses-4-detail|light|contrast",
+    "count": 6,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "19-senses-4-detail|light|textClipped",
+    "count": 3,
+    "why": "去掉 RootView 的字号上限后，最大无障碍字号下这些文字被截断（之前被上限挡住没量到）；交 iPhone 编码线程按第 73 条改成能换行或改排版"
+  },
+  {
+    "key": "19-senses-5-denied|light|textClipped",
+    "count": 3,
+    "why": "去掉 RootView 的字号上限后，最大无障碍字号下这些文字被截断（之前被上限挡住没量到）；交 iPhone 编码线程按第 73 条改成能换行或改排版"
+  },
+  {
+    "key": "19-senses-6-share-sheet|dark|contrast",
+    "count": 1,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "19-senses-6-share-sheet|light|contrast",
+    "count": 1,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "19-senses-6-share-sheet|light|textClipped",
+    "count": 2,
+    "why": "放大字号后文字可能被截断；交 iPhone 编码线程按第 73 条改（挤不下就换行或竖排）"
+  },
+  {
+    "key": "19-senses-6b-share-answered|dark|contrast",
+    "count": 1,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "19-senses-6b-share-answered|light|contrast",
+    "count": 2,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "19-senses-6b-share-answered|light|textClipped",
+    "count": 3,
+    "why": "去掉 RootView 的字号上限后，最大无障碍字号下这些文字被截断（之前被上限挡住没量到）；交 iPhone 编码线程按第 73 条改成能换行或改排版"
+  },
+  {
+    "key": "19-senses-6c-share-queued|dark|contrast",
+    "count": 1,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "19-senses-6c-share-queued|light|contrast",
+    "count": 1,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "19-senses-6c-share-queued|light|textClipped",
+    "count": 2,
+    "why": "放大字号后文字可能被截断；交 iPhone 编码线程按第 73 条改（挤不下就换行或竖排）"
+  },
+  {
+    "key": "19-senses-6d-share-entry-off|light|sufficientElementDescription",
+    "count": 1,
+    "why": "有能点或能读的元素没有名字；交 iPhone 编码线程按第 76 条补 accessibilityLabel"
+  },
+  {
+    "key": "19-senses-6d-share-entry-off|light|textClipped",
+    "count": 1,
+    "why": "放大字号后文字可能被截断；交 iPhone 编码线程按第 73 条改（挤不下就换行或竖排）"
+  },
+  {
+    "key": "19-senses-6e-share-removed|light|sufficientElementDescription",
+    "count": 1,
+    "why": "有能点或能读的元素没有名字；交 iPhone 编码线程按第 76 条补 accessibilityLabel"
+  },
+  {
+    "key": "19-senses-6e-share-removed|light|textClipped",
+    "count": 1,
+    "why": "放大字号后文字可能被截断；交 iPhone 编码线程按第 73 条改（挤不下就换行或竖排）"
+  },
+  {
+    "key": "19-senses-6f-share-unpaired|light|sufficientElementDescription",
+    "count": 1,
+    "why": "有能点或能读的元素没有名字；交 iPhone 编码线程按第 76 条补 accessibilityLabel"
+  },
+  {
+    "key": "19-senses-6f-share-unpaired|light|textClipped",
+    "count": 1,
+    "why": "放大字号后文字可能被截断；交 iPhone 编码线程按第 73 条改（挤不下就换行或竖排）"
+  },
+  {
+    "key": "19-senses-share-entry|dark|contrast",
+    "count": 1,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "19-senses-share-entry|light|contrast",
+    "count": 2,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "19-senses-share-entry|light|textClipped",
+    "count": 2,
+    "why": "放大字号后文字可能被截断；交 iPhone 编码线程按第 73 条改（挤不下就换行或竖排）"
+  },
+  {
+    "key": "19-settings-more-1-abilities|dark|contrast",
+    "count": 2,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "19-settings-more-1-abilities|light|contrast",
+    "count": 2,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "19-settings-more-2-permission-primer|light|textClipped",
+    "count": 1,
+    "why": "去掉 RootView 的字号上限后，最大无障碍字号下这些文字被截断（之前被上限挡住没量到）；交 iPhone 编码线程按第 73 条改成能换行或改排版"
+  },
+  {
+    "key": "19-settings-more-3-permission-denied|light|textClipped",
+    "count": 2,
+    "why": "去掉 RootView 的字号上限后，最大无障碍字号下这些文字被截断（之前被上限挡住没量到）；交 iPhone 编码线程按第 73 条改成能换行或改排版"
+  },
+  {
+    "key": "22-gaps-1-safari-guide|dark|contrast",
+    "count": 2,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "22-gaps-1-safari-guide|light|contrast",
+    "count": 3,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "22-gaps-1-safari-guide|light|textClipped",
+    "count": 2,
+    "why": "放大字号后文字可能被截断；交 iPhone 编码线程按第 73 条改（挤不下就换行或竖排）"
+  },
+  {
+    "key": "22-gaps-1b-safari-on|dark|contrast",
+    "count": 2,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "22-gaps-1b-safari-on|light|contrast",
+    "count": 3,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "22-gaps-1b-safari-on|light|textClipped",
+    "count": 3,
+    "why": "放大字号后文字可能被截断；交 iPhone 编码线程按第 73 条改（挤不下就换行或竖排）"
+  },
+  {
+    "key": "23-listen-1|dark|contrast",
+    "count": 4,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "23-listen-1|light|contrast",
+    "count": 5,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "23-listen-1|light|dynamicType",
+    "count": 11,
+    "why": "文字不完全跟动态字体放大（多半是 RootView 把字号封顶在 accessibility2，以及固定行高）；交 iPhone 编码线程按第 73 条改"
+  },
+  {
+    "key": "23-listen-2|dark|contrast",
+    "count": 2,
+    "why": "第一次真正在深色下量出来的（之前“深色”那一遍其实在浅色下跑，事故 I-121）：浅灰小字在深色底上对比度不够；协调者 2026-11-27 定按实测登记，PR 745 合并后在本线程把深色灰字调亮修掉"
+  },
+  {
+    "key": "23-listen-2|light|contrast",
+    "count": 1,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "23-listen-2|light|dynamicType",
+    "count": 10,
+    "why": "文字不完全跟动态字体放大（多半是 RootView 把字号封顶在 accessibility2，以及固定行高）；交 iPhone 编码线程按第 73 条改"
+  },
+  {
+    "key": "23-listen-3b|dark|contrast",
+    "count": 1,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "23-listen-3b|light|contrast",
+    "count": 1,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "23-listen-3b|light|dynamicType",
+    "count": 6,
+    "why": "文字不完全跟动态字体放大（多半是 RootView 把字号封顶在 accessibility2，以及固定行高）；交 iPhone 编码线程按第 73 条改"
+  },
+  {
+    "key": "23-listen-3|light|dynamicType",
+    "count": 6,
+    "why": "文字不完全跟动态字体放大（多半是 RootView 把字号封顶在 accessibility2，以及固定行高）；交 iPhone 编码线程按第 73 条改"
+  },
+  {
+    "key": "23-listen-4|dark|contrast",
+    "count": 2,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "23-listen-4|light|contrast",
+    "count": 2,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "23-listen-4|light|dynamicType",
+    "count": 4,
+    "why": "文字不完全跟动态字体放大（多半是 RootView 把字号封顶在 accessibility2，以及固定行高）；交 iPhone 编码线程按第 73 条改"
+  },
+  {
+    "key": "23-listen-5|dark|contrast",
+    "count": 2,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "23-listen-5|light|contrast",
+    "count": 2,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "23-listen-5|light|dynamicType",
+    "count": 6,
+    "why": "文字不完全跟动态字体放大（多半是 RootView 把字号封顶在 accessibility2，以及固定行高）；交 iPhone 编码线程按第 73 条改"
+  },
+  {
+    "key": "23-listen-6|dark|contrast",
+    "count": 2,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "23-listen-6|light|contrast",
+    "count": 2,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "23-listen-6|light|dynamicType",
+    "count": 8,
+    "why": "文字不完全跟动态字体放大（多半是 RootView 把字号封顶在 accessibility2，以及固定行高）；交 iPhone 编码线程按第 73 条改"
+  },
+  {
+    "key": "next-10-her-import-preview|dark|contrast",
+    "count": 7,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "next-10-her-import-preview|light|contrast",
+    "count": 7,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "next-10-her-import-preview|light|dynamicType",
+    "count": 1,
+    "why": "文字不完全跟动态字体放大（多半是 RootView 把字号封顶在 accessibility2，以及固定行高）；交 iPhone 编码线程按第 73 条改"
+  },
+  {
+    "key": "next-10-her-import-preview|light|textClipped",
+    "count": 2,
+    "why": "放大字号后文字可能被截断；交 iPhone 编码线程按第 73 条改（挤不下就换行或竖排）"
+  },
+  {
+    "key": "next-10-her-server-status|dark|contrast",
+    "count": 4,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "next-10-her-server-status|light|contrast",
+    "count": 7,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "next-10-her-transfer|dark|contrast",
+    "count": 5,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "next-10-her-transfer|light|contrast",
+    "count": 5,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "next-10-her-transfer|light|textClipped",
+    "count": 1,
+    "why": "放大字号后文字可能被截断；交 iPhone 编码线程按第 73 条改（挤不下就换行或竖排）"
+  },
+  {
+    "key": "next-2-chat-attach|dark|contrast",
+    "count": 1,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "next-2-chat-attach|light|contrast",
+    "count": 1,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "next-2-chat-attach|light|dynamicType",
+    "count": 1,
+    "why": "导航栏右上角系统 PhotosPicker 按钮“照片”的字不随动态字体放大：苹果的栏按钮在大字号下用长按放大预览（Large Content Viewer）代替放大字号，这是系统组件的做法，不自绘替换"
+  },
+  {
+    "key": "next-2-chat-attach|light|textClipped",
+    "count": 1,
+    "why": "放大字号后文字可能被截断；交 iPhone 编码线程按第 73 条改（挤不下就换行或竖排）"
+  },
+  {
+    "key": "next-2-chat-format-streaming|light|contrast",
+    "count": 1,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "next-2-chat-format-streaming|light|sufficientElementDescription",
+    "count": 1,
+    "why": "有能点或能读的元素没有名字；交 iPhone 编码线程按第 76 条补 accessibilityLabel"
+  },
+  {
+    "key": "next-2-chat-format|dark|contrast",
+    "count": 6,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "next-2-chat-format|light|contrast",
+    "count": 6,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "next-2-chat-format|light|dynamicType",
+    "count": 9,
+    "why": "文字不完全跟动态字体放大（多半是 RootView 把字号封顶在 accessibility2，以及固定行高）；交 iPhone 编码线程按第 73 条改"
+  },
+  {
+    "key": "next-2-chat-format|light|sufficientElementDescription",
+    "count": 1,
+    "why": "有能点或能读的元素没有名字；交 iPhone 编码线程按第 76 条补 accessibilityLabel"
+  },
+  {
+    "key": "next-2-chat-options-chosen|dark|contrast",
+    "count": 3,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "next-2-chat-options-chosen|light|contrast",
+    "count": 3,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "next-2-chat-options-chosen|light|sufficientElementDescription",
+    "count": 1,
+    "why": "有能点或能读的元素没有名字；交 iPhone 编码线程按第 76 条补 accessibilityLabel"
+  },
+  {
+    "key": "next-2-chat-options|dark|contrast",
+    "count": 3,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "next-2-chat-options|light|contrast",
+    "count": 3,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "next-2-chat-options|light|sufficientElementDescription",
+    "count": 1,
+    "why": "有能点或能读的元素没有名字；交 iPhone 编码线程按第 76 条补 accessibilityLabel"
+  },
+  {
+    "key": "next-2-chat-talk-her|light|contrast",
+    "count": 1,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "next-2-chat-talk-her|light|sufficientElementDescription",
+    "count": 1,
+    "why": "有能点或能读的元素没有名字；交 iPhone 编码线程按第 76 条补 accessibilityLabel"
+  },
+  {
+    "key": "next-2-chat-talk-her|light|textClipped",
+    "count": 1,
+    "why": "放大字号后文字可能被截断；交 iPhone 编码线程按第 73 条改（挤不下就换行或竖排）"
+  },
+  {
+    "key": "next-2-chat-talk-listening|dark|contrast",
+    "count": 7,
+    "why": "第一次真正在深色下量出来的（之前“深色”那一遍其实在浅色下跑，事故 I-121）：浅灰小字在深色底上对比度不够；协调者 2026-11-27 定按实测登记，PR 745 合并后在本线程把深色灰字调亮修掉"
+  },
+  {
+    "key": "next-2-chat-talk-listening|light|contrast",
+    "count": 5,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "next-2-chat-talk-listening|light|dynamicType",
+    "count": 9,
+    "why": "文字不完全跟动态字体放大（多半是 RootView 把字号封顶在 accessibility2，以及固定行高）；交 iPhone 编码线程按第 73 条改"
+  },
+  {
+    "key": "next-2-chat-talk-listening|light|sufficientElementDescription",
+    "count": 1,
+    "why": "有能点或能读的元素没有名字；交 iPhone 编码线程按第 76 条补 accessibilityLabel"
+  },
+  {
+    "key": "next-3-her-allowances-empty|dark|contrast",
+    "count": 2,
+    "why": "第一次真正在深色下量出来的（之前“深色”那一遍其实在浅色下跑，事故 I-121）：浅灰小字在深色底上对比度不够；协调者 2026-11-27 定按实测登记，PR 745 合并后在本线程把深色灰字调亮修掉"
+  },
+  {
+    "key": "next-3-her-allowances-empty|light|contrast",
+    "count": 1,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "next-3-her-allowances-empty|light|textClipped",
+    "count": 1,
+    "why": "去掉 RootView 的字号上限后，最大无障碍字号下这些文字被截断（之前被上限挡住没量到）；交 iPhone 编码线程按第 73 条改成能换行或改排版"
+  },
+  {
+    "key": "next-3-her-allowances|dark|contrast",
+    "count": 5,
+    "why": "第一次真正在深色下量出来的（之前“深色”那一遍其实在浅色下跑，事故 I-121）：浅灰小字在深色底上对比度不够；协调者 2026-11-27 定按实测登记，PR 745 合并后在本线程把深色灰字调亮修掉"
+  },
+  {
+    "key": "next-3-her-allowances|light|contrast",
+    "count": 4,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "next-3-her-approvals|dark|contrast",
+    "count": 6,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "next-3-her-approvals|light|contrast",
+    "count": 7,
+    "why": "main 上实测 14 条、登记 6 条（事故 I-121，登记表和代码对不上）；PR 745 修掉一半后剩 7 条：两张同意卡的标题、正文、理由小字和“不删”“删掉”“不用”三个按钮，肉眼看对比度正常，原因还没查清；PR 745 合并后在本线程继续查"
+  },
+  {
+    "key": "next-3-her-approvals|light|textClipped",
+    "count": 2,
+    "why": "放大字号后文字可能被截断；交 iPhone 编码线程按第 73 条改（挤不下就换行或竖排）"
+  },
+  {
+    "key": "next-3-her-devices|dark|contrast",
+    "count": 4,
+    "why": "第一次真正在深色下量出来的（之前“深色”那一遍其实在浅色下跑，事故 I-121）：浅灰小字在深色底上对比度不够；协调者 2026-11-27 定按实测登记，PR 745 合并后在本线程把深色灰字调亮修掉"
+  },
+  {
+    "key": "next-3-her-devices|light|contrast",
+    "count": 3,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "next-3-her-devices|light|sufficientElementDescription",
+    "count": 1,
+    "why": "有能点或能读的元素没有名字；交 iPhone 编码线程按第 76 条补 accessibilityLabel"
+  },
+  {
+    "key": "next-3-her-notifications|dark|contrast",
+    "count": 1,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "next-3-her-notifications|light|contrast",
+    "count": 1,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "next-3-her-privacy|dark|contrast",
+    "count": 3,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "next-3-her-privacy|light|contrast",
+    "count": 6,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改；2026-11-27 加 1 条：“她”改成 Himawari 后，“Himawari 照常回答，但不记新的”这行说明被判对比度不够，属误报：次要文字色 #565b50 在白底 6.98:1、浅底 6.8:1，深色 #b4b4ae 在卡片底 6.89:1、页面底 8.0:1，都高于 4.5:1；审计按截图像素估算，13 号字里拉丁字母的细笔画被估低"
+  },
+  {
+    "key": "next-3-her|dark|contrast",
+    "count": 6,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "next-3-her|light|contrast",
+    "count": 8,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "next-3-her|light|dynamicType",
+    "count": 1,
+    "why": "文字不完全跟动态字体放大（多半是 RootView 把字号封顶在 accessibility2，以及固定行高）；交 iPhone 编码线程按第 73 条改"
+  },
+  {
+    "key": "next-3-her|light|textClipped",
+    "count": 1,
+    "why": "放大字号后文字可能被截断；交 iPhone 编码线程按第 73 条改（挤不下就换行或竖排）"
+  },
+  {
+    "key": "next-4-memory-trash|dark|contrast",
+    "count": 1,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "next-4-memory-trash|light|contrast",
+    "count": 1,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "next-4-memory-versions|dark|contrast",
+    "count": 7,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "next-4-memory-versions|light|contrast",
+    "count": 7,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "next-4-memory-versions|light|textClipped",
+    "count": 6,
+    "why": "放大字号后文字可能被截断；交 iPhone 编码线程按第 73 条改（挤不下就换行或竖排）"
+  },
+  {
+    "key": "next-5-chat-copied|dark|contrast",
+    "count": 6,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "next-5-chat-copied|light|contrast",
+    "count": 6,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "next-5-chat-copied|light|dynamicType",
+    "count": 7,
+    "why": "文字不完全跟动态字体放大（多半是 RootView 把字号封顶在 accessibility2，以及固定行高）；交 iPhone 编码线程按第 73 条改"
+  },
+  {
+    "key": "next-5-chat-copied|light|sufficientElementDescription",
+    "count": 1,
+    "why": "有能点或能读的元素没有名字；交 iPhone 编码线程按第 76 条补 accessibilityLabel"
+  },
+  {
+    "key": "next-5-chat-replied|light|dynamicType",
+    "count": 1,
+    "why": "文字不完全跟动态字体放大（多半是 RootView 把字号封顶在 accessibility2，以及固定行高）；交 iPhone 编码线程按第 73 条改"
+  },
+  {
+    "key": "next-5-chat-replied|light|sufficientElementDescription",
+    "count": 1,
+    "why": "有能点或能读的元素没有名字；交 iPhone 编码线程按第 76 条补 accessibilityLabel"
+  },
+  {
+    "key": "next-5-chat-replied|light|textClipped",
+    "count": 1,
+    "why": "去掉 RootView 的字号上限后，最大无障碍字号下这些文字被截断（之前被上限挡住没量到）；交 iPhone 编码线程按第 73 条改成能换行或改排版"
+  },
+  {
+    "key": "next-5-chat-replying|dark|contrast",
+    "count": 2,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "next-5-chat-replying|light|contrast",
+    "count": 2,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "next-5-chat-replying|light|sufficientElementDescription",
+    "count": 1,
+    "why": "有能点或能读的元素没有名字；交 iPhone 编码线程按第 76 条补 accessibilityLabel"
+  },
+  {
+    "key": "next-5-chat-replying|light|textClipped",
+    "count": 1,
+    "why": "放大字号后文字可能被截断；交 iPhone 编码线程按第 73 条改（挤不下就换行或竖排）"
+  },
+  {
+    "key": "next-5-chat-rich|dark|contrast",
+    "count": 5,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "next-5-chat-rich|light|contrast",
+    "count": 5,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "next-5-chat-rich|light|dynamicType",
+    "count": 7,
+    "why": "文字不完全跟动态字体放大（多半是 RootView 把字号封顶在 accessibility2，以及固定行高）；交 iPhone 编码线程按第 73 条改"
+  },
+  {
+    "key": "next-5-chat-rich|light|sufficientElementDescription",
+    "count": 1,
+    "why": "有能点或能读的元素没有名字；交 iPhone 编码线程按第 76 条补 accessibilityLabel"
+  },
+  {
+    "key": "next-5-chat-select-text|light|dynamicType",
+    "count": 1,
+    "why": "文字不完全跟动态字体放大（多半是 RootView 把字号封顶在 accessibility2，以及固定行高）；交 iPhone 编码线程按第 73 条改"
+  },
+  {
+    "key": "next-6-chat-empty|light|sufficientElementDescription",
+    "count": 1,
+    "why": "有能点或能读的元素没有名字；交 iPhone 编码线程按第 76 条补 accessibilityLabel"
+  },
+  {
+    "key": "next-6-her-about|dark|contrast",
+    "count": 12,
+    "why": "第一次真正在深色下量出来的（之前“深色”那一遍其实在浅色下跑，事故 I-121）：浅灰小字在深色底上对比度不够；协调者 2026-11-27 定按实测登记，PR 745 合并后在本线程把深色灰字调亮修掉"
+  },
+  {
+    "key": "next-6-her-about|light|contrast",
+    "count": 8,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "next-6-her-about|light|sufficientElementDescription",
+    "count": 5,
+    "why": "有能点或能读的元素没有名字；交 iPhone 编码线程按第 76 条补 accessibilityLabel"
+  },
+  {
+    "key": "next-6-her-about|light|textClipped",
+    "count": 14,
+    "why": "去掉 RootView 的字号上限后，最大无障碍字号下这些文字被截断（之前被上限挡住没量到）；交 iPhone 编码线程按第 73 条改成能换行或改排版"
+  },
+  {
+    "key": "next-7-delete-perception-days|light|textClipped",
+    "count": 1,
+    "why": "去掉 RootView 的字号上限后，最大无障碍字号下这些文字被截断（之前被上限挡住没量到）；交 iPhone 编码线程按第 73 条改成能换行或改排版"
+  },
+  {
+    "key": "next-7-delete-perception-episode|light|dynamicType",
+    "count": 1,
+    "why": "文字不完全跟动态字体放大（多半是 RootView 把字号封顶在 accessibility2，以及固定行高）；交 iPhone 编码线程按第 73 条改"
+  },
+  {
+    "key": "next-7-delete-perception-episode|light|textClipped",
+    "count": 3,
+    "why": "去掉 RootView 的字号上限后，最大无障碍字号下这些文字被截断（之前被上限挡住没量到）；交 iPhone 编码线程按第 73 条改成能换行或改排版"
+  },
+  {
+    "key": "next-7-delete-perception|light|dynamicType",
+    "count": 1,
+    "why": "文字不完全跟动态字体放大（多半是 RootView 把字号封顶在 accessibility2，以及固定行高）；交 iPhone 编码线程按第 73 条改"
+  },
+  {
+    "key": "next-7-delete-perception|light|textClipped",
+    "count": 3,
+    "why": "去掉 RootView 的字号上限后，最大无障碍字号下这些文字被截断（之前被上限挡住没量到）；交 iPhone 编码线程按第 73 条改成能换行或改排版"
+  },
+  {
+    "key": "next-8-background-exchanges|dark|contrast",
+    "count": 9,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "next-8-background-exchanges|light|contrast",
+    "count": 12,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "next-8-background-exchanges|light|dynamicType",
+    "count": 3,
+    "why": "文字不完全跟动态字体放大（多半是 RootView 把字号封顶在 accessibility2，以及固定行高）；交 iPhone 编码线程按第 73 条改"
+  },
+  {
+    "key": "next-8-background-exchanges|light|hitRegion",
+    "count": 1,
+    "why": "点击区域小于 44×44 点；交 iPhone 编码线程按第 75 条改"
+  },
+  {
+    "key": "next-8-background-exchanges|light|textClipped",
+    "count": 3,
+    "why": "去掉 RootView 的字号上限后，最大无障碍字号下这些文字被截断（之前被上限挡住没量到）；交 iPhone 编码线程按第 73 条改成能换行或改排版"
+  },
+  {
+    "key": "next-8-background-none|light|sufficientElementDescription",
+    "count": 1,
+    "why": "有能点或能读的元素没有名字；交 iPhone 编码线程按第 76 条补 accessibilityLabel"
+  },
+  {
+    "key": "next-8-background-quiet|light|dynamicType",
+    "count": 3,
+    "why": "文字不完全跟动态字体放大（多半是 RootView 把字号封顶在 accessibility2，以及固定行高）；交 iPhone 编码线程按第 73 条改"
+  },
+  {
+    "key": "next-8-background-quiet|light|hitRegion",
+    "count": 1,
+    "why": "点击区域小于 44×44 点；交 iPhone 编码线程按第 75 条改"
+  },
+  {
+    "key": "next-8-background-sheet|dark|contrast",
+    "count": 4,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "next-8-background-sheet|light|contrast",
+    "count": 5,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "next-8-background-sheet|light|textClipped",
+    "count": 2,
+    "why": "放大字号后文字可能被截断；交 iPhone 编码线程按第 73 条改（挤不下就换行或竖排）"
+  },
+  {
+    "key": "next-8-background-subthread|dark|contrast",
+    "count": 6,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "next-8-background-subthread|light|contrast",
+    "count": 8,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "next-8-background-subthread|light|dynamicType",
+    "count": 3,
+    "why": "文字不完全跟动态字体放大（多半是 RootView 把字号封顶在 accessibility2，以及固定行高）；交 iPhone 编码线程按第 73 条改"
+  },
+  {
+    "key": "next-8-background-subthread|light|hitRegion",
+    "count": 1,
+    "why": "点击区域小于 44×44 点；交 iPhone 编码线程按第 75 条改"
+  },
+  {
+    "key": "next-8-background-subthread|light|textClipped",
+    "count": 2,
+    "why": "去掉 RootView 的字号上限后，最大无障碍字号下这些文字被截断（之前被上限挡住没量到）；交 iPhone 编码线程按第 73 条改成能换行或改排版"
+  },
+  {
+    "key": "next-8-background|light|sufficientElementDescription",
+    "count": 1,
+    "why": "有能点或能读的元素没有名字；交 iPhone 编码线程按第 76 条补 accessibilityLabel"
+  },
+  {
+    "key": "next-8-background|light|textClipped",
+    "count": 2,
+    "why": "去掉 RootView 的字号上限后，最大无障碍字号下这些文字被截断（之前被上限挡住没量到）；交 iPhone 编码线程按第 73 条改成能换行或改排版"
+  },
+  {
+    "key": "next-9-her-no-timers|dark|contrast",
+    "count": 4,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "next-9-her-no-timers|light|contrast",
+    "count": 6,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "next-9-her-no-timers|light|dynamicType",
+    "count": 1,
+    "why": "文字不完全跟动态字体放大（多半是 RootView 把字号封顶在 accessibility2，以及固定行高）；交 iPhone 编码线程按第 73 条改"
+  },
+  {
+    "key": "next-9-her-no-timers|light|textClipped",
+    "count": 1,
+    "why": "放大字号后文字可能被截断；交 iPhone 编码线程按第 73 条改（挤不下就换行或竖排）"
+  },
+  {
+    "key": "next-9-timer-paused|dark|contrast",
+    "count": 3,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "next-9-timer-paused|light|contrast",
+    "count": 4,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "next-9-timer-paused|light|textClipped",
+    "count": 1,
+    "why": "去掉 RootView 的字号上限后，最大无障碍字号下这些文字被截断（之前被上限挡住没量到）；交 iPhone 编码线程按第 73 条改成能换行或改排版"
+  },
+  {
+    "key": "next-9-timer-recurring|dark|contrast",
+    "count": 10,
+    "why": "第一次真正在深色下量出来的（之前“深色”那一遍其实在浅色下跑，事故 I-121）：浅灰小字在深色底上对比度不够；协调者 2026-11-27 定按实测登记，PR 745 合并后在本线程把深色灰字调亮修掉"
+  },
+  {
+    "key": "next-9-timer-recurring|light|contrast",
+    "count": 9,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "next-9-timer-recurring|light|textClipped",
+    "count": 4,
+    "why": "去掉 RootView 的字号上限后，最大无障碍字号下这些文字被截断（之前被上限挡住没量到）；交 iPhone 编码线程按第 73 条改成能换行或改排版"
+  },
+  {
+    "key": "next-9-timer-reminder|dark|contrast",
+    "count": 4,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "next-9-timer-reminder|light|contrast",
+    "count": 4,
+    "why": "字和底色对比度不够 4.5:1（多是浅灰小字放在浅底或玻璃上）；交 iPhone 编码线程按第 74 条改"
+  },
+  {
+    "key": "next-9-timers-empty|light|textClipped",
+    "count": 1,
+    "why": "放大字号后文字可能被截断；交 iPhone 编码线程按第 73 条改（挤不下就换行或竖排）"
+  },
+  {
+    "key": "next-9-timers-reminders|light|textClipped",
+    "count": 1,
+    "why": "放大字号后文字可能被截断；交 iPhone 编码线程按第 73 条改（挤不下就换行或竖排）"
+  },
+  {
+    "key": "next-9-timers|light|dynamicType",
+    "count": 1,
+    "why": "文字不完全跟动态字体放大（多半是 RootView 把字号封顶在 accessibility2，以及固定行高）；交 iPhone 编码线程按第 73 条改"
+  },
+  {
+    "key": "next-9-timers|light|hitRegion",
+    "count": 1,
+    "why": "点击区域小于 44×44 点；交 iPhone 编码线程按第 75 条改"
+  },
+  {
+    "key": "next-9-timers|light|textClipped",
+    "count": 2,
+    "why": "误报（2026-11-28 核对）：截图工作流 run 46087594795 在最大无障碍字号下截的实际画面里这些说明文字完整换行、没有被截掉，只是页面很长、它们在第一屏底部以下，滚下去才看得到；审计对屏幕外或只露出一半的长文字报“可能被截断”；列表页脚是系统 List 的 section footer"
+  },
+  {
+    "key": "next-10-her-model|light|dynamicType",
+    "count": 2,
+    "why": "文字不完全跟动态字体放大：导航栏“完成”和分组标题的字号由系统和 RootView 的动态字体上限（accessibility2）决定，和她的页面其他场景同一原因；交 iPhone 编码线程按第 73 条改"
+  },
+  {
+    "key": "next-10-her-name|light|dynamicType",
+    "count": 1,
+    "why": "文字不完全跟动态字体放大：导航栏“完成”、输入框和分组说明的字号由系统和 RootView 的动态字体上限（accessibility2）决定，和她的页面其他场景同一原因；交 iPhone 编码线程按第 73 条改"
+  },
+  {
+    "key": "19-senses-6d-share-entry-off|dark|contrast",
+    "count": 1,
+    "why": "第一次真正在深色下量出来的（之前“深色”那一遍其实在浅色下跑，事故 I-121）：浅灰小字在深色底上对比度不够；协调者 2026-11-27 定按实测登记，PR 745 合并后在本线程把深色灰字调亮修掉"
+  },
+  {
+    "key": "19-senses-6e-share-removed|dark|contrast",
+    "count": 1,
+    "why": "第一次真正在深色下量出来的（之前“深色”那一遍其实在浅色下跑，事故 I-121）：浅灰小字在深色底上对比度不够；协调者 2026-11-27 定按实测登记，PR 745 合并后在本线程把深色灰字调亮修掉"
+  },
+  {
+    "key": "23-listen-3|dark|contrast",
+    "count": 2,
+    "why": "误报（2026-11-28 核对）：被报的是听写横幅的副标题“iPhone 麦克风 · 45 分钟”和“暂停”按钮；截图工作流 run 46091093658 里深色实测对比度 6.3:1 和 8.5:1，都高于 4.5:1"
+  },
+  {
+    "key": "15-pairing-flow-2-waiting|dark|contrast",
+    "count": 1,
+    "why": "第一次真正在深色下量出来的（之前“深色”那一遍其实在浅色下跑，事故 I-121）：浅灰小字在深色底上对比度不够；协调者 2026-11-27 定按实测登记，PR 745 合并后在本线程把深色灰字调亮修掉"
+  },
+  {
+    "key": "19-senses-6f-share-unpaired|dark|contrast",
+    "count": 1,
+    "why": "第一次真正在深色下量出来的（之前“深色”那一遍其实在浅色下跑，事故 I-121）：浅灰小字在深色底上对比度不够；协调者 2026-11-27 定按实测登记，PR 745 合并后在本线程把深色灰字调亮修掉"
+  },
+  {
+    "key": "23-listen-5|light|textClipped",
+    "count": 2,
+    "why": "误报（2026-11-28 核对）：截图工作流 run 46087594795 在最大无障碍字号下截的实际画面里“是你在叫我吗”面板的说明和“是我，去办”按钮都完整换行显示，没有被截掉"
+  },
+  {
+    "key": "next-3-her-allowances|light|textClipped",
+    "count": 1,
+    "why": "误报（2026-11-28 核对）：截图工作流 run 46087594795 在最大无障碍字号下截的实际画面里这些说明文字完整换行、没有被截掉，只是页面很长、它们在第一屏底部以下，滚下去才看得到；审计对屏幕外或只露出一半的长文字报“可能被截断”"
+  },
+  {
+    "key": "next-3-her-notifications|light|textClipped",
+    "count": 2,
+    "why": "误报（2026-11-28 核对）：截图工作流 run 46087594795 在最大无障碍字号下截的实际画面里这些说明文字完整换行、没有被截掉，只是页面很长、它们在第一屏底部以下，滚下去才看得到；审计对屏幕外或只露出一半的长文字报“可能被截断”"
+  },
+  {
+    "key": "next-9-timers-reminders|light|dynamicType",
+    "count": 1,
+    "why": "误报（2026-11-28 核对）：被报的是页脚说明“在主对话里说‘取消交房租的提醒’也行。”，它用系统的 .footnote 字体、放在系统 List 的 section footer 里，本身跟随动态字体；同页在最大字号下的截图（run 46087594795）里它和其他文字一起放大"
+  }
+]

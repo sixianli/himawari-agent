@@ -41,14 +41,18 @@ import {
   type DeviceActionDetail,
   type DeviceActionReadBack,
   type DeviceActionRegistration,
-  type DeviceActionUndoPlan,
   type DeviceActionRegistry,
+  type DeviceActionTarget,
+  type DeviceActionTargetData,
+  type DeviceActionUndoPlan,
   describeDeviceActionParameters,
   deviceActionFingerprint,
   validateDeviceActionArguments,
 } from "./device-action-registry.js";
 
 export const DEVICE_ACTION_RESULT_MAXIMUM_BYTES = 64 * 1024;
+export const DEVICE_ACTION_LISTED_TARGET_DAYS = 7;
+export const DEVICE_ACTION_LISTED_TARGET_READS = 500;
 export const DEVICE_ACTION_REASON_MAXIMUM_CHARACTERS = 500;
 
 const MODEL_REASONS: Readonly<Record<DeviceActionReasonCode, string | null>> = Object.freeze({
@@ -105,6 +109,14 @@ export interface DeviceActionServiceOptions {
   readonly timeZone: string;
   readonly now: () => string;
   readonly newId: () => string;
+  readonly onReadFailed?: (failure: DeviceActionReadFailure) => void;
+}
+
+export interface DeviceActionReadFailure {
+  readonly event: "device_action.read_failed";
+  readonly action: string;
+  readonly deviceId: string;
+  readonly outcome: Exclude<DeviceActionReportOutcome, "succeeded">;
 }
 
 export interface DeviceActionDescription {
@@ -141,6 +153,7 @@ export interface DeviceActionDelivery {
   readonly detail: DeviceActionDetail;
   readonly confirmLabel: DeviceActionDetail;
   readonly declineLabel: DeviceActionDetail;
+  readonly resultMaximumBytes: number;
 }
 
 export type DeviceActionUndoState = "none" | "available" | "pending" | "done" | "failed";
@@ -262,8 +275,51 @@ export class DeviceActionService {
         includeDeleted: false,
       })
     ).find((entry) => entry.deviceId === deviceId && entry.externalId === id);
-    if (!item || item.data === null) return undefined;
-    return { target: item.data, localTime: this.#localTime };
+    if (item && item.data !== null) return { target: item.data, localTime: this.#localTime };
+    const listed = rule.listedBy ? await this.#listed(rule, id, deviceId) : null;
+    return listed ? { target: listed, localTime: this.#localTime } : undefined;
+  }
+
+  async #listed(
+    rule: DeviceActionTarget,
+    id: unknown,
+    deviceId: string,
+  ): Promise<DeviceActionTargetData | null> {
+    const lister = rule.listedBy;
+    if (!lister || typeof id !== "string") return null;
+    const since = new Date(
+      Date.parse(this.#options.now()) - DEVICE_ACTION_LISTED_TARGET_DAYS * 86_400_000,
+    ).toISOString();
+    const reads = (
+      await this.#options.store.list({
+        ...this.#options.scope,
+        deviceId,
+        states: ["succeeded"],
+        limit: DEVICE_ACTION_LISTED_TARGET_READS,
+        finishedSince: since,
+      })
+    )
+      .filter((record) => record.action === lister.action && record.resultRef !== null)
+      .sort((a, b) => (b.finishedAt ?? "").localeCompare(a.finishedAt ?? ""));
+    for (const record of reads) {
+      const stored = await this.#options.content.read(record.resultRef as string);
+      const evidence = plainObject(stored?.["evidence"]) ? stored["evidence"] : null;
+      const done = plainObject(evidence?.["done"]) ? evidence["done"] : null;
+      const items = Array.isArray(done?.[lister.list]) ? (done[lister.list] as unknown[]) : [];
+      const found = items.find(
+        (entry): entry is Record<string, unknown> => plainObject(entry) && entry[rule.idKey] === id,
+      );
+      if (found)
+        return Object.freeze(
+          Object.fromEntries(
+            Object.entries(found).filter(
+              (pair): pair is [string, string | number | boolean] =>
+                pair[0] !== rule.idKey && ["string", "number", "boolean"].includes(typeof pair[1]),
+            ),
+          ),
+        );
+    }
+    return null;
   }
 
   async #detail(record: DeviceActionRecord): Promise<{
@@ -579,6 +635,7 @@ export class DeviceActionService {
       detail,
       confirmLabel: registration.confirmLabel,
       declineLabel: registration.declineLabel,
+      resultMaximumBytes: DEVICE_ACTION_RESULT_MAXIMUM_BYTES,
     });
   }
 
@@ -691,6 +748,13 @@ export class DeviceActionService {
     if (reported.kind === "recorded") {
       await this.#ledger(reported.record);
       this.#options.delivery.settled(id);
+      if (registration?.actionKind === "READ" && outcome !== "succeeded")
+        this.#options.onReadFailed?.({
+          event: "device_action.read_failed",
+          action: existing.action,
+          deviceId,
+          outcome: outcome as Exclude<DeviceActionReportOutcome, "succeeded">,
+        });
     }
     return { kind: reported.kind, state: reported.record.state };
   }

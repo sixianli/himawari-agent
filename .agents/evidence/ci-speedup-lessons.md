@@ -2,6 +2,8 @@
 
 > **只是参考，不是规则**。这里记的是另一个线程给 Himawari 的 CI 提速时积累的经验，不是“CI 开源工具”线程必须遵守的规则，也不限定它的方案范围。开源工具面对的用户、机器和约束都不一样，这里的做法换个场景可能不是最好的。请从问题本身出发，大胆想更好的做法和更多可能性；这里的数据和踩过的坑可以拿来验证想法，不必照搬。
 
+> 2026-11-26 注：这里记的自托管 CI 机器（OVH CI 服务器、Oracle ARM runner）已全部撤掉，CI 现在跑在 GitHub 免费托管机器上，见 [ADR 0292](../../docs/adr/0292-how-ci-runs-now.md)。下面的机器和作业数据只是当时的记录，不是现状。
+
 这份文档记的是“让 CI 变快变顺”线程给 Himawari 的 CI 提速时做过的每一项优化：发现了什么、前后实测数据、成功还是失败、为什么，以及对“CI 开源工具”线程有什么用。Andy 2026-11-15 要求从这天起持续记，开源工具线程重新开工时先读这份。CI（持续集成）是每次推送后 GitHub Actions 自动跑的检查；runner 是装在自己机器上、替 GitHub 执行 CI 作业的程序，一个 runner 一次只跑一个作业。
 
 - [机器和作业现状](#setup)
@@ -21,7 +23,7 @@
 | CI 服务器（同一台） | 单独内存池，预留 2 GB、上限 4 GB | `ci-vps-gate` | 汇总作业 `ci/required` |
 | Oracle 东京 ARM | 4 核 24 GB | `ci-arm-1`、`ci-arm-2` | policy、static、security、tooling |
 
-来源：`docs/runbooks/ci-vps-runner-runbook.md` 第 17、67、180 行；`.github/workflows/ci.yml` 各作业的 `runs-on`。表里只列 `ci.yml` 一次完整运行的作业；另外 `main.yml` 的 `main/evidence`（约 20 秒）和 `main/confirmation`（轻量确认时才跑）跑在 `ci-vps`，`merge-queue.yml` 跑在 `ci-arm`（CI 门禁临时放宽期间只手动触发）。
+来源：[ci-vps-runner-runbook.md（已删除，固定链接）](https://github.com/sixianli/himawari-agent/blob/88e17c2430041266de223e41c4163c45d1a02369/docs/runbooks/ci-vps-runner-runbook.md) 第 17、67、180 行；`.github/workflows/ci.yml` 各作业的 `runs-on`。表里只列 `ci.yml` 一次完整运行的作业；另外 `main.yml` 的 `main/evidence`（约 20 秒）和 `main/confirmation`（轻量确认时才跑）跑在 `ci-vps`，`merge-queue.yml` 跑在 `ci-arm`（CI 门禁临时放宽期间只手动触发）。
 
 一次完整运行的依赖顺序：policy → build → tests（三份）和 browser（三个）→ `ci/required`；static、security、tooling 只等 policy。
 
@@ -88,6 +90,16 @@
   2. tests 作业要拿本次的 build 产物核对，现在只能从 CI 服务器本机取（`scripts/ci/run-share.mjs` 的 `get` 只读本机目录），`scripts/ci/run.mjs` 也要求产物的平台和本机一致；ARM 上的作业需要新的取产物办法。让 ARM 自己出产物也不简单：`scripts/ci/platforms.mjs` 的产物平台清单只有 `macos-arm64`、`linux-x64`，要先加上 `linux-arm64` 和对应的 build 作业。
   3. ARM 只有 4 核，tooling 和 static 同时跑时每核负载已到 1.45；再加 integration 可能更挤，要先量。
 - 结果：待补。
+
+<a id="apple-scope"></a>
+### 7. 没碰 iPhone 客户端的 PR 不再占 Mac 机器（2026-11-26）
+
+- 发现（GitHub 接口取 2026-11-24 15:45 到 11-26 15:45 JST 的全部运行和作业）：CI 已搬到 GitHub 免费托管机器，免费账号同时最多 5 台 Mac（作业按有 runner 的时间叠起来，最高正好 5 台，满 5 台累计约 325 分钟）。11-26 12 点起 Mac 作业排队中位数 16 到 49 分钟、最长 83 分钟；在这之前大多不到 2 分钟。Linux 那边 CI 一整轮中位数 25 分钟、慢的一成 40 分钟，排队中位数不到 1 分钟。
+- 原因：`apple.yml` 没有按路径筛选，每个非草稿 PR 的每次推送都起 4 台 Mac（`apple/iphone` 约 9 分钟，三份无障碍审计各约 21 分钟，每份都自己从头编译一遍），main 的每次合并也一样。PR 上的 403 次 Apple 运行里 194 次来自一个 `clients/apple/` 文件都没改的 PR，占 PR 上 Mac 用时的一半（1311 / 2625 分钟）。
+- 做法：加一个几秒钟的 Linux 作业 `apple/changes`，用 `scripts/ci/apple-scope.mjs` 看改动有没有碰 `clients/apple/`、`apple.yml` 或这个脚本，没碰就跳过 Mac 作业；说不清时照跑。合并只要求 `ci/required`，跳过的 Mac 作业不卡合并。
+- 结果：待补（合并后看 Mac 排队时间）。
+- 可供参考：机器数量有硬上限时，先看“谁在占机器、它该不该跑”，再谈加速单个作业。
+- 还没做：三份无障碍审计各自从头编译，可以先编一次再分给几台跑（`build-for-testing` / `test-without-building`），能省 Mac 时间但要在作业之间传编译产物，没在这次做。
 
 <a id="pitfalls"></a>
 ## 踩过的坑

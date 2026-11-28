@@ -14,7 +14,7 @@
 - 原则之间冲突时按这个顺序裁决：用户主权，其次边界与可逆性，其次记忆可靠性，其次主动性与效率。当一个设计在两条原则之间取舍时，要写明它依据的是哪一条原则。
 - “自有优先、数据自持”（"Owned first, data held by the owner"）取代了早先“本地优先”（"local-first"）的说法：Himawari 在哪里运行、数据存在哪里，由 Andy 控制，可以是 Andy 租用的服务器。不得把 Himawari 描述为本地优先。
 - PRD（产品需求文档）规定一个版本的范围，可以推迟愿景中的部分内容，但不得与愿景矛盾。只有用户能修改愿景正文；新版本替换整份文档，并在附录中记录改动，并新开一份采纳 ADR 取代上一份。
-- 自 v2.2 起，Andy 定的规则是硬性设定，不是记忆：规则写进程序、必定执行、每条有回归测试；记忆只保存规则的出处和修改历史。护城河是四样资产：记忆图谱、Agent 规则手册、长尾工具库、决策记录。把规则当记忆条目存储或注入的现有设计是已知缺口，列在 [ADR 0134](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0134-adopt-product-vision-v2-2.md) 里，不是目标；现行愿景 v2.3 的采纳记录是 [ADR 0153](docs/adr/0153-adopt-product-vision-v2-3.md)。
+- 自 v2.2 起，Andy 定的规则是硬性设定，不是记忆：规则写进程序、必定执行、每条有回归测试；记忆只保存规则的出处和修改历史。护城河是四样资产：记忆图谱、Agent 规则手册、长尾工具库、决策记录。把规则当记忆条目存储或注入的现有设计是已知缺口，列在 [ADR 0134](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0134-adopt-product-vision-v2-2.md) 里，不是目标；现行愿景 v2.4 的采纳记录是 [ADR 0310](docs/adr/0310-adopt-product-vision-v2-4.md)。自 v2.4 起，Himawari 是每人一个、互相隔离的多用户产品，愿景里的“我”指每一份的主人。
 
 <a id="glossary"></a>
 ## 词表
@@ -35,7 +35,7 @@ Andy 的全局指令已复制到 [.claude/rules/owner-global-instructions.md](.c
 <a id="incidents-and-repeated-mistakes"></a>
 ## 事故和反复犯的错误
 
-每个会话都遵守 [.claude/rules/incident-gates.md](.claude/rules/incident-gates.md)：每个事故都要有一道自动检查，同一个错误出现三次必须上硬门槛。
+每个会话都遵守 [.claude/rules/incident-gates.md](.claude/rules/incident-gates.md)：每个事故都要有一道自动检查，同一个错误出现两次必须上硬门槛（程序检查，过不去就报错，不靠模型判断）；PR 的 CI 红了两次，PR 说明里要写复盘（含共同前提和验证）才能合并；修一个事故第二次出现的提交要写 `Premise:` 行，说明当初哪个想法错了。改到 `ci/core-areas.json` 列出的核心目录的 PR，说明里要有“## 安全依据”并点名一个 CI 会跑的测试。新事故的编号用 `npm run incident:new` 生成，不手挑。每个提交说明都要写一行 `Incident: I-<编号>`、`Incident-follow-up: I-<编号>` 或 `Incident: none`，次数由检查从提交记录里数，不靠手记。
 
 <a id="prompt-prefix-append-only"></a>
 ## 发给模型的内容只追加
@@ -97,7 +97,7 @@ Andy 的全局指令已复制到 [.claude/rules/owner-global-instructions.md](.c
 <a id="approved-web-design-baselines"></a>
 ## 已批准的网页设计基线
 
-设计或修改 Himawari 网页（视觉设计、聊天交互、品牌素材）之前，先读[网页设计基线](.agents/instructions/web-design-baselines.md)。
+设计或修改 Himawari 网页（视觉设计、聊天交互、品牌素材）之前，先读[网页设计基线](.agents/instructions/web-design-baselines.md)。iPhone、Apple Watch、Mac 三个 App 的界面和交互一律照苹果最新的《Human Interface Guidelines》（苹果官方界面设计规范）做，能用系统组件就用系统组件，见 [Andy 定的长期规则](.claude/rules/owner-standing-rules.md#apple-clients-follow-the-hig)。
 
 <a id="engineering-diagrams"></a>
 ## 工程图
@@ -117,13 +117,13 @@ Andy 的全局指令已复制到 [.claude/rules/owner-global-instructions.md](.c
 每个提交立即推送到 `origin` 上同名的分支（见全局指令的“Git 与操作”一节）。项目补充：
 
 - 它适用于所有代理做的提交。
+- 例外：PR 已标成“准备合并”后，一轮修改在本地改完、检查过再一次推送；PR 什么时候开成草稿、什么时候标准备合并，见[草稿和准备合并](.agents/instructions/delivery-mode.md#draft-then-ready)。
 - 已推送的提交不等于已充分测试的提交。提交说明仍必须写明实际运行了哪些测试层；第 3 层在 PR 或合并之前运行，而不是在每次推送之前。
 
-<a id="hermes-test-server-connectivity"></a>
 <a id="test-and-production-hosts"></a>
 ## 测试主机和生产主机
 
-在运行、安排或委派任何构建、测试、资格验证或上线之前，或者在连接 Hermes 测试服务器、登录生产机之前，先读 [.agents/instructions/test-and-production-hosts.md](.agents/instructions/test-and-production-hosts.md)。简要来说：服务器端的构建、检查和测试绝不在 MacBook 上运行；iPhone、Apple Watch、Mac 客户端的构建、单元测试和安装在 Andy 的 Mac 上用 Xcode 做。
+在运行、安排或委派任何构建、测试、资格验证或上线之前，或者在登录生产机之前，先读 [.agents/instructions/test-and-production-hosts.md](.agents/instructions/test-and-production-hosts.md)。简要来说：定向测试和提交前检查在云端线程的容器里跑，完整测试由 GitHub CI 跑，没有单独的测试服务器；服务器端的构建、检查和测试绝不在 MacBook 上运行；iPhone、Apple Watch、Mac 客户端的构建和单元测试在 GitHub 的 macOS 机器上做，经 TestFlight 安装，不依赖 Andy 的 Mac（ADR 0309 第 14 条）。
 
 <a id="test-trigger-timing"></a>
 ## 测试触发时机

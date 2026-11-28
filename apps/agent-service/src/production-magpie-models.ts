@@ -1,9 +1,9 @@
-import { modelRefString } from "@himawari-agent/gateway-contracts";
 import type {
   ConfiguredCompletionsGenerationModelDescriptor,
   ConfiguredModelDescriptor,
   ProductConfiguration,
 } from "@himawari-agent/application";
+import { modelRefString } from "@himawari-agent/gateway-contracts";
 import { resolveConfiguredSecretRequirement } from "./production-model-composition.js";
 
 export type PriceTier = "low" | "mid" | "high";
@@ -110,6 +110,9 @@ export function parseMagpieModelList(body: unknown): readonly MagpieModelEntry[]
   return entries;
 }
 
+const inputsOf = (entry: MagpieModelEntry): readonly ("text" | "image")[] =>
+  Object.freeze(entry.acceptsImages ? ["text", "image"] : ["text"]);
+
 function descriptorFor(
   primary: ConfiguredCompletionsGenerationModelDescriptor,
   entry: MagpieModelEntry,
@@ -124,10 +127,7 @@ function descriptorFor(
     priority: primary.priority + 1 + index,
     reasoning,
     ...(reasoning ? { thinkingLevels: Object.freeze([...entry.reasoningLevels]) } : {}),
-    input: Object.freeze(entry.acceptsImages ? ["text", "image"] : ["text"]) as readonly (
-      | "text"
-      | "image"
-    )[],
+    input: inputsOf(entry),
     contextWindow: entry.contextWindow,
     maxTokens: Math.min(entry.maxOutputTokens, primary.maxTokens),
     cost: Object.freeze(
@@ -239,11 +239,13 @@ export async function expandConfigurationWithMagpieModels(
     )
     .map((entry, index) => descriptorFor(primary, entry, index));
   const adjusted: ConfiguredModelDescriptor[] = configuration.modelDescriptors.map((descriptor) =>
-    descriptor === primary && own && own.reasoningLevels.length > 0
+    descriptor === primary && own
       ? Object.freeze({
           ...primary,
-          reasoning: true,
-          thinkingLevels: Object.freeze([...own.reasoningLevels]),
+          input: inputsOf(own),
+          ...(own.reasoningLevels.length > 0
+            ? { reasoning: true, thinkingLevels: Object.freeze([...own.reasoningLevels]) }
+            : {}),
         })
       : descriptor,
   );

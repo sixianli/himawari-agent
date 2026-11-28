@@ -81,6 +81,7 @@ public final class SensesModel {
             if let count = await service.mirrorCount(item) { mirrorCounts[item] = count }
         }
         await resume()
+        await service.retryWaiting()
     }
 
     public func resume() async {
@@ -152,6 +153,18 @@ public final class SensesModel {
         update(item) { $0.on = true }
         await reconcile(item)
         await loadDay(item)
+        if let reason = Self.notOnReason(state(item)) {
+            notice = L.format(reason, item.name)
+        }
+    }
+
+    static func notOnReason(_ state: SenseState) -> String? {
+        switch state {
+        case .on, .serverPaused: nil
+        case .systemDenied: "detail.notOn.systemDenied"
+        case .serverUnsupported: "detail.notOn.unsupported"
+        case .off: "detail.notOn.off"
+        }
     }
 
     public func turnOff(_ item: SenseItem) async {
@@ -166,6 +179,14 @@ public final class SensesModel {
     public func requestAlways(_ item: SenseItem) async {
         update(item) { $0.askedAlways = true }
         always[item] = await service.requestAlways(item)
+    }
+
+    public func alwaysNeedsSettings(_ item: SenseItem) -> Bool {
+        always[item] == true || switchStates[item]?.askedAlways == true
+    }
+
+    public func reloadAlways() {
+        for item in items { always[item] = service.alwaysAllowed(item) }
     }
 
     public func setRetention(_ item: SenseItem, days: Int) async {
@@ -185,7 +206,7 @@ public final class SensesModel {
         defer { working = nil }
         do {
             let result = try await service.deleteRecords(item, reason: L.format("detail.deleteAll", item.name))
-            notice = L.format("detail.deleted", result.deleted.records + result.deleted.trackPoints)
+            notice = L.format("detail.deleted", result.removed)
             await loadDay(item)
             await reloadStatus()
         } catch SensesGatewayError.confirmationCancelled {
@@ -209,7 +230,11 @@ public final class SensesModel {
     }
 
     private func update(_ item: SenseItem, _ change: (inout SenseSwitchState) -> Void) {
-        try? switches.update(item, change)
+        do {
+            try switches.update(item, change)
+        } catch {
+            notice = L.text("detail.failed")
+        }
         switchStates[item] = switches.state(item)
     }
 }

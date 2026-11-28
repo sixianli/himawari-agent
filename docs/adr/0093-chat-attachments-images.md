@@ -102,6 +102,6 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 - [ADR 0048：改用 Vercel AI Gateway，文本模型只用 DeepSeek V4.1 Flash](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0048-vercel-ai-gateway-replaces-openrouter.md)
 - [ADR 0090：对话界面 v6 第二期（附件）](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0090-chat-ui-v6-answer-and-composer.md#attachments)
 - [ADR 0091：对话界面 v6 第三期](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0091-chat-ui-v6-file-preview-and-sidebar.md)
-- [控制中心 v4 设计 Spec 的附件图片增补](../execution/specs/2026-09-15-control-center-v4-design.md#v6-attachment-images)
+- [控制中心 v4 设计 Spec 的附件图片增补](../assets/control-center/2026-09-15-v4-design.md#v6-attachment-images)
 - [案例 28：回答下方一行和附件](../engineering-casebook.md#case-answer-line-attachments)
-- [SOURCE: docs/execution/specs/2026-09-15-control-center-v4-design.md]
+- [SOURCE: docs/assets/control-center/2026-09-15-v4-design.md]

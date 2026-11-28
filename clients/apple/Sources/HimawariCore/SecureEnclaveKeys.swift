@@ -14,7 +14,13 @@ public struct SecureEnclaveKeySigner: DeviceKeySigner {
     }
 
     public func publicKeySPKI() throws -> Data {
-        try store.load(role, context: nil).publicKey.derRepresentation
+        do {
+            return try store.load(role, context: nil).publicKey.derRepresentation
+        } catch let error as DeviceKeyError {
+            throw error
+        } catch {
+            throw DeviceKeyError.keyUnreadable(role)
+        }
     }
 
     public func sign(_ message: Data, reason: String?) async throws -> Data {
@@ -109,7 +115,12 @@ public struct SecureEnclaveKeyStore: Sendable {
             flags,
             &error
         ) else { throw DeviceKeyError.accessControl }
-        let key = try SecureEnclave.P256.Signing.PrivateKey(accessControl: access)
+        let key: SecureEnclave.P256.Signing.PrivateKey
+        do {
+            key = try SecureEnclave.P256.Signing.PrivateKey(accessControl: access)
+        } catch {
+            throw DeviceKeyError.notCreated(role)
+        }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,

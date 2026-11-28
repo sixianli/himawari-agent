@@ -3,12 +3,22 @@ import AppKit
 import HimawariCore
 import HimawariDesign
 import HimawariShell
+import SwiftUI
 
 @MainActor
 public final class MacAppDelegate: NSObject, NSApplicationDelegate {
+    let menu: MenuBarModel
+    let main: MacMainModel
+    let updater: MacUpdater?
     private var controller: MenuBarController?
+    private var openWindow: OpenWindowAction?
+    private var openSettingsAction: OpenSettingsAction?
 
     public override init() {
+        let app = AppModel(kind: .mac)
+        menu = MenuBarModel(app: app, settings: MacSettingsStore())
+        main = MacMainModel(app: app)
+        updater = MacUpdater.forMainBundle()
         super.init()
     }
 
@@ -20,10 +30,31 @@ public final class MacAppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         #endif
-        SerifFace.shared.prepare()
-        NSApp.setActivationPolicy(.accessory)
-        let model = MenuBarModel(app: AppModel(kind: .mac), settings: MacSettingsStore())
-        controller = MenuBarController(model: model)
+        let controller = MenuBarController(model: menu)
+        controller.openMain = { [weak self] in self?.showMainWindow() }
+        controller.openSettingsWindow = { [weak self] in self?.showSettings() }
+        controller.openAwaiting = { [weak self] in
+            guard let self else { return }
+            main.go(to: .her(.approvals))
+            showMainWindow()
+        }
+        self.controller = controller
+    }
+
+    func register(_ openWindow: OpenWindowAction, _ openSettings: OpenSettingsAction) {
+        self.openWindow = openWindow
+        openSettingsAction = openSettings
+    }
+
+    func showMainWindow() {
+        guard main.isSignedIn else { return }
+        NSApp.activate()
+        openWindow?(id: MacScenes.mainWindow)
+    }
+
+    func showSettings() {
+        NSApp.activate()
+        openSettingsAction?()
     }
 
     public func application(_ application: NSApplication, open urls: [URL]) {
@@ -33,8 +64,19 @@ public final class MacAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     public func applicationDidBecomeActive(_ notification: Notification) {
-        controller?.model.app.becameActive()
-        controller?.model.settings.refreshPermissions()
+        menu.app.becameActive()
+        menu.settings.refreshPermissions()
+    }
+
+    public func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        false
+    }
+
+    public func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag {
+            if main.isSignedIn { showMainWindow() } else { controller?.showPairing() }
+        }
+        return true
     }
 }
 #endif

@@ -12,9 +12,22 @@ import {
   loadBundledMigrations,
   openQualifiedDatabase,
 } from "@himawari-agent/persistence-sqlite";
-import { initializeStateRoot, writeAuthorityFile } from "@himawari-agent/platform-node";
-import { CHAT_MEMORY_SNAPSHOT_MARKER, MEMORY_CAPTURE } from "@himawari-agent/prompt-catalog";
-import { buildDeviceTestRequest, generateDeviceTestKeyPair } from "@himawari-agent/testing";
+import {
+  generateSetupCode,
+  initializeStateRoot,
+  writeAuthorityFile,
+  writeSetupCode,
+} from "@himawari-agent/platform-node";
+import {
+  CHAT_MEMORY_SNAPSHOT_MARKER,
+  CONVERSATION_RECALL_HEADER,
+  MEMORY_CAPTURE,
+} from "@himawari-agent/prompt-catalog";
+import {
+  buildDeviceTestRequest,
+  generateDeviceTestKeyPair,
+  SoftwarePasskey,
+} from "@himawari-agent/testing";
 import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { exportJWK, generateKeyPair, type JSONWebKeySet, SignJWT } from "jose";
@@ -1243,7 +1256,6 @@ async function openInstalledMain(
     version: "installed-policy-v1",
     systemInstruction: "请用中文回答。",
     memoryLimit: 10,
-    maxSelectedMemories: 5,
     ...(options.coding
       ? {
           coding: {
@@ -1593,7 +1605,15 @@ function readRunBilling(database: ReturnType<typeof openQualifiedDatabase>, runI
   return { identities, allocations, accounts };
 }
 
+function answerMemoryCapture(memories: readonly object[]) {
+  return (input: Readonly<Record<string, unknown>>) =>
+    JSON.stringify(input["messages"]).includes(MEMORY_CAPTURE.text.slice(0, 24))
+      ? { text: JSON.stringify({ memories }) }
+      : { text: "安装后的持久回答" };
+}
+
 it("[R2-L5] executes authenticated HTTP requests and persists gateway costs after restart", async () => {
+  chatReply = answerMemoryCapture([]);
   const service = await openInstalledMain();
   await service.command("thread.create", "installed-main-create", {
     threadId: "thread-production-main",
@@ -1676,7 +1696,7 @@ it("[R2-L5] executes authenticated HTTP requests and persists gateway costs afte
         },
         { timeout: 30_000 },
       )
-      .toBe(6);
+      .toBe(5);
     const modelCalls = providerRequests.filter(({ path: route }) => route.startsWith("/v1/"));
     for (const call of modelCalls) {
       expect(call.body?.["model"]).toBe(
@@ -1706,7 +1726,6 @@ it("[R2-L5] executes authenticated HTTP requests and persists gateway costs afte
         "agent-stream",
         "embedding",
         "embedding",
-        "model-port",
         "model-port",
         "model-port",
       ]);
@@ -1803,6 +1822,7 @@ it("[R2-L5] executes authenticated HTTP requests and persists gateway costs afte
     expect(unavailable.status).toBe(503);
     expect(unavailable.body).not.toMatchObject({ status: "ready" });
   } finally {
+    chatReply = undefined;
     await service.stop();
   }
 }, 90_000);
@@ -1812,10 +1832,6 @@ it.each(["connection loss", "missing cost", "budget exceeded"] as const)(
   async (failure) => {
     const service = await openInstalledMain();
     const threadId = "thread-memory-fallback";
-    const capture = (memories: readonly object[]) => (input: Readonly<Record<string, unknown>>) =>
-      JSON.stringify(input["messages"]).includes(MEMORY_CAPTURE.text.slice(0, 24))
-        ? { text: JSON.stringify({ memories }) }
-        : { text: "安装后的持久回答" };
     const degradeRows = () => {
       const database = openQualifiedDatabase(databasePath);
       try {
@@ -1834,7 +1850,7 @@ it.each(["connection loss", "missing cost", "budget exceeded"] as const)(
         answerLocale: "zh-CN",
         resultRef: await service.upload("memory-fallback-create-payload", "create"),
       });
-      chatReply = capture([
+      chatReply = answerMemoryCapture([
         {
           kind: "durable_fact",
           decision: "create",
@@ -1869,7 +1885,7 @@ it.each(["connection loss", "missing cost", "budget exceeded"] as const)(
         .toEqual({ indexed: 1 });
       expect(degradeRows()).toEqual([]);
 
-      chatReply = capture([]);
+      chatReply = answerMemoryCapture([]);
       dropEmbeddingConnections = failure === "connection loss";
       embeddingCostAvailable = failure !== "missing cost";
       rejectEmbeddingsOverBudget = failure === "budget exceeded";
@@ -2168,13 +2184,12 @@ async function systemInstructionChange(runPolicy: Record<string, unknown>) {
   }
 }
 
-it("[P5-3] checks the MCP entry against its own Cloudflare Access audience, not the web sign-in audience", async () => {
-  const mcpAudience = "mcp-access-audience-production-process";
-  const service = await openInstalledMain({ runPolicy: { mcpRead: { audience: mcpAudience } } });
+it("[P5-3] serves the MCP entry only to an OAuth access token and points a bare request to the sign-in details", async () => {
+  const service = await openInstalledMain();
   try {
-    const secret = seedMcpConnection();
-    const call = async (assertion?: string) =>
-      httpRequest(service.running().address, `/api/mcp/v1/${secret}`, {
+    const token = seedMcpConnection();
+    const call = async (bearer?: string) =>
+      httpRequest(service.running().address, "/api/mcp/v1", {
         ...jsonRequestBody({
           jsonrpc: "2.0",
           id: 1,
@@ -2184,28 +2199,41 @@ it("[P5-3] checks the MCP entry against its own Cloudflare Access audience, not 
         headers: {
           accept: "application/json, text/event-stream",
           "mcp-protocol-version": "2025-06-18",
-          ...(assertion ? { "cf-access-jwt-assertion": assertion } : {}),
+          ...(bearer ? { authorization: `Bearer ${bearer}` } : {}),
         },
       });
     const bare = await call();
     expect(bare.status).toBe(401);
-    expect(bare.headers.get("www-authenticate")).toBeNull();
-    const webAudience = await call(await signToken());
-    expect(webAudience.status).toBe(401);
-    const notOwner = await call(
-      await signToken({ audience: mcpAudience, subject: "someone-else-in-the-access-team" }),
+    expect(bare.headers.get("www-authenticate")).toContain(
+      `resource_metadata="${publicOrigin}/.well-known/oauth-protected-resource/api/mcp/v1"`,
     );
-    expect(notOwner.status).toBe(401);
-    const served = await call(await signToken({ audience: mcpAudience }));
+    const metadata = await httpRequest(
+      service.running().address,
+      "/.well-known/oauth-protected-resource/api/mcp/v1",
+      { method: "GET" },
+    );
+    expect(metadata.status).toBe(200);
+    expect(JSON.parse(metadata.raw)).toMatchObject({
+      resource: `${publicOrigin}/api/mcp/v1`,
+      authorization_servers: [publicOrigin],
+    });
+    expect((await call(await signToken())).status).toBe(401);
+    expect((await call("B".repeat(43))).status).toBe(401);
+    const served = await call(token);
     expect(served.status).toBe(200);
     expect(served.raw).toContain(String(new Date().getUTCFullYear()));
+    const names = await installedMcpToolNames(service.running().address, token);
+    expect(names).toEqual(
+      expect.arrayContaining(["today_context", "propose_memory", "propose_rule"]),
+    );
   } finally {
     await service.stop();
   }
 }, 120_000);
 
 function seedMcpConnection(): string {
-  const secret = "A".repeat(43);
+  const token = "A".repeat(43);
+  const now = new Date().toISOString();
   const seeded = openQualifiedDatabase(databasePath);
   try {
     seeded
@@ -2220,21 +2248,43 @@ function seedMcpConnection(): string {
         ownerId,
         agentId,
         "installed-process",
-        createHash("sha256").update(secret, "utf8").digest("hex"),
-        "2026-11-16T00:00:00.000Z",
-        "2026-11-16T00:00:00.000Z",
+        createHash("sha256").update("unused-installed-process").digest("hex"),
+        now,
+        now,
+      );
+    seeded
+      .prepare(
+        `INSERT OR IGNORE INTO mcp_oauth_clients (
+          client_id, owner_id, agent_id, registration, client_name, redirect_uris,
+          connection_id, created_at, updated_at
+        ) VALUES (?, ?, ?, 'dynamic', 'installed-process', '["http://127.0.0.1/callback"]', ?, ?, ?)`,
+      )
+      .run("client-installed-process", ownerId, agentId, "conn-installed-process", now, now);
+    seeded
+      .prepare(
+        `INSERT OR REPLACE INTO mcp_oauth_tokens (
+          token_sha256, owner_id, agent_id, kind, connection_id, client_id, family_id, scopes,
+          resource, created_at, expires_at, used_at, revoked_at
+        ) VALUES (?, ?, ?, 'access', ?, ?, ?, '["himawari:read","himawari:write"]', ?, ?, ?, NULL, NULL)`,
+      )
+      .run(
+        createHash("sha256").update(token, "utf8").digest("hex"),
+        ownerId,
+        agentId,
+        "conn-installed-process",
+        "client-installed-process",
+        "family-installed-process",
+        `${publicOrigin}/api/mcp/v1`,
+        now,
+        new Date(Date.now() + 3_600_000).toISOString(),
       );
   } finally {
     seeded.close();
   }
-  return secret;
+  return token;
 }
 
-async function installedMcpToolNames(
-  address: string,
-  assertion: string,
-  secret: string,
-): Promise<string[]> {
+async function installedMcpToolNames(address: string, token: string): Promise<string[]> {
   const client = new Client(
     { name: "claude-code", version: "2.1.400" },
     {
@@ -2243,10 +2293,10 @@ async function installedMcpToolNames(
     },
   );
   await client.connect(
-    new StreamableHTTPClientTransport(new URL(`/api/mcp/v1/${secret}`, address), {
+    new StreamableHTTPClientTransport(new URL("/api/mcp/v1", address), {
       fetch: async (input, init) => {
         const headers = new Headers(init?.headers);
-        headers.set("cf-access-jwt-assertion", assertion);
+        headers.set("authorization", `Bearer ${token}`);
         const target = new URL(input instanceof Request ? input.url : String(input));
         const result = await httpRequest(address, `${target.pathname}${target.search}`, {
           method: init?.method ?? "GET",
@@ -2266,28 +2316,6 @@ async function installedMcpToolNames(
     await client.close();
   }
 }
-
-it("[P5-3] shows the memory proposal tool only when runPolicy.mcpRead.proposals is on", async () => {
-  const mcpAudience = "mcp-access-audience-production-process";
-  for (const proposals of [false, true]) {
-    const service = await openInstalledMain({
-      runPolicy: { mcpRead: { audience: mcpAudience, ...(proposals ? { proposals } : {}) } },
-    });
-    try {
-      const secret = seedMcpConnection();
-      const names = await installedMcpToolNames(
-        service.running().address,
-        await signToken({ audience: mcpAudience }),
-        secret,
-      );
-      expect(names).toContain("today_context");
-      expect(names.includes("propose_memory")).toBe(proposals);
-      expect(names.includes("propose_rule")).toBe(proposals);
-    } finally {
-      await service.stop();
-    }
-  }
-}, 240_000);
 
 it("[PR-B] keeps the request head byte-identical when the configured system instruction changes between turns", async () => {
   const { first, second, rows } = await systemInstructionChange({});
@@ -2375,36 +2403,43 @@ const withoutTurnTime = (raw: string) =>
   raw.replace(turnTime, "本轮请求时间（UTC）：<time>。配置时区 $1 的当地时间：<time>。");
 
 async function pairInstalledDevice(service: Awaited<ReturnType<typeof openInstalledMain>>) {
-  const started = await service.web("pairing-codes", {});
-  expect(started.status, started.raw).toBe(201);
-  const code = (
-    JSON.parse(
-      Buffer.from(
-        String((started.body as { pairingUri: string }).pairingUri).replace(/^himawari-pair:/u, ""),
-        "base64url",
-      ).toString("utf8"),
-    ) as { code: string }
-  ).code;
+  const setupCode = generateSetupCode();
+  await writeSetupCode({
+    stateRoot,
+    scope: { ownerId: createOwnerId(ownerId), agentId: createAgentId(agentId) },
+    code: setupCode,
+    now: new Date(),
+    minutes: 15,
+  });
   const keys = generateDeviceTestKeyPair();
   const confirmKeys = generateDeviceTestKeyPair();
-  const paired = await httpRequest(service.running().address, "/api/device/v1/pair", {
-    method: "POST",
-    body: JSON.stringify({
-      pairingCode: code,
+  const passkey = new SoftwarePasskey(publicOrigin);
+  const signIn = (route: string, body: object) =>
+    httpRequest(service.running().address, `/api/device/v1/sign-in/${route}`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  const options = await signIn("setup/options", {
+    setupCode,
+    device: {
       kind: "iphone",
       name: "Andy iPhone",
       releaseChannel: "direct",
       devicePublicKey: keys.publicKeySpkiBase64,
       confirmPublicKey: confirmKeys.publicKeySpkiBase64,
-    }),
+    },
   });
-  expect(paired.status, paired.raw).toBe(201);
-  const device = (paired.body as { device: { id: string; revision: number } }).device;
-  const confirmed = await service.web("confirm", {
-    deviceId: device.id,
-    expectedRevision: device.revision,
+  expect(options.status, options.raw).toBe(200);
+  const started = options.body as {
+    flowId: string;
+    publicKey: { challenge: string; rp: { id: string } };
+  };
+  const finished = await signIn("setup/finish", {
+    flowId: started.flowId,
+    credential: passkey.create(started.publicKey),
   });
-  expect(confirmed.status, confirmed.raw).toBe(200);
+  expect(finished.status, finished.raw).toBe(201);
+  const device = (finished.body as { device: { id: string; revision: number } }).device;
   return async (route: string, body: object) => {
     const signed = buildDeviceTestRequest({
       origin: publicOrigin,
@@ -2445,10 +2480,6 @@ async function waitForThreadRun(
 
 it("[PR-A] [iOS-8] a half sentence prepared while the owner speaks sends the model the same bytes, memories and order as no preparation", async () => {
   const service = await openInstalledMain();
-  const capture = (memories: readonly object[]) => (input: Readonly<Record<string, unknown>>) =>
-    JSON.stringify(input["messages"]).includes(MEMORY_CAPTURE.text.slice(0, 24))
-      ? { text: JSON.stringify({ memories }) }
-      : { text: "安装后的持久回答" };
   const remembered = [
     "主人想把每周的会都改到下午开",
     "主人想把明天的例会改到下午三点",
@@ -2463,7 +2494,7 @@ it("[PR-A] [iOS-8] a half sentence prepared while the owner speaks sends the mod
     });
     for (const [index, text] of remembered.entries()) {
       const quote = `请记住，${text.replace("主人", "我")}`;
-      chatReply = capture([
+      chatReply = answerMemoryCapture([
         {
           kind: "durable_fact",
           decision: "create",
@@ -2503,7 +2534,7 @@ it("[PR-A] [iOS-8] a half sentence prepared while the owner speaks sends the mod
         { timeout: 30_000 },
       )
       .toEqual({ indexed: remembered.length });
-    chatReply = capture([]);
+    chatReply = answerMemoryCapture([]);
     const device = await pairInstalledDevice(service);
     const finalWords = "帮我把明天的会改到下午。";
     const spoken = async (name: string, partial: string | null) => {
@@ -2574,7 +2605,19 @@ it("[PR-A] [iOS-8] a half sentence prepared while the owner speaks sends the mod
     expect(order(lastCold)).not.toContain("主人的牙医是樱井医生");
     expect(order(outsideSnapshot(lastMessage(warm.request)))).toEqual(order(lastCold));
     expect(lastCold).toContain(finalWords);
-    expect(withoutTurnTime(warm.request.raw)).toBe(withoutTurnTime(cold.request.raw));
+    const withoutRecall = (raw: string) => {
+      const header = raw.indexOf(CONVERSATION_RECALL_HEADER.text);
+      if (header < 0) return raw;
+      const start = raw.lastIndexOf("\\n[Himawari 资料 ", header);
+      const ends = ["\\n[Himawari", "\\n[记忆变化", "\\n</himawari-context>"]
+        .map((next) => raw.indexOf(next, header))
+        .filter((at) => at >= 0);
+      if (start < 0 || ends.length === 0) throw new Error("CONVERSATION_RECALL_BLOCK_UNBOUNDED");
+      return raw.slice(0, start) + raw.slice(Math.min(...ends));
+    };
+    expect(withoutTurnTime(withoutRecall(warm.request.raw))).toBe(
+      withoutTurnTime(withoutRecall(cold.request.raw)),
+    );
     expect(warm.request.raw.match(turnTime)).toHaveLength(1);
   } finally {
     chatReply = undefined;

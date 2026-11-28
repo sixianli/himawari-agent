@@ -10,13 +10,16 @@ import {
   type HostWorkspaceSnapshotPort,
   hostDirectoryGrantStateKey,
   type IdGeneratorPort,
+  isModelVisible,
   type ProductConfiguration,
   type RunPolicyConfiguration,
   type WebProviderId,
 } from "@himawari-agent/application";
 import { sandboxWorkspaceCopySchema } from "@himawari-agent/execution-contracts";
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
+import type { ExternalRedactionOptions } from "@himawari-agent/sensitive-capture";
 import { createApprovalDisplayBuilder } from "./production-approval-display.js";
+import type { ProductionComputerTools } from "./production-computer-tools.js";
 import type {
   ProductionFileReadServices,
   WebProviderSecretBinding,
@@ -24,7 +27,6 @@ import type {
 import { createProductionHostReadOnly } from "./production-host-read.js";
 import type { ProductionHostWeb } from "./production-host-web.js";
 import { configuredModelDisclosureIdentity } from "./production-model-disclosure.js";
-import type { ExternalRedactionOptions } from "@himawari-agent/sensitive-capture";
 import { ProductionThreadArtifacts } from "./production-thread-artifacts.js";
 import { createProductionWorkspaceLedger } from "./production-workspace-ledger.js";
 import { PublicSearchAuthorization } from "./public-search-authorization.js";
@@ -52,6 +54,7 @@ export function createProductionFileReadServices(options: {
   readonly hostReadOnlyPort?: HostReadOnlyPort;
   readonly workspaceSnapshotPort?: HostReadOnlyPort & HostWorkspaceSnapshotPort;
   readonly hostWeb?: ProductionHostWeb;
+  readonly computer?: ProductionComputerTools;
   readonly externalTag?: () => Promise<ExternalRedactionOptions["tag"]>;
   readonly threadTitle?: (threadId: string) => Promise<string | null>;
 }): ProductionFileReadServices {
@@ -120,6 +123,7 @@ export function createProductionFileReadServices(options: {
     });
   return {
     ...(hostReadOnly ? { hostReadOnly } : {}),
+    ...(options.computer ? { computer: options.computer } : {}),
     ...(workspaceLedger ? { workspaceLedger } : {}),
     ...(threadArtifacts ? { threadArtifacts } : {}),
     ...(threadArtifacts
@@ -205,8 +209,7 @@ export function createProductionFileReadServices(options: {
       const model = configuration.modelDescriptors.find(
         ({ ref, role }) => ref === context.modelRef && role !== "embedding",
       );
-      if (!model || !model.allowedDataClassifications.includes(call.dataClassification))
-        return undefined;
+      if (!model || !isModelVisible(call.dataClassification)) return undefined;
       const common = {
         hostId: route.hostId,
         workerInstanceId: route.workerInstanceId,

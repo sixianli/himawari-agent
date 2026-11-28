@@ -250,14 +250,14 @@ export class VaultTestPhone {
       if (!entry.upload.origins.includes(request.origin))
         throw new Error("VAULT_TEST_PHONE_ORIGIN");
       const version = request.itemVersions[index] as number;
-      const at = Math.floor((input.now ?? Date.now()) / 1000);
+      const at = Math.floor((input.now ?? Date.now()) / 30_000) * 30;
       const seed = entry.values["totp"];
       const payload = {
         itemKey: (input.overrideItemKey ?? entry.itemKey).toString("base64"),
         ...(seed === undefined
           ? {}
           : {
-              totp: [0, 30, 60].map((offset) => ({
+              totp: [0, 30, 60, 90].map((offset) => ({
                 at: at + offset,
                 code: totpCode(seed, at + offset),
               })),

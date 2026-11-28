@@ -183,6 +183,8 @@ public final class WatchModel {
                 }
                 let deviceKey = keys.signer(.device)
                 let confirmKey = keys.signer(.confirm)
+                let devicePublicKey = try deviceKey.publicKeySPKI()
+                let confirmPublicKey = try confirmKey.publicKeySPKI()
                 let device = try await api.pair(
                     invitation: invitation,
                     kind: kind,
@@ -191,8 +193,6 @@ public final class WatchModel {
                     deviceKey: deviceKey,
                     confirmKey: confirmKey
                 )
-                let devicePublicKey = try deviceKey.publicKeySPKI()
-                let confirmPublicKey = try confirmKey.publicKeySPKI()
                 if let reported = device.pairingNumber,
                    reported != PairingNumber.digits(devicePublicKey: devicePublicKey, confirmPublicKey: confirmPublicKey) {
                     throw DeviceAPIError.invalidResponse

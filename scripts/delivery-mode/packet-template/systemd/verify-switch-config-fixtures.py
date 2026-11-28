@@ -50,6 +50,13 @@ approved_embedding = json.loads('__PKT_TARGET_EMBEDDING_JSON__')
 if approved_embedding is not None:
     wanted['modelDescriptors'][1] = approved_embedding
     wanted['memory'] = {'dimensions': approved_embedding['dimensions']}
+approved_speech = json.loads('__PKT_TARGET_SPEECH_JSON__')
+if approved_speech is not None:
+    wanted['speech'] = approved_speech
+for key, value in json.loads('__PKT_TARGET_RUN_POLICY_JSON__').items():
+    wanted['runPolicy'][key] = value
+for secret in json.loads('__PKT_TARGET_SECRET_REFERENCES_JSON__'):
+    wanted['secretReferences'] = [entry for entry in wanted['secretReferences'] if entry['ref'] != secret['ref']] + [secret]
 if accepted != wanted:
     failures.append('SWITCH_EXPECTED_CONFIG_NOT_ONLY_APPROVED_FIELDS')
 if json.dumps(original, sort_keys=True) != before:

@@ -1,23 +1,23 @@
 import { lstat, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { type GatewayV2Command, gatewayV2MessageSchema } from "@himawari-agent/gateway-contracts";
+import { parseProductConfiguration } from "@himawari-agent/platform-node";
 import { afterEach, expect, it, vi } from "vitest";
-import { gatewayV2MessageSchema, type GatewayV2Command } from "@himawari-agent/gateway-contracts";
-import { createProductionWorkspaceCopies } from "../../apps/agent-service/src/production-workspace-copies.ts";
 import { createProductionApprovalGateway } from "../../apps/agent-service/src/production-approval-gateway.ts";
 import { createProductionFileReadServices } from "../../apps/agent-service/src/production-file-read-services.ts";
-import { parseProductConfiguration } from "@himawari-agent/platform-node";
-import { revokeFixtureDirectoryGrant } from "../fixtures/revoke-directory-grant.ts";
+import { createProductionWorkspaceCopies } from "../../apps/agent-service/src/production-workspace-copies.ts";
 import { productionSandboxScope } from "../fixtures/production-sandbox-scope.ts";
+import { queuedLiveWorker } from "../fixtures/queued-live-worker.ts";
+import { revokeFixtureDirectoryGrant } from "../fixtures/revoke-directory-grant.ts";
 import {
-  OWNER_ID,
   AGENT_ID,
+  LIVE_SANDBOX,
+  OWNER_ID,
   SERVICE_AUTHORITY,
+  serviceRequest,
   T1,
   T2,
-  LIVE_SANDBOX,
-  serviceRequest,
 } from "../fixtures/sqlite-capability-invocation-fixture.ts";
-import { queuedLiveWorker } from "../fixtures/queued-live-worker.ts";
 
 vi.mock("node:child_process", async (original) => {
   const processes = await original<typeof import("node:child_process")>();
@@ -106,7 +106,6 @@ it("persists Owner copy selection and rejects changed source authority through t
       version: "copy-test",
       systemInstruction: "",
       memoryLimit: 1,
-      maxSelectedMemories: 1,
       coding: {
         hostId: f.fileBinding.hostId,
         workerInstanceId: f.fileBinding.workerInstanceId,

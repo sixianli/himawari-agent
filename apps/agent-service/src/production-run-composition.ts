@@ -1,11 +1,12 @@
 import { createHash } from "node:crypto";
 import {
   type ClockPort,
+  type ContextConversationRecallPort,
   ContextFormationService,
   ContextProjectionService,
   type ExecutionLiveFeed,
-  INBOX_LOOP_DEFAULTS,
   type IdGeneratorPort,
+  INBOX_LOOP_DEFAULTS,
   type MemoryPort,
   type ModelEgress,
   type ModelInvocationAdmissionDescriptor,
@@ -32,7 +33,11 @@ import {
 } from "@himawari-agent/application";
 import { canonicalAuthorizationSnapshot } from "@himawari-agent/application/action-intent-snapshot";
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
-import { PiAgentRuntimeAdapter, type PiModelBindingPort } from "@himawari-agent/runtime-pi";
+import {
+  historyKeptSince,
+  PiAgentRuntimeAdapter,
+  type PiModelBindingPort,
+} from "@himawari-agent/runtime-pi";
 import {
   type ContextExternalContent,
   markRecalledExternalRecords,
@@ -136,7 +141,7 @@ export interface ProductionRunCompositionOptions {
   > & {
     readonly runPolicy?: Pick<
       NonNullable<ProductConfiguration["runPolicy"]>,
-      "freezeThreadPrompts"
+      "freezeThreadPrompts" | "userComputers"
     >;
   };
   readonly onHandleTools?: (
@@ -152,6 +157,7 @@ export interface ProductionRunCompositionOptions {
   readonly modelRegistry: readonly ModelInvocationAdmissionDescriptor[];
   readonly protector: PayloadProtectorPort;
   readonly memory: Pick<MemoryPort, "search">;
+  readonly conversationRecall?: ContextConversationRecallPort;
   readonly tools: RuntimeToolPort;
   readonly backgroundCommands?: ProductionBackgroundCommands;
   readonly prepareQueuedSandboxExecutions?: (request: RuntimeRequest) => Promise<void>;
@@ -208,6 +214,7 @@ function liveTrace(
     readRun: (runId, afterSequence, limit) => trace.readRun(runId, afterSequence, limit),
     readSession: (sessionId, afterRecordedAt, limit) =>
       trace.readSession(sessionId, afterRecordedAt, limit),
+    readRecentByType: (input) => trace.readRecentByType(input),
   };
 }
 
@@ -332,6 +339,9 @@ export function createProductionRunComposition(options: ProductionRunComposition
     new ContextFormationService({
       profile,
       memory,
+      ...(options.conversationRecall
+        ? { conversations: options.conversationRecall, runtimeHistoryKeptSince: historyKeptSince }
+        : {}),
       trace,
       artifacts,
       payloads,
@@ -486,6 +496,7 @@ export function createProductionRunComposition(options: ProductionRunComposition
     ),
     models: options.models,
     cwd: options.cwd,
+    ...(configuration.runPolicy?.userComputers ? { toolsRunInComputer: true } : {}),
     agentDir: options.agentDir,
     ...(options.timeZone ? { timeZone: options.timeZone } : {}),
     admission,

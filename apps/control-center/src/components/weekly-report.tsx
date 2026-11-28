@@ -10,7 +10,7 @@ import type {
 } from "../proactive.js";
 import { AccountLogin } from "./account-login.js";
 import { Glyph, type GlyphName } from "./glyphs.js";
-import { McpUsageLines } from "./mcp-connections-settings.js";
+import { McpUsageLines } from "./mcp-usage-lines.js";
 import { ModalDialog } from "./overlays.js";
 import { ActionButton } from "./primitives.js";
 
@@ -23,7 +23,6 @@ type InfoKey =
   | "obs"
   | "type"
   | "stats"
-  | "muse"
   | "implicit"
   | "prereview"
   | "row:proactive_pushed"
@@ -53,13 +52,6 @@ const MAIN_GROUPS: readonly Group[] = [
 ];
 const OWN_RATE_LABELS: readonly Group[] = [...MAIN_GROUPS, "memory_capture_failed"];
 const DESCRIBED_GROUPS: readonly Group[] = ["proactive_pushed", "proactive_silent"];
-const MUSE_BUCKETS = [
-  "both",
-  "museOnly",
-  "himawariOnly",
-  "bothSilent",
-  "noHimawariRecord",
-] as const;
 const STATUS_GLYPH: Readonly<Record<DayStatus, GlyphName>> = {
   pass: "passed",
   fail: "failed",
@@ -408,15 +400,6 @@ function CardHead({
   );
 }
 
-function signedPercent(value: number): string {
-  const text = `${(value * 100).toFixed(1)}%`;
-  return value > 0 ? `+${text}` : text;
-}
-
-function signedFree(value: number | null, format: Format): string {
-  return value === null ? "-" : format.percent(value);
-}
-
 function ratioParts(
   group: CalibrationGroupSummary,
   minimumSamples: number,
@@ -458,169 +441,18 @@ const emptyGroup = (group: Group): CalibrationGroupSummary => ({
   rates: { useful: null, unneeded: null, missed: null },
 });
 
-function GapLines({
-  gap,
-  message,
-  format,
-}: {
-  gap: NonNullable<ProactiveWeekly["report"]["gap"]>;
-  message: Message;
-  format: Format;
-}) {
-  return (
-    <>
-      {gap.lines.map((line) => (
-        <div key={line.line} className="weekly-gap-line">
-          <b>{message("weekly.gap.line", { l: line.line })}</b>
-          <span>{message("weekly.gap.mails", { n: format.count(line.mails) })}</span>
-          {line.verdict === "insufficient" ? (
-            <span>{message("weekly.gap.few", { n: line.mails })}</span>
-          ) : (
-            <>
-              <span>
-                {message("weekly.gap.rates", {
-                  muse: signedFree(line.muse?.value ?? null, format),
-                  himawari: signedFree(line.himawari?.value ?? null, format),
-                })}
-              </span>
-              {line.difference !== null && line.low !== null && line.high !== null ? (
-                <span>
-                  {message("weekly.gap.diff", {
-                    d: signedPercent(line.difference),
-                    low: signedPercent(line.low),
-                    high: signedPercent(line.high),
-                  })}
-                </span>
-              ) : null}
-              <span>
-                {message("weekly.gap.verdict", {
-                  v: line.verdict === "decided" ? line.direction : "none",
-                })}
-              </span>
-            </>
-          )}
-        </div>
-      ))}
-    </>
-  );
-}
-
-function MuseBucketTiles({
-  muse,
-  message,
-  format,
-  mark,
-}: {
-  muse: ProactiveWeekly["report"]["muse"];
-  message: Message;
-  format: Format;
-  mark?: (typeof MUSE_BUCKETS)[number] | null;
-}) {
-  return (
-    <div className="weekly-tiles" data-count="5">
-      {MUSE_BUCKETS.map((bucket) => (
-        <div key={bucket} className="weekly-tile" data-mark={mark === bucket || undefined}>
-          <b>{format.count(muse.buckets[bucket])}</b>
-          <span>{message("weekly.muse.bucket", { b: bucket })}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-export function WeekGlance({
-  report,
-  message,
-  locale,
-  mark,
-}: {
-  report: ProactiveWeekly["report"];
-  message: Message;
-  locale: string;
-  mark: (typeof MUSE_BUCKETS)[number] | null;
-}) {
-  const format = formatter(locale);
-  const groups = new Map(report.groups.map((group) => [group.group, group]));
-  return (
-    <div className="mail-week">
-      <p className="weekly-window">
-        {message("weekly.window.range", {
-          start: format.day(report.startDay),
-          end: format.day(addDays(report.endDay, -1)),
-        })}
-      </p>
-      {report.ratesWithheld ? (
-        <p className="weekly-empty">{message("decision.email.weekWithheld")}</p>
-      ) : null}
-      <div className="mail-week-rows">
-        {DESCRIBED_GROUPS.map((name) => {
-          const group = groups.get(name) ?? emptyGroup(name);
-          const parts = report.ratesWithheld
-            ? null
-            : ratioParts(group, report.minimumSamples, message, format);
-          return (
-            <div key={name} className="weekly-type-card" data-group={name}>
-              <h3>{message("weekly.group", { g: name })}</h3>
-              <div className="weekly-metric">
-                <span>{message("weekly.type.column", { c: "total" })}</span>
-                <span>{format.count(group.total)}</span>
-              </div>
-              <div className="weekly-metric">
-                <span>{message("weekly.type.column", { c: "rated" })}</span>
-                <span>{format.count(group.rated)}</span>
-              </div>
-              {report.ratesWithheld ? null : parts ? (
-                parts.map((part) => (
-                  <div key={part.rating} className="weekly-metric">
-                    <span>{part.label}</span>
-                    <span>
-                      {part.value}
-                      <small>{part.range}</small>
-                    </span>
-                  </div>
-                ))
-              ) : (
-                <div className="weekly-metric" data-few>
-                  <span>{message("weekly.type.column", { c: "ratio" })}</span>
-                  <span>{message("weekly.few", { n: group.rated })}</span>
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-      <h3>{message("weekly.muse.title")}</h3>
-      {report.muse.entries === 0 ? (
-        <p className="weekly-empty">{message("weekly.muse.empty")}</p>
-      ) : (
-        <MuseBucketTiles muse={report.muse} message={message} format={format} mark={mark} />
-      )}
-      <h3>{message("weekly.gap.title")}</h3>
-      {report.gap === null ? (
-        <p className="weekly-empty">{message("weekly.gap.notFull")}</p>
-      ) : report.gap.lines.every((line) => line.mails === 0) ? (
-        <p className="weekly-empty">{message("weekly.gap.empty")}</p>
-      ) : (
-        <GapLines gap={report.gap} message={message} format={format} />
-      )}
-    </div>
-  );
-}
-
 export function WeeklyReport({
   proactive,
   weekly,
   message,
   locale,
   onRate,
-  onOpenMail,
 }: {
   proactive: ProactiveModel;
   weekly: ProactiveWeeklyAccess;
   message: Message;
   locale: string;
   onRate: () => void;
-  onOpenMail?: (messageId: string, endDay: string) => void;
 }) {
   const access = useRef(weekly);
   access.current = weekly;
@@ -630,8 +462,6 @@ export function WeeklyReport({
   const [openInfo, setOpenInfo] = useState<OpenInfo | null>(null);
   const [openDay, setOpenDay] = useState<string | null>(null);
   const [otherOpen, setOtherOpen] = useState(false);
-  const [markBusy, setMarkBusy] = useState<string | null>(null);
-  const [markFailed, setMarkFailed] = useState(false);
   const [pick, setPick] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [confirmBusy, setConfirmBusy] = useState(false);
@@ -855,13 +685,6 @@ export function WeeklyReport({
         list: [],
         version: null,
       };
-    if (key === "muse")
-      return {
-        title: message("weekly.muse.title"),
-        paragraphs: [message("weekly.muse.def")],
-        list: [],
-        version: null,
-      };
     const group = key.slice(4);
     return {
       title: message("weekly.group", { g: group }),
@@ -931,20 +754,6 @@ export function WeeklyReport({
     }
   };
 
-  const toggleMark = async (caseId: string, marked: boolean) => {
-    if (markBusy !== null) return;
-    setMarkBusy(caseId);
-    setMarkFailed(false);
-    try {
-      await weekly.markGapCase(caseId, report.endDay, !marked);
-      setReload((value) => value + 1);
-    } catch {
-      setMarkFailed(true);
-    } finally {
-      setMarkBusy(null);
-    }
-  };
-
   const ratioCells = (group: CalibrationGroupSummary) =>
     ratioParts(group, report.minimumSamples, message, format);
   const rowName = (group: Group, level: "cell" | "card") =>
@@ -980,8 +789,6 @@ export function WeeklyReport({
   const column = (c: "type" | "total" | "rated" | "ratio") => message("weekly.type.column", { c });
 
   const metrics = proactive.overview?.metrics ?? null;
-  const muse = report.muse;
-  const pairing = muse.pairing;
   const info = openInfo ? infoFor(openInfo.key) : null;
   const windowText =
     phase === "unset"
@@ -1225,117 +1032,6 @@ export function WeeklyReport({
           </div>
         </section>
       ) : null}
-
-      <section className="weekly-card" aria-label={message("weekly.muse.title")}>
-        <CardHead title={message("weekly.muse.title")} infoKey="muse" info={infoButton} />
-        {muse.entries === 0 ? (
-          <p className="weekly-empty">{message("weekly.muse.empty")}</p>
-        ) : (
-          <>
-            <MuseBucketTiles muse={muse} message={message} format={format} />
-            <p className="weekly-muse-foot">
-              <span>
-                {message("weekly.muse.unpaired")} <b>{format.count(muse.unpaired)}</b>
-              </span>
-              {pairing && showTable ? (
-                <span>
-                  {message("weekly.muse.rate")}{" "}
-                  <b>
-                    {pairing.enough && pairing.value !== null
-                      ? message("weekly.ratio", {
-                          pct: format.percent(pairing.value),
-                          k: format.count(pairing.successes),
-                          n: format.count(pairing.samples),
-                        })
-                      : message("weekly.few", { n: pairing.samples })}
-                  </b>
-                </span>
-              ) : null}
-            </p>
-          </>
-        )}
-      </section>
-
-      <section className="weekly-card" aria-label={message("weekly.gap.title")}>
-        <CardHead title={message("weekly.gap.title")} infoKey={null} info={infoButton} />
-        {report.gap === null ? (
-          <p className="weekly-empty">{message("weekly.gap.notFull")}</p>
-        ) : report.gap.lines.every((line) => line.mails === 0) ? (
-          <p className="weekly-empty">{message("weekly.gap.empty")}</p>
-        ) : (
-          <>
-            <GapLines gap={report.gap} message={message} format={format} />
-            <p className="weekly-muse-foot">{message("weekly.gap.note")}</p>
-          </>
-        )}
-      </section>
-
-      <section className="weekly-card" aria-label={message("weekly.cases.title")}>
-        <CardHead title={message("weekly.cases.title")} infoKey={null} info={infoButton} />
-        {report.gapCases.length === 0 ? (
-          <p className="weekly-empty">{message("weekly.cases.empty")}</p>
-        ) : (
-          <>
-            <ul className="weekly-cases">
-              {report.gapCases.map((item) => (
-                <li key={item.id} className="weekly-case" data-case-id={item.id}>
-                  <span className="weekly-case-attr">
-                    {message("weekly.cases.attr", { a: item.attribution })}
-                  </span>
-                  <div>
-                    <b>{message("weekly.cases.muse")}</b>
-                    <p>
-                      {item.museTextWithheld
-                        ? message("weekly.cases.withheld")
-                        : [item.museTitle, item.museText].filter(Boolean).join(" · ") ||
-                          message("weekly.cases.noText")}
-                    </p>
-                  </div>
-                  <div>
-                    <b>{message("weekly.cases.himawari")}</b>
-                    <p>{message("weekly.cases.outcome", { o: item.himawariOutcome })}</p>
-                    <p>{item.himawariReason ?? message("weekly.cases.noReason")}</p>
-                    <p>
-                      {message("weekly.cases.memory", {
-                        m: item.memoryHits,
-                        r: item.relatedMessages,
-                      })}
-                    </p>
-                    <p>{message("weekly.cases.rating", { r: item.ownerRating ?? "none" })}</p>
-                  </div>
-                  {onOpenMail && item.messageId !== null ? (
-                    <button
-                      type="button"
-                      className="weekly-case-open"
-                      data-open-mail={item.id}
-                      onClick={() =>
-                        item.messageId !== null && onOpenMail(item.messageId, report.endDay)
-                      }
-                    >
-                      {message("decision.email.open")}
-                    </button>
-                  ) : null}
-                  <button
-                    type="button"
-                    className="weekly-case-mark"
-                    aria-pressed={item.marked}
-                    disabled={markBusy !== null}
-                    onClick={() => void toggleMark(item.id, item.marked)}
-                  >
-                    {message("weekly.cases.mark", { on: item.marked ? "yes" : "no" })}
-                  </button>
-                </li>
-              ))}
-            </ul>
-            {markFailed ? (
-              <p className="weekly-muse-foot" role="alert">
-                {message("weekly.cases.markFailed")}
-              </p>
-            ) : null}
-            <p className="weekly-muse-foot">{message("weekly.cases.note")}</p>
-          </>
-        )}
-      </section>
 
       <section className="weekly-card" aria-label={message("weekly.implicit.title")}>
         <CardHead title={message("weekly.implicit.title")} infoKey="implicit" info={infoButton} />

@@ -23,7 +23,7 @@ export const REDACTOR_ONLY_FILES = Object.freeze([
   "packages/application/src/services/model-egress.ts",
   "packages/application/src/services/perception-extraction.ts",
   "packages/platform-node/src/files/pi-output-export.ts",
-  "apps/agent-service/src/production-gap-export.ts",
+  "apps/agent-service/src/export-masking.ts",
 ]);
 
 export const SENSITIVE_RULE_PACKAGE = "packages/sensitive-capture/src/";
@@ -76,14 +76,15 @@ export const EXTERNAL_EGRESS_PATTERNS = Object.freeze([
   { name: "AI Gateway decision request", pattern: /\/decisions[`"']/u },
   { name: "Exa MCP request", pattern: /https:\/\/mcp\.exa\.ai\/mcp/u },
   { name: "DeepSeek web tool request", pattern: /\/v1\/tools\/(?:search|fetch)/u },
+  { name: "DashScope speech request", pattern: /multimodal-generation\/generation/u },
 ]);
 
 export const ALLOWED_EXTERNAL_EGRESS_FILES = Object.freeze(
   new Map([
     ["packages/platform-node/src/typesafe-jev-transport.ts", ["TypeSafe review request"]],
-    ["packages/platform-node/src/voice-addressee-decision.ts", ["AI Gateway decision request"]],
     ["packages/platform-node/src/exa-public-search.ts", ["Exa MCP request"]],
     ["packages/platform-node/src/deepseek-web-provider.ts", ["DeepSeek web tool request"]],
+    ["packages/platform-node/src/speech-synthesis.ts", ["DashScope speech request"]],
     [
       "packages/platform-node/src/memory-import-duplicate-decision.ts",
       ["AI Gateway decision request"],
@@ -100,7 +101,6 @@ export const EXTERNAL_REDACTION_FUNCTIONS = Object.freeze([
 export const REQUIRED_EXTERNAL_REDACTION_CALLS = Object.freeze(
   new Map([
     ["packages/platform-node/src/typesafe-jev-transport.ts", ["redactForExternalText"]],
-    ["packages/platform-node/src/voice-addressee-decision.ts", ["redactForExternalText"]],
     ["packages/platform-node/src/memory-import-duplicate-decision.ts", ["redactForExternalText"]],
     ["packages/platform-node/src/owner-intent-decision.ts", ["redactForExternalText"]],
     [
@@ -111,6 +111,7 @@ export const REQUIRED_EXTERNAL_REDACTION_CALLS = Object.freeze(
       "packages/platform-node/src/deepseek-web-provider.ts",
       ["redactForExternalText", "maskedPublicFetchUrl"],
     ],
+    ["packages/platform-node/src/speech-synthesis.ts", ["redactForExternalText"]],
   ]),
 );
 
@@ -164,6 +165,13 @@ export const SENSITIVE_GATE_CALLS = Object.freeze([
     decision: KEEP,
     reason:
       "不是发给模型的出口：其他 agent 经 MCP 提议的记忆正文里有令牌、私钥这类机器密钥时拒收，密钥不该当成记忆存下（ADR 0228 决定 3）",
+  },
+  {
+    file: "apps/agent-service/src/production-memory-control.ts",
+    calls: { containsRestrictedIdentifier: 1 },
+    decision: KEEP,
+    reason:
+      "不是发给模型的出口：导入预览里像密码、证件号的条目只标成“默认不导入”、按机密级别存引用、不交给分类模型；用户仍可以手动勾选导入，不整段拒收",
   },
   {
     file: "packages/platform-node/src/files/pi-output-export.ts",

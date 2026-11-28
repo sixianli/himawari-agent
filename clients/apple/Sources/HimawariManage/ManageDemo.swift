@@ -21,6 +21,19 @@ public enum ManageDemoScreen: String, CaseIterable, Sendable {
     case herAllowanceDays = "next-3-her-allowance-days"
     case memoryVersions = "next-4-memory-versions"
     case memoryTrash = "next-4-memory-trash"
+    case herAbout = "next-6-her-about"
+    case herTimers = "next-9-timers"
+    case herTimersEmpty = "next-9-timers-empty"
+    case herTimersReminders = "next-9-timers-reminders"
+    case herTimerRecurring = "next-9-timer-recurring"
+    case herTimerReminder = "next-9-timer-reminder"
+    case herTimerPaused = "next-9-timer-paused"
+    case herNoTimers = "next-9-her-no-timers"
+    case herName = "next-10-her-name"
+    case herModel = "next-10-her-model"
+    case herTransfer = "next-10-her-transfer"
+    case herImportPreview = "next-10-her-import-preview"
+    case herServerStatus = "next-10-her-server-status"
 }
 
 public struct ManageDemoView: View {
@@ -33,37 +46,63 @@ public struct ManageDemoView: View {
     public var body: some View {
         switch screen {
         case .memory:
-            MemoryRootView(store: ManageDemo.memoryStore())
+            NavigationStack { MemoryRootView(store: ManageDemo.memoryStore()) }
         case .memoryDetail:
-            MemoryRootView(store: ManageDemo.memoryStore(), opening: .memory("m1"))
+            NavigationStack { MemoryRootView(store: ManageDemo.memoryStore(), opening: .memory("m1")) }
         case .memoryEdit:
-            MemoryRootView(store: ManageDemo.memoryStore(), opening: .edit("m5"))
+            NavigationStack { MemoryRootView(store: ManageDemo.memoryStore(), opening: .edit("m5")) }
         case .rules:
-            MemoryRootView(store: ManageDemo.memoryStore(), tab: .rules)
+            NavigationStack { RulesPage(store: ManageDemo.memoryStore(), quietHours: nil) }
         case .ruleDetail:
-            MemoryRootView(store: ManageDemo.memoryStore(), tab: .rules, opening: .rule("r1"))
+            NavigationStack { RulesPage(store: ManageDemo.memoryStore(), quietHours: nil, opening: "r1") }
         case .deviceAbilities:
-            her([.devices, .device(ManageDemo.phoneId)])
+            her([.settings, .devices, .device(ManageDemo.phoneId)])
         case .her:
             her([])
         case .herApprovals:
             her([.approvals])
         case .herPrivacy:
-            her([.privacy])
+            her([.settings, .privacy])
         case .herDevices:
-            her([.devices])
+            her([.settings, .devices])
         case .herNotifications:
-            her([.notifications])
+            her([.settings, .notifications])
         case .herAllowances:
             her([.allowances])
+        case .herAbout:
+            her([.settings, .about])
         case .herAllowancesEmpty:
             her([.allowances], allowances: false)
         case .memoryVersions:
-            MemoryRootView(store: ManageDemo.memoryStore(), opening: .memory("m5"))
+            NavigationStack { MemoryRootView(store: ManageDemo.memoryStore(), opening: .memory("m5")) }
         case .memoryTrash:
             NavigationStack {
                 MemoryTrashPage(store: ManageDemo.loadedMemoryStore()) {}
             }
+        case .herTimers:
+            her([.timers])
+        case .herTimersEmpty:
+            her([.timers], timers: .demo([]))
+        case .herTimersReminders:
+            her([.timers], timers: .demo(TimersStore.demoTimers().filter { $0.kind == .reminder }))
+        case .herTimerRecurring:
+            her([.timers, .timer(TimersStore.demoNewsId)])
+        case .herTimerReminder:
+            her([.timers, .timer(TimersStore.demoRentId)])
+        case .herTimerPaused:
+            her([.timers, .timer(TimersStore.demoTanakaId)])
+        case .herNoTimers:
+            her([], timers: TimersStore(timers: nil))
+        case .herName:
+            her([.settings, .name], personal: true)
+        case .herModel:
+            her([.settings, .model], personal: true)
+        case .herTransfer:
+            her([.settings, .transfer])
+        case .herImportPreview:
+            her([.settings, .transfer, .importPreview], memoryImport: ManageDemo.previewedImport())
+        case .herServerStatus:
+            her([.settings, .about, .serverStatus])
         case .herAllowanceDays:
             AllowanceDaysSheet(days: 7) { _ in }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -71,11 +110,15 @@ public struct ManageDemoView: View {
         }
     }
 
-    private func her(_ path: [HerPage.Page], allowances: Bool = true) -> some View {
+    private func her(_ path: [HerPage.Page], allowances: Bool = true, timers: TimersStore = .demo(), memoryImport: MemoryImportStore? = nil, personal: Bool = false) -> some View {
         HerPage(
             settings: ManageDemo.settingsStore(),
             memory: ManageDemo.memoryStore(allowances: allowances),
             quietHours: QuietHoursStore(gateway: ManageDemo.gateway()),
+            timers: timers,
+            personal: personal ? ManageDemo.personalStore() : nil,
+            gateway: ManageDemo.gateway(),
+            memoryImport: memoryImport,
             listening: DemoListening(),
             actions: .demo(),
             senses: AnyView(EmptyView()),
@@ -87,7 +130,35 @@ public struct ManageDemoView: View {
 @MainActor
 final class DemoListening: HerListening {
     let hasVoiceprint = true
+    let isListening = false
     func deleteVoiceprint() {}
+    func stop() {}
+}
+
+extension TimersStore {
+    static let demoRentId = "timer-rent"
+    static let demoNewsId = "timer-news"
+    static let demoTanakaId = "timer-tanaka"
+
+    static func demo(_ timers: [OwnerTimer] = demoTimers()) -> TimersStore {
+        TimersStore(timers: timers)
+    }
+
+    static func demoTimers(now: Date = Date(), calendar: Calendar = .current) -> [OwnerTimer] {
+        func at(days: Int, _ hour: Int, _ minute: Int = 0) -> Date {
+            let day = calendar.date(byAdding: .day, value: days, to: calendar.startOfDay(for: now)) ?? now
+            return calendar.date(bySettingHour: hour, minute: minute, second: 0, of: day) ?? day
+        }
+        return [
+            OwnerTimer(timerId: "timer-gone", kind: .followUp, title: "问房东修空调", task: "问房东修空调", schedule: "周四", createdBy: .her, status: .cancelled, runBudgetMicros: 50_000, createdAt: at(days: -10, 9)),
+            OwnerTimer(timerId: "timer-done", kind: .reminder, title: "拿快递", task: "拿快递", schedule: "昨天 18:00", createdBy: .owner, status: .finished, lastAt: at(days: -1, 18), runCount: 1, createdAt: at(days: -2, 9)),
+            OwnerTimer(timerId: demoTanakaId, kind: .followUp, title: nil, task: "周五前没收到田中的报价单就提醒我追一下，顺便问交期", schedule: "周五 10:00", createdBy: .her, status: .paused, runBudgetMicros: 50_000, createdAt: at(days: -3, 11)),
+            OwnerTimer(timerId: demoNewsId, kind: .recurring, title: "AI 新闻简报", task: "每天早上整理 AI 新闻，挑三条最重要的，每条两句话说清楚。只看英文一手来源。", ownerWords: "- 以后每天早上给我看看 AI 新闻\n- 只要英文的一手来源\n- 别超过三条\n- 每条两句话就够了\n- 周末也要", schedule: "每天 8:00", createdBy: .agreed, nextAt: at(days: 1, 8), lastAt: at(days: 0, 8), runCount: 12, spentMicros: 61_000, runBudgetMicros: 20_000, lastResult: OwnerTimer.LastResult(text: "挑了三条：一家实验室发了新的开源模型；一份报告说推理成本半年降了一半；一个编程助手加了后台运行。", at: at(days: 0, 8, 2)), createdAt: at(days: -13, 21)),
+            OwnerTimer(timerId: "timer-week", kind: .recurring, title: "周报草稿", task: "每周五晚上把这周的事整理成周报草稿", schedule: "每周五 21:00", createdBy: .owner, nextAt: at(days: 3, 21), runCount: 2, spentMicros: 4_000, runBudgetMicros: 30_000, createdAt: at(days: -15, 20)),
+            OwnerTimer(timerId: demoRentId, kind: .reminder, title: "交房租", task: "提醒我交房租", schedule: "下月 1 日 9:00", createdBy: .owner, nextAt: at(days: 6, 9), createdAt: at(days: -1, 22)),
+            OwnerTimer(timerId: "timer-call", kind: .reminder, title: "给妈妈打电话", task: "提醒我给妈妈打电话", schedule: "今晚 20:00", createdBy: .agreed, nextAt: at(days: 0, 20), createdAt: at(days: 0, 9)),
+        ]
+    }
 }
 
 enum ManageDemo {
@@ -102,10 +173,29 @@ enum ManageDemo {
         return store
     }
 
+    @MainActor static func previewedImport() -> MemoryImportStore {
+        let store = MemoryImportStore(gateway: gateway())
+        Task { await store.preview(.codex, files: [MemoryImportFile(name: "MEMORY.md", text: "# User Profile")]) }
+        return store
+    }
+
     @MainActor static func settingsStore() -> SettingsStore {
         SettingsStore(
             gateway: gateway(),
             identity: DeviceIdentity(deviceId: phoneId, origin: URL(string: "https://himawari.example.com")!, access: nil)
+        )
+    }
+
+    @MainActor static func personalStore() -> PersonalStore {
+        PersonalStore(
+            gateway: gateway(),
+            preferences: OwnerPreferences(name: "Andy", modelRef: "deepseek-flash", thinkingLevel: "high", revision: 3),
+            models: ChatModels(defaultRef: "magpie-main", options: [
+                ChatModel(ref: "magpie-main", name: "himawari-main", provider: "magpie", thinkingLevels: ["off", "low", "medium", "high"], automatic: true),
+                ChatModel(ref: "deepseek-flash", name: "DeepSeek V4.1 Flash", provider: "magpie", thinkingLevels: ["off", "high"], price: .init(input: 0.1, output: 0.4), priceTier: .low),
+                ChatModel(ref: "glm-flash", name: "GLM 5.3 Flash", provider: "magpie", thinkingLevels: ["off", "high"], price: .init(input: 0.2, output: 0.8), priceTier: .mid),
+                ChatModel(ref: "minimax", name: "MiniMax M3", provider: "magpie", thinkingLevels: ["off"], price: .init(input: 0.4, output: 1.6), priceTier: .high),
+            ])
         )
     }
 
@@ -116,12 +206,17 @@ enum ManageDemo {
     static func answer(_ type: String, allowances: Bool) -> String {
         switch type {
         case "memory.overview.read": memories
+        case "memory.search.read": searchHits
         case "memory.rules.read": allowances ? rules : #"{"payload":{"rules":[],"allowances":[],"allowanceDays":7}}"#
         case "device.list.read": devices
+        case "server.status.read": serverStatus
+        case "memory.import.preview.read": importPreview
         case "quiet_hours.read": #"{"payload":{"version":"v1","editable":true,"enabled":true,"start":"23:00","end":"07:00","classes":["scheduled_reminder","run_result","mail_reminder","her_words"],"rules":[{"ruleId":"rule-quiet","summary":"晚上 11 点到早上 7 点别推"}]}}"#
         default: "{}"
         }
     }
+
+    static let searchHits = #"{"payload":{"query":"过敏","results":[{"kind":"memory","memoryId":"m3","ruleId":null,"text":"对花生过敏","category":"health","tentative":false,"updatedAt":"2026-10-21T03:00:00Z"},{"kind":"rule","memoryId":"m6","ruleId":"r1","text":"给没发过邮件的人发信，先问我","category":"rule","tentative":false,"updatedAt":"2026-10-20T03:00:00Z"}],"generatedAt":"2026-11-26T03:00:00Z"}}"#
 
     private static func memory(
         _ id: String, _ group: String, _ text: String, inference: Bool, recordedAt: String, lastUsedAt: String?, quote: String?,
@@ -134,6 +229,10 @@ enum ManageDemo {
         {"memoryId":"\#(id)","revision":1,"text":"\#(text)","inference":\#(inference),"sourceThreadId":null,"sourceRefs":[],"category":"other","subCategory":"\#(group)","status":"\#(status)","recordedAt":"\#(recordedAt)","updatedAt":"\#(updatedAt ?? recordedAt)","lastUsedAt":\#(used),"importBatchId":null,"history":[\#(older){"historyId":1,"kind":"created","text":"\#(text)","quote":\#(quoted),"sourceThreadId":null,"sourceDeleted":false,"at":"\#(recordedAt)"}]}
         """#
     }
+
+    private static let serverStatus = #"{"payload":{"live":true,"ready":true,"status":"healthy","dependencies":[{"name":"worker","required":true,"status":"healthy","reasonCode":null}],"release":{"commit":"25bf7041","installedAt":"2026-11-26T07:40:00.000Z"},"disk":{"availableBytes":21474836480,"totalBytes":50000000000},"generatedAt":"2026-11-26T08:00:00.000Z"}}"#
+
+    private static let importPreview = #"{"payload":{"files":[{"name":"MEMORY.md","state":"read","found":4}],"found":4,"items":[{"contentRef":"demo-a","text":"每天早上跑步","from":"MEMORY.md · User Profile","category":"preference","subCategory":null,"topic":null,"flag":null,"selectable":true,"checked":true},{"contentRef":"demo-b","text":"对花生过敏","from":"MEMORY.md · User Profile","category":"health","subCategory":null,"topic":"health","flag":"duplicate","selectable":false,"checked":false},{"contentRef":"demo-c","text":"周五下午和田中开会","from":"MEMORY.md · User Profile","category":"event","subCategory":null,"topic":null,"flag":"similar","selectable":true,"checked":false},{"contentRef":"demo-d","text":"用 pnpm 而不是 npm","from":"MEMORY.md · General Tips","category":"project","subCategory":"Codex","topic":null,"flag":"coding","selectable":true,"checked":false}]}}"#
 
     private static var memories: String {
         let items = [
@@ -175,6 +274,9 @@ private actor DemoTransport: DeviceTransport {
     nonisolated func post(path: String, json: Data, nonce: String?, confirm: ConfirmPrompt?) async throws -> DeviceResponse {
         if path == ManageGateway.challengePath {
             return DeviceResponse(status: 201, body: Data(#"{"challenge":"demo","expiresAt":"2999-01-01T00:00:00Z"}"#.utf8))
+        }
+        if path == ManageGateway.textPath {
+            return DeviceResponse(status: 200, body: Data(#"{"payloadRef":"demo-upload"}"#.utf8))
         }
         let body = (try? JSONDecoder().decode([String: JSONValue].self, from: json)) ?? [:]
         guard case .string(let type)? = body["type"] else { return DeviceResponse(status: 200, body: Data("{}".utf8)) }

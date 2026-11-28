@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 import type {
+  AppConnectionStorePort,
   ApplePushStorePort,
   AttentionStatePort,
   AuditLedgerPort,
@@ -28,13 +29,12 @@ import type {
   DurableGitHubMonitorHistoryPolicyPort,
   ExecutionEnvironmentStorePort,
   ExternalMemoryProposalStorePort,
-  GapCaseMarkPort,
   GitHubIntegrationStatePort,
   GovernanceMutationReceiptStorePort,
-  HomeUrgencyStorePort,
   InboxStorePort,
   LedgerObservationPort,
   McpConnectionStorePort,
+  McpOAuthStorePort,
   McpMemorySyncStorePort,
   MemoryBookStorePort,
   MemoryCaptureBacklogPort,
@@ -49,7 +49,6 @@ import type {
   ModelBudgetPort,
   ModelInvocationIdentityPort,
   ModelUsageStorePort,
-  MuseIntakePort,
   OwnerIdentityStatePort,
   OwnerPreferencesStorePort,
   OwnerRuleStorePort,
@@ -632,16 +631,16 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
     return this.durable.reviewPrereview();
   }
 
-  homeUrgency(): HomeUrgencyStorePort {
-    return this.durable.homeUrgency();
-  }
-
   externalMemoryProposals(): ExternalMemoryProposalStorePort {
     return this.durable.externalMemoryProposals();
   }
 
   mcpConnections(): McpConnectionStorePort {
     return this.durable.mcpConnections();
+  }
+
+  mcpOAuth(): McpOAuthStorePort {
+    return this.durable.mcpOAuth();
   }
 
   vault(): VaultStorePort {
@@ -676,16 +675,8 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
     return this.durable.realEval();
   }
 
-  gapCaseMarks(): GapCaseMarkPort {
-    return this.durable.gapCaseMarks();
-  }
-
   decisionLedger(): DecisionLedgerPort {
     return this.durable.decisionLedger();
-  }
-
-  museIntake(): MuseIntakePort {
-    return this.durable.museIntake();
   }
 
   ledgerObservation(): LedgerObservationPort {
@@ -714,6 +705,10 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   proactive(): ProactiveStorePort {
     return this.durable.proactive();
+  }
+
+  appConnections(): AppConnectionStorePort {
+    return this.durable.appConnections();
   }
 
   ownerPreferences(): OwnerPreferencesStorePort {

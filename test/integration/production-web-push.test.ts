@@ -467,6 +467,18 @@ describe("[WP-3] web push dispatch", () => {
     expect(context.sender.requests).toHaveLength(8);
   });
 
+  it("[ADR-0285] REVERSE: leaves a due reminder to the inbox when reminders go through her, and still pushes approvals", async () => {
+    const context = await setup();
+    await context.subscribe("phone", "zh-CN");
+    const push = context.create({ remindersViaInbox: true });
+    context.setClock(T0);
+    context.reminder("r1", "private");
+    context.approval("a1", "high");
+    await push.tick();
+    const sent = context.sender.notifications();
+    expect(sent.map(({ notification }) => notification["title"])).toEqual(["等你审批 · 高风险"]);
+  });
+
   it("[HOME-count] sends no badge when the home count is unavailable or cannot be read, and reads it only when something is sent", async () => {
     const context = await setup();
     await context.subscribe("phone", "zh-CN");
@@ -502,13 +514,13 @@ describe("[WP-3] web push dispatch", () => {
     expect(context.failures).toEqual([new Error("home count down")]);
   });
 
-  it("[WP-3] hides sensitive reminders and suppresses everything while a page is visible", async () => {
+  it("[WP-3] hides reminders that hold a password or key and suppresses everything while a page is visible", async () => {
     const context = await setup();
     await context.subscribe("phone", "ja");
     const push = context.create();
     await push.tick();
     context.setClock(T0);
-    context.reminder("secret", "sensitive");
+    context.reminder("secret", "restricted");
     await push.tick();
     expect(context.sender.notifications()[0]?.notification).toMatchObject({
       title: "Himawari リマインダー",
@@ -875,7 +887,7 @@ describe("[WP-3] web push dispatch", () => {
     ]);
   });
 
-  it("[SAID-1] REVERSE: a sensitive or restricted reply never puts its words on the lock screen", async () => {
+  it("[SAID-1][I-129] REVERSE: only a reply holding a password or key keeps its words off the lock screen; health and identity words show", async () => {
     const context = await setup();
     await context.subscribe("phone", "zh-CN");
     const push = context.create();
@@ -902,8 +914,8 @@ describe("[WP-3] web push dispatch", () => {
     const bodies = context.sender
       .notifications()
       .map(({ notification }) => String(notification["body"]));
-    expect(bodies).toEqual(["你有一条私密消息", "你有一条私密消息"]);
-    expect(bodies.join("\n")).not.toContain("TK1234567");
+    expect(bodies.toSorted()).toEqual(["你有一条私密消息", "你的护照号是 TK1234567。"].toSorted());
+    expect(bodies.join("\n")).not.toContain("银行卡密码");
     expect(context.failures).toEqual([]);
   });
 

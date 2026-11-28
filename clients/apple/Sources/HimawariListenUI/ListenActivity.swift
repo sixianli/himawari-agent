@@ -49,24 +49,48 @@ public enum ListenCommand: String, Sendable {
     case openRecordingKit
 }
 
+public enum ListenActivityLifetime {
+    public static let staleAfter: TimeInterval = 180
+
+    public static func staleDate(after now: Date) -> Date {
+        now.addingTimeInterval(staleAfter)
+    }
+}
+
 @MainActor
 public final class ListenCommandCenter {
-    public static let shared = ListenCommandCenter()
+    public static let shared = ListenCommandCenter(endActivities: ListenCommandCenter.endSystemActivities)
 
     public var handler: (@MainActor (ListenCommand) async -> Void)? {
         didSet { deliverPending() }
     }
 
     private var pending: ListenCommand?
+    private let endActivities: @MainActor () async -> Void
 
-    private init() {}
+    public init(endActivities: @escaping @MainActor () async -> Void) {
+        self.endActivities = endActivities
+    }
 
     public func perform(_ command: ListenCommand) async {
         guard let handler else {
-            if command == .openRecordingKit { pending = command }
+            switch command {
+            case .openRecordingKit:
+                pending = command
+            case .stop, .pause:
+                await endActivities()
+            case .resume, .notMe, .itsMe:
+                break
+            }
             return
         }
         await handler(command)
+    }
+
+    public static func endSystemActivities() async {
+        #if canImport(ActivityKit) && os(iOS)
+        await ListenActivities.endAll()
+        #endif
     }
 
     private func deliverPending() {
@@ -81,6 +105,33 @@ public struct ListenActivityAttributes: ActivityAttributes {
     public typealias ContentState = ListenLiveState
 
     public init() {}
+}
+
+public enum ListenActivities {
+    public static func endAll() async {
+        await end(Activity<ListenActivityAttributes>.activities)
+    }
+
+    @discardableResult
+    public static func endExisting() -> Task<Void, Never> {
+        let existing = Activity<ListenActivityAttributes>.activities
+        return Task { await end(existing) }
+    }
+
+    private static func end(_ activities: [Activity<ListenActivityAttributes>]) async {
+        for activity in activities {
+            await activity.end(nil, dismissalPolicy: .immediate)
+        }
+    }
+
+    public static func endAllBeforeExit(timeout: TimeInterval = 2) {
+        let done = DispatchSemaphore(value: 0)
+        Task.detached {
+            await endAll()
+            done.signal()
+        }
+        _ = done.wait(timeout: .now() + timeout)
+    }
 }
 
 public struct PauseListeningIntent: LiveActivityIntent {

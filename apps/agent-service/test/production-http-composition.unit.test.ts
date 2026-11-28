@@ -1,5 +1,15 @@
-import { generateKeyPairSync, randomBytes, randomUUID } from "node:crypto";
-import { chmod, lstat, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
+import {
+  chmod,
+  copyFile,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { request as httpRequest } from "node:http";
 import { connect } from "node:net";
 import { tmpdir } from "node:os";
@@ -24,32 +34,35 @@ import {
   SqliteProductStateRepository,
 } from "@himawari-agent/persistence-sqlite";
 import {
-  devicePairingNumber,
+  generateSetupCode,
   type HostProviderSecretSource,
   type HostSecretMaterialSource,
   initializeStateRoot,
   parseProductConfiguration,
+  writeSetupCode,
 } from "@himawari-agent/platform-node";
+import {
+  buildDeviceTestRequest,
+  generateDeviceTestKeyPair,
+  SoftwarePasskey,
+} from "@himawari-agent/testing";
 import { exportJWK, importJWK, type JSONWebKeySet, SignJWT } from "jose";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import {
   createProductionHttpComposition,
   type ProductionHttpCompositionSecretSources,
   ProductionThreadGatewayAccessPolicy,
-  resolveDevicePairingAccess,
 } from "../src/production-http-composition.js";
 import {
-  mcpConnectionSecretDigest,
-  newMcpConnectionSecret,
-} from "../src/production-mcp-connections.js";
+  type McpGrantView,
+  ProductionMcpAuthorization,
+} from "../src/production-mcp-authorization.js";
 import {
   MCP_READ_BODY_LIMIT,
   MCP_READ_PATH,
   ProductionMcpRead,
   type ProductionMcpReadOptions,
 } from "../src/production-mcp-read.js";
-import { buildDeviceTestRequest, generateDeviceTestKeyPair } from "@himawari-agent/testing";
-import { createMcpAccess } from "./fixtures/mcp-access.js";
 import { productionHttpRs256TestKeys } from "./fixtures/production-http-rs256.test-key.js";
 
 const ORIGIN = "https://agent.example.test";
@@ -73,6 +86,26 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
+let migratedTemplate: Promise<string> | undefined;
+
+async function buildMigratedTemplate(): Promise<string> {
+  const directory = await mkdtemp(path.join(tmpdir(), "himawari-production-http-template-"));
+  const databasePath = path.join(directory, "product.sqlite");
+  const database = openQualifiedDatabase(databasePath);
+  try {
+    applyMigrations(database, await loadBundledMigrations());
+    database.pragma("wal_checkpoint(TRUNCATE)");
+  } finally {
+    database.close();
+  }
+  return databasePath;
+}
+
+afterAll(async () => {
+  if (migratedTemplate)
+    await rm(path.dirname(await migratedTemplate), { recursive: true, force: true });
+});
+
 async function fixture() {
   const root = await mkdtemp(path.join(tmpdir(), "himawari-production-http-"));
   roots.push(root);
@@ -82,8 +115,9 @@ async function fixture() {
   await mkdir(staticRoot);
   await writeFile(path.join(staticRoot, "index.html"), "<!doctype html><title>Himawari</title>");
   const databasePath = path.join(layout.data, "product.sqlite");
+  migratedTemplate ??= buildMigratedTemplate();
+  await copyFile(await migratedTemplate, databasePath);
   const database = openQualifiedDatabase(databasePath);
-  applyMigrations(database, await loadBundledMigrations());
   database.prepare("INSERT INTO owners (id, revision) VALUES (?, 0)").run(OWNER_ID);
   database
     .prepare("INSERT INTO agents (id, owner_id, revision) VALUES (?, ?, 0)")
@@ -385,8 +419,6 @@ describe("production HTTP composition", () => {
           "capability.detail",
           "capability.disable",
           "device.list.read",
-          "device.pairing.start",
-          "device.pairing.confirm",
           "device.rename",
           "device.revoke",
           "home.read",
@@ -394,6 +426,9 @@ describe("production HTTP composition", () => {
           "data.export.cancel",
           "data.export.status.read",
           "files.list.read",
+          "decision.spoken.read",
+          "decision.spoken.rate",
+          "decision.stats.read",
           "login.devices.read",
           "login.device.revoke",
           "login.devices.revoke_others",
@@ -900,111 +935,7 @@ describe("production HTTP composition", () => {
     }
   });
 
-  it("[P5-3] serves the MCP read entry through the real composition only with a Cloudflare Access assertion", async () => {
-    const paths = await fixture();
-    const config = configuration(paths);
-    const repository = await SqliteProductStateRepository.open({
-      stateRoot: paths.stateRoot,
-      databasePath: paths.databasePath,
-      minimumFreeBytes: 0,
-      now: () => NOW.toISOString(),
-    });
-    const access = await createMcpAccess(() => new Date(NOW));
-    const recorded: string[] = [];
-    const scope = {
-      ownerId: OWNER_ID,
-      agentId: AGENT_ID,
-    } as unknown as ProductionMcpReadOptions["scope"];
-    const owners = repository.ownerIdentityState();
-    await owners.bindFirstOwner({
-      ownerId: scope.ownerId,
-      externalSubjectRef: await access.ownerSubjectRef(),
-      boundAt: NOW.toISOString(),
-    });
-    const mcpRead = new ProductionMcpRead({
-      scope,
-      clock: { now: () => NOW.toISOString() },
-      access: access.verifier,
-      owners,
-      timeZone: "Asia/Tokyo",
-      connections: repository.mcpConnections(),
-      requestTimeoutMs: 5_000,
-      sources: {
-        recall: async () => ({ output: {}, contentClassification: "public", memoryIds: [] }),
-        embedOutsideRun: (_context, operation) => operation(),
-        reminders: async () => ({ reminders: [], more: false }),
-        settings: () => repository.proactive().readSettings(scope),
-      },
-      ledger: {
-        append: async (write) => {
-          recorded.push(write.reasonCode);
-        },
-      },
-      onFailure: () => undefined,
-      onSummariesFailed: () => undefined,
-    });
-    const composition = await createProductionHttpComposition({
-      configuration: config,
-      repository,
-      authority: () => authority(config),
-      secretSources: secretSources(),
-      jwksFetcher: { fetch: async () => ({ keys: [] }) },
-      identityFetcher: { fetch: async () => ({}) },
-      now: () => new Date(NOW),
-      mcpRead,
-    });
-    const secret = newMcpConnectionSecret();
-    await repository.mcpConnections().create({
-      ...scope,
-      id: "conn-composition",
-      name: "composition",
-      secretSha256: mcpConnectionSecretDigest(secret),
-      capabilities: ["mcp"],
-      readCeiling: "private",
-      pushPolicy: "ask",
-      createdAt: NOW.toISOString(),
-    });
-    try {
-      const call = (assertion?: string, url = `${MCP_READ_PATH}/${secret}`) =>
-        composition.app.inject({
-          method: "POST",
-          url,
-          headers: {
-            host: "agent.example.test",
-            accept: "application/json, text/event-stream",
-            "content-type": "application/json",
-            "mcp-protocol-version": "2025-06-18",
-            ...(assertion ? { "cf-access-jwt-assertion": assertion } : {}),
-          },
-          payload: {
-            jsonrpc: "2.0",
-            id: 1,
-            method: "tools/call",
-            params: { name: "today_context", arguments: {} },
-          },
-        });
-      const denied = await call();
-      expect(denied.statusCode).toBe(401);
-      expect(recorded).toEqual([]);
-      const unknown = await call(
-        await access.sign(),
-        `${MCP_READ_PATH}/${newMcpConnectionSecret()}`,
-      );
-      expect(unknown.statusCode).toBe(404);
-      const bare = await call(await access.sign(), MCP_READ_PATH);
-      expect(bare.body).not.toContain("2026");
-      expect(recorded).toEqual([]);
-      const served = await call(await access.sign());
-      expect(served.statusCode).toBe(200);
-      expect(served.body).toContain("2026");
-      expect(recorded).toEqual(["today_context"]);
-    } finally {
-      await composition.close();
-      await repository.close();
-    }
-  });
-
-  it("[P5-B] the owner creates a connection, sees its address once, and the connection is counted", async () => {
+  it("lets an agent connect through standard OAuth: discovery, registration, iPhone approval, tokens, refresh and revocation", async () => {
     const paths = await fixture();
     const config = configuration(paths);
     const keyPair = {
@@ -1028,22 +959,30 @@ describe("production HTTP composition", () => {
       minimumFreeBytes: 0,
       now: () => NOW.toISOString(),
     });
-    const access = await createMcpAccess(() => new Date(NOW));
     const recorded: string[] = [];
+    const notified: McpGrantView[] = [];
     const scope = {
       ownerId: OWNER_ID,
       agentId: AGENT_ID,
     } as unknown as ProductionMcpReadOptions["scope"];
+    const clock = { now: () => NOW.toISOString() };
+    const authorization = new ProductionMcpAuthorization({
+      scope,
+      clock,
+      publicOrigin: ORIGIN,
+      resourcePath: MCP_READ_PATH,
+      store: repository.mcpOAuth(),
+      connections: repository.mcpConnections(),
+      metadata: { read: async () => ({ status: "unavailable", reason: "MCP_TEST_OFFLINE" }) },
+      notify: async (grant) => {
+        notified.push(grant);
+      },
+      onFailure: () => undefined,
+    });
     const mcpRead = new ProductionMcpRead({
       scope,
-      clock: { now: () => NOW.toISOString() },
-      access: access.verifier,
-      owners: {
-        readBySubject: async () =>
-          ({ ownerId: scope.ownerId, status: "active" }) as unknown as Awaited<
-            ReturnType<ReturnType<typeof repository.ownerIdentityState>["readBySubject"]>
-          >,
-      },
+      clock,
+      tokens: authorization,
       timeZone: "Asia/Tokyo",
       connections: repository.mcpConnections(),
       requestTimeoutMs: 5_000,
@@ -1079,7 +1018,7 @@ describe("production HTTP composition", () => {
         leaseId: "lease-mcp-connections" as AuthorityFence["leaseId"],
         fencingToken: AUTHORITY.fencingToken,
       }),
-      mcpRead,
+      mcpRead: { read: mcpRead, authorization, onAuthorizationFailure: () => undefined },
     });
     const ownerEnvelope = (authenticationRef: string, type: string) => ({
       schemaVersion: "gateway.v2",
@@ -1094,11 +1033,15 @@ describe("production HTTP composition", () => {
       messageId: `message-${type}-${Math.random()}`,
       type,
     });
+    const host = { host: "agent.example.test" };
+    const verifier = randomBytes(48).toString("base64url");
+    const challenge = createHash("sha256").update(verifier).digest("base64url");
+    const redirect = "http://127.0.0.1:33418/callback";
     try {
       const bootstrap = await composition.app.inject({
         method: "POST",
         url: "/bootstrap",
-        headers: { host: "agent.example.test" },
+        headers: host,
         payload: {
           token: "bootstrap-token-production-fixture",
           ownerId: OWNER_ID,
@@ -1121,7 +1064,7 @@ describe("production HTTP composition", () => {
             url: "/api/control-center/v1/config",
             headers: requestHeaders(token, cookie),
           })
-        ).json() as { csrfToken: string; installedGatewayV2Operations: string[] }
+        ).json() as { csrfToken: string }
       ).csrfToken;
       const authenticationRef = (session.json() as { session: { authenticationRef: string } })
         .session.authenticationRef;
@@ -1137,39 +1080,36 @@ describe("production HTTP composition", () => {
             payload,
           },
         });
-      const read = async () => {
+      const query = async (type: "mcp.connections.read" | "mcp.grants.read") => {
         const response = await composition.app.inject({
           method: "POST",
           url: "/api/gateway/v2/queries",
           headers: requestHeaders(token, cookie),
-          payload: {
-            ...ownerEnvelope(authenticationRef, "mcp.connections.read"),
-            kind: "query",
-            payload: {},
-          },
+          payload: { ...ownerEnvelope(authenticationRef, type), kind: "query", payload: {} },
         });
         expect(response.statusCode, response.body).toBe(200);
-        const parsed = gatewayV2MessageSchema.parseJson(response.body);
+        return gatewayV2MessageSchema.parseJson(response.body);
+      };
+      const connections = async () => {
+        const parsed = await query("mcp.connections.read");
         if (parsed.type !== "mcp.connections.snapshot") throw new Error(parsed.type);
         return parsed.payload;
       };
-      const address = (connectionId: string, withCookie = cookie) =>
-        composition.app.inject({
-          method: "GET",
-          url: `/api/mcp-connections/address?connectionId=${encodeURIComponent(connectionId)}`,
-          headers: requestHeaders(token, withCookie),
-        });
-      const mcpAssertion = await access.sign();
-      const mcp = (path: string) =>
+      const grants = async () => {
+        const parsed = await query("mcp.grants.read");
+        if (parsed.type !== "mcp.grants.snapshot") throw new Error(parsed.type);
+        return parsed.payload;
+      };
+      const mcp = (bearer?: string) =>
         composition.app.inject({
           method: "POST",
-          url: path,
+          url: MCP_READ_PATH,
           headers: {
-            host: "agent.example.test",
+            ...host,
             accept: "application/json, text/event-stream",
             "content-type": "application/json",
             "mcp-protocol-version": "2025-06-18",
-            "cf-access-jwt-assertion": mcpAssertion,
+            ...(bearer ? { authorization: `Bearer ${bearer}` } : {}),
           },
           payload: {
             jsonrpc: "2.0",
@@ -1178,93 +1118,304 @@ describe("production HTTP composition", () => {
             params: { name: "today_context", arguments: {} },
           },
         });
-      expect((await read()).connections).toEqual([]);
-      const created = await command("mcp.connection.create", "mcp-create-01", {
-        name: "  Claude Code  ",
-        capabilities: ["mcp", "command_hooks"],
-        readCeiling: "private",
-        pushPolicy: "ask",
+      const form = (url: string, fields: Record<string, string>) =>
+        composition.app.inject({
+          method: "POST",
+          url,
+          headers: { ...host, "content-type": "application/x-www-form-urlencoded" },
+          payload: new URLSearchParams(fields).toString(),
+        });
+      const authorize = (clientId: string, state: string, extra: Record<string, string> = {}) =>
+        composition.app.inject({
+          method: "GET",
+          url: `/api/mcp-auth/v1/authorize?${new URLSearchParams({
+            response_type: "code",
+            client_id: clientId,
+            redirect_uri: redirect,
+            code_challenge: challenge,
+            code_challenge_method: "S256",
+            state,
+            resource: `${ORIGIN}${MCP_READ_PATH}`,
+            scope: "himawari:read himawari:write",
+            ...extra,
+          })}`,
+          headers: { ...host, "accept-language": "zh-CN,zh;q=0.9" },
+        });
+      const status = async (grantId: string) =>
+        (
+          await composition.app.inject({
+            method: "GET",
+            url: `/api/mcp-auth/v1/authorize/status?grant=${grantId}`,
+            headers: host,
+          })
+        ).json() as { state: string; location: string | null };
+
+      const challenged = await mcp();
+      expect(challenged.statusCode).toBe(401);
+      const header = String(challenged.headers["www-authenticate"]);
+      expect(header).toContain(
+        `resource_metadata="${ORIGIN}/.well-known/oauth-protected-resource${MCP_READ_PATH}"`,
+      );
+      expect(header).not.toContain("invalid_token");
+      const resource = await composition.app.inject({
+        method: "GET",
+        url: `/.well-known/oauth-protected-resource${MCP_READ_PATH}`,
+        headers: host,
       });
-      expect(created.statusCode, created.body).toBe(200);
-      const connectionId = (created.json() as { resultRef: string }).resultRef;
-      expect(connectionId).toMatch(/^conn-[0-9a-f]{24}$/u);
-      const again = await command("mcp.connection.create", "mcp-create-01", {
-        name: "  Claude Code  ",
-        capabilities: ["mcp", "command_hooks"],
-        readCeiling: "private",
-        pushPolicy: "ask",
+      expect(resource.json()).toMatchObject({
+        resource: `${ORIGIN}${MCP_READ_PATH}`,
+        authorization_servers: [ORIGIN],
       });
-      expect(again.statusCode, again.body).toBe(200);
-      expect(again.json()).toEqual({ resultRef: connectionId, replayed: true });
-      expect((await read()).connections).toHaveLength(1);
-      expect((await read()).connections[0]?.pushPolicy).toBe("ask");
-      const switched = await command("mcp.connection.change", "mcp-direct-01", {
-        connectionId,
+      const server = (
+        await composition.app.inject({
+          method: "GET",
+          url: "/.well-known/oauth-authorization-server",
+          headers: host,
+        })
+      ).json() as Record<string, unknown>;
+      expect(server).toMatchObject({
+        issuer: ORIGIN,
+        code_challenge_methods_supported: ["S256"],
+        client_id_metadata_document_supported: true,
+        registration_endpoint: `${ORIGIN}/api/mcp-auth/v1/register`,
+      });
+
+      const registered = await composition.app.inject({
+        method: "POST",
+        url: "/api/mcp-auth/v1/register",
+        headers: { ...host, "content-type": "application/json" },
+        payload: { client_name: "Claude Code", redirect_uris: ["http://127.0.0.1/callback"] },
+      });
+      expect(registered.statusCode, registered.body).toBe(201);
+      const clientId = (registered.json() as { client_id: string }).client_id;
+      expect(
+        (
+          await composition.app.inject({
+            method: "POST",
+            url: "/api/mcp-auth/v1/register",
+            headers: { ...host, "content-type": "application/json" },
+            payload: { client_name: "evil", redirect_uris: ["http://evil.example/callback"] },
+          })
+        ).statusCode,
+      ).toBe(400);
+
+      expect(
+        (await authorize(clientId, "s1", { redirect_uri: "https://evil.example/cb" })).statusCode,
+      ).toBe(400);
+      const unavailable = await authorize("https://client.example/metadata.json", "s0");
+      expect(unavailable.statusCode).toBe(503);
+      expect(notified).toEqual([]);
+
+      const waiting = await authorize(clientId, "state-1");
+      expect(waiting.statusCode).toBe(200);
+      expect(waiting.body).toContain("Claude Code");
+      expect(notified).toHaveLength(1);
+      const grant = notified[0] as McpGrantView;
+      expect(waiting.body).toContain(`data-grant="${grant.id}"`);
+      expect(grant).toMatchObject({
+        clientName: "Claude Code",
+        registration: "dynamic",
+        redirectHost: "127.0.0.1:33418",
+        localRedirect: true,
+        wantsWrite: true,
+        existingConnection: null,
+      });
+      expect(await status(grant.id)).toEqual({ state: "pending", location: null });
+      expect((await grants()).grants.map(({ id }) => id)).toEqual([grant.id]);
+
+      const approved = await command("mcp.grant.approve", "mcp-approve-01", {
+        grantId: grant.id,
         name: null,
-        capabilities: null,
-        readCeiling: null,
-        pushPolicy: "direct",
-        status: null,
+        readCeiling: "private",
+        pushPolicy: "ask",
+        write: true,
       });
-      expect(switched.statusCode, switched.body).toBe(200);
-      expect((await read()).connections[0]?.pushPolicy).toBe("direct");
-      expect((await address(connectionId, "")).statusCode).toBe(401);
-      const shown = await address(connectionId);
-      expect(shown.statusCode).toBe(200);
-      expect(shown.headers["cache-control"]).toBe("no-store");
-      const { path: keyedPath } = shown.json() as { path: string };
-      expect(keyedPath).toMatch(/^\/api\/mcp\/v1\/[A-Za-z0-9_-]{43}$/u);
-      expect((await address(connectionId)).statusCode).toBe(404);
-      const served = await mcp(keyedPath);
+      expect(approved.statusCode, approved.body).toBe(200);
+      const connectionId = (approved.json() as { resultRef: string }).resultRef;
+      expect((await grants()).grants).toEqual([]);
+      const done = await status(grant.id);
+      expect(done.state).toBe("approved");
+      const back = new URL(done.location ?? "");
+      expect(`${back.origin}${back.pathname}`).toBe(redirect);
+      expect(back.searchParams.get("state")).toBe("state-1");
+      expect(back.searchParams.get("iss")).toBe(ORIGIN);
+      const code = back.searchParams.get("code") ?? "";
+
+      expect(
+        (
+          await form("/api/mcp-auth/v1/token", {
+            grant_type: "authorization_code",
+            code,
+            client_id: clientId,
+            redirect_uri: redirect,
+            code_verifier: randomBytes(48).toString("base64url"),
+          })
+        ).json(),
+      ).toEqual({ error: "invalid_grant" });
+      const exchanged = await form("/api/mcp-auth/v1/token", {
+        grant_type: "authorization_code",
+        code,
+        client_id: clientId,
+        redirect_uri: redirect,
+        code_verifier: verifier,
+        resource: `${ORIGIN}${MCP_READ_PATH}`,
+      });
+      expect(exchanged.statusCode, exchanged.body).toBe(200);
+      expect(exchanged.headers["cache-control"]).toBe("no-store");
+      const tokens = exchanged.json() as {
+        access_token: string;
+        refresh_token: string;
+        token_type: string;
+        scope: string;
+      };
+      expect(tokens.token_type).toBe("Bearer");
+      expect(tokens.scope).toBe("himawari:read himawari:write");
+
+      const served = await mcp(tokens.access_token);
       expect(served.statusCode, served.body).toBe(200);
+      expect(served.body).toContain("2026");
       expect(recorded).toEqual([`mcp-connection:${connectionId}`]);
-      const snapshot = await read();
-      expect(snapshot.connections).toHaveLength(1);
-      expect(snapshot.connections[0]).toMatchObject({
+      const listed = await connections();
+      expect(listed.connections).toHaveLength(1);
+      expect(listed.connections[0]).toMatchObject({
         id: connectionId,
         name: "Claude Code",
-        capabilities: ["command_hooks", "mcp"],
+        registration: "dynamic",
+        clientHost: null,
         status: "active",
-        lastSeenAt: NOW.toISOString(),
-        usage: { reads: 1, delivered: 1, empty: 0, failed: 0, modelReads: 1, autoReads: 0 },
-        minute: { reads: 1, hookReads: 0 },
+        pushPolicy: "ask",
+        usage: { reads: 1, delivered: 1 },
       });
-      expect(snapshot.limits).toContainEqual({
-        key: "mcp.connections",
-        value: MCP_CONNECTION_MAXIMUM,
-        used: 1,
-      });
-      expect(snapshot.limits).toContainEqual({
+      expect(listed.limits).toContainEqual({
         key: "mcp.request.body_bytes",
         value: MCP_READ_BODY_LIMIT,
         used: null,
       });
-      expect(snapshot.limits).toContainEqual({
-        key: "mcp.connection.name_characters",
-        value: 64,
-        used: 11,
+      expect(listed.limits).toContainEqual({
+        key: "mcp.connections",
+        value: MCP_CONNECTION_MAXIMUM,
+        used: 1,
       });
-      expect(JSON.stringify(snapshot)).not.toContain(keyedPath.split("/").at(-1));
+      expect(JSON.stringify(listed)).not.toContain(tokens.access_token);
+
+      const replayed = await form("/api/mcp-auth/v1/token", {
+        grant_type: "authorization_code",
+        code,
+        client_id: clientId,
+        redirect_uri: redirect,
+        code_verifier: verifier,
+      });
+      expect(replayed.json()).toEqual({ error: "invalid_grant" });
+      expect((await mcp(tokens.access_token)).statusCode).toBe(401);
+
+      const second = await authorize(clientId, "state-2");
+      expect(second.statusCode).toBe(200);
+      const again = notified[1] as McpGrantView;
+      expect(again.existingConnection).toMatchObject({ id: connectionId, pushPolicy: "ask" });
+      await command("mcp.grant.approve", "mcp-approve-02", {
+        grantId: again.id,
+        name: null,
+        readCeiling: null,
+        pushPolicy: null,
+        write: false,
+      });
+      const secondCode =
+        new URL((await status(again.id)).location ?? "").searchParams.get("code") ?? "";
+      const readOnly = (
+        await form("/api/mcp-auth/v1/token", {
+          grant_type: "authorization_code",
+          code: secondCode,
+          client_id: clientId,
+          code_verifier: verifier,
+        })
+      ).json() as { access_token: string; refresh_token: string; scope: string };
+      expect(readOnly.scope).toBe("himawari:read");
+      expect((await connections()).connections).toHaveLength(1);
+
+      const older = readOnly.refresh_token;
+      const refreshed = await form("/api/mcp-auth/v1/token", {
+        grant_type: "refresh_token",
+        refresh_token: older,
+        client_id: clientId,
+      });
+      expect(refreshed.statusCode, refreshed.body).toBe(200);
+      const next = refreshed.json() as { access_token: string; refresh_token: string };
+      const newer = next.refresh_token;
+      expect(newer).not.toBe(older);
+      expect((await mcp(readOnly.access_token)).statusCode).toBe(401);
+      expect((await mcp(next.access_token)).statusCode).toBe(200);
+      const reused = await form("/api/mcp-auth/v1/token", {
+        grant_type: "refresh_token",
+        refresh_token: older,
+        client_id: clientId,
+      });
+      expect(reused.json()).toEqual({ error: "invalid_grant" });
+      expect((await mcp(next.access_token)).statusCode).toBe(401);
+      expect(
+        (
+          await form("/api/mcp-auth/v1/token", {
+            grant_type: "refresh_token",
+            refresh_token: newer,
+            client_id: clientId,
+          })
+        ).json(),
+      ).toEqual({ error: "invalid_grant" });
+
+      const third = await authorize(clientId, "state-3");
+      expect(third.statusCode).toBe(200);
+      const denied = notified[2] as McpGrantView;
+      expect(
+        (await command("mcp.grant.deny", "mcp-deny-01", { grantId: denied.id })).statusCode,
+      ).toBe(200);
+      const refused = new URL((await status(denied.id)).location ?? "");
+      expect(refused.searchParams.get("error")).toBe("access_denied");
+      expect(refused.searchParams.get("state")).toBe("state-3");
+      expect(refused.searchParams.has("code")).toBe(false);
+      expect(
+        (
+          await command("mcp.grant.approve", "mcp-approve-03", {
+            grantId: denied.id,
+            name: null,
+            readCeiling: null,
+            pushPolicy: null,
+            write: true,
+          })
+        ).statusCode,
+      ).toBe(404);
+
+      const fourth = await authorize(clientId, "state-4");
+      expect(fourth.statusCode).toBe(200);
+      await command("mcp.grant.approve", "mcp-approve-04", {
+        grantId: (notified[3] as McpGrantView).id,
+        name: null,
+        readCeiling: null,
+        pushPolicy: null,
+        write: true,
+      });
+      const fourthCode =
+        new URL((await status((notified[3] as McpGrantView).id)).location ?? "").searchParams.get(
+          "code",
+        ) ?? "";
+      const live = (
+        await form("/api/mcp-auth/v1/token", {
+          grant_type: "authorization_code",
+          code: fourthCode,
+          client_id: clientId,
+          code_verifier: verifier,
+        })
+      ).json() as { access_token: string };
+      expect((await mcp(live.access_token)).statusCode).toBe(200);
       const paused = await command("mcp.connection.change", "mcp-pause-01", {
         connectionId,
         name: null,
         capabilities: null,
-        readCeiling: "public",
+        readCeiling: null,
         pushPolicy: null,
         status: "paused",
       });
       expect(paused.statusCode, paused.body).toBe(200);
-      expect((await mcp(keyedPath)).statusCode).toBe(403);
-      expect((await read()).connections[0]).toMatchObject({
-        status: "paused",
-        readCeiling: "public",
-      });
-      const rotated = await command("mcp.connection.rotate", "mcp-rotate-01", { connectionId });
-      expect(rotated.statusCode, rotated.body).toBe(200);
-      const { path: rotatedPath } = (await address(connectionId)).json() as { path: string };
-      expect(rotatedPath).not.toBe(keyedPath);
-      expect((await mcp(keyedPath)).statusCode).toBe(404);
-      const revoked = await command("mcp.connection.change", "mcp-revoke-01", {
+      expect((await mcp(live.access_token)).statusCode).toBe(403);
+      await command("mcp.connection.change", "mcp-revoke-01", {
         connectionId,
         name: null,
         capabilities: null,
@@ -1272,46 +1423,12 @@ describe("production HTTP composition", () => {
         pushPolicy: null,
         status: "revoked",
       });
-      expect(revoked.statusCode, revoked.body).toBe(200);
-      expect((await mcp(rotatedPath)).statusCode).toBe(404);
-      expect((await read()).limits).toContainEqual({
-        key: "mcp.connection.name_characters",
-        value: 64,
-        used: 0,
-      });
+      const gone = await mcp(live.access_token);
+      expect(gone.statusCode).toBe(401);
+      expect(String(gone.headers["www-authenticate"])).toContain('error="invalid_token"');
       expect(
-        (
-          await command("mcp.connection.change", "mcp-empty-01", {
-            connectionId,
-            name: null,
-            capabilities: null,
-            readCeiling: null,
-            pushPolicy: null,
-            status: null,
-          })
-        ).statusCode,
+        (await command("mcp.connection.create", "mcp-create-01", { name: "x" })).statusCode,
       ).not.toBe(200);
-      expect(
-        (await command("mcp.connection.rotate", "mcp-rotate-02", { connectionId })).statusCode,
-      ).toBe(409);
-      expect(
-        (await command("mcp.connection.rotate", "mcp-rotate-03", { connectionId: "conn-missing" }))
-          .statusCode,
-      ).toBe(404);
-      const twice = await Promise.all(
-        [0, 1].map(() =>
-          command("mcp.connection.create", "mcp-create-race", {
-            name: "Codex",
-            capabilities: ["mcp"],
-            readCeiling: "private",
-            pushPolicy: "ask",
-          }),
-        ),
-      );
-      expect(twice.map((reply) => reply.statusCode)).toEqual([200, 200]);
-      const raced = twice.map((reply) => (reply.json() as { resultRef: string }).resultRef);
-      expect(raced[0]).toBe(raced[1]);
-      expect((await read()).connections.filter(({ id }) => id === raced[0])).toHaveLength(1);
     } finally {
       await composition.close();
       await repository.close();
@@ -1498,6 +1615,8 @@ describe("production HTTP composition", () => {
             status: string;
             reasonCode: string | null;
           }[];
+          release: unknown;
+          disk: { availableBytes: number; totalBytes: number };
         };
       };
       const webBody = webStatus.json() as typeof phoneStatus.payload;
@@ -1508,6 +1627,10 @@ describe("production HTTP composition", () => {
       expect(phoneStatus.payload.live).toBe(webBody.live);
       expect(phoneStatus.payload.ready).toBe(webBody.ready);
       expect(phoneStatus.payload.status).toBe(webBody.status);
+      const disk = phoneStatus.payload.disk;
+      expect(disk.totalBytes).toBeGreaterThan(0);
+      expect(disk.availableBytes).toBeLessThanOrEqual(disk.totalBytes);
+      expect(phoneStatus.payload.release).toBeNull();
       expect(phoneStatus.payload.dependencies).toEqual(
         webBody.dependencies.map(({ name, required, status, reasonCode }) => ({
           name,
@@ -1638,7 +1761,7 @@ describe("production HTTP composition", () => {
         payload: {
           ...ownerEnvelope(second.authenticationRef, "files.list.read"),
           kind: "query",
-          payload: { kind: null, origin: null, before: null, limit: 20 },
+          payload: { kind: null, origin: null, before: null, limit: 20, search: null },
         },
       });
       expect(phoneFiles.statusCode, phoneFiles.body).toBe(200);
@@ -2243,47 +2366,11 @@ describe("production Thread access scope", () => {
   );
 });
 
-describe("[P1-1] device pairing access", () => {
-  const resolve = async (ref: string, version: string) => `resolved:${ref}@${version}`;
-  const base = [
-    { ref: "payload-kek", version: "v1", purpose: "payload-encryption" },
-    { ref: "device-id-ref", version: "v2", purpose: "device-access-client-id" },
-    { ref: "device-key-ref", version: "v3", purpose: "device-access-client-secret" },
-  ];
-
-  it("reads the client id and secret from the two declared secrets", async () => {
-    await expect(resolveDevicePairingAccess(base, resolve)).resolves.toEqual({
-      clientId: "resolved:device-id-ref@v2",
-      clientSecret: "resolved:device-key-ref@v3",
-    });
-  });
-
-  it("refuses an access value the gateway contract would reject", async () => {
-    for (const value of ["", "x".repeat(257), "line\nbreak"])
-      await expect(
-        resolveDevicePairingAccess(base, async (ref) =>
-          ref === "device-key-ref" ? value : "client-id",
-        ),
-      ).rejects.toMatchObject({ code: "PRODUCTION_HTTP_SECRET_MATERIAL_INVALID" });
-    await expect(
-      resolveDevicePairingAccess(base, async () => "x".repeat(256)),
-    ).resolves.toBeDefined();
-  });
-
-  it("gives no access when either secret is not declared", async () => {
-    await expect(resolveDevicePairingAccess(base.slice(0, 1), resolve)).resolves.toBeUndefined();
-    await expect(resolveDevicePairingAccess(base.slice(0, 2), resolve)).resolves.toBeUndefined();
-    await expect(
-      resolveDevicePairingAccess([base[0], base[2]] as typeof base, resolve),
-    ).resolves.toBeUndefined();
-  });
-});
-
 describe("[P1-1] device management through gateway v2", () => {
   const ACCESS_ID = `access-id-${randomUUID()}`;
   const ACCESS_KEY = `access-key-${randomUUID()}`;
 
-  it("pairs, lists, confirms, renames and revokes a device with the gateway types and never leaks the access secrets", async () => {
+  it("signs devices in with a passkey, then lists, renames and revokes them with the gateway types and never leaks the access secrets", async () => {
     const paths = await fixture();
     const raw = rawConfiguration(paths);
     const config = parseProductConfiguration(
@@ -2422,10 +2509,8 @@ describe("[P1-1] device management through gateway v2", () => {
               revision: number;
               name: string;
               status: string;
-              pairingNumber: string | null;
             }[];
             limits: { key: string }[];
-            pairing: { expiresAt: string; access: unknown } | null;
           };
         };
       };
@@ -2444,99 +2529,109 @@ describe("[P1-1] device management through gateway v2", () => {
 
       const empty = await list();
       expect(empty.payload.devices).toEqual([]);
-      expect(empty.payload.pairing).toBeNull();
       expect(empty.payload.limits.map(({ key }) => key)).toContain("device.request.body_bytes");
 
-      const invalid = await command("device.pairing.start", { pairingCode: "A".repeat(21) + "B" });
-      expect(invalid.statusCode, invalid.body).toBe(400);
-      expect((await list()).payload.pairing).toBeNull();
-
-      const code = randomBytes(16).toString("base64url");
-      const started = await command("device.pairing.start", { pairingCode: code });
-      expect(started.statusCode, started.body).toBe(200);
-      const open = await list();
-      expect(open.payload.pairing).toEqual({
-        expiresAt: new Date(NOW.valueOf() + 600_000).toISOString(),
-        access: { clientId: ACCESS_ID, clientSecret: ACCESS_KEY },
-      });
-
-      const spki = () =>
-        generateKeyPairSync("ec", { namedCurve: "prime256v1" })
-          .publicKey.export({ type: "spki", format: "der" })
-          .toString("base64");
-      const devicePublicKey = spki();
-      const confirmPublicKey = spki();
-      const paired = await app.inject({
-        method: "POST",
-        url: "/api/device/v1/pair",
-        headers: { host: "agent.example.test", "content-type": "application/json" },
-        payload: JSON.stringify({
-          pairingCode: code,
+      const passkey = new SoftwarePasskey(ORIGIN);
+      const signIn = async (
+        name: string,
+        keys: { device: { publicKeySpkiBase64: string }; confirm: { publicKeySpkiBase64: string } },
+      ) => {
+        const device = {
           kind: "iphone",
-          name: "Andy iPhone",
+          name,
           releaseChannel: "direct",
-          devicePublicKey,
-          confirmPublicKey,
-        }),
+          devicePublicKey: keys.device.publicKeySpkiBase64,
+          confirmPublicKey: keys.confirm.publicKeySpkiBase64,
+        };
+        const enrolled =
+          (
+            await repository
+              .pairedDevices()
+              .listPasskeys({ ownerId: config.ownerId, agentId: config.agentId })
+          ).length > 0;
+        const post = (url: string, body: unknown) =>
+          app.inject({
+            method: "POST",
+            url: `/api/device/v1/sign-in/${url}`,
+            headers: { host: "agent.example.test", "content-type": "application/json" },
+            payload: JSON.stringify(body),
+          });
+        if (!enrolled) {
+          const code = generateSetupCode();
+          await writeSetupCode({
+            stateRoot: paths.stateRoot,
+            scope: { ownerId: config.ownerId, agentId: config.agentId },
+            code,
+            now: NOW,
+            minutes: 15,
+          });
+          const options = await post("setup/options", { setupCode: code, device });
+          expect(options.statusCode, options.body).toBe(200);
+          const started = options.json() as {
+            flowId: string;
+            publicKey: { challenge: string; rp: { id: string } };
+          };
+          const finished = await post("setup/finish", {
+            flowId: started.flowId,
+            credential: passkey.create(started.publicKey),
+          });
+          others.push(options.body, finished.body);
+          expect(finished.statusCode, finished.body).toBe(201);
+          return (finished.json() as { device: { id: string } }).device.id;
+        }
+        const options = await post("options", { device });
+        expect(options.statusCode, options.body).toBe(200);
+        const started = options.json() as {
+          flowId: string;
+          publicKey: { challenge: string; rpId: string };
+        };
+        const finished = await post("finish", {
+          flowId: started.flowId,
+          credential: passkey.get(started.publicKey),
+        });
+        others.push(options.body, finished.body);
+        expect(finished.statusCode, finished.body).toBe(200);
+        return (finished.json() as { device: { id: string } }).device.id;
+      };
+
+      const deviceId = await signIn("Andy iPhone", {
+        device: generateDeviceTestKeyPair(),
+        confirm: generateDeviceTestKeyPair(),
       });
-      others.push(paired.body);
-      expect(paired.statusCode, paired.body).toBe(201);
-      const pending = await list();
-      expect(pending.payload.pairing).toBeNull();
-      expect(pending.payload.devices).toEqual([
+      expect((await list()).payload.devices).toEqual([
         expect.objectContaining({
+          id: deviceId,
           name: "Andy iPhone",
-          status: "pending",
+          status: "active",
           revision: 0,
-          pairingNumber: devicePairingNumber({ devicePublicKey, confirmPublicKey }),
         }),
       ]);
-      const deviceId = pending.payload.devices[0]?.id ?? "";
-
-      const stale = await command("device.pairing.confirm", { deviceId, expectedRevision: 5 });
-      expect(stale.statusCode).not.toBe(200);
-      const confirmed = await command("device.pairing.confirm", {
-        deviceId,
-        expectedRevision: 0,
-      });
-      expect(confirmed.statusCode, confirmed.body).toBe(200);
-      expect(confirmed.json()).toEqual({ resultRef: `device:${deviceId}:1`, replayed: false });
-      const confirmedAgain = await command("device.pairing.confirm", {
-        deviceId,
-        expectedRevision: 0,
-      });
-      expect(confirmedAgain.statusCode, confirmedAgain.body).toBe(200);
-      expect(confirmedAgain.json()).toEqual({ resultRef: `device:${deviceId}:1`, replayed: true });
-      expect((await list()).payload.devices[0]).toMatchObject({
-        status: "active",
-        pairingNumber: null,
-      });
 
       const hidden = await command("device.rename", {
         deviceId,
-        expectedRevision: 1,
+        expectedRevision: 0,
         name: "Andy‮iPhone",
       });
       expect(hidden.statusCode).toBe(400);
       const renamed = await command("device.rename", {
         deviceId,
-        expectedRevision: 1,
+        expectedRevision: 0,
         name: "  Desk iPhone  ",
       });
       expect(renamed.statusCode, renamed.body).toBe(200);
       const renamedAgain = await command("device.rename", {
         deviceId,
-        expectedRevision: 1,
+        expectedRevision: 0,
         name: "Desk iPhone",
       });
-      expect(renamedAgain.json()).toEqual({ resultRef: `device:${deviceId}:2`, replayed: true });
+      expect(renamedAgain.json()).toEqual({ resultRef: `device:${deviceId}:1`, replayed: true });
       const otherName = await command("device.rename", {
         deviceId,
-        expectedRevision: 1,
+        expectedRevision: 0,
         name: "Another name",
       });
       expect(otherName.statusCode).not.toBe(200);
-      expect((await list()).payload.devices[0]).toMatchObject({ name: "Desk iPhone", revision: 2 });
+      expect((await list()).payload.devices[0]).toMatchObject({ name: "Desk iPhone", revision: 1 });
       const rest = await app.inject({
         method: "POST",
         url: "/api/devices/v1/list",
@@ -2546,41 +2641,19 @@ describe("[P1-1] device management through gateway v2", () => {
       expect(rest.statusCode, rest.body).toBe(200);
       expect(rest.body).toContain("Desk iPhone");
 
-      const revoked = await command("device.revoke", { deviceId, expectedRevision: 2 });
+      const revoked = await command("device.revoke", { deviceId, expectedRevision: 1 });
       expect(revoked.statusCode, revoked.body).toBe(200);
-      const revokedAgain = await command("device.revoke", { deviceId, expectedRevision: 2 });
-      expect(revokedAgain.json()).toEqual({ resultRef: `device:${deviceId}:3`, replayed: true });
+      const revokedAgain = await command("device.revoke", { deviceId, expectedRevision: 1 });
+      expect(revokedAgain.json()).toEqual({ resultRef: `device:${deviceId}:2`, replayed: true });
       const revokedStale = await command("device.revoke", { deviceId, expectedRevision: 0 });
       expect(revokedStale.statusCode).not.toBe(200);
-      expect((await list()).payload.devices[0]).toMatchObject({ status: "revoked", revision: 3 });
+      expect((await list()).payload.devices[0]).toMatchObject({ status: "revoked", revision: 2 });
 
-      const secondCode = randomBytes(16).toString("base64url");
-      expect((await command("device.pairing.start", { pairingCode: secondCode })).statusCode).toBe(
-        200,
-      );
       const second = {
         device: generateDeviceTestKeyPair(),
         confirm: generateDeviceTestKeyPair(),
       };
-      const secondPaired = await app.inject({
-        method: "POST",
-        url: "/api/device/v1/pair",
-        headers: { host: "agent.example.test", "content-type": "application/json" },
-        payload: JSON.stringify({
-          pairingCode: secondCode,
-          kind: "iphone",
-          name: "Confirmed iPhone",
-          releaseChannel: "direct",
-          devicePublicKey: second.device.publicKeySpkiBase64,
-          confirmPublicKey: second.confirm.publicKeySpkiBase64,
-        }),
-      });
-      expect(secondPaired.statusCode, secondPaired.body).toBe(201);
-      const secondDevice = (secondPaired.json() as { device: { id: string } }).device.id;
-      expect(
-        (await command("device.pairing.confirm", { deviceId: secondDevice, expectedRevision: 0 }))
-          .statusCode,
-      ).toBe(200);
+      const secondDevice = await signIn("Confirmed iPhone", second);
       const webLogins = await app.inject({
         method: "POST",
         url: "/api/gateway/v2/queries",

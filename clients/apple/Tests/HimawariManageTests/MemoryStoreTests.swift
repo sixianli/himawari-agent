@@ -36,6 +36,8 @@ private actor MemoryServer: DeviceTransport {
             return DeviceResponse(status: 200, body: Data(Self.overview.utf8))
         case .string("memory.rules.read"):
             return DeviceResponse(status: 200, body: Data(Self.rules.utf8))
+        case .string("memory.search.read"):
+            return DeviceResponse(status: 200, body: Data(Self.search.utf8))
         default:
             return DeviceResponse(status: 200, body: Data("{}".utf8))
         }
@@ -50,16 +52,40 @@ private actor MemoryServer: DeviceTransport {
     }
 
     static let overview = #"{"payload":{"memories":[\#(memory("m1", category: "health", status: "active")),\#(memory("m2", category: "health", status: "active")),\#(memory("m3", category: "work", status: "active")),\#(memory("m4", category: "work", status: "deleted"))],"imports":[],"capturePaused":false}}"#
+    static let search = #"{"payload":{"query":"过敏","results":[{"kind":"rule","memoryId":"m9","ruleId":"r1","text":"晚上别推","category":"rule","tentative":false,"updatedAt":"2026-10-21T03:00:00.000Z"},{"kind":"memory","memoryId":"m1","ruleId":null,"text":"t","category":"health","tentative":true,"updatedAt":"2026-10-21T03:00:00.000Z"}],"generatedAt":"2026-11-26T03:00:00.000Z"}}"#
     static let rules = #"{"payload":{"rules":[{"ruleId":"r1","type":"push_quiet_hours","summary":"晚上别推","status":"active","enforced":true,"updatedAt":"2026-10-21T03:00:00.000Z","quote":null,"changes":null,"lastUsed":null}]}}"#
 }
 
 @MainActor
 final class MemoryStoreTests: XCTestCase {
+    func testSearchAsksTheServerByMeaningAndKeepsItsRelevanceOrder() async throws {
+        let server = MemoryServer()
+        let store = MemoryStore(gateway: ManageGateway(transport: server, makeIdentifier: { "0123456789abcdef0123" }))
+        await store.load()
+        let hits = try await store.search("  我对什么过敏 ")
+        XCTAssertEqual(hits.map(\.id), ["rule:m9", "memory:m1"])
+        XCTAssertEqual(store.rule(hits[0].ruleId)?.ruleId, "r1")
+        XCTAssertEqual(store.memory(hits[1].memoryId)?.memoryId, "m1")
+        XCTAssertNil(store.memory("m4"))
+        let sent = await server.sent.last
+        XCTAssertEqual(sent?["type"], .string("memory.search.read"))
+        XCTAssertEqual(sent?["payload"], .object(["query": .string("我对什么过敏")]))
+    }
+
+    func testBlankSearchNeverReachesTheServer() async throws {
+        let server = MemoryServer()
+        let store = MemoryStore(gateway: ManageGateway(transport: server, makeIdentifier: { "0123456789abcdef0123" }))
+        let hits = try await store.search("   ")
+        XCTAssertEqual(hits, [])
+        let sent = await server.sent
+        XCTAssertTrue(sent.isEmpty)
+    }
+
     func testSummaryCountsOnlyWhatTheMemoryPageShows() async throws {
         let store = MemoryStore(gateway: ManageGateway(transport: MemoryServer(), makeIdentifier: { "0123456789abcdef0123" }))
         XCTAssertNil(store.summary(categoryLabel: { $0 }))
         await store.load()
-        XCTAssertEqual(store.summary(categoryLabel: { $0 }), MemorySummary(memories: 3, rules: 1))
+        XCTAssertEqual(store.summary(categoryLabel: { $0 }), MemorySummary(memories: 3))
     }
 
     func testPausingMemorySendsTheSettingsCommandAndReloads() async throws {

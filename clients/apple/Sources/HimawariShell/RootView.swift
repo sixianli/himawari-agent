@@ -9,14 +9,22 @@ import HimawariShare
 import SwiftUI
 
 public struct HimawariRootView: View {
-    @State private var model = AppModel()
+    @State private var model = AppModel.launched
     @Environment(\.scenePhase) private var scenePhase
 
     public init() {}
 
     public var body: some View {
         Group {
-            #if DEBUG
+            #if DEBUG && os(iOS)
+            if let load = ScrollBench.requested {
+                ScrollBenchView(load: load)
+            } else if let scene = DemoScene.requested {
+                DemoSceneView(scene: scene)
+            } else {
+                app
+            }
+            #elseif DEBUG
             if let scene = DemoScene.requested {
                 DemoSceneView(scene: scene)
             } else {
@@ -27,10 +35,11 @@ public struct HimawariRootView: View {
             #endif
         }
         .dismissesKeyboardOnOutsideTap()
-        .dynamicTypeSize(...DynamicTypeSize.accessibility2)
+        .tint(Color.hmSun)
     }
 
     @State private var handoverEntry: HandoverEntryLink?
+    @State private var otpauthImport: VaultOTPAuthImport?
 
     private var app: some View {
         Group {
@@ -48,8 +57,13 @@ public struct HimawariRootView: View {
                 HandoverEntryRoute(link.entry, safariURL: model.vault.pairingRecord()?.origin)
             }
         }
-        .onAppear { SerifFace.shared.prepare() }
         .onOpenURL { url in model.handlePairingLink(url.absoluteString) }
+        .onOpenURL { url in
+            if model.phase == .active, let link = VaultOTPAuthImport(url: url) { otpauthImport = link }
+        }
+        .sheet(item: $otpauthImport) { link in
+            VaultOTPAuthImportView(api: model.api, confirmKey: model.confirmKey, link: link) { otpauthImport = nil }
+        }
         .confirmationDialog(
             L.text("watch.offer.title"),
             isPresented: Binding(get: { model.watchOffer != nil }, set: { if !$0 { model.declineWatchOffer() } }),
@@ -82,9 +96,10 @@ struct MainShell: View {
     @State private var listening: ListeningController?
     @State private var herOpen: Bool
     @State private var herListenOpen = false
+    @State private var herVoiceprintOpen = false
     #if os(iOS)
     @State private var dictation = ChatDictation()
-    @State private var talkSession = ChatTalkSession()
+    @State private var talkSession: ChatTalkSession
     #endif
 
     init(model: AppModel, chat: ChatStore, actions: DeviceActionsModel? = nil, threadId: String? = nil, herOpen: Bool = false) {
@@ -93,6 +108,10 @@ struct MainShell: View {
         actionsOverride = actions
         fixedThreadId = threadId
         _herOpen = State(initialValue: herOpen)
+        #if os(iOS)
+        let api = model.api
+        _talkSession = State(initialValue: ChatTalkSession(cloudSpeech: { text in try await api.speech(text) }, reportTiming: { timing in await api.reportVoiceTiming(timing) }))
+        #endif
     }
 
     private var actions: DeviceActionsModel? { actionsOverride ?? model.actions }
@@ -105,12 +124,12 @@ struct MainShell: View {
     var body: some View {
         Group {
             if let threadId = fixedThreadId ?? mainThreadId {
-                ChatView(store: chat, threadId: threadId, draft: draft.text, openHerPage: { herOpen = true })
+                ChatView(store: chat, threadId: threadId, draft: draft.text, openHerPage: { herOpen = true }, explainSpoken: explainSpoken)
                     .id(draft.nonce)
                     .environment(\.chatStopRun, stopRun)
                     .environment(\.chatChooseOption, chooseOption)
                     .environment(\.chatOwnerAwaited, (actions?.waitingCount ?? 0) > 0)
-                    .environment(\.chatCanAttach, model.configuration?.acceptsChatAttachments == true)
+                    .environment(\.chatAttachLimits, model.configuration?.attachments)
                     #if os(iOS)
                     .environment(\.chatVoice, dictation)
                     .environment(\.chatTalk, talkSession)
@@ -128,8 +147,10 @@ struct MainShell: View {
                 ListenOverlay(controller: listening)
             }
         }
-        .hmCover(isPresented: $herOpen) {
+        .sheet(isPresented: $herOpen) {
             herPage
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
         }
         #if os(iOS)
         .hmCover(isPresented: Binding(get: { listening?.recordingKitOpen ?? false }, set: { listening?.recordingKitOpen = $0 })) {
@@ -150,6 +171,20 @@ struct MainShell: View {
             NotificationRouter.shared.approvalsRequested = false
             herOpen = true
         }
+        .agentGrantPrompt(
+            api: model.api,
+            confirmKey: model.confirmKey,
+            requested: NotificationRouter.shared.agentGrantRequested
+        ) {
+            NotificationRouter.shared.agentGrantRequested = false
+        }
+        .vaultPrompt(
+            api: model.api,
+            confirmKey: model.confirmKey,
+            requested: NotificationRouter.shared.vaultRequested
+        ) {
+            NotificationRouter.shared.vaultRequested = false
+        }
         #endif
     }
 
@@ -159,6 +194,14 @@ struct MainShell: View {
             mainThreadId = try await MainThreadLocator(api: model.api, confirmKey: model.confirmKey).mainThreadId()
         } catch {
             lookupFailed = true
+        }
+    }
+
+    private var explainSpoken: (ThreadMessage) -> AnyView {
+        let api = model.api
+        let confirmKey = model.confirmKey
+        return { message in
+            AnyView(SpokenExplanationCard(api: api, confirmKey: confirmKey, messageId: message.messageId))
         }
     }
 
@@ -182,8 +225,12 @@ struct MainShell: View {
             listening: listening,
             actions: actions,
             openListening: { herListenOpen = true },
+            openVoiceprint: { herVoiceprintOpen = true },
             senses: model.senses.map { senses in
                 AnyView(SensesView(model: senses) { HandoverEntryRows() })
+            },
+            perceptionDeletion: model.senses.map { senses in
+                { (close: @escaping () -> Void) -> AnyView in AnyView(PerceptionDeletionView(model: PerceptionDeletionModel(senses: senses), close: close)) }
             },
             sensesOn: { model.senses?.status?.senses.count },
             talk: { text in
@@ -199,6 +246,12 @@ struct MainShell: View {
         .sheet(isPresented: $herListenOpen) {
             if let listening {
                 ListenEntrySheet(controller: listening) { herListenOpen = false }
+                    .presentationCornerRadius(DesignTokens.Radius.sheetTop)
+            }
+        }
+        .sheet(isPresented: $herVoiceprintOpen) {
+            if let listening {
+                VoiceprintEnrollScreen(controller: listening) { herVoiceprintOpen = false }
                     .presentationCornerRadius(DesignTokens.Radius.sheetTop)
             }
         }
@@ -219,7 +272,7 @@ struct MainThreadWaiting: View {
                         .foregroundStyle(Color.hmSun)
                         .frame(minHeight: DesignTokens.Size.rowMinHeight)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

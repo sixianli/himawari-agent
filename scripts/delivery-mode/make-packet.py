@@ -1,4 +1,6 @@
 import argparse
+import ast
+import base64
 from collections import Counter
 import concurrent.futures
 from datetime import datetime, timezone
@@ -48,13 +50,11 @@ ADAPTATION_MANIFEST = 'acceptance/cloud/adaptation-manifest.json'
 SOURCE_CACHE_NAME = 'source-cache.git'
 PARAMETERS = 'packet-parameters.json'
 CHECKS_RECORD = 'packet-checks.json'
-PYTHON_ARCHIVE = 'python-3.12.10.tar.gz'
-PYTHON_VERSION = '3.12.10'
 TOOLCHAIN_LOCK = 'ci/toolchain-lock.json'
 NODE_ARCHITECTURES = {'x86_64': 'x64', 'aarch64': 'arm64'}
-MATERIAL_FILES = ('context.json', 'source-build-inputs.json', 'node-modules.tar.gz', 'node-modules.json', 'npm-ls.json', PYTHON_ARCHIVE)
+MATERIAL_FILES = ('context.json', 'source-build-inputs.json', 'node-modules.tar.gz', 'node-modules.json', 'npm-ls.json')
 EXECUTION_NOTE = 'G180'
-DISCOVERED_KEYS = ('OLD_PREFIX', 'OLD_OPERATIONS', 'OLD_QUALIFICATION', 'ORIGINAL_CONTEXT_WINDOW', 'ORIGINAL_MAX_TOKENS', 'ORIGINAL_PUBLIC_FETCH_BYTES', 'HOSTNAME', 'SERVICE_UID', 'SERVICE_GID', 'NODE_SHA256', 'NODE_ARCH', 'FIRST_SIGNER_KEY_PATH')
+DISCOVERED_KEYS = ('OLD_PREFIX', 'OLD_OPERATIONS', 'OLD_QUALIFICATION', 'ORIGINAL_CONTEXT_WINDOW', 'ORIGINAL_MAX_TOKENS', 'ORIGINAL_PUBLIC_FETCH_BYTES', 'HOSTNAME', 'SERVICE_UID', 'SERVICE_GID', 'NODE_SHA256', 'SYSTEM_BWRAP_SHA256', 'NODE_ARCH', 'FIRST_SIGNER_KEY_PATH')
 FAST_MODE_NOTE = 'skipped in fast delivery mode (DELIVERY_MODE=fast, ADR 0073, approved by Andy 2026-10-25T10:07Z; G180)'
 
 
@@ -108,6 +108,8 @@ def load_instance(name, host=None):
 
 
 def next_label(running):
+    if running == FIRST_INSTALL_LABEL:
+        return ORDINALS[0]
     if running not in ORDINALS or running == ORDINALS[-1]:
         refuse('PACKET_LABEL_NOT_DERIVABLE', running)
     return ORDINALS[ORDINALS.index(running) + 1]
@@ -299,11 +301,13 @@ def discovery_script():
         "    'serviceUid': service.pw_uid,",
         "    'serviceGid': service.pw_gid,",
         "    'nodeSha256': hashlib.sha256(pathlib.Path(node_path).read_bytes()).hexdigest(),",
+        "    'systemBwrapSha256': hashlib.sha256(pathlib.Path(os.path.realpath('/usr/bin/bwrap')).read_bytes()).hexdigest() if os.path.isfile('/usr/bin/bwrap') else None,",
         "    'signerKeys': [path for mtime, path in keys],",
         "    'active': subprocess.run(['/usr/bin/systemctl', 'is-active', unit_name], capture_output=True, text=True).stdout.strip(),",
         "    'execStart': [line for line in unit.decode().splitlines() if line.startswith('ExecStart=')],",
         "    'staticRoot': config.get('http', {}).get('staticRoot'),",
         "    'modelCount': len(models),",
+        "    'primaryClassifications': [entry.get('allowedDataClassifications') for entry in config.get('modelDescriptors', []) if isinstance(entry, dict) and entry.get('role') == 'primary'],",
         "    'model': {key: models[0].get(key) for key in ('contextWindow', 'maxTokens')} if len(models) == 1 else None,",
         "    'publicFetchMaximumBytes': fetch.get('maximumBytes') if isinstance(fetch, dict) else None,",
         "    'budgetsPresent': 'budgets' in config,",
@@ -355,6 +359,8 @@ def interpret_discovery(facts, instance, label=None):
             refuse('PACKET_SERVICE_ACCOUNT_NOT_READABLE', key + '=' + str(facts.get(key)))
     if not isinstance(facts.get('nodeSha256'), str) or re.fullmatch(r'[0-9a-f]{64}', facts['nodeSha256']) is None:
         refuse('PACKET_NODE_DIGEST_NOT_READABLE', facts.get('nodeSha256'))
+    if not isinstance(facts.get('systemBwrapSha256'), str) or re.fullmatch(r'[0-9a-f]{64}', facts['systemBwrapSha256']) is None:
+        refuse('PACKET_SYSTEM_BWRAP_NOT_READABLE', facts.get('systemBwrapSha256'))
     signer_keys = facts.get('signerKeys')
     if not isinstance(signer_keys, list) or not signer_keys or not all(isinstance(key, str) and re.fullmatch(r'/[A-Za-z0-9._/-]+', key) for key in signer_keys):
         refuse('PACKET_FIRST_SIGNER_KEY_NOT_FOUND', signer_keys)
@@ -372,6 +378,9 @@ def interpret_discovery(facts, instance, label=None):
     model = facts.get('model') or {}
     if facts.get('modelCount') != 1 or not all(type(model.get(key)) is int and model[key] > 0 for key in ('contextWindow', 'maxTokens')):
         refuse('PACKET_CONFIG_MODEL_LIMITS_NOT_READABLE', instance['configTargets']['modelRef'])
+    primaries = facts.get('primaryClassifications')
+    if not isinstance(primaries, list) or len(primaries) != 1 or not isinstance(primaries[0], list) or not all(level in primaries[0] for level in MODEL_VISIBLE_CLASSIFICATIONS):
+        refuse('PACKET_PRIMARY_MODEL_CANNOT_SEE_SENSITIVE', primaries)
     fetch_bytes = facts.get('publicFetchMaximumBytes')
     if type(fetch_bytes) is not int or fetch_bytes <= 0:
         refuse('PACKET_CONFIG_PUBLIC_FETCH_NOT_READABLE', fetch_bytes)
@@ -385,6 +394,7 @@ def interpret_discovery(facts, instance, label=None):
         'SERVICE_UID': facts['serviceUid'],
         'SERVICE_GID': facts['serviceGid'],
         'NODE_SHA256': facts['nodeSha256'],
+        'SYSTEM_BWRAP_SHA256': facts['systemBwrapSha256'],
         'NODE_ARCH': machine,
         'FIRST_SIGNER_KEY_PATH': signer_keys[0],
         'LABEL': chosen,
@@ -403,6 +413,9 @@ def interpret_discovery(facts, instance, label=None):
     }
 
 
+SPEECH_TARGET_KEYS = {'adapter', 'magpieModelRef', 'provider', 'model', 'voice', 'languageType', 'firstAudioTimeoutMs', 'maximumCharacters'}
+SPEECH_ADAPTERS = ('dashscope-qwen-tts',)
+MODEL_VISIBLE_CLASSIFICATIONS = ('public', 'private', 'sensitive')
 EMBEDDING_TARGET_KEYS = {'ref', 'role', 'provider', 'model', 'version', 'allowedDataClassifications', 'disclosure', 'secretRef', 'capabilities', 'cost', 'dimensions'}
 EMBEDDING_PROFILES = {
     ('vercel-ai-gateway', 'alibaba/qwen3-embedding-8b'): (4096, 1024),
@@ -419,6 +432,81 @@ def finite_non_negative(value):
         return math.isfinite(float(value)) and value >= 0
     except OverflowError:
         return False
+
+
+def speech_target(target):
+    if target is None:
+        return 'null'
+    reference = re.compile(r'[A-Za-z0-9][A-Za-z0-9._/:@-]{0,255}')
+    if not isinstance(target, dict) or set(target) != SPEECH_TARGET_KEYS or target['adapter'] not in SPEECH_ADAPTERS:
+        refuse('PACKET_SPEECH_TARGET_INVALID', target)
+    if not all(isinstance(target[key], str) and reference.fullmatch(target[key]) for key in ('magpieModelRef', 'model', 'voice')):
+        refuse('PACKET_SPEECH_TARGET_INVALID', target)
+    if not isinstance(target['provider'], str) or not re.fullmatch(r'[a-z0-9][a-z0-9_-]{0,63}', target['provider']) or not isinstance(target['languageType'], str) or not re.fullmatch(r'[A-Za-z]{2,32}', target['languageType']):
+        refuse('PACKET_SPEECH_TARGET_INVALID', target)
+    if type(target['firstAudioTimeoutMs']) is not int or not 200 <= target['firstAudioTimeoutMs'] <= 10000 or type(target['maximumCharacters']) is not int or not 1 <= target['maximumCharacters'] <= 600:
+        refuse('PACKET_SPEECH_TARGET_INVALID', target)
+    return json.dumps(target, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
+
+
+BROWSER_TARGET_KEYS = {'maxOutputBytes', 'maxTextChars', 'responseReserveMs'}
+COMPUTERS_SETTINGS = REPO / 'scripts/operations/computers/settings.json'
+
+
+APP_CONNECTION_TARGET_KEYS = {'name', 'title', 'serverUrl', 'clientId', 'clientSecret', 'trustsReadOnlyLabels'}
+APP_CONNECTION_SECRET_PURPOSE = 'app-connection-client'
+APP_CONNECTION_SECRET_SCOPE = 'agent'
+
+
+def app_connections_target(target):
+    if target is None:
+        return None, []
+    reference = re.compile(r'[A-Za-z0-9][A-Za-z0-9._-]{0,127}')
+    if not isinstance(target, list) or not target or len(target) > 32:
+        refuse('PACKET_APP_CONNECTIONS_TARGET_INVALID', target)
+    connections, secrets, names = [], [], set()
+    for entry in target:
+        if not isinstance(entry, dict) or set(entry) != APP_CONNECTION_TARGET_KEYS:
+            refuse('PACKET_APP_CONNECTIONS_TARGET_INVALID', entry)
+        secret = entry['clientSecret']
+        valid = (
+            isinstance(entry['name'], str) and re.fullmatch(r'[a-z][a-z0-9_]{0,63}', entry['name']) and entry['name'] not in names
+            and isinstance(entry['title'], str) and 0 < len(entry['title']) <= 64
+            and isinstance(entry['serverUrl'], str) and re.fullmatch(r'https://[A-Za-z0-9.-]+(:[0-9]+)?(/[A-Za-z0-9._~/-]*)?', entry['serverUrl'])
+            and isinstance(entry['clientId'], str) and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,255}', entry['clientId'])
+            and type(entry['trustsReadOnlyLabels']) is bool
+            and isinstance(secret, dict) and set(secret) == {'ref', 'version'}
+            and all(isinstance(secret[key], str) and reference.fullmatch(secret[key]) for key in ('ref', 'version'))
+            and secret['ref'] not in {known['ref'] for known in secrets}
+        )
+        if not valid:
+            refuse('PACKET_APP_CONNECTIONS_TARGET_INVALID', entry)
+        names.add(entry['name'])
+        connections.append({'name': entry['name'], 'title': entry['title'], 'serverUrl': entry['serverUrl'], 'clientId': entry['clientId'], 'clientSecretRef': secret['ref'], 'trustsReadOnlyLabels': entry['trustsReadOnlyLabels']})
+        secrets.append({'ref': secret['ref'], 'version': secret['version'], 'purpose': APP_CONNECTION_SECRET_PURPOSE, 'scope': APP_CONNECTION_SECRET_SCOPE})
+    return connections, secrets
+
+
+def secret_references_target(app_connections):
+    return json.dumps(app_connections_target(app_connections)[1], separators=(',', ':'), ensure_ascii=False)
+
+
+def run_policy_target(target, app_connections=None):
+    connections = app_connections_target(app_connections)[0]
+    if target is None:
+        return '{}' if connections is None else json.dumps({'appConnections': connections}, separators=(',', ':'), ensure_ascii=False)
+    if not isinstance(target, dict) or set(target) != {'browser'}:
+        refuse('PACKET_COMPUTERS_TARGET_INVALID', target)
+    browser = target['browser']
+    if not isinstance(browser, dict) or set(browser) != BROWSER_TARGET_KEYS or any(type(browser[key]) is not int or browser[key] < 0 for key in browser):
+        refuse('PACKET_COMPUTERS_TARGET_INVALID', target)
+    socket_path = json.loads(COMPUTERS_SETTINGS.read_text())['paths']['socket']
+    if not isinstance(socket_path, str) or not socket_path.startswith('/'):
+        refuse('PACKET_COMPUTERS_SOCKET_INVALID', socket_path)
+    additions = {'userComputers': {'socketPath': socket_path}, 'browser': {key: browser[key] for key in ('maxOutputBytes', 'maxTextChars', 'responseReserveMs')}}
+    if connections is not None:
+        additions['appConnections'] = connections
+    return json.dumps(additions, separators=(',', ':'), ensure_ascii=False)
 
 
 def embedding_target(target):
@@ -497,6 +585,9 @@ def base_parameters(instance, commit, date, discovered):
         'TARGET_MAX_TOKENS': targets['maxTokens'],
         'TARGET_PUBLIC_FETCH_BYTES': targets['publicFetchMaximumBytes'],
         'TARGET_EMBEDDING_JSON': embedding_target(targets.get('embedding')),
+        'TARGET_SPEECH_JSON': speech_target(targets.get('speech')),
+        'TARGET_RUN_POLICY_JSON': run_policy_target(targets.get('computers'), targets.get('appConnections')),
+        'TARGET_SECRET_REFERENCES_JSON': secret_references_target(targets.get('appConnections')),
         'STARTUP_READY_BUDGET_MS': startup_ready_budget(instance, git('show', commit + ':' + WORKER_SERVICE_MAIN)),
         'STARTUP_PHASE_BASELINE_MS': startup_phase_baseline(instance),
     }
@@ -589,14 +680,19 @@ def render(target, parameters, only=None):
     return written
 
 
-def describe_materials(materials, commit, python_sha256):
+def python_archive_name(version):
+    return 'python-' + version + '.tar.gz'
+
+
+def describe_materials(materials, commit, python_sha256, python_version):
     artifacts = sorted(materials.glob('linux-*-abi[0-9]*-' + commit + '-*-1.tar.gz'))
     if len(artifacts) != 1:
         refuse('PACKET_ARTIFACT_COUNT', len(artifacts))
-    for name in MATERIAL_FILES + ('source-' + commit[:7] + '.bundle',):
+    python_archive = python_archive_name(python_version)
+    for name in MATERIAL_FILES + (python_archive, 'source-' + commit[:7] + '.bundle'):
         if not (materials / name).is_file():
             refuse('PACKET_MATERIAL_MISSING', name)
-    if file_sha(materials / PYTHON_ARCHIVE) != python_sha256:
+    if file_sha(materials / python_archive) != python_sha256:
         refuse('PACKET_PYTHON_MATERIAL_CHANGED')
     if json.loads((materials / 'context.json').read_text()).get('testedSha') != commit:
         refuse('PACKET_CONTEXT_OTHER_COMMIT')
@@ -610,7 +706,7 @@ def describe_materials(materials, commit, python_sha256):
     regression = git('show', commit + ':' + REGRESSION_SOURCE, binary=True)
     artifact = artifacts[0]
     return {
-        'PYTHON_BYTES': (materials / PYTHON_ARCHIVE).stat().st_size,
+        'PYTHON_BYTES': (materials / python_archive).stat().st_size,
         'ARTIFACT_NAME': artifact.name,
         'ARTIFACT_SHA256': file_sha(artifact),
         'ARTIFACT_BYTES': artifact.stat().st_size,
@@ -637,7 +733,7 @@ def candidate_values(packet, commit, materials):
     archive = next(materials.glob('linux-*-abi[0-9]*-' + commit + '-*-1.tar.gz'))
     context = materials / 'context.json'
     bundle = materials / ('source-' + commit[:7] + '.bundle')
-    not_run = 'not-run: Layer 3 and Layer 4 reruns at ' + commit[:8] + ' ' + FAST_MODE_NOTE + '; only a Hermes build was run'
+    not_run = 'not-run: Layer 3 and Layer 4 reruns at ' + commit[:8] + ' ' + FAST_MODE_NOTE + '; only a build on the target build account was run'
     no_rehearsal = 'not-run: no installer rehearsal (fast delivery mode, ' + EXECUTION_NOTE + ')'
     values = {
         'candidate.testedCommit': commit,
@@ -648,7 +744,7 @@ def candidate_values(packet, commit, materials):
         'candidate.contextBytes': context.stat().st_size,
         'candidate.contextSha256': file_sha(context),
         'candidate.sourceTreeDigest': proof['sourceTreeDigestBefore'],
-        'candidate.materialReadback': 'Hermes build at ' + commit[:8] + ' (generated by scripts/delivery-mode/make-packet.py, build check passed) and a real-browser release walkthrough of this archive on Hermes (browser-acceptance/walkthrough.json, required by deploy.sh); no installer rehearsal (fast delivery mode, ' + EXECUTION_NOTE + ')',
+        'candidate.materialReadback': 'build on the target build account at ' + commit[:8] + ' (generated by scripts/delivery-mode/make-packet.py, build check passed) and a real-browser release walkthrough of this archive on the build account (browser-acceptance/walkthrough.json, required by deploy.sh); no installer rehearsal (fast delivery mode, ' + EXECUTION_NOTE + ')',
         'candidate.evidenceIds': ['G177', 'G180'],
         'candidate.artifactRuntimeAndUiContentSha256': no_rehearsal,
         'candidate.installationRehearsalEvidence': no_rehearsal,
@@ -802,7 +898,7 @@ def npm_observer_label(scripts):
 
 
 def builder_file(arch):
-    path = BUILDER / ('builder.json' if arch == 'x64' else 'builder-' + arch + '.json')
+    path = BUILDER / ('builder-' + arch + '.json')
     if not path.is_file():
         refuse('PACKET_BUILDER_UNKNOWN_ARCHITECTURE', arch)
     return path
@@ -813,16 +909,20 @@ def load_builder(arch, target_hostname, address):
     settings['address'] = address
     if settings.get('arch') != arch:
         refuse('PACKET_BUILDER_ARCHITECTURE_MISMATCH', arch + ' ' + str(settings.get('arch')))
-    if settings.get('transport') == 'target-ssh':
-        settings['hostname'] = target_hostname
+    settings['hostname'] = target_hostname
     return settings
+
+
+def python_material_version(commit):
+    version = json.loads(git('show', commit + ':' + TOOLCHAIN_LOCK))['python'].get('version')
+    if re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', str(version)) is None:
+        refuse('PACKET_PYTHON_VERSION_UNSUPPORTED', str(version))
+    return version
 
 
 def python_material_sha(commit, arch):
     lock = json.loads(git('show', commit + ':' + TOOLCHAIN_LOCK))
     python = lock['python']
-    if python.get('version') != PYTHON_VERSION:
-        refuse('PACKET_PYTHON_VERSION_UNSUPPORTED', str(python.get('version')))
     artifact = python['artifacts'].get('linux-' + arch)
     if not isinstance(artifact, dict) or re.fullmatch(r'[0-9a-f]{64}', str(artifact.get('sha256'))) is None:
         refuse('PACKET_PYTHON_MATERIAL_NOT_LOCKED', arch)
@@ -844,6 +944,8 @@ def builder_parameters(commit, discovered, settings):
     separate = builder_hostname != discovered['HOSTNAME']
     return {
         'PYTHON_SHA256': python_material_sha(commit, discovered['NODE_ARCH']),
+        'PYTHON_VERSION': python_material_version(commit),
+        'PYTHON_ARCHIVE_NAME': python_archive_name(python_material_version(commit)),
         **fd_parameters(discovered['NODE_ARCH']),
         'BUILDER_HOSTNAME': builder_hostname,
         'REHEARSAL_HOSTNAME': builder_hostname if separate else '',
@@ -851,25 +953,18 @@ def builder_parameters(commit, discovered, settings):
 
 
 class Hermes:
-    def __init__(self, run, settings=None):
-        self.settings = settings if settings is not None else json.loads((BUILDER / 'builder.json').read_text())
-        self.target_ssh = self.settings.get('transport') == 'target-ssh'
-        self.ssh_wrapper = os.environ.get('HIMAWARI_HERMES_SSH', str(REPO / '.ci-output/handoff/scripts/hermes-ssh.sh'))
-        self.upload_wrapper = os.environ.get('HIMAWARI_HERMES_UPLOAD', str(REPO / '.ci-output/handoff/scripts/hermes-upload.sh'))
+    def __init__(self, run, settings):
+        self.settings = settings
         self.poll_seconds = float(os.environ.get('HIMAWARI_HERMES_POLL_SECONDS', '15'))
         self.run_id = run
         self.work = self.settings['workRoot'] + '/' + run
         self.scripts = self.settings['scriptRoot'] + '/' + run
 
     def ssh_argv(self, command):
-        if self.target_ssh:
-            return [os.environ.get('HIMAWARI_PACKET_SSH', 'ssh'), *SSH_OPTIONS, self.settings['sshUser'] + '@' + self.settings['address'], command]
-        return [self.ssh_wrapper, command]
+        return [os.environ.get('HIMAWARI_PACKET_SSH', 'ssh'), *SSH_OPTIONS, self.settings['sshUser'] + '@' + self.settings['address'], command]
 
     def upload_argv(self, local, remote):
-        if self.target_ssh:
-            return [os.environ.get('HIMAWARI_PACKET_SCP', 'scp'), '-q', *SSH_OPTIONS, str(local), self.settings['sshUser'] + '@' + self.settings['address'] + ':' + remote]
-        return [self.upload_wrapper, str(local), remote]
+        return [os.environ.get('HIMAWARI_PACKET_SCP', 'scp'), '-q', *SSH_OPTIONS, str(local), self.settings['sshUser'] + '@' + self.settings['address'] + ':' + remote]
 
     def ssh(self, command, stdout=None):
         child = subprocess.run(self.ssh_argv(command), stdout=stdout or subprocess.PIPE, stderr=subprocess.PIPE, timeout=320, check=False)
@@ -910,7 +1005,7 @@ class Hermes:
     def install_scripts(self):
         self.ssh('mkdir -p ' + shlex.quote(self.scripts) + ' ' + shlex.quote(self.work + '-inputs'))
         effective = Path(tempfile.mkdtemp(prefix='packet-builder-')) / 'builder.json'
-        effective.write_text(json.dumps({key: value for key, value in self.settings.items() if key not in ('address', 'sshUser', 'transport')}, indent=2) + '\n')
+        effective.write_text(json.dumps({key: value for key, value in self.settings.items() if key not in ('address', 'sshUser')}, indent=2) + '\n')
         try:
             self.upload(effective, self.scripts + '/builder.json')
         finally:
@@ -934,7 +1029,7 @@ class Hermes:
                 break
             time.sleep(self.poll_seconds)
         if state != '0':
-            tail = self.ssh('tail -n 20 ' + shlex.quote(log_root + '/' + name + '.log')).decode(errors='replace')
+            tail = self.ssh('tail -n 60 ' + shlex.quote(log_root + '/' + name + '.log')).decode(errors='replace')
             refuse('PACKET_HERMES_STEP_FAILED', name + ' exit=' + state + '\n' + tail)
 
     def has_commit(self, commit):
@@ -952,7 +1047,7 @@ class Hermes:
         for name, digest in expected.items():
             if '/' in name or name.startswith('.'):
                 refuse('PACKET_HERMES_MATERIAL_NAME', name)
-            if name == PYTHON_ARCHIVE and (materials / name).is_file() and file_sha(materials / name) == digest:
+            if re.fullmatch(r'python-[0-9]+\.[0-9]+\.[0-9]+\.tar\.gz', name) and (materials / name).is_file() and file_sha(materials / name) == digest:
                 continue
             self.fetch(self.work + '/materials/' + name, materials / name, digest)
 
@@ -1106,6 +1201,86 @@ def finalize(packet, *arguments):
         refuse('PACKET_FINALIZE_FAILED', ' '.join(arguments) + ' ' + (child.stdout + child.stderr).strip()[-800:])
 
 
+REHEARSAL_DRIVER = """import base64, hashlib, json, pwd, subprocess, sys, types
+payload = json.loads(base64.b64decode(sys.stdin.buffer.read()))
+module = types.ModuleType('workspace_grant_binding')
+exec(compile(payload['module'], 'workspace-grant-binding.py', 'exec'), module.__dict__)
+account = pwd.getpwnam(payload['serviceAccount'])
+try:
+    checked, problems = module.check_production_authorization(payload['frozen'], payload['s0'], new_capability_refs=payload['newCapabilityRefs'], configuration_path=payload['configuration'], service_uid=account.pw_uid, service_gid=account.pw_gid)
+except Exception as error:
+    problems = [module.problem_code(error)]
+expected = payload['serviceProperties']
+try:
+    shown = subprocess.run(['/usr/bin/systemctl', 'show', payload['unit'], '--property=' + ','.join(expected)], capture_output=True, text=True, check=False).stdout
+except OSError:
+    shown = ''
+actual = dict(line.split('=', 1) for line in shown.splitlines() if '=' in line)
+problems += ['STOPPED_ORIGINAL_SERVICE_PROPERTIES_CHANGED:' + key + '=' + actual.get(key, '<missing>') for key, value in expected.items() if actual.get(key) != value]
+with open(payload['unitPath'], 'rb') as source:
+    if hashlib.sha256(source.read()).hexdigest() != payload['frozen']['service']['oldUnitSha256']:
+        problems.append('ORIGINAL_UNIT_CHANGED_BEFORE_SWITCH')
+print(json.dumps({'passed': not problems, 'problems': problems}))
+"""
+
+MAINTENANCE_REHEARSAL_DRIVER = """import { readFileSync } from 'node:fs';
+const payload = JSON.parse(Buffer.from(readFileSync(0, 'utf8'), 'base64').toString());
+const problems = [];
+const original = JSON.parse(readFileSync(payload.configuration, 'utf8'));
+const common = await import(payload.module);
+const steps = [['staticRootConfiguration', () => common.staticRootConfiguration(original)]];
+if (payload.firstTools) steps.push(['routeIdentity', () => common.routeIdentity(original, payload.plan)]);
+for (const [name, run] of steps) {
+  try { run(); } catch (error) { problems.push(name + ':' + String(error.code === 'ERR_ASSERTION' ? error.message : error).split('\\n')[0]); }
+}
+console.log(JSON.stringify({ passed: problems.length === 0, problems }));
+"""
+
+
+def service_properties(packet):
+    source = (packet / 'measurement/S6-service-read.py').read_text()
+    for node in ast.parse(source).body:
+        if isinstance(node, ast.Assign) and [getattr(target, 'id', None) for target in node.targets] == ['expected_properties']:
+            return ast.literal_eval(node.value)
+    refuse('PACKET_REHEARSAL_SERVICE_PROPERTIES_NOT_FOUND')
+
+
+def remote_json(instance, remote, payload, code):
+    output = run_remote(instance, remote, base64.b64encode(json.dumps(payload).encode()))
+    try:
+        return json.loads(output)
+    except ValueError:
+        refuse(code, output.decode(errors='replace')[-400:])
+
+
+def rehearse_production_data(packet, instance, parameters):
+    fixed = instance['fixedByTemplate']
+    frozen = json.loads((packet / 'inputs/bindings.json').read_text())
+    new_refs = json.loads(parameters['NEW_CAPABILITY_REFS_JSON'])
+    host = 'test "$(hostname)" = ' + shlex.quote(parameters['HOSTNAME']) + ' && '
+    signing = remote_json(instance, host + '/usr/bin/python3 -I -c ' + shlex.quote(REHEARSAL_DRIVER), {
+        'module': (packet / 'signing/workspace-grant-binding.py').read_text(),
+        'frozen': frozen,
+        's0': json.loads((packet / 'inputs/s0-db-readback.json').read_text()),
+        'newCapabilityRefs': new_refs,
+        'serviceAccount': fixed['serviceAccount'],
+        'configuration': fixed['config'],
+        'unit': fixed['unit'],
+        'unitPath': fixed['unitPath'],
+        'serviceProperties': service_properties(packet),
+    }, 'PACKET_PRODUCTION_REHEARSAL_OUTPUT_INVALID')
+    maintenance = remote_json(instance, host + shlex.quote(fixed['nodePath']) + ' --no-global-search-paths --input-type=module -e ' + shlex.quote(MAINTENANCE_REHEARSAL_DRIVER), {
+        'module': (packet / 'maintenance/maintenance-common.mjs').resolve().as_uri(),
+        'configuration': fixed['config'],
+        'firstTools': bool(new_refs),
+        'plan': frozen['workspace'],
+    }, 'PACKET_PRODUCTION_REHEARSAL_OUTPUT_INVALID')
+    problems = (signing.get('problems') or []) + (maintenance.get('problems') or [])
+    if problems or signing.get('passed') is not True or maintenance.get('passed') is not True:
+        refuse('PACKET_PRODUCTION_REHEARSAL_FAILED', ' '.join(problems or ['unknown']))
+    return {'signing': signing, 'maintenance': maintenance}
+
+
 def freeze(packet, instance):
     parameters = json.loads((packet / PARAMETERS).read_text())
     discovered = interpret_discovery(discover(instance, parameters['LABEL'], parameters['DATE']), instance, parameters['LABEL'])
@@ -1127,6 +1302,7 @@ def freeze(packet, instance):
     regenerate_hashes(packet)
     finalize(packet, '--candidate-from-s0')
     finalize(packet, '--freeze-reviewed-packet', 'round2/R2-L13/' + parameters['LABEL'] + '-' + parameters['DATE_COMPACT'] + '/reviewed')
+    rehearse_production_data(packet, instance, parameters)
     for command in ([sys.executable, '-I', str(packet / 'inputs/check-packet-consistency.py'), str(packet)], [sys.executable, '-I', str(HERE / 'browser-acceptance-gate.py'), str(packet)]):
         child = subprocess.run(command, capture_output=True, text=True, check=False)
         if child.returncode != 0:
@@ -1223,7 +1399,7 @@ def build_packet(arguments, instance, commit, date, parameters, hermes, work, st
         hermes.start_walkthrough()
         hermes.fetch_materials(materials)
         step('fetch-materials', started)
-    parameters.update(describe_materials(materials, commit, parameters['PYTHON_SHA256']))
+    parameters.update(describe_materials(materials, commit, parameters['PYTHON_SHA256'], parameters['PYTHON_VERSION']))
     packet.mkdir(parents=True)
     shutil.move(str(materials), str(packet / 'materials'))
     refreshed = assemble(packet, parameters, packet / 'materials')

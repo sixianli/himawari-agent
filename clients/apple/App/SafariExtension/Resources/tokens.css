@@ -1,5 +1,8 @@
 :root {
   --color-bg: rgba(252, 252, 251, 1);
+  --color-bubble: rgba(239, 239, 236, 1);
+  --color-bubble-code: rgba(37, 41, 33, 0.11);
+  --color-bubble-owner: rgba(154, 98, 0, 1);
   --color-danger: rgba(167, 60, 48, 1);
   --color-fill: rgba(37, 41, 33, 0.06);
   --color-fill-2: rgba(37, 41, 33, 0.11);
@@ -8,8 +11,8 @@
   --color-glow: rgba(232, 176, 74, 0.34);
   --color-glyph: rgba(138, 90, 0, 1);
   --color-highlight: rgba(248, 235, 203, 1);
-  --color-muted: rgba(107, 113, 100, 1);
-  --color-on-speak: rgba(252, 252, 251, 1);
+  --color-muted: rgba(86, 91, 80, 1);
+  --color-on-bubble-owner: rgba(252, 252, 251, 1);
   --color-on-text: rgba(252, 252, 251, 1);
   --color-scrim: rgba(0, 0, 0, 0.28);
   --color-separator: rgba(37, 41, 33, 0.09);
@@ -23,6 +26,7 @@
   --color-text: rgba(37, 41, 33, 1);
   --shadow-lift: 0px 2px 10px rgba(0, 0, 0, 0.07);
   --shadow-lift-big: 0px 8px 28px rgba(0, 0, 0, 0.13);
+  --shadow-puck: 0px 4px 14px rgba(0, 0, 0, 0.25);
   --radius-bubble: 26px;
   --radius-card: 28px;
   --radius-composer: 31px;
@@ -87,7 +91,6 @@
   --handover-field-radius: 22px;
   --handover-hero-gap: 18px;
   --handover-hero-icon: 72px;
-  --handover-hero-title-size: 26px;
   --handover-hero-top: 30px;
   --handover-note-inset: 8px;
   --handover-outcome-gap: 14px;
@@ -96,9 +99,9 @@
   --handover-sheet-gap: 18px;
   --handover-steps-gap: 18px;
   --handover-steps-padding: 20px;
-  --type-answer-size: 18px;
+  --type-answer-size: 17px;
   --type-answer-weight: 400;
-  --type-answer-line-height: 1.75;
+  --type-answer-line-height: 1.45;
   --type-badge-size: 12px;
   --type-badge-weight: 700;
   --type-badge-line-height: normal;
@@ -223,6 +226,9 @@
 @media (prefers-color-scheme: dark) {
   :root {
     --color-bg: rgba(30, 30, 30, 1);
+    --color-bubble: rgba(44, 44, 43, 1);
+    --color-bubble-code: rgba(255, 255, 255, 0.06);
+    --color-bubble-owner: rgba(154, 98, 0, 1);
     --color-danger: rgba(239, 160, 149, 1);
     --color-fill: rgba(228, 228, 225, 0.08);
     --color-fill-2: rgba(228, 228, 225, 0.15);
@@ -231,8 +237,8 @@
     --color-glow: rgba(239, 178, 60, 0.18);
     --color-glyph: rgba(242, 187, 79, 1);
     --color-highlight: rgba(75, 63, 37, 1);
-    --color-muted: rgba(160, 160, 154, 1);
-    --color-on-speak: rgba(228, 228, 225, 1);
+    --color-muted: rgba(180, 180, 174, 1);
+    --color-on-bubble-owner: rgba(252, 252, 251, 1);
     --color-on-text: rgba(30, 30, 30, 1);
     --color-scrim: rgba(0, 0, 0, 0.5);
     --color-separator: rgba(228, 228, 225, 0.1);
@@ -246,5 +252,6 @@
     --color-text: rgba(228, 228, 225, 1);
     --shadow-lift: 0px 2px 10px rgba(0, 0, 0, 0.35);
     --shadow-lift-big: 0px 8px 28px rgba(0, 0, 0, 0.5);
+    --shadow-puck: 0px 4px 14px rgba(0, 0, 0, 0.25);
   }
 }

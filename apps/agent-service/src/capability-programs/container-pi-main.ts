@@ -8,7 +8,9 @@ import {
 } from "@himawari-agent/platform-node";
 import { writeForegroundPiResult } from "./pi-foreground-result.js";
 
-const CONTAINER_COMMAND_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
+const CONTAINER_COMMAND_PATH =
+  process.env["HIMAWARI_COMMAND_PATH"] ||
+  "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 const PRIVATE_DIRECTORY = "/tmp";
 const WRITE_OPERATIONS = [
   "read",

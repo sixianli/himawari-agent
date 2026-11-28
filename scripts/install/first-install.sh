@@ -46,7 +46,7 @@ apt-get install -y -qq git build-essential python3 curl ca-certificates bubblewr
 
 step accounts
 id "$build_user" >/dev/null 2>&1 || useradd --system --create-home --home-dir "$build_home" --shell /bin/bash "$build_user"
-id "$service_user" >/dev/null 2>&1 || useradd --system --no-create-home --home-dir "$state_parent" --shell /usr/sbin/nologin "$service_user"
+id "$service_user" >/dev/null 2>&1 || useradd --system --no-create-home --home-dir "$state_parent/state" --shell /usr/sbin/nologin "$service_user"
 service_uid=$(id -u "$service_user")
 service_gid=$(id -g "$service_user")
 echo "FIRST_INSTALL_ACCOUNTS service=$service_user uid=$service_uid gid=$service_gid build=$build_user"
@@ -80,8 +80,12 @@ if [[ ! -x "$node_prefix/bin/node" || "$("$node_prefix/bin/node" --version)" != 
   [[ "$(sha256sum "$tarball" | cut -d ' ' -f 1)" == "$node_sha" ]] || { echo "FIRST_INSTALL_NODE_DIGEST_MISMATCH" >&2; exit 1; }
   rm -rf "$node_prefix"
   mkdir -p "$node_prefix"
-  tar -xzf "$tarball" -C "$node_prefix" --strip-components 1
+  tar -xzf "$tarball" -C "$node_prefix" --strip-components 1 --no-same-owner
   rm -f "$tarball"
+fi
+if [[ -n "$(find "$node_prefix" \( ! -user root -o ! -group root -o -perm /022 \) ! -type l -print -quit)" ]]; then
+  echo "FIRST_INSTALL_NODE_NOT_ROOT_OWNED $node_prefix: run chown -R root:root $node_prefix and chmod -R go-w $node_prefix" >&2
+  exit 1
 fi
 node_sha_installed=$(sha256sum "$node_prefix/bin/node" | cut -d ' ' -f 1)
 echo "FIRST_INSTALL_NODE $("$node_prefix/bin/node" --version) sha256=$node_sha_installed"

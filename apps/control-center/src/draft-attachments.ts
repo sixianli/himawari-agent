@@ -9,7 +9,7 @@ export interface DraftAttachment {
 }
 
 export const MESSAGE_LIMIT_BYTES = 64 * 1024;
-export const MAX_ATTACHMENTS = 10;
+export { CHAT_ATTACHMENTS_PER_MESSAGE as MAX_ATTACHMENTS } from "@himawari-agent/gateway-contracts";
 
 const SEPARATOR = "\n\n";
 const OPEN = '<file name="';
@@ -58,4 +58,13 @@ export function splitDraft(draft: string): { text: string; files: DraftAttachmen
     rest = start > 0 ? before.slice(0, -SEPARATOR.length) : "";
   }
   return { text: rest, files };
+}
+
+const REPLY = /^<reply to="([A-Za-z0-9_.:-]+)"\/>\n?/;
+
+export function splitReply(content: string): { replyTo: string | null; text: string } {
+  const tag = REPLY.exec(content);
+  return tag
+    ? { replyTo: tag[1] ?? null, text: content.slice(tag[0].length) }
+    : { replyTo: null, text: content };
 }
