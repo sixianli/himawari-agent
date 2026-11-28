@@ -2738,6 +2738,20 @@ async function settingsConversation(service: Awaited<ReturnType<typeof openInsta
       true,
     );
     expect(answered.status, answered.raw).toBe(200);
+    await expect
+      .poll(
+        async () => {
+          const current = await service.query("thread.detail", {
+            threadId,
+            afterSequence: 0,
+            limit: 100,
+          });
+          const runs = (current.body as { payload: { runs: { status: string }[] } }).payload.runs;
+          return runs.at(-1)?.status;
+        },
+        { timeout: 30_000, interval: 200 },
+      )
+      .toBe("completed");
   };
   return { say, read, approve };
 }
