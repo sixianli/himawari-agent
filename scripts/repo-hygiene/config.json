@@ -10,15 +10,8 @@
     "clients/apple/ui-review/DerivedData-mac/",
     "clients/apple/ui-review/DerivedDataWatch/"
   ],
-  "generatedExtensions": [
-    ".mp4",
-    ".mov"
-  ],
-  "mustBeIgnored": [
-    ".claude/worktrees/",
-    ".agents/local/",
-    ".cb-delegate/"
-  ],
+  "generatedExtensions": [".mp4", ".mov"],
+  "mustBeIgnored": [".claude/worktrees/", ".agents/local/", ".cb-delegate/"],
   "allowedLarge": [
     {
       "path": "clients/apple/Tests/Snapshots/",
