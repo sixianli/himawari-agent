@@ -30,27 +30,41 @@
       "uncovered": "演示场景里发消息不会真发出去，进行中状态要连真服务器才能操作，等端到端测试接上登录后补"
     },
     {
-      "feature": "消息排版：格式、边收边显示、富文本、选中、复制、回复",
+      "feature": "消息菜单：回复、复制、选择文字",
+      "scenes": ["next-5-chat-select-text", "next-5-chat-copied", "next-5-chat-replying"],
+      "checks": "长按回答出菜单：回复会在输入框上方显示在回复谁，取消回复后消失；复制后在输入框长按粘贴，粘进来的是这条回答；选择文字打开一页能看到这条回答，“完成”能关",
+      "tests": [
+        "HimawariUITests/ChatMessageMenuTests/testReplyingQuotesTheAnswerAboveTheInputAndCancelTakesItAway",
+        "HimawariUITests/ChatMessageMenuTests/testCopyingAnAnswerPutsItWhereYouCanPasteIt",
+        "HimawariUITests/ChatMessageMenuTests/testSelectingTextOpensAPageThatDoneCloses"
+      ]
+    },
+    {
+      "feature": "消息排版：格式、边收边显示、富文本、回复过的消息",
       "scenes": [
         "next-2-chat-format",
         "next-2-chat-format-streaming",
         "next-5-chat-rich",
-        "next-5-chat-select-text",
-        "next-5-chat-copied",
-        "next-5-chat-replied",
-        "next-5-chat-replying"
+        "next-5-chat-replied"
       ],
       "uncovered": "还没有操作这个功能的 UI 测试"
     },
     {
       "feature": "消息里的选项：点选项、显示选了哪一个",
       "scenes": ["next-2-chat-options", "next-2-chat-options-chosen"],
-      "uncovered": "还没有操作这个功能的 UI 测试"
+      "checks": "点一个选项后所有选项都点不了；已经选过的回答显示“选了”，旧选项点不了（演示里选了不会真发出去）",
+      "tests": [
+        "HimawariUITests/ChatOptionsTests/testPickingAnOptionLocksTheOthers",
+        "HimawariUITests/ChatOptionsTests/testAnAnsweredChoiceShowsWhatWasPickedAndCannotBePickedAgain"
+      ]
     },
     {
       "feature": "发附件",
       "scenes": ["next-2-chat-attach"],
-      "uncovered": "还没有操作这个功能的 UI 测试"
+      "checks": "附件面板列出文件、我现在的位置；关闭钮能关，点输入栏的“给 Himawari 看点东西”能再打开（演示里不真读照片、不真上传）",
+      "tests": [
+        "HimawariUITests/AttachSheetTests/testTheAttachSheetOffersEachWayAndClosesAndOpensAgain"
+      ]
     },
     {
       "feature": "语音对话",
@@ -111,13 +125,18 @@
       ]
     },
     {
-      "feature": "要你同意：今天页的列表、详情、面容 ID 同意",
-      "scenes": [
-        "17-today-more-2-detail",
-        "17-today-more-3-detail-face-id",
-        "17-today-more-1-approvals"
-      ],
-      "uncovered": "还没有操作这个功能的 UI 测试"
+      "feature": "要你同意：列表、详情",
+      "scenes": ["17-today-more-1-approvals", "17-today-more-2-detail"],
+      "checks": "列表能在“等你同意”和“处理过的”之间切；从 Himawari 页进去点开一条，能看到为什么问你",
+      "tests": [
+        "HimawariUITests/ApprovalsTests/testTheListSwitchesBetweenWaitingAndHandled",
+        "HimawariUITests/ApprovalsTests/testOpeningARequestShowsWhyHimawariIsAsking"
+      ]
+    },
+    {
+      "feature": "要你同意：点同意、点不用、面容 ID 同意",
+      "scenes": ["17-today-more-3-detail-face-id"],
+      "uncovered": "演示场景里没有服务器，点同意、点不用不会改任何东西，要连真服务器才能操作，等端到端测试接上登录后补"
     },
     {
       "feature": "通知设置",
