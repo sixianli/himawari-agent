@@ -428,6 +428,51 @@ export const TOOL_RESULT_DEVICE_ACTION_USAGE_CONTACT_UPDATE = fixedPrompt({
   text: "contactId 用 contact.search 结果里那个人的 contactId；手里没有就先用 contact.search 查出来，不要找主人要编号。",
 });
 
+export const TOOL_RESULT_DEVICE_ACTION_USAGE_DEVICE_REMINDER_READ = fixedPrompt({
+  id: "tools.result.device-action.usage.device-reminder-read",
+  purpose: "device_action describe 结果里 device_reminder.read 的用法说明",
+  usedBy: [REGISTRY_FILE],
+  layer: "tool-result",
+  output: "free-text",
+  text: "读设备上苹果“提醒事项”App 里的提醒。默认只读没完成的；includeCompleted 为 true 时连已完成的一起读；list 填清单名只读这个清单；query 填字只读标题或备注里有这些字的。主人问“提醒事项”App 里有什么、或要把其中一条标成完成时先用它：结果 done.reminders 里每项的 reminderId 就是 device_reminder.complete 要的编号，照抄，不要猜。done.truncated 为 true 表示条目太多没给全，加 list 或 query 再读。",
+});
+
+export const TOOL_RESULT_DEVICE_ACTION_USAGE_DEVICE_REMINDER_COMPLETE = fixedPrompt({
+  id: "tools.result.device-action.usage.device-reminder-complete",
+  purpose: "device_action describe 结果里 device_reminder.complete 的用法说明",
+  usedBy: [REGISTRY_FILE],
+  layer: "tool-result",
+  output: "free-text",
+  text: "reminderId 用 device_reminder.read 结果里那条提醒的 reminderId；手里没有就先用 device_reminder.read 读出来，不要找主人要编号。",
+});
+
+export const TOOL_RESULT_DEVICE_ACTION_USAGE_ALARM_LIST = fixedPrompt({
+  id: "tools.result.device-action.usage.alarm-list",
+  purpose: "device_action describe 结果里 alarm.list 的用法说明",
+  usedBy: [REGISTRY_FILE],
+  layer: "tool-result",
+  output: "free-text",
+  text: "读出 Himawari 在这台设备上设过、还没响完的闹钟（只看得到 Himawari 自己设的，看不到主人在“时钟”App 里设的）。结果 done.alarms 里每项有 alarmId、time（设备当地时间）和 state。",
+});
+
+export const TOOL_RESULT_DEVICE_ACTION_USAGE_HOME_READ = fixedPrompt({
+  id: "tools.result.device-action.usage.home-read",
+  purpose: "device_action describe 结果里 home.read 的用法说明",
+  usedBy: [REGISTRY_FILE],
+  layer: "tool-result",
+  output: "free-text",
+  text: "读设备“家庭”App 里的配件和它们现在的状态；room 填房间名只读这个房间，accessoryId 填编号只读这一个。结果 done.accessories 里每项的 accessoryId 就是 home.control 要的编号，照抄，不要猜。",
+});
+
+export const TOOL_RESULT_DEVICE_ACTION_USAGE_HOME_CONTROL = fixedPrompt({
+  id: "tools.result.device-action.usage.home-control",
+  purpose: "device_action describe 结果里 home.control 的用法说明",
+  usedBy: [REGISTRY_FILE],
+  layer: "tool-result",
+  output: "free-text",
+  text: "accessoryId 用 home.read 结果里那个配件的 accessoryId；手里没有就先用 home.read 读出来，不要找主人要编号。",
+});
+
 export const TOOL_RESULT_DEVICE_ACTION_USAGE_DEVICE_REMINDER = fixedPrompt({
   id: "tools.result.device-action.usage.device-reminder",
   purpose: "device_action describe 结果里 device_reminder 两个动作的用法说明",

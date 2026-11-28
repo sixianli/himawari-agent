@@ -2,6 +2,7 @@
 import CoreLocation
 import Foundation
 import HimawariCore
+import UIKit
 
 @MainActor
 public final class LocationCollector: NSObject, AlwaysCollecting, @preconcurrency CLLocationManagerDelegate {
@@ -18,6 +19,8 @@ public final class LocationCollector: NSObject, AlwaysCollecting, @preconcurrenc
         manager.pausesLocationUpdatesAutomatically = true
         manager.activityType = .other
     }
+
+    static let promptWait: Duration = .seconds(1)
 
     public var alwaysAllowed: Bool { manager.authorizationStatus == .authorizedAlways }
 
@@ -38,6 +41,11 @@ public final class LocationCollector: NSObject, AlwaysCollecting, @preconcurrenc
         _ = await withCheckedContinuation { continuation in
             waiting.append(continuation)
             manager.requestAlwaysAuthorization()
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: Self.promptWait)
+                guard UIApplication.shared.applicationState == .active else { return }
+                self?.answerWaiting()
+            }
         }
         if alwaysAllowed, sink != nil { applyBackground() }
         return alwaysAllowed
@@ -64,6 +72,10 @@ public final class LocationCollector: NSObject, AlwaysCollecting, @preconcurrenc
 
     public func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         guard manager.authorizationStatus != .notDetermined else { return }
+        answerWaiting()
+    }
+
+    private func answerWaiting() {
         let result = Self.map(manager.authorizationStatus)
         let pending = waiting
         waiting.removeAll()

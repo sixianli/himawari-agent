@@ -55,6 +55,8 @@ public enum SenseAuthorization: String, Codable, Sendable, Equatable {
     case denied
     case restricted
     case unavailable
+
+    public var permitsReading: Bool { self == .allowed || self == .limited }
 }
 
 public enum SenseState: Sendable, Equatable {

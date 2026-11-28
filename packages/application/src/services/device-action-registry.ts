@@ -1,9 +1,14 @@
 import {
+  TOOL_RESULT_DEVICE_ACTION_USAGE_ALARM_LIST,
   TOOL_RESULT_DEVICE_ACTION_USAGE_CALENDAR_CHANGE,
   TOOL_RESULT_DEVICE_ACTION_USAGE_CALENDAR_READ,
   TOOL_RESULT_DEVICE_ACTION_USAGE_CONTACT_SEARCH,
   TOOL_RESULT_DEVICE_ACTION_USAGE_CONTACT_UPDATE,
   TOOL_RESULT_DEVICE_ACTION_USAGE_DEVICE_REMINDER,
+  TOOL_RESULT_DEVICE_ACTION_USAGE_DEVICE_REMINDER_COMPLETE,
+  TOOL_RESULT_DEVICE_ACTION_USAGE_DEVICE_REMINDER_READ,
+  TOOL_RESULT_DEVICE_ACTION_USAGE_HOME_CONTROL,
+  TOOL_RESULT_DEVICE_ACTION_USAGE_HOME_READ,
 } from "@himawari-agent/prompt-catalog";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils.js";
@@ -470,7 +475,37 @@ const CALENDAR_TARGET: DeviceActionTarget = {
   listedBy: { action: "calendar.read", list: "events" },
 };
 const PHONE_AND_WATCH: readonly PairedDeviceKind[] = ["iphone", "watch"];
+const HOME_TARGET: DeviceActionTarget = {
+  mirrorKind: "home_accessory",
+  idKey: "accessoryId",
+  listedBy: { action: "home.read", list: "accessories" },
+};
 export const DEVICE_ACTION_REGISTRATIONS: readonly DeviceActionRegistration[] = Object.freeze([
+  {
+    name: "alarm.list",
+    schemaVersion: 1,
+    deviceKinds: ["iphone"],
+    parameters: {},
+    target: null,
+    actionKind: "READ",
+    escalation: null,
+    ownerPresence: never,
+    recipients: null,
+    resultOrigin: "owner",
+    readBack: "none",
+    snapshotBefore: false,
+    reversible: true,
+    usage: TOOL_RESULT_DEVICE_ACTION_USAGE_ALARM_LIST.text,
+    title: label("读取闹钟", "Read alarms", "アラームを読む"),
+    confirmLabel: label("读取", "Read", "読み取る"),
+    declineLabel: label("不读", "Don't read", "読まない"),
+    detail: () =>
+      label(
+        "读取 Himawari 设的闹钟",
+        "Read the alarms Himawari set",
+        "Himawari が設定したアラームを読む",
+      ),
+  },
   {
     name: "alarm.set",
     schemaVersion: 1,
@@ -693,7 +728,11 @@ export const DEVICE_ACTION_REGISTRATIONS: readonly DeviceActionRegistration[] = 
     schemaVersion: 1,
     deviceKinds: APPLE_DEVICES,
     parameters: { reminderId: text(256) },
-    target: { mirrorKind: "reminder", idKey: "reminderId" },
+    target: {
+      mirrorKind: "reminder",
+      idKey: "reminderId",
+      listedBy: { action: "device_reminder.read", list: "reminders" },
+    },
     actionKind: "CREATE_OR_UPDATE",
     escalation: null,
     ownerPresence: never,
@@ -702,7 +741,7 @@ export const DEVICE_ACTION_REGISTRATIONS: readonly DeviceActionRegistration[] = 
     readBack: "read_item",
     snapshotBefore: false,
     reversible: true,
-    usage: TOOL_RESULT_DEVICE_ACTION_USAGE_DEVICE_REMINDER.text,
+    usage: TOOL_RESULT_DEVICE_ACTION_USAGE_DEVICE_REMINDER_COMPLETE.text,
     title: label(
       "在“提醒事项”里标成完成",
       "Mark done in Reminders",
@@ -751,6 +790,36 @@ export const DEVICE_ACTION_REGISTRATIONS: readonly DeviceActionRegistration[] = 
       }),
   },
   {
+    name: "device_reminder.read",
+    schemaVersion: 1,
+    deviceKinds: APPLE_DEVICES,
+    parameters: {
+      query: text(200, false),
+      list: text(120, false),
+      includeCompleted: { type: "boolean", required: false },
+    },
+    target: null,
+    actionKind: "READ",
+    escalation: null,
+    ownerPresence: never,
+    recipients: null,
+    resultOrigin: "owner",
+    readBack: "none",
+    snapshotBefore: false,
+    reversible: true,
+    usage: TOOL_RESULT_DEVICE_ACTION_USAGE_DEVICE_REMINDER_READ.text,
+    title: label("读取“提醒事项”", "Read Reminders", "「リマインダー」を読む"),
+    confirmLabel: label("读取", "Read", "読み取る"),
+    declineLabel: label("不读", "Don't read", "読まない"),
+    detail: (args) =>
+      detail((locale) => {
+        const where = (args["list"] as string | undefined) ?? "";
+        if (locale === "en") return joined(["Read Reminders", where], ": ");
+        if (locale === "ja") return joined(["「リマインダー」を読む", where], "：");
+        return joined(["读取“提醒事项”", where], "：");
+      }),
+  },
+  {
     name: "home.control",
     schemaVersion: 1,
     deviceKinds: PHONE_AND_WATCH,
@@ -761,7 +830,8 @@ export const DEVICE_ACTION_REGISTRATIONS: readonly DeviceActionRegistration[] = 
       targetTemperature: { type: "number", required: false, minimum: 5, maximum: 40 },
       locked: flag(),
     },
-    target: { mirrorKind: "home_accessory", idKey: "accessoryId" },
+    target: HOME_TARGET,
+    usage: TOOL_RESULT_DEVICE_ACTION_USAGE_HOME_CONTROL.text,
     actionKind: "CREATE_OR_UPDATE",
     escalation: (args, context) => (homeSafety(args, context) ? "PHYSICAL_SAFETY" : null),
     ownerPresence: homeSafety,
@@ -787,7 +857,8 @@ export const DEVICE_ACTION_REGISTRATIONS: readonly DeviceActionRegistration[] = 
     schemaVersion: 1,
     deviceKinds: PHONE_AND_WATCH,
     parameters: { accessoryId: text(256, false), room: text(120, false) },
-    target: { mirrorKind: "home_accessory", idKey: "accessoryId" },
+    target: HOME_TARGET,
+    usage: TOOL_RESULT_DEVICE_ACTION_USAGE_HOME_READ.text,
     actionKind: "READ",
     escalation: null,
     ownerPresence: never,

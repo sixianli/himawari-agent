@@ -20,7 +20,7 @@ refuse() {
   exit "${3:-64}"
 }
 
-[[ "$action" == diagnose || "$action" == restart || "$action" == allow-sensitive ]] || refuse ACTION_INVALID "only diagnose, restart or allow-sensitive"
+[[ "$action" == diagnose || "$action" == restart || "$action" == allow-sensitive || "$action" == senses ]] || refuse ACTION_INVALID "only diagnose, restart, allow-sensitive or senses"
 [[ -n "$public_key" && -s "$public_key" ]] || refuse KEY_MISSING "HIMAWARI_OPS_PUBLIC_KEY must name the public key that seals the full diagnostics" 70
 
 service_line() {
@@ -73,10 +73,39 @@ JS
   fi
 }
 
+senses_report() {
+  if [[ -x "$node_bin" && -f "$database" ]]; then
+    (cd /tmp && "$node_bin" --no-warnings - "$database" <<'JS'
+const { DatabaseSync } = require("node:sqlite");
+const database = new DatabaseSync(process.argv[2], { readOnly: true });
+const all = (sql, ...values) => {
+  try {
+    return database.prepare(sql).all(...values);
+  } catch (error) {
+    return `ERROR ${error.message}`;
+  }
+};
+const since = Date.now() - 6 * 86400 * 1000;
+const show = (name, value) => console.log(`${name} ${JSON.stringify(value)}`);
+show("SENSES_DEVICES", all("SELECT id, kind, status, last_seen_at FROM paired_devices ORDER BY last_seen_at"));
+show("SENSES_SETTINGS", all("SELECT revision, disabled_senses, paused_from, paused_until, limit_overrides, updated_at FROM perception_settings"));
+show("SENSES_BY_DAY", all("SELECT local_day, device_id, type, json_extract(evidence, '$.subtype') AS subtype, capture_source, status, count(*) AS n, datetime(max(occurred_at_ms) / 1000, 'unixepoch') AS last_occurred, datetime(max(received_at_ms) / 1000, 'unixepoch') AS last_received FROM perception_records WHERE received_at_ms > ? OR occurred_at_ms > ? GROUP BY 1, 2, 3, 4, 5, 6 ORDER BY 1, 3, 4", since, since));
+show("SENSES_RECEIVED_BY_HOUR", all("SELECT strftime('%Y-%m-%dT%H', received_at_ms / 1000, 'unixepoch') AS hour, device_id, count(*) AS n FROM perception_records WHERE received_at_ms > ? GROUP BY 1, 2 ORDER BY 1", since));
+show("SENSES_LAST_BY_TYPE", all("SELECT device_id, type, json_extract(evidence, '$.subtype') AS subtype, datetime(max(occurred_at_ms) / 1000, 'unixepoch') AS last_occurred, datetime(max(received_at_ms) / 1000, 'unixepoch') AS last_received, count(*) AS n FROM perception_records GROUP BY 1, 2, 3 ORDER BY 1, 2, 3"));
+JS
+    ) 2>&1 | cut -c1-20000
+  else
+    echo "SENSES unavailable node=$node_bin database=$database"
+  fi
+  echo "== perception and device lines in the journal since 2 days ago"
+  "$journalctl_bin" -u "$unit" --since "2 days ago" --no-pager -q -o cat 2>/dev/null | grep -E 'perception|device\.|health|mirror|track' | grep -oE '"event":"[a-z_.]+"|"code":"[A-Z0-9_]+"|"path":"[a-z/]+"|"status":[0-9]+' | sort | uniq -c | sort -rn | head -60
+}
+
 sealed() {
   local work
   work="$(mktemp -d)"
   {
+    if [[ "${1:-}" == senses ]]; then senses_report; fi
     echo "== $unit since $window"
     "$journalctl_bin" -u "$unit" --since "$window" --no-pager -q 2>&1 | tail -4000
     for side in $side_units; do
@@ -169,6 +198,12 @@ if [[ "$action" == allow-sensitive ]]; then
     restart_service
     summary
   fi
+  exit 0
+fi
+
+if [[ "$action" == senses ]]; then
+  sealed senses
+  echo "OPS_DONE $(date -u +%Y-%m-%dT%H:%M:%SZ)"
   exit 0
 fi
 

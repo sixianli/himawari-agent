@@ -4,7 +4,8 @@ import Foundation
 import HimawariCore
 
 public final class ReminderActions: DeviceActionHandler, @unchecked Sendable {
-    public let names = ["device_reminder.complete", "device_reminder.create"]
+    public let names = ["device_reminder.complete", "device_reminder.create", "device_reminder.read"]
+    public let readOnly: Set<String> = ["device_reminder.read"]
     private let store: EKEventStore
     public let permission: DevicePermission
 
@@ -21,6 +22,8 @@ public final class ReminderActions: DeviceActionHandler, @unchecked Sendable {
     public func perform(_ delivery: DeviceActionDelivery) async throws -> JSONObject {
         let args = delivery.args
         switch delivery.action {
+        case "device_reminder.read":
+            return try await read(args, within: delivery.resultMaximumBytes)
         case "device_reminder.create":
             let reminder = EKReminder(eventStore: store)
             reminder.title = try args.string("title")
@@ -45,6 +48,8 @@ public final class ReminderActions: DeviceActionHandler, @unchecked Sendable {
     public func readBack(_ delivery: DeviceActionDelivery, made: JSONObject?) async throws -> DeviceActionReading {
         let args = delivery.args
         switch delivery.action {
+        case "device_reminder.read":
+            return .unreadable
         case "device_reminder.complete":
             guard let found = try reminder(delivery) else { return .differs(["absent": .bool(true)]) }
             let value = Self.describe(found)
@@ -59,6 +64,35 @@ public final class ReminderActions: DeviceActionHandler, @unchecked Sendable {
             if let due = try args.optionalLocalDate("due"), value["due"]?.string != DeviceActionTime.localText(due) { return .differs(value) }
             return .matches(value)
         }
+    }
+
+    private func read(_ args: DeviceActionArguments, within limit: Int?) async throws -> JSONObject {
+        let query = try args.optionalString("query")?.lowercased()
+        let includeCompleted = try args.optionalBool("includeCompleted") ?? false
+        let listName = try args.optionalString("list")
+        let calendars: [EKCalendar]?
+        if let listName {
+            let match = store.calendars(for: .reminder).filter { $0.title == listName }
+            guard !match.isEmpty else { throw DeviceActionFailure(.targetMissing) }
+            calendars = match
+        } else {
+            calendars = nil
+        }
+        let predicate = includeCompleted
+            ? store.predicateForReminders(in: calendars)
+            : store.predicateForIncompleteReminders(withDueDateStarting: nil, ending: nil, calendars: calendars)
+        let store = store
+        let found: [JSONObject] = await withCheckedContinuation { continuation in
+            store.fetchReminders(matching: predicate) { reminders in
+                let matched = (reminders ?? []).filter { reminder in
+                    guard let query else { return true }
+                    return (reminder.title ?? "").lowercased().contains(query) || (reminder.notes ?? "").lowercased().contains(query)
+                }
+                continuation.resume(returning: matched.map(Self.describe))
+            }
+        }
+        let sorted = found.sorted { ($0["due"]?.string ?? "~") < ($1["due"]?.string ?? "~") }
+        return DeviceActionListing.fit(sorted, as: "reminders", within: limit)
     }
 
     private func reminder(_ delivery: DeviceActionDelivery) throws -> EKReminder? {

@@ -81,6 +81,7 @@ public final class SensesModel {
             if let count = await service.mirrorCount(item) { mirrorCounts[item] = count }
         }
         await resume()
+        await service.retryWaiting()
     }
 
     public func resume() async {
@@ -178,6 +179,14 @@ public final class SensesModel {
     public func requestAlways(_ item: SenseItem) async {
         update(item) { $0.askedAlways = true }
         always[item] = await service.requestAlways(item)
+    }
+
+    public func alwaysNeedsSettings(_ item: SenseItem) -> Bool {
+        always[item] == true || switchStates[item]?.askedAlways == true
+    }
+
+    public func reloadAlways() {
+        for item in items { always[item] = service.alwaysAllowed(item) }
     }
 
     public func setRetention(_ item: SenseItem, days: Int) async {

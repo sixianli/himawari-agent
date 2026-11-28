@@ -1133,9 +1133,9 @@
     "reason": "W-16：新增参数说明，任务编号从哪里抄；它不在冻结记录里，每次请求现拼，改它会让所有用到它的对话整段重算一次，所以随 PR-A/PR-B 同一次上线（不在后台命令模式时它是句柄工具）"
   },
   "tools.mail-read": {
-    "sha256": "f37cafa4f9d449f27e95095f747bce12c0a4892dd1417827b99ddc6b50327949",
-    "changedIn": "ADR 0285",
-    "reason": "Always On 第 1 步：新邮件进收件箱由她判断，要看前面往来时用 mail_read 读整个邮件串"
+    "sha256": "58972a91136b8110d6b249de6433364bba7808afacaa07a377b8839c1bce7ca3",
+    "changedIn": "I-130",
+    "reason": "mail_read 加 query：按 Gmail 搜索写法搜主人的邮箱；说明读失败已自动重试并交给开发，授权失效才要主人重连"
   },
   "tools.memory-open": {
     "sha256": "06f505a9fdabbf8065acd951f9657a3d4f644add9e637365cdc41906bd602140",
@@ -1399,6 +1399,31 @@
     "sha256": "4cdea5930b529306a9a838e53350001a4f11ae72f06984db41755eba737b2fc3",
     "changedIn": "iOS 第 9A 批",
     "reason": "device_reminder 两个动作的用法说明：默认用 Himawari 自己的提醒，主人明说才写进苹果“提醒事项”"
+  },
+  "tools.result.device-action.usage.alarm-list": {
+    "sha256": "1a33805b40dcab6f6ff54e1933df8bed601d16b0f6eb3eb8468bd51804c5c4f0",
+    "changedIn": "I-130",
+    "reason": "新增：提醒事项、闹钟、家庭的读动作用法，以及标成完成、控制家居时编号从哪来"
+  },
+  "tools.result.device-action.usage.device-reminder-complete": {
+    "sha256": "b3dd2a5e72258484af7cca10b27a7e80ebdd02692a2ce37d8f89b98850a075e3",
+    "changedIn": "I-130",
+    "reason": "新增：提醒事项、闹钟、家庭的读动作用法，以及标成完成、控制家居时编号从哪来"
+  },
+  "tools.result.device-action.usage.device-reminder-read": {
+    "sha256": "ba656789d609f3c70ba43c3db5ec63159e00d8bd10e4372584451f9b147cb122",
+    "changedIn": "I-130",
+    "reason": "新增：提醒事项、闹钟、家庭的读动作用法，以及标成完成、控制家居时编号从哪来"
+  },
+  "tools.result.device-action.usage.home-control": {
+    "sha256": "cac0c8c813993cc13db0389c01a869ce1f4ffa554bd2c4cfb31cee1cb8b852d1",
+    "changedIn": "I-130",
+    "reason": "新增：提醒事项、闹钟、家庭的读动作用法，以及标成完成、控制家居时编号从哪来"
+  },
+  "tools.result.device-action.usage.home-read": {
+    "sha256": "dd4af208557d44f3ce429d0bb60c0ba30a05c19a2842d0e2d4ed6071cfb05f6d",
+    "changedIn": "I-130",
+    "reason": "新增：提醒事项、闹钟、家庭的读动作用法，以及标成完成、控制家居时编号从哪来"
   },
   "tools.result.device-action.waiting-owner": {
     "sha256": "cd84a6d23e03457c0fc116fa235ca008d2ec33f5495d30a90b363479dc06caec",
