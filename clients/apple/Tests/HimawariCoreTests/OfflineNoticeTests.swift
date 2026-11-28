@@ -17,7 +17,7 @@ import Testing
         let notice = OfflineNotice(grace: 0.05)
         notice.connectionChanged(online: false)
         #expect(notice.shown == false)
-        try await Task.sleep(nanoseconds: 200_000_000)
+        await notice.pending?.value
         #expect(notice.shown == true)
         notice.connectionChanged(online: true)
         #expect(notice.shown == false)
@@ -26,7 +26,7 @@ import Testing
     @Test func comingBackToTheAppStartsTheGraceAgainInsteadOfShowingAtOnce() async throws {
         let notice = OfflineNotice(grace: 0.15)
         notice.connectionChanged(online: false)
-        try await Task.sleep(nanoseconds: 250_000_000)
+        await notice.pending?.value
         #expect(notice.shown == true)
         notice.retrying()
         #expect(notice.shown == false)
@@ -41,7 +41,7 @@ import Testing
         notice.connectionChanged(online: false)
         notice.retrying()
         #expect(notice.shown == false)
-        try await Task.sleep(nanoseconds: 200_000_000)
+        await notice.pending?.value
         #expect(notice.shown == true)
     }
 
