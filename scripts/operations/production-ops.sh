@@ -7,6 +7,7 @@ unit="${HIMAWARI_OPS_UNIT:-himawari-prod.service}"
 side_units="${HIMAWARI_OPS_SIDE_UNITS:-magpie.service}"
 node_bin="${HIMAWARI_OPS_NODE:-/opt/himawari/node/bin/node}"
 database="${HIMAWARI_OPS_DATABASE:-/var/lib/himawari/state/data/product.sqlite}"
+config="${HIMAWARI_OPS_CONFIG:-/etc/himawari/config.json}"
 public_key="${HIMAWARI_OPS_PUBLIC_KEY:-}"
 lock_file="${HIMAWARI_OPS_LOCK:-}"
 systemctl_bin="${HIMAWARI_OPS_SYSTEMCTL:-systemctl}"
@@ -38,8 +39,9 @@ summary() {
   events="$("$journalctl_bin" -u "$unit" --since "$window" --no-pager -q -o cat 2>/dev/null | grep -oE '"event":"[a-z_.]+"|"code":"[A-Z0-9_]+"|"reasonCode":"[A-Z0-9_]+"|"lastDrop":"[A-Za-z]+"' | sort | uniq -c | sort -rn | head -40 | awk '{print $2 "=" $1}' | tr '\n' ' ')"
   echo "OPS_JOURNAL_NAMES ${events:-none}"
   if [[ -x "$node_bin" && -f "$database" ]]; then
-    (cd /tmp && "$node_bin" --no-warnings - "$database" <<'JS'
+    (cd /tmp && "$node_bin" --no-warnings - "$database" "$config" <<'JS'
 const { DatabaseSync } = require("node:sqlite");
+const { readFileSync } = require("node:fs");
 const database = new DatabaseSync(process.argv[2], { readOnly: true });
 const all = (sql, ...values) => {
   try {
@@ -53,6 +55,17 @@ const terminal = ["completed", "failed", "cancelled"];
 console.log(`OPS_RUNS_BY_STATUS ${JSON.stringify(all("SELECT status, count(*) AS n FROM runs GROUP BY status ORDER BY status"))}`);
 console.log(`OPS_RUNS_OPEN ${JSON.stringify(all("SELECT id, thread_id, status, created_at, updated_at FROM runs WHERE status NOT IN (?, ?, ?) ORDER BY created_at", ...terminal))}`);
 console.log(`OPS_RUNS_RECENT ${JSON.stringify(all("SELECT id, thread_id, status, created_at, updated_at FROM runs WHERE created_at > ? ORDER BY created_at", since))}`);
+console.log(`OPS_OWNER_MODEL ${JSON.stringify(all("SELECT model_ref, thinking_level, updated_at FROM owner_preferences"))}`);
+console.log(`OPS_MODEL_INVOCATIONS ${JSON.stringify(all("SELECT model_ref, data_classification, source, status, count(*) AS n, max(reserved_at) AS last FROM model_invocation_identities WHERE reserved_at > ? GROUP BY model_ref, data_classification, source, status ORDER BY last", since))}`);
+let descriptors;
+try {
+  descriptors = (JSON.parse(readFileSync(process.argv[3], "utf8")).modelDescriptors ?? []).map(
+    ({ ref, role, provider, model, routingClass, allowedDataClassifications }) => ({ ref, role, provider, model, routingClass, allowedDataClassifications }),
+  );
+} catch (error) {
+  descriptors = `ERROR ${error.message}`;
+}
+console.log(`OPS_MODEL_DESCRIPTORS ${JSON.stringify(descriptors)}`);
 JS
     ) 2>&1 | cut -c1-6000
   else

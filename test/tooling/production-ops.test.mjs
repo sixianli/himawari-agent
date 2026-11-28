@@ -92,6 +92,56 @@ describe("production-ops", () => {
     expect(opened.stdout).toContain("owner said: my secret dinner plans");
   });
 
+  it("names which model each recent call used and what the configured models allow, without their secrets", () => {
+    const directory = temporary();
+    const database = path.join(directory, "product.sqlite");
+    const seeded = spawnSync(
+      process.execPath,
+      [
+        "--no-warnings",
+        "-e",
+        `const { DatabaseSync } = require("node:sqlite");
+const db = new DatabaseSync(process.argv[1]);
+db.exec("CREATE TABLE runs (id TEXT, thread_id TEXT, status TEXT, created_at TEXT, updated_at TEXT)");
+db.exec("CREATE TABLE owner_preferences (model_ref TEXT, thinking_level TEXT, updated_at TEXT)");
+db.exec("CREATE TABLE model_invocation_identities (model_ref TEXT, data_classification TEXT, source TEXT, status TEXT, reserved_at TEXT)");
+db.prepare("INSERT INTO owner_preferences VALUES (?, ?, ?)").run("kimi-chat", "medium", new Date().toISOString());
+db.prepare("INSERT INTO model_invocation_identities VALUES (?, ?, ?, ?, ?)").run("kimi-chat", "private", "agent-stream", "settled", new Date().toISOString());`,
+        database,
+      ],
+      { encoding: "utf8" },
+    );
+    expect(seeded.status).toBe(0);
+    const config = path.join(directory, "config.json");
+    writeFileSync(
+      config,
+      JSON.stringify({
+        modelDescriptors: [
+          {
+            ref: "kimi-chat",
+            role: "primary",
+            provider: "magpie",
+            model: "kimi",
+            allowedDataClassifications: ["public", "private"],
+            secretRef: "magpie-token-value-should-not-print",
+          },
+        ],
+      }),
+    );
+    const { child } = run("diagnose", directory, {
+      HIMAWARI_OPS_NODE: process.execPath,
+      HIMAWARI_OPS_DATABASE: database,
+      HIMAWARI_OPS_CONFIG: config,
+    });
+    expect(child.status).toBe(0);
+    expect(child.stdout).toContain('OPS_OWNER_MODEL [{"model_ref":"kimi-chat"');
+    expect(child.stdout).toContain('"model_ref":"kimi-chat","data_classification":"private"');
+    expect(child.stdout).toContain(
+      'OPS_MODEL_DESCRIPTORS [{"ref":"kimi-chat","role":"primary","provider":"magpie","model":"kimi","allowedDataClassifications":["public","private"]}]',
+    );
+    expect(child.stdout).not.toContain("magpie-token-value-should-not-print");
+  });
+
   it("collects before it restarts and confirms the service came back", () => {
     const directory = temporary();
     const { child } = run("restart", directory, {
