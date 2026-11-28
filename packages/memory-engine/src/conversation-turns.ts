@@ -377,6 +377,7 @@ export class ConversationTurnService {
     readonly agentId: AgentId;
     readonly query: string;
     readonly excludeThreadId: ThreadId | null;
+    readonly excludeEndedFrom?: string | null;
     readonly allowedClassifications: readonly DataClassification[];
     readonly maximumCharacters: number;
     readonly relevance?: RelevanceTuning;
@@ -390,6 +391,9 @@ export class ConversationTurnService {
       !this.#options.embeddableClassifications.includes("private")
     )
       return [];
+    const keptSince =
+      input.excludeEndedFrom == null ? Number.NaN : Date.parse(input.excludeEndedFrom);
+    const excludeWholeThread = Number.isNaN(keptSince);
     let vector: Float32Array;
     try {
       vector = await (input.within ?? direct)("private", () => embedder.embedQuery(input.query));
@@ -405,20 +409,26 @@ export class ConversationTurnService {
       allowedClassifications: input.allowedClassifications.filter(isModelVisible),
       from: null,
       to: null,
-      excludeThreadId: input.excludeThreadId,
+      excludeThreadId: excludeWholeThread ? input.excludeThreadId : null,
       limit: STORE_SEARCH_LIMIT,
     });
+    const shown = ({ turn }: { readonly turn: ConversationTurn }) =>
+      excludeWholeThread ||
+      turn.threadId !== input.excludeThreadId ||
+      Date.parse(turn.endedAt) < keptSince;
+    const vectorHits = result.vector.filter(shown);
+    const lexicalHits = result.lexical.filter(shown);
     const tuning = input.relevance ?? DEFAULT_RELEVANCE_TUNING;
-    const strongestKeyword = Math.max(0, ...result.lexical.map(({ signal }) => signal));
+    const strongestKeyword = Math.max(0, ...lexicalHits.map(({ signal }) => signal));
     const keyword = new Map(
-      result.lexical.map(({ turn, signal }) => [
+      lexicalHits.map(({ turn, signal }) => [
         turn.id,
         strongestKeyword > 0 ? Math.max(0, signal) / strongestKeyword : 0,
       ]),
     );
     const floor = this.#options.minimumSimilarity - tuning.cutoffMargin;
     const admitted = new Set(
-      result.vector
+      vectorHits
         .filter(
           ({ turn, signal }) =>
             signal + tuning.keywordWeight * (keyword.get(turn.id) ?? 0) >= floor,
@@ -426,7 +436,7 @@ export class ConversationTurnService {
         .map(({ turn }) => turn.id),
     );
     const fused = new Map<string, { turn: ConversationTurn; score: number }>();
-    for (const list of [result.vector, result.lexical])
+    for (const list of [vectorHits, lexicalHits])
       list
         .filter(({ turn }) => admitted.has(turn.id))
         .forEach(({ turn }, rank) => {

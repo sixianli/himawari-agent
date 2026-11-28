@@ -89,6 +89,7 @@ export class ProductionConversationRecall implements ContextConversationRecallPo
       agentId: request.agentId,
       query,
       excludeThreadId: request.threadId,
+      excludeEndedFrom: request.threadInContextSince,
       allowedClassifications: modelVisibleClassifications(),
       maximumCharacters: this.#options.maximumCharacters,
       ...(this.#options.relevance ? { relevance: this.#options.relevance } : {}),

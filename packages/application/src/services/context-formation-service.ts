@@ -40,7 +40,7 @@ import type { ClockPort, IdGeneratorPort } from "../ports/system.js";
 import type { ThreadContextSnapshot, ThreadRepositoryPort } from "../ports/threads.js";
 import { modelVisibleCeiling } from "./model-visibility.js";
 import type { OwnerProfile, OwnerProfilePort } from "./owner-profile-service.js";
-import { isRuntimeHistoryReference } from "./runtime-history-service.js";
+import { isRuntimeHistoryReference, RuntimeHistoryService } from "./runtime-history-service.js";
 import type { SessionTraceRecorder } from "./session-trace-recorder.js";
 
 const CLASSIFICATION_RANK = Object.freeze({ public: 0, private: 1, sensitive: 2, restricted: 3 });
@@ -126,6 +126,7 @@ export interface ContextConversationRecallRequest {
   readonly agentId: AgentId;
   readonly runId: RunId;
   readonly threadId: ThreadId | null;
+  readonly threadInContextSince: string | null;
   readonly queryRef: PayloadRef;
   readonly dataClassification: DataClassification;
   readonly executionLease?: import("../ports/run-dispatch.js").RunExecutionLeaseClaim;
@@ -154,6 +155,7 @@ export interface ContextConversationRecallPort {
 export interface ContextFormationServiceDependencies {
   readonly memory: Pick<MemoryPort, "search">;
   readonly conversations?: ContextConversationRecallPort;
+  readonly runtimeHistoryKeptSince?: (messages: readonly unknown[]) => string | null;
   readonly trace: SessionTraceRecorder;
   readonly artifacts: RunPayloadArtifactPort;
   readonly payloads: Pick<PayloadStorePort, "get">;
@@ -281,7 +283,7 @@ export class ContextFormationService implements ContextFormationPort {
         queryTerms: request.memoryQueryTerms,
         limit: request.memoryLimit,
       }),
-      this.recallConversations(request),
+      this.recallConversations(request, snapshot, eligibleHistory, selectedHistory),
     ]);
     const conversationRecall =
       recalled && CLASSIFICATION_RANK[recalled.dataClassification] <= VISIBLE_RANK
@@ -503,17 +505,55 @@ export class ContextFormationService implements ContextFormationPort {
     });
   }
 
+  private async threadInContextSince(
+    request: ContextFormationRequest,
+    snapshot: ThreadContextSnapshot | undefined,
+    eligibleHistory: readonly ContextThreadMessage[],
+    selectedHistory: readonly ContextThreadMessage[],
+  ): Promise<string | null> {
+    const keptSince = this.dependencies.runtimeHistoryKeptSince;
+    if (snapshot?.runtimeHistory) {
+      if (!keptSince) return null;
+      const history = new RuntimeHistoryService({
+        ownerId: request.ownerId,
+        agentId: request.agentId,
+        clock: this.dependencies.clock,
+        ids: this.dependencies.ids,
+        artifacts: this.dependencies.artifacts,
+        payloads: this.dependencies.payloads,
+        protector: this.dependencies.protector,
+      });
+      const state = await history.load(snapshot.runtimeHistory.reference, modelVisibleCeiling());
+      return keptSince(state.messages);
+    }
+    if (!snapshot || selectedHistory.length >= eligibleHistory.length) return null;
+    return selectedHistory[0]?.occurredAt ?? this.dependencies.clock.now();
+  }
+
   private async recallConversations(
     request: ContextFormationRequest,
+    snapshot: ThreadContextSnapshot | undefined,
+    eligibleHistory: readonly ContextThreadMessage[],
+    selectedHistory: readonly ContextThreadMessage[],
   ): Promise<ContextConversationRecall | undefined> {
     const conversations = this.dependencies.conversations;
     if (!conversations) return undefined;
     try {
+      const threadInContextSince = await this.threadInContextSince(
+        request,
+        snapshot,
+        eligibleHistory,
+        selectedHistory,
+      ).catch((error: unknown) => {
+        if (request.signal?.aborted) throw error;
+        return null;
+      });
       return await conversations.recall({
         ownerId: request.ownerId,
         agentId: request.agentId,
         runId: request.runId,
         threadId: request.threadId,
+        threadInContextSince,
         queryRef: request.memoryQueryRef,
         dataClassification: request.dataClassification,
         ...(request.executionLease ? { executionLease: request.executionLease } : {}),

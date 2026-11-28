@@ -1,5 +1,9 @@
 import type { DecisionLedgerWrite, ThreadDistillationStatePort } from "@himawari-agent/application";
-import { ContextFormationService, SessionTraceRecorder } from "@himawari-agent/application";
+import {
+  ContextFormationService,
+  RuntimeHistoryService,
+  SessionTraceRecorder,
+} from "@himawari-agent/application";
 import {
   createAgentId,
   createMemoryGenerationId,
@@ -8,6 +12,7 @@ import {
   createSessionId,
   createThreadId,
 } from "@himawari-agent/domain";
+import { historyKeptSince } from "@himawari-agent/runtime-pi";
 import { createReferenceAdapterSet, DeterministicFailureScheduler } from "@himawari-agent/testing";
 import { describe, expect, it, vi } from "vitest";
 
@@ -504,6 +509,7 @@ describe("Task 9 Memory and context formation", () => {
     expect(requests).toEqual([
       expect.objectContaining({
         threadId: THREAD_ID,
+        threadInContextSince: null,
         queryRef: "payload-memory-query-01",
         runId: RUN_ID,
       }),
@@ -547,6 +553,79 @@ describe("Task 9 Memory and context formation", () => {
     expect(
       restricted.envelope.contextBlocks.some(({ kind }) => kind === "conversation-recall"),
     ).toBe(false);
+  });
+
+  it("[自动原话] in the one main conversation, lets recall reach this conversation's words that compaction left out, and REVERSE keeps the whole conversation out before any compaction", async () => {
+    const adapters = createReferenceAdapterSet({ scope: { ownerId: OWNER_ID, agentId: AGENT_ID } });
+    const trace = new SessionTraceRecorder({
+      trace: adapters.trace,
+      artifacts: adapters.runPayloadArtifacts,
+      protector: adapters.payloadProtector,
+      audit: adapters.audit,
+      clock: adapters.clock,
+      ids: adapters.ids,
+    });
+    const history = new RuntimeHistoryService({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      clock: adapters.clock,
+      ids: adapters.ids,
+      artifacts: adapters.runPayloadArtifacts,
+      payloads: adapters.payload,
+      protector: adapters.payloadProtector,
+    });
+    const kept = Date.parse("2026-11-20T03:00:00.000Z");
+    const compacted = await history.save({
+      runId: RUN_ID,
+      dataClassification: "private",
+      messages: [
+        {
+          role: "compactionSummary",
+          summary: "earlier talk",
+          tokensBefore: 90_000,
+          timestamp: kept - 1000,
+        },
+        { role: "user", content: "kept words", timestamp: kept },
+      ],
+    });
+    const whole = await history.save({
+      runId: RUN_ID,
+      dataClassification: "private",
+      messages: [{ role: "user", content: "all words", timestamp: kept }],
+    });
+    const formWith = async (reference: typeof compacted, runId: string) => {
+      const requests: { threadInContextSince: string | null }[] = [];
+      await new ContextFormationService({
+        memory: adapters.memory,
+        trace,
+        artifacts: adapters.runPayloadArtifacts,
+        payloads: adapters.payload,
+        protector: adapters.payloadProtector,
+        clock: adapters.clock,
+        ids: adapters.ids,
+        runtimeHistoryKeptSince: historyKeptSince,
+        threads: {
+          readContextSnapshot: async () => ({
+            thread: {} as never,
+            messages: [],
+            runStates: [],
+            runtimeHistory: { reference, runState: { runId: RUN_ID, status: "running" } },
+            sourceWatermark: null,
+          }),
+        },
+        conversations: {
+          recall: async (input) => {
+            requests.push(input);
+            return undefined;
+          },
+        },
+      }).form({ ...request("user_message"), runId: createRunId(runId) });
+      return requests.map(({ threadInContextSince }) => threadInContextSince);
+    };
+    expect(await formWith(compacted, "run-context-compacted")).toEqual([
+      "2026-11-20T03:00:00.000Z",
+    ]);
+    expect(await formWith(whole, "run-context-whole")).toEqual([null]);
   });
 
   it("[ADR-0286] brings every memory that clears the relevance threshold, with no count cap, and leaves out unrelated ones", async () => {

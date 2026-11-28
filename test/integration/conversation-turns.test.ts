@@ -980,7 +980,11 @@ describe.each(["worker", "direct"] as const)("conversation turns through %s", (e
       onFailure: (error) => failures.push(error),
     });
     let asked = 0;
-    const ask = async (question: string, threadId: ThreadId = NOW) => {
+    const ask = async (
+      question: string,
+      threadId: ThreadId = NOW,
+      threadInContextSince: string | null = null,
+    ) => {
       asked += 1;
       const queryRef = `payload-recall-query-${asked}`;
       await payloads.put(
@@ -999,6 +1003,7 @@ describe.each(["worker", "direct"] as const)("conversation turns through %s", (e
         agentId: AGENT_ID,
         runId: `run-recall-${asked}` as never,
         threadId,
+        threadInContextSince,
         queryRef,
         dataClassification: "private",
         executionLease: { fencingToken: 1 } as never,
@@ -1043,6 +1048,26 @@ describe.each(["worker", "direct"] as const)("conversation turns through %s", (e
       expect(await ask("你上次推荐的那本科幻小说叫什么", BOOKS)).toBeUndefined();
       resource.embedder.fail = true;
       expect(await ask("你上次推荐的那本科幻小说叫什么")).toBeUndefined();
+      expect(failures).toEqual([]);
+    } finally {
+      await resource.repository.close();
+    }
+  });
+
+  it("[自动原话] in the one main conversation, brings back its own early words once they were compacted out, and REVERSE never repeats words still in context", async () => {
+    const { resource, ask, failures } = await recallFixture();
+    try {
+      const compacted = await ask(
+        "你上次推荐的那本科幻小说叫什么",
+        BOOKS,
+        "2026-11-20T00:00:00.000Z",
+      );
+      expect(
+        compacted?.turns.map(({ conversationId, sequence }) => [conversationId, sequence]),
+      ).toEqual([[BOOKS, 1]]);
+      expect(
+        await ask("你上次推荐的那本科幻小说叫什么", BOOKS, "2026-11-17T00:00:00.000Z"),
+      ).toBeUndefined();
       expect(failures).toEqual([]);
     } finally {
       await resource.repository.close();

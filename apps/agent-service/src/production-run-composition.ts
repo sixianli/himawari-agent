@@ -33,7 +33,11 @@ import {
 } from "@himawari-agent/application";
 import { canonicalAuthorizationSnapshot } from "@himawari-agent/application/action-intent-snapshot";
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
-import { PiAgentRuntimeAdapter, type PiModelBindingPort } from "@himawari-agent/runtime-pi";
+import {
+  historyKeptSince,
+  PiAgentRuntimeAdapter,
+  type PiModelBindingPort,
+} from "@himawari-agent/runtime-pi";
 import {
   type ContextExternalContent,
   markRecalledExternalRecords,
@@ -335,7 +339,9 @@ export function createProductionRunComposition(options: ProductionRunComposition
     new ContextFormationService({
       profile,
       memory,
-      ...(options.conversationRecall ? { conversations: options.conversationRecall } : {}),
+      ...(options.conversationRecall
+        ? { conversations: options.conversationRecall, runtimeHistoryKeptSince: historyKeptSince }
+        : {}),
       trace,
       artifacts,
       payloads,
