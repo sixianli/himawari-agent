@@ -142,6 +142,10 @@ jobs:
           ')"
           echo "udid=$udid" >> "$GITHUB_OUTPUT"
           xcrun simctl list devices | grep "$udid"
+      - name: 先把模拟器开机并等它完全起来，再开始审计
+        env:
+          UDID: ${{ steps.simulator.outputs.udid }}
+        run: xcrun simctl bootstatus "$UDID" -b
       - name: 每个示例场景跑苹果的无障碍审计（浅色全部审计项，深色对比度）
         env:
           TEST_RUNNER_HIMAWARI_AUDIT_SHARD: ${{ matrix.shard }}
