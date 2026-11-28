@@ -24,6 +24,7 @@ upper_size="${HIMAWARI_SHADOW_UPPER_SIZE:-8G}"
 machine="himawari-shadow"
 boot_wait="${HIMAWARI_SHADOW_BOOT_WAIT:-300}"
 service_wait="${HIMAWARI_SHADOW_SERVICE_WAIT:-120}"
+service_settle="${HIMAWARI_SHADOW_SERVICE_SETTLE:-30}"
 probe_timeout="${HIMAWARI_SHADOW_PROBE_TIMEOUT:-15}"
 masked_units="${HIMAWARI_SHADOW_MASKED_UNITS:-oracle-keepalive.service cloudflared.service}"
 shadow=""
@@ -159,6 +160,10 @@ boot_exit() {
   echo "host journal: $(timeout "$probe_timeout" /usr/bin/journalctl --no-pager -q -o short-monotonic --since "@$boot_started" -k -t systemd -t systemd-machined -t systemd-nspawn -n 40 2>&1 | grep -iE 'shadow|nspawn|machine|oom|killed|memory' | tail -20 | cut -c1-240 | tr '\n' '|')"
   echo "console: $(console_tail)"
 }
+service_report() {
+  echo "service: $(probe show "$unit" --no-pager -p ActiveState -p SubState -p Result -p MainPID -p NRestarts -p ExecMainStatus 2>&1 | tr '\n' ' ')"
+  echo "service journal: $(look /usr/bin/journalctl -u "$unit" -n 40 --no-pager -q -o short-monotonic 2>&1 | cut -c1-300 | tr '\n' '|')"
+}
 deadline=$(( SECONDS + boot_wait ))
 state=""
 while (( SECONDS < deadline )); do
@@ -178,7 +183,12 @@ while (( SECONDS < deadline )); do
   [[ "$active" == active ]] && break
   sleep 2
 done
-[[ "$active" == active ]] || fail OLD_SERVICE_NOT_ACTIVE "$unit did not start on the copied data (${active:-unreachable}): $(look /usr/bin/journalctl -u "$unit" -n 20 --no-pager 2>&1 | tr '\n' ' ' | cut -c1-2000); $(stuck_units)"
+[[ "$active" == active ]] || fail OLD_SERVICE_NOT_ACTIVE "$unit did not start on the copied data (${active:-unreachable}); $(service_report); $(stuck_units)"
+restarts="$(probe show "$unit" -p NRestarts --value 2> /dev/null || true)"
+sleep "$service_settle"
+active="$(probe is-active "$unit" 2> /dev/null || true)"
+[[ "$active" == active && "$(probe show "$unit" -p NRestarts --value 2> /dev/null || true)" == "$restarts" ]] || fail OLD_SERVICE_NOT_STABLE "$unit started on the copied data but did not stay up for $service_settle seconds (${active:-unreachable}); $(service_report)"
+echo "SHADOW_OLD_SERVICE_STABLE ${service_settle}s restarts=${restarts:-unknown}"
 find_leader || fail LEADER_MISSING "machinectl does not name the shadow machine's first process"
 echo "SHADOW_BOOTED leader=$leader"
 
@@ -195,6 +205,10 @@ set -e
 sed 's/^/SHADOW| /' "$shadow/deploy.log" | tail -200
 if [[ "$code" -ne 0 ]]; then
   stopped_at="$(sed -n 's/^DEPLOY_STOPPED_AT \([A-Z0-9_]*\).*/\1/p' "$shadow/deploy.log" | tail -1)"
+  while IFS= read -r report; do
+    echo "SHADOW_STEP_REPORT $report $(look /bin/cat -- "$report" 2>&1 | head -c 4000 | tr '\n' ' ')"
+  done < <(sed -n 's/^STEP_FAILURE_REPORT \([^ ]*\).*/\1/p' "$shadow/deploy.log" | sort -u)
+  service_report | sed 's/^/SHADOW_AFTER_FAILURE /'
   fail "DEPLOY_${stopped_at:-UNKNOWN}" "the deploy failed on a copy of production; production was not touched (exit $code)"
 fi
 grep -q '^DEPLOY_PASSED$' "$shadow/deploy.log" || fail DEPLOY_UNFINISHED "the deploy on the copy did not print DEPLOY_PASSED"

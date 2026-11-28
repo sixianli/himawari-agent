@@ -91,7 +91,16 @@ case "$1" in
     [ -e "$FAKE_LOG/machine.up" ] || exit 1
     [ -z "$FAKE_SYSTEMCTL_HANGS" ] || exec sleep 60
     echo "${FAKE_SYSTEM_STATE:-running}"; [ "${FAKE_SYSTEM_STATE:-running}" = running ] ;;
-  is-active) echo "${FAKE_UNIT_STATE:-active}"; [ "${FAKE_UNIT_STATE:-active}" = active ] ;;
+  is-active)
+    if [ -n "$FAKE_UNIT_FLAPS" ] && [ -e "$FAKE_LOG/unit.seen" ]; then echo failed; exit 3; fi
+    touch "$FAKE_LOG/unit.seen"
+    echo "${FAKE_UNIT_STATE:-active}"; [ "${FAKE_UNIT_STATE:-active}" = active ] ;;
+  show)
+    if [[ " $* " == *" -p NRestarts --value "* ]]; then
+      if [ -n "$FAKE_UNIT_FLAPS" ] && [ -e "$FAKE_LOG/unit.counted" ]; then echo 1; else touch "$FAKE_LOG/unit.counted"; echo 0; fi
+    else
+      printf 'ActiveState=failed\nSubState=failed\nResult=exit-code\nMainPID=0\nNRestarts=1\nExecMainStatus=1\n'
+    fi ;;
   list-jobs) echo "42 boot-efi.mount start running" ;;
   --failed) echo "cloud-init.service loaded failed failed" ;;
 esac
@@ -101,6 +110,8 @@ FAKE_DEPLOY = '''#!/bin/bash
 echo "deploy on_failure=$HIMAWARI_DEPLOY_ON_FAILURE from=$HIMAWARI_DEPLOY_FROM_STEP host=${HIMAWARI_PACKET_HOST:-} shadow=${HIMAWARI_DEPLOY_SHADOW_REHEARSAL:-} path=$PATH packet=$1"
 if [ -n "$FAKE_DEPLOY_FAIL_AT" ]; then
   echo "DEPLOY_STEP_START $FAKE_DEPLOY_FAIL_AT"
+  echo '{"failureCode": "FIRST_S2_INITIAL_SERVICE_NOT_ACTIVE"}' > "$FAKE_LOG/step-report.json"
+  echo "STEP_FAILURE_REPORT $FAKE_LOG/step-report.json {}"
   echo "MIGRATION_REFUSED bad timestamp in row 7" >&2
   echo "DEPLOY_STOPPED_AT $FAKE_DEPLOY_FAIL_AT exit=3" >&2
   exit 3
@@ -152,7 +163,7 @@ class ShadowRehearsalTest(unittest.TestCase):
         return database
 
     def run_rehearsal(self, **extra):
-        environment = {'PATH': '/usr/bin:/bin', 'FAKE_LOG': str(self.log), 'HIMAWARI_SHADOW_TOOLS': str(self.tools), 'HIMAWARI_SHADOW_SBIN': str(self.tools), 'HIMAWARI_SHADOW_UPPER_SIZE': '1M', 'HIMAWARI_SHADOW_PROC_FILESYSTEMS': str(self.log / 'filesystems'), 'HIMAWARI_SHADOW_LOOP_CONTROL': str(self.log / 'loop-control'), 'HIMAWARI_PACKET_HOST': '127.0.0.1', 'HIMAWARI_DEPLOY_SHADOW_REHEARSAL': '1', 'HIMAWARI_SHADOW_STATE_DATA': str(self.data), 'HIMAWARI_SHADOW_PARENT': str(self.parent), 'HIMAWARI_SHADOW_BOOT_WAIT': '5', 'HIMAWARI_SHADOW_SERVICE_WAIT': '3', 'HIMAWARI_SHADOW_PROBE_TIMEOUT': '2', **extra}
+        environment = {'PATH': '/usr/bin:/bin', 'FAKE_LOG': str(self.log), 'HIMAWARI_SHADOW_TOOLS': str(self.tools), 'HIMAWARI_SHADOW_SBIN': str(self.tools), 'HIMAWARI_SHADOW_UPPER_SIZE': '1M', 'HIMAWARI_SHADOW_PROC_FILESYSTEMS': str(self.log / 'filesystems'), 'HIMAWARI_SHADOW_LOOP_CONTROL': str(self.log / 'loop-control'), 'HIMAWARI_PACKET_HOST': '127.0.0.1', 'HIMAWARI_DEPLOY_SHADOW_REHEARSAL': '1', 'HIMAWARI_SHADOW_STATE_DATA': str(self.data), 'HIMAWARI_SHADOW_PARENT': str(self.parent), 'HIMAWARI_SHADOW_BOOT_WAIT': '5', 'HIMAWARI_SHADOW_SERVICE_WAIT': '3', 'HIMAWARI_SHADOW_PROBE_TIMEOUT': '2', 'HIMAWARI_SHADOW_SERVICE_SETTLE': '1', **extra}
         return subprocess.run(['/bin/bash', str(self.scripts / 'shadow-rehearsal.sh'), str(self.packet)], capture_output=True, text=True, env=environment, timeout=120)
 
     def test_the_copy_holds_rows_still_in_the_write_ahead_log_and_keeps_owner_and_mode(self):
@@ -177,6 +188,9 @@ class ShadowRehearsalTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn('SHADOW_REHEARSAL_FAILED DEPLOY_S7_CONFIG_APPLY', result.stderr)
         self.assertIn('SHADOW| MIGRATION_REFUSED bad timestamp in row 7', result.stdout)
+        self.assertIn('{"failureCode": "FIRST_S2_INITIAL_SERVICE_NOT_ACTIVE"}', result.stdout)
+        self.assertIn('SHADOW_STEP_REPORT ' + str(self.log / 'step-report.json'), result.stdout)
+        self.assertIn('SHADOW_AFTER_FAILURE service: ActiveState=failed', result.stdout)
         self.assertEqual((self.data / 'product.sqlite').read_bytes(), before)
         self.assertEqual(list(self.parent.iterdir()), [])
         self.assertIn('machinectl terminate himawari-shadow', (self.log / 'calls').read_text())
@@ -304,6 +318,14 @@ class ShadowRehearsalTest(unittest.TestCase):
         result = self.run_rehearsal(FAKE_UNIT_STATE='failed')
         self.assertEqual(result.returncode, 1)
         self.assertIn('SHADOW_REHEARSAL_FAILED OLD_SERVICE_NOT_ACTIVE', result.stderr)
+        self.assertNotIn('SHADOW_DEPLOY_START', result.stdout)
+
+    def test_I120_an_old_release_that_starts_and_then_falls_over_is_caught_before_the_rehearsed_deploy(self):
+        self.live_database()
+        result = self.run_rehearsal(FAKE_UNIT_FLAPS='1')
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('SHADOW_REHEARSAL_FAILED OLD_SERVICE_NOT_STABLE', result.stderr)
+        self.assertIn('service: ActiveState=failed', result.stderr)
         self.assertNotIn('SHADOW_DEPLOY_START', result.stdout)
 
     def test_too_little_disk_for_the_copy_refuses_before_copying(self):
