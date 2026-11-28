@@ -28,17 +28,19 @@ if [[ "$request" =~ ^ops\ ([a-z][a-z-]{0,31})$ ]]; then
   exit $?
 fi
 verb=deploy
-if [[ "$request" =~ ^deploy\ ([0-9a-f]{40})\ (-|[0-9a-f]{40})\ ([01])$ ]]; then
+skip_shadow=0
+if [[ "$request" =~ ^deploy\ ([0-9a-f]{40})\ (-|[0-9a-f]{40})\ ([01])(\ skip-shadow)?$ ]]; then
   commit="${BASH_REMATCH[1]}"
   since="${BASH_REMATCH[2]}"
   force="${BASH_REMATCH[3]}"
+  [[ -z "${BASH_REMATCH[4]}" ]] || skip_shadow=1
 elif [[ "$request" =~ ^rehearse\ ([0-9a-f]{40})\ boot$ ]]; then
   verb=rehearse
   commit="${BASH_REMATCH[1]}"
   since=-
   force=0
 else
-  refuse REQUEST_INVALID "only 'deploy <40-hex commit> <40-hex since or -> <0|1 force>' or 'rehearse <40-hex commit> boot' or 'ops <action>' is accepted"
+  refuse REQUEST_INVALID "only 'deploy <40-hex commit> <40-hex since or -> <0|1 force> [skip-shadow]' or 'rehearse <40-hex commit> boot' or 'ops <action>' is accepted"
 fi
 [[ "$since" != - ]] || since=""
 
@@ -108,6 +110,7 @@ export HIMAWARI_PACKET_HOST="${HIMAWARI_DEPLOY_LOCAL_HOST:-127.0.0.1}"
 export HIMAWARI_DEPLOY_COMMIT="$commit"
 export HIMAWARI_DEPLOY_SINCE="$since"
 export HIMAWARI_DEPLOY_FORCE="$force"
+export HIMAWARI_DEPLOY_SKIP_SHADOW="$skip_shadow"
 export HIMAWARI_DEPLOY_OUTPUT_ROOT="$base/production"
 cd "$checkout" || exit 70
 exec bash scripts/delivery-mode/ci-deploy.sh

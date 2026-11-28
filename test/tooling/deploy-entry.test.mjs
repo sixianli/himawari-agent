@@ -41,7 +41,7 @@ function source() {
   mkdirSync(path.join(repo, "scripts/delivery-mode"), { recursive: true });
   writeFileSync(
     path.join(repo, "scripts/delivery-mode/ci-deploy.sh"),
-    '#!/bin/bash\necho "STUB commit=$HIMAWARI_DEPLOY_COMMIT since=$HIMAWARI_DEPLOY_SINCE force=$HIMAWARI_DEPLOY_FORCE host=$HIMAWARI_PACKET_HOST path=$PATH"\n',
+    '#!/bin/bash\necho "STUB commit=$HIMAWARI_DEPLOY_COMMIT since=$HIMAWARI_DEPLOY_SINCE force=$HIMAWARI_DEPLOY_FORCE host=$HIMAWARI_PACKET_HOST skipShadow=$HIMAWARI_DEPLOY_SKIP_SHADOW path=$PATH"\n',
   );
   writeFileSync(
     path.join(repo, "scripts/delivery-mode/shadow-rehearsal.sh"),
@@ -239,6 +239,20 @@ describe("himawari-deploy-entry", () => {
     expect(child.status).toBe(0);
     expect(child.stdout).toContain(`STUB commit=${main}`);
     expect(alive(pid)).toBe(false);
+  });
+
+  it("passes the owner's request to skip the shadow rehearsal and nothing else after the force flag", () => {
+    const { repo, main } = source();
+    const skipped = runEntry(`deploy ${main} - 0 skip-shadow`, repo);
+    expect(skipped.status).toBe(0);
+    expect(skipped.stdout).toContain(
+      `STUB commit=${main} since= force=0 host=127.0.0.1 skipShadow=1`,
+    );
+    const plain = runEntry(`deploy ${main} - 0`, repo);
+    expect(plain.stdout).toContain("skipShadow=0");
+    const refused = runEntry(`deploy ${main} - 0 skip-everything`, repo);
+    expect(refused.status).not.toBe(0);
+    expect(refused.stderr).toContain("REQUEST_INVALID");
   });
 
   it("checks out a main commit and runs its own ci-deploy.sh against the local machine", () => {

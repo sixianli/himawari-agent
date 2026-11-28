@@ -122,7 +122,12 @@ packet="$(sed -n 's/^PACKET_READY //p' "$prepare_log" | tail -1 | /usr/bin/pytho
 [[ -d "$packet" ]] || refuse PACKET_MISSING "no PACKET_READY line" 3
 
 echo "CI_DEPLOY_START $packet"
-HIMAWARI_DEPLOY_SHADOW_REHEARSAL=1 HIMAWARI_DEPLOY_ON_FAILURE="${HIMAWARI_DEPLOY_ON_FAILURE:-rollback}" bash "$here/deploy.sh" "$packet"
+shadow=1
+if [[ "${HIMAWARI_DEPLOY_SKIP_SHADOW:-0}" == 1 ]]; then
+  shadow=0
+  echo "CI_DEPLOY_SHADOW_SKIPPED: the owner asked to deploy without the shadow rehearsal; a failed step still rolls back to the running release"
+fi
+HIMAWARI_DEPLOY_SHADOW_REHEARSAL="$shadow" HIMAWARI_DEPLOY_ON_FAILURE="${HIMAWARI_DEPLOY_ON_FAILURE:-rollback}" bash "$here/deploy.sh" "$packet"
 deploy_code=$?
 if [[ "$deploy_code" -ne 0 ]]; then
   echo "CI_DEPLOY_FAILED exit=$deploy_code" >&2
