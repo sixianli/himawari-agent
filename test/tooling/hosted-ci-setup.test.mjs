@@ -7,8 +7,14 @@ import {
   validateAppleAuditSchedule,
   validateAppleMacSlots,
   validateHostedRunners,
+  validateManualMacRunsSupersede,
 } from "../../scripts/ci/check-policy.mjs";
-import { linuxRunnerLabel, macRunnerLabel, repositoryRoot } from "../../scripts/ci/contracts.mjs";
+import {
+  githubExpression,
+  linuxRunnerLabel,
+  macRunnerLabel,
+  repositoryRoot,
+} from "../../scripts/ci/contracts.mjs";
 
 const script = path.join(repositoryRoot, "scripts/ci/prepare-hosted.sh");
 const run = (args, env = {}) =>
@@ -152,8 +158,10 @@ describe("iPhone 工作流", () => {
     expect(group).toContain("github.event_name");
     expect(group).toContain("github.event.pull_request.number || github.ref");
     expect(group).not.toContain("github.sha");
-    expect(workflow.concurrency["cancel-in-progress"]).toMatch(
-      /^\$\{\{ github\.event_name == 'pull_request' \}\}$/u,
+    expect(workflow.concurrency["cancel-in-progress"]).toBe(
+      githubExpression(
+        "github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main'",
+      ),
     );
     const scope = workflow.jobs.changes.steps.at(-1);
     expect(scope.env.BASE).toContain("github.event_name == 'push' && '--since-green'");
@@ -478,6 +486,51 @@ describe("TestFlight 工作流", () => {
     expect(workflow.jobs.claim.if).toContain("failure()");
     expect(workflow.jobs.claim.steps.at(-1).run).toBe(
       "node scripts/ci/main-claim.mjs testflight.yml apple testflight/upload",
+    );
+  });
+});
+
+describe("手动触发的 Mac 运行，同一分支新的一次取消旧的", () => {
+  const read = (name) => readFileSync(path.join(repositoryRoot, ".github/workflows", name), "utf8");
+  const all = Object.fromEntries(
+    ["apple.yml", "apple-screens.yml", "mac-release.yml", "testflight.yml"].map((name) => [
+      name,
+      read(name),
+    ]),
+  );
+  it("现有的苹果工作流都满足；只在 main 上出包的 Mac 安装包发布不要求取消", () => {
+    expect(() => validateManualMacRunsSupersede(all)).not.toThrow();
+    expect(parse(all["mac-release.yml"]).concurrency).toBeUndefined();
+  });
+  it.each([
+    [
+      "截图不取消旧的",
+      "apple-screens.yml",
+      (workflow) => {
+        workflow.concurrency["cancel-in-progress"] = false;
+      },
+    ],
+    [
+      "苹果全套只取消 PR 上的旧运行",
+      "apple.yml",
+      (workflow) => {
+        workflow.concurrency["cancel-in-progress"] = githubExpression(
+          "github.event_name == 'pull_request'",
+        );
+      },
+    ],
+    [
+      "并发组不按分支分",
+      "apple-screens.yml",
+      (workflow) => {
+        workflow.concurrency.group = "apple-screens";
+      },
+    ],
+  ])("拒绝%s", (_label, name, change) => {
+    const workflow = parse(all[name]);
+    change(workflow);
+    expect(() => validateManualMacRunsSupersede({ [name]: stringify(workflow) })).toThrow(
+      "MANUAL_MAC_RUN_SUPERSEDE",
     );
   });
 });

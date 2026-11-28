@@ -985,6 +985,32 @@ export function validateAppleMacSlots(text) {
   }
 }
 
+export function validateManualMacRunsSupersede(workflows) {
+  for (const [file, text] of Object.entries(workflows)) {
+    const workflow = parseDocument(text, { uniqueKeys: true }).toJS() ?? {};
+    if (!Object.hasOwn(workflow.on ?? {}, "workflow_dispatch")) continue;
+    const jobs = workflow.jobs ?? {};
+    const mainOnly = (id, seen = new Set()) => {
+      if (seen.has(id) || !jobs[id]) return false;
+      seen.add(id);
+      return (
+        String(jobs[id].if).includes("github.ref == 'refs/heads/main'") ||
+        [jobs[id].needs ?? []].flat().some((need) => mainOnly(need, seen))
+      );
+    };
+    const branchMac = Object.keys(jobs).filter(
+      (id) => jobs[id]["runs-on"] === macRunnerLabel && !mainOnly(id),
+    );
+    if (branchMac.length === 0) continue;
+    const cancel = workflow.concurrency?.["cancel-in-progress"];
+    assert(
+      String(workflow.concurrency?.group).includes("github.ref") &&
+        (cancel === true || String(cancel).includes("github.event_name == 'workflow_dispatch'")),
+      `MANUAL_MAC_RUN_SUPERSEDE ${file}: a manual run on a branch must cancel the older run of the same branch (concurrency group by github.ref, cancel-in-progress)`,
+    );
+  }
+}
+
 export function validateAppleAuditSchedule(text) {
   const workflow = parseDocument(text, { uniqueKeys: true }).toJS() ?? {};
   const crons = (workflow.on?.schedule ?? []).map((entry) => entry.cron);
@@ -1846,14 +1872,14 @@ export function validateWorkflowsAgainstPolicy({ root, source, proposed }) {
   const appleWorkflow = readFileSync(path.join(workflowDirectory, "apple.yml"), "utf8");
   validateAppleMacSlots(appleWorkflow);
   validateAppleAuditSchedule(appleWorkflow);
-  validateHostedRunners(
-    Object.fromEntries(
-      readdirSync(workflowDirectory)
-        .filter((name) => /\.ya?ml$/u.test(name))
-        .sort()
-        .map((name) => [name, readFileSync(path.join(workflowDirectory, name), "utf8")]),
-    ),
+  const workflows = Object.fromEntries(
+    readdirSync(workflowDirectory)
+      .filter((name) => /\.ya?ml$/u.test(name))
+      .sort()
+      .map((name) => [name, readFileSync(path.join(workflowDirectory, name), "utf8")]),
   );
+  validateHostedRunners(workflows);
+  validateManualMacRunsSupersede(workflows);
 }
 
 export async function validateTestsAgainstPolicy({ root, source, proposed }) {
