@@ -526,6 +526,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PR_REFLECTION_AGGREGATE_JOB: ci/required
         run: if [ "$GITHUB_EVENT_NAME" = pull_request ]; then node scripts/check-pr-reflection.mjs; fi
+      - name: 改核心目录的 PR 必须写安全依据并点名 CI 会跑的测试
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: if [ "$GITHUB_EVENT_NAME" = pull_request ]; then node scripts/check-pr-safety.mjs; fi
       - name: 把本次运行的共享目录指到本机临时目录
         run: mkdir -p "$RUNNER_TEMP/ci-share" && echo "HIMAWARI_CI_SHARE=$RUNNER_TEMP/ci-share" >> "$GITHUB_ENV"
       - name: 算出本周的缓存周号
