@@ -32,8 +32,7 @@ struct MacSettingsWindow: View {
 
     static func symbol(_ section: HerSection) -> String {
         switch section {
-        case .notifications: "bell"
-        case .privacy: "hand.raised"
+        case .about: "info.circle"
         default: "gearshape"
         }
     }

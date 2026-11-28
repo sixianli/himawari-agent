@@ -8,12 +8,12 @@ struct MemoryTrashPage: View {
     @State private var failed = false
 
     var body: some View {
-        SettingsPage(gap: DesignTokens.Allowance.pageGap) {
+        SettingsPage {
             SheetHeader(title: M.trashTitle, leading: .back, action: back)
             if !store.trashed.isEmpty {
                 SettingsGroup(label: nil) {
                     ForEach(store.trashed) { item in
-                        TrashRow(item: item, now: Date(), last: item == store.trashed.last) { recover(item) }
+                        TrashRow(item: item, now: Date()) { recover(item) }
                     }
                 }
             }
@@ -22,6 +22,7 @@ struct MemoryTrashPage: View {
                 .foregroundStyle(Color.hmMuted)
                 .padding(.horizontal, DesignTokens.Allowance.footInset)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .outsideRowCard()
         }
         .alert(M.actionFailed, isPresented: $failed) {}
     }
@@ -41,12 +42,10 @@ struct MemoryTrashPage: View {
 struct TrashRow: View {
     let item: MemoryItem
     let now: Date
-    let last: Bool
     let recover: () -> Void
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: SL.rowGap) {
+        HStack(spacing: SL.rowGap) {
                 VStack(alignment: .leading, spacing: DesignTokens.Her.rowSubtitleGap) {
                     Text(item.text).hmType(SL.rowValue).foregroundStyle(Color.hmText)
                     if let line = Self.line(item, now: now) {
@@ -62,11 +61,8 @@ struct TrashRow: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.pressable)
-            }
-            .padding(.vertical, SL.rowPaddingVertical)
-            .frame(minHeight: SL.rowMinHeight)
-            if !last { RowSeparator() }
         }
+        .frame(minHeight: SL.rowMinHeight)
     }
 
     static func line(_ item: MemoryItem, now: Date) -> String? {

@@ -15,18 +15,16 @@ struct MemoryImportPastePage: View {
     @State private var copied = false
 
     var body: some View {
-        SettingsPage(gap: SL.pageGap) {
+        SettingsPage {
             SheetHeader(title: M.importSource(.assistant), leading: .back, action: back)
             SettingsGroup(label: M.aiStep1) {
                 Text(M.aiPrompt)
                     .hmType(DesignTokens.TypeScale.body)
                     .foregroundStyle(Color.hmText)
                     .textSelection(.enabled)
-                    .padding(.vertical, SL.rowPaddingVertical)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                RowSeparator()
                 Button(action: copy) {
-                    SettingsRow(icon: nil, title: M.copyPrompt, value: copied ? M.copied : nil, last: true)
+                    SettingsRow(icon: nil, title: M.copyPrompt, value: copied ? M.copied : nil)
                 }
                 .buttonStyle(.pressable)
             }
@@ -47,6 +45,7 @@ struct MemoryImportPastePage: View {
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
             .disabled(pasted.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .outsideRowCard()
         }
     }
 
@@ -68,7 +67,7 @@ struct MemoryImportPreviewPage: View {
     @State private var failed = false
 
     var body: some View {
-        SettingsPage(gap: SL.pageGap) {
+        SettingsPage {
             SheetHeader(title: M.importGroup, leading: .back, action: back)
             content
         }
@@ -108,10 +107,11 @@ struct MemoryImportPreviewPage: View {
                 }
             }
             .frame(maxWidth: .infinity, minHeight: DesignTokens.Size.emptyMinHeight)
+            .outsideRowCard()
         case .preview:
             SettingsGroup(label: M.importSummary(found: store.found, shown: store.items.count, on: store.chosen.count)) {
                 ForEach(store.items) { item in
-                    ImportItemRow(item: item, last: item == store.items.last) { store.toggle(item) }
+                    ImportItemRow(item: item) { store.toggle(item) }
                 }
             }
         case .done(let count):
@@ -134,13 +134,11 @@ struct MemoryImportPreviewPage: View {
 
 struct ImportItemRow: View {
     let item: MemoryImportItem
-    let last: Bool
     let toggle: () -> Void
 
     var body: some View {
         Button(action: toggle) {
-            VStack(spacing: 0) {
-                HStack(alignment: .top, spacing: SL.rowGap) {
+            HStack(alignment: .top, spacing: SL.rowGap) {
                     VStack(alignment: .leading, spacing: SL.rowTextGap) {
                         Text(item.text).hmType(SL.rowValue).foregroundStyle(item.selectable ? Color.hmText : Color.hmMuted)
                         Text(item.from).hmType(DesignTokens.TypeScale.caption).foregroundStyle(Color.hmMuted)
@@ -152,11 +150,8 @@ struct ImportItemRow: View {
                     Icon(.check, size: DesignTokens.IconSize.listRow)
                         .foregroundStyle(Color.hmSun)
                         .opacity(item.checked && item.selectable ? 1 : 0)
-                }
-                .padding(.vertical, SL.rowPaddingVertical)
-                .frame(minHeight: SL.rowMinHeight)
-                if !last { RowSeparator() }
             }
+            .frame(minHeight: SL.rowMinHeight)
             .contentShape(Rectangle())
         }
         .buttonStyle(.pressable)
@@ -171,7 +166,7 @@ struct ServerStatusPage: View {
     let back: () -> Void
 
     var body: some View {
-        SettingsPage(gap: SL.pageGap) {
+        SettingsPage {
             SheetHeader(title: M.serverStatusTitle, leading: .back, action: back)
             switch store.phase {
             case .loading:
@@ -180,15 +175,13 @@ struct ServerStatusPage: View {
                 EmptyStateView(Text(M.loadFailed)).frame(minHeight: DesignTokens.Size.emptyMinHeight)
             case .loaded(let status):
                 SettingsGroup(label: nil) {
-                    ForEach(Array(Self.rows(status).enumerated()), id: \.offset) { index, row in
+                    ForEach(Array(Self.rows(status).enumerated()), id: \.offset) { _, row in
                         SettingsRow(
                             icon: nil,
                             title: row.title,
                             detail: row.definition,
                             value: row.value,
-                            tone: row.tone,
-                            last: index == Self.rows(status).count - 1
-                        )
+                            tone: row.tone)
                     }
                 }
                 if let checked = Timestamp.parse(status.generatedAt) {
@@ -196,6 +189,7 @@ struct ServerStatusPage: View {
                         .hmType(DesignTokens.TypeScale.caption)
                         .foregroundStyle(Color.hmMuted)
                         .padding(.horizontal, SL.groupLabelPadding)
+                        .outsideRowCard()
                 }
             }
         }

@@ -20,14 +20,14 @@ struct AboutPage: View {
     }
 
     var body: some View {
-        SettingsPage(gap: SL.pageGap) {
+        SettingsPage {
             SheetHeader(title: M.aboutTitle, leading: .back, action: back)
             SettingsGroup(label: nil) {
                 SettingsRow(icon: nil, title: M.aboutVersion, value: Self.versionLine ?? "-")
-                SettingsRow(icon: nil, title: M.aboutServer, detail: server ?? M.aboutNotConnected, last: server == nil || openStatus == nil)
+                SettingsRow(icon: nil, title: M.aboutServer, detail: server ?? M.aboutNotConnected)
                 if server != nil, let openStatus {
                     Button(action: openStatus) {
-                        SettingsRow(icon: nil, title: M.serverStatusTitle, chevron: true, last: true)
+                        SettingsRow(icon: nil, title: M.serverStatusTitle, chevron: true)
                     }
                     .buttonStyle(.pressable)
                 }
@@ -37,7 +37,7 @@ struct AboutPage: View {
                     Button {
                         if let url = URL(string: item.repository) { openURL(url) }
                     } label: {
-                        SettingsRow(icon: nil, title: item.name, value: item.license, chevron: true, last: index == ThirdPartyLicenses.all.count - 1)
+                        SettingsRow(icon: nil, title: item.name, value: item.license, chevron: true)
                     }
                     .buttonStyle(.pressable)
                 }
@@ -45,13 +45,13 @@ struct AboutPage: View {
             if developerMode, let openTiming {
                 SettingsGroup(label: M.developer) {
                     Button(action: openTiming) {
-                        HerRow(icon: .stopwatch, title: M.talkTiming, last: true)
+                        SettingsRow(icon: .stopwatch, title: M.talkTiming, chevron: true)
                     }
                     .buttonStyle(.pressable)
                 }
             }
             SettingsGroup(label: nil) {
-                SettingsRow(icon: nil, title: M.developerMode, switchState: $developerMode, last: true)
+                SettingsRow(icon: nil, title: M.developerMode, switchState: $developerMode)
             }
         }
     }

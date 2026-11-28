@@ -4,42 +4,32 @@ import Observation
 import SwiftUI
 
 public enum HerSection: String, CaseIterable, Hashable, Sendable {
-    case memory
-    case rules
     case approvals
-    case timers
-    case allowances
-    case vault
+    case personalization
     case notifications
-    case privacy
+    case passwords
+    case noMoreAsking
     case about
 
-    public var title: String {
+    var entry: HerEntry? {
         switch self {
-        case .memory: M.herMemory
-        case .rules: M.rules
-        case .approvals: L.text("approval.title")
-        case .timers: M.timersTitle
-        case .allowances: M.allowancesTitle
-        case .vault: M.vaultTitle
-        case .notifications: M.quietTitle
-        case .privacy: M.privacy
-        case .about: M.aboutTitle
+        case .approvals: nil
+        case .personalization: .personalization
+        case .notifications: .notifications
+        case .passwords: .passwords
+        case .noMoreAsking: .noMoreAsking
+        case .about: .about
         }
     }
 
+    public var group: String? { entry?.group.rawValue }
+
+    public var title: String {
+        entry?.title ?? L.text("approval.title")
+    }
+
     public var icon: IconName {
-        switch self {
-        case .memory: .affiliate
-        case .rules: .clipboardList
-        case .approvals: .handStop
-        case .timers: .alarm
-        case .allowances: .shieldCheck
-        case .vault: .key
-        case .notifications: .bell
-        case .privacy: .eye
-        case .about: .infoCircle
-        }
+        entry?.icon ?? .handStop
     }
 }
 
@@ -50,6 +40,7 @@ public final class HerWorkspace {
     let memory: MemoryStore
     let quietHours: QuietHoursStore
     let timers: TimersStore
+    let personal: PersonalStore
     public private(set) var vaultCount: HerVaultCount = .unknown
     @ObservationIgnored let api: DeviceAPI
     @ObservationIgnored let confirmKey: DeviceKeySigner
@@ -67,6 +58,7 @@ public final class HerWorkspace {
         memory = MemoryStore(gateway: gateway)
         quietHours = QuietHoursStore(gateway: gateway)
         timers = TimersStore(gateway: gateway)
+        personal = PersonalStore(gateway: gateway, loadModels: { try? await api.configuration().chatModels })
     }
 
     public func load() async {
@@ -74,17 +66,17 @@ public final class HerWorkspace {
         async let memoryLoaded: Void = memory.load()
         async let quietLoaded: Void = quietHours.load()
         async let timersLoaded: Void = timers.load()
+        async let personalLoaded: Void = personal.load()
         vaultCount = await countVault()
-        _ = await (settingsLoaded, memoryLoaded, quietLoaded, timersLoaded)
+        _ = await (settingsLoaded, memoryLoaded, quietLoaded, timersLoaded, personalLoaded)
     }
 
     public func isAvailable(_ section: HerSection, actions: DeviceActionsModel?) -> Bool {
         switch section {
-        case .memory, .rules, .allowances, .privacy, .about: true
+        case .personalization, .noMoreAsking, .about: true
         case .approvals: actions != nil
-        case .timers: timers.phase != .unsupported
-        case .vault: vaultCount != .unsupported && Self.vaultBuilt
-        case .notifications: quietHours.hours != nil
+        case .notifications: timers.phase != .unsupported || quietHours.hours != nil
+        case .passwords: vaultCount != .unsupported && Self.vaultBuilt
         }
     }
 
@@ -118,20 +110,12 @@ public struct HerSectionView: View {
     private let talk: (String) -> Void
     private let openChat: () -> Void
     private let removedThisDevice: () -> Void
-    private let senses: AnyView?
-    private let perceptionDeletion: ((@escaping () -> Void) -> AnyView)?
-    private let sensesOn: () -> Int?
     @State private var path: [HerPage.Page] = []
-    @State private var sensesOpen = false
-    @State private var deletionOpen = false
 
     public init(
         section: HerSection,
         workspace: HerWorkspace,
         actions: DeviceActionsModel?,
-        senses: AnyView? = nil,
-        perceptionDeletion: ((@escaping () -> Void) -> AnyView)? = nil,
-        sensesOn: @escaping () -> Int? = { nil },
         talk: @escaping (String) -> Void,
         openChat: @escaping () -> Void,
         removedThisDevice: @escaping () -> Void
@@ -139,9 +123,6 @@ public struct HerSectionView: View {
         self.section = section
         self.workspace = workspace
         self.actions = actions
-        self.senses = senses
-        self.perceptionDeletion = perceptionDeletion
-        self.sensesOn = sensesOn
         self.talk = talk
         self.openChat = openChat
         self.removedThisDevice = removedThisDevice
@@ -155,46 +136,25 @@ public struct HerSectionView: View {
                 }
         }
         .environment(\.herInSidebar, true)
-        .sheet(isPresented: $sensesOpen) {
-            senses
-        }
-        .sheet(isPresented: $deletionOpen) {
-            perceptionDeletion?({ deletionOpen = false })
-        }
     }
 
     @ViewBuilder
     private var root: some View {
         switch section {
-        case .memory:
-            MemoryRootView(store: workspace.memory, talk: talk)
-        case .rules:
-            RulesPage(store: workspace.memory, quietHours: workspace.quietHours.hours, talk: talk)
         case .approvals:
             if let actions {
                 ApprovalsView(model: actions, openThread: { _ in openChat() }, close: openChat)
             }
-        case .timers:
-            TimersPage(store: workspace.timers, open: { path.append(.timer($0)) }, back: openChat)
-        case .allowances:
-            HerAllowancesPage(memory: workspace.memory, back: openChat)
-        case .vault:
+        case .personalization:
+            PersonalizationPage(personal: workspace.personal)
+        case .notifications:
+            NotificationsHubPage(timers: workspace.timers, quietHours: workspace.quietHours)
+        case .passwords:
             #if canImport(CryptoKit) && canImport(Security) && canImport(LocalAuthentication)
             VaultRootView(api: workspace.api, confirmKey: workspace.confirmKey, close: openChat)
             #endif
-        case .notifications:
-            NotificationsPage(store: workspace.quietHours, back: openChat)
-        case .privacy:
-            PrivacyPage(
-                memory: workspace.memory,
-                listening: nil,
-                openListening: {},
-                openVoiceprint: {},
-                openSenses: senses == nil ? nil : { sensesOpen = true },
-                openDeletion: perceptionDeletion == nil ? nil : { deletionOpen = true },
-                sensesSummary: sensesOn().map(M.sensesOn),
-                back: openChat
-            )
+        case .noMoreAsking:
+            HerAllowancesPage(memory: workspace.memory, back: openChat)
         case .about:
             AboutPage(server: workspace.server, openTiming: { path.append(.talkTiming) }, back: openChat)
         }
@@ -203,6 +163,18 @@ public struct HerSectionView: View {
     @ViewBuilder
     private func destination(_ page: HerPage.Page) -> some View {
         switch page {
+        case .name:
+            NamePage(store: workspace.personal) { path.removeLast() }
+        case .rules:
+            RulesPage(store: workspace.memory, quietHours: workspace.quietHours.hours, talk: talk)
+        case .model:
+            ModelPage(store: workspace.personal) { path.removeLast() }
+        case .memory:
+            MemoryRootView(store: workspace.memory, talk: talk)
+        case .timers:
+            TimersPage(store: workspace.timers, open: { path.append(.timer($0)) }) { path.removeLast() }
+        case .notifications:
+            NotificationsPage(store: workspace.quietHours) { path.removeLast() }
         case .timer(let id):
             TimerDetailPage(store: workspace.timers, timerId: id) { path.removeLast() }
         case .device(let id):

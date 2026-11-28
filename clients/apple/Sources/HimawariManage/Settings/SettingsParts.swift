@@ -17,20 +17,24 @@ struct SheetHeader: View {
     var body: some View {
         if leading == .back || inSidebar {
             SystemNavigationTitle(Text(title))
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets())
+                .listRowSeparator(.hidden)
         } else {
             closeHeader
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets())
+                .listRowSeparator(.hidden)
         }
     }
 
     private var closeHeader: some View {
         HStack {
-            GlassCircleButton(Text(M.close), size: SL.headerButton, action: action) {
-                Icon(.x, size: DesignTokens.IconSize.glassButton)
-            }
+            Button(M.close, action: action)
             Spacer()
-            Text(title).hmType(DesignTokens.TypeScale.sheetTitle).foregroundStyle(Color.hmText)
+            Text(title).font(.headline).foregroundStyle(Color.hmText)
             Spacer()
-            Color.clear.frame(width: SL.headerButton, height: SL.headerButton)
+            Button(M.close, action: action).hidden()
         }
         .navigationTitle(title)
     }
@@ -41,16 +45,12 @@ struct SettingsGroup<Rows: View>: View {
     @ViewBuilder let rows: Rows
 
     var body: some View {
-        VStack(alignment: .leading, spacing: SL.groupGap) {
+        Section {
+            rows
+        } header: {
             if let label {
                 Text(label)
-                    .hmType(DesignTokens.TypeScale.groupLabel)
-                    .foregroundStyle(Color.hmMuted)
-                    .padding(.horizontal, SL.groupLabelPadding)
             }
-            VStack(spacing: 0) { rows }
-                .padding(.horizontal, SL.rowsPaddingHorizontal)
-                .himawariCard(padding: EdgeInsets())
         }
     }
 }
@@ -71,77 +71,106 @@ struct SettingsRow: View {
     var tone: Tone = .muted
     var chevron = false
     var switchState: Binding<Bool>? = nil
-    var last = false
-    @Environment(\.dynamicTypeSize) private var typeSize
-
-    private var valueStacksUnderTitle: Bool {
-        typeSize.isAccessibilitySize
-    }
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(alignment: switchState != nil && (detail != nil || note != nil || warning != nil) ? .top : .center, spacing: SL.rowGap) {
-                if let icon {
-                    Icon(icon, size: DesignTokens.IconSize.listRow).foregroundStyle(Color.hmText)
-                }
-                VStack(alignment: .leading, spacing: SL.rowTextGap) {
-                    Text(title).hmType(SL.rowValue).foregroundStyle(Color.hmText)
-                    if let value, valueStacksUnderTitle {
-                        valueText(value)
+        if let switchState {
+            Toggle(isOn: switchState) { label }
+        } else {
+            HStack(spacing: SL.rowGap) {
+                LabeledContent {
+                    if let value {
+                        Text(value).foregroundStyle(valueColor)
                     }
-                    if let detail {
-                        Text(detail).hmType(DesignTokens.TypeScale.caption).foregroundStyle(Color.hmMuted)
-                    }
-                    if let note {
-                        Text(note).hmType(DesignTokens.TypeScale.caption).foregroundStyle(Color.hmMuted)
-                    }
-                    if let warning {
-                        Text(warning).hmType(DesignTokens.TypeScale.caption).foregroundStyle(Color.hmDanger)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                if let value, !valueStacksUnderTitle {
-                    valueText(value)
-                }
-                if let switchState {
-                    Toggle("", isOn: switchState).labelsHidden()
+                } label: {
+                    label
                 }
                 if chevron {
                     Icon(.chevronRight, size: DesignTokens.IconSize.chevron).foregroundStyle(Color.hmMuted)
                 }
             }
-            .padding(.vertical, SL.rowPaddingVertical)
             .frame(minHeight: SL.rowMinHeight)
-            if !last { RowSeparator() }
+            .contentShape(Rectangle())
         }
-        .contentShape(Rectangle())
     }
 
-    private func valueText(_ value: String) -> some View {
-        Text(value)
-            .hmType(SL.rowValue)
-            .foregroundStyle(tone == .attention ? Color.hmDanger : tone == .good ? Color.hmSun : Color.hmMuted)
+    private var label: some View {
+        Label {
+            VStack(alignment: .leading, spacing: SL.rowTextGap) {
+                Text(title).foregroundStyle(Color.hmText)
+                if let detail {
+                    Text(detail).font(.footnote).foregroundStyle(Color.hmMuted)
+                }
+                if let note {
+                    Text(note).font(.footnote).foregroundStyle(Color.hmMuted)
+                }
+                if let warning {
+                    Text(warning).font(.footnote).foregroundStyle(Color.hmDanger)
+                }
+            }
+        } icon: {
+            if let icon {
+                Icon(icon, size: DesignTokens.IconSize.listRow).foregroundStyle(Color.hmGlyph)
+            }
+        }
+        .labelStyle(SettingsRowLabelStyle(hasIcon: icon != nil))
+    }
+
+    private var valueColor: Color {
+        switch tone {
+        case .attention: Color.hmDanger
+        case .good: Color.hmSun
+        case .muted: Color.hmMuted
+        }
+    }
+}
+
+private struct SettingsRowLabelStyle: LabelStyle {
+    let hasIcon: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        if hasIcon {
+            Label(configuration)
+        } else {
+            configuration.title
+        }
+    }
+}
+
+extension View {
+    func outsideRowCard() -> some View {
+        listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets(top: SL.rowTextGap, leading: 0, bottom: SL.rowTextGap, trailing: 0))
+            .listRowSeparator(.hidden)
+    }
+}
+
+struct DestructiveRow: View {
+    let title: String
+    let action: () -> Void
+
+    var body: some View {
+        Section {
+            Button(role: .destructive, action: action) {
+                Text(title).frame(maxWidth: .infinity)
+            }
+        }
     }
 }
 
 struct SettingsPage<Content: View>: View {
-    let gap: CGFloat
     var systemBar = true
     @ViewBuilder let content: Content
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: gap) { content }
-                .padding(.top, systemBar ? SL.groupGap : DesignTokens.Size.sheetPaddingTop)
-                .padding(.horizontal, DesignTokens.Size.sheetPaddingHorizontal)
-                .padding(.bottom, DesignTokens.Size.sheetPaddingBottom)
-                .frame(maxWidth: .infinity, alignment: .topLeading)
-        }
-        .scrollIndicators(.hidden)
-        .himawariScreenBackground()
-        #if os(iOS)
-        .toolbar(systemBar ? .visible : .hidden, for: .navigationBar)
-        #endif
+        List { content }
+            .scrollContentBackground(.hidden)
+            .timersListStyle()
+            .tint(Color.hmSun)
+            .environment(\.defaultMinListRowHeight, 0)
+            .himawariScreenBackground()
+            #if os(iOS)
+            .toolbar(systemBar ? .visible : .hidden, for: .navigationBar)
+            #endif
     }
 }
 

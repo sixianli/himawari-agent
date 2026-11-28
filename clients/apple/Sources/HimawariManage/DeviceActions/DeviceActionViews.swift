@@ -308,36 +308,34 @@ public struct DeviceAbilitiesSection: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Her.pageGap) {
+        Group {
             if !model.permissions.isEmpty {
-                GroupedSection(Text(L.text("abilities.allowedBySystem"))) {
-                    ForEach(Array(model.permissions.enumerated()), id: \.element.id) { index, permission in
-                        if index > 0 { RowSeparator() }
+                Section(L.text("abilities.allowedBySystem")) {
+                    ForEach(model.permissions, id: \.id) { permission in
                         NavigationLink {
                             PermissionAbilitiesPage(model: model, permissionId: permission.id)
                         } label: {
-                            GroupedRow(Text(permission.name), icon: { EmptyView() }) {
-                                Text(L.text("permission.status.\(permission.status.rawValue)"))
-                                    .hmType(DesignTokens.TypeScale.body)
-                                    .foregroundStyle(Color.hmMuted)
+                            LabeledContent {
+                                Text(L.text("permission.status.\(permission.status.rawValue)")).foregroundStyle(Color.hmMuted)
+                            } label: {
+                                Text(permission.name).foregroundStyle(Color.hmText)
                             }
                         }
-                        .buttonStyle(.pressable)
                     }
                 }
             }
             if !unmatchedActions.isEmpty {
-                GroupedSection(Text(L.text("abilities.title"))) {
-                    ForEach(Array(unmatchedActions.enumerated()), id: \.element.id) { index, entry in
-                        if index > 0 { RowSeparator() }
+                Section(L.text("abilities.title")) {
+                    ForEach(unmatchedActions, id: \.id) { entry in
                         AbilityToggle(model: model, entry: entry)
                     }
                 }
             }
             if let problem = model.problem {
                 Text(problem)
-                    .hmType(DesignTokens.TypeScale.caption)
+                    .font(.footnote)
                     .foregroundStyle(Color.hmDanger)
+                    .outsideRowCard()
             }
         }
         .task { await model.refresh() }
@@ -356,34 +354,30 @@ struct PermissionAbilitiesPage: View {
     }
 
     var body: some View {
-        SettingsPage(gap: DesignTokens.Her.pageGap) {
+        SettingsPage {
             if let permission {
-                GroupedSection {
+                Section {
                     Button { primer = permission } label: {
-                        GroupedRow(Text(L.text("abilities.systemAccess")), icon: { EmptyView() }) {
-                            Text(L.text("permission.status.\(permission.status.rawValue)"))
-                                .hmType(DesignTokens.TypeScale.body)
-                                .foregroundStyle(Color.hmMuted)
-                        }
+                        SettingsRow(
+                            icon: nil,
+                            title: L.text("abilities.systemAccess"),
+                            value: L.text("permission.status.\(permission.status.rawValue)"),
+                            chevron: true)
                     }
                     .buttonStyle(.pressable)
                 }
-                Text(permission.purpose)
-                    .font(.footnote)
-                    .foregroundStyle(Color.hmMuted)
-                    .fixedSize(horizontal: false, vertical: true)
                 if !entries.isEmpty {
-                    GroupedSection(Text(L.text("abilities.title"))) {
-                        ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
-                            if index > 0 { RowSeparator() }
+                    Section(L.text("abilities.title")) {
+                        ForEach(entries, id: \.id) { entry in
                             AbilityToggle(model: model, entry: entry)
                         }
                     }
                 }
                 if let problem = model.problem {
                     Text(problem)
-                        .hmType(DesignTokens.TypeScale.caption)
+                        .font(.footnote)
                         .foregroundStyle(Color.hmDanger)
+                        .outsideRowCard()
                 }
             }
         }
@@ -404,13 +398,12 @@ struct AbilityToggle: View {
     let entry: DevicePolicyEntry
 
     var body: some View {
-        ToggleRow(
-            Text(entry.shownTitle),
-            isOn: Binding(
-                get: { entry.allowed },
-                set: { allowed in Task { await model.setAllowed(entry.name, allowed: allowed) } }
-            )
-        ) { EmptyView() }
+        Toggle(isOn: Binding(
+            get: { entry.allowed },
+            set: { allowed in Task { await model.setAllowed(entry.name, allowed: allowed) } }
+        )) {
+            Text(entry.shownTitle).foregroundStyle(Color.hmText)
+        }
     }
 }
 
