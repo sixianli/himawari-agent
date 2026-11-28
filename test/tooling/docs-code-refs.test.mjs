@@ -7,6 +7,7 @@ import {
   buildCodeIndex,
   checkDocsCodeRefs,
   classifyReference,
+  mainlineRef,
 } from "../../scripts/check-docs-code-refs.mjs";
 
 const roots = [];
@@ -141,6 +142,49 @@ describe("文档里写的路径、命令、名字要在代码里找得到", () =
       "export declare function createDepThing(): void;\n",
     );
     expect(checkDocsCodeRefs({ root, index: buildCodeIndex(root) }).errors).toEqual([]);
+  });
+});
+
+function commitAll(root, message) {
+  git(root, "add", "-A");
+  git(root, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", message);
+  return git(root, "rev-parse", "HEAD");
+}
+
+function squashMergedRepository() {
+  const root = repository(code, () => ({}));
+  const base = git(root, "rev-parse", "HEAD");
+  git(root, "checkout", "-q", "-b", "feature");
+  write(root, { "packages/memory/src/extra.ts": "export const EXTRA = 1;\n" });
+  const branchCommit = commitAll(root, "feature work");
+  git(root, "checkout", "-q", "--detach", base);
+  git(root, "merge", "-q", "--squash", "feature");
+  const squashCommit = commitAll(root, "feature work (#751)");
+  git(root, "update-ref", "refs/remotes/origin/main", squashCommit);
+  return { root, branchCommit, squashCommit };
+}
+
+describe("verified_at 要写 main 上的提交（I-261128-mxs1）", () => {
+  it("写的是压缩合并前分支上的提交时报错：合并后 main 上没有这个提交", () => {
+    const { root, branchCommit } = squashMergedRepository();
+    write(root, { "docs/adr/0311-x.md": adr(branchCommit, "x", "packages/memory/src/extra.ts") });
+    expect(checkDocsCodeRefs({ root, mainline: "origin/main" }).errors).toEqual([
+      `DOCS_VERIFIED_AT_OFF_MAINLINE docs/adr/0311-x.md -> ${branchCommit} not on origin/main`,
+    ]);
+  });
+
+  it("写的是 main 上的提交时通过", () => {
+    const { root, squashCommit } = squashMergedRepository();
+    write(root, { "docs/adr/0311-x.md": adr(squashCommit, "x", "packages/memory/src/extra.ts") });
+    expect(checkDocsCodeRefs({ root, mainline: "origin/main" }).errors).toEqual([]);
+  });
+
+  it("PR 上对照 PR 的目标分支，其他时候对照 origin/main；没有这个引用时不查", () => {
+    const { root } = squashMergedRepository();
+    expect(mainlineRef(root, {})).toBe("origin/main");
+    expect(mainlineRef(root, { GITHUB_BASE_REF: "release" })).toBe("");
+    git(root, "update-ref", "refs/remotes/origin/release", "HEAD");
+    expect(mainlineRef(root, { GITHUB_BASE_REF: "release" })).toBe("origin/release");
   });
 });
 
