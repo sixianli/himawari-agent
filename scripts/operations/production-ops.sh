@@ -14,13 +14,18 @@ systemctl_bin="${HIMAWARI_OPS_SYSTEMCTL:-systemctl}"
 journalctl_bin="${HIMAWARI_OPS_JOURNALCTL:-journalctl}"
 window="${HIMAWARI_OPS_WINDOW:-3 hours ago}"
 start_wait="${HIMAWARI_OPS_START_WAIT:-120}"
+computers_unit="${HIMAWARI_OPS_COMPUTERS_UNIT:-himawari-computers.service}"
+computers_config="${HIMAWARI_OPS_COMPUTERS_CONFIG:-/etc/himawari-computers/config.json}"
+computers_socket="${HIMAWARI_OPS_COMPUTERS_SOCKET:-/run/himawari-computers/computers.sock}"
+docker_bin="${HIMAWARI_OPS_DOCKER:-docker}"
+runsc_bin="${HIMAWARI_OPS_RUNSC:-/usr/local/bin/runsc}"
 
 refuse() {
   echo "OPS_REFUSED $1: $2" >&2
   exit "${3:-64}"
 }
 
-[[ "$action" == diagnose || "$action" == restart || "$action" == allow-sensitive || "$action" == senses ]] || refuse ACTION_INVALID "only diagnose, restart, allow-sensitive or senses"
+[[ "$action" == diagnose || "$action" == restart || "$action" == allow-sensitive || "$action" == senses || "$action" == computers ]] || refuse ACTION_INVALID "only diagnose, restart, allow-sensitive, senses or computers"
 [[ -n "$public_key" && -s "$public_key" ]] || refuse KEY_MISSING "HIMAWARI_OPS_PUBLIC_KEY must name the public key that seals the full diagnostics" 70
 
 service_line() {
@@ -206,6 +211,58 @@ if [[ "$action" == allow-sensitive ]]; then
     restart_service
     summary
   fi
+  exit 0
+fi
+
+computers_report() {
+  service_line "$computers_unit"
+  echo "OPS_COMPUTERS_UNIT_START $("$systemctl_bin" show "$computers_unit" --no-pager -p ExecStart 2>&1 | grep -oE 'path=[^ ;]+' | head -1)"
+  if [[ -S "$computers_socket" ]]; then
+    echo "OPS_COMPUTERS_SOCKET present group=$(stat -c %G "$computers_socket")"
+  else
+    echo "OPS_COMPUTERS_SOCKET missing $computers_socket"
+  fi
+  local runsc_version runtimes states
+  runsc_version="$("$runsc_bin" --version 2>/dev/null | head -1)"
+  echo "OPS_COMPUTERS_RUNSC ${runsc_version:-unavailable $runsc_bin}"
+  if runtimes="$("$docker_bin" info --format '{{json .Runtimes}}' 2>/dev/null)"; then
+    echo "OPS_COMPUTERS_DOCKER_RUNTIMES $(printf '%s' "$runtimes" | grep -oE '"[a-z0-9._-]+":\{' | tr -d '"{:' | sort | tr '\n' ' ')"
+  else
+    echo "OPS_COMPUTERS_DOCKER_RUNTIMES unavailable $docker_bin"
+  fi
+  if states="$("$docker_bin" ps -a --filter label=io.himawari.computer --format '{{.State}}' 2>/dev/null)"; then
+    echo "OPS_COMPUTERS_CONTAINERS $(printf '%s\n' "$states" | grep -v '^$' | sort | uniq -c | awk '{print $2 "=" $1}' | tr '\n' ' ')"
+  else
+    echo "OPS_COMPUTERS_CONTAINERS unavailable $docker_bin"
+  fi
+  if [[ -x "$node_bin" ]]; then
+    (cd /tmp && "$node_bin" --no-warnings - "$config" "$computers_config" <<'JS'
+const { readFileSync } = require("node:fs");
+const read = (file) => {
+  try {
+    return JSON.parse(readFileSync(file, "utf8"));
+  } catch (error) {
+    return { error: error.code ?? error.message };
+  }
+};
+const main = read(process.argv[2]);
+const policy = main.runPolicy ?? {};
+console.log(`OPS_COMPUTERS_RUN_POLICY ${JSON.stringify(main.error ? { error: main.error } : { capabilityDeployment: Boolean(main.capabilityDeployment), coding: Boolean(policy.coding), userComputers: policy.userComputers ?? null, browser: policy.browser ?? null })}`);
+const computers = read(process.argv[3]);
+console.log(`OPS_COMPUTERS_CONFIG ${JSON.stringify(computers.error ? { error: computers.error } : { schemaVersion: computers.schemaVersion ?? null, image: computers.image ?? null, runtime: computers.runtime ?? null, disk: computers.disk ?? null, idle: computers.idle ?? null })}`);
+JS
+    ) 2>&1 | cut -c1-4000
+  else
+    echo "OPS_COMPUTERS_RUN_POLICY unavailable node=$node_bin"
+  fi
+  local events
+  events="$("$journalctl_bin" -u "$computers_unit" --since "$window" --no-pager -q -o cat 2>/dev/null | grep -oE '"event":"[a-z_.]+"|"code":"[A-Z0-9_]+"' | sort | uniq -c | sort -rn | head -40 | awk '{print $2 "=" $1}' | tr '\n' ' ')"
+  echo "OPS_COMPUTERS_JOURNAL_NAMES ${events:-none}"
+}
+
+if [[ "$action" == computers ]]; then
+  computers_report
+  echo "OPS_DONE $(date -u +%Y-%m-%dT%H:%M:%SZ)"
   exit 0
 fi
 
