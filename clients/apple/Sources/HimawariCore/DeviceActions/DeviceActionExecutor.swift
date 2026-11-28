@@ -52,7 +52,7 @@ public actor DeviceActionExecutor {
 
     public func permissions() -> [DevicePermission] {
         var seen = Set<String>()
-        return allHandlers.map(\.permission).filter { seen.insert($0.id).inserted }
+        return allHandlers.map(\.permission).filter { $0.shownToOwner && seen.insert($0.id).inserted }
     }
 
     @discardableResult

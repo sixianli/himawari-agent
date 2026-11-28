@@ -248,6 +248,25 @@ export function perceptionSearchEvidenceText(
 export const PERCEPTION_RECORD_TYPE_NAMES = Object.freeze(
   Object.keys(PERCEPTION_RECORD_TYPES) as PerceptionRecordType[],
 );
+export const PERCEPTION_UNPRODUCED_TYPES: readonly PerceptionRecordType[] = Object.freeze([
+  "camera.capture",
+  "screen.text",
+  "context.now_playing",
+  "context.connectivity",
+  "context.power",
+  "context.focus",
+  "context.app",
+  "home.state",
+  "presence.app",
+]);
+export const PERCEPTION_PRODUCED_TYPE_NAMES: readonly PerceptionRecordType[] = Object.freeze(
+  PERCEPTION_RECORD_TYPE_NAMES.filter((type) => !PERCEPTION_UNPRODUCED_TYPES.includes(type)),
+);
+export const PERCEPTION_PRODUCED_SENSES: readonly PerceptionSense[] = Object.freeze(
+  PERCEPTION_SENSES.filter((sense) =>
+    PERCEPTION_PRODUCED_TYPE_NAMES.some((type) => PERCEPTION_RECORD_TYPES[type].sense === sense),
+  ),
+);
 export const PERCEPTION_EPISODE_ANCHOR_TYPES: readonly PerceptionRecordType[] = Object.freeze([
   "speech.utterance",
 ]);

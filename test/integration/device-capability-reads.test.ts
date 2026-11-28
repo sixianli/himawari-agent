@@ -4,6 +4,11 @@ import {
   DEVICE_ACTION_REGISTRATIONS,
   DEVICE_MIRROR_KIND_NAMES,
   type DeviceActionRegistration,
+  PERCEPTION_PRODUCED_SENSES,
+  PERCEPTION_PRODUCED_TYPE_NAMES,
+  PERCEPTION_RECORD_TYPE_NAMES,
+  PERCEPTION_UNPRODUCED_TYPES,
+  type PerceptionRecordType,
 } from "@himawari-agent/application";
 import { describe, expect, it } from "vitest";
 
@@ -128,5 +133,59 @@ describe("[I-130] 每个设备能力都有读的路径", () => {
     expect(apple.handled.size).toBeGreaterThan(0);
     expect(apple.uploadedMirrors.size).toBeGreaterThan(0);
     for (const kind of apple.uploadedMirrors) expect(DEVICE_MIRROR_KIND_NAMES).toContain(kind);
+  });
+});
+
+function swiftSources(directory: string): string[] {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const full = path.join(directory, entry.name);
+    if (entry.isDirectory()) return swiftSources(full);
+    return entry.name.endsWith(".swift") ? [readFileSync(full, "utf8")] : [];
+  });
+}
+
+function recordTypesAppleProduces(): ReadonlySet<string> {
+  const literals = new Set<string>();
+  for (const source of swiftSources(appleSources))
+    for (const match of source.matchAll(/"([a-z_]+\.[a-z_]+)"/gu)) literals.add(match[1] ?? "");
+  return new Set(PERCEPTION_RECORD_TYPE_NAMES.filter((type) => literals.has(type)));
+}
+
+function perceptionListingGaps(
+  unproduced: readonly PerceptionRecordType[],
+  produced: ReadonlySet<string>,
+): readonly string[] {
+  const gaps: string[] = [];
+  for (const type of PERCEPTION_RECORD_TYPE_NAMES) {
+    const listed = !unproduced.includes(type);
+    if (listed && !produced.has(type))
+      gaps.push(`${type}: 列给模型可读，但没有任何客户端会产生这种记录`);
+    if (!listed && produced.has(type))
+      gaps.push(`${type}: 苹果端会产生这种记录，却标成了没人产生，模型读不到`);
+  }
+  return gaps;
+}
+
+describe("[I-130] 列给模型的感知种类都有客户端在产生", () => {
+  it("每种列给模型的记录，苹果端代码里都有产生它的地方；没人产生的不列", () => {
+    expect(perceptionListingGaps(PERCEPTION_UNPRODUCED_TYPES, recordTypesAppleProduces())).toEqual(
+      [],
+    );
+    expect(PERCEPTION_PRODUCED_TYPE_NAMES.length).toBeGreaterThan(0);
+    expect(PERCEPTION_PRODUCED_SENSES).not.toContain("surroundings");
+    expect(PERCEPTION_PRODUCED_SENSES).toContain("location");
+  });
+
+  it("拦得住这次的真实情况：电量、专注模式、正在播放等全部列给模型，却没有客户端产生", () => {
+    const gaps = perceptionListingGaps([], recordTypesAppleProduces());
+    expect(gaps).toContain("context.power: 列给模型可读，但没有任何客户端会产生这种记录");
+    expect(gaps).toContain("screen.text: 列给模型可读，但没有任何客户端会产生这种记录");
+    expect(gaps).toHaveLength(PERCEPTION_UNPRODUCED_TYPES.length);
+  });
+
+  it("反向：把真在产生的种类标成没人产生，也会被拦", () => {
+    expect(perceptionListingGaps(["location.visit"], recordTypesAppleProduces())).toContain(
+      "location.visit: 苹果端会产生这种记录，却标成了没人产生，模型读不到",
+    );
   });
 });

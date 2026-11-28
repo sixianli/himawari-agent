@@ -13,3 +13,4 @@
 "NSHealthShareUsageDescription" = "读步数、睡眠、心率和锻炼，存在你自己的服务器上。";
 "NSHealthUpdateUsageDescription" = "Himawari 只读健康数据，不往健康 App 里写任何东西。";
 "NSPhotoLibraryUsageDescription" = "记下新拍的照片和截屏的时间、地点，不传这些照片本身；你在“+”里选的照片会发给 Himawari。";
+"CurrentLocation" = "你问“我现在在哪”“附近有什么”时，要用精确位置才答得准。";

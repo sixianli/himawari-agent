@@ -1,7 +1,6 @@
 import { flatMailReader, ProactiveSourceUnauthorizedError } from "@himawari-agent/application";
 import { describe, expect, it } from "vitest";
 import {
-  CALENDAR_READONLY_SCOPE,
   createGmailReader,
   createGoogleOAuth,
   GMAIL_READONLY_SCOPE,
@@ -156,7 +155,7 @@ describe("[PG-11] Gmail read-only source", () => {
         : json({
             refresh_token: "refresh-new",
             access_token: "access-new",
-            scope: `${GMAIL_READONLY_SCOPE} ${CALENDAR_READONLY_SCOPE}`,
+            scope: GMAIL_READONLY_SCOPE,
           }),
     );
     const client = oauth(fake.fetch);
@@ -168,7 +167,7 @@ describe("[PG-11] Gmail read-only source", () => {
       access_type: "offline",
       prompt: "consent",
       state: "state-1",
-      scope: `${GMAIL_READONLY_SCOPE} ${CALENDAR_READONLY_SCOPE}`,
+      scope: GMAIL_READONLY_SCOPE,
     });
     expect(await client.exchange("code-1")).toMatchObject({
       refreshToken: "refresh-new",

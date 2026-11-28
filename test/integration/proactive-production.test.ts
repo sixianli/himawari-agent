@@ -27,7 +27,6 @@ import {
   SqliteProductStateRepository,
 } from "@himawari-agent/persistence-sqlite";
 import {
-  CALENDAR_READONLY_SCOPE,
   createGmailReader,
   createGoogleOAuth,
   GMAIL_READONLY_SCOPE,
@@ -112,7 +111,7 @@ function fakeGoogle() {
           ? json({
               refresh_token: "refresh-1",
               access_token: "access-1",
-              scope: `${GMAIL_READONLY_SCOPE} ${CALENDAR_READONLY_SCOPE}`,
+              scope: GMAIL_READONLY_SCOPE,
             })
           : json({ error: "invalid_grant" }, 400);
       return json({ access_token: "access-1", expires_in: 3600 });

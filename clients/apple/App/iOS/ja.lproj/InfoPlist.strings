@@ -13,3 +13,4 @@
 "NSHealthShareUsageDescription" = "歩数、睡眠、心拍数、ワークアウトを読み取り、あなた自身のサーバーに保存します。";
 "NSHealthUpdateUsageDescription" = "Himawari はヘルスケアデータを読み取るだけで、ヘルスケア App には何も書き込みません。";
 "NSPhotoLibraryUsageDescription" = "新しく撮った写真とスクリーンショットの日時と場所を記録します。その写真そのものはアップロードしません。「+」で選んだ写真は Himawari に送ります。";
+"CurrentLocation" = "「今どこ」「近くに何がある」と聞かれたとき、正確に答えるには正確な位置情報が必要です。";

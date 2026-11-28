@@ -1665,6 +1665,11 @@
     "changedIn": "I-130",
     "reason": "新增：提醒事项、闹钟、家庭的读动作用法，以及标成完成、控制家居时编号从哪来"
   },
+  "tools.result.device-action.usage.device-status": {
+    "sha256": "dbe8eebb8a2c481993acac565da02b15cede918e4b21a9b6d4be6e90dea513a3",
+    "changedIn": "I-130",
+    "reason": "新增 location.current、device.status 两个现读动作；perception_read 只列有客户端在产生的种类"
+  },
   "tools.result.device-action.usage.home-control": {
     "sha256": "cac0c8c813993cc13db0389c01a869ce1f4ffa554bd2c4cfb31cee1cb8b852d1",
     "changedIn": "I-130",
@@ -1674,6 +1679,11 @@
     "sha256": "dd4af208557d44f3ce429d0bb60c0ba30a05c19a2842d0e2d4ed6071cfb05f6d",
     "changedIn": "I-130",
     "reason": "新增：提醒事项、闹钟、家庭的读动作用法，以及标成完成、控制家居时编号从哪来"
+  },
+  "tools.result.device-action.usage.location-current": {
+    "sha256": "413870bf41f0143b28637406b4f30116e5e15e6bad8ad7d9523a441f40c4a1d4",
+    "changedIn": "I-130",
+    "reason": "新增 location.current、device.status 两个现读动作；perception_read 只列有客户端在产生的种类"
   },
   "tools.result.device-action.waiting-owner": {
     "sha256": "cd84a6d23e03457c0fc116fa235ca008d2ec33f5495d30a90b363479dc06caec",
@@ -1721,9 +1731,9 @@
     "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
   },
   "tools.result.perception-read.unknown-kinds": {
-    "sha256": "47c227d179d2b590592d1fa6324aedcd4ae6eebbf0e8ab511041f2d1b5334d2e",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
+    "sha256": "294baa8c4aa5e03e4936868d437fcf7ff36d63be58f2c3ff0a8f6ebf37fb9091",
+    "changedIn": "I-130",
+    "reason": "新增 location.current、device.status 两个现读动作；perception_read 只列有客户端在产生的种类"
   },
   "tools.result.rule-set.ask-owner": {
     "sha256": "d25662743343f3251ba1300b1e08b1934b08661431db4e6fdafead1b879e10da",
