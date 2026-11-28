@@ -221,7 +221,7 @@ class ShadowRehearsalTest(unittest.TestCase):
         self.assertNotIn('SHADOW_FSTAB_DROPPED # comment', result.stdout)
         self.assertIn('SHADOW_SYSTEM_STATE running', result.stdout)
         arguments = (self.log / 'nspawn.args').read_text().splitlines()
-        for expected in ('--private-network', '--boot', '--machine=himawari-shadow', '--link-journal=no'):
+        for expected in ('--private-network', '--boot', '--machine=himawari-shadow', '--link-journal=no', '--console=pipe'):
             self.assertIn(expected, arguments)
         directory = next(argument for argument in arguments if argument.startswith('--directory='))[len('--directory='):]
         shadow = Path(directory).parent

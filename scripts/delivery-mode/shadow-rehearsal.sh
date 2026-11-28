@@ -175,7 +175,7 @@ printf "%s" "$4" | while read -r number host port; do
 done
 shift 4
 exec "$@"
-' shadow-root "$mount" "$shadow" "$masked_units" "$egress_spec" "$nspawn" --quiet --directory="$shadow/root" --private-network --link-journal=no --machine="$machine" --hostname="$(hostname)" --console=passive --bind="$shadow/state:$state_root" --bind="$shadow/journal:/var/log/journal" --bind="$shadow/egress:/run/himawari-shadow-egress" --property="MemoryMax=$memory_max" --boot > "$shadow/boot.log" 2>&1 9>&- &
+' shadow-root "$mount" "$shadow" "$masked_units" "$egress_spec" "$nspawn" --quiet --directory="$shadow/root" --private-network --link-journal=no --machine="$machine" --hostname="$(hostname)" --console=pipe --bind="$shadow/state:$state_root" --bind="$shadow/journal:/var/log/journal" --bind="$shadow/egress:/run/himawari-shadow-egress" --property="MemoryMax=$memory_max" --boot < /dev/null > "$shadow/boot.log" 2>&1 9>&- &
 launcher=$!
 booted=1
 leader=""
@@ -194,7 +194,7 @@ look() {
 }
 stuck_units() {
   find_leader || true
-  echo "leader: ${leader:-unknown}"
+  echo "leader: ${leader:-unknown} wchan=$(cat "/proc/${leader:-0}/wchan" 2>&1) stack=$(timeout "$probe_timeout" cat "/proc/${leader:-0}/stack" 2>&1 | head -12 | tr -s " \n" " ")"
   echo "jobs: $(probe list-jobs --no-pager --no-legend 2>&1 | head -20 | tr -s ' \n' ' ')"
   echo "failed: $(probe --failed --no-pager --no-legend 2>&1 | head -20 | tr -s ' \n' ' ')"
   echo "processes: $(look /bin/ps -eo pid,stat,wchan:24,etimes,args --no-headers 2>&1 | head -40 | cut -c1-160 | tr -s ' \n' ' ')"
