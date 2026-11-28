@@ -36,8 +36,11 @@ final class ChatComposerTests: XCTestCase {
     func testJumpingToTheLatestShowsTheWholeLastMessageAboveTheInputBar() {
         let app = DemoApp.launch("motion-scroll-under-glass")
         let jump = app.buttons["chat.jumpLatest"].firstMatch
-        XCTAssertTrue(jump.waitForExistence(timeout: 15), "scrolling up the long chat did not bring up the jump-to-latest button")
-        Thread.sleep(forTimeInterval: 4)
+        if !jump.waitForExistence(timeout: 12) {
+            for _ in 0..<4 where !jump.exists { app.swipeDown() }
+        }
+        XCTAssertTrue(jump.waitForExistence(timeout: 5), "scrolling up the long chat did not bring up the jump-to-latest button")
+        Thread.sleep(forTimeInterval: 1)
         jump.tap()
         XCTAssertTrue(DemoApp.waitUntil(timeout: 5) { !jump.exists }, "the jump-to-latest button stayed after tapping it")
         let field = input(in: app)

@@ -38,7 +38,6 @@ public struct ChatView: View {
     @State private var shownSteps: ShownSteps?
     @State private var farFromLatest = false
     @State private var latestJumps = 0
-    @State private var scrollPosition = ScrollPosition(edge: .bottom)
     @State private var copiedCount = 0
     @State private var copiedShown = false
     @State private var replyingTo: ThreadMessage?
@@ -69,6 +68,7 @@ public struct ChatView: View {
     }
 
     private static let headerHeight = DesignTokens.Chat.puckTop + DesignTokens.Chat.puckSize
+    private static let transcriptEnd = "transcript.end"
 
     public var body: some View {
         withTalkFeed
@@ -434,7 +434,7 @@ public struct ChatView: View {
                     withAnimation(.easeInOut(duration: 3)) { proxy.scrollTo(first.id, anchor: .top) }
                 }
                 .onChange(of: latestJumps) { _, _ in
-                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.3)) { scrollPosition.scrollTo(edge: .bottom) }
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.3)) { proxy.scrollTo(Self.transcriptEnd, anchor: .bottom) }
                 }
         }
     }
@@ -457,17 +457,21 @@ public struct ChatView: View {
         let placed = BubbleLayout.place(rows.map(\.entry))
         let actions = rowActions(jump: jump)
         return ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0) {
-                ForEach(rows) { row in
-                    ChatRowView(model: model(of: row, placed: placed[row.id] ?? ChatRow.lone), actions: actions)
-                        .equatable()
+            VStack(spacing: 0) {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(rows) { row in
+                        ChatRowView(model: model(of: row, placed: placed[row.id] ?? ChatRow.lone), actions: actions)
+                            .equatable()
+                    }
                 }
+                .padding(.horizontal, DesignTokens.Chat.bubbleEdge)
+                .padding(.top, Self.headerHeight + DesignTokens.Chat.puckContentGap + (shownBackgroundWork == nil ? 0 : DesignTokens.Chat.puckBannerGap + DesignTokens.Avatar.backgroundPillHeight))
+                .padding(.bottom, 110)
+                Color.clear
+                    .frame(height: 0)
+                    .id(Self.transcriptEnd)
             }
-            .padding(.horizontal, DesignTokens.Chat.bubbleEdge)
-            .padding(.top, Self.headerHeight + DesignTokens.Chat.puckContentGap + (shownBackgroundWork == nil ? 0 : DesignTokens.Chat.puckBannerGap + DesignTokens.Avatar.backgroundPillHeight))
-            .padding(.bottom, 110)
         }
-        .scrollPosition($scrollPosition)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { screenWidth = $0 }
         .onScrollGeometryChange(for: Bool.self) { geometry in
             geometry.contentSize.height - geometry.visibleRect.maxY > geometry.containerSize.height
