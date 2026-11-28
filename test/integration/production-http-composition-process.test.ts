@@ -2605,14 +2605,15 @@ it("[PR-A] [iOS-8] a half sentence prepared while the owner speaks sends the mod
     expect(order(lastCold)).not.toContain("主人的牙医是樱井医生");
     expect(order(outsideSnapshot(lastMessage(warm.request)))).toEqual(order(lastCold));
     expect(lastCold).toContain(finalWords);
-    const opener = "[Himawari 资料 ";
     const withoutRecall = (raw: string) => {
       const header = raw.indexOf(CONVERSATION_RECALL_HEADER.text);
       if (header < 0) return raw;
-      const start = raw.lastIndexOf(opener, header);
-      const end = raw.indexOf(opener, header);
-      if (start < 0 || end < 0) throw new Error("CONVERSATION_RECALL_BLOCK_UNBOUNDED");
-      return raw.slice(0, start) + raw.slice(end);
+      const start = raw.lastIndexOf("\\n[Himawari 资料 ", header);
+      const ends = ["\\n[Himawari", "\\n[记忆变化", "\\n</himawari-context>"]
+        .map((next) => raw.indexOf(next, header))
+        .filter((at) => at >= 0);
+      if (start < 0 || ends.length === 0) throw new Error("CONVERSATION_RECALL_BLOCK_UNBOUNDED");
+      return raw.slice(0, start) + raw.slice(Math.min(...ends));
     };
     expect(withoutTurnTime(withoutRecall(warm.request.raw))).toBe(
       withoutTurnTime(withoutRecall(cold.request.raw)),
