@@ -35,8 +35,19 @@ def keep_owner_and_mode(source_info, target):
         os.chmod(target, stat.S_IMODE(source_info.st_mode))
 
 
+def live_lease_expiry(database_path):
+    connection = sqlite3.connect('file:' + str(database_path) + '?mode=ro', uri=True)
+    try:
+        if connection.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'authority_leases'").fetchone() is None:
+            return None
+        return connection.execute('SELECT MAX(expires_at) FROM authority_leases WHERE released_at IS NULL').fetchone()[0]
+    finally:
+        connection.close()
+
+
 def copy_tree(source, target):
     sqlite_files = 0
+    leases = []
     for parent, directories, files in os.walk(source):
         relative = Path(parent).relative_to(source)
         destination = target / relative
@@ -60,6 +71,9 @@ def copy_tree(source, target):
             elif stat.S_ISREG(info.st_mode) and info.st_size > 0 and is_sqlite(path):
                 snapshot(path, destination / name)
                 sqlite_files += 1
+                expiry = live_lease_expiry(destination / name)
+                if expiry:
+                    leases.append(expiry)
             elif stat.S_ISREG(info.st_mode):
                 try:
                     shutil.copyfile(path, destination / name)
@@ -68,7 +82,7 @@ def copy_tree(source, target):
             else:
                 continue
             keep_owner_and_mode(info, destination / name)
-    return sqlite_files
+    return sqlite_files, max(leases) if leases else None
 
 
 def main():
@@ -77,8 +91,10 @@ def main():
     source, target = Path(sys.argv[1]), Path(sys.argv[2])
     if not source.is_dir() or source.is_symlink() or not target.is_dir() or any(target.iterdir()):
         raise SystemExit('SHADOW_COPY_PATHS_INVALID')
-    count = copy_tree(source, target)
+    count, lease_expiry = copy_tree(source, target)
     print('SHADOW_COPY_SQLITE_FILES', count)
+    if lease_expiry:
+        print('SHADOW_COPY_LEASE_EXPIRES', lease_expiry)
 
 
 if __name__ == '__main__':

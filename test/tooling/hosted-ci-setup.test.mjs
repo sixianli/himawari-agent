@@ -430,7 +430,7 @@ describe("iPhone 工作流", () => {
       ),
     ).toContain('BlueprintName = "HimawariMac"');
   });
-  it("每个示例场景都跑苹果的无障碍审计，审计测试在 Himawari scheme 里", () => {
+  it("每个示例场景都跑苹果的无障碍审计，审计测试在 Himawari scheme 里，开跑前先把模拟器开机等它起来（I-132）", () => {
     const job = workflow.jobs["iphone-accessibility"];
     expect(job.name).toContain("apple/iphone-accessibility");
     expect(job.strategy.matrix.shard.length).toBeGreaterThan(1);
@@ -441,6 +441,11 @@ describe("iPhone 工作流", () => {
     expect(audit).toContain("-xctestrun");
     expect(audit).toContain("-only-testing:HimawariUITests");
     expect(audit).toContain("set -o pipefail");
+    const boot = job.steps.findIndex((step) => step.run?.includes("simctl bootstatus"));
+    expect(boot).toBeGreaterThan(-1);
+    expect(job.steps[boot].run).toContain("-b");
+    expect(job.steps[boot].env.UDID).toContain("steps.simulator.outputs.udid");
+    expect(boot).toBeLessThan(job.steps.indexOf(shard));
     const scheme = readFileSync(
       path.join(
         repositoryRoot,
